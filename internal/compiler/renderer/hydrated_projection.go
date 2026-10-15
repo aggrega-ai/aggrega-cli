@@ -50,8 +50,9 @@ type valuesMappingRefs struct {
 
 // hydratedProjection is what one node's mid-render state is reduced to once that
 // state is complete: the node's inline values-mapping reference set, the resolved
-// source, the parsed workload, its attributed deliveries, and each artifact
-// entry's template text before anything evaluates it.
+// source, whether a workload was parsed and the environment names its containers
+// declare, its attributed deliveries, and each artifact entry's template text
+// before anything evaluates it.
 //
 // Every field is a value already read out of the state. None of them is a
 // handle the state can be walked back out of, which is the property that keeps
@@ -77,6 +78,11 @@ type hydratedProjection struct {
 	// workload. A Recipe declaring no workload body reaches artifact evaluation
 	// with none, because workload synthesis had nothing to parse.
 	ParsedNodeWorkloadPresent bool
+
+	// ParsedNodeWorkloadEnvironmentNames are the environment names each container
+	// of the node's parsed workload declares, read from the same parsed workload
+	// the presence answer above is, and empty where there is none.
+	ParsedNodeWorkloadEnvironmentNames []constraint.ContainerEnvironmentNames
 
 	// NodeInjectDeliveries are the deliveries the node's injection pipe carries
 	// once every attachment attached to it has delivered, in delivery order,
@@ -188,6 +194,11 @@ type nodeAttachmentProjection struct {
 	// nothing to parse.
 	AttachmentParsedWorkloadPresent bool
 
+	// AttachmentParsedWorkloadEnvironmentNames are the environment names each
+	// container of the attachment's parsed workload declares, and empty where the
+	// render parsed none.
+	AttachmentParsedWorkloadEnvironmentNames []constraint.ContainerEnvironmentNames
+
 	// AttachmentArtifactTemplateText is the template text standing at each of the
 	// attachment's artifacts, keyed by the output name the entry resolves to and
 	// held in the order the entries were walked.
@@ -230,6 +241,11 @@ type boundaryAttachmentProjection struct {
 	// BoundaryAttachmentParsedWorkloadPresent reports whether the boundary-scope
 	// attachment's render state carries a workload.
 	BoundaryAttachmentParsedWorkloadPresent bool
+
+	// BoundaryAttachmentParsedWorkloadEnvironmentNames are the environment names
+	// each container of the boundary-scope attachment's parsed workload declares,
+	// and empty where the render parsed none.
+	BoundaryAttachmentParsedWorkloadEnvironmentNames []constraint.ContainerEnvironmentNames
 
 	// BoundaryAttachmentArtifactTemplateText is the template text standing at
 	// each of the boundary-scope attachment's artifacts, keyed by the output name
@@ -306,8 +322,9 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 	}
 	sourceDeclared, workloadPresent := pillarsReached(state)
 	p := &hydratedProjection{
-		ResolvedNodeSourceDeclared: sourceDeclared,
-		ParsedNodeWorkloadPresent:  workloadPresent,
+		ResolvedNodeSourceDeclared:         sourceDeclared,
+		ParsedNodeWorkloadPresent:          workloadPresent,
+		ParsedNodeWorkloadEnvironmentNames: workloadEnvironmentNames(state.ParsedWorkload),
 	}
 	if recipe := state.Recipe; recipe != nil {
 		p.ValuesMappingTemplateRefs = collectValuesMappingRefs(recipe.Spec.ValuesMapping)
@@ -568,6 +585,10 @@ type attachmentOwner interface {
 	// from the inputs it embeds.
 	readableFacts(findingFile, outputName string) (constraint.HydratedView, error)
 
+	// readableHydratedFacts is readableFacts for a reading that is not about one
+	// artifact entry, with what could not be checked supplied by the caller.
+	readableHydratedFacts(findingFile, unchecked string) (constraint.HydratedView, error)
+
 	// readableEmittedFacts reports the emitted-stage presentation a rule over this
 	// owner reads, and refuses a presentation standing over no retention, on the
 	// same reading readableFacts follows for the stage before it.
@@ -675,15 +696,31 @@ type attachmentOwnerInputs struct {
 func (i attachmentOwnerInputs) readableFacts(
 	findingFile, outputName string,
 ) (constraint.HydratedView, error) {
+	return i.readableHydratedFacts(findingFile, fmt.Sprintf(
+		"artifact %q could not be checked against the pillars the FeatureRecipe declares", outputName))
+}
+
+// readableHydratedFacts is the guard [attachmentOwnerInputs.readableFacts]
+// applies, for a reading over this owner's mid-render facts that is not about one
+// artifact entry. unchecked says what could not be checked, and opens the halt.
+//
+// The two absences mean what they mean there: an absent presentation is a render
+// that published none, and nothing reads this owner's facts in it; an absent
+// retention beneath a present presentation would answer every fact with its zero
+// value, which a reading cannot tell from a document that declared nothing, so it
+// halts rather than passing. The guard is one body so the arrangement it refuses
+// is refused alike for every reading over these facts.
+func (i attachmentOwnerInputs) readableHydratedFacts(
+	findingFile, unchecked string,
+) (constraint.HydratedView, error) {
 	if i.facts == nil {
 		return nil, nil
 	}
 	if i.into == nil {
 		return nil, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
-			fmt.Sprintf("artifact %q could not be checked against the pillars the FeatureRecipe "+
-				"declares — internal error: the check's inputs were incomplete. This is a fault in "+
+			unchecked+" — internal error: the check's inputs were incomplete. This is a fault in "+
 				"the compiler rather than in the FeatureRecipe, so there is nothing to correct in "+
-				"the catalog", outputName), nil, nil)
+				"the catalog", nil, nil)
 	}
 	return i.facts, nil
 }
@@ -832,12 +869,14 @@ func (r nodeAttachmentOwner) recordPillars(state *PhaseBState) {
 		return
 	}
 	sourceDeclared, workloadPresent := pillarsReached(state)
+	environment := workloadEnvironmentNames(state.ParsedWorkload)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	p := h.nodeAttachmentEntry(r.key)
 	p.AttachmentResolvedSourceDeclared = sourceDeclared
 	p.AttachmentParsedWorkloadPresent = workloadPresent
+	p.AttachmentParsedWorkloadEnvironmentNames = environment
 }
 
 func (r nodeAttachmentOwner) recordArtifactTemplate(outputName, text string) {
@@ -880,12 +919,14 @@ func (r boundaryAttachmentOwner) recordPillars(state *PhaseBState) {
 		return
 	}
 	sourceDeclared, workloadPresent := pillarsReached(state)
+	environment := workloadEnvironmentNames(state.ParsedWorkload)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	p := h.boundaryAttachmentEntry(r.key)
 	p.BoundaryAttachmentResolvedSourceDeclared = sourceDeclared
 	p.BoundaryAttachmentParsedWorkloadPresent = workloadPresent
+	p.BoundaryAttachmentParsedWorkloadEnvironmentNames = environment
 }
 
 func (r boundaryAttachmentOwner) recordArtifactTemplate(outputName, text string) {
@@ -1043,6 +1084,64 @@ func pillarsReached(state *PhaseBState) (sourceDeclared, workloadPresent bool) {
 		return false, false
 	}
 	return recipeSourceDeclared(state.Recipe), state.ParsedWorkload != nil
+}
+
+// workloadAttachmentDeliveredAsEnv is the delivery an attachments entry of a
+// Workload container names to have its value set in the container's environment,
+// as the Workload schema spells that choice. The other one the schema admits
+// mounts the value as a file, which sets nothing in the environment.
+const workloadAttachmentDeliveredAsEnv = "env"
+
+// workloadEnvironmentNames reduces one parsed workload to the environment names
+// each of its containers declares: every main container in author order, then
+// every init container in list order, each with the names of its plain variables
+// and of its attachments entries delivered as env, in author order.
+//
+// It is one function rather than an expression at each recording site for the
+// reason [pillarsReached] gives: a node's own render and an attachment's render
+// answer this the same way over different documents, and two copies would be free
+// to diverge over a state neither reads twice.
+//
+// It reads names and nothing else. A value is what a template may have taken from
+// data an author declared sensitive, and no rule over these names reads one, so
+// none is copied out of the workload. Every list it builds is an OrderedMap's own
+// author order, which is what makes the answer the same on every run.
+//
+// A nil workload answers nil: a render that parsed none has no container to name.
+func workloadEnvironmentNames(w *types.Workload) []constraint.ContainerEnvironmentNames {
+	if w == nil {
+		return nil
+	}
+	var out []constraint.ContainerEnvironmentNames
+	for name, c := range w.Containers.All() {
+		entry := containerEnvironmentNames(c)
+		entry.Name = name
+		out = append(out, entry)
+	}
+	for position, c := range w.InitContainers {
+		entry := containerEnvironmentNames(c)
+		entry.Init = true
+		entry.Position = position
+		out = append(out, entry)
+	}
+	return out
+}
+
+// containerEnvironmentNames is the per-container half of
+// [workloadEnvironmentNames]: the container's plain variable names and the names
+// of its attachments entries delivered as env, each in author order. The caller
+// supplies which container it is.
+func containerEnvironmentNames(c types.ContainerSpec) constraint.ContainerEnvironmentNames {
+	var out constraint.ContainerEnvironmentNames
+	for name := range c.Variables.All() {
+		out.Variables = append(out.Variables, name)
+	}
+	for name, ref := range c.Attachments.All() {
+		if ref.As == workloadAttachmentDeliveredAsEnv {
+			out.EnvAttachments = append(out.EnvAttachments, name)
+		}
+	}
+	return out
 }
 
 // collectValuesMappingRefs derives the reference set of a node's values mapping.

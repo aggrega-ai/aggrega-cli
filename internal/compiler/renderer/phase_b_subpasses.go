@@ -1669,6 +1669,14 @@ func renderFeatureRecipeFiles(
 	// artifact template has been evaluated — which is the state each recorded value
 	// names.
 	state.recordAttachmentPillars()
+	// Then ask the value declared over this owner's Workload whether one of its
+	// containers names an environment variable twice, at the position the
+	// component walk asks it for its own: after the recording it reads, and before
+	// the artifacts pass and workload synthesis, both of which read the parsed
+	// Workload.
+	if err := runAttachmentWorkloadEnvironmentRule(ctx.Err, state); err != nil {
+		return nil, "", err
+	}
 	if err := phaseB3(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
 		// The artifacts pass is the one crossing that hands the provider's own
 		// error back untouched, so the category is assigned here or nowhere: the

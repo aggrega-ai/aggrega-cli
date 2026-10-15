@@ -1087,7 +1087,9 @@ func objectionsAsAuthoredHalt(objections []constraint.Objection, envelope string
 	}, envelope)
 }
 
-// artifactFindingFile is the document an artifact finding is positioned at.
+// artifactFindingFile is the document an artifact finding is positioned at, and
+// the one a finding about the Workload the same document renders is positioned at
+// too.
 //
 // It prefers the Recipe's own path and falls back to the Recipe's name. The path
 // is what an author opens, so it wins wherever the render has one; today the

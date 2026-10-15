@@ -10,7 +10,8 @@ import (
 // hydratedView presents, as named facts, the state each render reached before any
 // of its artifact bytes existed: the value it resolved for each provides key, the
 // reference set of its inline values mapping, whether a source survived
-// resolution, whether a workload was parsed, the attributed deliveries its
+// resolution, whether a workload was parsed and which environment names its
+// containers declare, the attributed deliveries its
 // injection pipe carries, and the template text standing at each artifact before
 // anything evaluates it.
 //
@@ -183,6 +184,23 @@ func (v *hydratedView) ParsedNodeWorkloadPresent(node string) bool {
 	return p.ParsedNodeWorkloadPresent
 }
 
+// ParsedNodeWorkloadEnvironmentNames returns the environment names each container
+// of a node's parsed workload declares: every main container in author order, then
+// every init container in list order, each with the names of its plain variables
+// and of its attachments entries delivered as env, in author order.
+//
+// The workload read is the one the render parsed after the connection fold, which
+// never moves an entry's key, so the names are the ones the author wrote. Names
+// are answered and never a value. A node whose render parsed no workload, and a
+// node the render did not reach, both answer empty.
+func (v *hydratedView) ParsedNodeWorkloadEnvironmentNames(node string) []constraint.ContainerEnvironmentNames {
+	p, ok := v.projections.projection(node)
+	if !ok {
+		return nil
+	}
+	return p.ParsedNodeWorkloadEnvironmentNames
+}
+
 // NodeInjectDeliveries returns the deliveries a node's injection pipe carries
 // once every attachment attached to it has delivered, in delivery order.
 //
@@ -301,6 +319,27 @@ func (v *hydratedView) AttachmentParsedWorkloadPresent(node string, attachment s
 		nodeAttachmentKey{node: node, attachment: attachment},
 	)
 	return p.AttachmentParsedWorkloadPresent
+}
+
+// AttachmentParsedWorkloadEnvironmentNames returns the environment names each
+// container of the workload one attachment's render on a node parsed declares, in
+// the order the node-scoped form answers in.
+//
+// It is answered from the attachment's own owner for the reason its presence
+// answer is: the attachment renders under the host component's node identity over
+// a workload its FeatureRecipe declares, so a node-keyed answer would be the
+// host's containers. An attachment whose render parsed no workload, and one the
+// render did not reach, answer empty.
+func (v *hydratedView) AttachmentParsedWorkloadEnvironmentNames(
+	node string, attachment string,
+) []constraint.ContainerEnvironmentNames {
+	p, ok := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	return p.AttachmentParsedWorkloadEnvironmentNames
 }
 
 // AttachmentArtifactTemplateText returns the template text standing at one
@@ -430,6 +469,25 @@ func (v *hydratedView) BoundaryAttachmentParsedWorkloadPresent(
 		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
 	)
 	return p.BoundaryAttachmentParsedWorkloadPresent
+}
+
+// BoundaryAttachmentParsedWorkloadEnvironmentNames returns the environment names
+// each container of the workload one boundary-scope attachment's render parsed
+// declares, in the order the node-scoped form answers in.
+//
+// The owner is rooted at the boundary for the reason the boundary-scope presence
+// answer is. An attachment whose render parsed no workload, and one the render did
+// not reach, answer empty.
+func (v *hydratedView) BoundaryAttachmentParsedWorkloadEnvironmentNames(
+	boundary string, attachment string,
+) []constraint.ContainerEnvironmentNames {
+	p, ok := v.projections.boundaryAttachmentProjectionOf(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	return p.BoundaryAttachmentParsedWorkloadEnvironmentNames
 }
 
 // BoundaryAttachmentArtifactTemplateText returns the template text standing at

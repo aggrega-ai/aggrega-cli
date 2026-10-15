@@ -2134,8 +2134,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Phase B.2 — workload eval + ValidateWorkload + the connection fold +
-		// ValidateWorkloadAttachments. No-op for Recipes that don't declare
-		// workload:. The workload slot cross-check validates
+		// ValidateWorkloadAttachments + referenceability. No-op for Recipes that
+		// don't declare workload:. The workload slot cross-check validates
 		// containers.<n>.attachments against the bound Component's featuresSchema
 		// slot allowlist and, for an entry naming a connection, against the slots
 		// that connection's socket declares.
@@ -2150,6 +2150,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// been parsed, and no artifact template has been evaluated. The state is
 		// read and not retained.
 		input.hydrated.recordNode(state)
+
+		// Then ask the value declared over this node's own Workload whether one of
+		// its containers names an environment variable twice. It reads the recording
+		// above, so it sits immediately after it, and it sits before the artifacts
+		// pass and workload synthesis because both read the parsed Workload: a pair
+		// refused here never reaches a provider.
+		if err := runWorkloadEnvironmentRule(ctx.Err, state); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+		}
 
 		// Phase B.3 — artifacts evaluation. Each artifacts: entry (inline
 		// content or $import:-loaded) renders through Go templates against

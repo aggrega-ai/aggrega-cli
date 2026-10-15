@@ -2845,6 +2845,13 @@ func (EmittedViewBase) ParsedNodeWorkloadPresent(node string) bool {
 	panic("this view does not carry parsed-node-workload-present, which is read from renderer.PhaseBState.ParsedWorkload")
 }
 
+// ParsedNodeWorkloadEnvironmentNames panics. This view does not carry
+// parsed-node-workload-environment-names, which is read from
+// renderer.PhaseBState.ParsedWorkload.
+func (EmittedViewBase) ParsedNodeWorkloadEnvironmentNames(node string) []ContainerEnvironmentNames {
+	panic("this view does not carry parsed-node-workload-environment-names, which is read from renderer.PhaseBState.ParsedWorkload")
+}
+
 // NodeInjectDeliveries panics. This view does not carry
 // node-inject-deliveries, which is read from types.InjectPipe.
 func (EmittedViewBase) NodeInjectDeliveries(node string) []InjectDelivery {
@@ -2891,6 +2898,13 @@ func (EmittedViewBase) AttachmentParsedWorkloadPresent(node string, attachment s
 	panic("this view does not carry attachment-parsed-workload-present, which is read from types.FeatureRecipeSpec.Workload")
 }
 
+// AttachmentParsedWorkloadEnvironmentNames panics. This view does not
+// carry attachment-parsed-workload-environment-names, which is read from
+// types.FeatureRecipeSpec.Workload.
+func (EmittedViewBase) AttachmentParsedWorkloadEnvironmentNames(node string, attachment string) []ContainerEnvironmentNames {
+	panic("this view does not carry attachment-parsed-workload-environment-names, which is read from types.FeatureRecipeSpec.Workload")
+}
+
 // AttachmentArtifactTemplateText panics. This view does not carry
 // attachment-artifact-template-text, which is read from
 // types.FeatureRecipeSpec.Artifacts.
@@ -2924,6 +2938,13 @@ func (EmittedViewBase) BoundaryAttachmentResolvedSourceDeclared(boundary string,
 // types.FeatureRecipeSpec.Workload.
 func (EmittedViewBase) BoundaryAttachmentParsedWorkloadPresent(boundary string, attachment string) bool {
 	panic("this view does not carry boundary-attachment-parsed-workload-present, which is read from types.FeatureRecipeSpec.Workload")
+}
+
+// BoundaryAttachmentParsedWorkloadEnvironmentNames panics. This view does
+// not carry boundary-attachment-parsed-workload-environment-names, which
+// is read from types.FeatureRecipeSpec.Workload.
+func (EmittedViewBase) BoundaryAttachmentParsedWorkloadEnvironmentNames(boundary string, attachment string) []ContainerEnvironmentNames {
+	panic("this view does not carry boundary-attachment-parsed-workload-environment-names, which is read from types.FeatureRecipeSpec.Workload")
 }
 
 // BoundaryAttachmentArtifactTemplateText panics. This view does not carry
@@ -3449,6 +3470,7 @@ type HydratedStageFacts interface {
 	ValuesMappingTemplateRefs(node string) ([]string, bool)
 	ResolvedNodeSourceDeclared(node string) bool
 	ParsedNodeWorkloadPresent(node string) bool
+	ParsedNodeWorkloadEnvironmentNames(node string) []ContainerEnvironmentNames
 	NodeInjectDeliveries(node string) []InjectDelivery
 	AttachmentInjectMappingMechanisms(node string, attachment string) []InjectMappingMechanism
 	ArtifactTemplateText(node string, artifact string) string
@@ -3456,11 +3478,13 @@ type HydratedStageFacts interface {
 	ArtifactImportedPath(node string, artifact string) string
 	AttachmentResolvedSourceDeclared(node string, attachment string) bool
 	AttachmentParsedWorkloadPresent(node string, attachment string) bool
+	AttachmentParsedWorkloadEnvironmentNames(node string, attachment string) []ContainerEnvironmentNames
 	AttachmentArtifactTemplateText(node string, attachment string, artifact string) string
 	AttachmentArtifactRecordedContentPin(node string, attachment string, artifact string) (string, bool)
 	AttachmentArtifactImportedPath(node string, attachment string, artifact string) string
 	BoundaryAttachmentResolvedSourceDeclared(boundary string, attachment string) bool
 	BoundaryAttachmentParsedWorkloadPresent(boundary string, attachment string) bool
+	BoundaryAttachmentParsedWorkloadEnvironmentNames(boundary string, attachment string) []ContainerEnvironmentNames
 	BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string
 	BoundaryAttachmentArtifactRecordedContentPin(boundary string, attachment string, artifact string) (string, bool)
 	BoundaryAttachmentArtifactImportedPath(boundary string, attachment string, artifact string) string

@@ -4402,3 +4402,192 @@ var BoundaryAttachmentOmitsProviderHonoursTheEntries = constraint.Check[
 		)}
 	},
 }
+
+// The rule that one container of a Workload names each environment variable once,
+// declared once per document that authors a Workload.
+//
+// A container receives its environment from two lists its author writes: the
+// plain `variables`, and the `attachments` entries delivered `as: env`, whose key
+// is the name such an entry sets. A provider synthesizing the Workload writes the
+// two kinds in an order of its own — the helm and compose providers write the
+// attachment-read entries first and the plain variables after them — so one name
+// written in both lists would reach the process with whichever value that order
+// lets win. That outcome follows from where the two kinds land rather than from
+// anything the author wrote, so the pair is refused before any provider is handed
+// the Workload: once, on the host, whichever provider renders it.
+//
+// One rule, three values, on the reading the artifact-pillar family states: a
+// node's own Recipe, the FeatureRecipe an attachment binds on a node and the
+// FeatureRecipe a boundary-scope attachment binds are three documents, each
+// authoring its own Workload, and each value reads the facts keyed by its own
+// owner. The predicate has ONE body, [workloadEnvironmentObjections], so the
+// comparison and the wording exist once.
+//
+// # What it reads, and what it cannot see
+//
+// It reads names and never a value: each container, its plain variable names, and
+// the names of its attachments entries delivered as env, from the Workload as
+// parsed, after the entries naming a connection were folded onto the slot that
+// connection's attachment carries — a fold that never moves a key. An attachments
+// entry delivered as a file is mounted rather than set in the environment, so it
+// never forms a pair. Two entries written under complementary template conditions
+// never reach it either, because it reads the rendered Workload, in which only one
+// of the two exists.
+//
+// Two sources of environment entries are outside what it reads, and both are
+// bounds rather than oversights. A container's `envFrom` entries set every key of
+// the ConfigMap or Secret they name, and those keys are not known when the
+// Workload is compiled, so no `envFrom` key is compared. And an entry a provider
+// or a pipeline step writes into a rendered document after the Workload is
+// synthesized is not part of the Workload this rule reads.
+//
+// # Where a finding is positioned
+//
+// Each value is invoked over its owner's workload template field alone, so a
+// finding is positioned at the Workload key of the document that declares it —
+// the position every other refusal about a Workload carries — whichever form the
+// Workload took there, written in place or imported. The rendered Workload is not
+// a text an author wrote line for line, so the container and the variable are
+// named in the detail rather than located.
+
+// workloadEnvironmentAdvice is what a reader of the refusal can do about it. It is
+// the raise's advice rather than part of the registered sentence because the
+// sentence states the condition, and the three values raising it share the remedy.
+const workloadEnvironmentAdvice = "Rename one of the two, or write them under complementary " +
+	"template conditions so that only one of them renders"
+
+// workloadEnvironmentObjections is the one body of the rule: for each container,
+// in the order the fact answers them, each attachments entry delivered as env
+// whose name is also one of that container's plain variables raises one
+// objection, in the order the attachments entries are authored.
+//
+// The two name lists are compared within one container and never across two:
+// every container is an environment of its own, so one name in two containers is
+// not a pair.
+//
+// Its detail leaves the variable bare, because the registered sentence already
+// says an environment variable is what the finding is about, and captions the
+// container, which the position cannot name. ownerDetail is what the calling value
+// adds after the container — the attachment, where the Workload belongs to one —
+// and is positional rather than variadic so a value cannot omit it silently.
+func workloadEnvironmentObjections(
+	s constraint.Subject,
+	containers []constraint.ContainerEnvironmentNames,
+	ownerDetail []constraint.DetailValue,
+) []constraint.Objection {
+	var out []constraint.Objection
+	for _, c := range containers {
+		for _, name := range c.EnvAttachments {
+			if !slices.Contains(c.Variables, name) {
+				continue
+			}
+			detail := []constraint.DetailValue{
+				constraint.Uncaptioned(name),
+				workloadContainerDetail(c),
+			}
+			out = append(out, s.RaiseWithAdvice(
+				validator.ErrDuplicateContainerEnvironmentVariable(), workloadEnvironmentAdvice,
+				append(detail, ownerDetail...)...,
+			))
+		}
+	}
+	return out
+}
+
+// workloadContainerDetail names one container the way the rule's detail does: a
+// main container by the key it is written under, and an init container by its
+// place in the list, spelled the way that list is indexed.
+func workloadContainerDetail(c constraint.ContainerEnvironmentNames) constraint.DetailValue {
+	if c.Init {
+		return constraint.Captioned("init container", fmt.Sprintf("initContainers[%d]", c.Position))
+	}
+	return constraint.Captioned("container", c.Name)
+}
+
+// WorkloadEnvironmentVariableNamedOnce reports each environment variable one
+// container of the Workload a node's own Recipe renders names twice — as a plain
+// variable and as an attachments entry delivered as env.
+//
+// It acts on the Recipe's workload field and on no other: invoked over any other
+// template field the Recipe writes, it raises nothing, so the rule is asked about
+// the Workload once whatever axis it is handed.
+//
+// Its facts are keyed by the node alone, which is the owner of the Workload a
+// node's own render parses; a FeatureRecipe's Workload is answered by the two
+// values below, keyed by their own owner.
+var WorkloadEnvironmentVariableNamedOnce = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeTemplateFieldSubject,
+]{
+	Sentinel: validator.ErrDuplicateContainerEnvironmentVariable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeTemplateFieldSubject,
+	) []constraint.Objection {
+		if s.TemplateField() != recipeFieldWorkload {
+			return nil
+		}
+		return workloadEnvironmentObjections(s, v.ParsedNodeWorkloadEnvironmentNames(s.NodeID()), nil)
+	},
+}
+
+// AttachmentWorkloadEnvironmentVariableNamedOnce reports each environment
+// variable one container of the Workload the FeatureRecipe one attachment binds
+// on a node renders names twice.
+//
+// It is the node rule's question asked of the attachment's own document. Its facts
+// are keyed by the attachment as well as by the node, because the attachment's
+// render runs under the host component's node identity over a Workload its
+// FeatureRecipe declares: a node-keyed answer would be the host's containers.
+//
+// Its detail names the attachment after the container, captioned, because the
+// position names the Workload key inside the FeatureRecipe, and a node may carry
+// several attachments whose FeatureRecipes are separate documents.
+var AttachmentWorkloadEnvironmentVariableNamedOnce = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentTemplateFieldSubject,
+]{
+	Sentinel: validator.ErrDuplicateContainerEnvironmentVariable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if s.TemplateField() != recipeFieldWorkload {
+			return nil
+		}
+		return workloadEnvironmentObjections(s,
+			v.AttachmentParsedWorkloadEnvironmentNames(s.NodeID(), s.AttachmentName()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}
+
+// BoundaryAttachmentWorkloadEnvironmentVariableNamedOnce reports each environment
+// variable one container of the Workload the FeatureRecipe one boundary-scope
+// attachment binds renders names twice.
+//
+// It is the same question the two values above ask, rooted where such an
+// attachment is declared: it is written once on a boundary and renders once for
+// it, so its facts are keyed by the boundary rather than by any component. Its
+// detail names the attachment, on the reading the node-carried form follows.
+var BoundaryAttachmentWorkloadEnvironmentVariableNamedOnce = constraint.Check[
+	constraint.HydratedView,
+	constraint.BoundaryAttachmentTemplateFieldSubject,
+]{
+	Sentinel: validator.ErrDuplicateContainerEnvironmentVariable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.BoundaryAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if s.TemplateField() != recipeFieldWorkload {
+			return nil
+		}
+		return workloadEnvironmentObjections(s,
+			v.BoundaryAttachmentParsedWorkloadEnvironmentNames(s.BoundaryPath(), s.AttachmentName()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}

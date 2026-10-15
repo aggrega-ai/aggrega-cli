@@ -6,10 +6,12 @@ package renderer
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -307,6 +309,151 @@ containers:
 	err := phaseB2(ctx, state, validator.WorkloadSlots{Own: slots})
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
+	}
+}
+
+// envPairSlots declares the credential slot the env-pair fixtures below name,
+// with env delivery permitted, and puts its fill's published locators on ctx —
+// so the slot checks and the referenceability check that run beside the
+// environment check pass, and a refusal can only come from the pair itself.
+func envPairSlots(ctx *types.TemplateContext) validator.WorkloadSlots {
+	slots := types.OrderedMap[types.AttachmentSlot]{}
+	slots.Set("credential", types.AttachmentSlot{Inject: []string{"env"}})
+	locators := types.OrderedMap[string]{}
+	locators.Set("name", "app-db")
+	locators.Set("key", "password")
+	ctx.Features.Set("credential", types.TemplateAttachment{Type: "example/credential", Provides: locators})
+	return validator.WorkloadSlots{Own: slots}
+}
+
+// envPairDescribedFacts stands in for the earlier presentation the mid-render one
+// extends. It carries no value behind the interface: the rule asked below reads a
+// mid-render fact only, so any earlier-stage read panics rather than answering a
+// zero value.
+type envPairDescribedFacts struct{ constraint.DescribedView }
+
+// envPairRender runs the sub-passes up to and including the Workload's own over a
+// Recipe whose Workload is the given text, records the mid-render state into a
+// retention presented the way a build presents it, and asks the rule declared over
+// the Workload at the seam a build asks it at — the same order the node walk runs
+// them in. It returns the state and what the rule raised.
+//
+// The sub-passes are required to pass: a refusal from any of them would mean the
+// rule below was never asked, and a test reading that as the rule's verdict would
+// be reading the wrong check.
+func envPairRender(t *testing.T, ctx *types.TemplateContext, workload string) (*PhaseBState, error) {
+	t.Helper()
+	r := minimalRecipe("test")
+	r.Spec.Workload = types.WorkloadTemplate{Inline: workload}
+	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
+	state.hydrated = newHydratedProjections(nil)
+	state.hydratedFacts = newHydratedView(envPairDescribedFacts{}, state.hydrated)
+	if state.hydratedFacts == nil {
+		t.Fatal("the mid-render presentation was not built, so the rule below would never be asked")
+	}
+	slots := envPairSlots(ctx)
+
+	emptyLocals := types.OrderedMap[string]{}
+	if err := phaseB0(ctx, state, emptyLocals); err != nil {
+		t.Fatalf("phaseB0: %v", err)
+	}
+	if err := phaseB1(ctx, state); err != nil {
+		t.Fatalf("phaseB1: %v", err)
+	}
+	if err := phaseB2(ctx, state, slots); err != nil {
+		t.Fatalf("phaseB2 refused the fixture, so the rule over the Workload is never asked: %v", err)
+	}
+	state.hydrated.recordNode(state)
+	return state, runWorkloadEnvironmentRule(nil, state)
+}
+
+// TestTheWorkloadEnvironmentRuleHaltsAPairPhaseB2Admits pins that a container
+// naming one environment variable both as a variable and as an env-delivered
+// attachment passes the Workload's own sub-pass — the checks there admit it — and
+// is refused at the seam after it, under the condition that names exactly that,
+// positioned at the Recipe's Workload key and naming the variable and the
+// container. That seam is before the artifacts pass and workload synthesis, so the
+// pair never reaches a provider.
+func TestTheWorkloadEnvironmentRuleHaltsAPairPhaseB2Admits(t *testing.T) {
+	t.Parallel()
+	state, err := envPairRender(t, minimalCtx(), `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: app:1.0
+    variables:
+      DB_PASSWORD: plain
+    attachments:
+      DB_PASSWORD:
+        from: credential
+        as: env
+`)
+	if state.ParsedWorkload == nil {
+		t.Fatal("phaseB2 published no Workload, so the recording the rule reads holds no container")
+	}
+	if !errors.Is(err, validator.ErrDuplicateContainerEnvironmentVariable()) {
+		t.Fatalf("expected the duplicate-environment-variable condition, got %v", err)
+	}
+	var ce *cerrors.CompilerError
+	if !errors.As(err, &ce) {
+		t.Fatalf("the halt is not a positioned diagnostic: %T %v", err, err)
+	}
+	if got := ce.Source(); got.File != "recipe.yaml" || got.Locator != ".spec.workload" {
+		t.Errorf("the halt is positioned at %q; want the Recipe's Workload key, recipe.yaml at .spec.workload",
+			got.String())
+	}
+	const want = `a container declares one environment variable twice ("DB_PASSWORD", container "main"). ` +
+		"Rename one of the two, or write them under complementary template conditions so that only one of them renders"
+	if got := ce.Message(); got != want {
+		t.Errorf("the halt reads\n  %s\nwant\n  %s", got, want)
+	}
+}
+
+// TestTheWorkloadEnvironmentRulePassesAGuardedPair pins the other half: a template
+// writing the variable and the attachment under complementary conditions renders
+// only one of them, and the rendered Workload is what the rule reads, so either
+// side of the condition passes and carries the name exactly once.
+//
+// The recorded names are read back as well, so a pass here cannot be a rule that
+// was never asked about a container: the container is recorded with the name in
+// exactly one of its two lists.
+func TestTheWorkloadEnvironmentRulePassesAGuardedPair(t *testing.T) {
+	t.Parallel()
+	const guarded = `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: app:1.0
+{{- if .values.useCredential }}
+    attachments:
+      DB_PASSWORD:
+        from: credential
+        as: env
+{{- else }}
+    variables:
+      DB_PASSWORD: plain
+{{- end }}
+`
+	for _, useCredential := range []bool{true, false} {
+		t.Run(map[bool]string{true: "the attachment renders", false: "the variable renders"}[useCredential], func(t *testing.T) {
+			t.Parallel()
+			ctx := minimalCtx()
+			ctx.Values.Set("useCredential", useCredential)
+			state, err := envPairRender(t, ctx, guarded)
+			if err != nil {
+				t.Fatalf("a guarded pair renders one of the two and must pass; got %v", err)
+			}
+			containers := state.hydratedFacts.ParsedNodeWorkloadEnvironmentNames("test")
+			if len(containers) != 1 || containers[0].Init || containers[0].Name != "main" {
+				t.Fatalf("recorded containers %+v; want the one main container", containers)
+			}
+			asAttachment := slices.Contains(containers[0].EnvAttachments, "DB_PASSWORD")
+			asVariable := slices.Contains(containers[0].Variables, "DB_PASSWORD")
+			if asAttachment != useCredential || asVariable == useCredential {
+				t.Errorf("recorded DB_PASSWORD as attachment=%v, as variable=%v; want exactly the %s",
+					asAttachment, asVariable, map[bool]string{true: "attachment", false: "variable"}[useCredential])
+			}
+		})
 	}
 }
 

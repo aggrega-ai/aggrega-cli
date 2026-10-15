@@ -353,6 +353,47 @@ type InjectMappingMechanism struct {
 	Mapped bool
 }
 
+// ContainerEnvironmentNames is what one container of a parsed workload
+// names in its environment: which container it is, the names of its plain
+// variables, and the names of its attachments entries delivered into the
+// environment.
+//
+// It is one fact rather than several because no part of it answers
+// anything alone. A container receives its environment from both lists, so
+// a variable name is only comparable with the attachment names of the same
+// container — two containers are two environments, and one name in two
+// of them has not met itself — and a reader handed the lists apart from
+// the container they belong to would have to re-pair them by position,
+// which is the re-derivation a declared fact exists to close.
+//
+// It carries names and never a value: what a rule over a container's
+// environment reads is which names it declares, and a value is what a
+// template may have taken from data an author declared sensitive.
+type ContainerEnvironmentNames struct {
+	// Init reports whether the container is an init container rather than a
+	// main one.
+	Init bool
+
+	// Name is the key a main container is written under, and empty for an init
+	// container, which is identified by its position.
+	Name string
+
+	// Position is an init container's place in the list the author wrote,
+	// counted from zero as that list is indexed, and zero for a main
+	// container, which is identified by its name.
+	Position int
+
+	// Variables are the names of the container's plain variables, in author
+	// order.
+	Variables []string
+
+	// EnvAttachments are the names of the container's attachments entries
+	// delivered as env, in author order. The key such an entry is written
+	// under is the name it sets in the container's environment; an entry
+	// delivered as a file is mounted rather than set there, and is absent.
+	EnvAttachments []string
+}
+
 // ArtifactTemplateDelimiters is the delimiter pair an artifact template is
 // read with: the opening delimiter and the closing one.
 //
@@ -5309,6 +5350,32 @@ type HydratedView interface {
 	// Keyed by node; read from renderer.PhaseBState.ParsedWorkload.
 	ParsedNodeWorkloadPresent(node string) bool
 
+	// ParsedNodeWorkloadEnvironmentNames are the environment names each
+	// container of a node's parsed workload declares: every main container in
+	// author order, then every init container in list order, each with the
+	// names of its plain variables and of its attachments entries delivered as
+	// env, in author order.
+	//
+	// The workload read is the one the render parsed, after the entries naming
+	// a connection were folded onto the slot that connection's attachment
+	// carries. The fold rewrites where an entry reads from and never the key
+	// it is written under, so the names answered are the ones the author wrote
+	// whichever slot an entry reaches.
+	//
+	// It answers names and never a value, and it is a narrow projection of the
+	// workload rather than the workload itself, on the reading the presence
+	// fact beside it carries: the workload is a structured document, and a
+	// rule handed it could walk into content the framework declares no fact
+	// for.
+	//
+	// It reads the same source field as that presence fact and is a different
+	// question: that one answers whether a workload was parsed at all, this
+	// one what its containers name. It is empty for a node whose render parsed
+	// no workload.
+	//
+	// Keyed by node; read from renderer.PhaseBState.ParsedWorkload.
+	ParsedNodeWorkloadEnvironmentNames(node string) []ContainerEnvironmentNames
+
 	// NodeInjectDeliveries are the deliveries a node's injection pipe carries
 	// once every attachment attached to that node has delivered into it, one
 	// entry per mechanism and key, each naming whatever attachment asked for
@@ -5552,6 +5619,27 @@ type HydratedView interface {
 	// Keyed by (node, attachment); read from types.FeatureRecipeSpec.Workload.
 	AttachmentParsedWorkloadPresent(node string, attachment string) bool
 
+	// AttachmentParsedWorkloadEnvironmentNames are the environment names each
+	// container of the workload one attachment's render on a node parsed
+	// declares: every main container in author order, then every init
+	// container in list order, each with the names of its plain variables and
+	// of its attachments entries delivered as env, in author order.
+	//
+	// Every reading the node-scoped form carries applies here over a different
+	// document: the workload read is the parsed one, after the connection
+	// fold, which never moves an entry's key; and it answers names and never a
+	// value.
+	//
+	// It is keyed by the attachment as well as by the node for the reason the
+	// presence fact beside it is: the attachment renders under the host
+	// component's node identity over a workload the FeatureRecipe declares, so
+	// a key without the attachment would answer with the host's containers
+	// while the workload being asked about is the attachment's. It is empty
+	// for an attachment whose render parsed no workload.
+	//
+	// Keyed by (node, attachment); read from types.FeatureRecipeSpec.Workload.
+	AttachmentParsedWorkloadEnvironmentNames(node string, attachment string) []ContainerEnvironmentNames
+
 	// AttachmentArtifactTemplateText is the template text standing at one
 	// artifact of the FeatureRecipe one attachment binds on a node, as it is
 	// before anything evaluates it.
@@ -5672,6 +5760,27 @@ type HydratedView interface {
 	// Keyed by (boundary, attachment); read from
 	// types.FeatureRecipeSpec.Workload.
 	BoundaryAttachmentParsedWorkloadPresent(boundary string, attachment string) bool
+
+	// BoundaryAttachmentParsedWorkloadEnvironmentNames are the environment
+	// names each container of the workload one boundary-scope attachment's
+	// render parsed declares: every main container in author order, then every
+	// init container in list order, each with the names of its plain variables
+	// and of its attachments entries delivered as env, in author order.
+	//
+	// Every reading the node-scoped form carries applies here over a different
+	// document: the workload read is the parsed one, after the connection
+	// fold, which never moves an entry's key; and it answers names and never a
+	// value.
+	//
+	// It is rooted at a boundary for the reason the presence fact beside it
+	// is: the attachment is declared once at the boundary and renders once for
+	// it, so a component-rooted key would present one authored workload many
+	// times over. It is empty for an attachment whose render parsed no
+	// workload.
+	//
+	// Keyed by (boundary, attachment); read from
+	// types.FeatureRecipeSpec.Workload.
+	BoundaryAttachmentParsedWorkloadEnvironmentNames(boundary string, attachment string) []ContainerEnvironmentNames
 
 	// BoundaryAttachmentArtifactTemplateText is the template text standing at
 	// one artifact of the FeatureRecipe one boundary-scope attachment binds,

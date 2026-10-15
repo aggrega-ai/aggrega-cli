@@ -10,10 +10,12 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// Workload-validation sentinels. Two are surfaced today: the schema-
-// validation failure (rule violations on the embedded Workload JSON
-// Schema) and the cross-entity featuresSchema check (Workload attachment
-// references vs the Component's featuresSchema slot declarations).
+// Workload-validation sentinels. Each names one check over a Workload a Recipe
+// or FeatureRecipe renders. The checks this package performs report through the
+// grouped WorkloadValidationError below; a condition the renderer raises from a
+// declared rule reports as that rule's own finding instead, and its declaration
+// says so. The declarations are the list: no count of them is kept here, because
+// a count written beside them goes stale the day a check is added.
 
 // ErrWorkloadValidation: schema-validation failure on the parsed
 // Workload against the embedded Workload JSON Schema.
@@ -52,8 +54,32 @@ var errSlotNotReferenceable = cerrors.Register("slot-not-referenceable", cerrors
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrDuplicateContainerEnvironmentVariable: one container of a Workload gives
+// one environment variable name two values — as a `variables` entry and as an
+// `attachments` entry of the same name delivered `as: env`. A provider writes
+// the two kinds of entry in a fixed order of its own, so which value the process
+// saw would follow from where each kind lands rather than from anything the
+// author wrote.
+//
+// It is raised by the renderer, on the host and once whichever provider renders
+// the Workload, from a declared rule over the parsed Workload of a Recipe, of a
+// FeatureRecipe an attachment binds on a component, and of a FeatureRecipe a
+// boundary-scope attachment binds. The rule reads names only and never a value,
+// and it reports through its own finding rather than through
+// WorkloadValidationError: one finding per pair, naming the variable and the
+// container, positioned at the Workload key of the document that declares it.
+func ErrDuplicateContainerEnvironmentVariable() error {
+	return errDuplicateContainerEnvironmentVariable
+}
+
+var errDuplicateContainerEnvironmentVariable = cerrors.Register("duplicate-container-environment-variable", cerrors.Meta{
+	ShortCode: "E0345",
+	Message:   "a container declares one environment variable twice",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // WorkloadValidationError carries the structured detail for a Workload
-// validation failure (schema validation or featuresSchema cross-check).
+// validation failure, whichever of this package's Workload checks raised it.
 //
 // It is a GROUPED report rather than a singular failure: one detected
 // condition yields one error carrying every offending field, so an author
