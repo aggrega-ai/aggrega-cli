@@ -70,10 +70,11 @@ type referenceImporter struct {
 }
 
 // referenceImporters are the reference importers, one per format, in the order a
-// folder lays them down.
+// folder lays them down. Each fixture is the compiler's own importer for its
+// format, built from its source under the module's plugins/ tree.
 var referenceImporters = []referenceImporter{
-	{format: "langflow", fixture: "import-langflow-go.wasm", name: "import-langflow"},
-	{format: "flowise", fixture: "import-flowise-go.wasm", name: "import-flowise"},
+	{format: "langflow", fixture: "langflow-importer.wasm", name: "import-langflow"},
+	{format: "flowise", fixture: "flowise-importer.wasm", name: "import-flowise"},
 }
 
 // referenceImporterFor returns the reference importer serving format, failing
@@ -252,10 +253,11 @@ func (f CatalogFolder) Plugins() []LaidPlugin {
 // It builds the importer fixtures, so a caller that goes on to change the
 // process environment the toolchain reads should call this first.
 //
-// There is no skip here beyond the one the fixture build itself carries, and
-// that one fires only when the plugin kit's source or its toolchain is absent:
-// a binary carrying no JSON parser, or a generation that refuses, fails the
-// calling test.
+// There is no skip here beyond the one the fixture build carries when no
+// umbrella checkout surrounds the test: the importer fixtures are built from this
+// module's own sources with the Go toolchain the test already runs under, so a
+// build that fails, a binary carrying no JSON parser, or a generation that
+// refuses, fails the calling test.
 func LayCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool) CatalogFolder {
 	t.Helper()
 

@@ -14,7 +14,9 @@
 //     `mutator-rust.wasm`), built by the fixture's own `build.sh`.
 //   - Production plugins at `aggrega-cli/plugins/<name>/`. The
 //     artifact name is `<name>.wasm` (no language suffix), built by the
-//     plugin's own Cargo project.
+//     plugin's own Cargo project for a Rust crate, or for a Go guest — a
+//     package of this module — by the standard Go toolchain from the module
+//     root, as the core-plugin build builds it.
 //
 // EnsureFixtureBuilt detects the layout from the artifact-name shape
 // and dispatches accordingly. The cache + freshness semantics are
@@ -125,7 +127,8 @@ func loadFixtureResult(artifactName string) (path string, skip error, ok bool) {
 //   - "<socket>-<lang>.wasm" → PDK example layout at
 //     aggrega-pdk/<lang>/examples/<socket>/. Built via build.sh.
 //   - "<name>.wasm" (single component) → production plugin layout at
-//     aggrega-cli/plugins/<name>/. Built via cargo.
+//     aggrega-cli/plugins/<name>/. Built via cargo for a Rust crate, or via
+//     the Go toolchain for a Go guest, stamped with coreGuestDefaultVersion.
 //
 // The cache lets multiple integration tests share a single build per
 // fixture per test process, and turns the absent-toolchain case into
@@ -172,21 +175,28 @@ func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 // it is the one way a test obtains such a guest, so each such test does not grow
 // a build of its own.
 //
-// Only the PDK example layout is supported, and the example's build script must
-// honour the AGGREGA_PLUGIN_VERSION stamp. A script ignoring it builds the
-// fixture's default version under the stamped name, which nothing here can
-// detect without loading the guest; whatever publishes or validates the result
-// reads the version it actually reports, so a test built on a stamp that did not
-// take fails there rather than passing on the wrong guest. version must not be
-// empty, since the unstamped build is EnsureFixtureBuilt's.
+// Two layouts are supported: the PDK example layout, and a Go guest of the
+// production-plugin layout. A PDK example's build script must honour the
+// AGGREGA_PLUGIN_VERSION stamp. A script ignoring it builds the fixture's default
+// version under the stamped name, which nothing here can detect without loading
+// the guest; whatever publishes or validates the result reads the version it
+// actually reports, so a test built on a stamp that did not take fails there
+// rather than passing on the wrong guest. A Go guest under aggrega-cli/plugins/ is
+// stamped through the linker here, the way the core-plugin build stamps it. A
+// Rust crate of the production-plugin layout is not supported. version must not
+// be empty, since the unstamped build is EnsureFixtureBuilt's.
 //
 // Caching, freshness, the cross-process build lock and publishing by rename are
 // the same as EnsureFixtureBuilt's, keyed on the stamped name.
 func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) string {
 	t.Helper()
-	socket, lang, ok := parsePDKFixtureName(artifactName)
-	if !ok {
-		t.Fatalf("stamped fixture %q is not a PDK example artifact (want <socket>-<lang>.wasm)", artifactName)
+	socket, lang, isPDK := parsePDKFixtureName(artifactName)
+	plugin, isPlugin := "", false
+	if !isPDK {
+		plugin, isPlugin = parsePluginArtifactName(artifactName)
+	}
+	if !isPDK && !isPlugin {
+		t.Fatalf("stamped fixture %q is neither a PDK example artifact (<socket>-<lang>.wasm) nor a production plugin artifact (<name>.wasm)", artifactName)
 	}
 	if version == "" {
 		t.Fatalf("stamped fixture %q needs a version; the unstamped build is EnsureFixtureBuilt's", artifactName)
@@ -199,7 +209,14 @@ func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) strin
 		if err != nil {
 			return "", fmt.Errorf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
 		}
-		return buildPDKFixtureAs(t, umbrellaRoot, artifactName, stamped, socket, lang, version)
+		if isPDK {
+			return buildPDKFixtureAs(t, umbrellaRoot, artifactName, stamped, socket, lang, version)
+		}
+		pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", plugin)
+		if !isGoGuest(pluginDir) {
+			t.Fatalf("stamped fixture %q names no Go guest at %s; only a Go guest of the production-plugin layout takes a stamp", artifactName, pluginDir)
+		}
+		return buildGoPluginArtifact(t, umbrellaRoot, artifactName, stamped, plugin, version)
 	})
 	if skip != nil {
 		t.Skipf("%v", skip)
@@ -459,9 +476,11 @@ func pdkDependencySources(umbrellaRoot, lang string) (pdkSrc, abiSrc string) {
 }
 
 // buildPluginArtifact handles the production-plugin layout at
-// aggrega-cli/plugins/<name>/. Missing Cargo.toml is a hard
-// fail (the plugin source is supposed to exist); missing
-// wasm32-unknown-unknown target is a skip with a clear remediation;
+// aggrega-cli/plugins/<name>/. A directory holding a Cargo.toml is a Rust crate
+// built by cargo; one holding a main.go and no Cargo.toml is a Go guest, built by
+// buildGoPluginArtifact at coreGuestDefaultVersion. A directory holding neither
+// is a hard fail (the plugin source is supposed to exist); for a Rust crate a
+// missing wasm32-unknown-unknown target is a skip with a clear remediation, and
 // other cargo failures are FAIL with the cargo error output.
 //
 // The path returned is a published copy under the shared testdata
@@ -472,7 +491,10 @@ func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) 
 	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
-		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
+		if isGoGuest(pluginDir) {
+			return buildGoPluginArtifact(t, umbrellaRoot, artifactName, artifactName, name, coreGuestDefaultVersion)
+		}
+		t.Fatalf("plugin source missing at %s: %v, and no main.go beside it (a production plugin is a Cargo crate or a Go guest; absence is a regression)", manifestPath, err)
 	}
 
 	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
@@ -498,6 +520,84 @@ func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) 
 	}
 
 	return publishPluginArtifact(t, pluginDir, name, artifactPath), nil
+}
+
+// coreGuestDefaultVersion is the build-provenance version a Go guest of the
+// production-plugin layout reports when a test names none. A Plugin entity is
+// generated from a guest at the version the guest reports, and the generation
+// refuses a guest reporting none, so an unstamped test build could not be laid
+// down as an entity. It is the default the plugin kit's own example builds stamp,
+// so an entity generated from a fixture carries the same version whichever layout
+// its guest was built from.
+const coreGuestDefaultVersion = "1.0.0"
+
+// pdkVersionSymbol is the linker symbol the Go plugin kit folds into a guest's
+// describe() descriptor as the version the guest reports about its own build.
+const pdkVersionSymbol = "github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version"
+
+// isGoGuest reports whether pluginDir holds a Go guest: a main.go at its root.
+func isGoGuest(pluginDir string) bool {
+	_, err := os.Stat(filepath.Join(pluginDir, "main.go"))
+	return err == nil
+}
+
+// buildGoPluginArtifact builds the Go guest at aggrega-cli/plugins/<name>/ and
+// publishes it under outName in the shared testdata directory, stamped with
+// version as the version it reports through describe().
+//
+// The guest is a package of this module rather than a module of its own, so it is
+// built from the module root against the module's own go.mod — GOWORK=off, as the
+// core-plugin build runs it — with that build's reproducibility flags (-trimpath,
+// -buildvcs=false, an empty build id). Freshness watches the guest's own directory
+// and the Go plugin kit and ABI source trees it builds against.
+//
+// There is no toolchain-absent skip, for the reason EnsureLocalGuestBuilt gives:
+// the standard Go toolchain targeting wasip1 is present whenever a test runs at
+// all, so any build failure is a hard test failure.
+func buildGoPluginArtifact(t *testing.T, umbrellaRoot, artifactName, outName, name, version string) (string, error) {
+	t.Helper()
+	moduleRoot := filepath.Join(umbrellaRoot, "aggrega-cli")
+	pluginDir := filepath.Join(moduleRoot, "plugins", name)
+	testdataDir := filepath.Join(moduleRoot, "internal", "wasm", "testdata")
+	artifactPath := filepath.Join(testdataDir, outName)
+
+	pdkSrc, abiSrc := pdkDependencySources(umbrellaRoot, "go")
+	if isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+		return artifactPath, nil
+	}
+	if err := os.MkdirAll(testdataDir, 0o755); err != nil {
+		t.Fatalf("mkdir testdata: %v", err)
+	}
+
+	release := lockFixtureBuild(testdataDir, artifactName)
+	defer release()
+
+	if isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+		return artifactPath, nil
+	}
+
+	stageDir, err := newStageDir(testdataDir)
+	if err != nil {
+		t.Fatalf("stage Go guest build for %s: %v", outName, err)
+	}
+	defer os.RemoveAll(stageDir)
+
+	staged := filepath.Join(stageDir, outName)
+	cmd := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-buildmode=c-shared",
+		"-ldflags", "-X "+pdkVersionSymbol+"="+version+" -buildid=",
+		"-o", staged, "./plugins/"+name)
+	cmd.Dir = moduleRoot
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Go guest build failed for %s at %s: %v\noutput:\n%s", outName, pluginDir, err, string(output))
+	}
+	if _, err := os.Stat(staged); err != nil {
+		t.Fatalf("Go guest build for %s reported success but produced nothing at %s: %v", outName, staged, err)
+	}
+	if err := publishArtifact(staged, artifactPath); err != nil {
+		t.Fatalf("publish Go guest %s: %v", outName, err)
+	}
+	return artifactPath, nil
 }
 
 // publishPluginArtifact copies cargo's release artifact for the named

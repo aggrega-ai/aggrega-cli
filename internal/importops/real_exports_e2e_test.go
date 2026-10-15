@@ -273,10 +273,10 @@ func draftedDocumentNamed(t *testing.T, res Result, name string) draftedDocument
 //     connects into, holding a reference to that node — which the edge already
 //     records. An input named by the node's inputAnchors is not drafted as a value.
 //
-// 🔴 PLANTED DEFECTS, one per shape, each in the walker of the importer example
-// serving the row's format (aggrega-pdk/go/examples/import-langflow/walk.go for
-// Langflow, aggrega-pdk/go/examples/import-flowise/walk.go for Flowise); the
-// fixtures the tests run are rebuilt from those sources when they change.
+// 🔴 PLANTED DEFECTS, one per shape, each in the walker of the importer
+// serving the row's format (plugins/langflow-importer/walk.go for Langflow,
+// plugins/flowise-importer/walk.go for Flowise); the fixtures the tests run are
+// rebuilt from those sources when they change.
 //
 //   - In liftNode, delete the three lines `if isCanvasNote(outerType) { return
 //     importer.Node{}, false }`: in the Langflow walker the Langflow note row
@@ -493,7 +493,7 @@ func draftedTargets(t *testing.T, rel string) map[string]string {
 // checks that it is drafted as a value and not as a slot.
 //
 // 🔴 PLANTED DEFECT — the field name restored as the classifier, in the node-list
-// reader both importer examples' walkers share (aggrega-pdk/go/pkg/importer/tree.go).
+// reader both importers' walkers share (aggrega-pdk/go/pkg/importer/tree.go).
 // Add
 //
 //	func isSecretName(name string) bool {
@@ -637,7 +637,7 @@ func TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker(t *t
 // or anything else in the catalog — stops passing the whole-catalog check.
 //
 // 🔴 PLANTED DEFECT — the fields written directly under values, in the emitter
-// both importer examples share (aggrega-pdk/go/pkg/importer/emit.go,
+// both importers share (aggrega-pdk/go/pkg/importer/emit.go,
 // draftComponentBody): delete the lines writing `type: object`, `properties:` and
 // `additionalProperties: false`, and indent each field two spaces less. Every
 // drafted Component carrying values then fails the shape check, and the Langflow

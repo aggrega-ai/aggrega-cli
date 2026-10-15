@@ -266,7 +266,7 @@ func decisionForType(t *testing.T, out abi.ImportOutput, nodeType string) abi.Im
 // scaffolded output for inspection.
 func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	parserRes, parserLoad, probe := realJSONParserSeam(t)
 	source := readFixture(t, "langflow-flow.json")
 
@@ -326,7 +326,7 @@ func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 // swap hint the author can act on. Nothing is silently referenced.
 func TestImportLangflow_HintsOnlyDraftsEverything(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "langflow-flow.json")
 
@@ -354,7 +354,7 @@ func TestImportLangflow_HintsOnlyDraftsEverything(t *testing.T) {
 // scores and all.
 func TestImportLangflow_Deterministic(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	source := readFixture(t, "langflow-flow.json")
 
 	run := func() []byte {
@@ -379,7 +379,7 @@ func TestImportLangflow_Deterministic(t *testing.T) {
 // references by source so two flows compose into one aggregate without collision.
 func TestImportLangflow_MultiFile(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	parserRes, parserLoad, probe := realJSONParserSeam(t)
 
 	sources := []abi.ImportSource{
@@ -417,7 +417,7 @@ func TestImportLangflow_MultiFile(t *testing.T) {
 // record is byte-identical across the two runs; the files are not.
 func TestImportLangflow_TwoRenderersOneRecord(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	source := readFixture(t, "langflow-flow.json")
 
 	do := func(mode string) abi.ImportOutput {
@@ -465,7 +465,7 @@ func TestImportLangflow_TwoRenderersOneRecord(t *testing.T) {
 // component name.
 func TestImportLangflow_TieBrokenByName(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-langflow-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 
 	// A generic model node: "Model" in the type infers the ai-model category, but
@@ -501,7 +501,7 @@ func TestImportLangflow_TieBrokenByName(t *testing.T) {
 // envelope schema gate the catalog loader runs at each parse boundary.
 func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 	t.Parallel()
-	fixture := wasmtest.EnsureFixtureBuilt(t, "import-flowise-go.wasm")
+	fixture := wasmtest.EnsureFixtureBuilt(t, "flowise-importer.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "flowise-flow.json")
 
