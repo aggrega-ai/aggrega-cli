@@ -395,9 +395,10 @@ type PersistentTemplateVolume struct {
 	AccessModes []string `json:"accessModes,omitempty" yaml:"accessModes,omitempty"`
 }
 
-// ServiceSpec describes one Service in a Workload. Type is one of
-// ClusterIP / NodePort / LoadBalancer / Headless (enum-validated by
-// the embedded Workload schema).
+// ServiceSpec describes one Service in a Workload. Type is one of the
+// service types the embedded Workload schema enumerates, and is validated
+// against that enum; how far each type reaches is stated on the schema's
+// description of the field.
 type ServiceSpec struct {
 	Type  string          `json:"type" yaml:"type"`
 	Ports OrderedMap[int] `json:"ports,omitempty,omitzero" yaml:"ports,omitempty"`

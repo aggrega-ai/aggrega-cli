@@ -1023,18 +1023,31 @@ func applyPodUser(svc *Service, w *types.Workload) {
 	}
 }
 
+// loopbackHostIP is the host address a Loopback service entry's ports are
+// published on: the IPv4 loopback address. The IPv6 loopback address is not
+// bound as well. Compose's port syntax carries one host address per entry, so
+// it would take a second entry, and a host whose loopback interface carries no
+// IPv6 address cannot bind it — the service would then fail to start there.
+const loopbackHostIP = "127.0.0.1"
+
 // applyWorkloadServicePorts walks Workload.Services and translates entries
 // into port-publishing settings on the main compose service. Compose has no
 // separate Service primitive (a service IS the workload); the Service.Type
-// field decides whether to publish ports:
+// field decides whether, and on which host address, to publish ports:
 //
 //   - ClusterIP / Headless        → no publishing (internal only)
-//   - NodePort / LoadBalancer     → ports published as host:container
+//   - NodePort / LoadBalancer     → ports published on every host interface,
+//     as host:container
+//   - Loopback                    → ports published on the host's loopback
+//     address only, as 127.0.0.1:host:container
 //
 // Multiple Workload.Services entries with overlapping ports collapse to a
-// single ports list on the main service. Aggregation is by service.type:
-// any entry with type NodePort or LoadBalancer triggers publishing for ALL
-// of its ports (the most-publishing wins per port).
+// single ports list on the main service, one entry per container port. Any
+// entry with type NodePort, LoadBalancer or Loopback triggers publishing for
+// ALL of its ports, and the widest reach wins per port: a port that a NodePort
+// or LoadBalancer entry publishes is published on every interface even when a
+// Loopback entry names it too, since every interface already includes the
+// loopback one. That holds whichever of the entries was authored first.
 //
 // A published port carries the transport declared on the container port its
 // name resolves to, as compose's `/protocol` suffix. A port with no declared
@@ -1057,11 +1070,20 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 		host  int
 		ctr   int
 		proto string
+		// loopback is true while every entry publishing this port is a
+		// Loopback one; a single wider entry clears it for good.
+		loopback bool
 	}
 	publishedByCtr := map[int]publishedPort{}
 
 	for _, svc := range w.Services.All() {
-		if svc.Type != "NodePort" && svc.Type != "LoadBalancer" {
+		var loopback bool
+		switch svc.Type {
+		case rendercore.WorkloadServiceTypeNodePort, rendercore.WorkloadServiceTypeLoadBalancer:
+			// published on every host interface
+		case rendercore.WorkloadServiceTypeLoopback:
+			loopback = true
+		default:
 			continue
 		}
 		for portName, portNum := range svc.Ports.All() {
@@ -1078,7 +1100,13 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 			// Compose maps host:container 1:1: the same number is used on
 			// both sides. An explicit per-port host-port authoring field is
 			// not implemented.
-			publishedByCtr[portNum] = publishedPort{host: portNum, ctr: portNum, proto: suffix}
+			prev, seen := publishedByCtr[portNum]
+			publishedByCtr[portNum] = publishedPort{
+				host:     portNum,
+				ctr:      portNum,
+				proto:    suffix,
+				loopback: loopback && (!seen || prev.loopback),
+			}
 		}
 	}
 
@@ -1094,7 +1122,11 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 	sort.Ints(keys)
 	for _, k := range keys {
 		p := publishedByCtr[k]
-		main.Ports = append(main.Ports, fmt.Sprintf("%d:%d%s", p.host, p.ctr, p.proto))
+		hostIP := ""
+		if p.loopback {
+			hostIP = loopbackHostIP + ":"
+		}
+		main.Ports = append(main.Ports, fmt.Sprintf("%s%d:%d%s", hostIP, p.host, p.ctr, p.proto))
 	}
 
 	frag.Services[mainServiceName] = main

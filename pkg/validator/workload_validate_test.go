@@ -160,7 +160,7 @@ func TestValidateWorkload_BadRestartPolicy_Fails(t *testing.T) {
 
 func TestValidateWorkload_AllServiceTypesValid(t *testing.T) {
 	t.Parallel()
-	for _, svcType := range []string{"ClusterIP", "NodePort", "LoadBalancer", "Headless"} {
+	for _, svcType := range []string{"ClusterIP", "NodePort", "LoadBalancer", "Headless", "Loopback"} {
 		w := minimalWorkload()
 		// The JSON Schema requires services to declare at least one port.
 		// The public Workload schema at

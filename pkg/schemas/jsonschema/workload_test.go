@@ -229,3 +229,63 @@ func TestWorkloadJSONSchemaHostNetwork(t *testing.T) {
 		})
 	}
 }
+
+// TestWorkloadJSONSchemaServiceType proves the structural contract for a
+// service entry's type: the five enumerated values are accepted, Loopback among
+// them, and any other spelling is refused when the Workload is validated rather
+// than reaching a provider as a type it would have to guess at.
+//
+// Every row is one document that differs from the others only in the type
+// value, so the accepted rows are the positive control for the refused ones:
+// a refused row fails on its type and on nothing else.
+func TestWorkloadJSONSchemaServiceType(t *testing.T) {
+	t.Parallel()
+	var schema libschema.Schema
+	if err := json.Unmarshal([]byte(WorkloadJSONSchema), &schema); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	v, err := jsonschema.New(&schema)
+	if err != nil {
+		t.Fatalf("jsonschema.New: %v", err)
+	}
+
+	cases := []struct {
+		name        string
+		serviceType string
+		wantOK      bool
+	}{
+		{name: "ClusterIP is accepted", serviceType: "ClusterIP", wantOK: true},
+		{name: "Headless is accepted", serviceType: "Headless", wantOK: true},
+		{name: "NodePort is accepted", serviceType: "NodePort", wantOK: true},
+		{name: "LoadBalancer is accepted", serviceType: "LoadBalancer", wantOK: true},
+		{name: "Loopback is accepted", serviceType: "Loopback", wantOK: true},
+		{name: "a misspelling is refused", serviceType: "Loopbak", wantOK: false},
+		{name: "the value is case-sensitive", serviceType: "loopback", wantOK: false},
+		{name: "a host address is not a type", serviceType: "127.0.0.1", wantOK: false},
+		{name: "an empty type is refused", serviceType: "", wantOK: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			typeJSON, err := json.Marshal(tc.serviceType)
+			if err != nil {
+				t.Fatalf("encode type: %v", err)
+			}
+			doc := `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+				"containers":{"main":{"image":"x","ports":{"admin":9090}}},
+				"services":{"local":{"type":` + string(typeJSON) + `,"ports":{"admin":9090}}}}`
+			var instance any
+			if err := json.Unmarshal([]byte(doc), &instance); err != nil {
+				t.Fatalf("decode instance: %v", err)
+			}
+			report, err := v.Validate(instance, nil)
+			if err != nil {
+				t.Fatalf("validate engine error: %v", err)
+			}
+			ok := len(report.Findings) == 0
+			if ok != tc.wantOK {
+				t.Fatalf("type %q: wantOK=%v got ok=%v findings=%v", tc.serviceType, tc.wantOK, ok, report.Findings)
+			}
+		})
+	}
+}

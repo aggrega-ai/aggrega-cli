@@ -22,7 +22,9 @@
 //   - A persistentTemplate volume requires form: stateful (companion
 //     validation, single-sourced in rendercore); those volumes become the
 //     StatefulSet's volumeClaimTemplates.
-//   - One K8s Service per Workload.Services entry.
+//   - One K8s Service per Workload.Services entry. An entry of type Loopback
+//     halts, since a K8s Service cannot bind to a host's loopback address
+//     (checkServiceTypes).
 //   - One PVC per persistent volume (NOT persistentTemplate; those become
 //     volumeClaimTemplates inside the StatefulSet spec).
 //   - configmap / secret volume variants → K8s volume references by name
@@ -113,6 +115,13 @@ func SynthesizeWorkloadCore(
 	// the chart. A workload the input marks as produced from a declared value
 	// is refused without quoting the value.
 	if err := checkEmittedQuantities(w, nodeCtx.NodeID, nodeCtx.SensitiveWorkload); err != nil {
+		return nil, err
+	}
+
+	// A service type the rendered Service cannot express halts here, before any
+	// Service is translated, rather than reaching the chart as a type the
+	// cluster would refuse.
+	if err := checkServiceTypes(w, nodeCtx.NodeID); err != nil {
 		return nil, err
 	}
 
@@ -951,7 +960,7 @@ func translateServices(w *types.Workload, basis, namespace string, selectorLabel
 				Ports:    ports,
 			},
 		}
-		if svcSpec.Type == "Headless" {
+		if svcSpec.Type == rendercore.WorkloadServiceTypeHeadless {
 			svc.Spec.ClusterIP = "None"
 		}
 		out = append(out, svc)
@@ -961,10 +970,11 @@ func translateServices(w *types.Workload, basis, namespace string, selectorLabel
 
 // translateServiceType maps Workload Service.Type to K8s Service type.
 // Headless renders as ClusterIP at the type field; the clusterIP: None
-// distinction lives on the Spec.ClusterIP field.
+// distinction lives on the Spec.ClusterIP field. Loopback never reaches here:
+// checkServiceTypes refuses it before any Service is translated.
 func translateServiceType(t string) string {
-	if t == "Headless" {
-		return "ClusterIP"
+	if t == rendercore.WorkloadServiceTypeHeadless {
+		return rendercore.WorkloadServiceTypeClusterIP
 	}
 	return t
 }
