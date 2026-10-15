@@ -615,6 +615,10 @@ func publishPluginEntity(t *testing.T, host, name, version, pluginPath string) s
 // Authoring an explicit runtime block is how a test drives an entity-declared
 // execution constraint (a memory or per-call execution cap) through the publish
 // path, so the constraint can be observed flowing to the build-time load.
+//
+// pluginPath may be any pipeline-step guest whose describe() reports the export
+// the entity authors — step, operates=patch, scope=own — since the publish-time
+// cross-check holds the two to each other.
 func publishPluginEntityWithRuntime(t *testing.T, host, name, version, pluginPath, runtimeBlock string) string {
 	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -1039,15 +1043,16 @@ func assertSinglePluginManifest(t *testing.T, host, name, version, wantWasmDiges
 // single helm-provider Component whose Recipe carries a one-step pipeline that
 // references the named Plugin entity by its bare identity, and writes a
 // consumer workspace (aggregate / manifest / release / workspace config) wired to
-// build that Component over the registry at host. The committed frp-step-go
-// fixture self-describes as a helm-compatible pipeline-step plugin (export "step",
-// patch, own-scope), so the Recipe renders under the helm provider and the build
-// invokes the plugin. Returns the consumer workspace path (not yet chdir'd into).
+// build that Component over the registry at host. The step's guest must
+// self-describe as a helm-compatible pipeline-step plugin (export "step", patch,
+// own-scope), as the frp-step-go fixture and the spinning-step guest both do, so
+// the Recipe renders under the helm provider and the build invokes the plugin.
+// Returns the consumer workspace path (not yet chdir'd into).
 //
-// This is the shared scaffolding for the runtime-limit-flows-to-build proof: two
-// arms build the SAME catalog + workspace shape, differing only in the published
-// plugin entity's authored runtime block, so a fail-vs-succeed outcome is
-// attributable to that one authored difference and nothing else.
+// This is the shared scaffolding for the runtime-limit-flows-to-build proof: both
+// arms build the SAME catalog + workspace shape, so whatever separates their
+// outcomes lies in the Plugin entity each publishes — its guest and its authored
+// runtime block — and in nothing this scaffolding writes.
 func writePipelinePluginFixtureCatalog(t *testing.T, host, pluginURI string) string {
 	t.Helper()
 	cat := t.TempDir()
@@ -1144,21 +1149,51 @@ spec:
 // entity.runtime.limits → published entity → pulled → build-load chain is what
 // this test adds end-to-end.
 //
-// The proof is a fail-vs-succeed contrast on the one authored difference. The
-// fail arm publishes a Plugin entity authoring spec.runtime.timeoutMs: 1 — a
-// per-call execution ceiling far below what a real guest's describe()/step Call
-// needs. The ceiling is Call-scoped, and the build invokes the plugin, so the
-// 1 ms ceiling trips at the guest Call and the build halts with the loader's
-// ceiling cancellation. The success arm publishes the SAME fixture against the SAME
-// catalog + workspace shape with a generous runtime.timeoutMs, and the build
-// completes. Because the two arms differ ONLY in the authored runtime block, the
-// fail-vs-succeed outcome is attributable to the entity's authored timeout
-// reaching the loader — proving the limit flowed the full publish → pull → build
-// path, not that some unrelated error fired.
+// The fail arm publishes a Plugin entity authoring spec.runtime.timeoutMs: 1 over
+// the spinning-step guest, whose step call never returns on its own, and the
+// build must halt with the loader's cancellation naming that 1 ms ceiling. The
+// ceiling is Call-scoped and the build invokes the plugin, so a ceiling that
+// reaches the build's load cancels the step Call — and since that Call cannot
+// finish inside any ceiling, the build halts on every run, whatever the
+// machine's speed or load. The workspace pulls automatically, so the build's own
+// pull renders the Release first and stops on the same ceiling; a pull reports a
+// stopped render and carries on, and the build then renders for itself and halts
+// there.
+//
+// The guest is chosen for that property. A guest whose Calls merely run long can
+// finish inside a 1 ms ceiling, and its build then succeeds with the ceiling
+// applied, so its fail arm would halt only by chance. A Call that never returns
+// is cancelled by any ceiling that applies to it, so this arm's outcome turns on
+// whether the authored ceiling reached the build's guest Calls and on nothing
+// else.
+//
+// The halt is attributable to the AUTHORED value, not merely to some ceiling or
+// to an unrelated error. The phrase asserted is the one the loader contributes
+// when its ceiling cancels a Call, which nothing else produces, and it names the
+// ceiling it applied — a Call cancelled under the platform default would name
+// that default rather than 1 ms. A 1 ms ceiling can also cancel the guest's
+// describe(), whose first Call on an instance includes the start-up of the
+// guest's language runtime; that halt names the same authored ceiling and is the
+// same proof.
+//
+// The success arm publishes the frp-step-go fixture against the SAME catalog +
+// workspace shape with a generous runtime.timeoutMs, and the build completes: an
+// authored runtime block travels publish → pull → build without disturbing a
+// build whose guest Calls meet it. The arms differ in their guest as well as in
+// their ceiling, so the contrast between them is not what attributes the fail
+// arm's halt; the ceiling that halt names is.
 func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
-	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root discovery
-	// walks up from cwd); a clean skip if the toolchain is absent.
+	// Resolve both guests BEFORE any chdir: umbrella-root discovery walks up from
+	// cwd, and the spinning guest's source is addressed from this package's
+	// directory. The fixture skips cleanly if its toolchain is absent; the
+	// spinning guest is plain Go targeting wasip1, which ships with every Go
+	// distribution, so it has no skip path.
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+	spinningSrc, err := filepath.Abs(filepath.Join("..", "..", "internal", "wasm", "testdata", "spinning-step"))
+	if err != nil {
+		t.Fatalf("resolve guest source: %v", err)
+	}
+	spinningPath := wasmtest.EnsureLocalGuestBuilt(t, spinningSrc, "spinning-step.wasm")
 
 	// The helm PROVIDER-rendering plugin is core infrastructure: its entity ships
 	// in the standard catalog and its .wasm is embedded in the binary. It is
@@ -1175,9 +1210,10 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 
 	t.Run("tiny_timeout_fails_at_guest_call", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		// Author spec.runtime.timeoutMs: 1 — an execution ceiling a real guest's
-		// Call cannot meet. Indented two spaces under spec.
-		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", pluginPath,
+		// Author spec.runtime.timeoutMs: 1 over a guest whose step Call never
+		// returns on its own, so no machine finishes it inside the ceiling.
+		// Indented two spaces under spec.
+		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", spinningPath,
 			"  runtime:\n    timeoutMs: 1\n")
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
@@ -1190,17 +1226,18 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		if err == nil {
 			t.Fatal("build SUCCEEDED with an entity-authored timeoutMs: 1; the tiny per-call cap did not reach the loader")
 		}
-		// Attributability: the failure must be the per-call execution ceiling, not
-		// any error. The loader names that condition itself — the runtime alone
-		// would report only that a module closed, which several unrelated paths
-		// also produce — so the phrase matched here is the one the ceiling
-		// contributes and nothing else does. It is matched by walking the error
-		// chain, because the ceiling trips while the guest's language runtime is
-		// initialising and the cancellation is rendered into message text rather
-		// than carried as a wrapped error value, so matching on a context error
-		// over the chain does not reach it. The top CompilerError flattens its own
-		// Error() to its message, so the scan must traverse the chain rather than
-		// read err.Error() alone.
+		// Attributability: the failure must be the per-call execution ceiling the
+		// entity authored, not any error. The loader names that condition itself —
+		// the runtime alone would report only that a module closed, which several
+		// unrelated paths also produce — so the phrase matched here is the one the
+		// ceiling contributes and nothing else does, and it carries the ceiling's
+		// value. It is matched as text over the error chain rather than as a
+		// context error: where the ceiling lands while the guest's language runtime
+		// is initialising, the runtime renders the cancellation into message text
+		// rather than carrying it as a wrapped error value, so a context-error match
+		// would miss that halt. The top CompilerError flattens its own Error() to
+		// its message, so the scan must traverse the chain rather than read
+		// err.Error() alone.
 		const ceilingPhrase = "ran past its 1ms execution ceiling and was cancelled"
 		if !chainContains(err, ceilingPhrase) {
 			t.Fatalf("build err chain = %q; want a %q cancellation — the entity's timeoutMs: 1 must surface as a per-call execution-ceiling cancellation at the guest Call (not an unrelated error)",
@@ -1211,10 +1248,9 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 
 	t.Run("generous_timeout_succeeds", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		// The SAME fixture + catalog + workspace shape, with a generous execution
-		// ceiling the guest Call comfortably meets. The only difference from the fail
-		// arm is this authored runtime block, so the build completing here vs.
-		// halting there is attributable to the authored timeout reaching the loader.
+		// The SAME catalog + workspace shape over a guest whose Calls return, with
+		// a generous execution ceiling they comfortably meet: an authored runtime
+		// block reaches the build and leaves a build that meets it to complete.
 		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", pluginPath,
 			"  runtime:\n    timeoutMs: 60000\n")
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
