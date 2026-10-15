@@ -60,8 +60,8 @@ func TestBuildFromANestedSubdirectoryServesTheSameWorkspaceStore(t *testing.T) {
 	root := t.TempDir()
 
 	// The workspace is written BEFORE any working-directory change, because
-	// building the guest walks up from the working directory to find the umbrella
-	// checkout and a temporary directory has no checkout above it.
+	// building the guest walks up from the working directory to find this
+	// module's root and a temporary directory has no module above it.
 	releasePath := writeFetchingProviderWorkspace(t, root)
 
 	t.Chdir(root)

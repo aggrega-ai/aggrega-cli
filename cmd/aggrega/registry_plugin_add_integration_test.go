@@ -31,8 +31,8 @@ import (
 // plugins.governance entry; a subsequent pull resolves the attachment and pins
 // both the entity and its .wasm artifact in the lockfile.
 func TestIntegration_PluginAdd_ConfigSocket_RoundTrip(t *testing.T) {
-	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root
-	// discovery walks up from cwd); a clean skip only if the toolchain is absent.
+	// Resolve the committed .wasm fixture BEFORE any chdir (fixture
+	// resolution walks up from cwd); a clean skip only if the toolchain is absent.
 	mutatorPath := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
 	std := standardCatalogDir(t)
 

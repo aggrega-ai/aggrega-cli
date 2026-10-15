@@ -12,9 +12,6 @@
 #     identities the module declares and the messages registered beside them;
 #   - the provider capability grid, rendered from the render-behavior contract
 #     each provider guest declares.
-#
-# Each has a drift gate at the umbrella root that regenerates into a throwaway
-# copy and diffs, so a stale committed page fails the build rather than shipping.
 DOCS_DIR ?= ../aggrega-docs
 docs:
 	go run -tags clidocs ./cmd/aggrega -out $(DOCS_DIR)

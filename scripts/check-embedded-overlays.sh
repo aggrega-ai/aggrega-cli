@@ -77,8 +77,8 @@
 # Deterministic and offline.
 set -euo pipefail
 cd "$(dirname "$0")/.."          # aggrega-cli module root
-UMBRELLA="$(cd ../ && pwd)"
-HUB="$UMBRELLA/aggrega-hub"
+SIBLINGS_DIR="$(cd ../ && pwd)"
+HUB="$SIBLINGS_DIR/aggrega-hub"
 
 RELEASE=0
 for arg in "$@"; do

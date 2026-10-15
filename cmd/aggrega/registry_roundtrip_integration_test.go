@@ -675,7 +675,7 @@ spec:
 //   - a second pull + build reproduces the rendered tree byte-for-byte;
 //   - a frozen rebuild against a tampered cached plugin manifest is REJECTED.
 func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
-	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root discovery
+	// Resolve the committed .wasm fixture BEFORE any chdir (fixture resolution
 	// walks up from cwd); a clean skip if the toolchain is absent.
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 
@@ -1183,7 +1183,7 @@ spec:
 // their ceiling, so the contrast between them is not what attributes the fail
 // arm's halt; the ceiling that halt names is.
 func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
-	// Resolve both guests BEFORE any chdir: umbrella-root discovery walks up from
+	// Resolve both guests BEFORE any chdir: fixture resolution walks up from
 	// cwd, and the spinning guest's source is addressed from this package's
 	// directory. The fixture skips cleanly if its toolchain is absent; the
 	// spinning guest is plain Go targeting wasip1, which ships with every Go

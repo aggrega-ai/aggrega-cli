@@ -246,7 +246,7 @@ func TestIntegration_ARePullRepairsAComponentsDamagedSignatureBundle(t *testing.
 // pinned in the lockfile, pulled under a signing requirement for plugins, then its
 // cached bundle damaged.
 func TestIntegration_ARePullRepairsAPluginsDamagedSignatureBundle(t *testing.T) {
-	// Resolve fixtures BEFORE any chdir (umbrella-root discovery walks up from cwd).
+	// Resolve fixtures BEFORE any chdir (fixture resolution walks up from cwd).
 	mutatorPath := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
 	std := standardCatalogDir(t)
 

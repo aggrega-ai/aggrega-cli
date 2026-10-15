@@ -45,8 +45,8 @@
 # and the rebuild command) otherwise. Deterministic and offline.
 set -euo pipefail
 cd "$(dirname "$0")/.."          # aggrega-cli module root
-UMBRELLA="$(cd ../ && pwd)"
-OVERLAY_DIR="$UMBRELLA/aggrega-hub/plugin-overlays"
+SIBLINGS_DIR="$(cd ../ && pwd)"
+OVERLAY_DIR="$SIBLINGS_DIR/aggrega-hub/plugin-overlays"
 
 # The core-plugin list's one reader: core_plugin_rows and the artifact directories.
 . scripts/lib/core-plugins.sh

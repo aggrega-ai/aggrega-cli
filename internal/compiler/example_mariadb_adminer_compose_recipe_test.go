@@ -10,10 +10,9 @@
 // that layer a Recipe's workload is an opaque template string, so nothing
 // there observes what the synthesized Workload actually contains.
 //
-// This test depends on both aggrega-cli AND aggrega-docs submodules being
-// initialized in the umbrella checkout (the catalog paths cross the submodule
-// boundary into aggrega-docs). Run from the umbrella or initialise submodules
-// first.
+// This test reads its catalog from the aggrega-docs repository checked out
+// beside this one (the catalog path leaves this repository for aggrega-docs),
+// so check out aggrega-docs beside this repository first.
 //
 // composeWasmFactory is shared with the mariadb and mysql Recipe tests in this
 // same package rather than duplicated here, so every compose Recipe proof

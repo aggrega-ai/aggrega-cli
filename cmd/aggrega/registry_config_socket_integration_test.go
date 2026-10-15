@@ -295,8 +295,8 @@ func assertPluginAbsentFromLock(t *testing.T, lf *lockfile.Lockfile, socketName 
 // (buildPluginResolver), so each socket guest resolves through the pinned cache —
 // a green build is a genuine load-from-pin, and a policy halt is a genuine execute.
 func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
-	// Resolve the committed .wasm fixtures BEFORE any chdir (umbrella-root
-	// discovery walks up from cwd); a clean skip only if the toolchain is absent.
+	// Resolve the committed .wasm fixtures BEFORE any chdir (fixture
+	// resolution walks up from cwd); a clean skip only if the toolchain is absent.
 	mutatorPath := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
 	denyPolicyPath := wasmtest.EnsureFixtureBuilt(t, "policy-go.wasm")
 	allowPolicyPath := wasmtest.EnsureFixtureBuilt(t, "policy-allow-go.wasm")

@@ -253,11 +253,11 @@ func (f CatalogFolder) Plugins() []LaidPlugin {
 // It builds the importer fixtures, so a caller that goes on to change the
 // process environment the toolchain reads should call this first.
 //
-// There is no skip here beyond the one the fixture build carries when no
-// umbrella checkout surrounds the test: the importer fixtures are built from this
-// module's own sources with the Go toolchain the test already runs under, so a
-// build that fails, a binary carrying no JSON parser, or a generation that
-// refuses, fails the calling test.
+// There is no skip here beyond the one the fixture build carries when the
+// plugin kit and ABI checkouts beside this repository are not found: the
+// importer fixtures are built from this module's own sources with the Go
+// toolchain the test already runs under, so a build that fails, a binary
+// carrying no JSON parser, or a generation that refuses, fails the calling test.
 func LayCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool) CatalogFolder {
 	t.Helper()
 

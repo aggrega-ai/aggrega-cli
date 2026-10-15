@@ -436,9 +436,9 @@ const HubBaselineHost = "hub.aggrega.ai"
 
 // baselineJSON is the embedded official trust baseline for the aggrega hub. It
 // is the single source of the trusted identities: the same document is served
-// byte-for-byte as the hub's advertised trust doc (the umbrella derivation
-// script copies it into the served .well-known location), so the offline
-// baseline and the online advertised policy can never drift.
+// byte-for-byte as the hub's advertised trust doc (the served .well-known copy
+// is derived from this file), so the offline baseline and the online advertised
+// policy can never drift.
 //
 //go:embed baseline.json
 var baselineJSON []byte

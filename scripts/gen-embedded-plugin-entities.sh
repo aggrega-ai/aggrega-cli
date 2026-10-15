@@ -40,8 +40,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."          # aggrega-cli module root
 CLI_ROOT="$(pwd)"
-UMBRELLA="$(cd ../ && pwd)"
-HUB="$UMBRELLA/aggrega-hub"
+SIBLINGS_DIR="$(cd ../ && pwd)"
+HUB="$SIBLINGS_DIR/aggrega-hub"
 OVERLAY_DIR="$HUB/plugin-overlays"
 
 # The core-plugin list's one reader: core_plugin_rows, the artifact directories

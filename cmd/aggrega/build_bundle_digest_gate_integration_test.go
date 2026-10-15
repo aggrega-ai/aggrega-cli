@@ -196,8 +196,8 @@ func overwriteCachedBlobByDigest(t *testing.T, cacheRoot, wantDigest string, tam
 // the compose-provider fixture catalog; each arm uses its own registry +
 // workspace so a tamper in one never leaks into another.
 func TestIntegration_BuildBundleDigestGate(t *testing.T) {
-	// Resolve fixtures BEFORE any chdir (umbrella-root discovery walks up from
-	// cwd); a clean skip only if the toolchain is absent.
+	// Resolve fixtures BEFORE any chdir (fixture resolution walks up from cwd);
+	// a clean skip only if the toolchain is absent.
 	mutatorPath := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
 	std := standardCatalogDir(t)
 

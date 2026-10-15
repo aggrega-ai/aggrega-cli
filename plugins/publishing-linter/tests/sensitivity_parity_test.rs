@@ -43,11 +43,10 @@
 //!     absent, suppressed, or left behind by a fixture edit is named
 //!     rather than read as agreement.
 //!
-//! Skip-on-missing-file behaviour matches the other cross-language test
-//! in this crate: a standalone plugin checkout where the compiler source
-//! is unreachable skips with a printed note, and setting
-//! `UMBRELLA_CHECKOUT=1` turns that skip into a hard failure for callers
-//! that require the pin to hold.
+//! The compiler sources these pins read ship in every checkout of this
+//! crate, because the crate lives inside the repository that owns them.
+//! As in the other cross-language test in this crate, a missing source
+//! file is a failure naming the path it was expected at, never a skip.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -277,40 +276,30 @@ fn pillar_key_cases_match_the_shared_expectation() {
 // Vocabulary pins against the source of truth
 // ---------------------------------------------------------------------
 
-/// Resolves a compiler source file relative to this crate, mirroring how
-/// the name-shape symmetry test reaches the same tree.
-fn compiler_source(segments: &[&str]) -> Option<PathBuf> {
+/// Resolves a compiler source file in the repository holding this crate,
+/// two directories above it, as the name-shape symmetry test reaches the
+/// same tree.
+fn compiler_source(segments: &[&str]) -> PathBuf {
     let mut candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
     for s in segments {
         candidate = candidate.join(s);
     }
-    candidate.exists().then_some(candidate)
+    candidate
 }
 
-/// Reads a compiler source file, or returns None after the same
-/// skip-or-hard-fail decision the name-shape symmetry test makes.
-fn read_compiler_source(segments: &[&str], test_name: &str) -> Option<String> {
-    match compiler_source(segments) {
-        Some(path) => Some(
-            std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
-        ),
-        None => {
-            if std::env::var("UMBRELLA_CHECKOUT").is_ok() {
-                panic!(
-                    "{test_name}: UMBRELLA_CHECKOUT is set but {} is unreachable. The umbrella \
-                     layout places it relative to this plugin crate; ensure the checkout is intact.",
-                    segments.join("/")
-                );
-            }
-            eprintln!(
-                "{test_name}: {} not reachable (standalone plugin checkout); skipping. Set \
-                 UMBRELLA_CHECKOUT=1 to hard-fail instead.",
-                segments.join("/")
-            );
-            None
-        }
+/// Reads a compiler source file, panicking with the path it was expected
+/// at when the file is absent.
+fn read_compiler_source(segments: &[&str], test_name: &str) -> String {
+    let path = compiler_source(segments);
+    if !path.exists() {
+        panic!(
+            "{test_name}: the compiler source is missing at {}; it is {} in the repository \
+             holding this crate, two directories above it",
+            path.display(),
+            segments.join("/")
+        );
     }
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
 /// Returns the text between the delimiter opened by `needle` and its
@@ -370,12 +359,10 @@ fn quoted_literals(block: &str) -> BTreeSet<String> {
 
 #[test]
 fn compact_form_keyword_vocabulary_matches_the_source_of_truth() {
-    let Some(vocabulary) = read_compiler_source(
+    let vocabulary = read_compiler_source(
         &["pkg", "compactform", "vocabulary.go"],
         "compact_form_keyword_vocabulary_matches_the_source_of_truth",
-    ) else {
-        return;
-    };
+    );
 
     // The plugin's copy is the union of the three keyword sets that make a
     // mapping a constraint leaf, plus the one composition keyword that acts
@@ -413,12 +400,10 @@ fn compact_form_keyword_vocabulary_matches_the_source_of_truth() {
 
 #[test]
 fn schema_container_keyword_vocabulary_matches_the_source_of_truth() {
-    let Some(dispatch) = read_compiler_source(
+    let dispatch = read_compiler_source(
         &["pkg", "compactform", "dispatch.go"],
         "schema_container_keyword_vocabulary_matches_the_source_of_truth",
-    ) else {
-        return;
-    };
+    );
 
     let body = delimited_block(&dispatch, "structural := []string{")
         .expect("the structural keyword list not found; the dispatch shape moved");
@@ -444,12 +429,10 @@ fn schema_container_keyword_vocabulary_matches_the_source_of_truth() {
 /// the compiler's suite rather than this crate's.
 #[test]
 fn composition_keyword_sets_match_the_source_of_truth() {
-    let Some(reader) = read_compiler_source(
+    let reader = read_compiler_source(
         &["pkg", "resolver", "sensitive_leaves.go"],
         "composition_keyword_sets_match_the_source_of_truth",
-    ) else {
-        return;
-    };
+    );
 
     for (needle, ours) in [
         ("branchListKeywords = []string{", BRANCH_LIST_KEYWORDS),
@@ -478,12 +461,10 @@ fn composition_keyword_sets_match_the_source_of_truth() {
 
 #[test]
 fn selector_operator_vocabulary_matches_the_source_of_truth() {
-    let Some(parse) = read_compiler_source(
+    let parse = read_compiler_source(
         &["pkg", "selector", "parse.go"],
         "selector_operator_vocabulary_matches_the_source_of_truth",
-    ) else {
-        return;
-    };
+    );
 
     // The closed operator set. The slot rule reads only the two forms that
     // can pin a key to one value and explicitly excludes the rest, so a
@@ -756,33 +737,28 @@ fn both_halves_pin_the_same_fixture_revision() {
         ));
     }
 
-    // The compiler half is unreachable in a standalone checkout of this
-    // crate, which is the same condition the vocabulary pins above handle
-    // and is handled the same way, through the one escape hatch.
-    if let Some(compiler) = read_compiler_source(
+    let compiler = strip_source_comments(&read_compiler_source(
         &["internal", "lintops", "sensitivity_parity_test.go"],
         "both_halves_pin_the_same_fixture_revision",
+    ));
+    match pinned_value(
+        &compiler,
+        "const sensitivityParityFixtureRevision = \"",
+        "the compiler half",
     ) {
-        let compiler = strip_source_comments(&compiler);
-        match pinned_value(
-            &compiler,
-            "const sensitivityParityFixtureRevision = \"",
-            "the compiler half",
-        ) {
-            Ok(pinned) if pinned != revision => failures.push(format!(
-                "the compiler half records having verified fixture revision {pinned}, but the \
-                 fixture is revision {revision}. That half has not checked itself against the \
-                 current cases, so whatever this half reports covers one reader only. Re-run the \
-                 compiler half against the current fixture and update its recorded revision to \
-                 {revision}"
-            )),
-            Ok(_) => {}
-            Err(message) => failures.push(message),
-        }
-        for name in COMPILER_HALF_CHECKS {
-            if let Some(message) = compiler_check_liveness(&compiler, name) {
-                failures.push(message);
-            }
+        Ok(pinned) if pinned != revision => failures.push(format!(
+            "the compiler half records having verified fixture revision {pinned}, but the \
+             fixture is revision {revision}. That half has not checked itself against the \
+             current cases, so whatever this half reports covers one reader only. Re-run the \
+             compiler half against the current fixture and update its recorded revision to \
+             {revision}"
+        )),
+        Ok(_) => {}
+        Err(message) => failures.push(message),
+    }
+    for name in COMPILER_HALF_CHECKS {
+        if let Some(message) = compiler_check_liveness(&compiler, name) {
+            failures.push(message);
         }
     }
 

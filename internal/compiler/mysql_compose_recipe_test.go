@@ -3,9 +3,9 @@
 
 // Per-Recipe integration test for the in-repo mysql compose Recipe.
 //
-// This test depends on both aggrega-cli AND aggrega-hub submodules being
-// initialized in the umbrella checkout (paths cross the submodule boundary
-// into aggrega-hub). Run from the umbrella or initialise submodules first.
+// This test reads catalog entities from the aggrega-hub repository checked out
+// beside this one (the paths leave this repository for aggrega-hub), so check
+// out aggrega-hub beside this repository first.
 //
 // composeWasmFactory and composeServiceKeyCount are shared with the mariadb
 // Recipe test in this same package rather than duplicated here, so both Recipes

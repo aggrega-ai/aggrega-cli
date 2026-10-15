@@ -29,8 +29,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."          # aggrega-cli
 CLI_ROOT="$(pwd)"
-UMBRELLA="$(cd ../ && pwd)"
-HUB="$UMBRELLA/aggrega-hub"
+SIBLINGS_DIR="$(cd ../ && pwd)"
+HUB="$SIBLINGS_DIR/aggrega-hub"
 OVERLAY_DIR="$HUB/plugin-overlays"
 OUTPUT_DIR="$HUB/aggrega-catalog/plugin"
 

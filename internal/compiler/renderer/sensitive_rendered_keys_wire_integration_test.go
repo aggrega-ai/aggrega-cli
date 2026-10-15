@@ -5,10 +5,11 @@
 // guest receives over its rendered keys, driven from a worked example's own
 // authored catalog through the real render path and the real embedded guest.
 //
-// This test depends on both the aggrega-cli AND aggrega-docs submodules being
-// initialized in the umbrella checkout, and it writes the shared cross-language
-// wire vector into the aggrega-abi submodule under AGGREGA_UPDATE_GOLDEN=1. Run
-// from the umbrella or initialise submodules first.
+// This test reads a worked example's catalog from the aggrega-docs repository
+// and the standard catalog from the aggrega-hub repository, and compares its
+// capture with the shared cross-language wire vector in the aggrega-abi
+// repository, writing that vector under AGGREGA_UPDATE_GOLDEN=1. All three are
+// read from checkouts beside this repository; check them out there first.
 
 package renderer_test
 

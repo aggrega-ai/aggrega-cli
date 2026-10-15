@@ -4,11 +4,10 @@
 // Package compiler_test — end-to-end catalog-driven proof of the
 // core/compose-bridge Feature + FeatureRecipe.
 //
-// This test depends on both aggrega-cli AND aggrega-hub submodules being
-// initialized in the umbrella checkout. Contributors running tests via
-// `cd aggrega-cli && go test ./...` without `git submodule update --init`
-// from the umbrella will see this test fail with a missing-catalog-entry
-// error. Run from the umbrella or initialise submodules first.
+// This test reads catalog entities from the aggrega-hub repository checked out
+// beside this one. Without that checkout it fails with a missing-catalog-entry
+// error rather than skipping, so check out aggrega-hub beside this repository
+// first.
 
 package compiler_test
 

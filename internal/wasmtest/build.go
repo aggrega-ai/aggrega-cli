@@ -41,10 +41,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/tools/projectionparity"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
 )
 
@@ -117,10 +119,11 @@ func loadFixtureResult(artifactName string) (path string, skip error, ok bool) {
 // EnsureFixtureBuilt resolves a .wasm artifact from its source.
 // Returns the artifact's absolute path after ensuring it exists and
 // is no older than every file in the source directory. Skips the
-// calling test with a clear diagnostic when the source is not present
-// (the per-language PDK or the plugin source has not been authored
-// yet) or when the build fails (the required toolchain is not on
-// PATH; the workspace setup script installs them).
+// calling test with a clear diagnostic when the aggrega-pdk and
+// aggrega-abi checkouts the build reads are not found beside this
+// repository, when a plugin kit example's source is not present, or
+// when a build tool or target the build needs is not installed. A
+// build that fails with its toolchain present fails the test.
 //
 // Two artifact-name shapes are recognised:
 //
@@ -141,17 +144,18 @@ func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 	path, skip := buildFixtureOnce(artifactName, func() (string, error) {
 		t.Helper()
 
-		umbrellaRoot, err := resolveUmbrellaRoot()
+		moduleRoot := ModuleRoot(t)
+		siblingsDir, err := siblingCheckoutsDir()
 		if err != nil {
-			return "", fmt.Errorf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
+			return "", err
 		}
 
 		if socket, lang, ok := parsePDKFixtureName(artifactName); ok {
-			return buildPDKFixture(t, umbrellaRoot, artifactName, socket, lang)
+			return buildPDKFixture(t, moduleRoot, siblingsDir, artifactName, socket, lang)
 		}
 
 		if name, ok := parsePluginArtifactName(artifactName); ok {
-			return buildPluginArtifact(t, umbrellaRoot, artifactName, name)
+			return buildPluginArtifact(t, moduleRoot, siblingsDir, artifactName, name)
 		}
 
 		t.Fatalf("malformed artifact name %q (want <socket>-<lang>.wasm OR <name>.wasm)", artifactName)
@@ -205,18 +209,19 @@ func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) strin
 
 	path, skip := buildFixtureOnce(stamped, func() (string, error) {
 		t.Helper()
-		umbrellaRoot, err := resolveUmbrellaRoot()
+		moduleRoot := ModuleRoot(t)
+		siblingsDir, err := siblingCheckoutsDir()
 		if err != nil {
-			return "", fmt.Errorf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
+			return "", err
 		}
 		if isPDK {
-			return buildPDKFixtureAs(t, umbrellaRoot, artifactName, stamped, socket, lang, version)
+			return buildPDKFixtureAs(t, moduleRoot, siblingsDir, artifactName, stamped, socket, lang, version)
 		}
-		pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", plugin)
+		pluginDir := pluginSourceDir(moduleRoot, plugin)
 		if !isGoGuest(pluginDir) {
 			t.Fatalf("stamped fixture %q names no Go guest at %s; only a Go guest of the production-plugin layout takes a stamp", artifactName, pluginDir)
 		}
-		return buildGoPluginArtifact(t, umbrellaRoot, artifactName, stamped, plugin, version)
+		return buildGoPluginArtifact(t, moduleRoot, siblingsDir, artifactName, stamped, plugin, version)
 	})
 	if skip != nil {
 		t.Skipf("%v", skip)
@@ -260,15 +265,12 @@ func EnsureLocalGuestBuilt(t *testing.T, srcDir, artifactName string) string {
 	path, skip := buildFixtureOnce(artifactName, func() (string, error) {
 		t.Helper()
 
-		umbrellaRoot, err := resolveUmbrellaRoot()
-		if err != nil {
-			t.Fatalf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
-		}
+		moduleRoot := ModuleRoot(t)
 		if _, err := os.Stat(filepath.Join(srcDir, "main.go")); err != nil {
 			t.Fatalf("local guest source missing at %s: %v (the fixture's main.go is supposed to ship; absence is a regression)", srcDir, err)
 		}
 
-		testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
+		testdataDir := fixtureDir(moduleRoot)
 		artifactPath := filepath.Join(testdataDir, artifactName)
 		if isFresh(artifactPath, srcDir) {
 			return artifactPath, nil
@@ -291,10 +293,11 @@ func EnsureLocalGuestBuilt(t *testing.T, srcDir, artifactName string) string {
 		defer os.RemoveAll(stageDir)
 
 		staged := filepath.Join(stageDir, artifactName)
-		// GOWORK=off is what makes the guest's own go.mod authoritative: the
-		// umbrella workspace does not enrol these single-file guest modules, and
-		// resolving them through it would either fail or bind them to whatever
-		// the workspace pins rather than to what the guest declares.
+		// GOWORK=off is what makes the guest's own go.mod authoritative: a Go
+		// workspace file in an enclosing directory does not enrol these
+		// single-file guest modules, and resolving them through it would either
+		// fail or bind them to whatever that workspace pins rather than to what
+		// the guest declares.
 		cmd := exec.Command("go", "build", "-buildmode=c-shared", "-o", staged, "./")
 		cmd.Dir = srcDir
 		cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")
@@ -332,19 +335,19 @@ func EnsureFixtureBytes(t *testing.T, artifactName string) []byte {
 	return b
 }
 
-func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang string) (string, error) {
-	return buildPDKFixtureAs(t, umbrellaRoot, artifactName, artifactName, socket, lang, "")
+func buildPDKFixture(t *testing.T, moduleRoot, siblingsDir, artifactName, socket, lang string) (string, error) {
+	return buildPDKFixtureAs(t, moduleRoot, siblingsDir, artifactName, artifactName, socket, lang, "")
 }
 
 // buildPDKFixtureAs builds the PDK example that produces artifactName and
 // publishes the result under outName. A non-empty version is handed to the
 // example's build script as its version stamp; empty builds the example's own
 // default.
-func buildPDKFixtureAs(t *testing.T, umbrellaRoot, artifactName, outName, socket, lang, version string) (string, error) {
-	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
+func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outName, socket, lang, version string) (string, error) {
+	testdataDir := fixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, outName)
 
-	sourceDir := filepath.Join(umbrellaRoot, "aggrega-pdk", lang, "examples", socket)
+	sourceDir := filepath.Join(siblingsDir, "aggrega-pdk", lang, "examples", socket)
 	if _, err := os.Stat(sourceDir); err != nil {
 		return "", fmt.Errorf("fixture source %s not present (the %s PDK may not have shipped yet): %v",
 			sourceDir, lang, err)
@@ -355,7 +358,7 @@ func buildPDKFixtureAs(t *testing.T, umbrellaRoot, artifactName, outName, socket
 	// a dependency moves the artifact stale even though the example's
 	// own source is untouched, so a regenerated PDK or ABI forces a
 	// rebuild rather than reusing a now-incompatible prebuilt fixture.
-	pdkSrc, abiSrc := pdkDependencySources(umbrellaRoot, lang)
+	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, lang)
 	if isFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
 		return artifactPath, nil
 	}
@@ -411,14 +414,14 @@ func buildPDKFixtureAs(t *testing.T, umbrellaRoot, artifactName, outName, socket
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// A non-zero exit splits two ways. If a required build tool is
-		// absent from PATH, skip with a loud, greppable marker so an
-		// arc-end gate can distinguish a toolchain skip from a real
+		// absent from PATH, skip with a loud, greppable marker so a gate
+		// reading the test log can distinguish a toolchain skip from a real
 		// pass. If the toolchain is present and the build still failed,
 		// that is a genuine failure the gate must surface — fail loudly,
 		// never skip, so a red build cannot read as green.
 		if pdkToolchainAbsent(string(output)) {
-			return "", fmt.Errorf("TOOLCHAIN-ABSENT: fixture build for %s skipped — a required build tool is not on PATH; run scripts/setup-workspace.sh to install the toolchain\noutput:\n%s",
-				artifactName, string(output))
+			return "", fmt.Errorf("TOOLCHAIN-ABSENT: fixture build for %s skipped — the %s toolchain is incomplete: a required build tool is not on PATH or a required target is not installed (the build output below names it)\noutput:\n%s",
+				artifactName, lang, string(output))
 		}
 		t.Fatalf("fixture build failed for %s (toolchain present, build broke): %v\noutput:\n%s",
 			artifactName, err, string(output))
@@ -459,18 +462,19 @@ func pdkToolchainAbsent(output string) bool {
 }
 
 // pdkDependencySources returns the PDK and ABI source directories a
-// PDK example builds against, for the given language. The source-holding
-// subdirectory differs per language: rust and typescript keep sources
-// under src/, go under pkg/. lang is one of the recognised PDK languages
-// (rust, go, typescript) as classified by parsePDKFixtureName.
-func pdkDependencySources(umbrellaRoot, lang string) (pdkSrc, abiSrc string) {
+// PDK example builds against, for the given language, inside the sibling
+// checkouts under siblingsDir. The source-holding subdirectory differs per
+// language: rust and typescript keep sources under src/, go under pkg/. lang
+// is one of the recognised PDK languages (rust, go, typescript) as classified
+// by parsePDKFixtureName.
+func pdkDependencySources(siblingsDir, lang string) (pdkSrc, abiSrc string) {
 	switch lang {
 	case "go":
-		pdkSrc = filepath.Join(umbrellaRoot, "aggrega-pdk", "go", "pkg")
-		abiSrc = filepath.Join(umbrellaRoot, "aggrega-abi", "go", "pkg")
+		pdkSrc = filepath.Join(siblingsDir, "aggrega-pdk", "go", "pkg")
+		abiSrc = filepath.Join(siblingsDir, "aggrega-abi", "go", "pkg")
 	case "rust", "typescript":
-		pdkSrc = filepath.Join(umbrellaRoot, "aggrega-pdk", lang, "src")
-		abiSrc = filepath.Join(umbrellaRoot, "aggrega-abi", lang, "src")
+		pdkSrc = filepath.Join(siblingsDir, "aggrega-pdk", lang, "src")
+		abiSrc = filepath.Join(siblingsDir, "aggrega-abi", lang, "src")
 	}
 	return pdkSrc, abiSrc
 }
@@ -487,17 +491,17 @@ func pdkDependencySources(umbrellaRoot, lang string) (pdkSrc, abiSrc string) {
 // directory, not cargo's own release artifact: cargo owns that path and
 // rewrites it in place on every build, so a test that read it directly
 // could catch it mid-write while another test process rebuilt the crate.
-func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) (string, error) {
-	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
+func buildPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, name string) (string, error) {
+	pluginDir := pluginSourceDir(moduleRoot, name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		if isGoGuest(pluginDir) {
-			return buildGoPluginArtifact(t, umbrellaRoot, artifactName, artifactName, name, coreGuestDefaultVersion)
+			return buildGoPluginArtifact(t, moduleRoot, siblingsDir, artifactName, artifactName, name, coreGuestDefaultVersion)
 		}
 		t.Fatalf("plugin source missing at %s: %v, and no main.go beside it (a production plugin is a Cargo crate or a Go guest; absence is a regression)", manifestPath, err)
 	}
 
-	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
+	testdataDir := fixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, artifactName)
 
 	// Freshness watches the plugin's own src/ AND the path-dependency
@@ -508,8 +512,8 @@ func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) 
 	// prebuilt artifact. buildPluginArtifact knows the plugin's deps;
 	// isFresh stays a generic newest-mtime walk over the dirs it is given.
 	srcDir := filepath.Join(pluginDir, "src")
-	pdkSrc := filepath.Join(umbrellaRoot, "aggrega-pdk", "rust", "src")
-	abiSrc := filepath.Join(umbrellaRoot, "aggrega-abi", "rust", "src")
+	pdkSrc := filepath.Join(siblingsDir, "aggrega-pdk", "rust", "src")
+	abiSrc := filepath.Join(siblingsDir, "aggrega-abi", "rust", "src")
 
 	if isFresh(artifactPath, srcDir, pdkSrc, abiSrc) {
 		return artifactPath, nil
@@ -554,14 +558,13 @@ func isGoGuest(pluginDir string) bool {
 // There is no toolchain-absent skip, for the reason EnsureLocalGuestBuilt gives:
 // the standard Go toolchain targeting wasip1 is present whenever a test runs at
 // all, so any build failure is a hard test failure.
-func buildGoPluginArtifact(t *testing.T, umbrellaRoot, artifactName, outName, name, version string) (string, error) {
+func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, outName, name, version string) (string, error) {
 	t.Helper()
-	moduleRoot := filepath.Join(umbrellaRoot, "aggrega-cli")
-	pluginDir := filepath.Join(moduleRoot, "plugins", name)
-	testdataDir := filepath.Join(moduleRoot, "internal", "wasm", "testdata")
+	pluginDir := pluginSourceDir(moduleRoot, name)
+	testdataDir := fixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, outName)
 
-	pdkSrc, abiSrc := pdkDependencySources(umbrellaRoot, "go")
+	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, "go")
 	if isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
 		return artifactPath, nil
 	}
@@ -658,12 +661,8 @@ func cargoBuildWasm(t *testing.T, pluginDir, manifestPath, artifactName string) 
 func ForcePluginBuild(t *testing.T, name string) string {
 	t.Helper()
 
-	umbrellaRoot, err := resolveUmbrellaRoot()
-	if err != nil {
-		t.Skipf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
-	}
-
-	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
+	moduleRoot := ModuleRoot(t)
+	pluginDir := pluginSourceDir(moduleRoot, name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
@@ -673,7 +672,7 @@ func ForcePluginBuild(t *testing.T, name string) string {
 		t.Skipf("%v", skipErr)
 	}
 
-	artifactPath := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata", name+".wasm")
+	artifactPath := filepath.Join(fixtureDir(moduleRoot), name+".wasm")
 	return publishPluginArtifact(t, pluginDir, name, artifactPath)
 }
 
@@ -689,12 +688,7 @@ func ForcePluginBuild(t *testing.T, name string) string {
 func ForcePluginTest(t *testing.T, name string) {
 	t.Helper()
 
-	umbrellaRoot, err := resolveUmbrellaRoot()
-	if err != nil {
-		t.Skipf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
-	}
-
-	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
+	pluginDir := pluginSourceDir(ModuleRoot(t), name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
@@ -753,11 +747,68 @@ func parsePluginArtifactName(name string) (pluginName string, ok bool) {
 	return stem, true
 }
 
-// resolveUmbrellaRoot walks up from the test's working directory until
-// it finds a .gitmodules file — the umbrella root. Returns an error
-// when no .gitmodules is found above the working directory (the test
-// is running outside an umbrella checkout).
-func resolveUmbrellaRoot() (string, error) {
+// ModuleRoot returns the root directory of the module this package belongs to:
+// the directory of the nearest Go module file at or above the test's working
+// directory. Every path a fixture build reads or writes inside this repository —
+// a plugin's source, the shared fixture directory, the module a Go guest is built
+// from — is joined onto it, so those paths resolve inside the repository however
+// it is checked out.
+//
+// The module file found must declare the module that holds this package. A test
+// whose working directory has moved outside the module fails here rather than
+// resolving its fixtures against an unrelated tree, which is why a test that
+// changes its working directory resolves its fixtures first.
+func ModuleRoot(t testing.TB) string {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("locate the working directory: %v", err)
+	}
+	root, err := moduleRootAbove(cwd)
+	if err != nil {
+		t.Fatalf("resolve this module's root: %v", err)
+	}
+	return root
+}
+
+// moduleRootAbove is [ModuleRoot] from an explicit starting directory.
+func moduleRootAbove(start string) (string, error) {
+	root, modulePath, err := projectionparity.ModuleRoot(start)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(ownImportPath, modulePath+"/") {
+		return "", fmt.Errorf("the module file nearest %s declares module %s, which does not hold %s",
+			start, modulePath, ownImportPath)
+	}
+	return root, nil
+}
+
+// ownImportPath is this package's import path, read from a type it declares
+// rather than spelled, so the check in moduleRootAbove follows the module if it
+// is renamed.
+var ownImportPath = reflect.TypeOf(moduleAnchor{}).PkgPath()
+
+// moduleAnchor carries this package's import path for ownImportPath.
+type moduleAnchor struct{}
+
+// fixtureDir is the shared fixture directory every layout publishes into.
+func fixtureDir(moduleRoot string) string {
+	return filepath.Join(moduleRoot, "internal", "wasm", "testdata")
+}
+
+// pluginSourceDir is the source directory of the production plugin name.
+func pluginSourceDir(moduleRoot, name string) string {
+	return filepath.Join(moduleRoot, "plugins", name)
+}
+
+// siblingCheckoutsDir returns the directory holding this repository's sibling
+// checkouts — the plugin kit at aggrega-pdk/ and the ABI at aggrega-abi/, which
+// the plugin kit examples and the kit and ABI source trees a fixture's freshness
+// watches are read from. It walks up from the test's working directory to the
+// first directory holding a .gitmodules file, and returns an error naming both
+// siblings when there is none.
+func siblingCheckoutsDir() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -769,7 +820,8 @@ func resolveUmbrellaRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no .gitmodules found above %s", cwd)
+			return "", fmt.Errorf("the aggrega-pdk and aggrega-abi checkouts beside this repository were not found: "+
+				"no directory above %s holds the .gitmodules file that marks where they are checked out", cwd)
 		}
 		dir = parent
 	}

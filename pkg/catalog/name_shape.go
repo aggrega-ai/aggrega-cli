@@ -31,9 +31,8 @@
 // string. Grouping the declarations into a const block, reflowing them
 // across lines, switching to double quotes, or turning one into a
 // reference to another package's constant all break the extraction
-// silently. The symmetry test skips gracefully when this file is
-// unreachable from a standalone plugin checkout, and fails hard rather
-// than skipping when UMBRELLA_CHECKOUT is set.
+// silently. The symmetry test reads this file from the same repository
+// and fails, naming the expected path, when it is missing.
 //
 // Per-entity-kind name shapes are documented at
 // aggrega-docs/architecture/13-catalog-and-registry.md "Catalog entity

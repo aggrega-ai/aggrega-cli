@@ -19,9 +19,9 @@
 // producer Export and the consumer import onto the flow-style JSON stack is
 // carried by the shared surgical codec the link pass uses.
 //
-// These tests depend on both aggrega-cli AND aggrega-hub submodules being
-// initialized in the umbrella checkout (the catalog paths cross the submodule
-// boundary into aggrega-hub). They skip when the sibling catalog is absent.
+// These tests read catalog entities from the aggrega-hub repository checked out
+// beside this one (the catalog paths leave this repository for aggrega-hub).
+// They skip when the sibling catalog is absent.
 
 package compiler_test
 

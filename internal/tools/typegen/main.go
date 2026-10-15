@@ -121,7 +121,7 @@ type enumSource struct {
 	lang string
 	// regen is the "Regenerate with ..." header line(s) for this target, so a
 	// target committed under pkg/types and one committed across the aggrega-abi
-	// submodule boundary each name their own regeneration command.
+	// repository boundary each name their own regeneration command.
 	regen string
 	// doc is a file-level documentation comment emitted after the header,
 	// explaining the file's single-source role and any deliberately-separate

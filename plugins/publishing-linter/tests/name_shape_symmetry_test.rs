@@ -5,8 +5,8 @@
 //! constants in `src/rules/name_shape.rs` and the Go-side
 //! source-of-truth in `aggrega-cli/pkg/catalog/name_shape.go`.
 //!
-//! The test reads the Go file (umbrella-relative; available in
-//! umbrella checkouts), extracts every `const X = ...` line carrying a
+//! The test reads the Go file (two directories above this crate, in the
+//! same repository), extracts every `const X = ...` line carrying a
 //! per-kind regex string, and compares the extracted patterns to the
 //! Rust-side dispatch table. Drift between the two surfaces surfaces
 //! here at unit-test time.
@@ -19,24 +19,19 @@
 //! to the Go declarations with no Rust arm leaves the rule resolving
 //! "no shape" for it, which reports nothing and reads as a pass.
 //!
-//! Skip-on-missing-file behaviour: standalone PDK / plugin checkouts
-//! where the Go file is unreachable skip the test gracefully (cargo's
-//! stable test framework has no skip-with-message primitive; the
-//! test passes with a printed note).
-//!
-//! Hard-fail-when-supposed-to-pin: callers running in an umbrella
-//! checkout (or any context that REQUIRES the symmetry to hold) set
-//! the `UMBRELLA_CHECKOUT=1` environment variable before invoking
-//! the test. Under that env var, a missing Go file panics instead of
-//! silently skipping. CI workflows that pin the symmetry should set
-//! the env var; standalone developer testing leaves it unset for the
-//! graceful-skip path.
+//! The Go file ships in every checkout of this crate, because the crate
+//! lives inside the repository that owns it. A missing file is therefore
+//! a failure, never a skip: a test that passed with nothing to compare
+//! would report symmetry it never checked.
 
 use std::path::PathBuf;
 
 use publishing_linter::rules::name_shape::NAME_SHAPES;
 
-fn go_source_path() -> Option<PathBuf> {
+/// `go_source_path` resolves the Go source of truth, which sits at
+/// `pkg/catalog/name_shape.go` in the repository holding this crate (two
+/// directories above it), and panics naming that path when it is absent.
+fn go_source_path() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let candidate = manifest_dir
         .join("..")
@@ -44,11 +39,15 @@ fn go_source_path() -> Option<PathBuf> {
         .join("pkg")
         .join("catalog")
         .join("name_shape.go");
-    if candidate.exists() {
-        Some(candidate)
-    } else {
-        None
+    if !candidate.exists() {
+        panic!(
+            "name_shape_symmetry_test: the Go source of truth is missing at {}; it is \
+             pkg/catalog/name_shape.go in the repository holding this crate, two directories \
+             above it",
+            candidate.display()
+        );
     }
+    candidate
 }
 
 fn extract_go_const(source: &str, name: &str) -> Option<String> {
@@ -98,24 +97,7 @@ fn declared_go_kinds(source: &str) -> Vec<String> {
 
 #[test]
 fn name_shape_constants_match_go_source_of_truth() {
-    let path = match go_source_path() {
-        Some(p) => p,
-        None => {
-            if std::env::var("UMBRELLA_CHECKOUT").is_ok() {
-                panic!(
-                    "name_shape_symmetry_test: UMBRELLA_CHECKOUT is set but the Go file is unreachable. \
-                     The umbrella layout requires aggrega-cli/pkg/catalog/name_shape.go relative to \
-                     this plugin crate. If you are running CI, ensure the umbrella checkout is intact."
-                );
-            }
-            eprintln!(
-                "name_shape_symmetry_test: Go file not reachable (standalone plugin checkout); \
-                 skipping. The umbrella CI run pins symmetry (set UMBRELLA_CHECKOUT=1 to hard-fail \
-                 on missing Go file)."
-            );
-            return;
-        }
-    };
+    let path = go_source_path();
 
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read Go file at {}: {e}", path.display()));

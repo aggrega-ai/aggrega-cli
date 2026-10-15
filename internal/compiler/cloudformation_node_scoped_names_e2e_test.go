@@ -14,9 +14,9 @@
 // references the database it names and that the stack outputs carry each
 // database's connection identity separately.
 //
-// These tests depend on both aggrega-cli AND aggrega-hub submodules being
-// initialized in the umbrella checkout (the catalog paths cross the submodule
-// boundary into aggrega-hub). They skip when the sibling catalog is absent.
+// These tests read catalog entities from the aggrega-hub repository checked out
+// beside this one (the catalog paths leave this repository for aggrega-hub).
+// They skip when the sibling catalog is absent.
 
 package compiler_test
 

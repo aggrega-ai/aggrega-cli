@@ -66,11 +66,12 @@ func ensureRenderProviderWasm(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	// cmd/aggrega → up 3 to the umbrella root.
-	umbrella := filepath.Clean(filepath.Join(wd, "..", "..", ".."))
-	exampleDir := filepath.Join(umbrella, "aggrega-pdk", "go", "examples", "render")
-	pdkDir := filepath.Join(umbrella, "aggrega-pdk", "go")
-	abiDir := filepath.Join(umbrella, "aggrega-abi", "go")
+	// cmd/aggrega → up 3 to the directory holding this repository beside its
+	// aggrega-pdk and aggrega-abi sibling checkouts.
+	siblingsDir := filepath.Clean(filepath.Join(wd, "..", "..", ".."))
+	exampleDir := filepath.Join(siblingsDir, "aggrega-pdk", "go", "examples", "render")
+	pdkDir := filepath.Join(siblingsDir, "aggrega-pdk", "go")
+	abiDir := filepath.Join(siblingsDir, "aggrega-abi", "go")
 	if _, err := os.Stat(filepath.Join(exampleDir, "main.go")); err != nil {
 		t.Fatalf("provider render fixture source absent at %s: %v", exampleDir, err)
 	}

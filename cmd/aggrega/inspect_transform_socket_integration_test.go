@@ -158,7 +158,7 @@ func inspectGraphOf(t *testing.T, root, stdCatalog string) (string, error) {
 // a registry-arm failure is attributable to the guest's origin and to nothing
 // else.
 func TestIntegration_InspectResolvesATransformGuestFromEitherOrigin(t *testing.T) {
-	// Resolved before any chdir: umbrella-root discovery walks up from the working
+	// Resolved before any chdir: fixture resolution walks up from the working
 	// directory, and both arms change into their workspace.
 	guestPath := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
 	guestBytes, err := os.ReadFile(guestPath)

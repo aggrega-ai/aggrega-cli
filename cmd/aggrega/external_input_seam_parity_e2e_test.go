@@ -525,8 +525,8 @@ func TestThreeSurfacesEmitByteIdenticalArtifactSets(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	// Building the guest walks up from the working directory to find the umbrella
-	// checkout, which the package directory the test runs in sits beneath.
+	// Building the guest walks up from the working directory to find this
+	// module's root, which the package directory the test runs in sits beneath.
 	releasePath := writeFetchingProviderWorkspace(t, root)
 
 	// The command line's render is placed under the fixture root, and the daemon

@@ -17,8 +17,8 @@ import (
 // that a freshness check might still consider current.
 //
 // Skip contract: the gate skips ONLY when the wasm32 target or the
-// Rust toolchain is absent (the workspace-setup script installs them).
-// A genuine compile error is a FAIL, never a skip. After the wasm
+// Rust toolchain is absent. A genuine compile error is a FAIL, never
+// a skip. After the wasm
 // build succeeds the gate runs the crate's own Rust unit/integration
 // tests (`cargo test`, host target) so a behavioural regression in a
 // rule surfaces here too.

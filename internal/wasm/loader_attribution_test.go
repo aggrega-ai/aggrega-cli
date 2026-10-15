@@ -140,8 +140,8 @@ func TestColdCompileAttributionObservation(t *testing.T) {
 // straight out of testdata reports an unbuilt workspace as a failure of the
 // attribution contract, which is a statement about the environment dressed as a
 // statement about the product. wasmtest.EnsureFixtureBuilt is this module's one
-// home for that build, and it skips with its own diagnostic naming the workspace
-// setup script when the guest's source or its toolchain is unavailable — so an
+// home for that build, and it skips with its own diagnostic naming what is
+// missing when the guest's source or its toolchain is unavailable — so an
 // attribution assertion still never degrades silently into a pass.
 func builtFixture(t *testing.T, name string) (string, []byte) {
 	t.Helper()

@@ -10,12 +10,11 @@ package main
 //
 // The generator renders one target per invocation, chosen by the output path's
 // base name, so a target whose committed copy lives outside this module is
-// produced by passing that path rather than by a directive here. Its drift is
-// gated by the workspace build, which has every tree present; a directive naming
-// a path outside the module would fail outright in a standalone checkout of this
-// repository, where that path does not exist.
+// produced by passing that path rather than by a directive here: a directive
+// naming a path outside the module would fail outright in a checkout of this
+// repository alone, where that path does not exist.
 //
-// Run from the umbrella checkout:
+// Run from this module's root:
 // `go generate ./internal/compiler/constraint/factgen`.
 //
 //go:generate go run . ../views_gen.go

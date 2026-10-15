@@ -9,7 +9,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -36,8 +35,7 @@ func linterSpec(b []byte) wasm.PluginSpec {
 // plugin never sees raw YAML.
 func loadFixture(t *testing.T, kind, classification, file string) json.RawMessage {
 	t.Helper()
-	root := umbrellaRoot(t)
-	path := filepath.Join(root, "aggrega-cli", "plugins", "publishing-linter",
+	path := filepath.Join(wasmtest.ModuleRoot(t), "plugins", "publishing-linter",
 		"tests", "fixtures", strings.ToLower(kind), classification, file)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -82,28 +80,6 @@ func normaliseYAMLForJSON(v any) any {
 		return out
 	default:
 		return v
-	}
-}
-
-// umbrellaRoot resolves the umbrella root by walking up from the
-// caller's directory until .gitmodules is found. Mirrors the
-// resolution wasmtest's package internally performs.
-func umbrellaRoot(t *testing.T) string {
-	t.Helper()
-	_, callerFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	dir := filepath.Dir(callerFile)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".gitmodules")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("no .gitmodules above %s", callerFile)
-		}
-		dir = parent
 	}
 }
 

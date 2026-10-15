@@ -2,21 +2,31 @@
 
 This directory holds `.wasm` fixtures the loader's integration tests
 in `loader_integration_test.go` consume. The artifacts are built on
-demand from their source in the sibling `aggrega-pdk/` submodule and
-gitignored — nothing binary is committed here.
+demand from their source in the `aggrega-pdk` repository checked out
+beside this one and gitignored — nothing binary is committed here.
 
 ## How the fixtures are built
 
-`testdata_build_test.go` defines `ensureFixtureBuilt(t, "<name>")`.
+`testdata_build_test.go` defines `ensureFixtureBuilt(t, "<name>")`, a
+thin wrapper over the shared `wasmtest.EnsureFixtureBuilt` helper.
 For each requested artifact:
 
 1. Parse the artifact name as `<socket>-<lang>.wasm`.
-2. Locate the source at `aggrega-pdk/<lang>/examples/<socket>/`.
-3. If the `.wasm` is missing or older than any source file, invoke
-   the fixture's `build.sh` to rebuild it into this directory.
-4. If the per-language PDK source is not present, or the toolchain
-   the fixture needs is not on `PATH`, `t.Skipf` cleanly with a
-   diagnostic pointing at `scripts/setup-workspace.sh`.
+2. Locate the source at `aggrega-pdk/<lang>/examples/<socket>/` in the
+   `aggrega-pdk` checkout beside this repository. The directory holding
+   the sibling checkouts is found by walking up to its `.gitmodules`
+   file.
+3. If the `.wasm` is missing or older than any file of that source or
+   of the per-language plugin kit and ABI sources it builds against,
+   invoke the fixture's `build.sh` to rebuild it, and publish the
+   result into this directory.
+4. If the sibling checkouts are not found, the example's source is not
+   present, or a tool the fixture needs is not on `PATH`, `t.Skipf`
+   cleanly with a diagnostic naming what is missing. A build that
+   fails with its toolchain present fails the test.
+
+The same helper also builds a production plugin, named `<name>.wasm`,
+from this repository's `plugins/<name>/` into this directory.
 
 The cache lives per `go test` process; multiple tests sharing a
 fixture build it once. A fresh CI checkout always rebuilds.
@@ -67,9 +77,6 @@ chain:
   add wasm32-wasip1` idempotently.)
 - TypeScript (Extism JS PDK build) — `node` + the Extism JS PDK
   tooling. (Ships with the TypeScript PDK.)
-
-The workspace setup script (`scripts/setup-workspace.sh` from the
-umbrella root) installs all required toolchains user-locally.
 
 ## Naming convention
 

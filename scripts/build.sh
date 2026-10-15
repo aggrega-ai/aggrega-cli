@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/build.sh — self-contained build for the aggrega CLI.
 #
-# 🔴 THIS IS NOT THE GATE SCRIPT, AND THE TWO SHARE A FILENAME.
+# 🔴 THIS SCRIPT BUILDS; IT DOES NOT TEST.
 #
-# It builds; it does not test. There are no test modes here — no unit battery, no
-# integration battery, no drift gates, no lint tiers. Its switches choose what to
-# build (--light, --target, --stripped), and --expect-version checks the version
-# the build stamped. Invoking it and reading a success as "the gate passed"
-# reports a green for a battery that never ran.
+# There are no test modes here — no unit battery, no integration battery, no drift
+# gates, no lint tiers. Its switches choose what to build (--light, --target,
+# --stripped), and --expect-version checks the version the build stamped. Invoking
+# it and reading a success as "the tests passed" reports a green for a battery that
+# never ran.
 #
-# The gate lives at the umbrella root and is invoked from there:
+# This module's tests run through the Go toolchain directly (README.md, "Testing"):
 #
-#     ./scripts/build.sh --test-fast aggrega-cli
+#     go test ./...
 #
-# That script is a different program with the same basename, and the umbrella root
-# is where every gate invocation belongs. Anything asking for a build gate wants
-# that one, not this one. So any --test… flag given here is answered with that
-# pointer and exit 2, rather than with a bare "unknown argument".
+# So any --test… flag given here is answered with that pointer and exit 2, rather
+# than with a bare "unknown argument".
 #
 # Builds the version-stamped aggrega binary with its provider/linter guests
 # embedded (default), or the no-embed aggrega-light binary (--light). Runs from a
@@ -96,7 +94,7 @@
 #   scripts/build.sh … --expect-version <version>
 #                               # refuse unless what was built stamps <version>
 #   scripts/build.sh --help
-#   scripts/build.sh --test…    # refused (exit 2): names the workspace build script
+#   scripts/build.sh --test…    # refused (exit 2): points at go test ./...
 #
 # An argument it cannot use is refused with exit 2, before anything is built.
 # Exit non-zero on the first failing step.
@@ -168,13 +166,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --test*)
       # Answered rather than rejected as unknown: running a test mode from here is
-      # the common mistake, and the fix is a different script at a different root.
+      # the common mistake, and the fix is to run the tests through Go directly.
       fail "$arg: this script builds the CLI and has no test modes."
-      fail "  The test modes belong to the umbrella workspace's own build script —"
-      fail "  scripts/build.sh at the workspace root, a different script with the same name."
-      fail "  Run it from the workspace root:"
-      fail "    ./scripts/build.sh $arg aggrega-cli"
-      fail "  Outside the umbrella workspace, run this module's tests directly: go test ./..."
+      fail "  Run this module's tests directly: go test ./..."
       exit 2
       ;;
     *)

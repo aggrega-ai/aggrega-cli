@@ -3,9 +3,9 @@
 
 // Per-Recipe integration tests for the in-repo mariadb Recipe set.
 //
-// These tests depend on both aggrega-cli AND aggrega-hub submodules being
-// initialized in the umbrella checkout (paths cross the submodule boundary
-// into aggrega-hub). Run from the umbrella or initialise submodules first.
+// These tests read catalog entities from the aggrega-hub repository checked out
+// beside this one (the paths leave this repository for aggrega-hub), so check
+// out aggrega-hub beside this repository first.
 
 package compiler_test
 

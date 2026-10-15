@@ -38,7 +38,7 @@ cd "$(dirname "$0")/.."
 # The core-plugin list's one reader: core_plugin_rows and the artifact directories.
 . scripts/lib/core-plugins.sh
 rows="$(core_plugin_rows)" || exit 1
-REBUILD_HINT="rebuild with: go generate ./internal/wasm/embedded/... && go build   (or ./scripts/build.sh from the umbrella root, which needs no separate generate step)"
+REBUILD_HINT="rebuild with: go generate ./internal/wasm/embedded/... && go build"
 
 MODCACHE="$(go env GOMODCACHE)"
 GOROOT_DIR="$(go env GOROOT)"

@@ -5,9 +5,10 @@ package main
 
 // The reflect-free guest codec is generated into the sibling aggrega-abi
 // module. The generator lives here in aggrega-cli; aggrega-abi carries no
-// dependency on aggrega-cli, so the codec is emitted across the submodule
-// boundary by path rather than driven from a directive inside aggrega-abi.
-// Run from the umbrella checkout: `go generate ./internal/tools/typegen`.
+// dependency on aggrega-cli, so the codec is emitted across the repository
+// boundary by path rather than driven from a directive inside aggrega-abi, and
+// the directives below need the aggrega-abi repository checked out beside this
+// one. Run from this module's root: `go generate ./internal/tools/typegen`.
 //
 // Every Rust codec target is driven from here. The Rust crate is lint-gated as a
 // whole — the gate reads the crate, not a per-file list — so a Rust target left
