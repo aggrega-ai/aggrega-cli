@@ -166,6 +166,7 @@ func participationCases() []participationCase {
 		{ruleID: "plugin-default-limits", fixtureFile: "plugin_default_limits.yaml"},
 		{ruleID: "secret-slot-declares-sensitive", fixtureFile: "secret_slot_unmarked.yaml"},
 		{ruleID: "provides-declared-by-component", fixtureFile: "provides_undeclared.yaml"},
+		{ruleID: "metrics-credential-annotation-matches-provides", fixtureFile: "metrics_credential_disagreement.yaml"},
 	}
 }
 

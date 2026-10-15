@@ -24,6 +24,12 @@
 //!    Component the host could not resolve, no Release, another entity kind.
 //!  - The suppression flag, and the finding's severity.
 //!  - A planted credential marker is absent from every finding of every case.
+//!  - A scrape connection, judged by what its target states about how its
+//!    metrics authenticate: not at all for `none`, never against the caller
+//!    key for `separate-token`, and as any other connection for `target-key`,
+//!    for no annotation and for any other value. A connection on another
+//!    socket to the same targets is judged whatever they state, and a managed
+//!    target is still not judged.
 
 mod common;
 
@@ -78,14 +84,33 @@ fn keyless_server() -> Value {
     })
 }
 
-/// The caller, whose model socket declares the credential slot.
+/// The key-checking server stating how its metrics authenticate, written with
+/// the annotation key the standard catalog uses rather than the rule's own
+/// constant, so a rule reading another key fails here.
+fn metrics_server(value: Value) -> Value {
+    let mut server = key_checking_server();
+    server["metadata"]["annotations"] =
+        json!({"observability.aggrega.ai/metrics-credential": value});
+    server
+}
+
+/// The socket the standard catalog gives a metrics scraper, written as the
+/// catalog writes it rather than through the rule's own constant.
+const SCRAPE: &str = "scrape_target";
+
+/// The caller, whose model socket and scrape socket both declare the
+/// credential slot. The rule reads no consumer's Component, so one caller
+/// serves the connections on either socket.
 fn caller() -> Value {
     json!({
         "apiVersion": "aggrega.ai/v1alpha1",
         "kind": "Component",
         "metadata": {"name": "example/ai-agent/caller", "version": "1.0.0"},
         "spec": {
-            "usesSchema": {"model": {"featuresSchema": {"credential": {"sensitive": true}}}},
+            "usesSchema": {
+                "model": {"featuresSchema": {"credential": {"sensitive": true}}},
+                "scrape_target": {"featuresSchema": {"credential": {"sensitive": true}}},
+            },
         },
     })
 }
@@ -122,6 +147,16 @@ fn connection(credential: Option<&str>) -> Value {
 
 /// An Aggregate holding the server `model` and the caller `agent`.
 fn aggregate(target_key: Option<&str>, credential: Option<&str>) -> Value {
+    aggregate_on("model", target_key, credential)
+}
+
+/// The same Aggregate with the caller's `primary` connection on `socket`.
+fn aggregate_on(socket: &str, target_key: Option<&str>, credential: Option<&str>) -> Value {
+    let mut uses = serde_json::Map::new();
+    uses.insert(
+        socket.to_string(),
+        json!({"primary": connection(credential)}),
+    );
     json!({
         "apiVersion": "aggrega.ai/v1alpha1",
         "kind": "Aggregate",
@@ -131,7 +166,7 @@ fn aggregate(target_key: Option<&str>, credential: Option<&str>) -> Value {
                 "model": {"type": "example/ai-model/server:1.0.0", "features": target_features(target_key)},
                 "agent": {
                     "type": "example/ai-agent/caller:1.0.0",
-                    "uses": {"model": {"primary": connection(credential)}},
+                    "uses": Value::Object(uses),
                 },
             },
         },
@@ -462,4 +497,278 @@ fn the_suppression_silences_every_case() {
         );
         assert!(run(&suppressed).is_empty(), "the suppression left a finding");
     }
+}
+
+// ---- Scrape connections ----
+
+/// The phrase each reported case's finding carries, named for the rows below.
+const PRESENTS_NO_KEY: Option<&str> = Some("carries nothing in its credential slot");
+const LOCATORS_DIFFER: Option<&str> = Some("write their secret's locator differently");
+const TARGET_CHECKS_NO_KEY: Option<&str> = Some("leaves its api_key slot");
+
+/// A credential that is not the target's key: a token issued for its metrics
+/// alone, read from a parameter of its own.
+const METRICS_TOKEN: &str = "{{ .parameters.metrics_token }}";
+
+/// Asserts what one scrape row drew: silence, or one finding carrying the
+/// phrase and naming the connection, the scrape socket, the target and the two
+/// slots.
+fn assert_row(row: &str, findings: &[Diagnostic], want: Option<&str>) {
+    match want {
+        None => assert!(
+            findings.is_empty(),
+            "{row}: want silence; got {findings:#?}"
+        ),
+        Some(phrase) => {
+            assert_one(findings, phrase);
+            let message = &findings[0].message;
+            assert!(
+                message.contains("on socket \"scrape_target\""),
+                "{row}: the finding names the scrape socket; got {message}"
+            );
+        }
+    }
+}
+
+/// The target a row reaches: the key-checking server stating `annotation`, or
+/// stating nothing.
+fn target_stating(annotation: Option<Value>) -> Value {
+    match annotation {
+        Some(value) => metrics_server(value),
+        None => key_checking_server(),
+    }
+}
+
+#[test]
+fn a_scrape_is_judged_by_what_its_target_states_about_its_metrics() {
+    // One row per target statement and case: the annotation value (none for an
+    // unannotated target), the target's key, the scrape connection's
+    // credential, and what the row draws.
+    let rows = [
+        // Metrics served with no credential, as vllm and tgi serve theirs: the
+        // scrape is not judged in any case.
+        (
+            "vllm-like target stating none, key filled, no credential",
+            Some(json!("none")),
+            Some(SHARED),
+            None,
+            None,
+        ),
+        (
+            "tgi-like target stating none, key filled, a metrics-only token",
+            Some(json!("none")),
+            Some(SHARED),
+            Some(METRICS_TOKEN),
+            None,
+        ),
+        (
+            "target stating none, key unfilled, a credential",
+            Some(json!("none")),
+            None,
+            Some(METRICS_TOKEN),
+            None,
+        ),
+        // Metrics taking a token of their own: never compared with the key.
+        (
+            "target stating separate-token, a metrics-only token",
+            Some(json!("separate-token")),
+            Some(SHARED),
+            Some(METRICS_TOKEN),
+            None,
+        ),
+        (
+            "target stating separate-token, key filled, no credential",
+            Some(json!("separate-token")),
+            Some(SHARED),
+            None,
+            None,
+        ),
+        (
+            "target stating separate-token, key unfilled, a token",
+            Some(json!("separate-token")),
+            None,
+            Some(METRICS_TOKEN),
+            None,
+        ),
+        // Metrics taking the caller key: judged as any connection is.
+        (
+            "target stating target-key, no credential",
+            Some(json!("target-key")),
+            Some(SHARED),
+            None,
+            PRESENTS_NO_KEY,
+        ),
+        (
+            "target stating target-key, a metrics-only token",
+            Some(json!("target-key")),
+            Some(SHARED),
+            Some(METRICS_TOKEN),
+            LOCATORS_DIFFER,
+        ),
+        (
+            "target stating target-key, key unfilled",
+            Some(json!("target-key")),
+            None,
+            Some(SHARED),
+            TARGET_CHECKS_NO_KEY,
+        ),
+        (
+            "target stating target-key, one parameter at both ends",
+            Some(json!("target-key")),
+            Some(SHARED),
+            Some(SHARED),
+            None,
+        ),
+        // No statement: judged as today.
+        (
+            "unannotated target, no credential",
+            None,
+            Some(SHARED),
+            None,
+            PRESENTS_NO_KEY,
+        ),
+        (
+            "unannotated target, a metrics-only token",
+            None,
+            Some(SHARED),
+            Some(METRICS_TOKEN),
+            LOCATORS_DIFFER,
+        ),
+        (
+            "unannotated target, key unfilled",
+            None,
+            None,
+            Some(SHARED),
+            TARGET_CHECKS_NO_KEY,
+        ),
+        // A value the rule does not know states nothing: judged as today.
+        (
+            "target stating another value",
+            Some(json!("open")),
+            Some(SHARED),
+            None,
+            PRESENTS_NO_KEY,
+        ),
+        (
+            "target stating none in another letter case",
+            Some(json!("None")),
+            Some(SHARED),
+            None,
+            PRESENTS_NO_KEY,
+        ),
+        (
+            "target stating a non-string value",
+            Some(json!(true)),
+            Some(SHARED),
+            None,
+            PRESENTS_NO_KEY,
+        ),
+    ];
+    for (row, annotation, target_key, credential, want) in rows {
+        let findings = run(&input_against(
+            target_stating(annotation),
+            aggregate_on(SCRAPE, target_key, credential),
+            bare_release(),
+        ));
+        assert_row(row, &findings, want);
+    }
+}
+
+#[test]
+fn a_connection_on_another_socket_is_judged_whatever_the_target_states() {
+    // A model connection to a target stating each value, in each case: every
+    // case is reported, so no statement about metrics reaches a caller of the
+    // target's own API.
+    for annotation in [
+        Some(json!("none")),
+        Some(json!("separate-token")),
+        Some(json!("target-key")),
+        None,
+    ] {
+        for (target_key, credential, phrase) in CASES {
+            let findings = run(&input_against(
+                target_stating(annotation.clone()),
+                aggregate_on("model", target_key, credential),
+                bare_release(),
+            ));
+            assert_one(&findings, phrase);
+            assert!(
+                findings[0].message.contains("on socket \"model\""),
+                "{annotation:?}: {}",
+                findings[0].message
+            );
+        }
+    }
+}
+
+#[test]
+fn the_socket_decides_which_connection_to_one_target_is_judged() {
+    // One target stating that its metrics are open, reached twice by one
+    // caller: a model connection reading a different parameter and a scrape
+    // connection carrying a metrics-only token. Only the model connection is
+    // reported, so the silence on the scrape is its socket's.
+    let mut agg = aggregate_on("model", Some(SHARED), Some(MARKER));
+    agg["spec"]["components"]["agent"]["uses"][SCRAPE] =
+        json!({"metrics": connection(Some(METRICS_TOKEN))});
+    let findings = run(&input_against(
+        metrics_server(json!("none")),
+        agg,
+        bare_release(),
+    ));
+    assert_one(&findings, "write their secret's locator differently");
+    assert!(
+        findings[0].message.contains("on socket \"model\""),
+        "{}",
+        findings[0].message
+    );
+}
+
+#[test]
+fn a_scrape_the_release_writes_is_judged_by_the_same_statement() {
+    // A scrape connection only the Release wires, carrying a metrics-only token.
+    let mut agg = aggregate(Some(SHARED), None);
+    agg["spec"]["components"]["agent"]
+        .as_object_mut()
+        .expect("agent")
+        .remove("uses");
+    let release = release_with(json!({
+        "model": {},
+        "agent": {"uses": {SCRAPE: {"primary": {
+            "target": "model",
+            "features": {"credential": operator_secret(METRICS_TOKEN)},
+        }}}},
+    }));
+    let rows = [
+        ("separate-token", Some(json!("separate-token")), None),
+        ("none", Some(json!("none")), None),
+        ("target-key", Some(json!("target-key")), LOCATORS_DIFFER),
+        ("unannotated", None, LOCATORS_DIFFER),
+    ];
+    for (row, annotation, want) in rows {
+        let findings = run(&input_against(
+            target_stating(annotation),
+            agg.clone(),
+            release.clone(),
+        ));
+        assert_row(
+            &format!("a scrape the Release wires, {row}"),
+            &findings,
+            want,
+        );
+    }
+}
+
+#[test]
+fn a_managed_target_stating_target_key_is_still_not_judged() {
+    let mut target = metrics_server(json!("target-key"));
+    target["metadata"]["labels"] = json!({"component.aggrega.ai/hosting": "managed"});
+    let findings = run(&input_against(
+        target,
+        aggregate_on(SCRAPE, Some(SHARED), None),
+        bare_release(),
+    ));
+    assert!(
+        findings.is_empty(),
+        "a managed target was judged: {findings:#?}"
+    );
 }

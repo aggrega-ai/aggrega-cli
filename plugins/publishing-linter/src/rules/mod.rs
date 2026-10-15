@@ -16,6 +16,7 @@ pub mod category_vs_directory;
 pub mod connection_credential_matches_target_key;
 pub mod dynamic_refs;
 pub mod id_overrides;
+pub mod metrics_credential_annotation_matches_provides;
 pub mod name_shape;
 pub mod plugin_default_limits;
 pub mod provides_declared_by_component;

@@ -148,6 +148,16 @@ var (
 			"dispatch neither invokes nor holds a view of."),
 	})
 
+	errMetricsCredentialAnnotationMatchesProvides = cerrors.Register("metrics-credential-annotation-matches-provides", cerrors.Meta{
+		ShortCode: "E0346",
+		Message: "a Component's annotation stating how its metrics authenticate disagrees with whether it declares the " +
+			"provides key saying an instance's metrics need a credential",
+		RulePlace: cerrors.RuleEvaluatedElsewhere("The publishing-linter guest evaluates the annotation a Component states how its metrics " +
+			"authenticate with against the provides keys its schema declares, and this package raises the condition on " +
+			"the finding it returns. The rule runs inside the guest over content presented at publication, which the " +
+			"rule dispatch neither invokes nor holds a view of."),
+	})
+
 	errConnectionCredentialMatchesTargetKey = cerrors.Register("connection-credential-matches-target-key", cerrors.Meta{
 		ShortCode: "E0329",
 		Message: "a connection and the target it reaches do not name one key: they write different locators for " +
@@ -214,6 +224,15 @@ func ErrSecretSlotDeclaresSensitive() error { return errSecretSlotDeclaresSensit
 // the Component it implements does not declare.
 func ErrProvidesDeclaredByComponent() error { return errProvidesDeclaredByComponent }
 
+// ErrMetricsCredentialAnnotationMatchesProvides fires when a Component's
+// annotation stating how its metrics authenticate and its declaration of the
+// provides key saying whether an instance's metrics need a credential disagree:
+// it states that its metrics take no credential and declares the key, or states
+// that they take one and does not.
+func ErrMetricsCredentialAnnotationMatchesProvides() error {
+	return errMetricsCredentialAnnotationMatchesProvides
+}
+
 // ErrConnectionCredentialMatchesTargetKey fires when a connection whose target
 // declares the key it requires of its callers and that target do not name one
 // key: the two ends write different locators, or only one end names a key.
@@ -266,6 +285,7 @@ var publishingRules = []publishingRule{
 	{condition: errPluginDefaultLimits},
 	{condition: errSecretSlotDeclaresSensitive},
 	{condition: errProvidesDeclaredByComponent},
+	{condition: errMetricsCredentialAnnotationMatchesProvides},
 	{condition: errConnectionCredentialMatchesTargetKey, releaseScoped: true},
 }
 

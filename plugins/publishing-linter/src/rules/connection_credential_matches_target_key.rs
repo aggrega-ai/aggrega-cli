@@ -38,6 +38,30 @@
 //!   - both are filled and the locators the two ends write differ, so they
 //!     may name different secrets.
 //!
+//! A connection on the socket `scrape_target` is a scrape: the standard
+//! catalog gives that name to the socket a metrics scraper reaches the
+//! components it scrapes through. A scrape presents whatever credential the
+//! target's metrics take, and whether that is the key the target requires of
+//! its callers is a property of the target's product rather than of the
+//! connection. So for a scrape the rule reads what the target's Component
+//! states in its annotation `observability.aggrega.ai/metrics-credential`:
+//!
+//!   - `none` — its metrics are served with no credential, so a scrape
+//!     connection to it is not judged at all;
+//!   - `separate-token` — its metrics take a token of their own, so a scrape
+//!     connection's credential is not compared with the target's `api_key`,
+//!     and none of the three cases above is reported on it;
+//!   - `target-key` — its metrics take the key the target requires of every
+//!     caller, so a scrape connection to it is judged like any other.
+//!
+//! The rule reads only those three values: a target writing no such
+//! annotation, or writing any other value, has its scrape connections judged
+//! like any other. A connection on any other socket — a model, a tool, a
+//! datastore — is judged the same whatever the target's annotation says. The
+//! socket name and the annotation are catalog conventions no schema keyword
+//! marks, like the two slot names, so a scraping socket named differently is
+//! judged like any other socket.
+//!
 //! What is compared is each end's locator as its author wrote it — the
 //! `origin` an attachment carries, in its `values` where the Aggregate
 //! attaches it and in its `infra` where the Release does. Two ends reading one
@@ -74,6 +98,7 @@
 use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use serde_json::{Map, Value};
 
+use crate::metrics_credential::{self, MetricsCredential};
 use crate::raw;
 
 /// The rule's identifier, as the host dispatches it.
@@ -101,6 +126,11 @@ pub const HOSTING_LABEL: &str = "component.aggrega.ai/hosting";
 /// presents to the vendor, not one the target requires of its callers.
 pub const MANAGED: &str = "managed";
 
+/// The socket a metrics scraper reaches the components it scrapes through, by
+/// the standard catalog's convention. A connection on it is a scrape, and is
+/// judged by what its target states about how its metrics authenticate.
+pub const SCRAPE_SOCKET: &str = "scrape_target";
+
 pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     if input.entity_kind != "Aggregate" {
         return vec![];
@@ -126,7 +156,13 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         let Some(target) = instances.iter().find(|i| i.name == conn.target) else {
             continue;
         };
-        if !target.active || !target_checks_caller_key(input, &target.name) {
+        if !target.active {
+            continue;
+        }
+        let Some(component) = target_component(input, &target.name) else {
+            continue;
+        };
+        if !checks_caller_key(&component) || !compared_with_target_key(&conn, &component) {
             continue;
         }
         let target_end = target_end(target, &placements);
@@ -332,15 +368,32 @@ fn connections<'a>(instances: &[Instance<'a>], placements: &[Placement<'a>]) -> 
     out
 }
 
-/// Whether the Component the named instance resolves to is a target the rule
-/// judges: it declares the caller key slot among its own slots, and it is not
-/// labelled managed. An instance whose Component the host could not resolve is
-/// absent from the input, which reads as not declaring the slot.
-fn target_checks_caller_key(input: &LinterInput, instance: &str) -> bool {
-    let Some(component) = input.components.get(instance).map(|doc| raw::parse(doc)) else {
-        return false;
-    };
-    declares_caller_key(&component) && !is_managed(&component)
+/// The Component the named instance resolves to. An instance whose Component
+/// the host could not resolve is absent from the input, so nothing is read
+/// about it and its connections are not judged.
+fn target_component(input: &LinterInput, instance: &str) -> Option<Value> {
+    input.components.get(instance).map(|doc| raw::parse(doc))
+}
+
+/// Whether a target's Component makes it one the rule judges: it declares the
+/// caller key slot among its own slots, and it is not labelled managed.
+fn checks_caller_key(component: &Value) -> bool {
+    declares_caller_key(component) && !is_managed(component)
+}
+
+/// Whether a connection's credential is compared with its target's caller key.
+/// Every connection's is, except a scrape's where the target's Component states
+/// that its metrics take no credential or a token of their own. The socket is
+/// read first, so a connection on any other socket is compared whatever the
+/// target states.
+fn compared_with_target_key(conn: &Connection<'_>, target: &Value) -> bool {
+    if conn.socket != SCRAPE_SOCKET {
+        return true;
+    }
+    !matches!(
+        metrics_credential::declared(target),
+        Some(MetricsCredential::NoCredential | MetricsCredential::SeparateToken)
+    )
 }
 
 fn declares_caller_key(component: &Value) -> bool {

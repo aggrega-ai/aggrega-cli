@@ -24,6 +24,7 @@ use aggrega_pdk_rust::{
 };
 use extism_pdk::{plugin_fn, FnResult};
 
+pub mod metrics_credential;
 pub mod policies;
 pub mod raw;
 pub mod rubric;
@@ -87,6 +88,9 @@ pub fn lint_rules(input: Vec<u8>) -> FnResult<Vec<u8>> {
         }
         "provides-declared-by-component" => {
             rules::provides_declared_by_component::classify(&input)
+        }
+        "metrics-credential-annotation-matches-provides" => {
+            rules::metrics_credential_annotation_matches_provides::classify(&input)
         }
         "connection-credential-matches-target-key" => {
             rules::connection_credential_matches_target_key::classify(&input)
