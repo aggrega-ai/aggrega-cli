@@ -108,7 +108,7 @@ var readBuildInfo = debug.ReadBuildInfo
 var defaultKubeVersion = sync.OnceValues(func() (chartutil.KubeVersion, error) {
 	info, ok := readBuildInfo()
 	if !ok {
-		return chartutil.KubeVersion{}, errors.New("helm: the Kubernetes version to render for is not named, " +
+		return chartutil.KubeVersion{}, errors.New("the Kubernetes version to render for is not named, " +
 			"and this provider carries no build information to read the default from")
 	}
 	for _, dep := range info.Deps {
@@ -116,7 +116,7 @@ var defaultKubeVersion = sync.OnceValues(func() (chartutil.KubeVersion, error) {
 			return kubeVersionOfClientLibrary(dep.Version)
 		}
 	}
-	return chartutil.KubeVersion{}, fmt.Errorf("helm: the Kubernetes version to render for is not named, "+
+	return chartutil.KubeVersion{}, fmt.Errorf("the Kubernetes version to render for is not named, "+
 		"and this provider was built without the %s module the default is read from", clientLibraryModule)
 })
 
@@ -126,13 +126,13 @@ var defaultKubeVersion = sync.OnceValues(func() (chartutil.KubeVersion, error) {
 func kubeVersionOfClientLibrary(moduleVersion string) (chartutil.KubeVersion, error) {
 	fields := strings.Split(strings.TrimPrefix(moduleVersion, "v"), ".")
 	if len(fields) < 2 {
-		return chartutil.KubeVersion{}, fmt.Errorf("helm: %s version %q carries no minor version to derive the default Kubernetes version from",
+		return chartutil.KubeVersion{}, fmt.Errorf("%s version %q carries no minor version to derive the default Kubernetes version from",
 			clientLibraryModule, moduleVersion)
 	}
 	major, majorErr := strconv.Atoi(fields[0])
 	minor, minorErr := strconv.Atoi(fields[1])
 	if majorErr != nil || minorErr != nil || major < 0 || minor < 0 {
-		return chartutil.KubeVersion{}, fmt.Errorf("helm: %s version %q is not a module version the default Kubernetes version can be derived from",
+		return chartutil.KubeVersion{}, fmt.Errorf("%s version %q is not a module version the default Kubernetes version can be derived from",
 			clientLibraryModule, moduleVersion)
 	}
 	kubeMajor, kubeMinor := strconv.Itoa(major+1), strconv.Itoa(minor)
