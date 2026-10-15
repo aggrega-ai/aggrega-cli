@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/gen-embedded-plugin-entities.sh
 #
-# Generates the complete Plugin entity for every embedded guest and writes it
-# beside the guest under internal/wasm/embedded/plugins/<name>.plugin.yaml, so
-# the full binary embeds a complete catalog view of its own core plugins. A
-# no-local-catalog build then resolves core providers (compose, helm, terraform,
-# …) from the embedded entities at render time, with no registry round-trip.
+# Generates the complete Plugin entity for every core guest and writes it beside
+# the guest, in its row's artifact directory: under
+# internal/wasm/embedded/plugins/<name>.plugin.yaml for a guest the binary
+# embeds, so the full binary embeds a complete catalog view of its own core
+# plugins, and under internal/wasm/embedded/published-only/<name>.plugin.yaml for
+# one it does not, where the co-located dev catalog and the entity check read it.
+# A no-local-catalog build resolves core providers (compose, helm, terraform, …)
+# from the embedded entities at render time, with no registry round-trip.
+#
+# The embedded guests' entities come from `plugin gen-catalog --from-embedded`;
+# the others' from core_plugin_generate_unembedded (scripts/lib/core-plugins.sh),
+# the one generation of a core plugin the binary does not embed, which the
+# core-plugin catalog generator and the release workflow call as well.
 #
 # The entity is emitted through the SAME path the committed hub catalog uses —
 # `plugin gen-catalog --from-embedded` merging each guest's describe()
@@ -36,9 +44,10 @@ UMBRELLA="$(cd ../ && pwd)"
 HUB="$UMBRELLA/aggrega-hub"
 OVERLAY_DIR="$HUB/plugin-overlays"
 
-MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
-EMBED_DIR="internal/wasm/embedded/plugins"
-[ -f "$MANIFEST" ] || { echo "gen-embedded-plugin-entities: manifest not found: $MANIFEST" >&2; exit 1; }
+# The core-plugin list's one reader: core_plugin_rows, the artifact directories
+# and the generation of the rows the binary does not embed.
+. scripts/lib/core-plugins.sh
+rows="$(core_plugin_rows)" || exit 1
 [ -d "$OVERLAY_DIR" ] || { echo "gen-embedded-plugin-entities: overlay dir not found: $OVERLAY_DIR (the sibling aggrega-hub is required to generate embedded entities)" >&2; exit 1; }
 
 echo "=== build aggrega (provenance version stamp) ==="
@@ -54,22 +63,25 @@ echo "=== generate embedded plugin entities ==="
 "$BIN" plugin gen-catalog --from-embedded \
   --overlay "$OVERLAY_DIR" \
   --output-dir "$OUT"
+echo "=== generate the entities of the core plugins the binary does not embed ==="
+core_plugin_generate_unembedded "$BIN" "$OVERLAY_DIR" "$OUT"
 
-# Relocate each generated per-coordinate entity to the flat, name-based embed
-# layout beside its guest. gen-catalog writes <out>/<pluginType>/<name>/<ver>/
-# plugin.yaml; the embed layout is plugins/<name>.plugin.yaml. The bytes are
-# copied verbatim, so the embedded entity is byte-identical to what the hub
-# generator writes for the same commit.
+# Relocate each generated per-coordinate entity to the flat, name-based layout
+# beside its guest. gen-catalog writes <out>/<pluginType>/<name>/<ver>/
+# plugin.yaml; the layout beside the guest is <dir>/<name>.plugin.yaml. The bytes
+# are copied verbatim, so the entity beside each guest is byte-identical to what
+# the hub generator writes for the same commit.
 declare -a written=()
-while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
-  case "$socket" in ''|'#'*) continue;; esac
+while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
+  [ -n "$socket" ] || continue
   src="$(echo "$OUT/$socket/$name"/*/plugin.yaml)"
   if [ ! -f "$src" ]; then
     echo "gen-embedded-plugin-entities: no generated entity for $socket/$name at $OUT/$socket/$name/*/plugin.yaml" >&2
     exit 1
   fi
-  cp "$src" "$EMBED_DIR/$name.plugin.yaml"
+  mkdir -p "$dir"
+  cp "$src" "$dir/$name.plugin.yaml"
   written+=("$name")
-done < "$MANIFEST"
+done <<< "$rows"
 
-echo "=== wrote embedded plugin entities: ${written[*]} ==="
+echo "=== wrote core plugin entities: ${written[*]} ==="

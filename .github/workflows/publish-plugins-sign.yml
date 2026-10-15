@@ -1,8 +1,9 @@
 name: Publish and sign core plugins
 
 # Tag-driven publisher for the CLI release: the binaries for Linux, Windows and
-# macOS, the desktop extension package, the tooling image, and the core
-# provider/linter plugins that are embedded in the aggrega binary.
+# macOS, the desktop extension package, the tooling image, and the core plugins
+# the core-plugin list names — the ones embedded in the aggrega binary and the
+# ones built and published with it but not embedded.
 #
 # The work is split across jobs so that the credentials that sign and publish
 # never share a job with third-party code. Building runs code this repository
@@ -43,8 +44,8 @@ name: Publish and sign core plugins
 #                        pinned, against the sibling checkouts that job handed
 #                        over, once they match its list; it checks that
 #                        every build script stamping a version takes it from
-#                        the one shared recipe, builds the binary and its
-#                        embedded guests (plus the light no-embed binary),
+#                        the one shared recipe, builds the binary and every
+#                        core guest (plus the light no-embed binary),
 #                        asserts host/guest ABI self-consistency, builds the
 #                        Windows and macOS binaries, stages each smoke run's
 #                        inputs, packs the desktop extension package, generates
@@ -909,15 +910,18 @@ jobs:
 
       - name: Assert ABI self-consistency
         # A real gate, not a comment: the binary reports the single ABI version its
-        # host speaks, and every embedded guest self-reports the ABI it binds
-        # against in its build descriptor. If any guest disagrees with the host, or
-        # any value is empty, the generated catalog entities would advertise an ABI
-        # the binary cannot honor — so the run fails here, before generating or
-        # publishing anything. Whenever a release tag is in play — a tag push, or a
-        # manual dispatch that supplied a tag input — the binary's stamped version
-        # must also equal that tag; a mismatch means the build did not stamp the
-        # release and the run fails. It needs only the built binary and its
-        # guests, no registry and no image.
+        # host speaks, and every core guest — embedded or not — self-reports the
+        # ABI it binds against in its build descriptor, which the build wrote in
+        # the guest's own artifact directory. The descriptors read are the ones
+        # the core-plugin list names, through its one reader, so a guest the list
+        # names whose descriptor is missing fails here too. If any guest disagrees
+        # with the host, or any value is empty, the generated catalog entities
+        # would advertise an ABI the binary cannot honor — so the run fails here,
+        # before generating or publishing anything. Whenever a release tag is in
+        # play — a tag push, or a manual dispatch that supplied a tag input — the
+        # binary's stamped version must also equal that tag; a mismatch means the
+        # build did not stamp the release and the run fails. It needs only the
+        # built binary and its guests, no registry and no image.
         run: |
           set -euo pipefail
 
@@ -930,13 +934,22 @@ jobs:
           BIN_VERSION="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$HOST_ABI" ] || { echo "ABI gate: binary reported no abiVersion" >&2; exit 1; }
 
-          DESC_DIR="aggrega-cli/internal/wasm/embedded/plugins"
-          shopt -s nullglob
-          descriptors=("$DESC_DIR"/*.describe.json)
-          [ "${#descriptors[@]}" -gt 0 ] || { echo "ABI gate: no guest descriptors found in $DESC_DIR — the embedded build did not run" >&2; exit 1; }
+          . aggrega-cli/scripts/lib/core-plugins.sh
+          rows="$(core_plugin_rows)"
+          descriptors=()
+          while IFS=$'\x1f' read -r socket name _src _toolchain _extra _embed dir; do
+            [ -n "$socket" ] || continue
+            descriptors+=("aggrega-cli/$dir/$name.describe.json")
+          done <<< "$rows"
+          [ "${#descriptors[@]}" -gt 0 ] || { echo "ABI gate: the core-plugin list names no guest" >&2; exit 1; }
 
           mismatch=0
           for d in "${descriptors[@]}"; do
+            if [ ! -f "$d" ]; then
+              echo "ABI gate: no guest descriptor at $d — the guest build did not run for it" >&2
+              mismatch=1
+              continue
+            fi
             guest_abi="$(grep -oE '"abi_version"[[:space:]]*:[[:space:]]*"[^"]+"' "$d" | head -1 | grep -oE '"[^"]+"$' | tr -d '"')"
             if [ -z "$guest_abi" ]; then
               echo "ABI gate: $d reports no abi_version" >&2
@@ -1241,34 +1254,48 @@ jobs:
           echo "packed $BUNDLE"
 
       - name: Generate the core plugin catalog entities
-        # Emits one Plugin entity per embedded guest by merging each guest's
+        # Emits one Plugin entity per core guest by merging each guest's
         # machine-derived contract fields with its authored overlay; the entity
-        # version is the binary's own build version. The overlay directory is the
-        # REQUIRED authored input surfaced above; a guest with no overlay halts
-        # this step rather than getting invented entity content. Pure computation
-        # from the built guests, with no external side effect.
+        # version is the binary's own build version, which every core guest was
+        # stamped with. The guests the binary embeds are generated from the
+        # binary itself; the core plugins the list names as not embedded are
+        # generated from the guests the build wrote beside the embedded ones,
+        # through the core-plugin list's one generation of them, which the local
+        # generators call as well. The overlay directory is the REQUIRED authored
+        # input surfaced above; a guest with no overlay halts this step rather
+        # than getting invented entity content. Pure computation from the built
+        # guests, with no external side effect.
         run: |
           set -euo pipefail
           export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
           mkdir -p "$RELEASE_INPUTS/plugins/entities"
           "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" --output-dir "$RELEASE_INPUTS/plugins/entities"
+          . aggrega-cli/scripts/lib/core-plugins.sh
+          core_plugin_generate_unembedded "$AGGREGA_BIN" "$OVERLAY_DIR" "$RELEASE_INPUTS/plugins/entities"
 
       - name: Stage the core plugins for publishing
-        # Exactly the set of guests built into this binary, each generated entity
-        # paired with its decompressed guest, written as the pairing
-        # sign-and-publish publishes. The guests are embedded compressed, so they
-        # are decompressed into a working directory under the filename the
-        # publisher looks for, and that filename comes from the product's own
-        # tool rather than from a rule spelled here. A guest's file is identified
-        # by socket AND name — `governance--cel.wasm`, not `cel.wasm` — because a
-        # name is unique only within its socket, and deriving it from the .gz
-        # filename names a file the publisher never looks for.
+        # Exactly the set of core guests this build stamped — the ones built into
+        # this binary and the ones the core-plugin list builds without embedding —
+        # each generated entity paired with its decompressed guest, written as the
+        # pairing sign-and-publish publishes. Each guest is read from the artifact
+        # directory its row of the core-plugin list names, through the list's one
+        # reader, so a guest the binary does not embed is found where the build
+        # wrote it and no directory is spelled here. The guests are stored
+        # compressed, so they are decompressed into a working directory under the
+        # filename the publisher looks for, and that filename comes from the
+        # product's own tool rather than from a rule spelled here. A guest's file
+        # is identified by socket AND name — `governance--cel.wasm`, not
+        # `cel.wasm` — because a name is unique only within its socket, and
+        # deriving it from the .gz filename names a file the publisher never looks
+        # for.
         #
         # 🔴 `internal/buildtools/pluginguestfile` is the one place that rule
-        # lives, and publish-plugins.sh resolves every guest through it. Reading
-        # the socket out of the entity path and joining it here would work today
-        # and be a second copy of the rule — the first naming change would break
-        # this loop silently, since a wrong name looks exactly like a missing file.
+        # lives, and publish-plugins.sh resolves every guest through it. The
+        # socket and name read out of the entity path below only find the
+        # entity's row of the core-plugin list; joining them into the filename
+        # here would work today and be a second copy of the rule — the first
+        # naming change would break this loop silently, since a wrong name looks
+        # exactly like a missing file.
         #
         # Deriving the filename runs Go, which is why the pairing is resolved
         # here: publish-plugins.sh --pairs-out writes, for each entity, the guest
@@ -1276,6 +1303,7 @@ jobs:
         # The pairing is written only when every entity paired.
         run: |
           set -euo pipefail
+          . aggrega-cli/scripts/lib/core-plugins.sh
           STAGE="$RELEASE_INPUTS/plugins"
           WASM_DIR="$STAGE/wasm"
           mkdir -p "$WASM_DIR"
@@ -1283,10 +1311,13 @@ jobs:
           for entity in "$STAGE"/entities/*/*/*/plugin.yaml; do
             [ -f "$entity" ] || continue
             leaf="$(cd aggrega-cli && GOWORK=off go run ./internal/buildtools/pluginguestfile -entity "$entity")"
-            # entities/<socket>/<name>/<version>/plugin.yaml -> <name>
+            # entities/<socket>/<name>/<version>/plugin.yaml -> <socket>, <name>:
+            # the row of the core-plugin list the entity was generated for.
             name="$(basename "$(dirname "$(dirname "$entity")")")"
-            src="aggrega-cli/internal/wasm/embedded/plugins/$name.wasm.gz"
-            [ -f "$src" ] || { echo "no embedded guest for $entity at $src" >&2; exit 1; }
+            socket="$(basename "$(dirname "$(dirname "$(dirname "$entity")")")")"
+            dir="$(core_plugin_dir_of "$socket" "$name")"
+            src="aggrega-cli/$dir/$name.wasm.gz"
+            [ -f "$src" ] || { echo "no built guest for $entity at $src" >&2; exit 1; }
             gunzip -c "$src" > "$WASM_DIR/$leaf"
             staged=$((staged + 1))
           done
@@ -2016,9 +2047,9 @@ jobs:
             --fulcio-url "$FULCIO_URL" --rekor-url "$REKOR_URL"
 
       - name: Publish and sign the core plugins
-        # Publishes exactly the set of guests built into this binary: each pair
-        # in the build job's pairing — a generated entity and its decompressed
-        # guest — pushed and signed keyless against public Sigstore. The pairing
+        # Publishes exactly the core plugins the build job stamped, embedded or
+        # not: each pair in the build job's pairing — a generated entity and its
+        # decompressed guest — pushed and signed keyless against public Sigstore. The pairing
         # was resolved by the build job, so publishing it needs only the binary.
         # A dry run prints the reference set and the sign plan without any
         # network call or signing.

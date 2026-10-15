@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/gen-core-plugin-catalog.sh
 #
-# Generates the core-plugin catalog entities from the compiler binary's embedded
-# guests and the authored per-plugin overlays, into the sibling aggrega-hub
+# Generates the core-plugin catalog entities from the core guests — the ones the
+# compiler binary embeds and the ones the core-plugin list builds without
+# embedding — and the authored per-plugin overlays, into the sibling aggrega-hub
 # catalog; NOT part of the ordinary build or test cycle. The release step runs it
 # in a scratch checkout, to check the release's overlays and render docs pages.
 # The copy aggrega-hub commits comes from the tag-driven publish CI, which runs the
@@ -32,18 +33,22 @@ UMBRELLA="$(cd ../ && pwd)"
 HUB="$UMBRELLA/aggrega-hub"
 OVERLAY_DIR="$HUB/plugin-overlays"
 OUTPUT_DIR="$HUB/aggrega-catalog/plugin"
-MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
 
 [ -d "$OVERLAY_DIR" ] || { echo "gen-core-plugin-catalog: overlay dir not found: $OVERLAY_DIR" >&2; exit 1; }
-[ -f "$MANIFEST" ] || { echo "gen-core-plugin-catalog: manifest not found: $MANIFEST" >&2; exit 1; }
 
-# The socket directories this run owns are derived from the embedded-plugin
-# manifest's socket column — the same declarative source the --from-embedded
-# selection below draws its guests from — so the set cleared and the set reported
-# cannot fall behind the set actually written. A list kept by hand here would be
-# precisely the parallel list that manifest exists to prevent.
-mapfile -t SOCKETS < <(awk -F'\t' '$1 != "" && $1 !~ /^#/ { print $1 }' "$MANIFEST" | sort -u)
-[ "${#SOCKETS[@]}" -gt 0 ] || { echo "gen-core-plugin-catalog: no plugin sockets declared in $MANIFEST" >&2; exit 1; }
+# The core-plugin list's one reader: core_plugin_rows and the generation of the
+# rows the binary does not embed.
+. scripts/lib/core-plugins.sh
+rows="$(core_plugin_rows)" || exit 1
+
+# The socket directories this run owns are derived from the core-plugin list's
+# socket column — the same declarative source the --from-embedded selection and
+# the generation of the rows the binary does not embed draw their guests from —
+# so the set cleared and the set reported cannot fall behind the set actually
+# written. A list kept by hand here would be precisely the parallel list the core
+# plugin list exists to prevent.
+mapfile -t SOCKETS < <(while IFS=$'\x1f' read -r socket _; do [ -n "$socket" ] && printf '%s\n' "$socket"; done <<< "$rows" | sort -u)
+[ "${#SOCKETS[@]}" -gt 0 ] || { echo "gen-core-plugin-catalog: no plugin sockets declared in $CORE_PLUGIN_LIST" >&2; exit 1; }
 
 echo "=== build aggrega (generator binary) ==="
 _ver="$(git describe --tags --always 2>/dev/null || echo dev)"; _ver="${_ver#v}"
@@ -66,6 +71,8 @@ echo "=== generate core plugin catalog entities ==="
 "$BIN" plugin gen-catalog --from-embedded \
   --overlay "$OVERLAY_DIR" \
   --output-dir "$OUTPUT_DIR"
+echo "=== generate the entities of the core plugins the binary does not embed ==="
+core_plugin_generate_unembedded "$BIN" "$OVERLAY_DIR" "$OUTPUT_DIR"
 
 _socket_list="$(IFS=,; echo "${SOCKETS[*]}")"
 echo "=== done: entities under $OUTPUT_DIR/{$_socket_list} ==="

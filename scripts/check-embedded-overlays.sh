@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/check-embedded-overlays.sh
 #
-# Asserts that every embedded plugin declared in the embedded-plugin manifest is
-# consistent with the sibling aggrega-hub catalog inputs and outputs. For each
-# manifest entry it checks:
+# Asserts that every core plugin declared in the core-plugin list is consistent
+# with the sibling aggrega-hub catalog inputs and outputs, whether or not the
+# binary embeds it. For each list entry it checks:
 #   (a) a matching authored overlay is present under plugin-overlays/,
-#   (b) its embedded assets (the gzip-compressed guest and its describe()
-#       descriptor) are present,
+#   (b) its built assets (the gzip-compressed guest and its describe()
+#       descriptor, in the entry's artifact directory) are present,
 #   (c) the committed core-plugin catalog carries a version directory matching
 #       the current compiler build version, and
 #   (d) the contract the committed catalog publishes for a plugin still says what
@@ -88,11 +88,11 @@ for arg in "$@"; do
   esac
 done
 
-MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
-EMBED_DIR="internal/wasm/embedded/plugins"
+# The core-plugin list's one reader: core_plugin_rows and the artifact directories.
+. scripts/lib/core-plugins.sh
+rows="$(core_plugin_rows)" || exit 1
 OVERLAY_DIR="$HUB/plugin-overlays"
 CATALOG_DIR="$HUB/aggrega-catalog/plugin"
-[ -f "$MANIFEST" ] || { echo "check-embedded-overlays: manifest not found: $MANIFEST" >&2; exit 1; }
 [ -d "$HUB" ] || { echo "check-embedded-overlays: aggrega-hub not found at $HUB" >&2; exit 1; }
 
 # BUILD_VER is the version check (c) EXPECTS to find as a committed version
@@ -347,8 +347,8 @@ declare -a contract_uncompared=()
 contract_declared=0
 contract_compared=0
 
-while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
-  case "$socket" in ''|'#'*) continue;; esac
+while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
+  [ -n "$socket" ] || continue
   entry_ok=1
 
   # (a) authored overlay present.
@@ -358,11 +358,11 @@ while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
     missing+=("$socket/$name"); entry_ok=0
   fi
 
-  # (b) embedded assets present.
-  wasmgz="$EMBED_DIR/$name.wasm.gz"
-  desc="$EMBED_DIR/$name.describe.json"
+  # (b) built assets present, in the entry's artifact directory.
+  wasmgz="$dir/$name.wasm.gz"
+  desc="$dir/$name.describe.json"
   if [ ! -f "$wasmgz" ]; then
-    echo "MISSING  $socket/$name — no embedded artifact $wasmgz"
+    echo "MISSING  $socket/$name — no built artifact $wasmgz"
     missing+=("$socket/$name"); entry_ok=0
   fi
   if [ ! -f "$desc" ]; then
@@ -424,14 +424,14 @@ while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
   fi
 
   [ "$entry_ok" = 1 ] && echo "ok       $socket/$name"
-done < "$MANIFEST"
+done <<< "$rows"
 
 status=0
 if [ "${#missing[@]}" -gt 0 ]; then
   echo
-  echo "embedded plugins missing an overlay or artifact: ${missing[*]}"
+  echo "core plugins missing an overlay or artifact: ${missing[*]}"
   echo "author the overlay under aggrega-hub/plugin-overlays/, and rebuild the"
-  echo "embedded guests (go generate ./internal/wasm/embedded/... or ./scripts/build.sh)"
+  echo "core guests (go generate ./internal/wasm/embedded/... or ./scripts/build.sh)"
   status=1
 fi
 

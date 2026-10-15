@@ -11,9 +11,11 @@
 # work-list:
 #
 #   enumerate-embedded --entities-dir <dir> --wasm-dir <dir>
-#       Publish the entities a `aggrega plugin gen-catalog --from-embedded` run
-#       wrote under <entities-dir>, each paired with its decompressed guest in
-#       <wasm-dir>. This is exactly the set of guests built into the binary.
+#       Publish the core plugin entities a release generated under
+#       <entities-dir> — `aggrega plugin gen-catalog --from-embedded` for the
+#       guests built into the binary, and the same generation per guest for the
+#       core plugins built without being embedded — each paired with its
+#       decompressed guest in <wasm-dir>.
 #
 #   glob-dir <dir> [--wasm-dir <dir>]
 #       Publish every Plugin entity YAML found under <dir>. Each entity's guest is
@@ -233,7 +235,7 @@ pair_path() {
 FILES=()
 case "$MODE" in
   enumerate-embedded)
-    [ -n "$ENTITIES_DIR" ] || { echo "publish-plugins: enumerate-embedded requires --entities-dir <dir> (a 'aggrega plugin gen-catalog --from-embedded' output)" >&2; exit 2; }
+    [ -n "$ENTITIES_DIR" ] || { echo "publish-plugins: enumerate-embedded requires --entities-dir <dir> (the core plugin entities a release generated)" >&2; exit 2; }
     [ -n "$WASM_DIR" ]     || { echo "publish-plugins: enumerate-embedded requires --wasm-dir <dir> (the decompressed guest set)" >&2; exit 2; }
     [ -d "$ENTITIES_DIR" ] || { echo "publish-plugins: entities dir not found: $ENTITIES_DIR" >&2; exit 1; }
     while IFS= read -r f; do FILES+=("$f"); done < <(find "$ENTITIES_DIR" -name '*.yaml' | sort)

@@ -1,10 +1,14 @@
-# Embedded-plugin manifest — the single declarative source naming which Wasm
-# plugins ship inside the CLI binary. This file is read by the embedded package
-# (to build its registry table) and by the embedded build, freshness-check, and
-# drift-guard scripts, so the embedded set is authored exactly once and the
-# parallel lists cannot drift apart.
+# Core-plugin list — the single declarative source naming the compiler's core
+# Wasm plugins and whether the CLI binary embeds each. Every plugin listed is
+# built and stamped at the compiler's version, has its Plugin entity generated
+# and is published with each compiler release; a plugin the binary does not
+# embed differs from the rest only there. This file is read by the embedded
+# package (to build its registry table, from the rows it embeds) and, through
+# scripts/lib/core-plugins.sh, by the guest build, the freshness and drift
+# checks, the overlay check, the entity generation and the release workflow, so
+# the set is authored exactly once and no parallel list can drift from it.
 #
-# One row per embedded plugin. Fields are tab-separated; blank lines and lines
+# One row per core plugin. Fields are tab-separated; blank lines and lines
 # beginning with # are ignored. Fields:
 #   socket      plugin socket (provider, linter, ...) — first URI path segment
 #   name        plugin name — second URI path segment and artifact basename
@@ -12,9 +16,14 @@
 #   toolchain   guest toolchain: go or rust
 #   extraRoots  comma-separated extra source roots for the freshness check
 #               (e.g. a local SDK crate); empty for go guests
+#   embed       empty or absent: the binary embeds the plugin; `no`: it is
+#               built, stamped, generated and published, and never embedded.
+#               No other value is accepted. Written only where it is `no`.
 #
-# The registry key is the plugin's bare identity {socket}/{name}; the embedded
-# assets are plugins/{name}.wasm.gz and plugins/{name}.describe.json.
+# The registry key is the plugin's bare identity {socket}/{name}. An embedded
+# plugin's artifacts are plugins/{name}.wasm.gz, plugins/{name}.describe.json and
+# plugins/{name}.plugin.yaml; a plugin the binary does not embed has the same
+# three under published-only/, which nothing embeds.
 provider	helm	./plugins/helm-provider	go
 provider	compose	./plugins/compose-provider	go
 provider	helm-chart	./plugins/helmchart-provider	go
@@ -29,3 +38,5 @@ governance	label-injector	./plugins/label-injector-mutator	go
 governance	selector-tagger	./plugins/selector-tagger-mutator	go
 governance	rego	plugins/rego-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore
 governance	cel	plugins/cel-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore
+importer	langflow	./plugins/langflow-importer	go		no
+importer	flowise	./plugins/flowise-importer	go		no

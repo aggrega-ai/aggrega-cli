@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/check-embedded-guests.sh
 #
-# Fails when any embedded provider guest under
-# internal/wasm/embedded/plugins/<name>.wasm.gz is missing, or older than the
-# newest source file it is built from.
+# Fails when any core guest — under internal/wasm/embedded/plugins/<name>.wasm.gz
+# for a plugin the binary embeds, under
+# internal/wasm/embedded/published-only/<name>.wasm.gz for one it does not — is
+# missing, or older than the newest source file it is built from.
 #
 # The embedded guests are reproducible build outputs regenerated from guest
 # source (see the build-embedded-*.sh scripts, run by
@@ -34,9 +35,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
-EMBED_DIR="internal/wasm/embedded/plugins"
-[ -f "$MANIFEST" ] || { echo "check-embedded-guests: manifest not found: $MANIFEST" >&2; exit 1; }
+# The core-plugin list's one reader: core_plugin_rows and the artifact directories.
+. scripts/lib/core-plugins.sh
+rows="$(core_plugin_rows)" || exit 1
 REBUILD_HINT="rebuild with: go generate ./internal/wasm/embedded/... && go build   (or ./scripts/build.sh from the umbrella root, which needs no separate generate step)"
 
 MODCACHE="$(go env GOMODCACHE)"
@@ -56,11 +57,11 @@ list_go_sources() {
     | grep -v "^$MODCACHE" | grep -v "^$GOROOT_DIR"
 }
 
-# check_go_guest NAME PKG — flags NAME when its artifact is missing or older than
-# any Go source file compiled into the guest built from PKG.
+# check_go_guest NAME PKG DIR — flags NAME when its artifact DIR/NAME.wasm.gz is
+# missing or older than any Go source file compiled into the guest built from PKG.
 check_go_guest() {
-  local name="$1" pkg="$2"
-  local artifact="$EMBED_DIR/$name.wasm.gz"
+  local name="$1" pkg="$2" dir="$3"
+  local artifact="$dir/$name.wasm.gz"
   if [ ! -f "$artifact" ]; then
     echo "STALE  $name — missing artifact $artifact"
     stale+=("$name")
@@ -83,13 +84,13 @@ check_go_guest() {
   fi
 }
 
-# check_rust_guest NAME ROOT... — flags NAME when its artifact is missing or
-# older than any source file under the given roots, excluding cargo build
-# directories.
+# check_rust_guest NAME DIR ROOT... — flags NAME when its artifact
+# DIR/NAME.wasm.gz is missing or older than any source file under the given
+# roots, excluding cargo build directories.
 check_rust_guest() {
-  local name="$1"; shift
+  local name="$1" dir="$2"; shift 2
   local roots=("$@")
-  local artifact="$EMBED_DIR/$name.wasm.gz"
+  local artifact="$dir/$name.wasm.gz"
   if [ ! -f "$artifact" ]; then
     echo "STALE  $name — missing artifact $artifact"
     stale+=("$name")
@@ -105,17 +106,17 @@ check_rust_guest() {
   fi
 }
 
-# Walk the embedded-plugin manifest — the one declarative source of which plugins
-# ship inside the binary and where each guest's source lives — and check every
-# entry against its artifact. A go guest is checked against its compiled Go
-# sources; a rust guest against its crate directory plus any extra source roots
-# (its local SDK crate). Reading the manifest here keeps this guard in lockstep
-# with the build script and the registry table.
-while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
-  case "$socket" in ''|'#'*) continue;; esac
+# Walk the core-plugin list — the one declarative source of the core plugins,
+# where each guest's source lives and whether the binary embeds it — and check
+# every entry against its artifact, in its row's directory. A go guest is checked
+# against its compiled Go sources; a rust guest against its crate directory plus
+# any extra source roots (its local SDK crate). Reading the list here keeps this
+# guard in lockstep with the build script and the registry table.
+while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
+  [ -n "$socket" ] || continue
   case "$toolchain" in
     go)
-      check_go_guest "$name" "$sourcePath"
+      check_go_guest "$name" "$sourcePath" "$dir"
       ;;
     rust)
       roots=("$sourcePath")
@@ -123,21 +124,21 @@ while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
         IFS=',' read -ra extra <<< "$extraRoots"
         roots+=("${extra[@]}")
       fi
-      check_rust_guest "$name" "${roots[@]}"
+      check_rust_guest "$name" "$dir" "${roots[@]}"
       ;;
     *)
       echo "check-embedded-guests: unknown toolchain '$toolchain' for $name" >&2
       exit 1
       ;;
   esac
-done < "$MANIFEST"
+done <<< "$rows"
 
 if [ "${#stale[@]}" -gt 0 ]; then
   echo
-  echo "embedded guests stale or missing: ${stale[*]}"
+  echo "core guests stale or missing: ${stale[*]}"
   echo "$REBUILD_HINT"
   exit 1
 fi
 
 echo
-echo "all embedded guests fresh"
+echo "all core guests fresh"

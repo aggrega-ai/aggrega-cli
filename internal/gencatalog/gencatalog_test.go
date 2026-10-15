@@ -236,9 +236,9 @@ func TestGenCatalogIdempotent(t *testing.T) {
 }
 
 // TestGenCatalogDescriptionOmittedWhenAbsent asserts the plugin-level
-// description is omitted cleanly when the guest reports none. No embedded guest
-// reports one today, so every generated entity must carry no metadata.description
-// — proving the command builds and runs correctly ahead of that field landing.
+// description of every entity --from-embedded generates follows its guest: the
+// description the guest reports, and none — omitted cleanly — where the guest
+// reports none.
 func TestGenCatalogDescriptionOmittedWhenAbsent(t *testing.T) {
 	overlayDir := t.TempDir()
 	outDir := t.TempDir()
@@ -264,6 +264,52 @@ func TestGenCatalogDescriptionOmittedWhenAbsent(t *testing.T) {
 		if description != "" && entity.Metadata.Description != description {
 			t.Errorf("%s: description = %q, want guest value %q", uri, entity.Metadata.Description, description)
 		}
+	}
+}
+
+// TestGenCatalogFromOneGuestCarriesTheDescriptionItReports drives --plugin over
+// a single guest read from disk and asserts its entity carries the plugin-level
+// description the guest reports through describe() — the description an entity
+// generated --from-embedded carries for the same guest. A core plugin the binary
+// does not embed is generated this way, so its published entity would otherwise
+// carry no description where every embedded core plugin's does. The guest is the
+// embedded JSON parser's, written out, because it reports a description: the
+// assertion is then able to fail.
+func TestGenCatalogFromOneGuestCarriesTheDescriptionItReports(t *testing.T) {
+	const uri = "parser/json"
+	raw, ok := embedded.LookupDescriptor(uri)
+	if !ok {
+		t.Fatalf("no embedded descriptor for %s (build the guests first)", uri)
+	}
+	desc, want, err := entitysynth.ParseDescriptorJSON(raw)
+	if err != nil {
+		t.Fatalf("parse descriptor for %s: %v", uri, err)
+	}
+	if want == "" {
+		t.Fatalf("%s reports no description, so the assertion could not fail; pick a guest that reports one", uri)
+	}
+	if desc.Metadata == nil || desc.Metadata.Version == "" {
+		t.Fatalf("embedded guest %s reports no describe() version", uri)
+	}
+	guest, ok := embedded.Lookup(uri)
+	if !ok {
+		t.Fatalf("no embedded guest for %s", uri)
+	}
+
+	dir := t.TempDir()
+	wasmPath := filepath.Join(dir, "json.wasm")
+	writeFixture(t, wasmPath, string(guest))
+	overlay := filepath.Join(dir, "json.yaml")
+	writeFixture(t, overlay, "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: json\n")
+	outDir := t.TempDir()
+
+	opts := Options{PluginPath: wasmPath, OutputDir: outDir, OverlayPath: overlay}
+	if err := Run(context.Background(), opts, &bytes.Buffer{}); err != nil {
+		t.Fatalf("gen-catalog --plugin: %v", err)
+	}
+	entity := readGeneratedEntity(t, outDir, uri, desc.Metadata.Version)
+	if entity.Metadata.Description != want {
+		t.Errorf("metadata.description = %q; want the guest's %q", entity.Metadata.Description, want)
 	}
 }
 

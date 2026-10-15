@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/build-embedded-plugins.sh
 #
-# Rebuilds the embedded Wasm guests from source, writes each gzip-compressed to
-# its embed path, extracts its describe() descriptor, and prints the uncompressed
-# content digest. This is the single build entry point for every embedded plugin:
-# it reads the embedded-plugin manifest (the one declarative source of which
-# plugins ship inside the binary) and branches on each row's toolchain, so the
-# set of embedded guests is authored exactly once and cannot drift from the
-# registry table or the freshness and drift guards.
+# Rebuilds the core Wasm guests from source, writes each gzip-compressed to its
+# row's artifact directory, extracts its describe() descriptor, and prints the
+# uncompressed content digest. This is the single build entry point for every
+# core plugin: it reads the core-plugin list (the one declarative source of the
+# core plugins and of whether the binary embeds each) through
+# scripts/lib/core-plugins.sh and branches on each row's toolchain, so the set of
+# core guests is authored exactly once and cannot drift from the registry table
+# or the freshness and drift guards. A guest the binary embeds is written under
+# internal/wasm/embedded/plugins/, which the binary embeds whole; one it does not
+# embed is built and stamped the same way and written under
+# internal/wasm/embedded/published-only/, which nothing embeds.
 #
 # The build is reproducible per commit. Go guests use GOWORK=off, -trimpath,
 # -buildid=, -buildvcs=false, and gzip -n to strip build-path, build-id, and
@@ -33,14 +37,14 @@
 # reported for reproducibility confirmation only.
 #
 # Usage:
-#   build-embedded-plugins.sh            # rebuild every manifest entry
+#   build-embedded-plugins.sh            # rebuild every core-plugin list entry
 #   build-embedded-plugins.sh NAME...    # rebuild only the named entries
 set -euo pipefail
 cd "$(dirname "$0")/.."          # aggrega-cli module root
 
-MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
-EMBED_DIR="internal/wasm/embedded/plugins"
-[ -f "$MANIFEST" ] || { echo "build-embedded-plugins: manifest not found: $MANIFEST" >&2; exit 1; }
+# The core-plugin list's one reader: core_plugin_rows and the artifact directories.
+. scripts/lib/core-plugins.sh
+rows="$(core_plugin_rows)" || exit 1
 
 # Build-provenance stamps (_ver, _sha) from the one shared recipe, computed once
 # and shared by every entry so a single rebuild pass stamps a consistent version
@@ -63,11 +67,11 @@ want() {
   return 1
 }
 
-# build_go NAME SOURCEPATH — compile the wasip1 guest from SOURCEPATH, gzip it to
-# the embed path, and extract its describe() descriptor.
+# build_go NAME SOURCEPATH DIR — compile the wasip1 guest from SOURCEPATH, gzip
+# it to DIR/NAME.wasm.gz, and extract its describe() descriptor beside it.
 build_go() {
-  local name="$1" src="$2"
-  local embed="$EMBED_DIR/$name.wasm.gz" wasm="$TMP/$name.wasm"
+  local name="$1" src="$2" dir="$3"
+  local embed="$dir/$name.wasm.gz" wasm="$TMP/$name.wasm"
   echo "=== build $name (go: GOOS=wasip1 GOARCH=wasm) ==="
   GOWORK=off GOOS=wasip1 GOARCH=wasm go build -trimpath \
     -ldflags "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=$_ver -X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Commit=$_sha -buildid=" \
@@ -136,10 +140,10 @@ rust_guest_flags() {
   printf '%s' "${flags[*]}"
 }
 
-# build_rust NAME SOURCEPATH — compile the wasm32-wasip1 crate at SOURCEPATH,
-# gzip it to the embed path, and extract its describe() descriptor. The built
-# artifact name is the crate directory basename with dashes mapped to
-# underscores (cargo's library-name convention).
+# build_rust NAME SOURCEPATH DIR — compile the wasm32-wasip1 crate at
+# SOURCEPATH, gzip it to DIR/NAME.wasm.gz, and extract its describe() descriptor
+# beside it. The built artifact name is the crate directory basename with dashes
+# mapped to underscores (cargo's library-name convention).
 #
 # cargo runs with the crate directory as its working directory, which is how a
 # developer builds one of these crates by hand. It matters because rustup selects
@@ -152,8 +156,8 @@ rust_guest_flags() {
 # physical parent of the module root, where cargo resolves the kits, so it is
 # unchanged by where cargo runs.
 build_rust() {
-  local name="$1" crate="$2"
-  local embed="$EMBED_DIR/$name.wasm.gz" workspace
+  local name="$1" crate="$2" dir="$3"
+  local embed="$dir/$name.wasm.gz" workspace
   workspace="$(cd .. && pwd -P)"
   local built="$crate/target/wasm32-wasip1/release/$(basename "$crate" | tr - _).wasm"
   echo "=== build $name (rust: cargo --target wasm32-wasip1) ==="
@@ -186,19 +190,20 @@ compress_and_describe() {
   echo "uncompressed content digest: $digest"
 }
 
-while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
-  case "$socket" in ''|'#'*) continue;; esac
+while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
+  [ -n "$socket" ] || continue
   want "$name" || continue
+  mkdir -p "$dir"
   case "$toolchain" in
-    go)   build_go   "$name" "$sourcePath" ;;
-    rust) build_rust "$name" "$sourcePath" ;;
+    go)   build_go   "$name" "$sourcePath" "$dir" ;;
+    rust) build_rust "$name" "$sourcePath" "$dir" ;;
     *)    echo "build-embedded-plugins: unknown toolchain '$toolchain' for $name" >&2; exit 1 ;;
   esac
   built+=("$name")
-done < "$MANIFEST"
+done <<< "$rows"
 
 if [ "${#SELECT[@]}" -gt 0 ] && [ "${#built[@]}" -ne "${#SELECT[@]}" ]; then
-  echo "build-embedded-plugins: some requested entries were not in the manifest: ${SELECT[*]}" >&2
+  echo "build-embedded-plugins: some requested entries were not in the core-plugin list: ${SELECT[*]}" >&2
   exit 1
 fi
-echo "=== rebuilt embedded guests: ${built[*]} ==="
+echo "=== rebuilt core guests: ${built[*]} ==="

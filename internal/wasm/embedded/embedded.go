@@ -20,10 +20,12 @@
 // and independently of the configured registry, and a rebuild of the embedded
 // bytes does not perturb the lookup key: the reference digest is derived from the
 // bytes on demand where a caller needs it. Adding another embedded plugin is a
-// drop-in: add a row to the embedded-plugin manifest (embedded-plugins.tsv) — the
-// single declarative source the registry table, the build script, and the
-// freshness and drift guards all read — so its gzip-compressed .wasm lands under
-// plugins/ and registers automatically.
+// drop-in: add a row to the core-plugin list (embedded-plugins.tsv) — the single
+// declarative source the registry table, the build script, and the freshness and
+// drift guards all read — so its gzip-compressed .wasm lands under plugins/ and
+// registers automatically. A row whose embed field is "no" is a core plugin the
+// binary does not carry: the scripts build and publish it, and its artifacts are
+// written beside plugins/ rather than under it, so pluginFS never takes them in.
 //
 // Freshness caveat: a plain go build does not regenerate these artifacts — it
 // embeds whatever .wasm.gz already sit under plugins/ from an earlier build,
@@ -104,17 +106,36 @@ func embeddedArtifacts() []embeddedArtifact {
 	return parseManifest(manifestTSV)
 }
 
+// embedField is the zero-based index of the core-plugin list's sixth field,
+// which says whether the binary embeds the row's plugin: empty or absent means
+// it does, notEmbedded means it does not.
+const embedField = 5
+
+// notEmbedded is the one value of the embed field that keeps a core plugin out
+// of the binary. The plugin is still built, stamped, generated and published by
+// the scripts that read the same list (scripts/lib/core-plugins.sh); it is only
+// never registered here, and its artifacts are written where pluginFS does not
+// reach.
+const notEmbedded = "no"
+
 // parseManifest derives the embedded-artifact table from the tab-separated
-// embedded-plugin manifest. It ignores blank lines and #-prefixed comments and
-// reads the socket (field 1) and name (field 2) from each remaining row, from
-// which the repository reference and asset paths are computed. The later fields
-// (source path, toolchain, extra roots) drive the build and freshness scripts,
-// not the registry, so they are ignored here.
+// core-plugin list. It ignores blank lines and #-prefixed comments and reads the
+// socket (field 1) and name (field 2) from each remaining row, from which the
+// repository reference and asset paths are computed, and the embed field (field
+// 6), which leaves out a row the binary does not embed. The fields between (source
+// path, toolchain, extra roots) drive the build and freshness scripts, not the
+// registry, so they are ignored here.
 //
-// A malformed or empty manifest is a build-of-the-binary defect — the file is
+// The scripts read the list through one shell reader, and a test holds that
+// reader and this function to the same answer over shared fixtures, so the two
+// readings of the embed field cannot come apart.
+//
+// A malformed or empty list is a build-of-the-binary defect — the file is
 // embedded at compile time and drives the scripts that produce the assets — so
 // this panics rather than returning an error, mirroring the mustRead and
-// mustDecompress contracts for the embedded bytes themselves.
+// mustDecompress contracts for the embedded bytes themselves. An embed value
+// other than empty or notEmbedded is malformed: read as either, a typo would
+// silently embed a plugin or drop one.
 func parseManifest(b []byte) []embeddedArtifact {
 	var out []embeddedArtifact
 	for _, raw := range strings.Split(string(b), "\n") {
@@ -124,11 +145,20 @@ func parseManifest(b []byte) []embeddedArtifact {
 		}
 		fields := strings.Split(line, "\t")
 		if len(fields) < 2 {
-			panic("plugin/embedded: malformed embedded-plugin manifest row: " + line)
+			panic("plugin/embedded: malformed core-plugin list row: " + line)
 		}
 		socket, name := strings.TrimSpace(fields[0]), strings.TrimSpace(fields[1])
 		if socket == "" || name == "" {
-			panic("plugin/embedded: embedded-plugin manifest row missing socket or name: " + line)
+			panic("plugin/embedded: core-plugin list row missing socket or name: " + line)
+		}
+		if len(fields) > embedField {
+			switch strings.TrimSpace(fields[embedField]) {
+			case "":
+			case notEmbedded:
+				continue
+			default:
+				panic("plugin/embedded: core-plugin list row has an embed field other than empty or " + notEmbedded + ": " + line)
+			}
 		}
 		out = append(out, embeddedArtifact{
 			uri:        socket + "/" + name,
@@ -138,7 +168,7 @@ func parseManifest(b []byte) []embeddedArtifact {
 		})
 	}
 	if len(out) == 0 {
-		panic("plugin/embedded: embedded-plugin manifest declares no plugins")
+		panic("plugin/embedded: core-plugin list declares no plugin the binary embeds")
 	}
 	return out
 }

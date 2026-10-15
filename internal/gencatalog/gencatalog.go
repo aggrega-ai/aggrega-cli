@@ -238,12 +238,11 @@ func composeFromPlugin(ctx context.Context, opts Options) ([]authoredcontent.Doc
 	if err != nil {
 		return nil, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}
-	// A single .wasm has no repository identity of its own; the loader-returned
-	// descriptor carries no plugin-level description field until the ABI grows
-	// one, so the single-guest path emits a description only once that field
-	// lands. The embedded path reads the description from the build-extracted
-	// descriptor JSON.
-	doc, err := composeEntity(opts.OutputDir, desc, "", hostFunctions, overlay, opts.PluginPath)
+	// The plugin-level description is the one the guest reports through
+	// describe(), as the embedded path reads it from the build-extracted
+	// descriptor JSON, so an entity generated from a single guest carries the
+	// same description an embedded guest's entity would.
+	doc, err := composeEntity(opts.OutputDir, desc, desc.Description, hostFunctions, overlay, opts.PluginPath)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +325,7 @@ func embeddedDescriptor(ctx context.Context, uri string) (wasm.PluginDescriptor,
 	if err != nil {
 		return wasm.PluginDescriptor{}, "", err
 	}
-	return desc, "", nil
+	return desc, desc.Description, nil
 }
 
 // describeWasmBytes loads a guest from bytes and returns its validated describe()

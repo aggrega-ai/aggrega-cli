@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/check-embedded-plugin-entities.sh
 #
-# Fails when any embedded plugin's generated entity under
-# internal/wasm/embedded/plugins/<name>.plugin.yaml is missing, older than an
-# input it is generated from — the guest's describe() descriptor (the
+# Fails when any core plugin's generated entity beside its guest — under
+# internal/wasm/embedded/plugins/<name>.plugin.yaml for a plugin the binary
+# embeds, under internal/wasm/embedded/published-only/ for one it does not — is
+# missing, older than an input it is generated from — the guest's describe() descriptor (the
 # machine-derived contract half) or the authored overlay (the identity / runtime
 # / provider half) — or declaring a version its guest does not report. The
 # embedded entity is what a no-local-catalog build resolves a core provider from
@@ -47,9 +48,9 @@ cd "$(dirname "$0")/.."          # aggrega-cli module root
 UMBRELLA="$(cd ../ && pwd)"
 OVERLAY_DIR="$UMBRELLA/aggrega-hub/plugin-overlays"
 
-MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
-EMBED_DIR="internal/wasm/embedded/plugins"
-[ -f "$MANIFEST" ] || { echo "check-embedded-plugin-entities: manifest not found: $MANIFEST" >&2; exit 1; }
+# The core-plugin list's one reader: core_plugin_rows and the artifact directories.
+. scripts/lib/core-plugins.sh
+rows="$(core_plugin_rows)" || exit 1
 REBUILD_HINT="rebuild with: ./scripts/gen-embedded-plugin-entities.sh   (or ./scripts/build.sh, which regenerates when stale)"
 
 have_overlays=1
@@ -81,16 +82,16 @@ guest_version() {
   sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "$1" | head -1
 }
 
-while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
-  case "$socket" in ''|'#'*) continue;; esac
-  entity="$EMBED_DIR/$name.plugin.yaml"
+while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
+  [ -n "$socket" ] || continue
+  entity="$dir/$name.plugin.yaml"
   if [ ! -f "$entity" ]; then
     echo "STALE  $socket/$name — missing entity $entity"
     stale+=("$name")
     continue
   fi
   newer=""
-  desc="$EMBED_DIR/$name.describe.json"
+  desc="$dir/$name.describe.json"
   newer="$(newer_input "$entity" "$desc")"
   if [ -z "$newer" ] && [ "$have_overlays" = 1 ]; then
     newer="$(newer_input "$entity" "$OVERLAY_DIR/$socket/$name.yaml")"
@@ -115,7 +116,7 @@ while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
     continue
   fi
   echo "fresh  $socket/$name"
-done < "$MANIFEST"
+done <<< "$rows"
 
 if [ "$have_overlays" = 0 ]; then
   echo "note: aggrega-hub sibling absent — overlay-currency half of the entity check skipped"
@@ -123,10 +124,10 @@ fi
 
 if [ "${#stale[@]}" -gt 0 ]; then
   echo
-  echo "embedded plugin entities stale or missing: ${stale[*]}"
+  echo "core plugin entities stale or missing: ${stale[*]}"
   echo "$REBUILD_HINT"
   exit 1
 fi
 
 echo
-echo "all embedded plugin entities fresh"
+echo "all core plugin entities fresh"
