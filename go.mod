@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/aggrega-ai/aggrega-abi-go v0.4.4
+	github.com/aggrega-ai/aggrega-abi-go v0.4.5
 	github.com/aggrega-ai/aggrega-pdk-go v0.3.3
 	github.com/aggrega-ai/aggrega-schemas v0.12.4
 	github.com/awslabs/goformation/v7 v7.14.9
