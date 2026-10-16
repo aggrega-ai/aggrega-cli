@@ -273,10 +273,11 @@ func parseOnce(ctx context.Context, syntax, name string, content []byte, seam Se
 	if src, done := parsed[key]; done {
 		return src, nil
 	}
-	if seam.ParserRes == nil || seam.ParserLoad == nil {
+	load := seam.parserLoader(ctx)
+	if seam.ParserRes == nil || load == nil {
 		return parsedSource{}, fmt.Errorf("no parser resolution is wired for the %s syntax", syntax)
 	}
-	out, err := parsersocket.ParseArtifact(ctx, seam.ParserRes, seam.ParserLoad, syntax, content, nil)
+	out, err := parsersocket.ParseArtifact(ctx, seam.ParserRes, load, syntax, content, nil)
 	if err != nil {
 		return parsedSource{}, err
 	}

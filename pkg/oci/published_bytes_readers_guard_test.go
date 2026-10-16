@@ -103,6 +103,7 @@ var publishedByteReaders = map[string]string{
 	"pkg/pluginpath.Resolver.ResolveContext":                   "a plugin .wasm artifact from its cache slot; never an entity document",
 	"internal/pullops.verifyCachedVerdictSocketPlugin":         "a plugin .wasm artifact from its cache slot; never an entity document",
 	"internal/pullops.verifyPluginHostFunctions":               "a plugin .wasm artifact re-derived against its stamp; never an entity document",
+	"internal/importops.acquireCarriedImporter":                "a core importer's plugin .wasm artifact, held to the digest the binary carries for it and verified before it is written to the content cache; never an entity document",
 	"cmd/aggrega.productionInstallPluginFetch":                 "a plugin artifact fetched for installation; never an entity document",
 	"pkg/docscache.ResolveAndCache":                            "a documentation bundle, refused unless it carries the docs mediatype; never an entity document",
 	"pkg/externalinputs.Service.ociPull":                       "an external input artifact; never an entity document",

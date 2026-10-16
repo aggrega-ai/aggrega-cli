@@ -35,6 +35,10 @@ import (
 // Importers is empty when neither the catalog nor the binary holds an importer,
 // and a harness standing in for the catalog supplies the entities whose
 // signatures it wants read, so one that supplies none recognises no source.
+//
+// ImporterLoad and ParserLoad are where a harness standing in for the seam
+// supplies its loaders. The real seam leaves both nil and loads through its one
+// loader, bound to the context of the import that runs it.
 type Seam struct {
 	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
@@ -43,21 +47,30 @@ type Seam struct {
 	Catalog      *abi.CatalogProjection
 	Importers    []types.Plugin
 
-	// importerLoadIn is the importer loader of the real seam bound to the context
-	// of the import that runs it, so the one step of an import that can reach a
-	// registry — acquiring a core importer the machine does not hold — ends with
-	// the import that asked for it. A harness standing in for the seam leaves it
-	// nil, and its ImporterLoad is what runs.
-	importerLoadIn func(ctx context.Context) func(types.Plugin) (wasm.PluginSpec, error)
+	// loadIn is the one loader of the real seam, serving both sockets, bound to
+	// the context of the import that runs it, so the one step of an import that
+	// can reach a registry — acquiring a core importer the machine does not hold —
+	// ends with the import that asked for it. A harness standing in for the seam
+	// leaves it nil, and its ImporterLoad and ParserLoad are what run.
+	loadIn func(ctx context.Context) func(types.Plugin) (wasm.PluginSpec, error)
 }
 
 // importerLoader returns the loader an import under ctx runs its importer
 // through: the real seam's, bound to ctx, or a harness's ImporterLoad.
 func (s Seam) importerLoader(ctx context.Context) importersocket.ImporterLoader {
-	if s.importerLoadIn == nil {
+	if s.loadIn == nil {
 		return s.ImporterLoad
 	}
-	return s.importerLoadIn(ctx)
+	return s.loadIn(ctx)
+}
+
+// parserLoader returns the loader an import under ctx runs a parser through:
+// the real seam's, bound to ctx, or a harness's ParserLoad.
+func (s Seam) parserLoader(ctx context.Context) parsersocket.ParserLoader {
+	if s.loadIn == nil {
+		return s.ParserLoad
+	}
+	return s.loadIn(ctx)
 }
 
 // ImporterResolver resolves a requested source format to the importer that
@@ -159,6 +172,10 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	cat.UseCarriedImporterResolution()
 	colocated := cat.PluginColocatedDirs()
 
+	// One loader serves both sockets, and each import binds it to its own context
+	// at the call that loads a plugin. A parser is never a core importer, so
+	// loading one reaches no registry; a core importer the machine does not hold
+	// is fetched under that context, so the fetch ends with the import.
 	loadIn := func(ctx context.Context) func(types.Plugin) (wasm.PluginSpec, error) {
 		return func(p types.Plugin) (wasm.PluginSpec, error) {
 			if accepted, carried := cat.CarriedImporterDigest(p); carried {
@@ -171,17 +188,12 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 			return resolver.PluginSpec(p.Coordinate(), resolved), nil
 		}
 	}
-	// A parser is never a core importer, so loading one reaches no registry and
-	// has no import's context to end with.
-	load := loadIn(context.Background())
 	return Seam{
-		ImporterRes:    cat,
-		ImporterLoad:   load,
-		ParserRes:      cat,
-		ParserLoad:     load,
-		Catalog:        importersocket.ProjectCatalog(cat),
-		Importers:      cat.ImporterPlugins(),
-		importerLoadIn: loadIn,
+		ImporterRes: cat,
+		ParserRes:   cat,
+		Catalog:     importersocket.ProjectCatalog(cat),
+		Importers:   cat.ImporterPlugins(),
+		loadIn:      loadIn,
 	}, nil
 }
 
