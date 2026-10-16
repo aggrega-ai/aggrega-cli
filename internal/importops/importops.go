@@ -16,7 +16,7 @@
 // format it advertises — among several advertisers, by the attachment naming
 // it — an attachment's inputs reach the importer it names and no other, and the
 // source format is either named outright or recognised by the signatures the
-// catalog's importers declare. That is a format-detection and
+// importers it resolves among declare. That is a format-detection and
 // plugin-selection surface, and drafting a starter document from a kind's schema
 // — the other capability that produces authoring files — has no use for any of
 // it: one converts something that already exists in a foreign format, the other
@@ -127,9 +127,9 @@ type PluginBytesResolver func(rw *workspaceconfig.ResolvedWorkspace, uri string,
 // A nil workspace here is a reachable, user-facing condition rather than a
 // wiring error: an import run outside any workspace resolves no configuration,
 // so there is no catalog to select an importer from. The sentence therefore
-// names what the reader has to change — being in a workspace whose catalog holds
-// an importer plugin advertising the source's format, which is how an importer is
-// selected — rather than reporting an internal fault.
+// names what the reader has to change — being in a workspace, whose catalog and
+// the compiler's core importers are where an importer advertising the source's
+// format is selected from — rather than reporting an internal fault.
 //
 // Resolving one here from the current directory would make the result depend on a
 // directory no caller named, which is exactly the dependency routing every
@@ -139,8 +139,8 @@ type PluginBytesResolver func(rw *workspaceconfig.ResolvedWorkspace, uri string,
 // condition for its own reader and never reaches this sentence.
 func workspaceOrRefuse(rw *workspaceconfig.ResolvedWorkspace) (*workspaceconfig.ResolvedWorkspace, error) {
 	if rw == nil {
-		return nil, fmt.Errorf("no workspace configuration resolved; run import from within a workspace whose catalog " +
-			"holds an importer plugin advertising the source's format")
+		return nil, fmt.Errorf("no workspace configuration resolved; run import from within a workspace, where an " +
+			"importer advertising the source's format is selected from its catalog and the compiler's core importers")
 	}
 	return rw, nil
 }

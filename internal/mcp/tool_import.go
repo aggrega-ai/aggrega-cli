@@ -28,7 +28,7 @@ const importToolName = "import"
 // Source names the file or the directory to convert, relative to the workspace
 // root or by absolute path, as every other path argument here is named. Format
 // names the source format outright; leaving it out recognises the format by the
-// signatures the importers in the workspace's catalog declare. DryRun does
+// signatures the importers declare, the core importers' included. DryRun does
 // everything the plain request
 // does except write, which is a property of the caller rather than of this
 // surface, so it is a request field rather than a second tool and it defaults
@@ -48,7 +48,7 @@ type importArgs struct {
 
 	// Format is a pointer so that a value a caller sent is distinguishable from
 	// one it left out. Absent means the format is recognised by the signatures the
-	// catalog's importers declare, which is this tool's default and not a failure; a value the
+	// importers declare, which is this tool's default and not a failure; a value the
 	// caller wrote and left blank is refused, because detecting instead would be
 	// an argument quietly substituted — and an argument quietly substituted
 	// reads to its sender exactly like one that was honoured. A plain string
@@ -205,7 +205,7 @@ var importToolSpec = toolSpec{
 	summary: "Turns a foreign source description into draft Aggrega authoring files, written into the workspace.",
 	description: "Turn a foreign source description — a flow or a service definition exported by another tool — " +
 		"into draft Aggrega authoring files, WRITTEN into the workspace this server serves. Pass `source`, the " +
-		"file or the directory to convert. The importer plugin in this workspace's catalog that advertises the " +
+		"file or the directory to convert. The importer plugin that advertises the " +
 		"source's format does the translation: it reads the source, drafts entities from it, and this writes what " +
 		"it produced, creating parent directories as needed. A directory — a chart or a project, say — is handed to " +
 		"the importer as exactly the files of it the importer's declared file patterns select, each named by its " +
@@ -215,18 +215,24 @@ var importToolSpec = toolSpec{
 		"the other tools here report a file under, and THERE IS NO ARGUMENT NAMING A DESTINATION — the drafts " +
 		"go into the workspace the call resolved, and nowhere else. The answer names that directory as " +
 		"`output_dir`, the one every drafted path is relative to, whether the file was written or handed back: " +
-		"it reports where the drafts went and chooses nothing. The workspace's catalog must hold an importer " +
-		"plugin that advertises the source's format, or the call is refused naming the capability no plugin " +
-		"advertises; nothing here ships one. A `plugins.importer` attachment whose `uri` names an importer " +
+		"it reports where the drafts went and chooses nothing. The importer is one this workspace's catalog " +
+		"holds or one of the compiler's core importers, which serve their formats in every workspace; a format " +
+		"no importer advertises is refused naming the capability no plugin advertises. A core importer this " +
+		"server's machine does not hold yet is fetched by the first import that needs it, from the workspace's " +
+		"default registry with this machine's own login, held to the module the compiler's release publishes " +
+		"and verified as a pull verifies a plugin, then kept in the workspace's content cache, so later imports " +
+		"reach no registry; nothing in the call names a registry or carries a credential. Where it cannot be " +
+		"fetched, the call is refused naming the importer, its version and what puts it on the machine. A " +
+		"`plugins.importer` attachment whose `uri` names an importer " +
 		"advertising the format, by identity and version, runs that importer at that version whatever other " +
 		"importer advertises the format too, and hands it — and no other importer — its `with.sources` and " +
-		"`with.settings`; where several advertise the format and no single one is attached, the call is " +
-		"refused naming them. " +
-		"Leave `format` out and the format is recognised by the signatures the importers in this workspace's " +
-		"catalog declare — the syntax a source is read in, the file names it applies to and the paths its parsed " +
-		"tree carries — reading the file named, or of a directory only the files a signature's file patterns " +
-		"select, and no network: a source no signature matches is refused asking for `format` and naming the " +
-		"formats the catalog's importers advertise, and a source " +
+		"`with.settings`; where several advertise the format and no single one is attached — a core importer " +
+		"and one of the catalog's among them — the call is refused naming them. " +
+		"Leave `format` out and the format is recognised by the signatures the importers declare — the syntax a " +
+		"source is read in, the file names it applies to and the paths its parsed tree carries — parsing through " +
+		"the parsers this workspace's catalog holds, reading the file named, or of a directory only the files a " +
+		"signature's file patterns select, and no network: a source no signature matches is refused asking for " +
+		"`format` and naming the formats the importers advertise, and a source " +
 		"signatures of more than one format match is refused naming them, rather than guessed at. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
@@ -249,7 +255,7 @@ var importToolSpec = toolSpec{
     "format": {
       "type": "string",
       "minLength": 1,
-      "description": "The source format, named outright — for example langflow or flowise. Leave it out and the format is recognised by the signatures the importers in the workspace's catalog declare."
+      "description": "The source format, named outright — for example langflow or flowise. Leave it out and the format is recognised by the signatures the importers declare, the workspace catalog's and the compiler's core importers' alike."
     },
     "dry_run": {
       "type": "boolean",
@@ -281,7 +287,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	if a.Format != nil {
 		if named = strings.TrimSpace(*a.Format); named == "" {
 			return errorResult(importToolName + " was sent a blank 'format'. Name the source format outright, " +
-				"or leave 'format' out altogether and it is recognised by the signatures the catalog's importers declare; " +
+				"or leave 'format' out altogether and it is recognised by the signatures the importers declare; " +
 				"a blank value is neither, so nothing was read and nothing was written.")
 		}
 	}
@@ -387,15 +393,15 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 // type is what keeps the two in step: a surface comparing the wording would keep
 // compiling and silently stop matching the first time either moved.
 //
-// The formats it names are read off the refusal itself — the ones the catalog's
-// importers advertise, or the ones the source was recognised as — so they are
-// the catalog's statement rather than a list of this surface's that would stop
-// being true the first time the catalog changed.
+// The formats it names are read off the refusal itself — the ones the importers
+// advertise, or the ones the source was recognised as — so they are the import's
+// statement rather than a list of this surface's that would stop being true the
+// first time the importers changed.
 func importFormatRefusal(err error) (string, bool) {
 	var undetected *importops.UndetectedFormatError
 	if errors.As(err, &undetected) {
-		return fmt.Sprintf("%s did not recognise the source format of %s from the signatures the importers in this "+
-			"workspace's catalog declare, and it does not guess: send 'format' naming the format outright (%s) and "+
+		return fmt.Sprintf("%s did not recognise the source format of %s from the signatures the importers "+
+			"declare, and it does not guess: send 'format' naming the format outright (%s) and "+
 			"call again. Nothing was written.", importToolName, undetected.Path(), formatChoices(undetected.Formats())), true
 	}
 	var ambiguous *importops.AmbiguousFormatError

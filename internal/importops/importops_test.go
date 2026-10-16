@@ -659,8 +659,8 @@ func TestImportRefusesWithoutAWorkspaceOrAResolver(t *testing.T) {
 	if err == nil {
 		t.Fatal("a nil workspace must be refused")
 	}
-	want := "no workspace configuration resolved; run import from within a workspace whose catalog holds an " +
-		"importer plugin advertising the source's format"
+	want := "no workspace configuration resolved; run import from within a workspace, where an importer " +
+		"advertising the source's format is selected from its catalog and the compiler's core importers"
 	if err.Error() != want {
 		t.Fatalf("nil-workspace refusal = %q; want %q", err.Error(), want)
 	}

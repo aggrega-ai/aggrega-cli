@@ -42,7 +42,7 @@ import (
 // would answer with drafts belonging to nowhere.
 //
 // format names the source format explicitly. An absent value means the format is
-// recognised by the signatures the importers in the workspace's catalog declare,
+// recognised by the signatures the importers declare, the core importers' included,
 // which is the same default the command line carries — so a caller that names
 // nothing gets detection rather than a refusal, and a caller converting a source
 // no signature recognises, or signatures of more than one format recognise, names
@@ -158,10 +158,14 @@ type importResult struct {
 // different rules — so a request may convert a description saved anywhere while
 // the drafts it produces still land inside the workspace.
 //
-// It reaches no registry and no network: the importer and the parser it draws on
-// are resolved from the workspace's own catalog and their bytes come from the
-// shared plugin cascade, which serves embedded, colocated, local and cached
-// modules and fetches nothing. Nothing is prompted for.
+// The one registry it may reach is the session workspace's default registry, and
+// only for a core importer of the compiler's release that the machine does not
+// hold yet: the import fetches it there, verifies it as every fetched plugin is
+// verified, and keeps it in the workspace's content cache, so later imports reach
+// no network. Every other importer, and the parser it draws on, is resolved from
+// the workspace's own catalog with its bytes from the shared plugin cascade. The
+// acquisition is the import operation's own, so this method acquires exactly as
+// the command and the assistant's tool do. Nothing is prompted for.
 func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error {
 	var params importParams
 	if len(req.Params) > 0 {
@@ -206,7 +210,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 
 	// The format the request named, or none, is handed on as it is: the import
 	// settles it, recognising an unnamed one from the signatures of the importers
-	// in the workspace's catalog. The source is handed on as the path resolved, a
+	// it resolves among. The source is handed on as the path resolved, a
 	// file or a directory, and the import reads it.
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
@@ -235,7 +239,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	if undetected := (*importops.UndetectedFormatError)(nil); errors.As(err, &undetected) {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
 			"import: the source format of "+undetected.Path()+" was not recognised from its shape by the "+
-				"signatures the importers in the workspace's catalog declare; send format to name it explicitly ("+
+				"signatures the importers declare; send format to name it explicitly ("+
 				sessionFormatExamples(undetected.Formats())+")")
 	}
 	if ambiguous := (*importops.AmbiguousFormatError)(nil); errors.As(err, &ambiguous) {

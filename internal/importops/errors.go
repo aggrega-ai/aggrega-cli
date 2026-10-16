@@ -41,7 +41,7 @@ var errImportHalted = cerrors.Register("import-halting-diagnostic", cerrors.Meta
 //
 // It is a registered condition because it is a refusal an author acts on and may
 // need to match: the import would otherwise have to choose between formats the
-// catalog's importers each claim, and choosing is a guess. Its occurrence names
+// importers each claim, and choosing is a guess. Its occurrence names
 // every format the source was recognised as, so the reader can name the one they
 // meant.
 //
@@ -54,7 +54,7 @@ var errAmbiguousImportFormat = cerrors.Register("ambiguous-import-format", cerro
 	ShortCode: "E0339",
 	Message:   "more than one importer recognises the source",
 	RulePlace: cerrors.RuleNoStageReaches("An import naming no format evaluates the rule, when the signatures the importers " +
-		"of the workspace's catalog record are matched against the source and those of more than one format match. " +
+		"it resolves among record are matched against the source and those of more than one format match. " +
 		"The import translates a foreign source description into entities before there is anything to compile, so " +
 		"no declared stage of a compilation holds the signatures or the source the rule reads."),
 })
