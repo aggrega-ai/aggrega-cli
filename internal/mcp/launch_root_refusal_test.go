@@ -5,8 +5,11 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,14 +30,21 @@ import (
 // workspace answers as it does on any server: a schema read by tool, and the
 // tool listing. A call naming a workspace of its own is answered there.
 //
-// A root that existed when the server started and is gone is the control: with
-// no source handed on, the refusal names this server's launch.
+// A root that was an existing folder when the server started and has gone since
+// is refused naming what supplied it too. A listener's handler shows it: built by
+// the exported constructor while the root is there and called after it is
+// removed, it answers a call naming no workspace with the variable and the
+// setting. A server
+// handed a root with no source — what a caller of this package leaving the
+// source unset builds; no launch of the command does — names this server's
+// launch.
 //
 // 🔴 PLANTED DEFECTS: drop the launch source from rootSourceOf and every refusal
 // row fails, naming this server's launch rather than the variable; drop the
 // command tool's launchRootRefusal and the cli-work row fails with the command
 // started; drop the cache inventory's case for it and the cache-status row fails,
-// answered from the machine-wide caches.
+// answered from the machine-wide caches; drop the source from the HTTP handler's
+// construction and the listener row fails, naming this server's launch.
 func TestALaunchRootThatIsNotAFolderIsTheAnswerToEveryCallActingInIt(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "no-such-folder")
@@ -86,15 +96,54 @@ func TestALaunchRootThatIsNotAFolderIsTheAnswerToEveryCallActingInIt(t *testing.
 		t.Errorf("a call naming a workspace of its own was refused: %s", res.Content[0].Text)
 	}
 
+	offline := true
+	served := filepath.Join(t.TempDir(), "workspace")
+	if err := os.Mkdir(served, 0o755); err != nil {
+		t.Fatalf("create %s: %v", served, err)
+	}
+	h, err := NewHTTPHandler(context.Background(), Config{
+		Stderr:              io.Discard,
+		WorkspaceRoot:       served,
+		WorkspaceRootSource: workspaceconfig.EnvWorkspaceRootSource,
+		Flags:               workspaceconfig.FlagOverlay{ConfigPath: global, Offline: &offline},
+	}, defaultTransportConfig())
+	if err != nil {
+		t.Fatalf("NewHTTPHandler over %s: %v", served, err)
+	}
+	hh, ok := h.(*httpHandler)
+	if !ok {
+		t.Fatalf("NewHTTPHandler returned %T, want the package's own handler", h)
+	}
+	hh.auth = acceptAllAuthenticator{}
+	ts := httptest.NewServer(hh)
+	t.Cleanup(ts.Close)
+	if err := os.Remove(served); err != nil {
+		t.Fatalf("remove %s: %v", served, err)
+	}
+	got := (&httpFixture{ts: ts, h: hh}).post(t, modernHeaders("tools/call", "list-entities"),
+		modernRequest(t, 1, "tools/call", map[string]any{"name": "list-entities", "arguments": map[string]any{}}))
+	var overHTTP struct {
+		IsError bool `json:"isError"`
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	opening := workspaceconfig.EnvWorkspaceRootSource + ` names the workspace root "`
+	if got.frame.Error != nil || json.Unmarshal(got.frame.Result, &overHTTP) != nil || !overHTTP.IsError ||
+		len(overHTTP.Content) == 0 || !strings.Contains(overHTTP.Content[0].Text, opening) {
+		t.Errorf("over a listener, a launch root gone since the server started was answered %s; want a tool "+
+			"error opening %q", got.raw, opening)
+	}
+
 	gone := t.TempDir()
-	control := &server{launchRoot: gone, flags: s.flags}
+	unnamed := &server{launchRoot: gone, flags: s.flags}
 	if err := os.Remove(gone); err != nil {
 		t.Fatalf("remove %s: %v", gone, err)
 	}
-	refusal := control.launchRootRefusal()
+	refusal := unnamed.launchRootRefusal()
 	if !errors.Is(refusal, fs.ErrNotExist) ||
 		!strings.Contains(refusal.Error(), `this server's launch names the workspace root "`+gone+`"`) {
-		t.Errorf("a launch root gone since the server started is refused as %v; want it named as this "+
-			"server's launch", refusal)
+		t.Errorf("a launch root handed with no source and gone since the server started is refused as %v; "+
+			"want it named as this server's launch", refusal)
 	}
 }

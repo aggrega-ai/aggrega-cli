@@ -7,8 +7,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,9 +34,18 @@ import (
 // after the others were answered, which a process that had ended could not, and
 // exits cleanly once its input closes.
 //
-// 🔴 PLANTED DEFECT: have runMCP return the refusal of a root that is not an
-// existing folder, as it does for a listener, and every row fails: the process
-// ends before it answers initialize.
+// Two rows launch over a folder that is there, by the variable and by the flag,
+// and remove it once initialize is answered: every call after that answers with
+// the same refusal, naming the variable with the setting, or the flag, rather
+// than the server's launch, while the server's stderr does not open with it,
+// which is what tells these rows from a launch over a folder that was never there.
+//
+// 🔴 PLANTED DEFECTS: have runMCP return the refusal of a root that is not an
+// existing folder, as it does for a listener, and every row but the two removing
+// their folder fails: the process ends before it answers initialize. Have runMCP
+// hand the server the launch root's source only where that root was refused at
+// startup, and the two rows removing their folder fail, each refusal naming this
+// server's launch.
 func TestAnUnusableWorkspaceRootIsServedAsTheRefusalOverStandardInputAndOutput(t *testing.T) {
 	t.Parallel()
 	bin := buildServeBinary(t)
@@ -44,6 +55,9 @@ func TestAnUnusableWorkspaceRootIsServedAsTheRefusalOverStandardInputAndOutput(t
 	// desktop user reads is what this row holds.
 	const byVariable = "AGGREGA_WORKSPACE_ROOT — the variable the desktop application's Workspace folder " +
 		"setting sets —"
+	// existing stands, in a row, for a folder the row creates before the launch
+	// and removes once initialize is answered.
+	const existing = "<a folder removed once the server has started>"
 
 	for _, row := range []struct {
 		name string
@@ -61,14 +75,34 @@ func TestAnUnusableWorkspaceRootIsServedAsTheRefusalOverStandardInputAndOutput(t
 			flags: []string{"--transport", "stdio"}, variable: missing, given: missing, opening: byVariable},
 		{name: "--workspace-root names a folder that is not there",
 			flags: []string{"--workspace-root", missing}, given: missing, opening: "--workspace-root"},
+		{name: "the variable names a folder removed once the server has started",
+			variable: existing, given: existing, opening: byVariable},
+		{name: "--workspace-root names a folder removed once the server has started",
+			flags: []string{"--workspace-root", existing}, given: existing, opening: "--workspace-root"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
-			want := row.opening + ` names the workspace root "` + row.given + `", which cannot be used: `
+			variable, flags, given := row.variable, slices.Clone(row.flags), row.given
+			removedAfterStart := given == existing
+			if removedAfterStart {
+				given = filepath.Join(t.TempDir(), "workspace")
+				if err := os.Mkdir(given, 0o755); err != nil {
+					t.Fatalf("create %s: %v", given, err)
+				}
+				if variable == existing {
+					variable = given
+				}
+				for i := range flags {
+					if flags[i] == existing {
+						flags[i] = given
+					}
+				}
+			}
+			want := row.opening + ` names the workspace root "` + given + `", which cannot be used: `
 
-			cmd := exec.Command(bin, append([]string{"mcp"}, row.flags...)...)
+			cmd := exec.Command(bin, append([]string{"mcp"}, flags...)...)
 			cmd.Dir = t.TempDir() // the client's own folder, which no workspace resolves from
-			cmd.Env = builtBinaryEnv(t, "AGGREGA_OFFLINE=1", workspaceconfig.EnvWorkspaceRoot+"="+row.variable)
+			cmd.Env = builtBinaryEnv(t, "AGGREGA_OFFLINE=1", workspaceconfig.EnvWorkspaceRoot+"="+variable)
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			stdin, err := cmd.StdinPipe()
@@ -141,10 +175,16 @@ func TestAnUnusableWorkspaceRootIsServedAsTheRefusalOverStandardInputAndOutput(t
 			}
 
 			send(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+			await(1)
+			if removedAfterStart {
+				if err := os.Remove(given); err != nil {
+					fail("remove %s once the server has started: %v", given, err)
+				}
+			}
 			send(rpcLine(2, "tools/call", `{"name":"validate","arguments":{"release":"release.yaml"}}`))
 			send(rpcLine(3, "resources/read", `{"uri":"catalog://component/core/compute/api-server"}`))
 			send(rpcLine(4, "tools/list", ""))
-			await(1, 2, 3, 4)
+			await(2, 3, 4)
 			send(rpcLine(5, "tools/call", `{"name":"`+mcpCommandToolName("aggrega validate")+`","arguments":{}}`))
 			await(5)
 
@@ -194,8 +234,10 @@ func TestAnUnusableWorkspaceRootIsServedAsTheRefusalOverStandardInputAndOutput(t
 			if a := answers[3]; a.Error == nil || !strings.Contains(a.Error.Message, want) {
 				t.Errorf("the catalog read was answered %s %+v; want an error carrying %q", a.Result, a.Error, want)
 			}
-			if first, _, _ := strings.Cut(stderr.String(), "\n"); !strings.HasPrefix(first, want) {
-				t.Errorf("the server's stderr opens with %q; want the refusal, %q", first, want)
+			first, _, _ := strings.Cut(stderr.String(), "\n")
+			if opens := strings.HasPrefix(first, want); opens == removedAfterStart {
+				t.Errorf("the server's stderr opens with %q; that it opens with the refusal %q is %v, want %v",
+					first, want, opens, !removedAfterStart)
 			}
 		})
 	}

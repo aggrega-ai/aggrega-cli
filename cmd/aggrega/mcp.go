@@ -231,18 +231,26 @@ func runMCP(cmd *cobra.Command, args []string) error {
 	given, source := workspaceRootFromFlagOrEnv(cmd, flagRoot, nil)
 	root, err := validateWorkspaceRootFlag(given, source)
 	// The server is handed the root a call naming no workspace of its own is
-	// answered in. Where the launch named one that is not an existing folder, it is
-	// handed that root exactly as it was given, with what supplied it, so every
-	// call resolving it meets the refusal this launch met, in the same words.
-	launchRoot, launchRootSource := root, ""
+	// answered in, and what supplied it, so a refusal of that root names the flag
+	// or the variable the reader has to correct whenever it is met. Where the
+	// launch named a root that is not an existing folder, it is handed that root
+	// exactly as it was given, so every call resolving it meets the refusal this
+	// launch met, in the same words; a root that is one is handed as it was
+	// resolved, and a call finding it gone later is refused naming the same source.
+	// A launch that named no root hands neither.
+	launchRoot := root
 	var ws *workspaceconfig.ResolvedWorkspace
 	if err != nil {
-		launchRoot, launchRootSource = given, source
+		launchRoot = given
 	} else {
 		// The workspace is read through the resolution every command reads, so the
 		// mcp block this launch honours is the one the cascade composed rather than
 		// one loaded a second time here.
 		ws, err = workspaceFromContext(cmd.Context())
+	}
+	launchRootSource := ""
+	if launchRoot != "" {
+		launchRootSource = source
 	}
 	var settings workspaceconfig.MCPConfig
 	var launch mcpLaunch
@@ -285,8 +293,8 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		// launch the bundle did not make carries none.
 		BundleVersion: bundleVersionFromEnv(nil),
 		WorkspaceRoot: launchRoot,
-		// Set only where the launch root is not an existing folder: a refusal of
-		// it then names what supplied it, as the launch's own refusal did.
+		// Set wherever the launch named a root, on both transports: a refusal of
+		// that root names what supplied it, as the launch's own refusal does.
 		WorkspaceRootSource: launchRootSource,
 		// Supplied for the same reason the command surface below is: the value
 		// belongs to this package and the server lives under it. Both halves of the

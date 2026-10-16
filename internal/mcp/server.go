@@ -141,16 +141,18 @@ type Config struct {
 	WorkspaceRoot string
 
 	// WorkspaceRootSource names what supplied WorkspaceRoot — the flag as a
-	// reader types it, or the variable with the desktop setting that sets it —
-	// where WorkspaceRoot is handed over exactly as that source gave it because
-	// it is not an existing folder. Such a launch is served all the same over
-	// standard input and output, and every call naming no workspace of its own
-	// meets the refusal the launch met, opening with this name, so a client that
-	// shows only the answers still shows what its user has to correct.
+	// reader types it, or the variable with the desktop setting that sets it — and
+	// every refusal of WorkspaceRoot opens with it, on both transports, so a
+	// client that shows only the answers still shows what its user has to
+	// correct. That holds for a root handed over exactly as its source gave it
+	// because it is not an existing folder — a launch served all the same over
+	// standard input and output, every call naming no workspace of its own meeting
+	// the refusal the launch met — and for a root that was an existing folder when
+	// the server started and has since gone.
 	//
-	// Empty, a refusal of WorkspaceRoot names this server's launch instead: that
-	// is how a root that was an existing folder when the server started, and has
-	// since gone, is reported.
+	// Empty beside a WorkspaceRoot, a refusal of that root names this server's
+	// launch instead, which is what a caller that hands a root without saying
+	// where it came from is answered with.
 	WorkspaceRootSource string
 
 	// Flags is what the invocation that launched this process said about
@@ -239,10 +241,10 @@ type server struct {
 	// and hands nothing. A test points it at a fixture workspace's root.
 	launchRoot string
 
-	// launchRootSource names what supplied launchRoot where the launch handed it
-	// over as given because it is not an existing folder
-	// (Config.WorkspaceRootSource), and is empty everywhere else. A refusal of
-	// the launch root opens with it (rootSourceOf).
+	// launchRootSource names what supplied launchRoot, where the launch said
+	// (Config.WorkspaceRootSource), and is empty where it did not or named no
+	// root. A refusal of the launch root opens with it (rootSourceOf), whether the
+	// root was not an existing folder when the server started or has gone since.
 	launchRootSource string
 
 	// flags is the command line the process was launched with, as it bears on

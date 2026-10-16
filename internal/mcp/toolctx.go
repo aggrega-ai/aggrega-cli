@@ -421,10 +421,12 @@ func resolutionInputs(launchRoot, rootArg string) (start, root string) {
 // as resolutionInputs does, so the refusal names the input whose value was
 // actually used.
 //
-// A launch whose root is not an existing folder hands its source on
-// (Config.WorkspaceRootSource), so every call resolving that root is refused in
-// the words the launch was refused in. The last name is reached by a root that
-// was an existing folder when the server started and has since gone.
+// A launch naming a root hands its source on (Config.WorkspaceRootSource), so
+// every call resolving that root is refused naming the flag or the variable the
+// launch read it from: in the words the launch was refused in where the root
+// was not an existing folder at startup, and in the same opening where it was
+// one and has gone since. The last name is reached only where the root was
+// handed on with no source.
 func rootSourceOf(rootArg, launchSource string) string {
 	if rootArg != "" {
 		return "the call's '" + argumentWorkspaceRoot + "'"

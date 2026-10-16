@@ -289,9 +289,10 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		announcedTools: announced,
 		renderHelp:     cfg.RenderHelp,
 		launchRoot:     cfg.WorkspaceRoot,
-		// Carried as the other transport carries it, though a listener is never
-		// started over a root that is not an existing folder: the launch refuses
-		// that root before anything binds, so this is empty here in practice.
+		// Carried as the other transport carries it. A listener is never started
+		// over a root that is not an existing folder — the launch refuses that root
+		// before anything binds — so the refusal it opens here is of a root that
+		// was one when the process started and has gone since.
 		launchRootSource: cfg.WorkspaceRootSource,
 		// Handed to this transport exactly as to the other: what the operator
 		// typed when starting the process is in force for every call it answers,
