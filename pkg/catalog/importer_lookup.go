@@ -164,7 +164,12 @@ var importerCapabilityDiag = capabilityDiag{
 //
 // Resolution routes through the same candidate set and select as the provider
 // socket, so an importer is resolved by exactly the mechanism a provider is — the
-// vocabulary and sentinels differ, the resolution core does not.
+// vocabulary and sentinels differ, the resolution core does not. On a view that
+// serves the importers the binary carries (UseCarriedImporterResolution), they
+// are candidates beside the catalog's own under every rule above: a carried
+// importer of another name advertising the format makes an unattached import
+// ambiguous, and one of the same identity at another version is chosen between
+// by version.
 func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error) {
 	capability := importCapabilityPrefix + format
 
@@ -203,8 +208,9 @@ func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (typ
 
 // ImporterPlugins returns every importer Plugin entity this catalog view resolves
 // importers from — the set ImporterPluginForFormat selects among, every version
-// it holds included — ordered by the key the catalog indexes each under,
-// <pluginType>/<name>:<version>.
+// it holds included, and the importers the binary carries where this view serves
+// them (UseCarriedImporterResolution) — ordered by the key the catalog indexes
+// each under, <pluginType>/<name>:<version>.
 //
 // It is what an import recognising a source's format reads the recognition
 // signatures of. Reading the same set the resolution selects from is what keeps
@@ -212,7 +218,7 @@ func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (typ
 // advertises, and the order is fixed by the keys rather than by the map the set
 // is held in, so the same catalog yields the same order on every run.
 func (c *Catalog) ImporterPlugins() []types.Plugin {
-	set := c.providerResolutionPlugins()
+	set := c.importerResolutionPlugins()
 	keys := make([]string, 0, len(set))
 	for key, p := range set {
 		if p.Metadata.PluginType == importerPluginType {
@@ -248,14 +254,14 @@ func ImporterFormats(p types.Plugin) []string {
 // capability, and that importer's name.
 //
 // It reads the set and the accessors the shared capability select filters on —
-// providerResolutionPlugins, the plugin type, the coordinate a binding is
+// importerResolutionPlugins, the plugin type, the coordinate a binding is
 // compared with, and each plugin's DeclaredCapabilities — so an attachment it
 // reports as naming an advertiser is one a select bound to it finds a candidate
 // for, across every version the set holds. Every version of one coordinate
 // carries the one name the coordinate is built from, so the name does not
 // depend on which version the walk meets first.
 func (c *Catalog) importerAdvertising(coordinate, capability string) (string, bool) {
-	for _, p := range c.providerResolutionPlugins() {
+	for _, p := range c.importerResolutionPlugins() {
 		if p.Metadata.PluginType != importerPluginType || p.Coordinate() != coordinate {
 			continue
 		}

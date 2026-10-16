@@ -741,6 +741,9 @@ var providerCapabilityDiag = capabilityDiag{
 // entities, embedded-wins on a shared coordinate. An explicit binding still
 // selects among the survivors, so a bound custom provider overrides the embedded
 // default while a local core entity of the same coordinate is shadowed by it.
+// For an importer the set also holds, on a view that serves them, the importers
+// the binary carries without embedding (resolutionPluginsFor), so they compete
+// with the catalog's own importers under exactly these rules.
 //
 // The capability is the already-separated capability string (the provider passes
 // the pre-split bare name; a format-routed socket passes its full "prefix:value"
@@ -759,7 +762,7 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
-	for key, p := range c.providerResolutionPlugins() {
+	for key, p := range c.resolutionPluginsFor(pluginType) {
 		if p.Metadata.PluginType != pluginType {
 			continue
 		}
@@ -853,14 +856,14 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 // a binding naming it selects.
 //
 // It reads the same set and the same accessor the resolution core filters on —
-// providerResolutionPlugins and each plugin's DeclaredCapabilities — so a name it
+// resolutionPluginsFor and each plugin's DeclaredCapabilities — so a name it
 // reports as served is one the core would match, and no second statement of
 // what a plugin serves exists beside the one on the entity. visible counts a
 // plugin of any type at the coordinate, because a binding naming a plugin of
 // another type still names something the catalog holds.
 func (c *Catalog) capabilitiesServed(pluginType, coordinate string) (served []string, visible bool) {
 	seen := map[string]struct{}{}
-	for _, p := range c.providerResolutionPlugins() {
+	for _, p := range c.resolutionPluginsFor(pluginType) {
 		if coordinate != "" && p.Coordinate() != coordinate {
 			continue
 		}

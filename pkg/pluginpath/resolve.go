@@ -641,10 +641,8 @@ func (r Resolver) ResolveCatalogArtifact(entityURI, artifactRef string) (closure
 // from here.
 func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, error) {
 	if pin, ok := r.pins[uri]; ok && pin != "" {
-		if got := digest.ContentDigest(b); got != pin {
-			return ResolvedPlugin{}, fmt.Errorf(
-				"plugin %q resolved from %s: content digest %s does not match lockfile pin %s: %w",
-				uri, tier.Source(), got, pin, oci.ErrFetchIntegrity())
+		if err := holdContent(uri, tier, b, pin, "lockfile pin"); err != nil {
+			return ResolvedPlugin{}, err
 		}
 	} else {
 		r.noteUnrecordedIdentity(uri, tier)
@@ -655,6 +653,32 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 		}
 	}
 	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri, Version: r.pinVersions[uri]}, nil
+}
+
+// HoldToDigest refuses resolved unless its bytes are the module want names: their
+// content digest must equal want, a sha256:<hex> content digest. heldTo names, in
+// the refusal, what want is — the record or the release it was taken from — so a
+// reader knows which statement of the module the bytes disagreed with.
+//
+// It is for a caller that knows, for one resolution, the exact module the bytes
+// must be, from somewhere other than the pin maps a Resolver is constructed with.
+// It shares the cascade's own comparison, so a module held here and one held to a
+// lockfile pin are refused under one condition — a wrapped oci.ErrFetchIntegrity
+// naming the reference, the source the bytes were read from, the digest they
+// carry and the one they had to.
+func HoldToDigest(resolved ResolvedPlugin, want, heldTo string) error {
+	return holdContent(resolved.URI, resolved.Tier, resolved.Bytes, want, heldTo)
+}
+
+// holdContent is the one comparison of a plugin's resolved bytes against a
+// digest they must match, read by the cascade's pin check (verified) and by
+// HoldToDigest alike.
+func holdContent(uri string, tier Tier, b []byte, want, heldTo string) error {
+	if got := digest.ContentDigest(b); got != want {
+		return fmt.Errorf("plugin %q resolved from %s: content digest %s does not match %s %s: %w",
+			uri, tier.Source(), got, heldTo, want, oci.ErrFetchIntegrity())
+	}
+	return nil
 }
 
 // unrecordedIdentityWriter receives the advisory raised when a plugin resolves

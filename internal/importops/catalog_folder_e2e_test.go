@@ -71,17 +71,26 @@ type cascadeResolution struct {
 }
 
 // recordingCascade is a plugin-bytes resolver that builds the shared plugin
-// cascade from the directories it is handed and nothing else — no workspace
-// cache, no pins, no entity front — and records every call.
+// cascade from the directories it is handed and nothing else — no pins, no entity
+// front, and no workspace cache unless workspaceCache is set — and records every
+// call.
 type recordingCascade struct {
 	mu    sync.Mutex
 	calls []cascadeResolution
+
+	// workspaceCache adds the content cache of the workspace the import resolved
+	// to the cascade's tiers, so a module no other tier holds is looked for there
+	// as the command's own resolution looks for it.
+	workspaceCache bool
 }
 
-func (r *recordingCascade) resolve(_ *workspaceconfig.ResolvedWorkspace, uri string,
+func (r *recordingCascade) resolve(rw *workspaceconfig.ResolvedWorkspace, uri string,
 	colocated map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
-	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: colocated},
-		pluginpath.PinPostureNone, pluginpath.PinMaps{})
+	tiers := pluginpath.ResolutionContext{ColocatedDirs: colocated}
+	if r.workspaceCache {
+		tiers.WorkspaceRoot, tiers.CacheDir = rw.Root(), rw.Config().ResolvedArtifactCacheDir()
+	}
+	cascade := pluginpath.NewResolver(tiers, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	resolved, err := cascade.Resolve(uri)
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -95,38 +104,33 @@ func (r *recordingCascade) resolutions() []cascadeResolution {
 	return slices.Clone(r.calls)
 }
 
-// catalogFolderImportWorkspace resolves a scratch workspace and lays the catalog
-// folder down in its conventional catalog directory, with both modules beside
-// their entities.
+// catalogFolderImportWorkspace resolves a scratch workspace whose conventional
+// catalog directory holds the catalog folder, with both modules beside their
+// entities, and whose configuration attaches each of the folder's importers with
+// no settings.
+//
+// The attachments are what make an import of either format run the folder's
+// importer: the binary's own importers advertise the same two formats, so with
+// none the import would halt as ambiguous between the two. An attachment carrying
+// no settings hands its importer nothing, so the importer runs exactly as one no
+// attachment names would.
 //
 // The workspace is required to have resolved at the directory its configuration
 // was written in, so the folder is laid inside the scratch tree and nowhere else.
 func catalogFolderImportWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorkspace, importopstest.CatalogFolder) {
 	t.Helper()
-	rw := aWorkspace(t)
-	if _, err := os.Stat(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)); err != nil {
-		t.Fatalf("the workspace resolved at %s, which is not the directory its configuration was written in: %v",
-			rw.Root(), err)
-	}
-	folder := importopstest.LayCatalogFolder(t, rw.Root(),
-		filepath.Join(rw.Root(), workspaceconfig.ConventionalCatalogDir), true)
-	return rw, folder
+	return catalogFolderImportWorkspaceAttaching(t, nil)
 }
 
 // catalogFolderImportWorkspaceAttaching is catalogFolderImportWorkspace whose
-// configuration attaches each of the folder's importers, by its identity and
-// version, with the settings given — so whichever importer a source's format
-// selects is handed them.
+// attachments hand each of the folder's importers the settings given — so
+// whichever importer a source's format selects is handed them.
 func catalogFolderImportWorkspaceAttaching(t *testing.T, settings map[string]any) (*workspaceconfig.ResolvedWorkspace,
 	importopstest.CatalogFolder) {
 	t.Helper()
 	wsDir := aWorkspaceDir(t)
-	folder := importopstest.LayCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), true)
-	attachments := make([]importopstest.Attachment, 0, len(folder.Importers))
-	for _, imp := range folder.Importers {
-		attachments = append(attachments, importopstest.Attachment{URI: imp.Identity, Settings: settings})
-	}
-	importopstest.WriteConfiguration(t, wsDir, attachments...)
+	folder := importopstest.LayAttachedCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir),
+		true, settings)
 	rw := resolveWorkspaceAt(t, wsDir)
 	if _, err := os.Stat(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)); err != nil {
 		t.Fatalf("the workspace resolved at %s, which is not the directory its configuration was written in: %v",

@@ -243,12 +243,6 @@ var descriptorRegistry = map[string][]byte{}
 // registerEntities.
 var entityRegistry = map[string][]byte{}
 
-// publishedRegistry holds what the binary carries of each core plugin it does
-// not embed — its generated entity and its guest's content digest — in the
-// core-plugin list's order. Populated from publishedFS at init by
-// registerPublished.
-var publishedRegistry []PublishedPlugin
-
 // register binds embedded plugin bare identities to their bytes read from
 // pluginFS. It is the single place an embedded plugin's guest is wired: read its
 // artifact from pluginFS and assign it under its bare identity. The generated
@@ -398,26 +392,6 @@ func EntityURIs() []string {
 	}
 	sort.Strings(uris)
 	return uris
-}
-
-// PublishedPlugins returns what the binary carries of each core plugin it does
-// not embed — its bare identity, its generated entity and its guest's content
-// digest — in the core-plugin list's order, so a consumer folding them into a
-// resolution set reads them in one order on every run (Deterministic Output
-// invariant). Each entity is a defensive copy, so a caller cannot mutate the
-// bytes backing every later call.
-//
-// These are not embedded plugins, and EntityURIs and LookupEntity never report
-// them: an embedded plugin's entity is served beside the module the binary
-// carries for it, while a plugin here has no module in the binary at all.
-func PublishedPlugins() []PublishedPlugin {
-	out := make([]PublishedPlugin, 0, len(publishedRegistry))
-	for _, p := range publishedRegistry {
-		entity := make([]byte, len(p.Entity))
-		copy(entity, p.Entity)
-		out = append(out, PublishedPlugin{URI: p.URI, Entity: entity, Digest: p.Digest})
-	}
-	return out
 }
 
 // SeedForTest registers uri→bytes in the embedded set and returns a function

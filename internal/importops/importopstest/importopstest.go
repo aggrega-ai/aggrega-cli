@@ -244,6 +244,43 @@ func (f CatalogFolder) Plugins() []LaidPlugin {
 	return append(append([]LaidPlugin{}, f.Importers...), f.Parser)
 }
 
+// Attachments returns one plugins.importer entry per importer the folder holds,
+// in the order the folder lays them down, each naming its importer by identity
+// and version and handing it settings — none where settings is nil, so the entry
+// carries no with and the importer it names is handed exactly what an importer
+// no entry names is handed.
+//
+// The binary carries importers of its own that advertise the same formats as the
+// folder's, so a workspace whose catalog holds the folder selects one of the
+// folder's importers only where an entry names it: with none, an import of either
+// format halts as ambiguous between the folder's importer and the binary's.
+func (f CatalogFolder) Attachments(settings map[string]any) []Attachment {
+	attachments := make([]Attachment, 0, len(f.Importers))
+	for _, imp := range f.Importers {
+		attachments = append(attachments, Attachment{URI: imp.Identity, Settings: settings})
+	}
+	return attachments
+}
+
+// LayAttachedCatalogFolder lays the folder down at dir, inside the workspace
+// rooted at workspaceRoot, as LayCatalogFolder does, and writes the workspace's
+// configuration at workspaceRoot with an entry attaching each of the folder's
+// importers and handing it settings (see [CatalogFolder.Attachments]). It is the
+// workspace in which an import of either format runs the folder's importer: what
+// a user whose catalog holds an importer of a format the binary's own importers
+// also serve writes to choose it.
+//
+// The configuration is written before the workspace is resolved, so a caller
+// resolves it afterwards; it replaces any configuration already at
+// workspaceRoot.
+func LayAttachedCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool,
+	settings map[string]any) CatalogFolder {
+	t.Helper()
+	folder := LayCatalogFolder(t, workspaceRoot, dir, withModules)
+	WriteConfiguration(t, workspaceRoot, folder.Attachments(settings)...)
+	return folder
+}
+
 // LayCatalogFolder lays the folder down at dir, inside the workspace rooted at
 // workspaceRoot, and returns what it holds.
 //

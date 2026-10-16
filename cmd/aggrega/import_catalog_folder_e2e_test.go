@@ -50,14 +50,21 @@ var catalogFolderImportSources = []struct {
 
 // catalogFolderWorkspace declares an isolated workspace whose conventional
 // catalog folder holds the importers and the parser — with their modules beside
-// them, or without — and returns its root and what the folder holds. A case calls
-// isolateMachineConfiguration first.
+// them, or without — and whose configuration attaches each of the folder's
+// importers with no settings, and returns its root and what the folder holds. A
+// case calls isolateMachineConfiguration first.
+//
+// The attachments are what make an import of either format run the folder's
+// importer: the binary's own importers advertise the same two formats, so with
+// none the import would halt as ambiguous between the two. An attachment carrying
+// no settings hands its importer nothing, so the importer runs exactly as one no
+// attachment names would.
 func catalogFolderWorkspace(t *testing.T, withModules bool) (string, importopstest.CatalogFolder) {
 	t.Helper()
-	root := resolveTempWorkspace(t, tempWorkspaceOptions{}).Root()
-	folder := importopstest.LayCatalogFolder(t, root,
-		filepath.Join(root, workspaceconfig.ConventionalCatalogDir), withModules)
-	return root, folder
+	root := t.TempDir()
+	folder := importopstest.LayAttachedCatalogFolder(t, root,
+		filepath.Join(root, workspaceconfig.ConventionalCatalogDir), withModules, nil)
+	return resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}).Root(), folder
 }
 
 // readCatalogFolderSource reads one committed source fixture.

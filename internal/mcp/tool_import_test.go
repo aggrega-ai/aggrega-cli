@@ -480,12 +480,18 @@ func TestTheImportToolRewordsAnUnsettledFormatByItsType(t *testing.T) {
 	}
 }
 
+// unadvertisedFormat is a format no importer advertises: not one the workspace's
+// catalog holds an importer for, and not one the binary's own importers serve.
+const unadvertisedFormat = "unadvertised"
+
 // TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat is the
 // nothing-attached case, and it is driven with the shared layer's own resolution
 // rather than with the seam the cases above point.
 //
-// The format is named, because a catalog holding no importer recognises no
-// source — the case whose refusal is asserted here is the one past recognition,
+// The format is named, and it is one no importer advertises. The binary's own
+// importers serve the Langflow and Flowise formats whatever the workspace's
+// catalog holds, so naming either would resolve one of them rather than reach
+// this refusal; and naming a format is what takes the case past recognition, to
 // where the format is settled and no importer serves it.
 //
 // The refusal is the shipped one: the condition the catalog registers for a
@@ -498,12 +504,12 @@ func TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat(t *testing.T) {
 	before := treeUnder(t, root)
 	s := importToolServer(t, root)
 
-	res := callTool(t, s, importToolName, map[string]any{"source": rel, "format": "langflow"})
+	res := callTool(t, s, importToolName, map[string]any{"source": rel, "format": unadvertisedFormat})
 	if !res.IsError {
 		t.Fatalf("a workspace attaching no importer imported anyway: %s", res.Content[0].Text)
 	}
 	text := res.Content[0].Text
-	if !strings.Contains(text, "import:langflow") {
+	if !strings.Contains(text, "import:"+unadvertisedFormat) {
 		t.Errorf("the refusal does not name the capability an importer would have to advertise, which is what "+
 			"the reader has to attach: %q", text)
 	}

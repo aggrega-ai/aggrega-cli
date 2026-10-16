@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -28,23 +29,39 @@ func importFixture(t *testing.T) *Server {
 	return srv
 }
 
-// importReadableFixture is importFixture with an importer resolver wired, so a
-// request reaches the path resolution and the read.
+// importReadableFixture is importFixture with a plugin resolver wired and a JSON
+// parser in the workspace's catalog folder, so a request reaches the path
+// resolution, the read and the source's shape.
 //
 // The plain fixture stops at the resolver-wiring check, which sits AHEAD of both
 // — deliberately, since the refusals it asserts are raised before an importer is
 // resolved. That ordering makes it useless for asserting anything about a path:
 // a request would be refused before the path was looked at, and a test reading
-// that refusal would report a path verdict the code never reached. The resolver
-// wired here fails when called, which is far enough: the format is selected from
-// the source's own bytes before any importer is asked for, so a request that
-// reaches format selection has already had its source opened and read.
+// that refusal would report a path verdict the code never reached.
+//
+// The format is selected from the source's own bytes before any importer is asked
+// for, so a request that reaches format selection has already had its source
+// opened and read. Selecting it parses the source in the syntax the importers'
+// signatures read — JSON for the importers the binary carries — so the workspace
+// holds a JSON parser, and the resolver wired here reads a module only from beside
+// a Plugin entity in the workspace's catalog folder. That serves the parser, and
+// no importer: the folder holds none, so a request that got as far as running one
+// is refused rather than run.
 func importReadableFixture(t *testing.T) *Server {
 	t.Helper()
 	srv := importFixture(t)
-	srv.resolveImportPlugin = func(*workspaceconfig.ResolvedWorkspace, string,
-		map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("this fixture resolves no importer module")
+	root := srv.resolvedWorkspace.Root()
+	importopstest.LayJSONParser(t, root, filepath.Join(root, workspaceconfig.ConventionalCatalogDir))
+	srv.resolveImportPlugin = func(_ *workspaceconfig.ResolvedWorkspace, uri string,
+		colocated map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
+		cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: colocated},
+			pluginpath.PinPostureNone, pluginpath.PinMaps{})
+		resolved, err := cascade.Resolve(uri)
+		if err != nil {
+			return pluginpath.ResolvedPlugin{}, fmt.Errorf("this fixture resolves no module but one beside an entity in "+
+				"the workspace's catalog folder: %w", err)
+		}
+		return resolved, nil
 	}
 	return srv
 }

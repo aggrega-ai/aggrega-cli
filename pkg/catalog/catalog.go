@@ -206,6 +206,13 @@ type Catalog struct {
 	// resolver guards, direct-constructed test fixtures) that must render exactly
 	// the providers they declare, unperturbed by the binary's embedded set.
 	resolveEmbeddedProviders bool
+
+	// carriedImporters holds, keyed like Plugins (<pluginType>/<name>:<version>),
+	// the importer entities this view serves from what the binary carries of the
+	// core plugins it does not embed, each beside the digest of the module it
+	// accepts. It is nil unless UseCarriedImporterResolution filled it, which only
+	// the import's own view does: no build, pull or by-reference lookup reads it.
+	carriedImporters map[string]carriedImporter
 }
 
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml

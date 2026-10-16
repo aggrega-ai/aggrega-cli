@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -106,8 +106,20 @@ func treeListing(t *testing.T, dir string) []string {
 // answers that a Component is not pinnable, and the edit refuses the edit it was
 // named. None of those writes anything, so the outside directory is listed before
 // and after every row and must not have changed. The first row is the control.
+//
+// An import row's workspace can read its source the way the import's own readable
+// fixture does: a JSON parser in the workspace's catalog folder, and that
+// fixture's plugin resolver, which reads a module only from beside an entity
+// there. Selecting a format parses the source in the syntax the importers'
+// signatures read, so an admitted import parses the source, matches it against
+// every signature and finds none that fits — a source refused for its shape, not
+// for where its drafts would go — so no importer is ever loaded.
 func TestADestinationARequestNamesIsJudgedByItsDeepestExistingPart(t *testing.T) {
 	t.Parallel()
+
+	// The resolver holds nothing of the server it was wired on, so it is taken
+	// from one readable fixture rather than restated here.
+	readableImport := importReadableFixture(t).resolveImportPlugin
 
 	const (
 		admittedToTheModule  = "wasm binary magic mismatch"
@@ -297,8 +309,9 @@ func TestADestinationARequestNamesIsJudgedByItsDeepestExistingPart(t *testing.T)
 			t.Parallel()
 			l := layDestinationLinks(t)
 			srv := linkedFilesServer(t, l.root, "workspace: {}\n")
-			srv.resolveImportPlugin = func(*workspaceconfig.ResolvedWorkspace, string, map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
-				return pluginpath.ResolvedPlugin{}, fmt.Errorf("this fixture resolves no importer module")
+			if row.method == "aggrega/import" {
+				importopstest.LayJSONParser(t, l.root, filepath.Join(l.root, workspaceconfig.ConventionalCatalogDir))
+				srv.resolveImportPlugin = readableImport
 			}
 			before := treeListing(t, l.outside)
 

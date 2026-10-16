@@ -29,6 +29,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -181,14 +182,37 @@ func TestEachImporterAttachmentConfiguresOnlyTheImporterItNames(t *testing.T) {
 	}
 }
 
+// carryNoImporter makes the binary carry no importer of its own for the rest of
+// the test, as a light build or a checkout without the overlays carries none, so
+// the importers a workspace's catalog holds are the only ones an import resolves
+// among.
+//
+// It is for a case whose subject is an importer no attachment names being the one
+// that runs. Where the binary carries its own importer of the requested format,
+// that importer competes with the catalog's, and an importer of another name no
+// attachment names cannot run — the case would then be about the competition,
+// which TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat covers with the
+// importers the binary does carry.
+//
+// 🔴 The carried set is process-wide, so a case calling this must not be
+// parallel; its rows may be, since they run before the set is restored.
+func carryNoImporter(t *testing.T) {
+	t.Helper()
+	t.Cleanup(embedded.SeedPublishedForTest(nil))
+}
+
 // TestAnImporterNoAttachmentNamesIsHandedNothing drives workspaces whose one
 // attachment names something other than the importer the requested format
 // resolves to — the other importer of the pair, an importer the catalog does not
 // hold, the parser — and requires the importer that runs to draft under its own
 // default namespace: it was handed nothing. Each row fails if a workspace's sole
 // attachment is handed to whichever importer runs, whatever it names.
+//
+// The binary carries no importer of its own here (carryNoImporter), so the
+// importer the format resolves to is the catalog's sole advertiser of it.
 func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it empties the process-wide carried set.
+	carryNoImporter(t)
 	for _, row := range []struct {
 		name      string
 		importers []importopstest.Importer
@@ -244,10 +268,15 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 
 // TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat drives catalogs
 // holding more than one importer advertising the Langflow format. With no
-// attachment the import halts as ambiguous, naming every advertiser; with one
-// attachment naming one of them, that one runs, handed that attachment's
-// settings; with attachments naming two of three, the import halts as ambiguous
-// naming the two attached and not the third.
+// attachment the import halts as ambiguous, naming every advertiser — the
+// Langflow importer the binary itself carries among them; with one attachment
+// naming one of them, that one runs, handed that attachment's settings; with
+// attachments naming two of three, the import halts as ambiguous naming the two
+// attached and not the third, nor the binary's.
+//
+// It runs over the importers the build of this binary carries, so the first row
+// fails rather than passing on two names where the build carries no Langflow
+// importer.
 func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
 	t.Parallel()
 	two := []importopstest.Importer{{Name: importerAlpha, Format: "langflow"}, {Name: importerBeta, Format: "langflow"}}
@@ -268,7 +297,7 @@ func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
 		{
 			name:      "no attachment",
 			importers: two,
-			ambiguous: `format "langflow" is advertised by importer plugins [import-alpha import-beta]`,
+			ambiguous: `format "langflow" is advertised by importer plugins [import-alpha import-beta langflow]`,
 		},
 		{
 			name:      "an attachment naming the second advertiser",
@@ -321,8 +350,13 @@ func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
 // chooses: the highest with no attachment, and the one an attachment's uri names
 // — exactly, or by a range — where one does. The pinned attachment is then the
 // one whose settings the import hands its importer.
+//
+// The binary carries no importer of its own here (carryNoImporter): the row with
+// no attachment is about the highest version of the catalog's one importer, which
+// a Langflow importer the binary carried would turn into an ambiguity.
 func TestAnAttachmentVersionChoosesThatVersionOfItsImporter(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it empties the process-wide carried set.
+	carryNoImporter(t)
 	versions := []importopstest.Importer{
 		{Name: importerAlpha, Version: "1.0.0", Format: "langflow"},
 		{Name: importerAlpha, Version: "2.0.0", Format: "langflow"},

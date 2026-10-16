@@ -41,7 +41,3 @@ func EntityURIs() []string { return nil }
 // ContentDigests mirrors the host signature so any retain caller that reaches it
 // compiles for wasip1. A guest embeds no plugins, so it returns no digests.
 func ContentDigests() []string { return nil }
-
-// PublishedPlugins mirrors the host signature so any resolution path that reaches
-// it compiles for wasip1. A guest resolves no plugins, so it returns none.
-func PublishedPlugins() []PublishedPlugin { return nil }
