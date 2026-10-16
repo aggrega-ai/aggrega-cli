@@ -151,6 +151,13 @@ func (s *mcpAuthorizationServer) issuer() string { return s.ts.URL }
 // own proofs are.
 func (s *mcpAuthorizationServer) mint(t *testing.T) string {
 	t.Helper()
+	return s.mintGranting(t, mcpCallerScope)
+}
+
+// mintGranting is mint with the grant the token carries named by the caller: one
+// scope, or several separated by spaces.
+func (s *mcpAuthorizationServer) mintGranting(t *testing.T, scope string) string {
+	t.Helper()
 	signer, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.ES256, Key: s.signingKey},
 		(&jose.SignerOptions{ExtraHeaders: map[jose.HeaderKey]any{
@@ -164,7 +171,7 @@ func (s *mcpAuthorizationServer) mint(t *testing.T) string {
 		Subject:  mcpCallerSubject,
 		Audience: jwt.Audience{mcpPublishedResource},
 		Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
-	}).Claims(map[string]any{"scope": mcpCallerScope}).Serialize()
+	}).Claims(map[string]any{"scope": scope}).Serialize()
 	if err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}

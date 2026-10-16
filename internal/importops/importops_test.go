@@ -129,6 +129,13 @@ func aWorkspaceDir(t *testing.T) string {
 // wsDir sits in.
 func resolveWorkspaceAt(t *testing.T, wsDir string) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
+	return resolveWorkspaceAtWith(t, wsDir, nil)
+}
+
+// resolveWorkspaceAtWith is resolveWorkspaceAt with the environment holding env
+// beside the redirect, and nothing else.
+func resolveWorkspaceAtWith(t *testing.T, wsDir string, env map[string]string) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
 	root := filepath.Dir(wsDir)
 	// The redirected global layer must EXIST, not merely be pointed at: the
 	// resolution refuses a configured global path that is absent rather than
@@ -145,7 +152,7 @@ func resolveWorkspaceAt(t *testing.T, wsDir string) *workspaceconfig.ResolvedWor
 		if k == workspaceconfig.EnvConfigOverride {
 			return globalPath
 		}
-		return ""
+		return env[k]
 	}
 	rw, err := workspaceconfig.Resolve(wsDir, "", lookup)
 	if err != nil {

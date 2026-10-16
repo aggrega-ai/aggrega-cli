@@ -20,10 +20,11 @@ import (
 //
 // The chokepoint is not confined to one package: the verification home and its
 // host-function primitive are declared in internal/pluginfetchverify, the fetch
-// tiers that must route through them are declared here, and the install command's
-// fetch is declared in the command package. A guard walking one directory would
-// see the call sites in it and pass blind on the others, so it walks all three
-// and reports one caller set per callee across them.
+// tiers that must route through them are declared here, the install command's
+// fetch is declared in the command package, and an import's fetch of a core
+// importer is declared in the import operation's package. A guard walking one
+// directory would see the call sites in it and pass blind on the others, so it
+// walks every one of them and reports one caller set per callee across them.
 type verificationUnit struct {
 	dir    string
 	prefix string
@@ -33,6 +34,7 @@ var verificationUnits = []verificationUnit{
 	{dir: ".", prefix: "pullops"},
 	{dir: filepath.Join("..", "pluginfetchverify"), prefix: "pluginfetchverify"},
 	{dir: filepath.Join("..", "..", "cmd", "aggrega"), prefix: "main"},
+	{dir: filepath.Join("..", "importops"), prefix: "importops"},
 }
 
 // qualify resolves a call expression to the package-qualified name of its
@@ -148,9 +150,10 @@ func enclosingCallers(t *testing.T) map[string]map[string]bool {
 // call each of the four verification surfaces:
 //
 //   - pluginfetchverify.Verify is the single home the cache-not-pin tiers route
-//     through. Its only callers are the verdict-socket cache verify and the CLI
-//     install fetch. A new cache-not-pin fetch that skips it (or a second copy
-//     that re-implements verification inline) breaks this set.
+//     through. Its only callers are the verdict-socket cache verify, the CLI
+//     install fetch and an import's acquisition of a core importer. A new
+//     cache-not-pin fetch that skips it (or a second copy that re-implements
+//     verification inline) breaks this set.
 //   - pullverify.Verify (the registry-signature primitive) is reachable from
 //     exactly two homes: the closure signature pass (the pinned tier), through
 //     the one call it shares with a verifying pull, recordSignatureAnswers, and
@@ -178,7 +181,8 @@ func TestPluginFetchVerificationChokepoint(t *testing.T) {
 	}{
 		{
 			callee: "pluginfetchverify.Verify",
-			want:   []string{"main.productionInstallPluginFetch", "pullops.verifyCachedVerdictSocketPlugin"},
+			want: []string{"importops.acquireCarriedImporter", "main.productionInstallPluginFetch",
+				"pullops.verifyCachedVerdictSocketPlugin"},
 		},
 		{
 			callee: "pullverify.Verify",

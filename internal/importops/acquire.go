@@ -72,17 +72,35 @@ func resolveCarriedImporter(ctx context.Context, rw *workspaceconfig.ResolvedWor
 	return cascade.ResolveContext(ctx, uri)
 }
 
+// carriedImporterSource returns where the module of uri, a core importer the
+// import's view serves from what the binary carries, is fetched from and its
+// signature asked about: the location the one binding of a plugin identity to a
+// registry names (catalog.PluginSignatureSubjectOf) under the workspace's default
+// registry location, and that location's host — or false where the workspace
+// names no default registry.
+//
+// It is the one place an import decides which registry it reaches, and it
+// decides from wsCfg alone. Nothing a caller sends with an import names a
+// registry, so the host is always the default registry's own. For a
+// configuration the resolution accepted, that is a host
+// wsCfg.IsConfiguredRegistry admits — the bound a registry read a caller asks
+// for over the assistant tools' listener is held to — whichever way the default
+// was written: left to the built-in one, a host, a host followed by a repository
+// path, or the name of an entry under registries.
+func carriedImporterSource(wsCfg workspaceconfig.Config, uri string) (catalog.SignatureSubject, bool) {
+	return catalog.PluginSignatureSubjectOf(wsCfg.DefaultRegistryLocation().Prefix(), uri)
+}
+
 // acquireCarriedImporter fetches the module of p, a core importer no tier of its
 // cascade holds, from the workspace's default registry, and writes it where that
 // cascade's content-cache tier reads it — or refuses, writing nothing.
 //
 // The compiler's release publishes each core importer to its registry under the
 // importer's identity and the release's version, and the workspace's default
-// registry is that registry, so the module is fetched from the location the one
-// binding of a plugin identity to a registry names
-// (catalog.PluginSignatureSubjectOf, under the default registry's location
-// prefix), at p's version. Every step that reaches the network goes through the
-// workspace's egress gate, so under the offline posture nothing is dialled.
+// registry is that registry, so the module is fetched from the location
+// carriedImporterSource names, at p's version. Every step that reaches the
+// network goes through the workspace's egress gate, so under the offline posture
+// nothing is dialled.
 //
 // The fetched bytes are held to accepted first, through the cascade's own
 // comparison (pluginpath.HoldToDigest), then verified through the one
@@ -106,7 +124,7 @@ func acquireCarriedImporter(ctx context.Context, rw *workspaceconfig.ResolvedWor
 	version := p.Metadata.Version
 	wsCfg := rw.Config()
 
-	subject, ok := catalog.PluginSignatureSubjectOf(wsCfg.DefaultRegistryLocation().Prefix(), uri)
+	subject, ok := carriedImporterSource(wsCfg, uri)
 	if !ok {
 		return carriedImporterNotOnMachine(p, "the workspace names no default registry to fetch it from", false)
 	}

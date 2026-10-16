@@ -118,9 +118,115 @@ func sharedCatalogFolderImport(t *testing.T, source []byte, name string) importo
 func isolateMachineConfiguration(t *testing.T) {
 	t.Helper()
 	importopstest.BuildImporterFixtures(t)
+	isolateFromThisMachine(t)
+}
+
+// isolateFromThisMachine points the per-user configuration, cache and registry
+// login locations at scratch directories for the rest of the test, so nothing a
+// surface runs reads configuration or a stored login this machine carries, and
+// nothing it keeps machine-wide — the assistant server's documentation bundle,
+// say — is written outside the test's own directories.
+func isolateFromThisMachine(t *testing.T) {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+}
+
+// assistantToolAnswer is the assistant server's answer to one tool call: whether
+// it reports a failure, the text of its first content block, and its structured
+// payload, left raw for the caller to read in the shape its own tool answers.
+type assistantToolAnswer struct {
+	isError    bool
+	text       string
+	structured json.RawMessage
+}
+
+// callAssistantTool runs `aggrega mcp --workspace-root root` through the real
+// command tree, over its own transport, sends it one call to tool carrying
+// arguments, and returns the answer to it.
+//
+// A call the server does not dispatch at all fails the test, and so does a
+// server that exits unsuccessfully: what a case reads is the tool's own answer.
+func callAssistantTool(t *testing.T, root, tool string, arguments map[string]any) assistantToolAnswer {
+	t.Helper()
+	params, err := json.Marshal(map[string]any{"name": tool, "arguments": arguments})
+	if err != nil {
+		t.Fatalf("encode the %s call: %v", tool, err)
+	}
+	var stdin, stdout, stderr bytes.Buffer
+	stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+	stdin.WriteString(rpcLine(2, "tools/call", string(params)))
+	cmd := newRootCmd()
+	cmd.SetIn(&stdin)
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"mcp", "--workspace-root", root})
+	if code := executeRoot(context.Background(), cmd); code != 0 {
+		t.Fatalf("aggrega mcp exited %d\nstderr:\n%s", code, stderr.String())
+	}
+
+	answers := answersByID(t, stdout.String(), 1, 2)
+	if answers[2].Error != nil {
+		t.Fatalf("the %s call was not dispatched: %s", tool, answers[2].Error.Message)
+	}
+	return decodeAssistantToolAnswer(t, tool, answers[2].Result)
+}
+
+// decodeAssistantToolAnswer reads the result the assistant server answered a
+// call to tool with, whichever transport carried it.
+func decodeAssistantToolAnswer(t *testing.T, tool string, result json.RawMessage) assistantToolAnswer {
+	t.Helper()
+	var call struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+		StructuredContent json.RawMessage `json:"structuredContent"`
+		IsError           bool            `json:"isError"`
+	}
+	if err := json.Unmarshal(result, &call); err != nil {
+		t.Fatalf("decode the %s answer: %v (body %s)", tool, err, result)
+	}
+	answer := assistantToolAnswer{isError: call.IsError, structured: call.StructuredContent}
+	if len(call.Content) > 0 {
+		answer.text = call.Content[0].Text
+	}
+	return answer
+}
+
+// callSession runs `aggrega serve --workspace-root root` through the real command
+// tree, sends it one request for method carrying params over its own framing, and
+// returns the frame answering it and what the session wrote to its error stream.
+//
+// The request names root as the workspace it is about, under workspaceRoot, as
+// the session's client does on every request it sends: the session reads a
+// request's workspace off the request itself, never off the root it was launched
+// with, and refuses one that names none before its method runs. A params entry
+// under the same key is sent in its place.
+//
+// A session that exits unsuccessfully fails the test: what a case reads is the
+// method's own answer.
+func callSession(t *testing.T, root, method string, params map[string]any) (map[string]json.RawMessage, string) {
+	t.Helper()
+	sent := map[string]any{"workspaceRoot": root}
+	maps.Copy(sent, params)
+	request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": sent})
+	if err != nil {
+		t.Fatalf("marshal the request: %v", err)
+	}
+	var stdin, stdout, stderr bytes.Buffer
+	fmt.Fprintf(&stdin, "Content-Length: %d\r\n\r\n", len(request))
+	stdin.Write(request)
+	cmd := newRootCmd()
+	cmd.SetIn(&stdin)
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"serve", "--workspace-root", root})
+	if code := executeRoot(context.Background(), cmd); code != 0 {
+		t.Fatalf("aggrega serve exited %d\nstderr:\n%s", code, stderr.String())
+	}
+	return daemonFrameAnswering(t, stdout.Bytes(), 1), stderr.String()
 }
 
 // runImportAtTheRoot runs `aggrega --workspace-root root import <args>` through
@@ -351,40 +457,17 @@ func TestTheAssistantImportToolRunsAnImporterFromTheCatalogFolder(t *testing.T) 
 		t.Fatalf("seed the served workspace: %v", err)
 	}
 
-	var stdin, stdout, stderr bytes.Buffer
-	stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
-	stdin.WriteString(rpcLine(2, "tools/call", `{"name":"import","arguments":{"source":"flow.json"}}`))
-	cmd := newRootCmd()
-	cmd.SetIn(&stdin)
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"mcp", "--workspace-root", root})
-	if code := executeRoot(context.Background(), cmd); code != 0 {
-		t.Fatalf("aggrega mcp exited %d\nstderr:\n%s", code, stderr.String())
+	answer := callAssistantTool(t, root, "import", map[string]any{"source": "flow.json"})
+	if answer.isError {
+		t.Fatalf("the import was refused: %s", answer.text)
 	}
-
-	answers := answersByID(t, stdout.String(), 1, 2)
-	if answers[2].Error != nil {
-		t.Fatalf("the import call was not dispatched: %s", answers[2].Error.Message)
+	var payload struct {
+		Written []string `json:"written"`
 	}
-	var call struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-		StructuredContent struct {
-			Format  string   `json:"format"`
-			Written []string `json:"written"`
-			Halted  bool     `json:"halted"`
-		} `json:"structuredContent"`
-		IsError bool `json:"isError"`
+	if err := json.Unmarshal(answer.structured, &payload); err != nil {
+		t.Fatalf("decode the import answer's payload: %v (body %s)", err, answer.structured)
 	}
-	if err := json.Unmarshal(answers[2].Result, &call); err != nil {
-		t.Fatalf("decode the import answer: %v (body %s)", err, answers[2].Result)
-	}
-	if call.IsError {
-		t.Fatalf("the import was refused: %+v", call.Content)
-	}
-	assertDraftsMatchTheSharedImport(t, root, call.StructuredContent.Written, shared)
+	assertDraftsMatchTheSharedImport(t, root, payload.Written, shared)
 }
 
 // TestTheSessionImportMethodRunsAnImporterFromTheCatalogFolder drives the
@@ -407,28 +490,9 @@ func TestTheSessionImportMethodRunsAnImporterFromTheCatalogFolder(t *testing.T) 
 		t.Fatalf("seed the served workspace: %v", err)
 	}
 
-	request, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "aggrega/import",
-		"params": map[string]any{"workspaceRoot": root, "source": "flow.json", "outputDir": "drafts"},
-	})
-	if err != nil {
-		t.Fatalf("marshal the request: %v", err)
-	}
-	var stdin, stdout, stderr bytes.Buffer
-	fmt.Fprintf(&stdin, "Content-Length: %d\r\n\r\n", len(request))
-	stdin.Write(request)
-	cmd := newRootCmd()
-	cmd.SetIn(&stdin)
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"serve", "--workspace-root", root})
-	if code := executeRoot(context.Background(), cmd); code != 0 {
-		t.Fatalf("aggrega serve exited %d\nstderr:\n%s", code, stderr.String())
-	}
-
-	frame := daemonFrameAnswering(t, stdout.Bytes(), 1)
+	frame, stderr := callSession(t, root, "aggrega/import", map[string]any{"source": "flow.json", "outputDir": "drafts"})
 	if raw, refused := frame["error"]; refused {
-		t.Fatalf("aggrega/import was refused: %s\nstderr:\n%s", raw, stderr.String())
+		t.Fatalf("aggrega/import was refused: %s\nstderr:\n%s", raw, stderr)
 	}
 	var result struct {
 		Format    string   `json:"format"`
