@@ -16,23 +16,42 @@
 # which the binary embeds, so the binary can name the one module it accepts for a
 # plugin whose bytes it does not carry.
 #
-# The build is reproducible per commit. Go guests use GOWORK=off, -trimpath,
-# -buildid=, -buildvcs=false, and gzip -n to strip build-path, build-id, and
-# ambient VCS stamps; rust guests use --remap-path-prefix, -C strip=symbols,
-# CARGO_INCREMENTAL=0, and gzip -n for the analogous effect. The rust remap
-# (rust_guest_flags below) covers every directory a rust guest would otherwise
-# name: the directory holding this module and the kits beside it, the cargo
-# home, and the toolchain's standard-library sources, so a guest carries no path
-# of the machine that built it. In both cases the compiler version and short
-# commit are injected explicitly (via -ldflags -X for go, via the
-# AGGREGA_VERSION and AGGREGA_COMMIT compile-time environment variables for
-# rust), so the uncompressed guest digest is deterministic for a given commit —
-# identical source at the same commit yields identical bytes, and the digest
-# advances only when the source or the commit does. For a rust guest this holds
-# for builds in one directory: cargo derives the identity of a path dependency
-# outside the crate's own workspace, such as the kits beside this module, from
-# its absolute location, and that identity reaches the guest's bytes, so the
-# same commit built in another directory yields a different digest.
+# The build is reproducible: the same commit yields the same bytes wherever it is
+# built, in any directory and on any machine. Four things make it so, and each is
+# held here rather than left to the building machine.
+#
+#   The toolchain. The compiler's own code reaches a guest's bytes, so a guest
+#   built with another toolchain is another module. A go guest is compiled with
+#   the module's own Go toolchain (go_guest_toolchain below), the one the release
+#   workflow sets Go up from, so a newer local Go does not compile it. A rust
+#   guest is compiled with the one exact release its rust-toolchain.toml pins, and
+#   is refused when the rustc that would compile it reports another.
+#
+#   The paths. Go guests use GOWORK=off, -trimpath, -buildid= and
+#   -buildvcs=false to strip build-path, build-id and ambient VCS stamps; rust
+#   guests use --remap-path-prefix, -C strip=symbols and CARGO_INCREMENTAL=0 for
+#   the analogous effect, and both use gzip -n. The rust remap (rust_guest_flags
+#   below) covers every directory a rust guest would otherwise name: the
+#   directory holding this module and the kits beside it, the cargo home, and the
+#   toolchain's standard-library sources, so a guest carries no path of the
+#   machine that built it.
+#
+#   The identity cargo gives a path dependency, which reaches a rust guest's
+#   bytes. cargo derives it from the dependency's absolute location unless the
+#   dependency lies under the workspace root, so a rust guest is compiled from a
+#   staged view in which every crate it depends on by path lies under one root
+#   (rust_guest_stage below).
+#
+#   The stamps. The compiler version and commit are injected explicitly (via
+#   -ldflags -X for go, via the AGGREGA_VERSION and AGGREGA_COMMIT compile-time
+#   environment variables for rust) from the shared recipe, whose commit has a
+#   fixed length, so the uncompressed guest digest advances only when the source
+#   or the commit does.
+#
+# What the building machine can still change is what it chooses to add: flags
+# given through RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS or the Go environment (GOFLAGS,
+# GOEXPERIMENT, GOWASM), and a cargo configuration of its own that alters the
+# release profile. A build meant to reproduce a published guest adds none.
 #
 # Each embedded guest registers under its digest-free bare identity
 # ({socket}/{name}); the resolution tests derive the expected digest from the
@@ -57,7 +76,14 @@ rows="$(core_plugin_rows)" || exit 1
 . scripts/lib/build-version.sh
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+# The directory rust guests are staged under (rust_guest_stage). Its path is
+# fixed for a checkout and a user, so the rustflags that remap it are the same
+# from one build to the next and cargo reuses what it compiled before; each
+# guest's stage is laid out afresh, and the whole of it is removed when the build
+# ends. Removing it touches only links and the files written there: rm does not
+# follow a link into the directory it points at.
+GUEST_STAGE_ROOT="${TMPDIR:-/tmp}/aggrega-guest-stage-$(id -u)-$(pwd -P | cksum | cut -d' ' -f1)"
+trap 'rm -rf "$TMP" "$GUEST_STAGE_ROOT"' EXIT
 
 declare -a SELECT=("$@")
 declare -a built=()
@@ -71,22 +97,43 @@ want() {
   return 1
 }
 
+# go_guest_toolchain — print the Go toolchain every go guest is compiled with: the
+# module's go.mod toolchain line, or go<version> from its go line where it has
+# none. That is the file the release workflow sets Go up from, so a guest built
+# there and one built here are compiled by the same release. Handed to the build
+# as GOTOOLCHAIN, it holds the build to that release exactly: the go command's
+# default takes a newer local toolchain in its place.
+go_guest_toolchain() {
+  local json
+  json="$(GOWORK=off go mod edit -json)" || return 1
+  awk -F'"' '
+    $2 == "Go"        { go = $4 }
+    $2 == "Toolchain" { toolchain = $4 }
+    END {
+      if (toolchain != "") print toolchain
+      else if (go != "") print "go" go
+      else { print "build-embedded-plugins: go.mod declares neither a toolchain nor a go line" > "/dev/stderr"; exit 1 }
+    }
+  ' <<< "$json"
+}
+
 # build_go NAME SOURCEPATH DIR [DIGEST_OUT] — compile the wasip1 guest from
-# SOURCEPATH, gzip it to DIR/NAME.wasm.gz, and extract its describe() descriptor
-# beside it; DIGEST_OUT is handed to compress_and_describe.
+# SOURCEPATH with the module's Go toolchain, gzip it to DIR/NAME.wasm.gz, and
+# extract its describe() descriptor beside it; DIGEST_OUT is handed to
+# compress_and_describe.
 build_go() {
   local name="$1" src="$2" dir="$3" digest_out="${4:-}"
   local embed="$dir/$name.wasm.gz" wasm="$TMP/$name.wasm"
-  echo "=== build $name (go: GOOS=wasip1 GOARCH=wasm) ==="
-  GOWORK=off GOOS=wasip1 GOARCH=wasm go build -trimpath \
+  echo "=== build $name (go $GO_GUEST_TOOLCHAIN: GOOS=wasip1 GOARCH=wasm) ==="
+  GOTOOLCHAIN="$GO_GUEST_TOOLCHAIN" GOWORK=off GOOS=wasip1 GOARCH=wasm go build -trimpath \
     -ldflags "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=$_ver -X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Commit=$_sha -buildid=" \
     -buildvcs=false -buildmode=c-shared -o "$wasm" "$src"
   compress_and_describe "$name" "$wasm" "$embed" "$digest_out"
 }
 
-# rust_guest_flags WORKSPACE — print, encoded for CARGO_ENCODED_RUSTFLAGS (one
-# flag per field, separated by the unit separator), the rustflags a rust guest
-# is compiled with, for the crate in the working directory.
+# rust_guest_flags WORKSPACE STAGE — print, encoded for CARGO_ENCODED_RUSTFLAGS
+# (one flag per field, separated by the unit separator), the rustflags a rust
+# guest is compiled with, for the crate in the working directory.
 #
 # A rust guest keeps the source path of every panic location it can report — in
 # its own code, its dependencies and the standard library — as a string in the
@@ -94,6 +141,9 @@ build_go() {
 #
 #   WORKSPACE, the directory holding this module and the     .
 #     kits its crates reference beside it
+#   STAGE, the view the guest is compiled from                .
+#     (rust_guest_stage), which lays the same directories
+#     out at the same relative positions
 #   the cargo home (CARGO_HOME, or ~/.cargo)                  cargo-home
 #   the toolchain's standard-library sources                  /rustc/<commit-hash>
 #
@@ -104,7 +154,15 @@ build_go() {
 #
 # rustc applies the LAST --remap-path-prefix whose prefix matches a path, so
 # WORKSPACE is given first: a checkout straight under a home directory contains
-# the cargo home and the toolchain, and their names must win.
+# the cargo home and the toolchain, and their names must win; STAGE follows it,
+# so its own name wins should the stage lie inside the checkout.
+#
+# cargo hands the compiler most crates under the stage by their path relative to
+# it, but not every location: generic code of one crate compiled into another is
+# recorded with its file joined to the working directory, which lies under the
+# stage. So the stage is remapped like the checkout. Its path is fixed for a
+# checkout (GUEST_STAGE_ROOT), so these flags are the same from one build to the
+# next, which is what lets cargo reuse what it compiled before.
 #
 # CARGO_ENCODED_RUSTFLAGS is read by cargo in preference to RUSTFLAGS and is not
 # split on spaces, so a directory whose name holds a space is remapped whole. A
@@ -117,7 +175,7 @@ build_go() {
 # lib/build-paths.sh. The copy is deliberate: each repository builds from its
 # own checkout alone, so neither sources a file from the other.
 rust_guest_flags() {
-  local workspace="$1"
+  local workspace="$1" stage="$2"
   local rustc="${RUSTC:-rustc}" sysroot version line commit=""
   if ! sysroot="$("$rustc" --print sysroot)" || ! version="$("$rustc" -vV)"; then
     echo "build-embedded-plugins: $rustc did not report its sysroot and version from $PWD" >&2
@@ -137,6 +195,7 @@ rust_guest_flags() {
   fi
   flags+=(
     "--remap-path-prefix=$workspace=."
+    "--remap-path-prefix=$stage=."
     "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=cargo-home"
     "--remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/${commit:-unknown}"
     "-Cstrip=symbols"
@@ -145,37 +204,172 @@ rust_guest_flags() {
   printf '%s' "${flags[*]}"
 }
 
+# rust_guest_stage WORKSPACE MODULE CRATE STAGE — lay out under STAGE the view the
+# rust guest at MODULE/CRATE is compiled from: WORKSPACE, the directory holding
+# this module and the kits beside it, with STAGE as the root of a generated
+# workspace whose one member is the guest.
+#
+# cargo identifies a path dependency by its path relative to the workspace root
+# when it lies under the root, and by its absolute location otherwise, and that
+# identity reaches the guest's bytes: it decides the order of the guest's
+# functions in the module. A guest crate is a workspace root of its own, and every
+# crate it depends on by path — the kits beside this module, the shared
+# governance core beside the guest — lies outside it, so built in place the same
+# commit yields different bytes in each directory it is checked out in. Under
+# STAGE each of those crates lies beneath the root, at the same relative position
+# wherever the checkout is.
+#
+# The view is links to the real files, apart from three things STAGE holds
+# itself: the root manifest, which names the guest its one member, excludes every
+# other directory under the root (an excluded path dependency is still a
+# dependency, it just does not join the workspace) and carries the guest's own
+# [profile.*] tables, since cargo reads profiles from the root alone; the guest's
+# manifest, copied without its [workspace] and [profile.*] tables; and the
+# guest's Cargo.lock, which cargo reads at the root. The module is laid out as
+# aggrega-cli whatever its checkout is called, because the guest's own path under
+# the root is part of its identity too.
+rust_guest_stage() {
+  local workspace="$1" module="$2" crate="$3" stage="$4"
+  local here="$module" there="$stage/aggrega-cli" rest="$crate" part e base
+  local excluded="" sep="" resolver
+  mkdir -p "$there" || return 1
+  for e in "$workspace"/* "$workspace"/.[!.]* "$workspace"/..?*; do
+    [ -e "$e" ] || [ -L "$e" ] || continue
+    [ "$e" -ef "$module" ] && continue
+    base="${e##*/}"
+    case "$base" in aggrega-cli|Cargo.toml|Cargo.lock) continue ;; esac
+    ln -s "$e" "$stage/$base" || return 1
+  done
+  # Down the crate's path, every entry beside each directory on the way.
+  while :; do
+    part="${rest%%/*}"
+    for e in "$here"/* "$here"/.[!.]* "$here"/..?*; do
+      [ -e "$e" ] || [ -L "$e" ] || continue
+      [ "${e##*/}" = "$part" ] && continue
+      ln -s "$e" "$there/${e##*/}" || return 1
+    done
+    here="$here/$part"
+    there="$there/$part"
+    mkdir "$there" || return 1
+    [ "$rest" = "$part" ] && break
+    rest="${rest#*/}"
+  done
+  for e in "$here"/* "$here"/.[!.]* "$here"/..?*; do
+    [ -e "$e" ] || [ -L "$e" ] || continue
+    case "${e##*/}" in Cargo.toml|Cargo.lock|target) continue ;; esac
+    ln -s "$e" "$there/${e##*/}" || return 1
+  done
+  awk '/^[[:space:]]*\[/ { skip = ($0 ~ /^[[:space:]]*\[[[:space:]]*(workspace|profile)[].[:space:]]/) } !skip' \
+    "$here/Cargo.toml" > "$there/Cargo.toml" || return 1
+  if [ -f "$here/Cargo.lock" ]; then
+    cp "$here/Cargo.lock" "$stage/Cargo.lock" || return 1
+  fi
+  for e in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
+    [ -d "$e" ] || continue
+    base="${e##*/}"
+    base="${base//\\/\\\\}"
+    base="${base//\"/\\\"}"
+    excluded="$excluded$sep\"$base\""
+    sep=", "
+  done
+  # The resolver a root package would get: one the manifest names, otherwise the
+  # one its edition implies. A generated root that named none would fall back to
+  # the oldest, and resolve the guest's features differently.
+  resolver="$(awk -F'"' '
+    /^[[:space:]]*\[/                                          { table = $0 }
+    /^[[:space:]]*resolver[[:space:]]*=/                       { named = $2 }
+    /^[[:space:]]*edition[[:space:]]*=/ && table ~ /^[[:space:]]*\[[[:space:]]*package[[:space:]]*\]/ { edition = $2 }
+    END {
+      if (named != "") print named
+      else if (edition == "2024") print "3"
+      else if (edition == "2021") print "2"
+      else print "1"
+    }
+  ' "$here/Cargo.toml")" || return 1
+  {
+    printf '[workspace]\n'
+    printf 'members = ["aggrega-cli/%s"]\n' "$crate"
+    printf 'exclude = [%s]\n' "$excluded"
+    printf 'resolver = "%s"\n\n' "$resolver"
+    awk '/^[[:space:]]*\[/ { keep = ($0 ~ /^[[:space:]]*\[[[:space:]]*profile\./) } keep' "$here/Cargo.toml"
+  } > "$stage/Cargo.toml"
+}
+
+# rust_guest_toolchain_check NAME CRATE CHANNEL — refuse, naming both, when the
+# rustc that would compile the guest in the working directory does not report
+# CHANNEL, the release CRATE/rust-toolchain.toml pins. rustup selects the
+# toolchain from that file, so the two differ only where something overrides it
+# (RUSTUP_TOOLCHAIN, RUSTC) or where the file names a moving channel such as
+# stable rather than one release; either way the guest would be compiled by a
+# release its source does not name, and its bytes would differ from the same
+# commit built anywhere else.
+rust_guest_toolchain_check() {
+  local name="$1" crate="$2" channel="$3"
+  local rustc="${RUSTC:-rustc}" version line release=""
+  if ! version="$("$rustc" -vV)"; then
+    echo "build-embedded-plugins: $rustc did not report its version for $name ($crate pins rust $channel; install it with: rustup toolchain install $channel --target wasm32-wasip1)" >&2
+    return 1
+  fi
+  while IFS= read -r line; do
+    case "$line" in "release: "*) release="${line#release: }" ;; esac
+  done <<< "$version"
+  if [ "$release" != "$channel" ]; then
+    echo "build-embedded-plugins: $crate/rust-toolchain.toml pins rust $channel for $name, but $rustc reports ${release:-no release}" >&2
+    echo "  a core guest is compiled by the one release its toolchain file pins and no other: unset RUSTUP_TOOLCHAIN and RUSTC, or pin one release rather than a channel" >&2
+    return 1
+  fi
+}
+
 # build_rust NAME SOURCEPATH DIR [DIGEST_OUT] — compile the wasm32-wasip1 crate
-# at SOURCEPATH, gzip it to DIR/NAME.wasm.gz, and extract its describe()
+# at SOURCEPATH with the toolchain it pins, from a staged view of the workspace
+# (rust_guest_stage), gzip it to DIR/NAME.wasm.gz, and extract its describe()
 # descriptor beside it; DIGEST_OUT is handed to compress_and_describe. The built
 # artifact name is the crate directory basename with dashes mapped to underscores
 # (cargo's library-name convention).
 #
-# cargo runs with the crate directory as its working directory, which is how a
-# developer builds one of these crates by hand. It matters because rustup selects
-# the toolchain from a rust-toolchain.toml found in the WORKING DIRECTORY and
-# never from --manifest-path: run from elsewhere, a crate that pins its own
-# toolchain is silently compiled by whichever toolchain the invoking directory
-# selects, and a crate whose dependencies need the pinned one then fails to
-# resolve. The rustflags are computed there too, so the standard-library remap
-# names the toolchain that compiles the crate; the workspace prefix is the
-# physical parent of the module root, where cargo resolves the kits, so it is
-# unchanged by where cargo runs.
+# cargo runs in the crate's staged directory, which holds a link to the crate's
+# rust-toolchain.toml. It matters because rustup selects the toolchain from a
+# rust-toolchain.toml found in the WORKING DIRECTORY and never from
+# --manifest-path: run from elsewhere, a crate that pins its own toolchain is
+# silently compiled by whichever toolchain the invoking directory selects. The
+# toolchain check and the rustflags are computed there too, so both read the
+# rustc that compiles the crate. The build directory stays the crate's own target
+# directory in the checkout, so the artifact lands where it always has and cargo's
+# cache outlives the stage; the workspace prefix of the remap covers it. Where
+# cargo rewrites the lock because the manifest moved past it, the rewritten lock
+# is copied back to the crate, as cargo would have written it there. A guest
+# whose bytes still name the stage is refused: the remap rewrites the paths the
+# compiler records, and a path reaching the guest any other way — as a string
+# value, say — would make its bytes depend on where it was built.
 build_rust() {
-  local name="$1" crate="$2" dir="$3" digest_out="${4:-}"
-  local embed="$dir/$name.wasm.gz" workspace
+  local name="$1" crate="${2#./}" dir="$3" digest_out="${4:-}"
+  local embed="$dir/$name.wasm.gz" module workspace channel stage
+  module="$(pwd -P)"
   workspace="$(cd .. && pwd -P)"
-  local built="$crate/target/wasm32-wasip1/release/$(basename "$crate" | tr - _).wasm"
-  echo "=== build $name (rust: cargo --target wasm32-wasip1) ==="
+  channel="$(core_plugin_rust_toolchain "$crate")" || exit 1
+  stage="$GUEST_STAGE_ROOT/$name"
+  rm -rf "$stage"
+  rust_guest_stage "$workspace" "$module" "$crate" "$stage" || exit 1
+  local wasm
+  wasm="$crate/target/wasm32-wasip1/release/$(basename "$crate" | tr - _).wasm"
+  echo "=== build $name (rust $channel: cargo --target wasm32-wasip1) ==="
   (
-    cd "$crate" || exit 1
-    rustflags="$(rust_guest_flags "$workspace")" || exit 1
-    CARGO_INCREMENTAL=0 \
+    cd "$stage/aggrega-cli/$crate" || exit 1
+    rust_guest_toolchain_check "$name" "$crate" "$channel" || exit 1
+    rustflags="$(rust_guest_flags "$workspace" "$stage")" || exit 1
+    CARGO_TARGET_DIR="$module/$crate/target" CARGO_INCREMENTAL=0 \
     AGGREGA_VERSION="$_ver" AGGREGA_COMMIT="$_sha" \
     CARGO_ENCODED_RUSTFLAGS="$rustflags" \
       cargo build --release --target wasm32-wasip1
   )
-  compress_and_describe "$name" "$built" "$embed" "$digest_out"
+  if [ -f "$stage/Cargo.lock" ] && ! cmp -s "$stage/Cargo.lock" "$crate/Cargo.lock"; then
+    cp "$stage/Cargo.lock" "$crate/Cargo.lock"
+  fi
+  if LC_ALL=C grep -qF -- "$stage" "$wasm"; then
+    echo "build-embedded-plugins: $name names the directory it was staged in ($stage), which no remap rewrote, so the guest's bytes would depend on where it was built" >&2
+    exit 1
+  fi
+  compress_and_describe "$name" "$wasm" "$embed" "$digest_out"
 }
 
 # compress_and_describe NAME WASM EMBED [DIGEST_OUT] — gzip the built guest to
@@ -201,6 +395,8 @@ compress_and_describe() {
     echo "wrote $digest_out"
   fi
 }
+
+GO_GUEST_TOOLCHAIN="$(go_guest_toolchain)" || exit 1
 
 while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
   [ -n "$socket" ] || continue

@@ -869,13 +869,31 @@ jobs:
           # dependency graph every run.
           cache: false
 
-      - name: Install Rust for the wasm32-wasip1 embedded guest
-        # Building the CLI regenerates its embedded guests; one guest is a Rust
-        # crate compiled to wasm32-wasip1, so the target must be installed.
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: '1.85'
-          targets: wasm32-wasip1
+      - name: Install the Rust toolchains the guests pin
+        # Building the CLI regenerates its core guests, and each Rust guest pins
+        # one exact toolchain in its rust-toolchain.toml: the guest build compiles
+        # it with that release and refuses any other, so a guest published from
+        # here is byte-identical to the same commit built anywhere else. This
+        # installs exactly the toolchains those files pin, with the wasm32-wasip1
+        # target, read through the core-plugin list's one reader, so no version is
+        # written here and a pin moved in the tree is the one installed. rustup is
+        # taken from the path or from the cargo home, and the cargo home's bin
+        # directory is put on the path of the steps after this one.
+        run: |
+          set -euo pipefail
+          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          if ! command -v rustup >/dev/null 2>&1; then
+            [ -x "$cargo_bin/rustup" ] || { echo "rust: rustup is neither on the path nor in $cargo_bin; install it on the runner" >&2; exit 1; }
+            PATH="$cargo_bin:$PATH"
+          fi
+          . aggrega-cli/scripts/lib/core-plugins.sh
+          toolchains="$(core_plugin_rust_toolchains)"
+          while IFS= read -r toolchain; do
+            [ -n "$toolchain" ] || continue
+            echo "rust: installing $toolchain, pinned by a core guest"
+            rustup toolchain install "$toolchain" --profile minimal --target wasm32-wasip1 --no-self-update
+          done <<< "$toolchains"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
 
       - name: Cache the Rust guest build
         # The publishing linter guest is a Rust crate; cache its registry and

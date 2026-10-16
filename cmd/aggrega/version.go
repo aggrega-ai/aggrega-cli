@@ -41,7 +41,7 @@ var version string
 
 // commit is the short revision stamped at build time via
 // -ldflags "-X main.commit=<sha>" (scripts/build.sh sets it from
-// `git rev-parse --short HEAD`). It is preferred over the
+// `git rev-parse HEAD`, cut to nine digits). It is preferred over the
 // runtime/debug.ReadBuildInfo `vcs.revision` setting, which go's
 // -buildvcs stamping reports unreliably for a module built inside a git
 // submodule (the gitdir-file indirection makes it lag HEAD). Empty for a

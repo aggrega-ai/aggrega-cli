@@ -24,7 +24,16 @@
 #   _ver — git describe, with any leading "v" stripped: the tag, the bare commit
 #          before any tag, or a "-dirty" suffix when the working tree has
 #          uncommitted changes; "dev" when git is unavailable.
-#   _sha — the short HEAD commit, or "unknown" when git is unavailable.
+#   _sha — the first nine hex digits of the HEAD commit, or "unknown" when git is
+#          unavailable.
+#
+# The commit is cut to a fixed length rather than abbreviated by git, because git
+# lengthens its abbreviation with the number of objects in the clone it runs in,
+# and the commit is compiled into every core guest: two checkouts of one commit
+# would otherwise stamp it with different bytes. The version needs no such cut at
+# a tag, where it is the tag alone, so a guest built from a tag carries the same
+# stamp wherever it is built; a version past a tag carries git's own
+# abbreviation, which follows the clone.
 #
 # The recipe carries the working-tree --dirty marker on purpose: a build made
 # from an edited tree advertises its exact state rather than masquerading as a
@@ -36,4 +45,4 @@
 # own root for the extension, the tree whose provenance the runner reads — before sourcing
 # this file, so `git describe` resolves there.
 _ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; _ver="${_ver#v}"
-_sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"; _sha="${_sha:0:9}"

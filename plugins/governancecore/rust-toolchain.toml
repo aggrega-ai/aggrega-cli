@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Cognitio S.r.l.
 #
-# Pinned to match the guests that consume this crate. Each of them selects the
-# stable channel because its embedded policy engine's dependency tree requires a
-# newer Rust than the shared plugin workspace floors itself to, and a shared crate
-# compiled by an older toolchain than its consumers would fail to resolve when
-# built on its own. rustup reads this file from the working directory, so it
-# applies when this crate is built or tested directly.
+# Pinned to the exact release the guests that consume this crate pin,
+# rego-governance and cel-governance. Each of them selects its own toolchain
+# because its embedded policy engine's dependency tree requires a newer Rust than
+# the shared plugin workspace floors itself to, and a shared crate compiled by an
+# older toolchain than its consumers would fail to resolve when built on its own.
+# rustup reads this file from the working directory, so it applies when this crate
+# is built or tested directly; inside a guest's build the guest's own file decides.
+# When the guests' release moves, this one moves with it.
 [toolchain]
-channel = "stable"
+channel = "1.98.1"
 targets = ["wasm32-wasip1"]

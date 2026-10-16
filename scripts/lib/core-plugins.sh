@@ -42,7 +42,7 @@
 # aggrega-cli module root; CORE_PLUGIN_MODULE_ROOT is that root, absolute, so a
 # caller anywhere can reach them.
 #
-# Sourcing sets five variables and defines three functions:
+# Sourcing sets these variables and defines these functions:
 #
 #   CORE_PLUGIN_MODULE_ROOT    the aggrega-cli module root, absolute
 #   CORE_PLUGIN_LIST           the list, relative to the module root
@@ -82,6 +82,19 @@
 #     each after `--from-embedded` has generated the embedded rows. It refuses,
 #     exit 1, when a guest or an overlay is missing, when the generation fails,
 #     or when the entity it wrote is not the row's plugin.
+#
+#   core_plugin_rust_toolchain SOURCEPATH
+#     Prints the toolchain the rust guest at SOURCEPATH pins: the channel its
+#     rust-toolchain.toml names. The guest build compiles the guest with that
+#     release and no other. It refuses, exit 1 naming the file, when the guest
+#     has no such file or the file names no channel.
+#
+#   core_plugin_rust_toolchains
+#     Prints, once each, the toolchain every rust row of the list pins, read
+#     through core_plugin_rust_toolchain, so a caller that installs toolchains
+#     installs exactly the ones the guests are compiled with and names no
+#     version of its own. It refuses, exit 1, as that function does for any
+#     rust row.
 
 CORE_PLUGIN_MODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CORE_PLUGIN_LIST="internal/wasm/embedded/embedded-plugins.tsv"
@@ -188,5 +201,32 @@ core_plugin_generate_unembedded() {
     fi
   done <<< "$rows"
   rm -rf "$tmp"
+  return 0
+}
+
+core_plugin_rust_toolchain() {
+  local file="$CORE_PLUGIN_MODULE_ROOT/${1#./}/rust-toolchain.toml" channel
+  if [ ! -f "$file" ]; then
+    echo "core-plugins: the rust guest at $1 pins no toolchain: $file is missing" >&2
+    return 1
+  fi
+  channel="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ { print $2; exit }' "$file")"
+  if [ -z "$channel" ]; then
+    echo "core-plugins: $file names no channel" >&2
+    return 1
+  fi
+  printf '%s\n' "$channel"
+}
+
+core_plugin_rust_toolchains() {
+  local rows src toolchain channel seen=$'\n'
+  rows="$(core_plugin_rows)" || return 1
+  while IFS=$'\x1f' read -r _ _ src toolchain _; do
+    [ "$toolchain" = rust ] || continue
+    channel="$(core_plugin_rust_toolchain "$src")" || return 1
+    case "$seen" in *$'\n'"$channel"$'\n'*) continue ;; esac
+    seen="$seen$channel"$'\n'
+    printf '%s\n' "$channel"
+  done <<< "$rows"
   return 0
 }

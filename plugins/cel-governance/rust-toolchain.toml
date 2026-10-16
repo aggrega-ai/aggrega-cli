@@ -9,6 +9,13 @@
 # rather than the toolchain choice it actually is. rustup reads this file from the
 # working directory, which is why the embedded-plugin build enters a crate's
 # directory before invoking cargo.
+#
+# The channel is one exact release, never a moving one such as stable: the
+# compiler's own code reaches the guest's bytes, so the same source builds to the
+# same module only under the same toolchain, and the embedded-plugin build refuses
+# to compile this guest with any other. Moving it changes every byte of the guest,
+# so it moves deliberately, in the change that prepares a release, together with
+# rego-governance and governancecore, which share it.
 [toolchain]
-channel = "stable"
+channel = "1.98.1"
 targets = ["wasm32-wasip1"]
