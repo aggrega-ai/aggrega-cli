@@ -89,12 +89,14 @@
 #     release and no other. It refuses, exit 1 naming the file, when the guest
 #     has no such file or the file names no channel.
 #
-#   core_plugin_rust_toolchains
-#     Prints, once each, the toolchain every rust row of the list pins, read
-#     through core_plugin_rust_toolchain, so a caller that installs toolchains
-#     installs exactly the ones the guests are compiled with and names no
-#     version of its own. It refuses, exit 1, as that function does for any
-#     rust row.
+#   core_plugin_rust_dirs
+#     Prints the source directory of every rust row of the list, one per line,
+#     relative to the module root, once core_plugin_rust_toolchain has found
+#     the toolchain file there naming a channel. A caller that installs
+#     toolchains runs rustup in each with no toolchain named, and rustup then
+#     installs the release that directory's file pins, with every target the
+#     file lists, so the caller names neither a release nor a target of its
+#     own. It refuses, exit 1, as that function does for any rust row.
 
 CORE_PLUGIN_MODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CORE_PLUGIN_LIST="internal/wasm/embedded/embedded-plugins.tsv"
@@ -218,15 +220,13 @@ core_plugin_rust_toolchain() {
   printf '%s\n' "$channel"
 }
 
-core_plugin_rust_toolchains() {
-  local rows src toolchain channel seen=$'\n'
+core_plugin_rust_dirs() {
+  local rows src toolchain
   rows="$(core_plugin_rows)" || return 1
   while IFS=$'\x1f' read -r _ _ src toolchain _; do
     [ "$toolchain" = rust ] || continue
-    channel="$(core_plugin_rust_toolchain "$src")" || return 1
-    case "$seen" in *$'\n'"$channel"$'\n'*) continue ;; esac
-    seen="$seen$channel"$'\n'
-    printf '%s\n' "$channel"
+    core_plugin_rust_toolchain "$src" > /dev/null || return 1
+    printf '%s\n' "${src#./}"
   done <<< "$rows"
   return 0
 }

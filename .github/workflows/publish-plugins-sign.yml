@@ -871,14 +871,21 @@ jobs:
 
       - name: Install the Rust toolchains the guests pin
         # Building the CLI regenerates its core guests, and each Rust guest pins
-        # one exact toolchain in its rust-toolchain.toml: the guest build compiles
-        # it with that release and refuses any other, so a guest published from
-        # here is byte-identical to the same commit built anywhere else. This
-        # installs exactly the toolchains those files pin, with the wasm32-wasip1
-        # target, read through the core-plugin list's one reader, so no version is
-        # written here and a pin moved in the tree is the one installed. rustup is
-        # taken from the path or from the cargo home, and the cargo home's bin
-        # directory is put on the path of the steps after this one.
+        # one exact toolchain in its rust-toolchain.toml, with every target it is
+        # compiled for: the guest build compiles it with that release and refuses
+        # any other, so a guest published from here is byte-identical to the same
+        # commit built anywhere else. In each Rust guest's source directory, named
+        # by the core-plugin list's one reader, rustup is asked to install with no
+        # toolchain named, and so installs the release that directory's file pins
+        # together with every target the file lists. No release and no target is
+        # written here: a pin or a target changed in the tree is the one
+        # installed. RUSTUP_TOOLCHAIN is cleared for the call because it outranks
+        # every toolchain file. The release build only compiles the guests, so it
+        # needs no component beyond the minimal profile's. rustup installs from a
+        # toolchain file this way from release 1.28.0 on; an older one refuses the
+        # call, and the step then stops naming that minimum and the runner's own
+        # rustup. rustup is taken from the path or from the cargo home, and the
+        # cargo home's bin directory is put on the path of the steps after this one.
         run: |
           set -euo pipefail
           cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
@@ -887,12 +894,15 @@ jobs:
             PATH="$cargo_bin:$PATH"
           fi
           . aggrega-cli/scripts/lib/core-plugins.sh
-          toolchains="$(core_plugin_rust_toolchains)"
-          while IFS= read -r toolchain; do
-            [ -n "$toolchain" ] || continue
-            echo "rust: installing $toolchain, pinned by a core guest"
-            rustup toolchain install "$toolchain" --profile minimal --target wasm32-wasip1 --no-self-update
-          done <<< "$toolchains"
+          dirs="$(core_plugin_rust_dirs)"
+          while IFS= read -r dir; do
+            [ -n "$dir" ] || continue
+            echo "rust: installing the toolchain aggrega-cli/$dir/rust-toolchain.toml pins, with its targets"
+            if ! ( cd "$CORE_PLUGIN_MODULE_ROOT/$dir" && env -u RUSTUP_TOOLCHAIN rustup toolchain install --profile minimal --no-self-update ); then
+              echo "rust: rustup could not install the toolchain aggrega-cli/$dir/rust-toolchain.toml pins. With no toolchain named, rustup installs the one a toolchain file names from release 1.28.0 on; this runner has $(rustup --version 2>/dev/null | awk 'NR == 1')" >&2
+              exit 1
+            fi
+          done <<< "$dirs"
           echo "$cargo_bin" >> "$GITHUB_PATH"
 
       - name: Cache the Rust guest build
