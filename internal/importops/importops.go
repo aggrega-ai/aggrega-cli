@@ -5,10 +5,10 @@
 // reaches: turning a foreign source description into draft Aggrega authoring
 // files, through the importer the catalog resolves for the source's format.
 //
-// The package exists because the logic used to sit in the command-line package,
-// which is package main and therefore unimportable by any other package — a
-// language rule rather than a convention. A surface that is not the command line
-// could not reach the code even though the code was right there.
+// The operation has a package of its own rather than a place in the command-line
+// package because that package is package main, which no other package can
+// import — a language rule rather than a convention — so code kept there, however
+// correct, is out of reach of every surface that is not the command line.
 //
 // # One operation, and why it is nonetheless its own package
 //
