@@ -9,6 +9,11 @@
 # rustup reads this file from the working directory, so it applies when this crate
 # is built or tested directly; inside a guest's build the guest's own file decides.
 # When the guests' release moves, this one moves with it.
+#
+# The one target listed, wasm32-wasip1, is the one the two guests compile this
+# crate for; built directly, for its own tests, it is compiled for the host, which
+# comes with every toolchain and is not listed. So a toolchain installed from this
+# file alone builds every build of this crate.
 [toolchain]
 channel = "1.98.1"
 targets = ["wasm32-wasip1"]

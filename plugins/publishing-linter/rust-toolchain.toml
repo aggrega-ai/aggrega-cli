@@ -10,6 +10,12 @@
 # working directory, which is why the embedded-plugin build enters a crate's
 # directory before invoking cargo. Moving it changes every byte of the guest, so it
 # moves deliberately, in the change that prepares a release.
+#
+# The targets are every one this crate is compiled for, so a toolchain installed
+# from this file alone builds all of them: wasm32-wasip1 for the guest the binary
+# embeds and the release publishes, and wasm32-unknown-unknown for the copy the
+# Go tests build from this directory and load. The host target, which builds and
+# runs the crate's own tests, comes with every toolchain and is not listed.
 [toolchain]
 channel = "1.85.1"
-targets = ["wasm32-wasip1"]
+targets = ["wasm32-wasip1", "wasm32-unknown-unknown"]

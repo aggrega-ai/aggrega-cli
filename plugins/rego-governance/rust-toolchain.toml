@@ -12,6 +12,11 @@
 # to compile this guest with any other. Moving it changes every byte of the guest,
 # so it moves deliberately, in the change that prepares a release, together with
 # cel-governance and governancecore, which share it.
+#
+# The one target listed is the one this crate is compiled for, so a toolchain
+# installed from this file alone builds it: wasm32-wasip1, for the guest the
+# binary embeds and the release publishes. The host target, which builds and runs
+# the crate's own tests, comes with every toolchain and is not listed.
 [toolchain]
 channel = "1.98.1"
 targets = ["wasm32-wasip1"]

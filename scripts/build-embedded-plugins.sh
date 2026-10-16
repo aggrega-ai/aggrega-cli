@@ -307,7 +307,7 @@ rust_guest_toolchain_check() {
   local name="$1" crate="$2" channel="$3"
   local rustc="${RUSTC:-rustc}" version line release=""
   if ! version="$("$rustc" -vV)"; then
-    echo "build-embedded-plugins: $rustc did not report its version for $name ($crate pins rust $channel; install it with: rustup toolchain install $channel --target wasm32-wasip1)" >&2
+    echo "build-embedded-plugins: $rustc did not report its version for $name ($crate/rust-toolchain.toml pins rust $channel; install it with every target that file lists: (cd $crate && rustup toolchain install))" >&2
     return 1
   fi
   while IFS= read -r line; do
