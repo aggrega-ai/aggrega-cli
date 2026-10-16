@@ -254,6 +254,14 @@ type httpHandler struct {
 // authorization server issued for this deployment. There is no exported route
 // by which a caller could install an authenticator that admits anything.
 func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http.Handler, error) {
+	// A listener is refused a launch refused for naming no root, rather than
+	// serving it as a process on standard input and output does: whoever
+	// supervises a listener reads its exit, and it would otherwise serve whichever
+	// directory it was started in. So no handler is built over one, and nothing
+	// binds.
+	if cfg.WorkspaceRootRefusal != nil {
+		return nil, cfg.WorkspaceRootRefusal
+	}
 	logw := cfg.Stderr
 	if logw == nil {
 		logw = os.Stderr

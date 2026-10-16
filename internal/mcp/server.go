@@ -127,7 +127,8 @@ type Config struct {
 	// WorkspaceRoot is the workspace this process serves, fixed when it was
 	// launched: the --workspace-root flag when the operator set it, otherwise
 	// AGGREGA_WORKSPACE_ROOT. Empty resolves from the process working directory,
-	// which is what a client launching this server inside a project gets.
+	// which is what a client launching this server inside a project gets, except
+	// where WorkspaceRootRefusal is set.
 	//
 	// It is the workspace root of every call that names no workspace of its own,
 	// taken as given: nothing above it is searched for an enclosing workspace,
@@ -154,6 +155,23 @@ type Config struct {
 	// launch instead, which is what a caller that hands a root without saying
 	// where it came from is answered with.
 	WorkspaceRootSource string
+
+	// WorkspaceRootRefusal is the refusal every call naming no workspace of its
+	// own is answered with, where the launch named no root and was refused for it
+	// all the same: the desktop application started this process with its
+	// Workspace folder setting empty (workspaceconfig.EmptyWorkspaceFolderError).
+	// No resolution of an empty root meets that refusal again — an empty root is
+	// discovery from the working directory, and that directory is the one nobody
+	// chose — so it is handed over whole rather than re-judged per call, as a root
+	// that is not an existing folder is.
+	//
+	// Where it is set, WorkspaceRoot is empty, and nothing resolves the working
+	// directory as a workspace: not a call naming none, not the documentation
+	// acquisition at the start of the run. A call naming a workspace of its own is
+	// answered there, and what acts in no workspace answers as on any server. A
+	// listener is refused at startup with it instead (NewHTTPHandler), as it is
+	// refused a root that is not an existing folder. Nil is every other launch.
+	WorkspaceRootRefusal error
 
 	// Flags is what the invocation that launched this process said about
 	// configuration on its command line: the global configuration file it named
@@ -238,7 +256,8 @@ type server struct {
 	// of a tool call that supplies no explicit workspace_root, taken as given
 	// (resolutionInputs), and the root a generated command tool's command is
 	// handed for such a call. Empty resolves from the process working directory
-	// and hands nothing. A test points it at a fixture workspace's root.
+	// and hands nothing, unless launchRefusal is set. A test points it at a
+	// fixture workspace's root.
 	launchRoot string
 
 	// launchRootSource names what supplied launchRoot, where the launch said
@@ -246,6 +265,12 @@ type server struct {
 	// root. A refusal of the launch root opens with it (rootSourceOf), whether the
 	// root was not an existing folder when the server started or has gone since.
 	launchRootSource string
+
+	// launchRefusal is the refusal a launch that named no root was refused with
+	// all the same (Config.WorkspaceRootRefusal), and nil for every other launch.
+	// Every call naming no workspace of its own meets it before anything is
+	// resolved (launchRefusalFor), and launchRoot is empty beside it.
+	launchRefusal error
 
 	// flags is the command line the process was launched with, as it bears on
 	// configuration: every workspace resolveToolWorkspace resolves is resolved
@@ -491,6 +516,7 @@ func Run(ctx context.Context, cfg Config) error {
 		renderHelp:       cfg.RenderHelp,
 		launchRoot:       cfg.WorkspaceRoot,
 		launchRootSource: cfg.WorkspaceRootSource,
+		launchRefusal:    cfg.WorkspaceRootRefusal,
 		flags:            cfg.Flags,
 		transport:        transportStdio,
 

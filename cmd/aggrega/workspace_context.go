@@ -241,6 +241,32 @@ func withholdNoWorkspaceNotice(ctx context.Context) {
 	}
 }
 
+// refuseWorkspace settles the resolver attached to ctx as refused with err,
+// before anything has read it, so every later read of this invocation's
+// workspace meets err rather than resolving one — the reads that reach it as a
+// function value included, such as the compiled-module cache's cap, which is
+// read the first time a guest is loaded (compiledModuleCacheCap).
+//
+// It is for a launch that refuses its workspace for a reason the resolution
+// itself would not meet, and is served all the same: the desktop application
+// starting `aggrega mcp` with its Workspace folder setting empty names no root,
+// and an empty root resolves the folder the process was started in, the one the
+// refusal exists to keep from being taken for the workspace. A root that is not
+// an existing folder needs no settling, because the resolution refuses it by
+// itself. A resolver that has already run keeps what it found.
+func refuseWorkspace(ctx context.Context, err error) {
+	l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace)
+	if !ok {
+		return
+	}
+	l.once.Do(func() {
+		l.mu.Lock()
+		l.resolved = true
+		l.mu.Unlock()
+		l.err = err
+	})
+}
+
 // nameWorkspaceRootSource records on the resolver attached to ctx where its
 // named root came from, as workspaceRootFromFlagOrEnv reports it, so a refusal
 // of a root that is not an existing folder names the flag or the variable that

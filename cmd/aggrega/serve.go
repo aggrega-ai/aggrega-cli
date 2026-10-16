@@ -105,8 +105,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 // validateWorkspaceRootFlag enforces the contract on the workspace root a
 // server's launch names, by --workspace-root or by AGGREGA_WORKSPACE_ROOT,
 // before the server starts serving. Empty string is treated as unset (the server
-// falls through to discovery). A non-empty value resolves to an absolute path,
-// must exist on disk, and must be a directory.
+// falls through to discovery), save that `aggrega mcp` refuses the desktop
+// bundle's launch naming no root (emptyDesktopWorkspaceFolder), which is that
+// command's to decide rather than this function's. A non-empty value resolves to
+// an absolute path, must exist on disk, and must be a directory.
 //
 // The judgement is the shared resolution's own (workspaceconfig.NamedRootDir),
 // the one every resolution handed a named root asks, so a launch and every

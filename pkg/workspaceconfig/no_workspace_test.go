@@ -5,6 +5,7 @@ package workspaceconfig_test
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -205,5 +206,36 @@ func TestANamedRootThatIsNotAnExistingFolderIsRefusedByTheResolution(t *testing.
 	}
 	if workspaceconfig.NameRootSource(nil, "--workspace-root") != nil {
 		t.Error("a nil error was turned into a refusal")
+	}
+}
+
+// TestTheEmptyWorkspaceFolderRefusalNamesTheSettingTheVariableAndTheFolderToChoose
+// holds the sentence a desktop launch with an empty Workspace folder setting is
+// refused in to the approved wording, written out rather than composed, so the
+// sentence a desktop user reads is what this test holds: it names the setting,
+// the variable that carries it, and the folder to choose. It is matched by its
+// type, and naming a root's source leaves it as it is, since it names no root.
+//
+// 🔴 PLANTED DEFECT: change DesktopWorkspaceFolderSetting, and this test fails on
+// the wording while the manifest conformance test fails on the title.
+func TestTheEmptyWorkspaceFolderRefusalNamesTheSettingTheVariableAndTheFolderToChoose(t *testing.T) {
+	t.Parallel()
+	const want = "the desktop application launched this server with its Workspace folder setting empty, so " +
+		"AGGREGA_WORKSPACE_ROOT names no workspace root: set Workspace folder to the folder that holds your " +
+		"workspace's .aggrega-config.yaml"
+	var err error = &workspaceconfig.EmptyWorkspaceFolderError{}
+	if err.Error() != want {
+		t.Errorf("the refusal reads\n%q\nwant\n%q", err, want)
+	}
+	var empty *workspaceconfig.EmptyWorkspaceFolderError
+	if wrapped := fmt.Errorf("resolve workspace: %w", err); !errors.As(wrapped, &empty) {
+		t.Errorf("the refusal is not matched by its type through a wrapper: %v", wrapped)
+	}
+	if named := workspaceconfig.NameRootSource(err, workspaceconfig.EnvWorkspaceRootSource); named.Error() != want {
+		t.Errorf("naming a root's source changed the refusal to %q", named)
+	}
+	var namedRoot *workspaceconfig.NamedRootError
+	if errors.As(err, &namedRoot) {
+		t.Error("the refusal of an empty setting is matched as the refusal of a named root")
 	}
 }

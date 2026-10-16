@@ -172,3 +172,25 @@ func NameRootSource(err error, source string) error {
 	}
 	return named.NamedBy(source)
 }
+
+// EmptyWorkspaceFolderError reports that the desktop application launched a
+// server with its Workspace folder setting ([DesktopWorkspaceFolderSetting])
+// empty, so [EnvWorkspaceRoot] names no workspace root.
+//
+// Everywhere else an empty EnvWorkspaceRoot is read as unset and the workspace is
+// found from the folder the process was started in. The desktop application
+// starts its server in a folder of its own choosing, often a system folder that
+// is no workspace, so on that launch an empty setting is a mistake to name rather
+// than a folder to search from: the refusal names the setting, the one thing the
+// person reading it in the application can change, and the folder to choose.
+// Which launch that is, is decided where a server is launched; this type holds
+// the sentence alone, composed from the names the desktop bundle's manifest is
+// held to, so every surface answering the refusal reads one sentence. Match it
+// with errors.As.
+type EmptyWorkspaceFolderError struct{}
+
+func (*EmptyWorkspaceFolderError) Error() string {
+	return fmt.Sprintf("the desktop application launched this server with its %s setting empty, so %s names no "+
+		"workspace root: set %s to the folder that holds your workspace's %s",
+		DesktopWorkspaceFolderSetting, EnvWorkspaceRoot, DesktopWorkspaceFolderSetting, ConfigFilename)
+}

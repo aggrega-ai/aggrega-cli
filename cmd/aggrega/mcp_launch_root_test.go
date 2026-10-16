@@ -135,39 +135,66 @@ func TestAWorkspaceRootALaunchNamesThatIsNotThereIsRefusedNamingWhereItCameFrom(
 // is inside the workspace rather than the workspace itself so that an empty
 // value taken as a root, which would be that folder, answers differently.
 //
-// 🔴 PLANTED DEFECT: drop validateWorkspaceRootFlag's reading of an empty value
+// It holds on both launches an empty value keeps that meaning on: one carrying
+// no desktop bundle version, and one carrying it with --workspace-root typed
+// empty, which is the reader's own choice and wins over the variable as on every
+// command. Only the bundle's launch naming no root at all is refused instead,
+// which TestAnEmptyWorkspaceFolderUnderTheDesktopBundleIsServedAsItsRefusal
+// drives.
+//
+// 🔴 PLANTED DEFECTS: drop validateWorkspaceRootFlag's reading of an empty value
 // as unset, and the empty variable roots the server in the folder it was started
-// in, which is not the workspace.
+// in, which is not the workspace. Have emptyDesktopWorkspaceFolder ignore whether
+// the flag was typed, and the row typing it empty fails, refused.
 func TestAnEmptyWorkspaceRootVariableLeavesTheServerToFindItsWorkspace(t *testing.T) {
-	// Not parallel: it sets the process environment and the working directory.
-	ws := t.TempDir()
-	writeLaunchRootFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace: {}\n")
-	startedIn := filepath.Join(ws, "sub")
-	if err := os.MkdirAll(startedIn, 0o755); err != nil {
-		t.Fatalf("create %s: %v", startedIn, err)
-	}
-	t.Chdir(startedIn)
-	t.Setenv(workspaceconfig.EnvWorkspaceRoot, "")
-	// Offline through the environment rather than a file, so the documentation
-	// acquisition at the start of the run stays off the network whichever root a
-	// planted defect lands the server in.
-	t.Setenv("AGGREGA_OFFLINE", "true")
+	// Not parallel: every row sets the process environment and the working
+	// directory.
+	for _, row := range []struct {
+		name string
+		// flags follow `mcp` on the command line; bundle is AGGREGA_BUNDLE_VERSION,
+		// empty for none.
+		flags  []string
+		bundle string
+	}{
+		{name: "no desktop bundle version"},
+		{name: "the desktop bundle version, and --workspace-root typed empty",
+			flags: []string{"--" + workspaceRootFlagName + "="}, bundle: bundleVersionProbe},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			ws := t.TempDir()
+			writeLaunchRootFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace: {}\n")
+			startedIn := filepath.Join(ws, "sub")
+			if err := os.MkdirAll(startedIn, 0o755); err != nil {
+				t.Fatalf("create %s: %v", startedIn, err)
+			}
+			t.Chdir(startedIn)
+			t.Setenv(workspaceconfig.EnvWorkspaceRoot, "")
+			// Set on every row, empty where the row carries none, so a value in this
+			// process's own environment cannot decide which launch a row is.
+			t.Setenv(workspaceconfig.EnvBundleVersion, row.bundle)
+			// Offline through the environment rather than a file, so the documentation
+			// acquisition at the start of the run stays off the network whichever root a
+			// planted defect lands the server in.
+			t.Setenv("AGGREGA_OFFLINE", "true")
 
-	var stdin, stdout, stderr bytes.Buffer
-	stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
-	stdin.WriteString(rpcLine(2, "tools/call", `{"name":"config-show","arguments":{}}`))
-	cmd := newRootCmd()
-	cmd.SetIn(&stdin)
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"mcp"})
-	if code := executeRoot(context.Background(), cmd); code != 0 {
-		t.Fatalf("aggrega mcp exited %d with the variable empty\nstderr:\n%s", code, stderr.String())
-	}
+			var stdin, stdout, stderr bytes.Buffer
+			stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+			stdin.WriteString(rpcLine(2, "tools/call", `{"name":"config-show","arguments":{}}`))
+			cmd := newRootCmd()
+			cmd.SetIn(&stdin)
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(append([]string{"mcp"}, row.flags...))
+			if code := executeRoot(context.Background(), cmd); code != 0 {
+				t.Fatalf("aggrega mcp exited %d with the variable empty\nstderr:\n%s", code, stderr.String())
+			}
 
-	root, _ := configShowAnswer(t, answersByID(t, stdout.String(), 1, 2)[2])
-	if !sameDirectory(t, root, ws) {
-		t.Errorf("the server answers for %q; want the workspace enclosing the folder it was started in, %q", root, ws)
+			root, _ := configShowAnswer(t, answersByID(t, stdout.String(), 1, 2)[2])
+			if !sameDirectory(t, root, ws) {
+				t.Errorf("the server answers for %q; want the workspace enclosing the folder it was started in, %q",
+					root, ws)
+			}
+		})
 	}
 }
 

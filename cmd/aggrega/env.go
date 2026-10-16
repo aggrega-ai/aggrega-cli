@@ -171,8 +171,9 @@ const (
 	// root-flag fallback rather than through the config overlay.
 	envWorkspaceRoot = workspaceconfig.EnvWorkspaceRoot
 	// envBundleVersion carries the version of the desktop bundle that launched
-	// the server. Not a config field and decides nothing; `aggrega mcp` reads it
-	// once at launch and reports it beside its own version.
+	// the server. Not a config field; `aggrega mcp` reads it once at launch,
+	// reports it beside its own version, and reads its presence as the bundle's
+	// launch (emptyDesktopWorkspaceFolder).
 	envBundleVersion = workspaceconfig.EnvBundleVersion
 	// envSigstoreIDToken is the sigstore-ecosystem interop alias for the
 	// identity token. Read only by the identity-token resolver, after the
@@ -205,7 +206,10 @@ func allBoundEnvVars() []string {
 //
 // It is read once, where `aggrega mcp` starts, and handed to the server whole:
 // the server reports it and compares it with its own version, and nothing
-// anywhere refuses on what it says.
+// anywhere refuses on the version it carries. That it is there at all is what
+// tells the bundle's launch apart, so the launch reads it once more for that
+// (emptyDesktopWorkspaceFolder): a bundle launch naming no root refuses the empty
+// Workspace folder setting rather than searching the folder it was started in.
 func bundleVersionFromEnv(look func(string) string) string {
 	return envLookupOrGetenv(look)(envBundleVersion)
 }

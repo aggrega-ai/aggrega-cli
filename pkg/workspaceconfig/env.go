@@ -235,10 +235,11 @@ const EnvWorkspaceRoot = "AGGREGA_WORKSPACE_ROOT"
 // server through EnvWorkspaceRoot.
 //
 // A refusal of a root the variable supplied names that setting
-// (EnvWorkspaceRootSource), because the person reading it in the desktop
-// application's chat changes the setting rather than the variable. The manifest
-// is JSON and cannot name this constant, so the test that holds the variable's
-// spelling there holds this title there too.
+// (EnvWorkspaceRootSource), and so does the refusal of a desktop launch that left
+// it empty ([EmptyWorkspaceFolderError]), because the person reading either in the
+// desktop application's chat changes the setting rather than the variable. The
+// manifest is JSON and cannot name this constant, so the test that holds the
+// variable's spelling there holds this title there too.
 const DesktopWorkspaceFolderSetting = "Workspace folder"
 
 // EnvWorkspaceRootSource is how a refusal of a workspace root EnvWorkspaceRoot
@@ -258,9 +259,13 @@ const EnvWorkspaceRootSource = EnvWorkspaceRoot + " — the variable the desktop
 // and say when the two come from different releases. The bundle's build writes
 // the value from the same version it stamps into the manifest's version field;
 // a launch the bundle did not make — from a terminal, an editor, or a listener —
-// carries none, and the server then reports no bundle. It is not a Config field
-// and decides nothing: the server reads it once at launch, reports it, and
-// refuses nothing on what it says.
+// carries none, and the server then reports no bundle. It is not a Config field:
+// the server reads it once at launch and reports it, and refuses nothing on the
+// version it carries. Its presence is the one thing that tells the bundle's
+// launch apart, so a server over standard input and output that carries it and
+// is named no root refuses the empty Workspace folder setting
+// ([EmptyWorkspaceFolderError]) where any other launch reads the empty root as
+// unset.
 //
 // That manifest is JSON and cannot name this constant, so the test that holds
 // EnvWorkspaceRoot's spelling there holds this one too.

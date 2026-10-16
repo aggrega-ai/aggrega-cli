@@ -183,10 +183,17 @@ variable that supplied it and the value as it was given: a listener is
 refused before it binds, while a server on standard input and output
 writes the refusal to stderr and starts all the same, answering every
 call that acts in that workspace with it, so a client that shows
-nothing of stderr still shows the refusal. With neither, a server on
-standard input and output resolves the workspace from the directory it
-was started in, while a listener is refused before it binds unless a
-workspace resolves there: one reached
+nothing of stderr still shows the refusal. An empty
+AGGREGA_WORKSPACE_ROOT is read as unset, but for one launch: a server
+on standard input and output given no --workspace-root, whose
+environment carries the AGGREGA_BUNDLE_VERSION the desktop bundle sets,
+was started with the desktop application's Workspace folder setting
+empty. It is served the same way, the refusal naming that setting, so
+no call naming no workspace of its own is answered in the directory it
+was started in. In every other case where neither names a root, a
+server on standard input and output resolves the workspace from the
+directory it was started in, while a listener is refused before it
+binds unless a workspace resolves there: one reached
 over HTTP serves a workspace an operator chose rather than
 whichever directory it happened to be started in. Where that directory
 anchors no workspace, a call naming no workspace of its own that names
@@ -229,6 +236,10 @@ process exits. A second request ends the process at once.`,
 func runMCP(cmd *cobra.Command, args []string) error {
 	flagRoot, _ := cmd.Flags().GetString(workspaceRootFlagName)
 	given, source := workspaceRootFromFlagOrEnv(cmd, flagRoot, nil)
+	// Read here, once, for the life of the process: the version of the desktop
+	// bundle that launched it, which the server reports beside its own. A launch
+	// the bundle did not make carries none.
+	bundleVersion := bundleVersionFromEnv(nil)
 	root, err := validateWorkspaceRootFlag(given, source)
 	// The server is handed the root a call naming no workspace of its own is
 	// answered in, and what supplied it, so a refusal of that root names the flag
@@ -238,11 +249,25 @@ func runMCP(cmd *cobra.Command, args []string) error {
 	// launch met, in the same words; a root that is one is handed as it was
 	// resolved, and a call finding it gone later is refused naming the same source.
 	// A launch that named no root hands neither.
+	//
+	// The desktop bundle's launch with its Workspace folder setting empty names no
+	// root either, and is refused all the same (emptyDesktopWorkspaceFolder). No
+	// resolution of an empty root would meet that refusal again — an empty root is
+	// the folder the process was started in — so the one refusal is handed whole:
+	// to the server, which answers every call naming no workspace of its own with
+	// it, and to this invocation's own resolution, which every later read of the
+	// workspace meets instead of resolving that folder.
 	launchRoot := root
 	var ws *workspaceconfig.ResolvedWorkspace
-	if err != nil {
+	var launchRefusal error
+	switch {
+	case err != nil:
 		launchRoot = given
-	} else {
+	case emptyDesktopWorkspaceFolder(cmd, given, source, bundleVersion):
+		launchRefusal = &workspaceconfig.EmptyWorkspaceFolderError{}
+		err = launchRefusal
+		refuseWorkspace(cmd.Context(), launchRefusal)
+	default:
 		// The workspace is read through the resolution every command reads, so the
 		// mcp block this launch honours is the one the cascade composed rather than
 		// one loaded a second time here.
@@ -256,7 +281,8 @@ func runMCP(cmd *cobra.Command, args []string) error {
 	var launch mcpLaunch
 	if err != nil {
 		// A workspace this launch cannot use is served all the same, over standard
-		// input and output: a root it names that is not an existing folder, and a
+		// input and output: a root it names that is not an existing folder, a
+		// Workspace folder setting the desktop bundle launched it with empty, and a
 		// workspace whose configuration is held. The line naming why goes to
 		// stderr, and the client that launched this process — which may show its
 		// user nothing of stderr — reads it in the answer to every call that acts
@@ -288,14 +314,14 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		Stdout:        cmd.OutOrStdout(),
 		Stderr:        cmd.ErrOrStderr(),
 		ServerVersion: provenanceCompilerVersion(),
-		// Read here, once, for the life of the process: the version of the desktop
-		// bundle that launched it, which the server reports beside its own. A
-		// launch the bundle did not make carries none.
-		BundleVersion: bundleVersionFromEnv(nil),
+		BundleVersion: bundleVersion,
 		WorkspaceRoot: launchRoot,
 		// Set wherever the launch named a root, on both transports: a refusal of
 		// that root names what supplied it, as the launch's own refusal does.
 		WorkspaceRootSource: launchRootSource,
+		// Set only on the desktop bundle's launch with an empty Workspace folder
+		// setting, which speaks over standard input and output by construction.
+		WorkspaceRootRefusal: launchRefusal,
 		// Supplied for the same reason the command surface below is: the value
 		// belongs to this package and the server lives under it. Both halves of the
 		// stamp are read through the derivations this package already owns, so a
@@ -395,13 +421,16 @@ func heldWorkspaceOf(cmd *cobra.Command, root string, err error) *workspaceconfi
 //
 // A root the launch names that is not an existing folder is written exactly as
 // a launch that ends with it writes it (formatCompilerError), so a client's log
-// keeps the one line every surface refusing that root prints. A workspace whose
-// configuration is held is written as a warning saying which tools still
-// answer. root is the root validateWorkspaceRootFlag returned, which
+// keeps the one line every surface refusing that root prints; the refusal of a
+// Workspace folder setting the desktop bundle launched it with empty is written
+// the same way, so the log carries the sentence every call is answered with. A
+// workspace whose configuration is held is written as a warning saying which
+// tools still answer. root is the root validateWorkspaceRootFlag returned, which
 // is the one the held view is asked for.
 func unusableWorkspaceNotice(cmd *cobra.Command, root string, err error) string {
 	var named *workspaceconfig.NamedRootError
-	if errors.As(err, &named) {
+	var empty *workspaceconfig.EmptyWorkspaceFolderError
+	if errors.As(err, &named) || errors.As(err, &empty) {
 		return formatCompilerError(err)
 	}
 	if held := heldWorkspaceOf(cmd, root, err); held != nil {
@@ -412,7 +441,8 @@ func unusableWorkspaceNotice(cmd *cobra.Command, root string, err error) string 
 }
 
 // servesUnusableWorkspaceOverStdio reports whether this invocation may serve a
-// workspace it cannot use — a root it names that is not an existing folder, or a
+// workspace it cannot use — a root it names that is not an existing folder, a
+// Workspace folder setting the desktop bundle launched it with empty, or a
 // workspace whose configuration is held: it speaks over standard input and
 // output, by default or by --transport stdio, and names no address to listen on.
 func servesUnusableWorkspaceOverStdio(cmd *cobra.Command) bool {
@@ -425,6 +455,32 @@ func servesUnusableWorkspaceOverStdio(cmd *cobra.Command) bool {
 		return transport == workspaceconfig.MCPTransportStdio
 	}
 	return true
+}
+
+// emptyDesktopWorkspaceFolder reports whether this invocation is the desktop
+// bundle's launch with its Workspace folder setting empty, which is served as a
+// refusal naming that setting (workspaceconfig.EmptyWorkspaceFolderError) rather
+// than read as no root.
+//
+// Three things make it that launch, and each is read where the launch already
+// reads it. It names no root: no --workspace-root was typed and
+// AGGREGA_WORKSPACE_ROOT is unset or empty, which workspaceRootFromFlagOrEnv
+// reports as no value and no source (given and source). It carries the bundle's
+// version, which the bundle sets on the server's environment and nothing else
+// does (bundleVersion, as bundleVersionFromEnv read it). And it speaks over
+// standard input and output, the launch the bundle makes
+// (servesUnusableWorkspaceOverStdio).
+//
+// Everywhere else an empty root means the workspace is found from the folder the
+// process was started in. The desktop application starts this server in a folder
+// of its own choosing, often a system folder that is no workspace, and its
+// manifest always hands the variable over, so on that launch an empty value is
+// the setting left empty rather than a request to search there. A typed
+// --workspace-root, an empty one included, is the reader's own choice and wins as
+// it does on every command; a launch carrying no bundle version, a listener,
+// `aggrega serve` and every other command keep reading an empty value as unset.
+func emptyDesktopWorkspaceFolder(cmd *cobra.Command, given, source, bundleVersion string) bool {
+	return given == "" && source == "" && bundleVersion != "" && servesUnusableWorkspaceOverStdio(cmd)
 }
 
 // mcpLaunch is what one invocation of `aggrega mcp` resolved to.

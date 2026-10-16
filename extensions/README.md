@@ -10,20 +10,23 @@ standard input and output — the same server `aggrega mcp` runs with no listen 
 manifest names no executable of any platform, the same bundle applies to every platform it declares:
 macOS, Windows and Linux.
 
-**It asks for two settings, and the server does not start until both are set.** **Path to the aggrega
-executable** is the program it launches. **Workspace folder** is the workspace the server serves: the
-folder that holds the project's `.aggrega-config.yaml`, handed to the server as
-`AGGREGA_WORKSPACE_ROOT` in its environment rather than as an argument, so the folder does not pass
-through the quoting of the command line the client composes. A client starts a local server in a folder
-of its own choosing,
-often a system folder, so without this setting every request naming no workspace would be answered
-there. The folder is taken as the workspace root itself, as `--workspace-root` is on every command. A
-folder that does not exist does not stop the server: it writes its refusal to standard error, starts
-all the same, and answers every request that acts in the workspace with that refusal, which names
-`AGGREGA_WORKSPACE_ROOT` as the variable the **Workspace folder** setting sets and quotes the value it
-was given — so the client receives it in the answer to each such request rather than only in its log. A Go test in this
-repository holds the variable's spelling and the setting's title in the manifest to the ones the
-program reads.
+**It asks for two settings, and both are required.** **Path to the aggrega executable** is the program
+it launches. **Workspace folder** is the workspace the server serves: the folder that holds the
+project's `.aggrega-config.yaml`, handed to the server as `AGGREGA_WORKSPACE_ROOT` in its environment
+rather than as an argument, so the folder does not pass through the quoting of the command line the
+client composes. A client starts a local server in a folder of its own choosing, often a system folder,
+so a request naming no workspace of its own is answered in the folder this setting names, or refused,
+and never answered in that one. The folder is taken as the
+workspace root itself, as `--workspace-root` is on every command. A folder that does not exist does not
+stop the server: it writes its refusal to standard error, starts all the same, and answers every request
+that acts in the workspace with that refusal, which names `AGGREGA_WORKSPACE_ROOT` as the variable the
+**Workspace folder** setting sets and quotes the value it was given — so the client receives it in the
+answer to each such request rather than only in its log. A setting left empty, which a client may save
+and launch the server with, is answered the same way: a server launched over standard input and output
+with `AGGREGA_BUNDLE_VERSION` in its environment and no root named refuses every request naming no
+workspace of its own with a refusal naming the empty **Workspace folder** setting, where any other
+launch reads an empty variable as unset. A Go test in this repository holds the variable's spelling and
+the setting's title in the manifest to the ones the program reads.
 
 ## Building the bundle
 
