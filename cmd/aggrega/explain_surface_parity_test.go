@@ -445,8 +445,8 @@ func TestExplainIsOneAnswerOnEverySurface(t *testing.T) {
 	}
 	// The pointer to the authoring contract answers a different question from the
 	// condition, so it is asserted as its own fact against a value written here.
-	if want := "aggrega-docs/language-reference/entities/" + assistantDiagnosticKind + ".md"; fromAssistant.DocPointer != want {
-		t.Errorf("doc pointer = %q, want the %s language-reference page (%q)",
+	if want := "https://aggrega.ai/docs/language-reference/entities/" + assistantDiagnosticKind + "/"; fromAssistant.DocPointer != want {
+		t.Errorf("doc pointer = %q, want the %s language-reference page's published address (%q)",
 			fromAssistant.DocPointer, assistantDiagnosticKind, want)
 	}
 

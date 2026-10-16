@@ -191,8 +191,8 @@ func TestExplainErrorCarriesThePublishedWalkThrough(t *testing.T) {
 	// The pointer to the kind's authoring contract is unaffected by any of this: it
 	// answers a different question — where to read the contract for the thing that
 	// failed — and both belong on the answer.
-	if payload.DocPointer != docEntityDir+"recipe.md" {
-		t.Errorf("doc pointer = %q, want the recipe language-reference page", payload.DocPointer)
+	if payload.DocPointer != haltref.PublishedURL(docEntityDir+"recipe.md") {
+		t.Errorf("doc pointer = %q, want the recipe language-reference page's published address", payload.DocPointer)
 	}
 }
 
@@ -340,7 +340,7 @@ func TestExplainErrorDiscriminatesASpentNumberFromAnUnrecognisedOne(t *testing.T
 			if tc.wantNote != "" {
 				want += "\n\n" + tc.wantNote
 			}
-			want += "\n\nSee: " + docEntityDir + "recipe.md"
+			want += "\n\nSee: " + haltref.PublishedURL(docEntityDir+"recipe.md")
 			if payload.Guidance != want {
 				t.Errorf("the prose is not the diagnostic, the note and the pointer.\n--- got ---\n%s\n"+
 					"--- want ---\n%s", payload.Guidance, want)
@@ -388,13 +388,20 @@ func TestExplainErrorReadsTheSessionsOwnBundle(t *testing.T) {
 	}
 }
 
-// TestAPointerNamesAKindsPageOrAPageOutrightThroughOneLine pins the two ways a
-// refusal selects the page it closes with, and that both close with the same
-// line.
+// TestAPointerNamesAKindsPageOrAPageOutrightThroughOneLine pins the ways a
+// refusal selects the page it closes with, and that every one closes with the
+// same line, naming the page by the address the published documentation serves
+// it at.
 //
-// The kind rows are the control on every refusal that did not change: a kind with
-// a page is sent to it, and no kind is sent to the index, byte for byte as before.
-// The page row is the refusal whose fix no kind's page teaches.
+// The kind rows are the control: a kind with a page is sent to it, and no kind is
+// sent to the index, byte for byte. The page rows are the refusals whose fix no
+// kind's page teaches. The workspace row is a refusal of the workspace a call
+// resolves, sent to the page teaching which workspace a call is answered in
+// although its caller names a kind with a page of its own; the kind row above it
+// with the same kind is what makes that row discriminate.
+//
+// The addresses are written out rather than derived, so a change to how a page
+// is addressed fails here instead of moving both sides of the comparison.
 func TestAPointerNamesAKindsPageOrAPageOutrightThroughOneLine(t *testing.T) {
 	const diagnostic = "the operation did not complete"
 	for _, tc := range []struct {
@@ -405,27 +412,39 @@ func TestAPointerNamesAKindsPageOrAPageOutrightThroughOneLine(t *testing.T) {
 		{
 			scenario: "a kind with a page of its own",
 			got:      explainDiagnostic(diagnostic, "recipe"),
-			want:     diagnostic + "\n\nSee: aggrega-docs/language-reference/entities/recipe.md",
+			want:     diagnostic + "\n\nSee: https://aggrega.ai/docs/language-reference/entities/recipe/",
 		},
 		{
 			scenario: "no kind at all",
 			got:      explainDiagnostic(diagnostic, ""),
-			want:     diagnostic + "\n\nSee: aggrega-docs/language-reference/",
+			want:     diagnostic + "\n\nSee: https://aggrega.ai/docs/language-reference/",
 		},
 		{
 			scenario: "a page named outright",
 			got:      explainDiagnosticAt(diagnostic, docServerReference),
-			want:     diagnostic + "\n\nSee: aggrega-docs/language-reference/cli/aggrega-mcp.md",
+			want:     diagnostic + "\n\nSee: https://aggrega.ai/docs/language-reference/cli/aggrega-mcp/",
 		},
 		{
 			scenario: "a tool failure selecting by kind",
 			got:      explainToolError("It stopped.", errors.New(diagnostic), ""),
-			want:     "It stopped.\n\n" + diagnostic + "\n\nSee: aggrega-docs/language-reference/",
+			want:     "It stopped.\n\n" + diagnostic + "\n\nSee: https://aggrega.ai/docs/language-reference/",
+		},
+		{
+			scenario: "a tool failure selecting a kind with a page of its own",
+			got:      explainToolError("It stopped.", errors.New(diagnostic), "component"),
+			want: "It stopped.\n\n" + diagnostic +
+				"\n\nSee: https://aggrega.ai/docs/language-reference/entities/component/",
+		},
+		{
+			scenario: "a refusal of the workspace the call resolves, whatever kind its caller names",
+			got:      explainToolError("It stopped.", toolWorkspaceRefusal(errors.New(diagnostic)), "component"),
+			want: "It stopped.\n\nresolve workspace: " + diagnostic +
+				"\n\nSee: https://aggrega.ai/docs/language-reference/cli/aggrega-mcp/",
 		},
 		{
 			scenario: "a tool failure naming its page outright",
 			got:      explainToolErrorAt("It stopped.", errors.New(diagnostic), docServerReference),
-			want:     "It stopped.\n\n" + diagnostic + "\n\nSee: aggrega-docs/language-reference/cli/aggrega-mcp.md",
+			want:     "It stopped.\n\n" + diagnostic + "\n\nSee: https://aggrega.ai/docs/language-reference/cli/aggrega-mcp/",
 		},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {

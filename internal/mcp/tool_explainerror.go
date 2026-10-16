@@ -17,18 +17,27 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
+// The pages a pointer names are written as paths inside the documentation tree,
+// the form the documentation bundle carries them in, and a pointer names each by
+// the address the published documentation serves it at (docAddress) — so a
+// reader with no checkout and no cached bundle can open it.
+
 // docEntityDir is the directory holding the per-kind language-reference pages.
 // A kind's page is named for the kind's own path segment, so the pointer is
 // derived rather than restated per kind.
-const docEntityDir = "aggrega-docs/language-reference/entities/"
+const docEntityDir = "language-reference/entities/"
 
-// docIndex is the fallback pointer when no kind-specific page applies.
-const docIndex = "aggrega-docs/language-reference/"
+// docIndex is the fallback pointer when no kind-specific page applies: the
+// language reference itself, named as its section rather than by the file that
+// opens it, because the section's own address is where that page is published.
+const docIndex = "language-reference"
 
-// docServerReference is the page teaching this server itself: the workspace it
-// serves, and the credentials a call spends. A refusal about either points here,
-// because no entity kind's page is about them.
-const docServerReference = docIndex + "cli/aggrega-mcp.md"
+// docServerReference is the page teaching this server itself: which workspace a
+// call is answered in, and the credentials a call spends. A refusal about either
+// points here, because no entity kind's page is about them — a refusal of the
+// workspace a call resolves included, whichever kind the call concerns
+// (explainToolError).
+const docServerReference = docIndex + "/cli/aggrega-mcp.md"
 
 // docPointerFor returns the language-reference page documenting an entity kind, or
 // the index when the kind is empty, unrecognized, or has no page of its own.
@@ -79,10 +88,20 @@ func explainDiagnosticAt(message, page string) string {
 }
 
 // docPointerLine is the line that closes a piece of guidance by naming the page
-// to read. It is the one place that line is written, so every refusal and every
-// expansion here spells its pointer the same way whichever page it names.
+// to read, by its published address. It is the one place that line is written,
+// so every refusal and every expansion here spells its pointer the same way
+// whichever page it names.
 func docPointerLine(page string) string {
-	return "See: " + page
+	return "See: " + docAddress(page)
+}
+
+// docAddress returns the address a pointer names a page by: where the published
+// documentation serves it, which a reader can open without a checkout or a
+// cached bundle. The line closing a piece of guidance and the pointer
+// explain-error carries as a field both name a page through it, so the two
+// cannot come to name one page in two forms.
+func docAddress(page string) string {
+	return haltref.PublishedURL(page)
 }
 
 // conditionNote returns what the compiler declares about the condition a
@@ -127,7 +146,16 @@ func conditionNoteFor(shortCode string) string {
 // sends a failure through, so a build error, a validation-load failure, and a
 // missing search plugin all reach the caller as guidance rather than an opaque
 // code.
+//
+// kind selects the pointer, except for a refusal of the workspace the call
+// resolves (toolWorkspaceRefusal), which points at the page teaching which
+// workspace a call is answered in whatever kind the call concerns: the fix is to
+// the workspace the call named or the server was started over, and no entity
+// kind's page teaches that.
 func explainToolError(action string, err error, kind string) string {
+	if refusesWorkspace(err) {
+		return explainToolErrorAt(action, err, docServerReference)
+	}
 	return explainToolErrorAt(action, err, docPointerFor(kind))
 }
 
@@ -213,8 +241,9 @@ type explainErrorEntry struct {
 // explainErrorResult is the explain-error tool's structured payload.
 //
 // Message is the diagnostic as it was sent, Guidance the whole expansion as
-// prose, and DocPointer the language-reference page for the kind the diagnostic
-// concerns — where to read the authoring contract for the thing that failed.
+// prose, and DocPointer the published address of the language-reference page
+// for the kind the diagnostic concerns — where to read the authoring contract
+// for the thing that failed, the same address the prose closes with.
 //
 // Condition, Entries and Reference are present only when the diagnostic named a
 // condition something resolves. Condition is what the compiler declares about it;
@@ -423,21 +452,22 @@ var explainErrorToolSpec = toolSpec{
 		if rerr != nil {
 			return nil, rerr
 		}
+		page := docPointerFor(a.Kind)
 		if expansion == nil {
 			// The diagnostic names no condition anything resolves, so the answer is
 			// the diagnostic and where to read the authoring contract — the form
 			// every expansion takes before a code adds anything to it.
-			guidance := explainDiagnostic(message, a.Kind)
+			guidance := explainDiagnosticAt(message, page)
 			return textResult(guidance, explainErrorResult{
 				Message:    message,
 				Guidance:   guidance,
-				DocPointer: docPointerFor(a.Kind),
+				DocPointer: docAddress(page),
 			})
 		}
 
 		result := explainErrorResult{
 			Message:    message,
-			DocPointer: docPointerFor(a.Kind),
+			DocPointer: docAddress(page),
 			Condition:  expansion.Condition,
 			Entries:    expansion.Entries,
 			Note:       expansion.Note,
@@ -449,7 +479,7 @@ var explainErrorToolSpec = toolSpec{
 		if expansion.Condition != nil {
 			result.Reference = haltref.ExplanationURL()
 		}
-		result.Guidance = explainGuidance(message, expansion, result.DocPointer)
+		result.Guidance = explainGuidance(message, expansion, page)
 		return textResult(result.Guidance, result)
 	},
 }
@@ -457,7 +487,8 @@ var explainErrorToolSpec = toolSpec{
 // explainGuidance composes the prose an assistant reads: the diagnostic it sent,
 // the shared explanation of the condition that diagnostic named, whatever could
 // not be added to that explanation, and where to read the authoring contract for
-// the kind it concerns.
+// the kind it concerns — page, named by its published address as every pointer
+// here is (docPointerLine).
 //
 // The blocks are joined rather than formatted together, and each is trimmed
 // first, so the shared explanation appears in the answer as the bytes the shared
@@ -472,12 +503,12 @@ var explainErrorToolSpec = toolSpec{
 // An absent block is left out rather than joined as an empty one, so an answer
 // about a spent number reads as the diagnostic, why the number names nothing now,
 // and the pointer — with no blank gap where an explanation would have been.
-func explainGuidance(message string, expansion *conditionExpansion, docPointer string) string {
+func explainGuidance(message string, expansion *conditionExpansion, page string) string {
 	blocks := []string{message}
 	for _, block := range []string{expansion.Rendered, expansion.Note} {
 		if block != "" {
 			blocks = append(blocks, block)
 		}
 	}
-	return strings.Join(append(blocks, docPointerLine(docPointer)), "\n\n")
+	return strings.Join(append(blocks, docPointerLine(page)), "\n\n")
 }

@@ -573,8 +573,32 @@ func (s *server) subjectWorkspace(tw *toolWorkspace, subject string) (*toolWorks
 
 // toolWorkspaceRefusal frames a failure to resolve a call's workspace, so a call
 // refused for a held configuration reads alike whichever resolution met it.
+//
+// The frame is a type of its own rather than a wrapped string so the refusal
+// says what it is about wherever it travels: the guidance a tool answers it with
+// points at the page teaching which workspace a call is answered in
+// (explainToolError), whichever kind the tool's call concerns, without any call
+// site having to know it was handed one.
 func toolWorkspaceRefusal(err error) error {
-	return fmt.Errorf("resolve workspace: %w", err)
+	return &workspaceRefusal{cause: err}
+}
+
+// workspaceRefusal is a failure to resolve the workspace a call is answered in,
+// as toolWorkspaceRefusal frames it. Its text is the cause's under the frame
+// every such refusal opens with, and the cause stays reachable through it.
+type workspaceRefusal struct {
+	cause error
+}
+
+func (r *workspaceRefusal) Error() string { return "resolve workspace: " + r.cause.Error() }
+
+func (r *workspaceRefusal) Unwrap() error { return r.cause }
+
+// refusesWorkspace reports whether err is, or wraps, a refusal of the workspace
+// a call resolves.
+func refusesWorkspace(err error) bool {
+	var refusal *workspaceRefusal
+	return errors.As(err, &refusal)
 }
 
 // resolveListingWorkspace resolves the workspace a call to the tool answering

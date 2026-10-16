@@ -93,7 +93,7 @@ func TestGuidancePointersNameOnlyPagesThatShip(t *testing.T) {
 		segment := entitykind.Segment(e.Kind)
 		got := docPointerFor(segment)
 		if e.ReferencePage {
-			want := "aggrega-docs/language-reference/entities/" + segment + ".md"
+			want := "language-reference/entities/" + segment + ".md"
 			if got != want {
 				t.Errorf("kind %s has a reference page but its guidance pointer is %q, want %q", e.Kind, got, want)
 			}

@@ -91,13 +91,15 @@ func requireNamesTheRefusedRecipe(t *testing.T, surface, answer, recipePath stri
 		"E0215",
 		"spec.source",
 		"skipped at load",
-		"aggrega-docs/language-reference/entities/recipe.md",
+		"https://aggrega.ai/docs/language-reference/entities/recipe/",
 	} {
 		if !strings.Contains(answer, want) {
 			t.Errorf("%s does not carry %q:\n%s", surface, want, answer)
 		}
 	}
-	if strings.Contains(answer, "entities/release.md") {
+	// Written without the form a page is addressed in, so it names the Release
+	// page however a pointer spells it.
+	if strings.Contains(answer, "language-reference/entities/release") {
 		t.Errorf("%s sends the reader to the Release contract for a fault authored in a Recipe:\n%s", surface, answer)
 	}
 }

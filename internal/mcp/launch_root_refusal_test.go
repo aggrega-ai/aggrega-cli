@@ -26,7 +26,8 @@ import (
 // that answers the machine-wide half when nothing resolves, and a tool running a
 // command in a separate process — and a catalog read each answer with the
 // refusal the launch met, opening with the variable and the desktop setting that
-// sets it and quoting the root as given. No command is started. What acts in no
+// sets it, quoting the root as given, and each tool call's closing with the
+// pointer to this server's own page. No command is started. What acts in no
 // workspace answers as it does on any server: a schema read by tool, and the
 // tool listing. A call naming a workspace of its own is answered there.
 //
@@ -44,7 +45,9 @@ import (
 // command tool's launchRootRefusal and the cli-work row fails with the command
 // started; drop the cache inventory's case for it and the cache-status row fails,
 // answered from the machine-wide caches; drop the source from the HTTP handler's
-// construction and the listener row fails, naming this server's launch.
+// construction and the listener row fails, naming this server's launch; let
+// explainToolError select by kind for a workspace refusal too and every tool row
+// fails its pointer, sent to a kind's page or the index.
 func TestALaunchRootThatIsNotAFolderIsTheAnswerToEveryCallActingInIt(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "no-such-folder")
@@ -59,6 +62,11 @@ func TestALaunchRootThatIsNotAFolderIsTheAnswerToEveryCallActingInIt(t *testing.
 	s.launchRootSource = workspaceconfig.EnvWorkspaceRootSource
 	s.flags = workspaceconfig.FlagOverlay{ConfigPath: global}
 	want := workspaceconfig.EnvWorkspaceRootSource + ` names the workspace root "` + missing + `", which cannot be used: `
+	// Every refusal closes by pointing at the page teaching which workspace a call
+	// is answered in, whichever kind its tool's other failures point at — the
+	// Release page for validate, the Component page for the listing and the
+	// configuration reading, the index for the cache inventory and the command.
+	pointer := "\n\n" + docPointerLine(docServerReference)
 
 	for _, c := range []struct {
 		tool string
@@ -74,6 +82,11 @@ func TestALaunchRootThatIsNotAFolderIsTheAnswerToEveryCallActingInIt(t *testing.
 		if !res.IsError || !strings.Contains(res.Content[0].Text, want) {
 			t.Errorf("%s %v was not answered with the launch's refusal (isError %v); want it to carry %q:\n%s",
 				c.tool, c.args, res.IsError, want, res.Content[0].Text)
+			continue
+		}
+		if !strings.HasSuffix(res.Content[0].Text, pointer) {
+			t.Errorf("%s %v refused the launch's workspace without closing with %q:\n%s",
+				c.tool, c.args, pointer, res.Content[0].Text)
 		}
 	}
 	if seen.argv != nil {

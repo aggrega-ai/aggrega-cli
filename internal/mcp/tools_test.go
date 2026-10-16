@@ -343,8 +343,8 @@ func TestExplainErrorTool(t *testing.T) {
 	if !strings.Contains(payload.Guidance, "load release foo: not found") {
 		t.Errorf("guidance dropped the original message: %q", payload.Guidance)
 	}
-	if payload.DocPointer != "aggrega-docs/language-reference/entities/release.md" {
-		t.Errorf("doc pointer = %q, want the release language-reference page", payload.DocPointer)
+	if payload.DocPointer != "https://aggrega.ai/docs/language-reference/entities/release/" {
+		t.Errorf("doc pointer = %q, want the release language-reference page's published address", payload.DocPointer)
 	}
 }
 
