@@ -30,17 +30,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/BurntSushi/toml@v1.6.0
 PackageComment: <text>Compiled into: wasm-provider-guests</text>
 FilesAnalyzed: false
 
-PackageName: github.com/MakeNowJust/heredoc
-SPDXID: SPDXRef-Package-go-github.com-MakeNowJust-heredoc-v1.0.0
-PackageVersion: v1.0.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/!make!now!just/heredoc/@v/v1.0.0.zip
-PackageLicenseConcluded: MIT
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright (c) 2014-2019 TSUYUSATO Kitsune</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/MakeNowJust/heredoc@v1.0.0
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: github.com/Masterminds/goutils
 SPDXID: SPDXRef-Package-go-github.com-Masterminds-goutils-v1.1.1
 PackageVersion: v1.1.1
@@ -53,13 +42,13 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/Masterminds/semver/v3
-SPDXID: SPDXRef-Package-go-github.com-Masterminds-semver-v3-v3.4.0
-PackageVersion: v3.4.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/!masterminds/semver/v3/@v/v3.4.0.zip
+SPDXID: SPDXRef-Package-go-github.com-Masterminds-semver-v3-v3.5.0
+PackageVersion: v3.5.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/!masterminds/semver/v3/@v/v3.5.0.zip
 PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (C) 2014-2019, Matt Butcher and Matt Farina</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Masterminds/semver/v3@v3.4.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Masterminds/semver/v3@v3.5.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -75,13 +64,13 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/ProtonMail/go-crypto
-SPDXID: SPDXRef-Package-go-github.com-ProtonMail-go-crypto-v1.1.6
-PackageVersion: v1.1.6
-PackageDownloadLocation: https://proxy.golang.org/github.com/!proton!mail/go-crypto/@v/v1.1.6.zip
+SPDXID: SPDXRef-Package-go-github.com-ProtonMail-go-crypto-v1.4.1
+PackageVersion: v1.4.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/!proton!mail/go-crypto/@v/v1.4.1.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2009 The Go Authors. All rights reserved.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/ProtonMail/go-crypto@v1.1.6
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/ProtonMail/go-crypto@v1.4.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -175,17 +164,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cespare/xxhash/v2@v2.3.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
-PackageName: github.com/chai2010/gettext-go
-SPDXID: SPDXRef-Package-go-github.com-chai2010-gettext-go-v1.0.2
-PackageVersion: v1.0.2
-PackageDownloadLocation: https://proxy.golang.org/github.com/chai2010/gettext-go/@v/v1.0.2.zip
-PackageLicenseConcluded: BSD-3-Clause
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright 2013 ChaiShushan <chaishushan{AT}gmail.com>. All rights reserved.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/chai2010/gettext-go@v1.0.2
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: github.com/cloudflare/circl
 SPDXID: SPDXRef-Package-go-github.com-cloudflare-circl-v1.6.3
 PackageVersion: v1.6.3
@@ -195,50 +173,6 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2019 Cloudflare. All rights reserved.
 Copyright (c) 2009 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cloudflare/circl@v1.6.3
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/containerd/containerd
-SPDXID: SPDXRef-Package-go-github.com-containerd-containerd-v1.7.30
-PackageVersion: v1.7.30
-PackageDownloadLocation: https://proxy.golang.org/github.com/containerd/containerd/@v/v1.7.30.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright 2012-2015 Docker, Inc.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/containerd/containerd@v1.7.30
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/containerd/errdefs
-SPDXID: SPDXRef-Package-go-github.com-containerd-errdefs-v1.0.0
-PackageVersion: v1.0.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/containerd/errdefs/@v/v1.0.0.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/containerd/errdefs@v1.0.0
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/containerd/log
-SPDXID: SPDXRef-Package-go-github.com-containerd-log-v0.1.0
-PackageVersion: v0.1.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/containerd/log/@v/v0.1.0.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/containerd/log@v0.1.0
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/containerd/platforms
-SPDXID: SPDXRef-Package-go-github.com-containerd-platforms-v0.2.1
-PackageVersion: v0.2.1
-PackageDownloadLocation: https://proxy.golang.org/github.com/containerd/platforms/@v/v0.2.1.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/containerd/platforms@v0.2.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -265,14 +199,14 @@ PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/cyphar/filepath-securejoin
-SPDXID: SPDXRef-Package-go-github.com-cyphar-filepath-securejoin-v0.6.1
-PackageVersion: v0.6.1
-PackageDownloadLocation: https://proxy.golang.org/github.com/cyphar/filepath-securejoin/@v/v0.6.1.zip
+SPDXID: SPDXRef-Package-go-github.com-cyphar-filepath-securejoin-v0.7.0
+PackageVersion: v0.7.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/cyphar/filepath-securejoin/@v/v0.7.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (C) 2014-2015 Docker Inc & Go Authors. All rights reserved.
 Copyright (C) 2017-2024 SUSE LLC. All rights reserved.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cyphar/filepath-securejoin@v0.6.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cyphar/filepath-securejoin@v0.7.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -321,13 +255,13 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/emicklei/go-restful/v3
-SPDXID: SPDXRef-Package-go-github.com-emicklei-go-restful-v3-v3.12.2
-PackageVersion: v3.12.2
-PackageDownloadLocation: https://proxy.golang.org/github.com/emicklei/go-restful/v3/@v/v3.12.2.zip
+SPDXID: SPDXRef-Package-go-github.com-emicklei-go-restful-v3-v3.13.0
+PackageVersion: v3.13.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/emicklei/go-restful/v3/@v/v3.13.0.zip
 PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012,2013 Ernest Micklei</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/emicklei/go-restful/v3@v3.12.2
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/emicklei/go-restful/v3@v3.13.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -354,17 +288,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/evanphx/json-patch@v5.9.
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
-PackageName: github.com/exponent-io/jsonpath
-SPDXID: SPDXRef-Package-go-github.com-exponent-io-jsonpath-v0.0.0-20210407135951-1de76d718b3f
-PackageVersion: v0.0.0-20210407135951-1de76d718b3f
-PackageDownloadLocation: https://proxy.golang.org/github.com/exponent-io/jsonpath/@v/v0.0.0-20210407135951-1de76d718b3f.zip
-PackageLicenseConcluded: MIT
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright (c) 2015 Exponent Labs LLC</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/exponent-io/jsonpath@v0.0.0-20210407135951-1de76d718b3f
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: github.com/extism/go-pdk
 SPDXID: SPDXRef-Package-go-github.com-extism-go-pdk-v1.1.3
 PackageVersion: v1.1.3
@@ -388,24 +311,24 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/fxamacker/cbor/v2
-SPDXID: SPDXRef-Package-go-github.com-fxamacker-cbor-v2-v2.9.0
-PackageVersion: v2.9.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/fxamacker/cbor/v2/@v/v2.9.0.zip
+SPDXID: SPDXRef-Package-go-github.com-fxamacker-cbor-v2-v2.9.1
+PackageVersion: v2.9.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/fxamacker/cbor/v2/@v/v2.9.1.zip
 PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2019-present Faye Amacker</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/fxamacker/cbor/v2@v2.9.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/fxamacker/cbor/v2@v2.9.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-errors/errors
-SPDXID: SPDXRef-Package-go-github.com-go-errors-errors-v1.4.2
-PackageVersion: v1.4.2
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-errors/errors/@v/v1.4.2.zip
+SPDXID: SPDXRef-Package-go-github.com-go-errors-errors-v1.5.1
+PackageVersion: v1.5.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-errors/errors/@v/v1.5.1.zip
 PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 Conrad Irwin <conrad@bugsnag.com></text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-errors/errors@v1.4.2
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-errors/errors@v1.5.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -454,13 +377,13 @@ PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-logr/logr
-SPDXID: SPDXRef-Package-go-github.com-go-logr-logr-v1.4.3
-PackageVersion: v1.4.3
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-logr/logr/@v/v1.4.3.zip
+SPDXID: SPDXRef-Package-go-github.com-go-logr-logr-v1.4.4
+PackageVersion: v1.4.4
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-logr/logr/@v/v1.4.4.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-logr/logr@v1.4.3
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-logr/logr@v1.4.4
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -498,30 +421,30 @@ PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/jsonpointer
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-jsonpointer-v0.23.1
-PackageVersion: v0.23.1
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/jsonpointer/@v/v0.23.1.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-jsonpointer-v1.0.0
+PackageVersion: v1.0.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/jsonpointer/@v/v1.0.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
 Copyright 2013 sigu-399 ( https://github.com/sigu-399 )</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/jsonpointer@v0.23.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/jsonpointer@v1.0.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/jsonreference
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-jsonreference-v0.21.6
-PackageVersion: v0.21.6
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/jsonreference/@v/v0.21.6.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-jsonreference-v1.0.0
+PackageVersion: v1.0.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/jsonreference/@v/v1.0.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
 Copyright 2013 sigu-399 ( https://github.com/sigu-399 )</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/jsonreference@v0.21.6
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/jsonreference@v1.0.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -584,35 +507,35 @@ PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/cmdutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-cmdutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/cmdutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-cmdutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/cmdutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/cmdutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/cmdutils@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/conv
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-conv-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/conv/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-conv-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/conv/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/conv@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/conv@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/fileutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-fileutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/fileutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-fileutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/fileutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/fileutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/fileutils@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -624,94 +547,105 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/jsonname@v0.26.0
-PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
+PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/jsonutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-jsonutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/jsonutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-jsonutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/jsonutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/jsonutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/jsonutils@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/loading
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-loading-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/loading/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-loading-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/loading/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/loading@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/loading@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/mangling
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-mangling-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/mangling/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-mangling-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/mangling/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/mangling@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/mangling@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/netutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-netutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/netutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-netutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/netutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/netutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/netutils@v0.27.1
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
+FilesAnalyzed: false
+
+PackageName: github.com/go-openapi/swag/pools
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-pools-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/pools/@v/v0.27.1.zip
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: NOASSERTION
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/pools@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/stringutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-stringutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/stringutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-stringutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/stringutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/stringutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/stringutils@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/typeutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-typeutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/typeutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-typeutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/typeutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/typeutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/typeutils@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/yamlutils
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-yamlutils-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/yamlutils/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-yamlutils-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/yamlutils/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/yamlutils@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/yamlutils@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag
-SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-v0.26.0
-PackageVersion: v0.26.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/@v/v0.26.0.zip
+SPDXID: SPDXRef-Package-go-github.com-go-openapi-swag-v0.27.1
+PackageVersion: v0.27.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/go-openapi/swag/@v/v0.27.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag@v0.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag@v0.27.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -782,13 +716,13 @@ PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/gnostic-models
-SPDXID: SPDXRef-Package-go-github.com-google-gnostic-models-v0.7.0
-PackageVersion: v0.7.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/google/gnostic-models/@v/v0.7.0.zip
+SPDXID: SPDXRef-Package-go-github.com-google-gnostic-models-v0.7.1
+PackageVersion: v0.7.1
+PackageDownloadLocation: https://proxy.golang.org/github.com/google/gnostic-models/@v/v0.7.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/gnostic-models@v0.7.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/gnostic-models@v0.7.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -825,17 +759,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/uuid@v1.6.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
-PackageName: github.com/gregjones/httpcache
-SPDXID: SPDXRef-Package-go-github.com-gregjones-httpcache-v0.0.0-20190611155906-901d90724c79
-PackageVersion: v0.0.0-20190611155906-901d90724c79
-PackageDownloadLocation: https://proxy.golang.org/github.com/gregjones/httpcache/@v/v0.0.0-20190611155906-901d90724c79.zip
-PackageLicenseConcluded: MIT
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright © 2012 Greg Jones (greg.jones@gmail.com)</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/gregjones/httpcache@v0.0.0-20190611155906-901d90724c79
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: github.com/grpc-ecosystem/grpc-gateway/v2
 SPDXID: SPDXRef-Package-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0
 PackageVersion: v2.29.0
@@ -847,17 +770,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/grpc-ecosystem/grpc-gate
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
-PackageName: github.com/hashicorp/errwrap
-SPDXID: SPDXRef-Package-go-github.com-hashicorp-errwrap-v1.1.0
-PackageVersion: v1.1.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/hashicorp/errwrap/@v/v1.1.0.zip
-PackageLicenseConcluded: MPL-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/errwrap@v1.1.0
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: github.com/hashicorp/go-cleanhttp
 SPDXID: SPDXRef-Package-go-github.com-hashicorp-go-cleanhttp-v0.5.2
 PackageVersion: v0.5.2
@@ -866,17 +778,6 @@ PackageLicenseConcluded: MPL-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/go-cleanhttp@v0.5.2
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/hashicorp/go-multierror
-SPDXID: SPDXRef-Package-go-github.com-hashicorp-go-multierror-v1.1.1
-PackageVersion: v1.1.1
-PackageDownloadLocation: https://proxy.golang.org/github.com/hashicorp/go-multierror/@v/v1.1.1.zip
-PackageLicenseConcluded: MPL-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/go-multierror@v1.1.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -991,22 +892,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/kevinburke/ssh_config@v1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
-PackageName: github.com/klauspost/compress
-SPDXID: SPDXRef-Package-go-github.com-klauspost-compress-v1.18.6
-PackageVersion: v1.18.6
-PackageDownloadLocation: https://proxy.golang.org/github.com/klauspost/compress/@v/v1.18.6.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright (c) 2012 The Go Authors. All rights reserved.
-Copyright (c) 2019 Klaus Post. All rights reserved.
-Copyright 2016-2017 The New York Times Company
-Copyright (c) 2015 Klaus Post
-Copyright (c) 2011 The Snappy-Go Authors. All rights reserved.
-Copyright 2016 The filepathx Authors</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/klauspost/compress@v1.18.6
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: github.com/klauspost/cpuid/v2
 SPDXID: SPDXRef-Package-go-github.com-klauspost-cpuid-v2-v2.3.0
 PackageVersion: v2.3.0
@@ -1048,7 +933,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Mitchell Hashimoto</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/mitchellh/go-wordwrap@v1.0.1
-PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
+PackageComment: <text>Compiled into: wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: github.com/mitchellh/reflectwalk
@@ -1192,39 +1077,17 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015, Dave Cheney <dave@cheney.net></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/pkg/errors@v0.9.1
-PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
-FilesAnalyzed: false
-
-PackageName: github.com/pmezard/go-difflib
-SPDXID: SPDXRef-Package-go-github.com-pmezard-go-difflib-v1.0.1-0.20181226105442-5d4384ee4fb2
-PackageVersion: v1.0.1-0.20181226105442-5d4384ee4fb2
-PackageDownloadLocation: https://proxy.golang.org/github.com/pmezard/go-difflib/@v/v1.0.1-0.20181226105442-5d4384ee4fb2.zip
-PackageLicenseConcluded: BSD-3-Clause
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright (c) 2013, Patrick Mezard</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/pmezard/go-difflib@v1.0.1-0.20181226105442-5d4384ee4fb2
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/russross/blackfriday/v2
-SPDXID: SPDXRef-Package-go-github.com-russross-blackfriday-v2-v2.1.0
-PackageVersion: v2.1.0
-PackageDownloadLocation: https://proxy.golang.org/github.com/russross/blackfriday/v2/@v/v2.1.0.zip
-PackageLicenseConcluded: BSD-2-Clause
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>> Copyright © 2011 Russ Ross</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/russross/blackfriday/v2@v2.1.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: github.com/santhosh-tekuri/jsonschema/v6
-SPDXID: SPDXRef-Package-go-github.com-santhosh-tekuri-jsonschema-v6-v6.0.2
-PackageVersion: v6.0.2
-PackageDownloadLocation: https://proxy.golang.org/github.com/santhosh-tekuri/jsonschema/v6/@v/v6.0.2.zip
+SPDXID: SPDXRef-Package-go-github.com-santhosh-tekuri-jsonschema-v6-v6.0.3
+PackageVersion: v6.0.3
+PackageDownloadLocation: https://proxy.golang.org/github.com/santhosh-tekuri/jsonschema/v6/@v/v6.0.3.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/santhosh-tekuri/jsonschema/v6@v6.0.2
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/santhosh-tekuri/jsonschema/v6@v6.0.3
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -1347,17 +1210,6 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/timestamp-authority/v2@v2.1.2
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
-PackageName: github.com/sirupsen/logrus
-SPDXID: SPDXRef-Package-go-github.com-sirupsen-logrus-v1.9.4
-PackageVersion: v1.9.4
-PackageDownloadLocation: https://proxy.golang.org/github.com/sirupsen/logrus/@v/v1.9.4.zip
-PackageLicenseConcluded: MIT
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: <text>Copyright (c) 2014 Simon Eskildsen</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sirupsen/logrus@v1.9.4
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -1541,46 +1393,46 @@ PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/otel/metric
-SPDXID: SPDXRef-Package-go-go.opentelemetry.io-otel-metric-v1.44.0
-PackageVersion: v1.44.0
-PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/otel/metric/@v/v1.44.0.zip
+SPDXID: SPDXRef-Package-go-go.opentelemetry.io-otel-metric-v1.45.0
+PackageVersion: v1.45.0
+PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/otel/metric/@v/v1.45.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel/metric@v1.44.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel/metric@v1.45.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/otel/trace
-SPDXID: SPDXRef-Package-go-go.opentelemetry.io-otel-trace-v1.44.0
-PackageVersion: v1.44.0
-PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/otel/trace/@v/v1.44.0.zip
+SPDXID: SPDXRef-Package-go-go.opentelemetry.io-otel-trace-v1.45.0
+PackageVersion: v1.45.0
+PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/otel/trace/@v/v1.45.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel/trace@v1.44.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel/trace@v1.45.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/otel
-SPDXID: SPDXRef-Package-go-go.opentelemetry.io-otel-v1.44.0
-PackageVersion: v1.44.0
-PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/otel/@v/v1.44.0.zip
+SPDXID: SPDXRef-Package-go-go.opentelemetry.io-otel-v1.45.0
+PackageVersion: v1.45.0
+PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/otel/@v/v1.45.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel@v1.44.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel@v1.45.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/proto/otlp
-SPDXID: SPDXRef-Package-go-go.opentelemetry.io-proto-otlp-v1.7.1
-PackageVersion: v1.7.1
-PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/proto/otlp/@v/v1.7.1.zip
+SPDXID: SPDXRef-Package-go-go.opentelemetry.io-proto-otlp-v1.11.0
+PackageVersion: v1.11.0
+PackageDownloadLocation: https://proxy.golang.org/go.opentelemetry.io/proto/otlp/@v/v1.11.0.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/proto/otlp@v1.7.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/proto/otlp@v1.11.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -1597,49 +1449,49 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: go.yaml.in/yaml/v3
-SPDXID: SPDXRef-Package-go-go.yaml.in-yaml-v3-v3.0.4
-PackageVersion: v3.0.4
-PackageDownloadLocation: https://proxy.golang.org/go.yaml.in/yaml/v3/@v/v3.0.4.zip
+SPDXID: SPDXRef-Package-go-go.yaml.in-yaml-v3-v3.0.5
+PackageVersion: v3.0.5
+PackageDownloadLocation: https://proxy.golang.org/go.yaml.in/yaml/v3/@v/v3.0.5.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2006-2010 Kirill Simonov
 Copyright (c) 2006-2011 Kirill Simonov
 Copyright (c) 2011-2019 Canonical Ltd
 Copyright 2011-2016 Canonical Ltd.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.yaml.in/yaml/v3@v3.0.4
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.yaml.in/yaml/v3@v3.0.5
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/crypto
-SPDXID: SPDXRef-Package-go-golang.org-x-crypto-v0.52.0
-PackageVersion: v0.52.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/crypto/@v/v0.52.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-crypto-v0.58.0
+PackageVersion: v0.58.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/crypto/@v/v0.58.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/crypto@v0.52.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/crypto@v0.58.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/mod
-SPDXID: SPDXRef-Package-go-golang.org-x-mod-v0.36.0
-PackageVersion: v0.36.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/mod/@v/v0.36.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-mod-v0.41.0
+PackageVersion: v0.41.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/mod/@v/v0.41.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/mod@v0.36.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/mod@v0.41.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/net
-SPDXID: SPDXRef-Package-go-golang.org-x-net-v0.55.0
-PackageVersion: v0.55.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/net/@v/v0.55.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-net-v0.60.0
+PackageVersion: v0.60.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/net/@v/v0.60.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/net@v0.55.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/net@v0.60.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -1655,46 +1507,46 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/sync
-SPDXID: SPDXRef-Package-go-golang.org-x-sync-v0.20.0
-PackageVersion: v0.20.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/sync/@v/v0.20.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-sync-v0.24.0
+PackageVersion: v0.24.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/sync/@v/v0.24.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/sync@v0.20.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/sync@v0.24.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/sys
-SPDXID: SPDXRef-Package-go-golang.org-x-sys-v0.45.0
-PackageVersion: v0.45.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/sys/@v/v0.45.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-sys-v0.49.0
+PackageVersion: v0.49.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/sys/@v/v0.49.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/sys@v0.45.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/sys@v0.49.0
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/term
-SPDXID: SPDXRef-Package-go-golang.org-x-term-v0.43.0
-PackageVersion: v0.43.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/term/@v/v0.43.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-term-v0.47.0
+PackageVersion: v0.47.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/term/@v/v0.47.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/term@v0.43.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/term@v0.47.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/text
-SPDXID: SPDXRef-Package-go-golang.org-x-text-v0.37.0
-PackageVersion: v0.37.0
-PackageDownloadLocation: https://proxy.golang.org/golang.org/x/text/@v/v0.37.0.zip
+SPDXID: SPDXRef-Package-go-golang.org-x-text-v0.43.0
+PackageVersion: v0.43.0
+PackageDownloadLocation: https://proxy.golang.org/golang.org/x/text/@v/v0.43.0.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/text@v0.37.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/text@v0.43.0
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -1710,46 +1562,46 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/genproto/googleapis/api
-SPDXID: SPDXRef-Package-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260526163538-3dc84a4a5aaa
-PackageVersion: v0.0.0-20260526163538-3dc84a4a5aaa
-PackageDownloadLocation: https://proxy.golang.org/google.golang.org/genproto/googleapis/api/@v/v0.0.0-20260526163538-3dc84a4a5aaa.zip
+SPDXID: SPDXRef-Package-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260803160001-6ac0973c030d
+PackageVersion: v0.0.0-20260803160001-6ac0973c030d
+PackageDownloadLocation: https://proxy.golang.org/google.golang.org/genproto/googleapis/api/@v/v0.0.0-20260803160001-6ac0973c030d.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/genproto/googleapis/api@v0.0.0-20260526163538-3dc84a4a5aaa
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/genproto/googleapis/api@v0.0.0-20260803160001-6ac0973c030d
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/genproto/googleapis/rpc
-SPDXID: SPDXRef-Package-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260523011958-0a33c5d7ca68
-PackageVersion: v0.0.0-20260523011958-0a33c5d7ca68
-PackageDownloadLocation: https://proxy.golang.org/google.golang.org/genproto/googleapis/rpc/@v/v0.0.0-20260523011958-0a33c5d7ca68.zip
+SPDXID: SPDXRef-Package-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260803160001-6ac0973c030d
+PackageVersion: v0.0.0-20260803160001-6ac0973c030d
+PackageDownloadLocation: https://proxy.golang.org/google.golang.org/genproto/googleapis/rpc/@v/v0.0.0-20260803160001-6ac0973c030d.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260523011958-0a33c5d7ca68
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260803160001-6ac0973c030d
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/grpc
-SPDXID: SPDXRef-Package-go-google.golang.org-grpc-v1.81.1
-PackageVersion: v1.81.1
-PackageDownloadLocation: https://proxy.golang.org/google.golang.org/grpc/@v/v1.81.1.zip
+SPDXID: SPDXRef-Package-go-google.golang.org-grpc-v1.83.1
+PackageVersion: v1.83.1
+PackageDownloadLocation: https://proxy.golang.org/google.golang.org/grpc/@v/v1.83.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2014 gRPC authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/grpc@v1.81.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/grpc@v1.83.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/protobuf
-SPDXID: SPDXRef-Package-go-google.golang.org-protobuf-v1.36.11
-PackageVersion: v1.36.11
-PackageDownloadLocation: https://proxy.golang.org/google.golang.org/protobuf/@v/v1.36.11.zip
+SPDXID: SPDXRef-Package-go-google.golang.org-protobuf-v1.36.12
+PackageVersion: v1.36.12
+PackageDownloadLocation: https://proxy.golang.org/google.golang.org/protobuf/@v/v1.36.12.zip
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2018 The Go Authors. All rights reserved.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/protobuf@v1.36.11
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/protobuf@v1.36.12
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -1761,7 +1613,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014, Evan Phoenix</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/evanphx/json-patch.v4@v4.13.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: gopkg.in/inf.v0
@@ -1800,81 +1652,70 @@ ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/yaml.v3@v3.0.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
-PackageName: helm.sh/helm/v3
-SPDXID: SPDXRef-Package-go-helm.sh-helm-v3-v3.20.2
-PackageVersion: v3.20.2
-PackageDownloadLocation: https://proxy.golang.org/helm.sh/helm/v3/@v/v3.20.2.zip
+PackageName: helm.sh/helm/v4
+SPDXID: SPDXRef-Package-go-helm.sh-helm-v4-v4.3.1
+PackageVersion: v4.3.1
+PackageDownloadLocation: https://proxy.golang.org/helm.sh/helm/v4/@v/v4.3.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2016 The Kubernetes Authors All Rights Reserved</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/helm.sh/helm/v3@v3.20.2
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/helm.sh/helm/v4@v4.3.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/apiextensions-apiserver
-SPDXID: SPDXRef-Package-go-k8s.io-apiextensions-apiserver-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/apiextensions-apiserver/@v/v0.35.1.zip
+SPDXID: SPDXRef-Package-go-k8s.io-apiextensions-apiserver-v0.37.1
+PackageVersion: v0.37.1
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/apiextensions-apiserver/@v/v0.37.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/apiextensions-apiserver@v0.35.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/apiextensions-apiserver@v0.37.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/apimachinery
-SPDXID: SPDXRef-Package-go-k8s.io-apimachinery-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/apimachinery/@v/v0.35.1.zip
+SPDXID: SPDXRef-Package-go-k8s.io-apimachinery-v0.37.1
+PackageVersion: v0.37.1
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/apimachinery/@v/v0.37.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/apimachinery@v0.35.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/apimachinery@v0.37.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/api
-SPDXID: SPDXRef-Package-go-k8s.io-api-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/api/@v/v0.35.1.zip
+SPDXID: SPDXRef-Package-go-k8s.io-api-v0.37.1
+PackageVersion: v0.37.1
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/api/@v/v0.37.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/api@v0.35.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/api@v0.37.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/cli-runtime
-SPDXID: SPDXRef-Package-go-k8s.io-cli-runtime-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/cli-runtime/@v/v0.35.1.zip
+SPDXID: SPDXRef-Package-go-k8s.io-cli-runtime-v0.37.1
+PackageVersion: v0.37.1
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/cli-runtime/@v/v0.37.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/cli-runtime@v0.35.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/cli-runtime@v0.37.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/client-go
-SPDXID: SPDXRef-Package-go-k8s.io-client-go-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/client-go/@v/v0.35.1.zip
+SPDXID: SPDXRef-Package-go-k8s.io-client-go-v0.37.1
+PackageVersion: v0.37.1
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/client-go/@v/v0.37.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/client-go@v0.35.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/client-go@v0.37.1
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
-FilesAnalyzed: false
-
-PackageName: k8s.io/component-base
-SPDXID: SPDXRef-Package-go-k8s.io-component-base-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/component-base/@v/v0.35.1.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/component-base@v0.35.1
-PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/klog/v2
@@ -1889,46 +1730,35 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/kube-openapi
-SPDXID: SPDXRef-Package-go-k8s.io-kube-openapi-v0.0.0-20250910181357-589584f1c912
-PackageVersion: v0.0.0-20250910181357-589584f1c912
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/kube-openapi/@v/v0.0.0-20250910181357-589584f1c912.zip
+SPDXID: SPDXRef-Package-go-k8s.io-kube-openapi-v0.0.0-20260721132016-d427ff9ee9ad
+PackageVersion: v0.0.0-20260721132016-d427ff9ee9ad
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/kube-openapi/@v/v0.0.0-20260721132016-d427ff9ee9ad.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/kube-openapi@v0.0.0-20250910181357-589584f1c912
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
-PackageName: k8s.io/kubectl
-SPDXID: SPDXRef-Package-go-k8s.io-kubectl-v0.35.1
-PackageVersion: v0.35.1
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/kubectl/@v/v0.35.1.zip
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: NOASSERTION
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/kubectl@v0.35.1
-PackageComment: <text>Compiled into: cli-host</text>
-FilesAnalyzed: false
-
 PackageName: k8s.io/utils
-SPDXID: SPDXRef-Package-go-k8s.io-utils-v0.0.0-20251002143259-bc988d571ff4
-PackageVersion: v0.0.0-20251002143259-bc988d571ff4
-PackageDownloadLocation: https://proxy.golang.org/k8s.io/utils/@v/v0.0.0-20251002143259-bc988d571ff4.zip
+SPDXID: SPDXRef-Package-go-k8s.io-utils-v0.0.0-20260626114624-be93311217bd
+PackageVersion: v0.0.0-20260626114624-be93311217bd
+PackageDownloadLocation: https://proxy.golang.org/k8s.io/utils/@v/v0.0.0-20260626114624-be93311217bd.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/utils@v0.0.0-20251002143259-bc988d571ff4
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/utils@v0.0.0-20260626114624-be93311217bd
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: oras.land/oras-go/v2
-SPDXID: SPDXRef-Package-go-oras.land-oras-go-v2-v2.6.0
-PackageVersion: v2.6.0
-PackageDownloadLocation: https://proxy.golang.org/oras.land/oras-go/v2/@v/v2.6.0.zip
+SPDXID: SPDXRef-Package-go-oras.land-oras-go-v2-v2.6.2
+PackageVersion: v2.6.2
+PackageDownloadLocation: https://proxy.golang.org/oras.land/oras-go/v2/@v/v2.6.2.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2021 ORAS Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/oras.land/oras-go/v2@v2.6.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/oras.land/oras-go/v2@v2.6.2
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -1944,24 +1774,24 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/kustomize/api
-SPDXID: SPDXRef-Package-go-sigs.k8s.io-kustomize-api-v0.20.1
-PackageVersion: v0.20.1
-PackageDownloadLocation: https://proxy.golang.org/sigs.k8s.io/kustomize/api/@v/v0.20.1.zip
+SPDXID: SPDXRef-Package-go-sigs.k8s.io-kustomize-api-v0.21.1
+PackageVersion: v0.21.1
+PackageDownloadLocation: https://proxy.golang.org/sigs.k8s.io/kustomize/api/@v/v0.21.1.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/kustomize/api@v0.20.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/kustomize/api@v0.21.1
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/kustomize/kyaml
-SPDXID: SPDXRef-Package-go-sigs.k8s.io-kustomize-kyaml-v0.20.1
-PackageVersion: v0.20.1
-PackageDownloadLocation: https://proxy.golang.org/sigs.k8s.io/kustomize/kyaml/@v/v0.20.1.zip
+SPDXID: SPDXRef-Package-go-sigs.k8s.io-kustomize-kyaml-v0.21.2
+PackageVersion: v0.21.2
+PackageDownloadLocation: https://proxy.golang.org/sigs.k8s.io/kustomize/kyaml/@v/v0.21.2.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/kustomize/kyaml@v0.20.1
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/kustomize/kyaml@v0.21.2
 PackageComment: <text>Compiled into: cli-host</text>
 FilesAnalyzed: false
 
@@ -1978,13 +1808,13 @@ PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/structured-merge-diff/v6
-SPDXID: SPDXRef-Package-go-sigs.k8s.io-structured-merge-diff-v6-v6.3.0
-PackageVersion: v6.3.0
-PackageDownloadLocation: https://proxy.golang.org/sigs.k8s.io/structured-merge-diff/v6/@v/v6.3.0.zip
+SPDXID: SPDXRef-Package-go-sigs.k8s.io-structured-merge-diff-v6-v6.4.2
+PackageVersion: v6.4.2
+PackageDownloadLocation: https://proxy.golang.org/sigs.k8s.io/structured-merge-diff/v6/@v/v6.4.2.zip
 PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/structured-merge-diff/v6@v6.3.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/structured-merge-diff/v6@v6.4.2
 PackageComment: <text>Compiled into: cli-host, wasm-provider-guests</text>
 FilesAnalyzed: false
 
@@ -2489,11 +2319,10 @@ FilesAnalyzed: false
 
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-dario.cat-mergo-v1.0.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-BurntSushi-toml-v1.6.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-MakeNowJust-heredoc-v1.0.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-goutils-v1.1.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-semver-v3-v3.4.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-semver-v3-v3.5.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-sprig-v3-v3.3.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-ProtonMail-go-crypto-v1.1.6
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-ProtonMail-go-crypto-v1.4.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-agext-levenshtein-v1.2.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-apparentlymart-go-textseg-v15-v15.0.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-asaskevich-govalidator-v0.0.0-20230301143203-a9d515a09cc2
@@ -2502,69 +2331,61 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-blang-sem
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-blang-semver-v3.5.1-incompatible
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-cenkalti-backoff-v5-v5.0.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-cespare-xxhash-v2-v2.3.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-chai2010-gettext-go-v1.0.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-cloudflare-circl-v1.6.3
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-containerd-containerd-v1.7.30
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-containerd-errdefs-v1.0.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-containerd-log-v0.1.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-containerd-platforms-v0.2.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-coreos-go-oidc-v3-v3.17.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-cyberphone-json-canonicalization-v0.0.0-20241213102144-19d51d7fe467
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-cyphar-filepath-securejoin-v0.6.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-cyphar-filepath-securejoin-v0.7.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-davecgh-go-spew-v1.1.2-0.20180830191138-d8f796af33cc
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-digitorus-pkcs7-v0.0.0-20230818184609-3a137a874352
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-digitorus-timestamp-v0.0.0-20231217203849-220c5c2851b7
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-dylibso-observe-sdk-go-v0.0.0-20240819160327-2d926c5d788a
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-emicklei-go-restful-v3-v3.12.2
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-emicklei-go-restful-v3-v3.13.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-emirpasic-gods-v1.18.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-evanphx-json-patch-v5.9.11-incompatible
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-exponent-io-jsonpath-v0.0.0-20210407135951-1de76d718b3f
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-extism-go-pdk-v1.1.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-extism-go-sdk-v1.7.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-fxamacker-cbor-v2-v2.9.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-errors-errors-v1.4.2
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-fxamacker-cbor-v2-v2.9.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-errors-errors-v1.5.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-git-gcfg-v1.5.1-0.20230307220236-3a3c6141e376
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-git-go-billy-v5-v5.9.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-git-go-git-v5-v5.19.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-jose-go-jose-v4-v4.1.4
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-logr-logr-v1.4.3
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-logr-logr-v1.4.4
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-logr-stdr-v1.2.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-analysis-v0.25.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-errors-v0.22.7
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-jsonpointer-v0.23.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-jsonreference-v0.21.6
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-jsonpointer-v1.0.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-jsonreference-v1.0.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-loads-v0.23.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-runtime-server-middleware-v0.30.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-runtime-v0.32.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-spec-v0.22.5
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-strfmt-v0.26.3
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-cmdutils-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-conv-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-fileutils-v0.26.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-cmdutils-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-conv-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-fileutils-v0.27.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-jsonname-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-jsonutils-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-loading-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-mangling-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-netutils-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-stringutils-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-typeutils-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-yamlutils-v0.26.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-v0.26.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-jsonutils-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-loading-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-mangling-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-netutils-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-pools-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-stringutils-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-typeutils-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-yamlutils-v0.27.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-swag-v0.27.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-validate-v0.25.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-viper-mapstructure-v2-v2.5.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-gobwas-glob-v0.2.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-golang-groupcache-v0.0.0-20241129210726-2c02b8208cf8
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-btree-v1.1.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-certificate-transparency-go-v1.3.3
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-gnostic-models-v0.7.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-gnostic-models-v0.7.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-go-containerregistry-v0.21.6
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-jsonschema-go-v0.4.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-uuid-v1.6.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-gregjones-httpcache-v0.0.0-20190611155906-901d90724c79
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-errwrap-v1.1.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-go-cleanhttp-v0.5.2
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-go-multierror-v1.1.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-go-retryablehttp-v0.7.8
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-hashicorp-hcl-v2-v2.24.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-huandu-xstrings-v1.5.0
@@ -2575,7 +2396,6 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-jbenet-go
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-jedisct1-go-minisign-v0.0.0-20211028175153-1c139d1cc84b
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-json-iterator-go-v1.1.12
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-kevinburke-ssh-config-v1.2.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-klauspost-compress-v1.18.6
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-klauspost-cpuid-v2-v2.3.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-liggitt-tabwriter-v0.0.0-20181228230101-89fcab3d43de
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-mitchellh-copystructure-v1.2.0
@@ -2593,9 +2413,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-peterbour
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-pjbgf-sha1cd-v0.6.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-pkg-browser-v0.0.0-20240102092130-5ac0b6a4141c
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-pkg-errors-v0.9.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-pmezard-go-difflib-v1.0.1-0.20181226105442-5d4384ee4fb2
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-russross-blackfriday-v2-v2.1.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-santhosh-tekuri-jsonschema-v6-v6.0.2
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-santhosh-tekuri-jsonschema-v6-v6.0.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sassoftware-relic-v7.2.1-incompatible
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-secure-systems-lab-go-securesystemslib-v0.11.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sergi-go-diff-v1.4.0
@@ -2607,7 +2425,6 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sigstore-
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sigstore-sigstore-go-v1.2.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sigstore-sigstore-v1.10.8
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sigstore-timestamp-authority-v2-v2.1.2
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-sirupsen-logrus-v1.9.4
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-skeema-knownhosts-v1.3.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-spf13-cast-v1.10.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-spf13-cobra-v1.10.2
@@ -2624,46 +2441,44 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-xlab-tree
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-youmark-pkcs8-v0.0.0-20240726163527-a2c0da244d78
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-zclconf-go-cty-v1.16.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-auto-sdk-v1.2.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-metric-v1.44.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-trace-v1.44.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-v1.44.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-proto-otlp-v1.7.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-metric-v1.45.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-trace-v1.45.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-otel-v1.45.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.opentelemetry.io-proto-otlp-v1.11.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.yaml.in-yaml-v2-v2.4.4
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.yaml.in-yaml-v3-v3.0.4
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-crypto-v0.52.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-mod-v0.36.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-net-v0.55.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-go.yaml.in-yaml-v3-v3.0.5
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-crypto-v0.58.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-mod-v0.41.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-net-v0.60.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-oauth2-v0.36.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-sync-v0.20.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-sys-v0.45.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-term-v0.43.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-text-v0.37.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-sync-v0.24.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-sys-v0.49.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-term-v0.47.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-text-v0.43.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-golang.org-x-time-v0.15.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260526163538-3dc84a4a5aaa
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260523011958-0a33c5d7ca68
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-grpc-v1.81.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-protobuf-v1.36.11
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260803160001-6ac0973c030d
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260803160001-6ac0973c030d
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-grpc-v1.83.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-google.golang.org-protobuf-v1.36.12
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-gopkg.in-evanphx-json-patch.v4-v4.13.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-gopkg.in-inf.v0-v0.9.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-gopkg.in-warnings.v0-v0.1.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-gopkg.in-yaml.v3-v3.0.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-helm.sh-helm-v3-v3.20.2
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-apiextensions-apiserver-v0.35.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-apimachinery-v0.35.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-api-v0.35.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-cli-runtime-v0.35.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-client-go-v0.35.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-component-base-v0.35.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-helm.sh-helm-v4-v4.3.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-apiextensions-apiserver-v0.37.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-apimachinery-v0.37.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-api-v0.37.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-cli-runtime-v0.37.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-client-go-v0.37.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-klog-v2-v2.140.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-kube-openapi-v0.0.0-20250910181357-589584f1c912
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-kubectl-v0.35.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-utils-v0.0.0-20251002143259-bc988d571ff4
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-oras.land-oras-go-v2-v2.6.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-kube-openapi-v0.0.0-20260721132016-d427ff9ee9ad
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-k8s.io-utils-v0.0.0-20260626114624-be93311217bd
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-oras.land-oras-go-v2-v2.6.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-json-v0.0.0-20250730193827-2d320260d730
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-kustomize-api-v0.20.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-kustomize-kyaml-v0.20.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-kustomize-api-v0.21.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-kustomize-kyaml-v0.21.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-randfill-v1.0.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-structured-merge-diff-v6-v6.3.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-structured-merge-diff-v6-v6.4.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-yaml-v1.6.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-aho-corasick-1.1.4
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-anyhow-1.0.102

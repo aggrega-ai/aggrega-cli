@@ -156,7 +156,7 @@ func TestHostClosureGuardDetectsBothEdges(t *testing.T) {
 		modulePath + "/internal/compiler/renderer/enginefactory",
 		modulePath + "/pkg/sourceresolver/helm",
 		modulePath + "/pkg/sourceresolver/gitrepo",
-		"helm.sh/helm/v3/pkg/chart",
+		"helm.sh/helm/v4/pkg/getter",
 	}
 
 	guests, perFormat = closureViolations(clean, modulePath, formats)

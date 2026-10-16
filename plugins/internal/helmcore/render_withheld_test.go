@@ -14,8 +14,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v4/pkg/chart/loader/archive"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
 )
 
 // The value the fixture's input marks sensitive, and one it does not. The marked
@@ -36,9 +37,9 @@ func chartLoaderFor(files map[string]string) helmcore.ChartLoader {
 	}
 	sort.Strings(names)
 	return func() (*chart.Chart, error) {
-		bufs := make([]*loader.BufferedFile, 0, len(names))
+		bufs := make([]*archive.BufferedFile, 0, len(names))
 		for _, name := range names {
-			bufs = append(bufs, &loader.BufferedFile{Name: name, Data: []byte(files[name])})
+			bufs = append(bufs, &archive.BufferedFile{Name: name, Data: []byte(files[name])})
 		}
 		return loader.LoadFiles(bufs)
 	}
@@ -136,6 +137,12 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 			files:  map[string]string{"templates/a.yaml": `{{ if hasPrefix "PLANTED" .Values.adminPassword }}{{ fail (printf "the admin password %s is a planted literal" .Values.adminPassword) }}{{ end }}`},
 			values: values, marked: marked, plainQuotes: true,
 			want: []string{"execution error at (vault/templates/a.yaml:", "failure text withheld"},
+		},
+		{
+			name:   "a fault the engine raises on a branch the marked value decides is withheld at its position",
+			files:  map[string]string{"templates/a.yaml": `{{ if hasPrefix "PLANTED" .Values.adminPassword }}{{ .Values.auth.password }}{{ end }}`},
+			values: values, marked: marked,
+			want: []string{"execution error at (vault/templates/a.yaml:1:", "failure text withheld"},
 		},
 		{
 			name: "a values-schema finding on the marked value carries the placeholder",

@@ -4,12 +4,14 @@
 package helmcore
 
 import (
+	"context"
 	"strings"
 	"testing"
 
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/engine"
+	"helm.sh/helm/v4/pkg/chart/common"
+	commonutil "helm.sh/helm/v4/pkg/chart/common/util"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
+	"helm.sh/helm/v4/pkg/engine"
 )
 
 // TestSplitRenderedDocuments_CommentGluedSeparator pins that a rendered stream
@@ -26,11 +28,11 @@ func TestSplitRenderedDocuments_CommentGluedSeparator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load chart: %v", err)
 	}
-	vals, err := chartutil.ToRenderValues(ch, map[string]any{}, chartutil.ReleaseOptions{Name: "cg", Namespace: "default"}, chartutil.DefaultCapabilities)
+	vals, err := commonutil.ToRenderValues(ch, map[string]any{}, common.ReleaseOptions{Name: "cg", Namespace: "default"}, common.DefaultCapabilities)
 	if err != nil {
 		t.Fatalf("render values: %v", err)
 	}
-	rendered, err := engine.Engine{}.Render(ch, vals)
+	rendered, err := engine.Engine{}.RenderWithContext(context.Background(), ch, vals)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

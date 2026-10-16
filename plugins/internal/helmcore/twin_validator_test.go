@@ -13,8 +13,9 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v4/pkg/chart/loader/archive"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
 )
 
 // decodeValues decodes a JSON object into the plain values map the render
@@ -47,9 +48,9 @@ func loadSchemaChart(t *testing.T) *chart.Chart {
 // charts is exercised without touching a filesystem chart root.
 func chartFromFiles(t *testing.T, files map[string]string) *chart.Chart {
 	t.Helper()
-	bufs := make([]*loader.BufferedFile, 0, len(files))
+	bufs := make([]*archive.BufferedFile, 0, len(files))
 	for name, content := range files {
-		bufs = append(bufs, &loader.BufferedFile{Name: name, Data: []byte(content)})
+		bufs = append(bufs, &archive.BufferedFile{Name: name, Data: []byte(content)})
 	}
 	ch, err := loader.LoadFiles(bufs)
 	if err != nil {

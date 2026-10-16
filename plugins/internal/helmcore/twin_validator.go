@@ -12,8 +12,9 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/chart/common"
+	commonutil "helm.sh/helm/v4/pkg/chart/common/util"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // valuesSchemaFailure is a values-schema validation failure: the text the
@@ -92,14 +93,14 @@ const chartSchemaResourceID = "file:///values.schema.json"
 //   - file $refs (chart-local relative references) resolve from the chart's
 //     in-memory file set, never the host filesystem;
 //   - http and https $refs resolve through fetch;
-//   - urn $refs consult chartutil.URNResolver and fall back to the
+//   - urn $refs consult the SDK's URNResolver and fall back to the
 //     permissive boolean-true schema, matching the SDK's own urn handling.
 //
 // Validation is a gate, not a transform: the validator never alters values,
 // so rendered bytes are identical whether a chart passes through this
 // validator or through the SDK's, and only acceptance can differ.
 func NewHermeticValuesValidator(fetch SchemaFetchFunc) ValuesValidator {
-	return func(ch *chart.Chart, vals chartutil.Values) error {
+	return func(ch *chart.Chart, vals common.Values) error {
 		if err := validateChartSchemas(ch, vals, fetch); err != nil {
 			// Mirrors the message the SDK wraps its own schema-validation
 			// failures with, so the two strategies surface alike.
@@ -166,7 +167,7 @@ func validateChartSchemas(ch *chart.Chart, values map[string]any, fetch SchemaFe
 // line is stripped so the surfaced text carries the per-violation lines, and
 // a compiler panic on a malformed schema document surfaces as an error rather
 // than crashing the render.
-func validateSingleSchemaHermetic(ch *chart.Chart, values chartutil.Values, fetch SchemaFetchFunc) (reterr error) {
+func validateSingleSchemaHermetic(ch *chart.Chart, values common.Values, fetch SchemaFetchFunc) (reterr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			reterr = fmt.Errorf("unable to validate schema: %s", r)
@@ -252,15 +253,15 @@ func (l fetchSchemaLoader) Load(urlStr string) (any, error) {
 }
 
 // urnSchemaLoader mirrors the SDK's urn-scheme handling: it consults the
-// SDK's pluggable chartutil.URNResolver and falls back to the permissive
-// boolean-true schema when the URN stays unresolved, so a chart the SDK
-// accepts is not rejected here over an unresolved URN.
+// SDK's pluggable URNResolver and falls back to the permissive boolean-true
+// schema when the URN stays unresolved, so a chart the SDK accepts is not
+// rejected here over an unresolved URN.
 type urnSchemaLoader struct{}
 
 // Load implements the schema library's URLLoader contract for the urn
 // scheme.
 func (urnSchemaLoader) Load(urlStr string) (any, error) {
-	if doc, err := chartutil.URNResolver(urlStr); err == nil && doc != nil {
+	if doc, err := commonutil.URNResolver(urlStr); err == nil && doc != nil {
 		return doc, nil
 	}
 	return jsonschema.UnmarshalJSON(strings.NewReader("true"))

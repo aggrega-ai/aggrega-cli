@@ -14,7 +14,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
-	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v4/pkg/cli"
+	"helm.sh/helm/v4/pkg/getter"
 )
 
 // fakeGetter is a static-body httpsGetter used in tests.
@@ -185,12 +186,94 @@ func TestProductionGetterAgainstHTTPTest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	pg := &productionGetter{providers: newProvidersNoEnv()}
+	pg := &productionGetter{providers: builtInProviders()}
 	got, err := pg.Get(srv.URL + "/chart.tgz")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if string(got.Bytes()) != string(body) {
 		t.Errorf("body mismatch; got %d bytes", len(got.Bytes()))
+	}
+}
+
+// plantedGetterPluginScheme is the URL scheme the planted getter plugin claims.
+// No built-in getter serves it, so a provider for it can only be the plugin.
+const plantedGetterPluginScheme = "aggregaplanted"
+
+// plantedGetterPlugin is a getter plugin in the form Helm loads one: a
+// plugin.yaml one directory below the directory Helm scans, claiming
+// plantedGetterPluginScheme and naming a command to run for it.
+const plantedGetterPlugin = `name: "planted"
+version: "0.1.0"
+type: getter/v1
+apiVersion: v1
+runtime: subprocess
+config:
+  protocols:
+    - "` + plantedGetterPluginScheme + `"
+runtimeConfig:
+  protocolCommands:
+    - platformCommand:
+        - command: "echo"
+      protocols:
+        - "` + plantedGetterPluginScheme + `"
+`
+
+// TestTheHTTPSAdapterRegistersNoGetterPluginFromTheWorkingDirectory holds that a
+// getter plugin sitting under the directory the process runs from adds no
+// download handler to the adapter, while the built-in http, https and oci
+// handlers stay registered.
+//
+// The control comes first and is what makes the verdict mean something: in the
+// same directory, Helm's plugin-aware constructor, handed settings naming no
+// plugin directory, does register the planted plugin — so the fixture is a
+// plugin Helm loads from exactly where it sits, and the adapter's refusal of it
+// is not a fixture Helm would refuse anyway.
+//
+// It changes the process's working directory and environment, so it never runs
+// in parallel. Loading a plugin makes Helm create a compilation cache under its
+// cache home, so the control points Helm's homes at the test's own directories
+// and leaves the developer's untouched.
+func TestTheHTTPSAdapterRegistersNoGetterPluginFromTheWorkingDirectory(t *testing.T) {
+	t.Setenv("HELM_CACHE_HOME", t.TempDir())
+	t.Setenv("HELM_CONFIG_HOME", t.TempDir())
+	t.Setenv("HELM_DATA_HOME", t.TempDir())
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "planted"), 0o755); err != nil {
+		t.Fatalf("make the plugin directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "planted", "plugin.yaml"), []byte(plantedGetterPlugin), 0o644); err != nil {
+		t.Fatalf("plant the plugin: %v", err)
+	}
+	t.Chdir(dir)
+
+	discovered := getter.All(&cli.EnvSettings{})
+	if _, err := discovered.ByScheme(plantedGetterPluginScheme); err != nil {
+		t.Fatalf("control: Helm's plugin-aware constructor did not register the planted plugin from the "+
+			"working directory, so this test cannot tell the adapter's refusal from a fixture Helm ignores: %v", err)
+	}
+
+	adapter, ok := NewHTTPSAdapter().(*httpsAdapter)
+	if !ok {
+		t.Fatalf("NewHTTPSAdapter returned %T, want *httpsAdapter", NewHTTPSAdapter())
+	}
+	production, ok := adapter.getter.(*productionGetter)
+	if !ok {
+		t.Fatalf("the adapter's getter is %T, want *productionGetter", adapter.getter)
+	}
+
+	if _, err := production.providers.ByScheme(plantedGetterPluginScheme); err == nil {
+		t.Errorf("the adapter registered a download handler for %q from the planted plugin", plantedGetterPluginScheme)
+	}
+	if _, err := production.Get(plantedGetterPluginScheme + "://charts.example.com/chart.tgz"); err == nil {
+		t.Errorf("the adapter fetched a %q URL; want a refusal naming the unsupported scheme", plantedGetterPluginScheme)
+	}
+	for _, scheme := range []string{"http", "https", "oci"} {
+		if _, err := production.providers.ByScheme(scheme); err != nil {
+			t.Errorf("the adapter has no built-in handler for %q: %v", scheme, err)
+		}
+	}
+	if got, want := len(production.providers), len(getter.Getters()); got != want {
+		t.Errorf("the adapter registered %d download providers, want Helm's %d built-in ones", got, want)
 	}
 }

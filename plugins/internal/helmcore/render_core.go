@@ -19,10 +19,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/engine"
-	"helm.sh/helm/v3/pkg/releaseutil"
+	"helm.sh/helm/v4/pkg/chart/common"
+	commonutil "helm.sh/helm/v4/pkg/chart/common/util"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	chartutil "helm.sh/helm/v4/pkg/chart/v2/util"
+	"helm.sh/helm/v4/pkg/engine"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
 )
 
 // ValuesValidator is a values-schema validation strategy for
@@ -37,7 +39,7 @@ import (
 // sandbox grants no ambient network — pass an explicit validator (see
 // NewHermeticValuesValidator) so no remote schema $ref is fetched at render
 // time.
-type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
+type ValuesValidator func(ch *chart.Chart, vals common.Values) error
 
 // ChartRender is what one render of a chart produced: the flat files it emits,
 // keyed by output filename, and the advisories the render raised about what it
@@ -107,7 +109,7 @@ func RenderLoadedChart(
 // hermetic validator (see NewHermeticValuesValidator), which skips the SDK's
 // live-fetching schema validation.
 func RenderChart(
-	_ context.Context,
+	ctx context.Context,
 	ch *chart.Chart,
 	values map[string]any,
 	nodeCtx rendercore.NodeRenderContext,
@@ -125,12 +127,12 @@ func RenderChart(
 	// It mutates ch; the chart is freshly loaded per render (the provider guest
 	// reconstructs it per node), so the mutation is not an aliasing or
 	// determinism hazard across nodes.
-	if err := chartutil.ProcessDependenciesWithMerge(ch, chartutil.Values(values)); err != nil {
+	if err := chartutil.ProcessDependencies(ch, common.Values(values)); err != nil {
 		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
 	}
 
 	// Coalesce the Phase B dict with the chart's default values
-	cvals, err := chartutil.CoalesceValues(ch, chartutil.Values(values))
+	cvals, err := commonutil.CoalesceValues(ch, values)
 	if err != nil {
 		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: coalesce values", nodeCtx.NodeID))
 	}
@@ -142,7 +144,7 @@ func RenderChart(
 	// so the namespace this render targets and the namespace an emitted resource's
 	// name is declared under cannot disagree.
 	ns := EffectiveNamespace(nodeCtx)
-	relOpts := chartutil.ReleaseOptions{
+	relOpts := common.ReleaseOptions{
 		Name:      releaseName(nodeCtx),
 		Namespace: ns,
 		Revision:  1,
@@ -160,9 +162,9 @@ func RenderChart(
 	// Skip the SDK's live-fetching validator and gate on the supplied one
 	// instead. The table handed to the validator is the same coalesced values
 	// table the render consumes.
-	renderVals, err := chartutil.ToRenderValuesWithSchemaValidation(ch, cvals, relOpts, caps, true)
+	renderVals, err := commonutil.ToRenderValuesWithSchemaValidation(ch, cvals, relOpts, caps, true)
 	if err == nil {
-		if vals, ok := renderVals["Values"].(chartutil.Values); ok {
+		if vals, ok := renderVals["Values"].(common.Values); ok {
 			err = validate(ch, vals)
 		} else {
 			err = fmt.Errorf("render values carry no coalesced values table to validate")
@@ -173,7 +175,7 @@ func RenderChart(
 	}
 
 	// Render
-	rendered, err := engine.Engine{}.Render(ch, renderVals)
+	rendered, err := engine.Engine{}.RenderWithContext(ctx, ch, renderVals)
 	if err != nil {
 		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render", nodeCtx.NodeID))
 	}

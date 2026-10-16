@@ -12,7 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"helm.sh/helm/v3/pkg/chart"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // ChartLoader loads a fresh copy of the chart a render reads. A render prunes the
@@ -183,17 +183,33 @@ func chartFailureStage(err error) (string, error) {
 
 // templatePosition returns the template, line and column Helm reports a template
 // failed at, and the empty string where the failure carries none. Helm spells a
-// chart's own fail or required as "execution error at (<file>:<line>:<col>): …"
-// and any other fault as the template engine's own "template:
-// <file>:<line>:<col>: executing …". The position is the chart's own text — a file
-// name and a place in it — and never data the template read; the action the
-// engine names after it is not taken, because a template rendered from a value
-// carries that value in its action.
+// chart's own fail or required as "execution error at (<file>:<line>:<col>): …".
+// A fault the template engine raises itself it spells as a trace, one entry per
+// template the fault passed through, the outermost first, each opening with its
+// position on a line of its own and the engine's "executing …" on the next,
+// indented:
+//
+//	<file>:<line>:<col>
+//	  executing "<template>" at <<action>>:
+//	    <message>
+//
+// Where Helm cannot read the fault into that trace — an error a template function
+// returned, or a fault raised inside a tpl call — it reports the engine's own text
+// unchanged: "template: <file>:<line>:<col>: executing …". The position is the
+// chart's own text — a file name and a place in it — and never data the template
+// read; the action the engine names after it is not taken, because a template
+// rendered from a value carries that value in its action.
 func templatePosition(err error) string {
 	msg := err.Error()
 	if rest, ok := strings.CutPrefix(msg, "execution error at ("); ok {
 		if end := strings.Index(rest, "): "); end >= 0 {
 			return rest[:end]
+		}
+		return ""
+	}
+	if position, next, ok := strings.Cut(msg, "\n"); ok && strings.HasPrefix(next, "  executing \"") {
+		if position != "" && !strings.Contains(position, ": ") {
+			return position
 		}
 		return ""
 	}

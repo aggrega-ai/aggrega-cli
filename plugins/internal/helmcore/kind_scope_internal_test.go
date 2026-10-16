@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
@@ -56,14 +56,14 @@ func TestKindScopes_EveryBuiltInKindIsPlacedExactlyWhereItsNameCarriesTheNamespa
 	}
 	ch := &chart.Chart{
 		Metadata:  &chart.Metadata{APIVersion: "v2", Name: "kinds", Version: "0.1.0"},
-		Templates: []*chart.File{{Name: "templates/kinds.yaml", Data: []byte(docs.String())}},
+		Templates: []*common.File{{Name: "templates/kinds.yaml", Data: []byte(docs.String())}},
 	}
 	nodeCtx := rendercore.NodeRenderContext{
 		NodeID:      "api",
 		Annotations: map[string]string{rendercore.AnnotationNamespace: "shop"},
 	}
 	rendered, err := RenderChart(context.Background(), ch, map[string]any{}, nodeCtx,
-		func(*chart.Chart, chartutil.Values) error { return nil })
+		func(*chart.Chart, common.Values) error { return nil })
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

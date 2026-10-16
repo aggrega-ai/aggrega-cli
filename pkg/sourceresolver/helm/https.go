@@ -18,9 +18,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/repo"
+	"helm.sh/helm/v4/pkg/getter"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
 )
 
 // KindHTTPS names the helm-https-chart source kind.
@@ -33,9 +32,9 @@ const KindHTTPS = "helm-https-chart"
 // access.
 type indexResolver func(repoURL, chart, version string, opts ...getter.Option) (directURL string, err error)
 
-// httpsGetter abstracts helm.sh/helm/v3/pkg/getter.Getter so tests
-// can inject a static-body implementation without spinning up
-// helm's full provider machinery.
+// httpsGetter abstracts Helm's getter.Getter so tests can inject a
+// static-body implementation without spinning up helm's full provider
+// machinery.
 type httpsGetter interface {
 	Get(href string, options ...getter.Option) (*tarGzBuffer, error)
 }
@@ -55,14 +54,14 @@ type httpsAdapter struct {
 	getter       httpsGetter
 }
 
-// NewHTTPSAdapter returns a helm-https-chart adapter wired to the
-// production helm getter (programmatic cli.EnvSettings — no
-// $KUBECONFIG / $HELM_* reads) and the production index resolver
+// NewHTTPSAdapter returns a helm-https-chart adapter wired to Helm's
+// built-in getters (see builtInProviders — no plugin is discovered, and
+// no $KUBECONFIG / $HELM_* is read) and the production index resolver
 // (downloads index.yaml from the repo root, parses with
 // repo.LoadIndexFile, looks up the chart+version, returns the
 // direct .tgz URL).
 func NewHTTPSAdapter() sourceresolver.Adapter {
-	g := &productionGetter{providers: newProvidersNoEnv()}
+	g := &productionGetter{providers: builtInProviders()}
 	return &httpsAdapter{
 		resolveIndex: func(repoURL, chart, version string, opts ...getter.Option) (string, error) {
 			return resolveFromIndexProduction(g, repoURL, chart, version, opts...)
@@ -179,19 +178,20 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 	}, nil
 }
 
-// newProvidersNoEnv constructs Helm getter providers without
-// reading $KUBECONFIG / $HELM_*. cli.EnvSettings fields are
-// populated programmatically (all empty); the adapter never reads
-// ambient environment so source resolution is reproducible across
-// developer machines and CI environments.
-func newProvidersNoEnv() getter.Providers {
-	s := &cli.EnvSettings{
-		RegistryConfig:   "",
-		RepositoryConfig: "",
-		RepositoryCache:  "",
-		Debug:            false,
-	}
-	return getter.All(s)
+// builtInProviders returns Helm's built-in getters — http and https in one
+// provider, oci in the other — and nothing else.
+//
+// It never discovers a getter plugin. Helm's plugin-aware constructor reads
+// its plugins from a directory, and with no directory configured it reads the
+// process's working directory instead, so a build run from a checked-out
+// repository would let that repository's contents register download handlers
+// of their own. A helm-https-chart source is fetched over http or https, which
+// the built-in getters serve, so no plugin is consulted.
+//
+// The built-in getters read no $KUBECONFIG / $HELM_* either, so source
+// resolution is reproducible across developer machines and CI environments.
+func builtInProviders() getter.Providers {
+	return getter.Getters()
 }
 
 // transportEndingWith returns a copy of base whose connections belong to ctx: it

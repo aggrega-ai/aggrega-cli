@@ -14,13 +14,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/chart/common"
 )
 
-// clientLibraryModule is the module whose version helm's own build stamps into the
-// SDK as the Kubernetes version `helm template` renders for. The embedded SDK is
-// built without that stamp, so its built-in capabilities name a placeholder
-// version; the render reads the same module's version from the binary instead.
+// clientLibraryModule is the module whose version decides the Kubernetes version
+// `helm template` renders for where none is named: helm derives that version from
+// this module's entry in the binary's build information, and the render reads the
+// same entry.
 const clientLibraryModule = "k8s.io/client-go"
 
 // renderCapabilities returns the capabilities a chart is rendered against for one
@@ -29,7 +29,7 @@ const clientLibraryModule = "k8s.io/client-go"
 // rendercore.AnnotationKubernetesVersion, or, where they name none, the version
 // [DefaultKubeVersion] reports.
 //
-// The value is parsed by the SDK's own chartutil.ParseKubeVersion, the parser
+// The value is parsed by the SDK's own common.ParseKubeVersion, the parser
 // behind `helm template --kube-version`, so the render accepts exactly the forms
 // that flag accepts and writes into .Capabilities.KubeVersion exactly what that
 // flag writes. An empty value is unset, as an empty flag is. A value the parser
@@ -41,29 +41,29 @@ const clientLibraryModule = "k8s.io/client-go"
 // The capabilities are a copy: the SDK's built-in set is a shared package value,
 // and writing a node's version into it would leak that version into every later
 // render.
-func renderCapabilities(nodeCtx rendercore.NodeRenderContext) (*chartutil.Capabilities, error) {
+func renderCapabilities(nodeCtx rendercore.NodeRenderContext) (*common.Capabilities, error) {
 	kubeVersion, err := renderKubeVersion(nodeCtx)
 	if err != nil {
 		return nil, err
 	}
-	caps := chartutil.DefaultCapabilities.Copy()
+	caps := common.DefaultCapabilities.Copy()
 	caps.KubeVersion = kubeVersion
 	return caps, nil
 }
 
 // renderKubeVersion resolves the Kubernetes version one node's chart renders for.
-func renderKubeVersion(nodeCtx rendercore.NodeRenderContext) (chartutil.KubeVersion, error) {
+func renderKubeVersion(nodeCtx rendercore.NodeRenderContext) (common.KubeVersion, error) {
 	authored := rendercore.KubernetesVersionFromAnnotations(nodeCtx.Annotations)
 	if authored == "" {
 		return DefaultKubeVersion()
 	}
-	parsed, err := chartutil.ParseKubeVersion(authored)
+	parsed, err := common.ParseKubeVersion(authored)
 	if err != nil {
 		where := fmt.Sprintf("node %q", nodeCtx.NodeID)
 		if nodeCtx.BoundaryPath != "" {
 			where = fmt.Sprintf("node %q in boundary %q", nodeCtx.NodeID, nodeCtx.BoundaryPath)
 		}
-		return chartutil.KubeVersion{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return common.KubeVersion{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("helm: %s: annotation %s: %q is not a Kubernetes version a chart can be rendered for: %v; "+
 				"write the version of the cluster the chart deploys to, such as \"1.31\" or \"v1.31.2\", "+
@@ -77,14 +77,18 @@ func renderKubeVersion(nodeCtx rendercore.NodeRenderContext) (chartutil.KubeVers
 // no annotation names one: the version the stock `helm template` of the same helm
 // release renders for.
 //
-// Helm's own build writes that version into the SDK from the version of the
-// k8s.io/client-go module it compiles against — the module's major version plus
-// one, its minor version, and a zero patch, so client library v0.35.1 renders for
-// Kubernetes v1.35.0. This binary links the same module through the same SDK, so
-// the version is read from the module's entry in the binary's own build
-// information rather than written down here: it moves exactly when the module
-// requirement moves, and a build of the provider and its rendered output can never
-// disagree about it.
+// Helm derives that version from the version of the k8s.io/client-go module the
+// binary links — the module's major version plus one, its minor version, and a
+// zero patch, so client library v0.37.1 renders for Kubernetes v1.37.0. This
+// binary links the same module through the same SDK, so the version is read from
+// the module's entry in the binary's own build information rather than written
+// down here: it moves exactly when the module requirement moves, and a build of
+// the provider and its rendered output can never disagree about it.
+//
+// The SDK's built-in capabilities carry the same derivation in a shipped binary
+// and a fixed placeholder version inside any test binary, so the render reads the
+// entry itself rather than taking the SDK's built-in version: a test of the render
+// then renders for the version the shipped provider renders for.
 //
 // It fails where the binary carries no build information or no entry for the
 // module. A main-package binary built from this module in module mode carries
@@ -92,7 +96,7 @@ func renderKubeVersion(nodeCtx rendercore.NodeRenderContext) (chartutil.KubeVers
 // other way rather than a property of any input. A library package's test binary
 // lists none of the modules it depends on, so this package's own tests supply the
 // entry.
-func DefaultKubeVersion() (chartutil.KubeVersion, error) {
+func DefaultKubeVersion() (common.KubeVersion, error) {
 	return defaultKubeVersion()
 }
 
@@ -105,10 +109,10 @@ var readBuildInfo = debug.ReadBuildInfo
 
 // defaultKubeVersion reads the build information once per process: it cannot
 // change while the binary runs.
-var defaultKubeVersion = sync.OnceValues(func() (chartutil.KubeVersion, error) {
+var defaultKubeVersion = sync.OnceValues(func() (common.KubeVersion, error) {
 	info, ok := readBuildInfo()
 	if !ok {
-		return chartutil.KubeVersion{}, errors.New("the Kubernetes version to render for is not named, " +
+		return common.KubeVersion{}, errors.New("the Kubernetes version to render for is not named, " +
 			"and this provider carries no build information to read the default from")
 	}
 	for _, dep := range info.Deps {
@@ -116,29 +120,32 @@ var defaultKubeVersion = sync.OnceValues(func() (chartutil.KubeVersion, error) {
 			return kubeVersionOfClientLibrary(dep.Version)
 		}
 	}
-	return chartutil.KubeVersion{}, fmt.Errorf("the Kubernetes version to render for is not named, "+
+	return common.KubeVersion{}, fmt.Errorf("the Kubernetes version to render for is not named, "+
 		"and this provider was built without the %s module the default is read from", clientLibraryModule)
 })
 
 // kubeVersionOfClientLibrary maps a k8s.io/client-go module version to the
-// Kubernetes version helm's build stamps for it: major plus one, the minor as it
-// is, and a zero patch, written as the SDK writes its own built-in version.
-func kubeVersionOfClientLibrary(moduleVersion string) (chartutil.KubeVersion, error) {
+// Kubernetes version helm derives for it: major plus one, the minor as it is, and
+// a zero patch. The version is built by the SDK's own parser from that string, so
+// it carries every field the SDK's built-in version carries, set as the SDK sets
+// them, and a chart printing the whole value reads what `helm template` prints.
+func kubeVersionOfClientLibrary(moduleVersion string) (common.KubeVersion, error) {
 	fields := strings.Split(strings.TrimPrefix(moduleVersion, "v"), ".")
 	if len(fields) < 2 {
-		return chartutil.KubeVersion{}, fmt.Errorf("%s version %q carries no minor version to derive the default Kubernetes version from",
+		return common.KubeVersion{}, fmt.Errorf("%s version %q carries no minor version to derive the default Kubernetes version from",
 			clientLibraryModule, moduleVersion)
 	}
 	major, majorErr := strconv.Atoi(fields[0])
 	minor, minorErr := strconv.Atoi(fields[1])
 	if majorErr != nil || minorErr != nil || major < 0 || minor < 0 {
-		return chartutil.KubeVersion{}, fmt.Errorf("%s version %q is not a module version the default Kubernetes version can be derived from",
+		return common.KubeVersion{}, fmt.Errorf("%s version %q is not a module version the default Kubernetes version can be derived from",
 			clientLibraryModule, moduleVersion)
 	}
-	kubeMajor, kubeMinor := strconv.Itoa(major+1), strconv.Itoa(minor)
-	return chartutil.KubeVersion{
-		Version: fmt.Sprintf("v%s.%s.0", kubeMajor, kubeMinor),
-		Major:   kubeMajor,
-		Minor:   kubeMinor,
-	}, nil
+	version := fmt.Sprintf("v%d.%d.0", major+1, minor)
+	parsed, err := common.ParseKubeVersion(version)
+	if err != nil {
+		return common.KubeVersion{}, fmt.Errorf("%s version %q derives the Kubernetes version %q, which the SDK's parser refuses: %w",
+			clientLibraryModule, moduleVersion, version, err)
+	}
+	return *parsed, nil
 }

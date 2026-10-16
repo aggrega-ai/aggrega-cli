@@ -19,11 +19,14 @@ import (
 	"sort"
 	"strings"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/engine"
-	"helm.sh/helm/v3/pkg/releaseutil"
+	"helm.sh/helm/v4/pkg/action"
+	ci "helm.sh/helm/v4/pkg/chart"
+	"helm.sh/helm/v4/pkg/chart/common"
+	commonutil "helm.sh/helm/v4/pkg/chart/common/util"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
+	chartutil "helm.sh/helm/v4/pkg/chart/v2/util"
+	"helm.sh/helm/v4/pkg/engine"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
 )
 
 // notesSuffix marks the rendered files that carry prose rather than a manifest.
@@ -47,10 +50,10 @@ const notesSuffix = "NOTES.txt"
 //   - A dependency named in Chart.yaml with no sub-chart of that name loaded
 //     from charts/, through action.CheckDependencies, which is what the command
 //     calls after loading and before rendering. That is the CHECKING function,
-//     and ProcessDependenciesWithMerge below is the PROCESSING one: the latter
-//     applies aliases and conditions, and a chart whose declared sub-chart is
-//     absent passes through it without complaint. Reading the processing call
-//     as the dependency check is the mistake this paragraph exists to prevent.
+//     and ProcessDependencies below is the PROCESSING one: the latter applies
+//     aliases and conditions, and a chart whose declared sub-chart is absent
+//     passes through it without complaint. Reading the processing call as the
+//     dependency check is the mistake this paragraph exists to prevent.
 //
 //   - Values that violate the chart's own values.schema.json, through
 //     ToRenderValues, which validates them rather than skipping validation.
@@ -86,7 +89,7 @@ const notesSuffix = "NOTES.txt"
 // nor `helm template`, which is the case the package comment describes: the
 // verdict is not a function of such a file's content at all.
 //
-// The value steps matter individually. ProcessDependenciesWithMerge applies the
+// The value steps matter individually. ProcessDependencies applies the
 // manifest's dependency aliases, and binds a dependency only when its name and
 // version match the sub-chart on disk. CoalesceValues, reached inside
 // ToRenderValues, scopes each alias-keyed value block into the sub-chart it
@@ -103,14 +106,20 @@ func RenderThroughDependencyPipeline(chartDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := action.CheckDependencies(ch, ch.Metadata.Dependencies); err != nil {
+	// The dependencies Chart.yaml declares are read through the chart accessor, as
+	// the command reads them before it checks them.
+	accessor, err := ci.NewAccessor(ch)
+	if err != nil {
 		return "", err
 	}
-	if err := chartutil.ProcessDependenciesWithMerge(ch, ch.Values); err != nil {
+	if err := action.CheckDependencies(ch, accessor.MetaDependencies()); err != nil {
 		return "", err
 	}
-	rv, err := chartutil.ToRenderValues(ch, ch.Values,
-		chartutil.ReleaseOptions{Name: "demo", Namespace: "default"}, chartutil.DefaultCapabilities)
+	if err := chartutil.ProcessDependencies(ch, ch.Values); err != nil {
+		return "", err
+	}
+	rv, err := commonutil.ToRenderValues(ch, ch.Values,
+		common.ReleaseOptions{Name: "demo", Namespace: "default"}, common.DefaultCapabilities)
 	if err != nil {
 		return "", err
 	}

@@ -34,10 +34,11 @@ func kubernetesVersionInput(release string) pipelinetest.Input {
 	}
 }
 
-// clientLibraryKubernetesVersion is the version helm's own build stamps for the
+// clientLibraryKubernetesVersion is the version helm derives for the
 // k8s.io/client-go this module requires: the module's major version plus one, its
-// minor version, a zero patch. It is read from go.mod, where helm's build reads
-// it, independently of what the provider reads, so a default that stops following
+// minor version, a zero patch. It is read from go.mod, whose requirement is what a
+// binary built from this module records in its build information and helm derives
+// from, independently of what the provider reads, so a default that stops following
 // the client library fails the row that compares against it.
 func clientLibraryKubernetesVersion(t *testing.T) string {
 	t.Helper()

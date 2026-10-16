@@ -487,11 +487,16 @@ func TestEgressLibraryImportChokepointGuard(t *testing.T) {
 		"github.com/sigstore/sigstore-go/pkg/tuf": {
 			"pkg/egress/livetrust": true,
 		},
-		"helm.sh/helm/v3/pkg/getter": {
+		"helm.sh/helm/v4/pkg/getter": {
 			"pkg/egress":              true,
 			"pkg/sourceresolver/helm": true,
 		},
 	}
+	// seen records each banned path some package imports. A banned path nothing
+	// imports guards nothing — a library moved to a new major version keeps its
+	// network package under another import path — so the guard fails on it rather
+	// than passing over an import it can no longer see.
+	seen := make(map[string]bool, len(banned))
 
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -524,6 +529,7 @@ func TestEgressLibraryImportChokepointGuard(t *testing.T) {
 			if !isBanned {
 				continue
 			}
+			seen[path] = true
 			if !allowed[pkgDir] {
 				t.Errorf("%s: package %q imports the library-owned network package %q outside its egress-gated home — route the transport through pkg/egress or the library's home package", fset.Position(imp.Pos()), pkgDir, path)
 			}
@@ -532,6 +538,11 @@ func TestEgressLibraryImportChokepointGuard(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk %s: %v", root, err)
+	}
+	for path := range banned {
+		if !seen[path] {
+			t.Errorf("no package imports the banned network package %q, so this guard no longer sees that library's egress — key it to the import path its home package uses now", path)
+		}
 	}
 }
 

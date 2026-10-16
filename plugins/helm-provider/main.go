@@ -35,8 +35,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v4/pkg/chart/loader/archive"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
 )
 
 // descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
@@ -343,9 +344,9 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 		return rendercore.RenderNodeOutput{}, err
 	}
 
-	bufs := make([]*loader.BufferedFile, 0, len(proj.Files))
+	bufs := make([]*archive.BufferedFile, 0, len(proj.Files))
 	for _, f := range proj.Files {
-		bufs = append(bufs, &loader.BufferedFile{Name: f.Path, Data: f.Content})
+		bufs = append(bufs, &archive.BufferedFile{Name: f.Path, Data: f.Content})
 	}
 	load := func() (*chart.Chart, error) { return loader.LoadFiles(bufs) }
 

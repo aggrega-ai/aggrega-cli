@@ -12,7 +12,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
-	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v4/pkg/chart/common"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // omitChart is a chart built in memory whose documents exercise every way an omit
@@ -21,10 +22,10 @@ import (
 // ConfigMaps whose names differ but fold to one file identity, a Job carrying no
 // name, and a CustomResourceDefinition shipped under crds/.
 func omitChart() *chart.Chart {
-	file := func(name, data string) *chart.File { return &chart.File{Name: name, Data: []byte(data)} }
+	file := func(name, data string) *common.File { return &common.File{Name: name, Data: []byte(data)} }
 	return &chart.Chart{
 		Metadata: &chart.Metadata{APIVersion: "v2", Name: "omit", Version: "0.1.0"},
-		Templates: []*chart.File{
+		Templates: []*common.File{
 			file("templates/settings.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\ndata:\n  level: info\n"),
 			file("templates/extra.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: extra\n  namespace: other\ndata:\n  k: v\n"),
 			file("templates/secret.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  name: token\nstringData:\n  key: generated\n"),
@@ -36,7 +37,7 @@ func omitChart() *chart.Chart {
 				"---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: twin-a\ndata:\n  which: dash\n"),
 			file("templates/job.yaml", "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: migrate-\n"),
 		},
-		Files: []*chart.File{
+		Files: []*common.File{
 			file("crds/widgets.yaml", "apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\n"+
 				"metadata:\n  name: widgets.example.com\nspec:\n  group: example.com\n  scope: Namespaced\n"+
 				"  names:\n    kind: Widget\n    plural: widgets\n  versions: []\n"),
