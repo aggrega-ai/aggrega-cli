@@ -75,3 +75,9 @@ func EntityURIs() []string { return nil }
 // caller compiles for a light build. A light binary embeds no plugins, so it
 // returns no digests.
 func ContentDigests() []string { return nil }
+
+// PublishedPlugins mirrors the default-host signature so a caller selecting a
+// core plugin the binary does not embed compiles for a light build. A light
+// binary carries no entities at all, so it returns none and such a plugin is
+// selected only through the workspace's catalog.
+func PublishedPlugins() []PublishedPlugin { return nil }

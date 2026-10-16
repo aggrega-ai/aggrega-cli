@@ -30,6 +30,13 @@
 # guest is checked against its crate source and the extra source roots its
 # manifest row names, excluding the cargo build directory.
 #
+# For a plugin the binary does not embed, the binary carries the content digest
+# of its guest instead of the guest (internal/wasm/embedded/published-selection/
+# <name>.digest), so that guest is also stale when the digest is missing or is
+# not the digest of the guest on disk. This half compares the recorded digest
+# with the bytes beside it, never with a rebuild, so the provenance stamp cannot
+# make it report false staleness.
+#
 # Exit 0 when every guest is fresh; exit 1 (naming each stale or missing guest
 # and the rebuild command) otherwise. Deterministic and offline.
 set -euo pipefail
@@ -106,14 +113,39 @@ check_rust_guest() {
   fi
 }
 
+# check_carried_digest NAME DIR — flags NAME, a plugin the binary does not
+# embed, when the content digest the binary carries for it is missing or is not
+# the digest of its decompressed guest DIR/NAME.wasm.gz. The digest is spelled
+# as the guest build writes it: sha256: and the lowercase hex sha256sum prints.
+check_carried_digest() {
+  local name="$1" dir="$2"
+  local carried="$CORE_PLUGIN_SELECTION_DIR/$name.digest" artifact="$dir/$name.wasm.gz"
+  local sum want got
+  if [ ! -f "$carried" ]; then
+    echo "STALE  $name — missing carried guest digest $carried"
+    stale+=("$name")
+    return
+  fi
+  sum="$(gunzip -c "$artifact" | sha256sum)"
+  want="sha256:${sum%% *}"
+  got="$(tr -d '[:space:]' < "$carried")"
+  if [ "$got" != "$want" ]; then
+    echo "STALE  $name — carried guest digest $got is not the guest's $want"
+    stale+=("$name")
+  fi
+}
+
 # Walk the core-plugin list — the one declarative source of the core plugins,
 # where each guest's source lives and whether the binary embeds it — and check
 # every entry against its artifact, in its row's directory. A go guest is checked
 # against its compiled Go sources; a rust guest against its crate directory plus
-# any extra source roots (its local SDK crate). Reading the list here keeps this
-# guard in lockstep with the build script and the registry table.
+# any extra source roots (its local SDK crate). A row the binary does not embed
+# whose guest is fresh is then checked against the digest the binary carries for
+# it. Reading the list here keeps this guard in lockstep with the build script
+# and the registry table.
 while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
   [ -n "$socket" ] || continue
+  flagged="${#stale[@]}"
   case "$toolchain" in
     go)
       check_go_guest "$name" "$sourcePath" "$dir"
@@ -131,6 +163,9 @@ while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir;
       exit 1
       ;;
   esac
+  if [ "$embed" = no ] && [ "${#stale[@]}" -eq "$flagged" ]; then
+    check_carried_digest "$name" "$dir"
+  fi
 done <<< "$rows"
 
 if [ "${#stale[@]}" -gt 0 ]; then

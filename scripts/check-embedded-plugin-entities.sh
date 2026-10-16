@@ -36,6 +36,11 @@
 #     the guest than the one now on disk — which modification time alone does not
 #     detect whenever the entity is the newer file.
 #
+# For a plugin the binary does not embed, the binary carries a copy of its
+# entity (internal/wasm/embedded/published-selection/<name>.plugin.yaml) in place
+# of the guest, so a copy that is missing or differs by a byte from the entity
+# beside the guest is stale too.
+#
 # The overlays live in the sibling aggrega-hub. When that sibling is absent (a
 # schemas/pdk/abi-only checkout that cannot generate entities anyway), the
 # overlay half of the freshness check is skipped with a note and only presence +
@@ -114,6 +119,21 @@ while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir;
     echo "STALE  $socket/$name — entity declares version $ev but its guest reports $(guest_version "$desc")"
     stale+=("$name")
     continue
+  fi
+  # The copy the binary carries of the entity of a plugin it does not embed must
+  # be the entity beside the guest, byte for byte.
+  if [ "$embed" = no ]; then
+    carried="$CORE_PLUGIN_SELECTION_DIR/$name.plugin.yaml"
+    if [ ! -f "$carried" ]; then
+      echo "STALE  $socket/$name — missing carried entity $carried"
+      stale+=("$name")
+      continue
+    fi
+    if ! cmp -s "$entity" "$carried"; then
+      echo "STALE  $socket/$name — carried entity $carried differs from $entity"
+      stale+=("$name")
+      continue
+    fi
   fi
   echo "fresh  $socket/$name"
 done <<< "$rows"

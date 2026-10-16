@@ -26,6 +26,9 @@
 // registers automatically. A row whose embed field is "no" is a core plugin the
 // binary does not carry: the scripts build and publish it, and its artifacts are
 // written beside plugins/ rather than under it, so pluginFS never takes them in.
+// Of such a plugin the binary carries only its generated entity and the content
+// digest of its guest, which the same scripts write under published-selection/
+// and publishedFS embeds (see PublishedPlugins) — never its module.
 //
 // Freshness caveat: a plain go build does not regenerate these artifacts — it
 // embeds whatever .wasm.gz already sit under plugins/ from an earlier build,
@@ -68,6 +71,22 @@ import (
 //
 //go:embed all:plugins
 var pluginFS embed.FS
+
+// publishedFS holds, for each core plugin the binary does not embed, its
+// generated Plugin entity and the content digest of its guest, both written by
+// the scripts that build and generate every core plugin. The directory never
+// holds a module: the guests of those plugins are written to published-only/,
+// which no embed directive names. The `all:` prefix takes in the .gitkeep
+// placeholder that keeps the directory present before anything is generated.
+//
+//go:embed all:published-selection
+var publishedFS embed.FS
+
+// publishedDir is the directory publishedFS embeds, relative to this package.
+// The scripts name the same directory from the module root (scripts/lib/
+// core-plugins.sh, CORE_PLUGIN_SELECTION_DIR), and a test holds the two to one
+// place.
+const publishedDir = "published-selection"
 
 // The bare identity every embedded plugin registers under is derived from its
 // manifest row (`{socket}/{name}`) — the same identity a Plugin entity derives
@@ -119,12 +138,8 @@ const embedField = 5
 const notEmbedded = "no"
 
 // parseManifest derives the embedded-artifact table from the tab-separated
-// core-plugin list. It ignores blank lines and #-prefixed comments and reads the
-// socket (field 1) and name (field 2) from each remaining row, from which the
-// repository reference and asset paths are computed, and the embed field (field
-// 6), which leaves out a row the binary does not embed. The fields between (source
-// path, toolchain, extra roots) drive the build and freshness scripts, not the
-// registry, so they are ignored here.
+// core-plugin list: the rows the binary embeds, in list order. It reads the list
+// through readCoreList and refuses a list naming no plugin the binary embeds.
 //
 // The scripts read the list through one shell reader, and a test holds that
 // reader and this function to the same answer over shared fixtures, so the two
@@ -133,11 +148,44 @@ const notEmbedded = "no"
 // A malformed or empty list is a build-of-the-binary defect — the file is
 // embedded at compile time and drives the scripts that produce the assets — so
 // this panics rather than returning an error, mirroring the mustRead and
-// mustDecompress contracts for the embedded bytes themselves. An embed value
+// mustDecompress contracts for the embedded bytes themselves.
+func parseManifest(b []byte) []embeddedArtifact {
+	embeds, _ := readCoreList(b)
+	if len(embeds) == 0 {
+		panic("plugin/embedded: core-plugin list declares no plugin the binary embeds")
+	}
+	return embeds
+}
+
+// publishedArtifact binds one core plugin the binary does not embed to the two
+// assets the binary carries of it, both under publishedDir: its generated Plugin
+// entity and the file holding the content digest of its guest.
+type publishedArtifact struct {
+	uri    string
+	entity string
+	digest string
+}
+
+// publishedArtifacts is the table of core plugins the binary does not embed,
+// derived from the same embedded core-plugin list as embeddedArtifacts.
+func publishedArtifacts() []publishedArtifact {
+	_, published := readCoreList(manifestTSV)
+	return published
+}
+
+// readCoreList is the binary's one reading of the core-plugin list. It ignores
+// blank lines and #-prefixed comments and reads the socket (field 1) and name
+// (field 2) of each remaining row, from which the repository reference and the
+// asset paths are computed, and the embed field (field 6), which says whether
+// the row is a plugin the binary embeds or one it carries only the entity and
+// guest digest of. The fields between (source path, toolchain, extra roots)
+// drive the build and freshness scripts, not the registry, so they are ignored
+// here. Both tables are in list order.
+//
+// A malformed row panics, for the reason parseManifest gives. An embed value
 // other than empty or notEmbedded is malformed: read as either, a typo would
 // silently embed a plugin or drop one.
-func parseManifest(b []byte) []embeddedArtifact {
-	var out []embeddedArtifact
+func readCoreList(b []byte) (embeds []embeddedArtifact, published []publishedArtifact) {
 	for _, raw := range strings.Split(string(b), "\n") {
 		line := strings.TrimRight(raw, "\r")
 		if t := strings.TrimSpace(line); t == "" || strings.HasPrefix(t, "#") {
@@ -155,22 +203,24 @@ func parseManifest(b []byte) []embeddedArtifact {
 			switch strings.TrimSpace(fields[embedField]) {
 			case "":
 			case notEmbedded:
+				published = append(published, publishedArtifact{
+					uri:    socket + "/" + name,
+					entity: publishedDir + "/" + name + ".plugin.yaml",
+					digest: publishedDir + "/" + name + ".digest",
+				})
 				continue
 			default:
 				panic("plugin/embedded: core-plugin list row has an embed field other than empty or " + notEmbedded + ": " + line)
 			}
 		}
-		out = append(out, embeddedArtifact{
+		embeds = append(embeds, embeddedArtifact{
 			uri:        socket + "/" + name,
 			wasmGz:     "plugins/" + name + ".wasm.gz",
 			descriptor: "plugins/" + name + ".describe.json",
 			entity:     "plugins/" + name + ".plugin.yaml",
 		})
 	}
-	if len(out) == 0 {
-		panic("plugin/embedded: core-plugin list declares no plugin the binary embeds")
-	}
-	return out
+	return embeds, published
 }
 
 // registry maps a plugin's bare identity (`<socket>/<name>`) to the embedded
@@ -192,6 +242,12 @@ var descriptorRegistry = map[string][]byte{}
 // catalog and no registry round-trip, populated from pluginFS at init by
 // registerEntities.
 var entityRegistry = map[string][]byte{}
+
+// publishedRegistry holds what the binary carries of each core plugin it does
+// not embed — its generated entity and its guest's content digest — in the
+// core-plugin list's order. Populated from publishedFS at init by
+// registerPublished.
+var publishedRegistry []PublishedPlugin
 
 // register binds embedded plugin bare identities to their bytes read from
 // pluginFS. It is the single place an embedded plugin's guest is wired: read its
@@ -251,10 +307,40 @@ func registerEntities() map[string][]byte {
 	return out
 }
 
+// registerPublished binds each core plugin the binary does not embed to its
+// generated entity and its guest's content digest, read from publishedFS. A
+// plugin is registered only when both assets are there and the digest file is
+// not blank, because the binary may offer a plugin for selection only when it
+// can also name the exact module it accepts. An absent asset is skipped rather
+// than fatal, as registerEntities skips one: a tree built before the assets were
+// generated, or a checkout without the sibling hub whose overlays the entity is
+// generated from, carries none, and a request for such a plugin then finds no
+// entity advertising what it asked for.
+func registerPublished() []PublishedPlugin {
+	var out []PublishedPlugin
+	for _, a := range publishedArtifacts() {
+		entity, err := publishedFS.ReadFile(a.entity)
+		if err != nil {
+			continue
+		}
+		raw, err := publishedFS.ReadFile(a.digest)
+		if err != nil {
+			continue
+		}
+		d := strings.TrimSpace(string(raw))
+		if d == "" {
+			continue
+		}
+		out = append(out, PublishedPlugin{URI: a.uri, Entity: entity, Digest: d})
+	}
+	return out
+}
+
 func init() {
 	registry = register()
 	descriptorRegistry = registerDescriptors()
 	entityRegistry = registerEntities()
+	publishedRegistry = registerPublished()
 }
 
 // Lookup returns the embedded bytes for uri and whether the URI is embedded.
@@ -312,6 +398,26 @@ func EntityURIs() []string {
 	}
 	sort.Strings(uris)
 	return uris
+}
+
+// PublishedPlugins returns what the binary carries of each core plugin it does
+// not embed — its bare identity, its generated entity and its guest's content
+// digest — in the core-plugin list's order, so a consumer folding them into a
+// resolution set reads them in one order on every run (Deterministic Output
+// invariant). Each entity is a defensive copy, so a caller cannot mutate the
+// bytes backing every later call.
+//
+// These are not embedded plugins, and EntityURIs and LookupEntity never report
+// them: an embedded plugin's entity is served beside the module the binary
+// carries for it, while a plugin here has no module in the binary at all.
+func PublishedPlugins() []PublishedPlugin {
+	out := make([]PublishedPlugin, 0, len(publishedRegistry))
+	for _, p := range publishedRegistry {
+		entity := make([]byte, len(p.Entity))
+		copy(entity, p.Entity)
+		out = append(out, PublishedPlugin{URI: p.URI, Entity: entity, Digest: p.Digest})
+	}
+	return out
 }
 
 // SeedForTest registers uri→bytes in the embedded set and returns a function

@@ -11,7 +11,10 @@
 # or the freshness and drift guards. A guest the binary embeds is written under
 # internal/wasm/embedded/plugins/, which the binary embeds whole; one it does not
 # embed is built and stamped the same way and written under
-# internal/wasm/embedded/published-only/, which nothing embeds.
+# internal/wasm/embedded/published-only/, which nothing embeds, and the content
+# digest of that guest is written under internal/wasm/embedded/published-selection/,
+# which the binary embeds, so the binary can name the one module it accepts for a
+# plugin whose bytes it does not carry.
 #
 # The build is reproducible per commit. Go guests use GOWORK=off, -trimpath,
 # -buildid=, -buildvcs=false, and gzip -n to strip build-path, build-id, and
@@ -31,10 +34,11 @@
 # its absolute location, and that identity reaches the guest's bytes, so the
 # same commit built in another directory yields a different digest.
 #
-# Each embedded guest registers under a digest-free repository reference
-# (oci://hub.aggrega.ai/plugin/{socket}/{name}); the resolution tests derive the
-# expected digest from the embedded bytes at test time, so the printed digest is
-# reported for reproducibility confirmation only.
+# Each embedded guest registers under its digest-free bare identity
+# ({socket}/{name}); the resolution tests derive the expected digest from the
+# embedded bytes at test time, so for an embedded guest the printed digest is
+# reported for reproducibility confirmation only. For a guest the binary does not
+# embed, the same digest is also the one the binary carries for it.
 #
 # Usage:
 #   build-embedded-plugins.sh            # rebuild every core-plugin list entry
@@ -67,16 +71,17 @@ want() {
   return 1
 }
 
-# build_go NAME SOURCEPATH DIR — compile the wasip1 guest from SOURCEPATH, gzip
-# it to DIR/NAME.wasm.gz, and extract its describe() descriptor beside it.
+# build_go NAME SOURCEPATH DIR [DIGEST_OUT] — compile the wasip1 guest from
+# SOURCEPATH, gzip it to DIR/NAME.wasm.gz, and extract its describe() descriptor
+# beside it; DIGEST_OUT is handed to compress_and_describe.
 build_go() {
-  local name="$1" src="$2" dir="$3"
+  local name="$1" src="$2" dir="$3" digest_out="${4:-}"
   local embed="$dir/$name.wasm.gz" wasm="$TMP/$name.wasm"
   echo "=== build $name (go: GOOS=wasip1 GOARCH=wasm) ==="
   GOWORK=off GOOS=wasip1 GOARCH=wasm go build -trimpath \
     -ldflags "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=$_ver -X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Commit=$_sha -buildid=" \
     -buildvcs=false -buildmode=c-shared -o "$wasm" "$src"
-  compress_and_describe "$name" "$wasm" "$embed"
+  compress_and_describe "$name" "$wasm" "$embed" "$digest_out"
 }
 
 # rust_guest_flags WORKSPACE — print, encoded for CARGO_ENCODED_RUSTFLAGS (one
@@ -140,10 +145,11 @@ rust_guest_flags() {
   printf '%s' "${flags[*]}"
 }
 
-# build_rust NAME SOURCEPATH DIR — compile the wasm32-wasip1 crate at
-# SOURCEPATH, gzip it to DIR/NAME.wasm.gz, and extract its describe() descriptor
-# beside it. The built artifact name is the crate directory basename with dashes
-# mapped to underscores (cargo's library-name convention).
+# build_rust NAME SOURCEPATH DIR [DIGEST_OUT] — compile the wasm32-wasip1 crate
+# at SOURCEPATH, gzip it to DIR/NAME.wasm.gz, and extract its describe()
+# descriptor beside it; DIGEST_OUT is handed to compress_and_describe. The built
+# artifact name is the crate directory basename with dashes mapped to underscores
+# (cargo's library-name convention).
 #
 # cargo runs with the crate directory as its working directory, which is how a
 # developer builds one of these crates by hand. It matters because rustup selects
@@ -156,7 +162,7 @@ rust_guest_flags() {
 # physical parent of the module root, where cargo resolves the kits, so it is
 # unchanged by where cargo runs.
 build_rust() {
-  local name="$1" crate="$2" dir="$3"
+  local name="$1" crate="$2" dir="$3" digest_out="${4:-}"
   local embed="$dir/$name.wasm.gz" workspace
   workspace="$(cd .. && pwd -P)"
   local built="$crate/target/wasm32-wasip1/release/$(basename "$crate" | tr - _).wasm"
@@ -169,16 +175,18 @@ build_rust() {
     CARGO_ENCODED_RUSTFLAGS="$rustflags" \
       cargo build --release --target wasm32-wasip1
   )
-  compress_and_describe "$name" "$built" "$embed"
+  compress_and_describe "$name" "$built" "$embed" "$digest_out"
 }
 
-# compress_and_describe NAME WASM EMBED — gzip the built guest to EMBED, extract
-# its describe() descriptor alongside, and print the uncompressed content digest.
-# The descriptor is extracted once here, on the host toolchain (no GOOS/GOARCH
-# override), so the plugin listing can report a guest's static metadata without
-# instantiating it.
+# compress_and_describe NAME WASM EMBED [DIGEST_OUT] — gzip the built guest to
+# EMBED, extract its describe() descriptor alongside, and print the uncompressed
+# content digest. The descriptor is extracted once here, on the host toolchain
+# (no GOOS/GOARCH override), so the plugin listing can report a guest's static
+# metadata without instantiating it. When DIGEST_OUT is given — the guest of a
+# plugin the binary does not embed — the digest is also written there, one line,
+# for the binary to carry.
 compress_and_describe() {
-  local name="$1" wasm="$2" embed="$3"
+  local name="$1" wasm="$2" embed="$3" digest_out="${4:-}"
   echo "=== compress to $embed ==="
   gzip -n -9 -c "$wasm" > "$embed"
   local desc="${embed%.wasm.gz}.describe.json"
@@ -188,15 +196,24 @@ compress_and_describe() {
   local digest; digest="sha256:$(sha256sum "$wasm" | cut -d' ' -f1)"
   echo "=== raw $(stat -c%s "$wasm") bytes / gz $(stat -c%s "$embed") bytes ==="
   echo "uncompressed content digest: $digest"
+  if [ -n "$digest_out" ]; then
+    printf '%s\n' "$digest" > "$digest_out"
+    echo "wrote $digest_out"
+  fi
 }
 
 while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir; do
   [ -n "$socket" ] || continue
   want "$name" || continue
   mkdir -p "$dir"
+  digest_out=""
+  if [ "$embed" = no ]; then
+    mkdir -p "$CORE_PLUGIN_SELECTION_DIR"
+    digest_out="$CORE_PLUGIN_SELECTION_DIR/$name.digest"
+  fi
   case "$toolchain" in
-    go)   build_go   "$name" "$sourcePath" "$dir" ;;
-    rust) build_rust "$name" "$sourcePath" "$dir" ;;
+    go)   build_go   "$name" "$sourcePath" "$dir" "$digest_out" ;;
+    rust) build_rust "$name" "$sourcePath" "$dir" "$digest_out" ;;
     *)    echo "build-embedded-plugins: unknown toolchain '$toolchain' for $name" >&2; exit 1 ;;
   esac
   built+=("$name")

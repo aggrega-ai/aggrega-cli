@@ -8,7 +8,10 @@
 # plugins, and under internal/wasm/embedded/published-only/<name>.plugin.yaml for
 # one it does not, where the co-located dev catalog and the entity check read it.
 # A no-local-catalog build resolves core providers (compose, helm, terraform, …)
-# from the embedded entities at render time, with no registry round-trip.
+# from the embedded entities at render time, with no registry round-trip. The
+# entity of a guest the binary does not embed is also copied, byte for byte, to
+# internal/wasm/embedded/published-selection/<name>.plugin.yaml, which the binary
+# embeds: it carries that entity, though never that guest.
 #
 # The embedded guests' entities come from `plugin gen-catalog --from-embedded`;
 # the others' from core_plugin_generate_unembedded (scripts/lib/core-plugins.sh),
@@ -81,6 +84,10 @@ while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir;
   fi
   mkdir -p "$dir"
   cp "$src" "$dir/$name.plugin.yaml"
+  if [ "$embed" = no ]; then
+    mkdir -p "$CORE_PLUGIN_SELECTION_DIR"
+    cp "$src" "$CORE_PLUGIN_SELECTION_DIR/$name.plugin.yaml"
+  fi
   written+=("$name")
 done <<< "$rows"
 

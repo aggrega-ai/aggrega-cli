@@ -7,15 +7,21 @@ package embedded
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestContentDigestsMatchGuestDerivation asserts the embedded-identity accessor
@@ -95,6 +101,12 @@ func TestManifestDerivedURIsAreStable(t *testing.T) {
 // importers are built and published with each compiler release, and the binary
 // carries none of their bytes. A row added to the core-plugin list for an
 // importer without its embed field set to "no" fails here.
+//
+// The binary does carry an entity and a guest digest of every core plugin it
+// does not embed, from a second embedded directory, so this also holds that
+// directory and the first to carrying no module of such a plugin: a module
+// written into either — or a plugin of the list's own "no" rows that the embed
+// tier answers for — fails here as well.
 func TestTheBinaryEmbedsNoImporter(t *testing.T) {
 	prefix := string(plugintype.Importer) + "/"
 	for _, a := range embeddedArtifacts() {
@@ -102,6 +114,145 @@ func TestTheBinaryEmbedsNoImporter(t *testing.T) {
 			t.Errorf("the binary embeds the importer %q; a core importer is published, never embedded", a.uri)
 		}
 	}
+
+	for _, a := range publishedArtifacts() {
+		if _, ok := Lookup(a.uri); ok {
+			t.Errorf("the binary embeds the module of %q, a core plugin the core-plugin list says it does not embed", a.uri)
+		}
+	}
+
+	embeddedModules := map[string]bool{}
+	for _, a := range embeddedArtifacts() {
+		embeddedModules[a.wasmGz] = true
+	}
+	for _, tree := range []struct {
+		name string
+		fsys fs.FS
+		root string
+	}{
+		{name: "the embedded plugins' directory", fsys: pluginFS, root: "plugins"},
+		{name: "the directory of what is carried of the plugins not embedded", fsys: publishedFS, root: publishedDir},
+	} {
+		err := fs.WalkDir(tree.fsys, tree.root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			if (strings.HasSuffix(p, ".wasm") || strings.HasSuffix(p, ".wasm.gz")) && !embeddedModules[p] {
+				t.Errorf("%s embeds the module %s, which belongs to no plugin the binary embeds", tree.name, p)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", tree.name, err)
+		}
+	}
+}
+
+// TestEveryCorePluginTheBinaryDoesNotEmbedCarriesItsEntityAndGuestDigest holds
+// what the binary carries of each core plugin it does not embed to what the
+// scripts build and publish for it. For every row of the core-plugin list whose
+// embed field is "no", in list order and with no other plugin among them:
+//
+//   - PublishedPlugins carries it;
+//   - its entity is a Plugin entity of the row's own identity, byte-identical to
+//     the entity the generator wrote beside its guest — the entity the release
+//     publishes;
+//   - its digest is the binary's own content digest of that guest decompressed,
+//     so the digest the guest build wrote with sha256sum and the derivation every
+//     content-addressing consumer compares agree, and a guest rebuilt without its
+//     digest is caught.
+//
+// The guest and the entity are found where the scripts' reader of the list says
+// the row's artifacts are, and the directory the binary embeds is held to the
+// one the scripts write into, so neither side's spelling of a place can drift
+// from the other's.
+func TestEveryCorePluginTheBinaryDoesNotEmbedCarriesItsEntityAndGuestDigest(t *testing.T) {
+	lib := coreListLibrary(t)
+	moduleRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("resolve the module root: %v", err)
+	}
+	here, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("read the test's working directory: %v", err)
+	}
+	wantSelectionDir, err := filepath.Rel(moduleRoot, filepath.Join(here, publishedDir))
+	if err != nil {
+		t.Fatalf("relate the embedded directory to the module root: %v", err)
+	}
+	if got := scriptsAnswer(t, lib, `printf '%s' "$CORE_PLUGIN_SELECTION_DIR"`); got != filepath.ToSlash(wantSelectionDir) {
+		t.Fatalf("the scripts write what the binary carries into %q; the binary embeds %q", got, filepath.ToSlash(wantSelectionDir))
+	}
+
+	rows := publishedArtifacts()
+	if len(rows) == 0 {
+		t.Fatal("the core-plugin list names no plugin the binary does not embed, so nothing here is proven")
+	}
+	carried := PublishedPlugins()
+	var got, want []string
+	for _, p := range carried {
+		got = append(got, p.URI)
+	}
+	for _, a := range rows {
+		want = append(want, a.uri)
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("the binary carries [%s]; want every plugin the core-plugin list does not embed, in list order: [%s]",
+			strings.Join(got, " "), strings.Join(want, " "))
+	}
+
+	for _, p := range carried {
+		t.Run(p.URI, func(t *testing.T) {
+			socket, name, _ := strings.Cut(p.URI, "/")
+			dir := scriptsAnswer(t, lib, `core_plugin_dir_of "$2" "$3"`, socket, name)
+
+			var entity types.Plugin
+			if err := yaml.Unmarshal(p.Entity, &entity); err != nil {
+				t.Fatalf("the carried entity does not decode as a Plugin: %v", err)
+			}
+			if entity.Kind != "Plugin" || entity.Coordinate() != p.URI {
+				t.Errorf("the carried entity is %s %q; want the Plugin %q", entity.Kind, entity.Coordinate(), p.URI)
+			}
+			besideGuest, err := os.ReadFile(filepath.Join(moduleRoot, dir, name+".plugin.yaml"))
+			if err != nil {
+				t.Fatalf("read the entity generated beside the guest: %v", err)
+			}
+			if !bytes.Equal(p.Entity, besideGuest) {
+				t.Errorf("the carried entity differs from the one generated beside the guest in %s", dir)
+			}
+
+			guest, err := os.ReadFile(filepath.Join(moduleRoot, dir, name+".wasm.gz"))
+			if err != nil {
+				t.Fatalf("read the guest the release publishes: %v", err)
+			}
+			zr, err := gzip.NewReader(bytes.NewReader(guest))
+			if err != nil {
+				t.Fatalf("open the guest: %v", err)
+			}
+			defer func() { _ = zr.Close() }()
+			module, err := io.ReadAll(zr)
+			if err != nil {
+				t.Fatalf("decompress the guest: %v", err)
+			}
+			if derived := digest.ContentDigest(module); p.Digest != derived {
+				t.Errorf("the carried digest is %q; the guest in %s digests to %q", p.Digest, dir, derived)
+			}
+		})
+	}
+}
+
+// scriptsAnswer runs command after sourcing the scripts' reader of the
+// core-plugin list at lib, with args as its positional parameters from $2 on,
+// and returns what it printed, failing the test on any refusal.
+func scriptsAnswer(t *testing.T, lib, command string, args ...string) string {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("bash", append([]string{"-c", `. "$1" && ` + command, "bash", lib}, args...)...)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run %q over the scripts' reader: %v\n%s", command, err, stderr.String())
+	}
+	return strings.TrimSuffix(stdout.String(), "\n")
 }
 
 // coreListCase is one core-plugin list both readers are run over, and what both

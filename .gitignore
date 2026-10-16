@@ -40,11 +40,17 @@ dist/
 # tracked so the //go:embed all:plugins directory is always present. A core
 # plugin the binary does not embed has the same three artifacts under
 # published-only/, beside plugins/ so the embed never takes them in; that
-# directory is made by the build and is not tracked at all.
+# directory is made by the build and is not tracked at all. What the binary does
+# carry of such a plugin — a copy of its entity and its guest's content digest —
+# is regenerated under published-selection/ by the same scripts and not tracked;
+# its .gitkeep stays tracked so the //go:embed all:published-selection directory
+# is always present.
 internal/wasm/embedded/plugins/*.wasm.gz
 internal/wasm/embedded/plugins/*.describe.json
 internal/wasm/embedded/plugins/*.plugin.yaml
 internal/wasm/embedded/published-only/
+internal/wasm/embedded/published-selection/*.plugin.yaml
+internal/wasm/embedded/published-selection/*.digest
 
 # The co-located plugin catalog is a developer-owned, regenerated-on-build
 # convenience: each core guest's .wasm laid down beside its Plugin entity so the

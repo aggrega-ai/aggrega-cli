@@ -90,8 +90,11 @@ var errAmbiguousParserPlugin = cerrors.Register("ambiguous-parser-plugin", cerro
 // When exactly one parser plugin advertises the format, its version is chosen by
 // the shared three-form version select (highest available), so multiple versions
 // of one parser coexist and resolve deterministically. The enumeration reads the
-// whole Plugin index, so both a core parser embedded in the binary (surfaced as a
-// Plugin entity) and a pulled catalog parser resolve through this one path.
+// view's own Plugin index — every Plugin entity the view loaded, a pulled one
+// included — and never the binary's embedded entities, whatever the view's
+// embedded-resolution posture: a core parser the binary embeds is selected here
+// only through a Plugin entity of its coordinate in the catalog, whose module the
+// plugin cascade then reads from the binary.
 //
 // Determinism (byte-identical output): candidate names sort before entering a
 // diagnostic and the version select sorts its candidates, so no outcome depends

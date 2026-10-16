@@ -17,6 +17,15 @@
 # other value is refused, here and by the binary's own reading of the list, so a
 # typo can neither embed a plugin nor drop one.
 #
+# Of a row that is not embedded the binary still carries what selects it, and
+# nothing of its module: its generated entity, as <name>.plugin.yaml, and the
+# content digest of its decompressed guest, as <name>.digest holding one line,
+# sha256:<lowercase hex>. Both are written to CORE_PLUGIN_SELECTION_DIR, which
+# the binary embeds whole: the digest by the guest build, the entity by the
+# entity generator, each a copy of what it writes beside the guest. The guest and
+# entity checks hold each to the guest and the entity it was copied from, and a
+# test in internal/wasm/embedded holds the digest to the binary's own derivation.
+#
 # 🔴 The rows are read with awk -F'\t', never with `IFS=$'\t' read`. A tab is an
 # IFS whitespace character, so `read` folds a run of tabs into one separator and
 # an empty field vanishes: a row whose extra source roots are empty would hand
@@ -33,12 +42,14 @@
 # aggrega-cli module root; CORE_PLUGIN_MODULE_ROOT is that root, absolute, so a
 # caller anywhere can reach them.
 #
-# Sourcing sets four variables and defines three functions:
+# Sourcing sets five variables and defines three functions:
 #
 #   CORE_PLUGIN_MODULE_ROOT    the aggrega-cli module root, absolute
 #   CORE_PLUGIN_LIST           the list, relative to the module root
 #   CORE_PLUGIN_EMBED_DIR      where an embedded row's artifacts are written
 #   CORE_PLUGIN_PUBLISHED_DIR  where a row that is not embedded writes them
+#   CORE_PLUGIN_SELECTION_DIR  where the entity and guest digest the binary
+#                              carries of a row that is not embedded are written
 #
 #   core_plugin_rows [FILE]
 #     Prints every row of FILE (default: the list), one per line, as seven fields
@@ -76,6 +87,7 @@ CORE_PLUGIN_MODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CORE_PLUGIN_LIST="internal/wasm/embedded/embedded-plugins.tsv"
 CORE_PLUGIN_EMBED_DIR="internal/wasm/embedded/plugins"
 CORE_PLUGIN_PUBLISHED_DIR="internal/wasm/embedded/published-only"
+CORE_PLUGIN_SELECTION_DIR="internal/wasm/embedded/published-selection"
 
 core_plugin_rows() {
   local file="${1:-$CORE_PLUGIN_MODULE_ROOT/$CORE_PLUGIN_LIST}"

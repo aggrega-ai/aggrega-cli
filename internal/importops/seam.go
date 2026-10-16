@@ -23,12 +23,11 @@ import (
 // recognition signatures settle a format the import does not name.
 //
 // They travel together because they are built from one catalog view: parser
-// and importer resolution share it and its embedded-resolution posture, so one
-// loader closure serves both sockets and no separate enable is needed for the
-// parser side, the Components the importer is shown are the ones held by the
-// catalog its importer was selected from, and the importers a source is
-// recognised by are the ones that resolution selects among. The recognition
-// parses the source through the same parser pair the importer draws on.
+// and importer resolution share it, so one loader closure serves both sockets,
+// the Components the importer is shown are the ones held by the catalog its
+// importer was selected from, and the importers a source is recognised by are
+// the ones that resolution selects among. The recognition parses the source
+// through the same parser pair the importer draws on.
 //
 // Catalog is nil when that catalog holds no Component, and a harness standing
 // in for the catalog leaves it nil unless it supplies a view of its own.
