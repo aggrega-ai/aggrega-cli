@@ -26,10 +26,14 @@ import "fmt"
 // Nothing here refuses. A difference is a fact a person may want to act on; it
 // is never a reason to decline a launch or a call.
 
-// versionLine is the line the argumentless capability answer opens with: the
-// version this server runs, and, where a desktop bundle launched it, that
-// bundle's version and whether the two come from one release. It is empty where
-// the server reports no version of its own, which no launch of the binary does.
+// versionLine is the line the argumentless capability answer opens with, and
+// carries in its structured answer as version_summary: the version this server
+// runs, and, where a desktop bundle launched it, that bundle's version and
+// whether the two come from one release. It is empty where the server reports no
+// version of its own, which no launch of the binary does.
+//
+// The answer calls it once and writes its text from the field, so a client
+// reading either the text or the structured answer reads this one line.
 //
 // Where the two differ the line is exactly releaseDifference's sentence, so the
 // capability answer and the connect-time guidance say it in the same words.

@@ -62,18 +62,26 @@ func TestTheVersionLineNamesBothVersionsAndSaysWhenTheyDiffer(t *testing.T) {
 }
 
 // TestOnlyTheArgumentlessCapabilityAnswerReportsTheVersions drives the
-// capability tool on a server launched by a bundle of another release, and holds
-// the versions to the one answer that says what the server is: the argumentless
-// index carries server_version and bundle_version and opens its text with the
-// line naming them, while a kind-narrowed index and a call naming tools carry
-// neither key and no such line. A server no bundle launched carries
-// server_version alone.
+// capability tool on servers launched by a bundle of another release, by a
+// bundle of the server's own release and by no bundle, and holds the versions to
+// the one answer that says what the server is: the argumentless index carries
+// server_version, bundle_version where a bundle launched the server, and
+// version_summary, the line its text opens with — the line naming both, saying
+// so where the two come from different releases. A kind-narrowed index and a
+// call naming tools carry none of the three keys and no such line.
+//
+// 🔴 PLANTED DEFECT: in describeCapabilitiesInvoke, set VersionSummary from
+// releaseDifference rather than versionLine, and the rows of a bundle of the
+// server's own release and of no bundle fail: their version_summary is absent,
+// and their text opens with the index rather than the line. Set it to any fixed
+// string instead, and every row fails on the field.
 func TestOnlyTheArgumentlessCapabilityAnswerReportsTheVersions(t *testing.T) {
 	t.Parallel()
-	launched := &server{out: io.Discard, logw: io.Discard, serverVersion: reportServerVersionProbe,
-		bundleVersion: reportBundleVersionProbe, launchRoot: t.TempDir()}
-	unbundled := &server{out: io.Discard, logw: io.Discard, serverVersion: reportServerVersionProbe,
-		launchRoot: t.TempDir()}
+	launch := func(t *testing.T, bundle string) *server {
+		t.Helper()
+		return &server{out: io.Discard, logw: io.Discard, serverVersion: reportServerVersionProbe,
+			bundleVersion: bundle, launchRoot: t.TempDir()}
+	}
 
 	keysOf := func(t *testing.T, res *callToolResult) map[string]json.RawMessage {
 		t.Helper()
@@ -86,28 +94,63 @@ func TestOnlyTheArgumentlessCapabilityAnswerReportsTheVersions(t *testing.T) {
 		}
 		return keys
 	}
-
-	index := callTool(t, launched, describeCapabilitiesName, describeCapabilitiesArgs{})
-	keys := keysOf(t, index)
-	if got := string(keys["server_version"]); got != `"`+reportServerVersionProbe+`"` {
-		t.Errorf("the argumentless index carries server_version %s; want %q", got, reportServerVersionProbe)
-	}
-	if got := string(keys["bundle_version"]); got != `"`+reportBundleVersionProbe+`"` {
-		t.Errorf("the argumentless index carries bundle_version %s; want %q", got, reportBundleVersionProbe)
-	}
-	if first, _, _ := strings.Cut(index.Content[0].Text, "\n"); first !=
-		versionLine(reportServerVersionProbe, reportBundleVersionProbe) {
-		t.Errorf("the argumentless index's text opens with %q; want the line naming both versions", first)
-	}
-
-	unbundledKeys := keysOf(t, callTool(t, unbundled, describeCapabilitiesName, describeCapabilitiesArgs{}))
-	if _, carried := unbundledKeys["bundle_version"]; carried {
-		t.Errorf("a server no bundle launched carries bundle_version %s", unbundledKeys["bundle_version"])
-	}
-	if _, carried := unbundledKeys["server_version"]; !carried {
-		t.Error("a server no bundle launched carries no server_version")
+	// stringOf decodes one key of the payload as a JSON string, reporting
+	// whether the payload carries the key at all.
+	stringOf := func(t *testing.T, keys map[string]json.RawMessage, key string) (string, bool) {
+		t.Helper()
+		raw, carried := keys[key]
+		if !carried {
+			return "", false
+		}
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			t.Fatalf("the payload's %s is %s, not a JSON string: %v", key, raw, err)
+		}
+		return s, true
 	}
 
+	for _, tc := range []struct {
+		name   string
+		bundle string
+		// differs is whether the line must say the two come from different
+		// releases.
+		differs bool
+	}{
+		{name: "a bundle of another release", bundle: reportBundleVersionProbe, differs: true},
+		{name: "a bundle of the server's own release", bundle: reportServerVersionProbe},
+		{name: "no bundle"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			index := callTool(t, launch(t, tc.bundle), describeCapabilitiesName, describeCapabilitiesArgs{})
+			keys := keysOf(t, index)
+			if got, _ := stringOf(t, keys, "server_version"); got != reportServerVersionProbe {
+				t.Errorf("the argumentless index carries server_version %q; want %q", got, reportServerVersionProbe)
+			}
+			switch got, carried := stringOf(t, keys, "bundle_version"); {
+			case tc.bundle == "" && carried:
+				t.Errorf("a server no bundle launched carries bundle_version %q", got)
+			case tc.bundle != "" && got != tc.bundle:
+				t.Errorf("the argumentless index carries bundle_version %q; want %q", got, tc.bundle)
+			}
+
+			want := versionLine(reportServerVersionProbe, tc.bundle)
+			summary, carried := stringOf(t, keys, "version_summary")
+			if !carried || summary != want {
+				t.Errorf("the argumentless index carries version_summary %q (carried: %v); want the version line %q",
+					summary, carried, want)
+			}
+			if first, _, _ := strings.Cut(index.Content[0].Text, "\n"); first != summary {
+				t.Errorf("the argumentless index's text opens with %q; want the line its version_summary carries, %q",
+					first, summary)
+			}
+			if says := strings.Contains(summary, "come from different releases"); says != tc.differs {
+				t.Errorf("version_summary %q says the two come from different releases: %v; want %v",
+					summary, says, tc.differs)
+			}
+		})
+	}
+
+	launched := launch(t, reportBundleVersionProbe)
 	for _, narrowed := range []struct {
 		name string
 		args describeCapabilitiesArgs
@@ -117,7 +160,7 @@ func TestOnlyTheArgumentlessCapabilityAnswerReportsTheVersions(t *testing.T) {
 	} {
 		res := callTool(t, launched, describeCapabilitiesName, narrowed.args)
 		keys := keysOf(t, res)
-		for _, key := range []string{"server_version", "bundle_version"} {
+		for _, key := range []string{"server_version", "bundle_version", "version_summary"} {
 			if raw, carried := keys[key]; carried {
 				t.Errorf("an answer %s carries %s %s; only the argumentless index reports the versions",
 					narrowed.name, key, raw)

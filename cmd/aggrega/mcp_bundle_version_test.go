@@ -43,16 +43,24 @@ type bundleLaunchAnswer struct {
 // Each launch answers initialize and the argumentless describe-capabilities.
 // serverInfo carries exactly its name and its version every time. The
 // capability answer carries server_version every time and bundle_version only
-// where the variable was set, and its text opens with one line naming them:
-// where they differ, the sentence saying the executable and the bundle come from
-// different releases, which the guidance then opens with too; where they are
-// equal, the line naming both and nothing more, and guidance identical to the
-// launch that carried no bundle; where absent, the server's version alone.
+// where the variable was set, and its text opens with one line naming them,
+// which its structured answer carries as version_summary: where they differ, the
+// sentence saying the executable and the bundle come from different releases,
+// which the guidance then opens with too; where they are equal, the line naming
+// both and nothing more, and guidance identical to the launch that carried no
+// bundle; where absent, the server's version alone. Each launch logs the
+// version_summary it answered, so a verbose run shows all three.
 //
 // 🔴 PLANTED DEFECT: in internal/mcp/version_report.go, replace the comparison
 // `bundleVersion == serverVersion` in releaseDifference with `true`. The
 // differing launch then fails: its capability answer opens with no line naming
-// the two versions, and its guidance carries no sentence saying they differ.
+// the two versions, its version_summary is absent, and its guidance carries no
+// sentence saying they differ.
+//
+// 🔴 PLANTED DEFECT: in internal/mcp/progressive.go, set the argumentless
+// answer's VersionSummary from anything but versionLine — a fixed string, or
+// releaseDifference. Every launch whose version_summary is then not its version
+// line fails on the field.
 func TestTheServerReportsItsVersionBesideTheBundleThatLaunchedIt(t *testing.T) {
 	t.Parallel()
 	bin := buildServeBinary(t)
@@ -75,8 +83,12 @@ func TestTheServerReportsItsVersionBesideTheBundleThatLaunchedIt(t *testing.T) {
 		// bundle is the bundle_version the payload must carry; empty wants no key.
 		bundle   string
 		wantLine string
+		// differs is whether the line must say the two come from different
+		// releases.
+		differs bool
 	}{
-		{name: "a bundle from another release", answer: differing, bundle: bundleVersionProbe, wantLine: difference},
+		{name: "a bundle from another release", answer: differing, bundle: bundleVersionProbe, wantLine: difference,
+			differs: true},
 		{name: "a bundle from the binary's own release", answer: equal, bundle: own,
 			wantLine: fmt.Sprintf("This server runs aggrega %s, launched by the desktop bundle of the same version, %s.",
 				own, own)},
@@ -107,8 +119,23 @@ func TestTheServerReportsItsVersionBesideTheBundleThatLaunchedIt(t *testing.T) {
 			case row.bundle != "" && jsonString(t, raw) != row.bundle:
 				t.Errorf("describe-capabilities carries bundle_version %s; want %q", raw, row.bundle)
 			}
-			if first, _, _ := strings.Cut(a.text, "\n"); first != row.wantLine {
+			first, _, _ := strings.Cut(a.text, "\n")
+			if first != row.wantLine {
 				t.Errorf("describe-capabilities' text opens with %q; want %q", first, row.wantLine)
+			}
+			raw, carried = a.payload["version_summary"]
+			t.Logf("version_summary: %s", raw)
+			summary := jsonString(t, raw)
+			switch {
+			case !carried || summary != row.wantLine:
+				t.Errorf("describe-capabilities carries version_summary %s; want the version line %q", raw, row.wantLine)
+			case summary != first:
+				t.Errorf("describe-capabilities carries version_summary %q; want the line its text opens with, %q",
+					summary, first)
+			}
+			if says := strings.Contains(summary, "come from different releases"); says != row.differs {
+				t.Errorf("describe-capabilities' version_summary %q says the two come from different releases: %v; "+
+					"want %v", summary, says, row.differs)
 			}
 			if _, index, _ := strings.Cut(a.text, "\n"); !strings.HasPrefix(index, "Every tool this server offers you") {
 				t.Errorf("describe-capabilities' text carries more than the one line before its index:\n%s", a.text)

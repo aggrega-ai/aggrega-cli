@@ -151,17 +151,25 @@ type capabilityDescriptor struct {
 // present and empty.
 //
 // The argumentless answer — the one a caller reads to learn what this server is
-// — also carries ServerVersion, the version this server runs, and BundleVersion,
-// the version of the desktop bundle that launched it, only where one did. Neither
+// — also carries ServerVersion, the version this server runs, BundleVersion, the
+// version of the desktop bundle that launched it, only where one did, and
+// VersionSummary, the line naming them that the answer's text opens with. None
 // is set on a narrowed answer or on definitions: those answer a question about
 // tools, and the versions answer one about the server (versionLine).
+//
+// VersionSummary is the text's line itself rather than a second rendering of the
+// two versions: the text is written from it. A client that shows a model only
+// the structured answer therefore hands it the same line, and where the
+// executable and the bundle come from different releases, the same sentence
+// saying so.
 type describeCapabilitiesResult struct {
-	Kind          string                 `json:"kind,omitempty"`
-	Tools         []string               `json:"tools,omitempty"`
-	ServerVersion string                 `json:"server_version,omitempty"`
-	BundleVersion string                 `json:"bundle_version,omitempty"`
-	Index         []capabilityProjection `json:"index,omitempty"`
-	Capabilities  []capabilityDescriptor `json:"capabilities,omitempty"`
+	Kind           string                 `json:"kind,omitempty"`
+	Tools          []string               `json:"tools,omitempty"`
+	ServerVersion  string                 `json:"server_version,omitempty"`
+	BundleVersion  string                 `json:"bundle_version,omitempty"`
+	VersionSummary string                 `json:"version_summary,omitempty"`
+	Index          []capabilityProjection `json:"index,omitempty"`
+	Capabilities   []capabilityDescriptor `json:"capabilities,omitempty"`
 }
 
 // kindScopeCommandToolNote is the one bound on a kind-scoped answer, written
@@ -288,6 +296,7 @@ func describeCapabilitiesInvoke(s *server, ctx context.Context, args json.RawMes
 	// which release the desktop bundle that launched it comes from, where one did.
 	payload := describeCapabilitiesResult{Index: projectTools(s.servedTools(ctx))}
 	payload.ServerVersion, payload.BundleVersion = s.reportedVersions()
+	payload.VersionSummary = versionLine(payload.ServerVersion, payload.BundleVersion)
 	return textResult(s.renderCapabilityIndex(payload), payload)
 }
 
@@ -488,13 +497,14 @@ func isKnownEntityKind(kind string) bool {
 // bound on a family that session cannot reach is a claim about tools the caller
 // was never offered.
 //
-// An answer carrying the versions opens with the one line naming them, composed
-// from the payload's own fields, so the text and the structured answer cannot
-// report two different versions.
+// An answer carrying the versions opens with the one line naming them, written
+// from the payload's own VersionSummary rather than composed again here, so the
+// text and the structured answer say it in the same words and cannot report two
+// different versions.
 func (s *server) renderCapabilityIndex(p describeCapabilitiesResult) string {
 	var b strings.Builder
-	if line := versionLine(p.ServerVersion, p.BundleVersion); line != "" {
-		b.WriteString(line)
+	if p.VersionSummary != "" {
+		b.WriteString(p.VersionSummary)
 		b.WriteString("\n")
 	}
 	if p.Kind == "" {
