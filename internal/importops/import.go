@@ -177,6 +177,16 @@ func (r Result) Halted() bool {
 // reports that together with the importer, so the attachment that selected it and
 // the attachment it is configured by are one answer rather than two.
 //
+// A core importer of the compiler's release that the machine does not hold — in
+// the binary or in the workspace's content cache — is acquired by the import that
+// first needs it, under ctx: fetched from the workspace's default registry, held
+// to the digest the binary carries for it, verified as every fetched plugin is,
+// and written to the content cache — and to nothing the workspace records, its
+// lockfile and its record of trusted plugins included. Every later import reads
+// it from there and reaches no registry. Where it can be neither read nor
+// fetched, the import is refused, naming the importer, its version and what puts
+// its module on the machine.
+//
 // 🔴 The write is CONTAINED, and the containment is the reused judgement rather
 // than a check written here. A scaffold path comes from the importer plugin, so
 // every path is placed by [pathscope.PlaceBeneath] — the one way a name somebody
@@ -208,7 +218,9 @@ func (r Result) Halted() bool {
 // catalog that would not load, a source no importer recognises or more than one
 // format's importers recognise, a link in a directory source leading out of it
 // ([*DirectoryLinkError]), a directory refused for the importer's patterns or a
-// name both a directory file and a with.sources file carry, a guest that failed,
+// name both a directory file and a with.sources file carry, a core importer of the
+// compiler's release that is not on the machine and could not be fetched, or whose
+// fetched module did not verify, a guest that failed,
 // an escaping path, a draft Windows cannot hold where the import runs on Windows,
 // or a write that failed.
 func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options) (Result, error) {
@@ -263,7 +275,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	}
 
 	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
-		seam.ImporterLoad, seam.ParserRes, seam.ParserLoad, format, primary, sources, settings, seam.Catalog)
+		seam.importerLoader(ctx), seam.ParserRes, seam.ParserLoad, format, primary, sources, settings, seam.Catalog)
 	if err != nil {
 		return Result{}, err
 	}

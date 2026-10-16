@@ -108,6 +108,15 @@ import (
 // question the catalog already answered. A nil map names no such place, and the
 // cascade then reads only its other tiers.
 //
+// One plugin is not resolved through it: a core importer of the compiler's
+// release, which the import's catalog view serves from what the binary carries.
+// Its module is the one the binary names by digest, so it is read through a
+// cascade this package builds from the workspace's content cache and that digest
+// — the slot a fetch of it writes, which no pin the workspace records addresses —
+// and acquired from the workspace's default registry where the machine does not
+// hold it. Nothing a resolver here holds a module to, and no entity it fronts one
+// with, is a statement about that module.
+//
 // A nil resolver is refused by [Import] rather than defaulted, because a default
 // would resolve plugin bytes by a rule no caller chose.
 type PluginBytesResolver func(rw *workspaceconfig.ResolvedWorkspace, uri string,

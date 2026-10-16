@@ -46,8 +46,10 @@ type ImporterResolver interface {
 // import operation reads them through the shared plugin cascade, which serves a
 // module embedded in the binary, one laid down beside its Plugin entity in a
 // catalog directory, one at an explicit local path and one in the workspace
-// content cache, and fetches nothing. The seam is injected so the orchestrator
-// stays agnostic to where the bytes come from.
+// content cache, and fetches nothing — except that a core importer of the
+// compiler's release no tier holds is fetched once, verified and written to the
+// content cache before it loads. The seam is injected so the orchestrator stays
+// agnostic to where the bytes come from.
 type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 
 // ImportArtifact resolves the importer advertising the requested format, loads
@@ -65,7 +67,8 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // alone — the import operation's loader reads them through the shared plugin
 // cascade, from the binary, from beside the importer's Plugin entity in a
 // catalog directory, from an explicit local path or from the workspace content
-// cache — so this orchestrator holds no pin discipline of its own.
+// cache, a core importer of the compiler's release held to the digest the binary
+// carries for it — so this orchestrator holds no pin discipline of its own.
 //
 // The socket carries the canonical CBOR encoding in both directions: the import
 // input is written by the generated codec's EncodeCBOR, and the guest's output is

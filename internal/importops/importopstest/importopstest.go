@@ -185,7 +185,25 @@ func LayImporters(t *testing.T, workspaceRoot, dir string, importers ...Importer
 // a value the loader reads back unchanged.
 func WriteConfiguration(t *testing.T, root string, attachments ...Attachment) {
 	t.Helper()
+	writeConfiguration(t, root, false, attachments)
+}
+
+// WriteOfflineConfiguration is WriteConfiguration for a workspace under the
+// offline posture, whose import reaches no registry: one that needs a core
+// importer the machine does not hold is refused rather than fetching it.
+func WriteOfflineConfiguration(t *testing.T, root string, attachments ...Attachment) {
+	t.Helper()
+	writeConfiguration(t, root, true, attachments)
+}
+
+// writeConfiguration writes the configuration WriteConfiguration and
+// WriteOfflineConfiguration describe.
+func writeConfiguration(t *testing.T, root string, offline bool, attachments []Attachment) {
+	t.Helper()
 	doc := map[string]any{"workspace": map[string]any{}}
+	if offline {
+		doc[workspaceconfig.OfflineSettingKey] = true
+	}
 	if len(attachments) > 0 {
 		entries := make([]map[string]any, 0, len(attachments))
 		for _, a := range attachments {

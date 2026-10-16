@@ -116,6 +116,11 @@ type PinMaps struct {
 	// pull the refusal of one of those facts names as its remedy. Empty names a
 	// placeholder in its place.
 	Release string
+
+	// HeldTo is what the refusal of bytes that do not match their pin names the
+	// pins as — the record or the release they were taken from. Empty names them
+	// lockfile pins.
+	HeldTo string
 }
 
 // PinSource is a construction site's written answer to where its plugin pins
@@ -172,6 +177,27 @@ func RecordedPins(pins PinMaps) *PinSource {
 	return &PinSource{posture: PinPostureLockfile, pins: pins}
 }
 
+// AcceptedDigest is the written answer "the one module this site accepts for uri
+// is the one digest names", where digest comes from neither the lockfile nor a
+// record beside it — the content digest the compiler carries for a core plugin it
+// publishes with each release without embedding it, say. heldTo names, in a
+// refusal, what digest is, so a reader knows which statement of the module the
+// bytes disagreed with.
+//
+// It carries the cache-not-pin posture. The digest is the version the cache tier
+// addresses uri's slot by — the slot a fetch writes a module it held to that
+// digest into, keyed by the module's content as a pull's is — and the pin every
+// tier's bytes are held to, so whichever tier answers, the bytes are that module
+// or the resolution is refused. A resolution under it carries a pin, so no
+// unrecorded-identity advisory is raised.
+func AcceptedDigest(uri, digest, heldTo string) *PinSource {
+	return &PinSource{posture: PinPostureVerifyOnRead, pins: PinMaps{
+		Pins:        map[string]string{uri: digest},
+		PinVersions: map[string]string{uri: digest},
+		HeldTo:      heldTo,
+	}}
+}
+
 // Resolver constructs the Resolver this pin source describes, over the tier
 // sources the caller supplies.
 //
@@ -207,6 +233,7 @@ func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolve
 		r.bundleDigests = pins.BundleDigests
 		r.recordedIn = pins.RecordedIn
 		r.release = pins.Release
+		r.pinsHeldTo = pins.HeldTo
 		r.expectsRecordedIdentity = true
 	case PinPostureNone:
 		// Pin-free base: no pins participate, whatever the caller passed, and a

@@ -60,8 +60,9 @@ func (in Fetched) AsksRegistryForSignature() bool {
 
 // Verify is the single home every plugin fetch routes through:
 // registry signature verification (against the resolving registry's trust policy)
-// and host-function stamp re-derivation. The verdict-socket cache and the CLI
-// install call it directly; the pinned closure descent reaches the same two
+// and host-function stamp re-derivation. The verdict-socket cache, the CLI
+// install and an import acquiring a core importer of the compiler's release call
+// it directly; the pinned closure descent reaches the same two
 // verification primitives (pullverify.Verify and VerifyHostFunctionStamp)
 // across its two structurally separate passes — the host-function pass runs
 // before the lockfile is built and the signature pass folds its facts into the
@@ -81,7 +82,9 @@ func (in Fetched) AsksRegistryForSignature() bool {
 // together with the bundle bytes that fact names — or nil where no signature was
 // verified. The verdict-socket cache records the fact in the trust record beside
 // the lockfile and caches the bundle, so a build can hold the plugin to it; the CLI
-// install discards it, because an installed extension command is held to no record.
+// install discards it, because an installed extension command is held to no record,
+// and so does an import acquiring a core importer, whose module every later read
+// holds to the digest the compiler carries for it.
 // What a caller does with the result is thus the caller's choice, not a second
 // function.
 func Verify(ctx context.Context, in Fetched, wsCfg workspaceconfig.Config, targetFor pullverify.TargetFor, diagOut io.Writer) (*pullverify.Result, error) {

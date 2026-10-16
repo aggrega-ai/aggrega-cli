@@ -79,6 +79,11 @@ const (
 	TierColocated Tier = "colocated" // 0b
 	TierLocal     Tier = "local"     // 1
 	TierCache     Tier = "cache"     // 2
+
+	// TierRegistry tags bytes a caller fetched from a registry itself and holds
+	// to a digest before it writes them where the cache tier reads them. The
+	// cascade never yields it: every tier the cascade reads is on the machine.
+	TierRegistry Tier = "registry"
 )
 
 // resolutionCascade lists the sources the cascade consults, in precedence order.
@@ -123,6 +128,8 @@ func (t Tier) resolutionPath() string {
 		return closure.ResolutionPathCatalog
 	case TierCache:
 		return closure.ResolutionPathCache
+	case TierRegistry:
+		return closure.ResolutionPathRegistry
 	}
 	return ""
 }
@@ -339,12 +346,16 @@ type PluginExportClaim struct {
 // the machine, so the condition says only that the bytes are absent; it states no
 // fetch, because the cascade performs none.
 //
-// It is raised in two places, and both report the same absence. A resolution that
-// exhausts the cascade raises it wherever a plugin is loaded. A pull raises it
-// earlier, before it writes anything, for a Plugin entity authored in a catalog
-// directory whose artifact no tier holds (see ResolveCatalogArtifact): such an
-// entity's artifact is read only from the machine, so no later pull can supply it,
-// and the pull is the step that can name the file to place.
+// It is raised in three places, and all three report the same absence. A
+// resolution that exhausts the cascade raises it wherever a plugin is loaded. A
+// pull raises it earlier, before it writes anything, for a Plugin entity authored
+// in a catalog directory whose artifact no tier holds (see ResolveCatalogArtifact):
+// such an entity's artifact is read only from the machine, so no later pull can
+// supply it, and the pull is the step that can name the file to place. And an
+// import raises it for a core importer of the compiler's release that no tier
+// holds and no registry could supply on that run — the workspace offline, no
+// registry answering, or the registry holding no such module — naming the
+// importer, its version and what puts the module on the machine.
 func ErrPluginArtifactNotFound() error { return errPluginArtifactNotFound }
 
 var errPluginArtifactNotFound = cerrors.Register("plugin-artifact-not-found", cerrors.Meta{
@@ -424,6 +435,10 @@ type Resolver struct {
 	// recordedIn is the file the pin source records those facts in, named in a
 	// refusal of one; empty names no file.
 	recordedIn string
+
+	// pinsHeldTo names, in the refusal of bytes that do not match their pin, what
+	// the pins are; empty names them lockfile pins, the record most pins come from.
+	pinsHeldTo string
 
 	// release is the Release that file belongs to, whose pull a refusal of one of
 	// those facts names as its remedy; empty names a placeholder.
@@ -641,7 +656,11 @@ func (r Resolver) ResolveCatalogArtifact(entityURI, artifactRef string) (closure
 // from here.
 func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, error) {
 	if pin, ok := r.pins[uri]; ok && pin != "" {
-		if err := holdContent(uri, tier, b, pin, "lockfile pin"); err != nil {
+		heldTo := r.pinsHeldTo
+		if heldTo == "" {
+			heldTo = "lockfile pin"
+		}
+		if err := holdContent(uri, tier, b, pin, heldTo); err != nil {
 			return ResolvedPlugin{}, err
 		}
 	} else {
@@ -660,19 +679,21 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 // the refusal, what want is — the record or the release it was taken from — so a
 // reader knows which statement of the module the bytes disagreed with.
 //
-// It is for a caller that knows, for one resolution, the exact module the bytes
-// must be, from somewhere other than the pin maps a Resolver is constructed with.
-// It shares the cascade's own comparison, so a module held here and one held to a
-// lockfile pin are refused under one condition — a wrapped oci.ErrFetchIntegrity
-// naming the reference, the source the bytes were read from, the digest they
-// carry and the one they had to.
+// It is for bytes no Resolver read: a module a caller fetched from a registry
+// itself (TierRegistry), held before anything else is done with it and before it
+// is written where the cache tier reads it. Bytes a Resolver reads are held by the
+// Resolver's own pin check, which a caller knowing the one module it accepts sets
+// up through AcceptedDigest. It shares the cascade's own comparison, so a module
+// held here and one held to a pin are refused under one condition — a wrapped
+// oci.ErrFetchIntegrity naming the reference, the source the bytes were read
+// from, the digest they carry and the one they had to.
 func HoldToDigest(resolved ResolvedPlugin, want, heldTo string) error {
 	return holdContent(resolved.URI, resolved.Tier, resolved.Bytes, want, heldTo)
 }
 
 // holdContent is the one comparison of a plugin's resolved bytes against a
 // digest they must match, read by the cascade's pin check (verified) and by
-// HoldToDigest alike.
+// HoldToDigest alike. heldTo names what want is in the refusal.
 func holdContent(uri string, tier Tier, b []byte, want, heldTo string) error {
 	if got := digest.ContentDigest(b); got != want {
 		return fmt.Errorf("plugin %q resolved from %s: content digest %s does not match %s %s: %w",
