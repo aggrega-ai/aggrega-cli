@@ -24,12 +24,13 @@ import (
 // command line's notice asks, so the two surfaces say it for the same
 // resolutions and name the same folder.
 //
-// It is a sentence in the answer's text and nothing else: no field is added to
-// the structured payload, so a caller reading that payload reads what it always
-// read. The answer is not refused, because the folder is a legitimate place to
-// answer from; what a caller needs is to know it was used, so an empty listing or
-// an entity not found reads as a wrong folder rather than as a configuration
-// problem.
+// It is a sentence in the answer's text, and no field of a tool's own payload
+// gains it. The structured payload carries it only through the copy of the text
+// written after this step ([withTextAnswer]), so a caller reading that payload
+// alone still reads the sentence. The answer is not refused, because the folder is a
+// legitimate place to answer from; what a caller needs is to know it was used, so
+// an empty listing or an entity not found reads as a wrong folder rather than as a
+// configuration problem.
 //
 // Over a listener it never applies, and is not asked: a listener refuses to start
 // in a folder no workspace resolves from unless it is handed a root, and a root a

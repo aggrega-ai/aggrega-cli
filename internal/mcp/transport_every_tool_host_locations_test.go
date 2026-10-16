@@ -58,7 +58,8 @@ import (
 //
 //   - A text block is searched as raw bytes only, and is not compared word by
 //     word. It is prose a tool composes for its caller, and it may say different
-//     words to the two callers about the same answer.
+//     words to the two callers about the same answer. The structured payload's
+//     text_answer holds that same text, and is judged as the text is.
 //   - An answer's prose spells only the locations the workspace holds as a caller
 //     may be told them: its root and anything under it, the config files its
 //     configuration was read from, and the directories its catalog is read from.
@@ -730,6 +731,8 @@ func (w *hostLocationWalk) say(format string, args ...any) {
 // be driven through it and the comparison watched rejecting something.
 func hostLocationComplaints(b hostLocationBounds, atTheKeyboard, overTheListener hostLocationAnswer) ([]string, int) {
 	w := &hostLocationWalk{b: b}
+	atTheKeyboard.structured = withoutItsText(atTheKeyboard)
+	overTheListener.structured = withoutItsText(overTheListener)
 	if atTheKeyboard.protocolError != overTheListener.protocolError {
 		w.say("the call was answered with the error envelope %q at the keyboard and %q over the listener",
 			atTheKeyboard.protocolError, overTheListener.protocolError)
@@ -753,6 +756,34 @@ func hostLocationComplaints(b hostLocationBounds, atTheKeyboard, overTheListener
 		}
 	}
 	return w.complaints, w.located
+}
+
+// withoutItsText is an answer's structured payload with its text_answer taken
+// out, where that text_answer is the answer's text — which is how every answer
+// carries it.
+//
+// The text is judged as text here: searched as bytes and never compared word for
+// word, because a tool may tell the two callers different words about the same
+// answer. The copy of it inside the payload is that same text, so it is judged
+// the same way — the byte search over the listener's frame still reaches it. A
+// text_answer that is not the text stays in the walk and is judged like any other
+// field, and so does every field of the tool's own, lint's summary of counts
+// among them.
+func withoutItsText(a hostLocationAnswer) any {
+	fields, isObject := a.structured.(map[string]any)
+	if !isObject || len(a.texts) != 1 {
+		return a.structured
+	}
+	if textAnswer, isText := fields[textAnswerKey].(string); !isText || textAnswer != a.texts[0] {
+		return a.structured
+	}
+	rest := make(map[string]any, len(fields)-1)
+	for key, value := range fields {
+		if key != textAnswerKey {
+			rest[key] = value
+		}
+	}
+	return rest
 }
 
 // value reads one value of each answer at the same place.

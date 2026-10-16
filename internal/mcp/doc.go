@@ -144,4 +144,27 @@
 // gate can fail on the copy that went stale. What holds the sites to it is
 // a guard over this package's failure returns, which enumerates the ones
 // carrying no structured payload and fails on any addition to that set.
+//
+// # What the structured payload carries besides the fields
+//
+// A client may hand its model the structured payload of an answer and not its
+// text, and a sentence only the text carries then reaches that model nowhere —
+// the line naming which release answered, a note on the folder an answer used,
+// a warning a tool composed in prose. So every structured payload carries the
+// text too, as one string under text_answer: the text block verbatim, every
+// sentence in order, success and failure alike. The text block itself is
+// unchanged, for the clients that read it. The name is one no tool's own
+// payload uses, so no tool is an exception: lint's payload keeps its summary,
+// the counts by severity, and carries text_answer beside it.
+//
+// The copy is written at the one line every result crosses, after the last step
+// that writes the text, so the two parts hold one string rather than two that
+// agree; a tool composes its text and its fields and never writes text_answer
+// itself. An answer that carries no structured payload is its text alone and
+// gains none; there the text is the only part a client has to hand its model.
+// An output schema a tool advertises declares text_answer as a required
+// string. What holds every tool to both is a guard
+// that drives each one over both transports and fails where an answer's
+// structured payload does not carry its text as text_answer, or where a tool
+// advertises an output schema that does not declare it.
 package mcp

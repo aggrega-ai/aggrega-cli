@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -43,11 +44,13 @@ func markedNoticeWorkspace(t *testing.T) string {
 // through the server's one exit, on a server reached over its own streams and
 // started in a folder no workspace resolves from: with no launch root and no root
 // on the call the answer says, once, which folder it used and how to name the
-// workspace; with a root on the call, or a launch root, it says nothing. No field
-// is added to the structured payload.
+// workspace; with a root on the call, or a launch root, it says nothing. The
+// structured payload carries the sentence exactly where it carries the text, in its
+// text_answer, and in no field of the tool's own.
 //
 // 🔴 PLANTED DEFECT: drop the withNoWorkspaceNotice call from handleToolsCall, and
-// the first row fails.
+// the first row fails. Move withTextAnswer ahead of it, and the first row fails on
+// the text_answer, which then lacks the sentence the text ends with.
 //
 // Not parallel: a server launched with no root resolves from the process working
 // directory, which is the condition under test.
@@ -92,8 +95,22 @@ func TestAToolAnswerSaysWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T) 
 			case !tc.says && count != 0:
 				t.Errorf("the answer says the notice although %s:\n%s", tc.name, text)
 			}
-			if strings.Contains(string(res.StructuredContent), noWorkspaceSentenceOpening) {
-				t.Errorf("the structured payload carries the notice: %s", res.StructuredContent)
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(res.StructuredContent, &fields); err != nil {
+				t.Fatalf("the structured payload is not an object: %v (%s)", err, res.StructuredContent)
+			}
+			var textAnswer string
+			if err := json.Unmarshal(fields[textAnswerKey], &textAnswer); err != nil || textAnswer != text {
+				t.Errorf("the structured payload's %s is %s; want the text, notice and all:\n%s",
+					textAnswerKey, fields[textAnswerKey], text)
+			}
+			delete(fields, textAnswerKey)
+			ownFields, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatalf("encode the payload's own fields: %v", err)
+			}
+			if strings.Contains(string(ownFields), noWorkspaceSentenceOpening) {
+				t.Errorf("a field of the tool's own payload carries the notice: %s", ownFields)
 			}
 		})
 	}

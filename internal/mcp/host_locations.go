@@ -337,7 +337,8 @@ func (s *server) servedWorkspace() *toolWorkspace {
 // It reads the text blocks and never the structured payload. Each tool routes its
 // own structured fields, so a comparison of the two transports' payloads still
 // sees a tool that left a location in one of them — which a second pass over the
-// payload here would hide.
+// payload here would hide. The copy of the text the payload carries is written
+// after this step ([withTextAnswer]), so it spells each place as the text does.
 func (s *server) withoutHostLocations(res *callToolResult) *callToolResult {
 	if res == nil || len(res.Content) == 0 {
 		return res

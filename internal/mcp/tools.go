@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -216,14 +217,15 @@ type toolTextContent struct {
 
 // callToolResult is the tools/call result envelope. Content carries the
 // human-readable rendering; StructuredContent carries the same result as a
-// machine-parseable object when the tool has one; IsError marks a failure the
-// caller can correct by changing the arguments — a refused argument
-// combination, a missing or wrong-typed argument, or an operation that ran and
-// reported a problem. It is distinct from a protocol-level error, which travels
-// as a JSON-RPC error envelope and is reserved for a fault with no tool result
-// to live in. A failure carried here always carries corrective guidance in its
-// text block so the assistant can act on it rather than on an opaque code; the
-// rule that decides the channel is in the package documentation.
+// machine-parseable object when the tool has one, and the rendering itself
+// under textAnswerKey once the result leaves dispatch (withTextAnswer); IsError
+// marks a failure the caller can correct by changing the arguments — a refused
+// argument combination, a missing or wrong-typed argument, or an operation that
+// ran and reported a problem. It is distinct from a protocol-level error, which
+// travels as a JSON-RPC error envelope and is reserved for a fault with no tool
+// result to live in. A failure carried here always carries corrective guidance in
+// its text block so the assistant can act on it rather than on an opaque code;
+// the rule that decides the channel is in the package documentation.
 //
 // It carries the per-request revision's envelope and no freshness hint. That
 // revision declares a tool result an ordinary result rather than a cacheable
@@ -375,6 +377,78 @@ func structuredErrorResult(guidance string, structured any) (*callToolResult, *r
 		res.StructuredContent = b
 	}
 	return res, nil
+}
+
+// textAnswerKey is the key a tool answer's structured payload carries the
+// answer's text under. No tool's own payload has a field of that name — lint's,
+// whose summary holds its counts, included — so every structured payload gains
+// it; a payload that came to use the name for a field of its own would fail the
+// guard rather than lose that field.
+const textAnswerKey = "text_answer"
+
+// withTextAnswer copies a result's text into its structured payload, under
+// textAnswerKey, and is the last step every tool's result takes on its way out of
+// dispatch. The rule it carries out is the package documentation's; what is
+// stated here is where it runs and how it writes.
+//
+// It runs after every step that writes the text, and the placement is what makes
+// the copy the text a caller receives. The sentence naming the folder an answer
+// used where no workspace was found is added after a tool composed its result,
+// and over a listener every place on this host is spelled again after that, so a
+// copy taken where a tool builds its result would lack the one and keep the
+// other. Taken here, the two cannot differ: the copy is read from the one string
+// the text block holds when the result is handed on, and nothing writes the text
+// after it.
+//
+// The text is copied whole, never split into sentences or reworded: a second
+// reading of the text would be a second statement of it, free to differ from the
+// first.
+//
+// The key is written first and every byte of the payload follows it unchanged,
+// so no field a tool answers with moves or is encoded differently.
+//
+// A result is handed on as it was composed where it carries no structured
+// payload — its text is then the whole answer — and where its shape is not the
+// one this step writes into: a payload that is not a JSON object, one already
+// carrying the key, or a text part that is not exactly one text block. The guard
+// driving every tool through dispatch fails on each of those shapes, so a
+// payload that comes to carry the key for a meaning of its own is a failing test
+// rather than a field silently overwritten or a key written twice.
+func withTextAnswer(res *callToolResult) *callToolResult {
+	if res == nil || len(res.StructuredContent) == 0 || len(res.Content) != 1 || res.Content[0].Type != "text" {
+		return res
+	}
+	payload := bytes.TrimSpace(res.StructuredContent)
+	if len(payload) < 2 || payload[0] != '{' {
+		return res
+	}
+	// Decoded only to ask whether the key is already there and whether the
+	// object has any field at all; nothing is encoded from it, so the order the
+	// payload's own fields are written in is the order it arrived with.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return res
+	}
+	if _, carried := fields[textAnswerKey]; carried {
+		return res
+	}
+	key, keyErr := json.Marshal(textAnswerKey)
+	text, textErr := json.Marshal(res.Content[0].Text)
+	if keyErr != nil || textErr != nil {
+		return res
+	}
+	var b bytes.Buffer
+	b.Grow(len(payload) + len(key) + len(text) + 2)
+	b.WriteByte('{')
+	b.Write(key)
+	b.WriteByte(':')
+	b.Write(text)
+	if len(fields) > 0 {
+		b.WriteByte(',')
+	}
+	b.Write(payload[1:])
+	res.StructuredContent = b.Bytes()
+	return res
 }
 
 // payload names in the corrective text a decode failure produces: what the
@@ -587,8 +661,10 @@ func (s *server) handleToolsList(ctx context.Context) (any, *rpcError) {
 // over a listener spells each location in its text the way a caller there may be
 // told it, after [server.withNoWorkspaceNotice], which over the process's own
 // streams says which folder an answer used where no workspace was found and none
-// was named. Both are here rather than in each tool because this is the one line
-// every result crosses.
+// was named, and then through [withTextAnswer], which copies the text those two
+// leave into the structured payload. All three are here rather than in each tool
+// because this is the one line every result crosses, and the copy is last
+// because it has to read the text the caller receives.
 func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -624,9 +700,11 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		// launch this process is answered without a place on this host in the text of
 		// any tool's answer, a tool added later included, and a caller that did is
 		// told which folder an answer used where no workspace was found and none was
-		// named. The refusals above name no location and are not read.
+		// named; and a caller reading only the structured payload reads that same text.
+		// The refusals above name no location, carry no structured payload, and are
+		// not read.
 		res, rpcErr := spec.invoke(s, ctx, p.Arguments)
-		return s.withoutHostLocations(s.withNoWorkspaceNotice(res)), rpcErr
+		return withTextAnswer(s.withoutHostLocations(s.withNoWorkspaceNotice(res))), rpcErr
 	}
 	// One class of name is answered with more than "no such tool", and it is the
 	// class a caller is most likely to have read about somewhere else: a tool
