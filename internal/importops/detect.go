@@ -148,8 +148,9 @@ func SelectFormat(ctx context.Context, explicit string, src *Source, seam Seam) 
 // The host knows no format. Each importer's signatures name the syntax the
 // source is read in, the file names they apply to and the paths the parsed tree
 // must or must not carry; a file is parsed through the parser socket — the
-// parser the catalog serves for that syntax, never a grammar of the host's own —
-// and the predicates are evaluated over the tree it returns. An importer one of
+// parser the import resolves for that syntax, the catalog's or, where the catalog
+// serves none, the one the binary carries, never a grammar in the host — and the
+// predicates are evaluated over the tree it returns. An importer one of
 // whose signatures matches recognises the source as every format it advertises.
 //
 // A directory is recognised exactly as a file is, over the files it holds: a
@@ -172,10 +173,11 @@ func SelectFormat(ctx context.Context, explicit string, src *Source, seam Seam) 
 //
 // A file that does not parse in a syntax — its parser reports a halting
 // diagnostic — matches no signature naming that syntax. A syntax that cannot be
-// parsed at all — no parser advertises it, or its parser cannot be run — is
-// returned as an error rather than passed over: the signatures naming it went
-// unevaluated, and choosing among the rest would be a guess about them. A file a
-// pattern selects that cannot be read is returned as the [*SourceReadError] it is.
+// parsed at all — neither the catalog nor the binary serves a parser for it, or
+// its parser cannot be run — is returned as an error rather than passed over:
+// the signatures naming it went unevaluated, and choosing among the rest would
+// be a guess about them. A file a pattern selects that cannot be read is
+// returned as the [*SourceReadError] it is.
 //
 // It makes no network access and reads no file but the source it was handed and,
 // of a directory, the files a signature's patterns select; the parser runs

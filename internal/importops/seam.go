@@ -28,7 +28,9 @@ import (
 // the Components the importer is shown are the ones held by the catalog its
 // importer was selected from, and the importers a source is recognised by are
 // the ones that resolution selects among. The recognition parses the source
-// through the same parser pair the importer draws on.
+// through the same parser pair the importer draws on, so a syntax the catalog
+// serves no parser for, and the binary does, is parsed by the binary's parser
+// for both.
 //
 // Catalog is nil when that catalog holds no Component, and a harness standing
 // in for the catalog leaves it nil unless it supplies a view of its own.
@@ -127,8 +129,7 @@ var BuildSeam = buildSeam
 // importer the catalog holds at the same identity and version keeps its place.
 // A core importer's recorded signatures recognise a source as the catalog's
 // importers' do, so a source one of them matches is recognised with no format
-// named. The view does not serve the binary's parsers: a parser is selected from
-// the catalog's own entities alone.
+// named.
 //
 // A core importer's module is never read from beside a catalog entity, since a
 // module laid there belongs to that entity even where it shares the core
@@ -150,6 +151,12 @@ var BuildSeam = buildSeam
 // The parser is selected by the same format capability from the same catalog
 // view, and its bytes come from the same cascade handed the same directories, so
 // a parser plugin loads exactly like any other — beside its entity included.
+// Where no parser in that view advertises a syntax, the parser the binary
+// carries for it serves instead (importParsers), its module read from the
+// binary's own tier of that cascade; where one does, it is the one used, and the
+// binary's parsers play no part. The binary carries its parsers whatever the
+// workspace holds, so nothing is fetched for one, and a workspace whose catalog
+// holds no parser at all still recognises a source and imports it.
 //
 // The importer's view of the catalog's Components is projected from this same
 // view, once, so the import loads the catalog once and shows the importer
@@ -190,7 +197,7 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	}
 	return Seam{
 		ImporterRes: cat,
-		ParserRes:   cat,
+		ParserRes:   importParsers{workspace: cat, binary: binaryParsers()},
 		Catalog:     importersocket.ProjectCatalog(cat),
 		Importers:   cat.ImporterPlugins(),
 		loadIn:      loadIn,

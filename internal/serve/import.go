@@ -163,9 +163,11 @@ type importResult struct {
 // hold yet: the import fetches it there, verifies it as every fetched plugin is
 // verified, and keeps it in the workspace's content cache, so later imports reach
 // no network. Every other importer, and the parser it draws on, is resolved from
-// the workspace's own catalog with its bytes from the shared plugin cascade. The
-// acquisition is the import operation's own, so this method acquires exactly as
-// the command and the assistant's tool do. Nothing is prompted for.
+// the workspace's own catalog with its bytes from the shared plugin cascade —
+// except a parser for a syntax the catalog serves none for, which is the one the
+// binary carries. The acquisition and the parser resolution are the import
+// operation's own, so this method acquires and parses exactly as the command and
+// the assistant's tool do. Nothing is prompted for.
 func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error {
 	var params importParams
 	if len(req.Params) > 0 {

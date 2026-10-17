@@ -35,6 +35,12 @@
 // writes their entities without modules, for an import refused before any
 // importer runs. A case importing a directory lays the files-probe importer,
 // which declares file patterns and reports back exactly what it was handed.
+//
+// A case about which parser an import reads through lays the importers with no
+// parser beside them, so every syntax is one the catalog serves no parser for, or
+// lays the planted parser: a parser of the json syntax that answers one fixed
+// tree whatever it is handed, so what an import did with a source says whether
+// that parser or another read it.
 package importopstest
 
 import (
@@ -257,9 +263,14 @@ func (f CatalogFolder) ImporterFor(t *testing.T, format string) LaidPlugin {
 	return LaidPlugin{}
 }
 
-// Plugins returns every entity the folder holds: its importers, then its parser.
+// Plugins returns every entity the folder holds: its importers, then its parser
+// where it holds one.
 func (f CatalogFolder) Plugins() []LaidPlugin {
-	return append(append([]LaidPlugin{}, f.Importers...), f.Parser)
+	out := append([]LaidPlugin{}, f.Importers...)
+	if f.Parser.Reference != "" {
+		out = append(out, f.Parser)
+	}
+	return out
 }
 
 // Attachments returns one plugins.importer entry per importer the folder holds,
@@ -323,6 +334,73 @@ func LayCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool)
 	}
 	folder.Parser = layParser(t, workspaceRoot, dir, withModules)
 	return folder
+}
+
+// LayAttachedImporterFolder lays down at dir, inside the workspace rooted at
+// workspaceRoot, the reference importer of each format with its module beside it
+// and NO parser, and writes the workspace's configuration at workspaceRoot with
+// an entry attaching each importer and handing it nothing. The folder's Parser is
+// left empty.
+//
+// It is the workspace whose catalog serves no parser for any syntax: an import
+// over it reads its source through whatever parser the import resolves when the
+// catalog serves none, or is refused for want of one. A case that wants the
+// catalog to serve one lays it beside the importers afterwards.
+//
+// The configuration is written before the workspace is resolved, so a caller
+// resolves it afterwards; it replaces any configuration already at
+// workspaceRoot.
+func LayAttachedImporterFolder(t *testing.T, workspaceRoot, dir string) CatalogFolder {
+	t.Helper()
+	folder := CatalogFolder{Dir: dir}
+	for _, r := range referenceImporters {
+		module := wasmtest.EnsureFixtureBuilt(t, r.fixture)
+		folder.Importers = append(folder.Importers, layPlugin(t, workspaceRoot, dir, module, r.name, true))
+	}
+	WriteConfiguration(t, workspaceRoot, folder.Attachments(nil)...)
+	return folder
+}
+
+// PlantedParserName is the metadata.name the planted parser's entity carries.
+const PlantedParserName = "planted-json"
+
+// PlantedParserNodeType is the type of the one node the planted parser's tree
+// carries, whatever source it was handed. A source the planted parser read is
+// recognised as the format whose signature asks for arrays at nodes and edges and
+// nothing at data.nodes — the Flowise format, among the reference importers — and
+// a Flowise import of it drafts one component, whose name carries this type
+// lowercased.
+const PlantedParserNodeType = "plantedMarkerParser"
+
+// plantedParserArtifact is the name the built planted parser is published under
+// among the built fixtures. No other build layout owns it.
+const plantedParserArtifact = "planted-json-parser.wasm"
+
+// plantedParserSource is where the planted parser's source sits beneath the
+// module root.
+var plantedParserSource = filepath.Join("internal", "importops", "testdata", "planted-json-parser")
+
+// PlantedJSONParserModule builds the planted parser and returns the built
+// module's path.
+//
+// The planted parser is a guest kept beside the import operation's tests for one
+// claim no real parser makes visible: which parser of a syntax read a source. It
+// advertises the json syntax, and its parse export answers one fixed tree for any
+// source — arrays at nodes and edges, nothing at data.nodes, and one node of the
+// type PlantedParserNodeType — so an import that read a source through it
+// recognises and drafts that tree rather than what the source holds.
+func PlantedJSONParserModule(t *testing.T) string {
+	t.Helper()
+	return localTestGuest(t, plantedParserSource, plantedParserArtifact)
+}
+
+// LayPlantedJSONParser lays the planted parser ([PlantedJSONParserModule]) down at
+// dir, inside the workspace rooted at workspaceRoot, generated from its built
+// module with the module beside it, under the name PlantedParserName — a parser
+// the workspace's catalog serves for the json syntax.
+func LayPlantedJSONParser(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	return layPlugin(t, workspaceRoot, dir, PlantedJSONParserModule(t), PlantedParserName, true)
 }
 
 // layParser lays the binary's own JSON parser down at dir under a name the binary
@@ -415,19 +493,28 @@ var filesProbeSource = filepath.Join("internal", "importops", "testdata", "files
 // module root, so every package's tests build the one guest.
 func FilesProbeModule(t *testing.T) string {
 	t.Helper()
+	return localTestGuest(t, filesProbeSource, filesProbeArtifact)
+}
+
+// localTestGuest builds the guest whose source sits at source beneath the module
+// root and returns the built module's path, published among the built fixtures as
+// artifact. The source is found by walking up from the directory the test runs in
+// to the module root, so every package's tests build the one guest.
+func localTestGuest(t *testing.T, source, artifact string) string {
+	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("read the test's working directory: %v", err)
 	}
 	for {
-		src := filepath.Join(dir, filesProbeSource)
+		src := filepath.Join(dir, source)
 		if _, err := os.Stat(filepath.Join(src, "main.go")); err == nil {
-			return wasmtest.EnsureLocalGuestBuilt(t, src, filesProbeArtifact)
+			return wasmtest.EnsureLocalGuestBuilt(t, src, artifact)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatalf("no %s above the test's working directory: the files-probe importer's source is "+
-				"supposed to ship beside the import operation's tests", filesProbeSource)
+			t.Fatalf("no %s above the test's working directory: the guest's source is supposed to ship beside "+
+				"the import operation's tests", source)
 		}
 		dir = parent
 	}

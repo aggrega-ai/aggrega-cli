@@ -230,7 +230,8 @@ var importToolSpec = toolSpec{
 		"and one of the catalog's among them — the call is refused naming them. " +
 		"Leave `format` out and the format is recognised by the signatures the importers declare — the syntax a " +
 		"source is read in, the file names it applies to and the paths its parsed tree carries — parsing through " +
-		"the parsers this workspace's catalog holds, reading the file named, or of a directory only the files a " +
+		"the parsers the importer reads the source with, the one this workspace's catalog holds for a syntax or " +
+		"the compiler's own for a syntax it holds none for, reading the file named, or of a directory only the files a " +
 		"signature's file patterns select, and no network: a source no signature matches is refused asking for " +
 		"`format` and naming the formats the importers advertise, and a source " +
 		"signatures of more than one format match is refused naming them, rather than guessed at. Send `dry_run` to be " +
