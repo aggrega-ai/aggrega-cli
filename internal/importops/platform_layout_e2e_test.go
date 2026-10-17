@@ -55,6 +55,21 @@ type flowFixture struct {
 	// wired is each socket of the platform that draws a connection, and the keys
 	// of the parts it reaches.
 	wired map[string][]string
+	// rewritten are the members of the source the carried flow holds written
+	// anew — each credential value the source holds, written empty; the carried
+	// flow is otherwise the source's own bytes.
+	rewritten []rewrittenMember
+}
+
+// rewrittenMember is one member of a source the carried flow holds written anew:
+// the text the source writes it as, which the source holds exactly once, and the
+// text the carried flow holds in its place.
+type rewrittenMember struct{ from, to string }
+
+// rewriting returns fx with the members the carried flow holds written anew.
+func (fx flowFixture) rewriting(members ...rewrittenMember) flowFixture {
+	fx.rewritten = members
+	return fx
 }
 
 const (
@@ -102,6 +117,10 @@ var flowFixtures = []flowFixture{
 	langflowFixture(realExportPath(langflowRemixProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Nvidia_Remix",
 		"faac3377-a15b-459b-a6bd-c47c318dcc78", nil),
+	langflowFixture(realExportPath(langflowSelectingProject),
+		"internal_compiler_importersocket_testdata_real-exports_langflow_Basic_Prompting_1.6.0",
+		"0dbee653-41ae-4e51-af2e-55757fb24be3", nil).
+		rewriting(rewrittenMember{from: `"value": "OPENAI_API_KEY"`, to: `"value": ""`}),
 }
 
 // platformSockets are the sockets the standard library declares on both flow
@@ -233,7 +252,8 @@ var uuidOfAPlatform = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]
 //
 //   - the Aggregate holds one instance of the source's platform, and its
 //     definition value, once interpolated, is the source's own bytes — double
-//     braces, a missing final line break and all;
+//     braces, a missing final line break and all — but for each credential value
+//     the table names, which it holds written empty;
 //   - the flow's identifier is the source's own where it gives one, and a UUID of
 //     the shape the platforms take where it gives none;
 //   - each socket draws exactly the connections the table names, each reaching a
@@ -270,9 +290,16 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 				t.Fatalf("the Aggregate holds the platform as %v, want one instance keyed %s", platforms, fx.key)
 			}
 			inst := agg.Spec.Components[fx.key]
-			if got, _ := inst.Values["flow_definition"].(string); got != string(export) {
-				t.Errorf("the definition the platform carries is not the source's bytes (%d bytes carried, %d exported)",
-					len(got), len(export))
+			carried := string(export)
+			for _, m := range fx.rewritten {
+				if n := strings.Count(carried, m.from); n != 1 {
+					t.Fatalf("the source holds %q %d times; the table names a member it holds once", m.from, n)
+				}
+				carried = strings.Replace(carried, m.from, m.to, 1)
+			}
+			if got, _ := inst.Values["flow_definition"].(string); got != carried {
+				t.Errorf("the definition the platform carries is not the source's bytes with the %d member(s) the table "+
+					"names written anew (%d bytes carried, %d expected)", len(fx.rewritten), len(got), len(carried))
 			}
 			id, _ := inst.Values[fx.ident].(string)
 			switch {

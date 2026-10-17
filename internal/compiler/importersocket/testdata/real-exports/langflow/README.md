@@ -10,5 +10,8 @@ input for the import of a Langflow flow.
 - `Basic Prompting.json` — path `src/backend/base/langflow/initial_setup/starter_projects/Basic Prompting.json`
 - `Nvidia Remix.json` — the Langflow 1.6.0 starter project the repository keeps as test data, path
   `src/lfx/tests/data/starter_projects_1_6_0/Nvidia Remix.json`. Its MCP Tools node has no MCP server chosen.
+- `Basic Prompting 1.6.0.json` — the Langflow 1.6.0 starter project the repository keeps as test data, path
+  `src/lfx/tests/data/starter_projects_1_6_0/Basic Prompting.json`, renamed here so it is not confused with
+  `Basic Prompting.json` above. Its Language Model node selects a model, `gpt-4.1`.
 
 `LICENSE` beside them is the repository's own `LICENSE` file at that commit, reproduced unchanged.

@@ -23,11 +23,13 @@ package importops
 // checkout they fail with a catalog-load error rather than skipping, so check out
 // aggrega-hub beside this repository first.
 //
-// The flows the Langflow cases import are the committed real export Basic
-// Prompting with authored values added — a model selected on its Language Model
-// node, which the export leaves unselected, and an MCP Tools node naming a server
-// — since no export Langflow publishes carries them. Each says so where it is
-// built; none is presented as an export.
+// The Langflow draft built as drafted is Langflow 1.6.0's Basic Prompting, a
+// committed real export whose Language Model node selects a model. The other flows
+// the Langflow cases import are the committed real export Basic Prompting with
+// authored values added — a model selected on its Language Model node, which that
+// export leaves unselected, a model named in the other ways a node can name one,
+// and an MCP Tools node naming a server, which no flow Langflow publishes carries.
+// Each says so where it is built; none is presented as an export.
 
 import (
 	"encoding/json"
@@ -613,54 +615,94 @@ func diagnosticsCoded(diagnostics []abi.Diagnostic, code string) []string {
 // default, OpenAI's base URL.
 const openAIEndpoint = "https://api.openai.com/v1"
 
+// asSeeded is the flow a platform is seeded with from the flow its draft
+// carries. The bundle each platform's Recipes import to seed a flow writes it as
+// a YAML literal block, which ends it in exactly one line feed: the carried flow
+// with its trailing line feeds — none included — written as one.
+func asSeeded(carried string) string {
+	return strings.TrimRight(carried, "\n") + "\n"
+}
+
 // TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt imports
-// the committed real Flowise export Multiple Documents QnA under the default
-// layout, referencing every HIGH match, and builds the draft with a Release
+// one committed real export of each platform under the default layout,
+// referencing every HIGH match — the Flowise export Multiple Documents QnA, and
+// Langflow 1.6.0's Basic Prompting with a mapping override mapping Langflow's
+// Language Model component to core/ai-model/openai, which no row of the
+// importer's own mapping arm does — and builds each draft with a Release
 // supplying only what the draft leaves for the Release: on helm as drafted, and
 // on compose with the lines the draft's comment shows for compose uncommented,
-// which must be exactly the owner's password declared with its own key. The
-// build succeeds on both, the chat model is written with the model its node
-// selects, the flow the platform is seeded with is the flow the draft carries,
-// and the platform reaches the wired model at the address the model publishes.
+// which must be exactly the platform's own secret — the Flowise owner's password,
+// the Langflow administrator's password — declared with its own key. The build
+// succeeds on both, the model part the platform's model socket draws is written
+// with the model its node selects, the flow the platform is seeded with is the
+// flow the draft carries, and the platform reaches the wired model at the address
+// the model publishes.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
 //   - in partModel (aggrega-pdk/go/pkg/importer/platform.go), replace
-//     `return true, name, ""` with `return true, "", noModelField`: both rows fail,
-//     the build halting on the model part's missing values.model;
+//     `return true, name, ""` with `return true, "", noModelField`: every row
+//     fails, the build halting on the model part's missing values.model;
 //   - in writeTargetAttachment (aggrega-pdk/go/pkg/importer/platform.go), replace
-//     `"      key: " + a.Key,` with `"      key: value",`: the compose row fails,
-//     the uncommented lines differing from the owner's password's own key.
+//     `"      key: " + a.Key,` with `"      key: value",`: both compose rows fail,
+//     the uncommented lines differing from the platform's secret's own key;
+//   - in modelFields (plugins/langflow-importer/model.go), replace
+//     `"LanguageModelComponent": {"model_name", "model"},` with
+//     `"LanguageModelComponent": {"model"},`: both Langflow rows fail — the
+//     export's Language Model node names its model in model_name alone, so
+//     values.model is left for the author and the build halts on it — and both
+//     Flowise rows pass.
 func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *testing.T) {
 	t.Parallel()
-	for _, target := range []string{"helm", "compose"} {
-		t.Run("flowise/"+target, func(t *testing.T) {
-			t.Parallel()
-			rw := hubPlatformWorkspace(t, referencing())
-			dir := filepath.Join(rw.Root(), "drafts")
-			res := importRealExport(t, rw, flowiseChatflow, authoredcontent.DeliveryFor(false), dir)
-			if res.Halted() {
-				t.Fatalf("the import halted: %+v", res.Diagnostics)
-			}
-			agg := readAsTheCompilerDoes(t, readDraftedAggregate(t, dir))
-			if got := agg.Spec.Components["chatopenai-0"].Values["model"]; got != "gpt-3.5-turbo" {
-				t.Errorf("the chat model is written with values.model %#v, want the one its node selects", got)
-			}
-			carried, _ := agg.Spec.Components["flowise"].Values["flow_definition"].(string)
-			if carried == "" {
-				t.Fatal("the draft carries no flow")
-			}
+	for _, tc := range []struct {
+		platform, source string
+		settings         map[string]any
+		// part is the key of the model part the platform's model socket draws,
+		// and model the model its node selects.
+		part, model string
+	}{
+		{platform: "flowise", source: flowiseChatflow, settings: referencing(), part: "chatopenai-0",
+			model: "gpt-3.5-turbo"},
+		{platform: "langflow", source: langflowSelectingProject, settings: referencingLanguageModel(),
+			part: "languagemodelcomponent-kboja", model: "gpt-4.1"},
+	} {
+		for _, target := range []string{"helm", "compose"} {
+			t.Run(tc.platform+"/"+target, func(t *testing.T) {
+				t.Parallel()
+				rw := hubPlatformWorkspace(t, tc.settings)
+				dir := filepath.Join(rw.Root(), "drafts")
+				res := importRealExport(t, rw, tc.source, authoredcontent.DeliveryFor(false), dir)
+				if res.Halted() {
+					t.Fatalf("the import halted: %+v", res.Diagnostics)
+				}
+				agg := readAsTheCompilerDoes(t, readDraftedAggregate(t, dir))
+				part := agg.Spec.Components[tc.part]
+				if part.Type != "core/ai-model/openai" {
+					t.Fatalf("the model part %s is %q, want the referenced core/ai-model/openai", tc.part, part.Type)
+				}
+				if got := agg.Spec.Components[tc.platform].Uses["model"][tc.part].Target; got != tc.part {
+					t.Fatalf("the model connection %s reaches %q, want the model part %s", tc.part, got, tc.part)
+				}
+				if got := part.Values["model"]; got != tc.model {
+					t.Errorf("the model part is written with values.model %#v, want %q, the one its node selects", got,
+						tc.model)
+				}
+				carried, _ := agg.Spec.Components[tc.platform].Values["flow_definition"].(string)
+				if carried == "" {
+					t.Fatal("the draft carries no flow")
+				}
 
-			artifacts := buildDraftOn(t, dir, platformRelease{platform: "flowise", target: target,
-				parts: []string{"chatopenai-0"}, model: "chatopenai-0"})
-			if got := seededFlow(t, artifacts, "flowise", target); got != carried {
-				t.Errorf("the platform is seeded with a flow of %d bytes that is not the %d the draft carries",
-					len(got), len(carried))
-			}
-			if got := platformVariable(t, artifacts, "flowise", target, "OPENAI_BASE_URL"); got != openAIEndpoint {
-				t.Errorf("OPENAI_BASE_URL is %q, want the wired model's address %q", got, openAIEndpoint)
-			}
-		})
+				artifacts := buildDraftOn(t, dir, platformRelease{platform: tc.platform, target: target,
+					parts: []string{tc.part}, model: tc.part})
+				if got, want := seededFlow(t, artifacts, tc.platform, target), asSeeded(carried); got != want {
+					t.Errorf("the platform is seeded with a flow of %d bytes that is not the %d the draft carries, ending "+
+						"in one line feed", len(got), len(want))
+				}
+				if got := platformVariable(t, artifacts, tc.platform, target, "OPENAI_BASE_URL"); got != openAIEndpoint {
+					t.Errorf("OPENAI_BASE_URL is %q, want the wired model's address %q", got, openAIEndpoint)
+				}
+			})
+		}
 	}
 }
 

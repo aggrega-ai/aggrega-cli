@@ -1,0 +1,4 @@
+mapped ChatInput-SzjnT (ChatInput) to imported/ai-model/chatinput as a draft, NONE
+mapped Prompt-tOH5D (Prompt) to imported/component/prompt as a draft, NONE
+mapped ChatOutput-8ZWWB (ChatOutput) to imported/ai-model/chatoutput as a draft, NONE
+mapped LanguageModelComponent-kBOja (LanguageModelComponent) to imported/ai-model/languagemodelcomponent as a draft, NONE

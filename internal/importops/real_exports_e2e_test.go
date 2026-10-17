@@ -48,8 +48,13 @@ const (
 	// server chosen, the one MCP Tools node the Langflow repository's own flows
 	// carry.
 	langflowRemixProject = "langflow/Nvidia Remix.json"
-	flowiseChatflow      = "flowise/chatflows/Multiple Documents QnA.json"
-	flowiseAgentflow     = "flowise/agentflowsv2/Agents Handoff.json"
+	// langflowSelectingProject is Langflow 1.6.0's Basic Prompting, whose language
+	// model node selects a model, gpt-4.1, where langflowPromptingProject selects
+	// none; its api_key field, marked password, names the global variable
+	// OPENAI_API_KEY.
+	langflowSelectingProject = "langflow/Basic Prompting 1.6.0.json"
+	flowiseChatflow          = "flowise/chatflows/Multiple Documents QnA.json"
+	flowiseAgentflow         = "flowise/agentflowsv2/Agents Handoff.json"
 )
 
 // realExports are the committed exports and what the reference importer drafts
@@ -81,6 +86,18 @@ var realExports = []struct {
 	{
 		name:   "a Langflow starter project prompting a language model",
 		source: langflowPromptingProject,
+		format: "langflow",
+		drafts: []string{
+			"aggregate.yaml",
+			"components/imported-ai-model-chatinput.yaml",
+			"components/imported-ai-model-chatoutput.yaml",
+			"components/imported-ai-model-languagemodelcomponent.yaml",
+			"components/imported-component-prompt.yaml",
+		},
+	},
+	{
+		name:   "a Langflow starter project whose language model selects a model",
+		source: langflowSelectingProject,
 		format: "langflow",
 		drafts: []string{
 			"aggregate.yaml",

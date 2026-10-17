@@ -49,6 +49,7 @@ var everyAgentFlowFixture = []struct {
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Basic Prompting.json"},
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Research Translation Loop.json"},
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Nvidia Remix.json"},
+	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Basic Prompting 1.6.0.json"},
 	{"flowise", "../../internal/compiler/testdata/flow-definition-escape/exports/flowise-chatflow.json"},
 }
 
