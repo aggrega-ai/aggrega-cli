@@ -6,11 +6,7 @@
 package main
 
 import (
-	"maps"
-	"slices"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/selectormatch"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -27,31 +23,23 @@ var flowise = importer.Format{
 
 // platform is the Flowise platform as the standard library's
 // core/ai-agent/flowise Component runs it: the chatflow is carried as the
-// Component's flow_definition and named by its chatflow_id, and the inputs the
-// Component requires that a chatflow cannot supply are left for the Release.
+// Component's flow_definition and named by its chatflow_id, each part wired to
+// it is reached as the platform delivers its connection (wire.go), and the
+// inputs the Component requires that a chatflow cannot supply are left for the
+// Release.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/flowise",
 	DefinitionValue: "flow_definition",
 	IdentifierValue: "chatflow_id",
 	Identifier:      chatflowID,
 	Credentials:     credentialsOf,
-	Match:           matchSelector,
+	Match:           selectormatch.Match,
+	Wire:            wireOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Flowise",
 		"infra.owner_email, the email address of the platform's owner account, required while values.flow_definition is set",
 		"the owner_password slot, that account's password, required while values.flow_definition is set",
 	},
-}
-
-// matchSelector reports whether labels satisfy selector, read in the
-// compiler's own label-selector grammar, which is the grammar a catalog
-// Component writes its sockets' selectors in.
-func matchSelector(sel string, labels map[string]string) (bool, error) {
-	ordered := types.NewOrderedMap[string]()
-	for _, k := range slices.Sorted(maps.Keys(labels)) {
-		ordered.Set(k, labels[k])
-	}
-	return selector.MatchString(sel, *ordered)
 }
 
 // detect is how a Flowise flow is recognised when an import names no format,

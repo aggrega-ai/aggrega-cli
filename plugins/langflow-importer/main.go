@@ -15,8 +15,9 @@
 //
 // The guest holds only what is particular to Langflow: this descriptor and the
 // export wiring, the walker lifting a flow's nodes and edges and locating its
-// credential values (walk.go), and the format's mapping arm, syntactic format
-// and platform (format.go). The rest — the
+// credential values (walk.go), how the flow reaches each part wired to the
+// platform (wire.go), and the format's mapping arm, syntactic format and
+// platform (format.go). The rest — the
 // confidence scorer, the decisions, the drafts, the renderers and the settings —
 // is the plugin kit's importer package,
 // github.com/aggrega-ai/aggrega-pdk-go/pkg/importer, which every importer built on

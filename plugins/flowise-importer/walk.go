@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -139,11 +140,14 @@ func chatflowID(tree json.RawMessage) string {
 // credentialsOf locates every credential value a Flowise flow holds, by the
 // marks Flowise itself writes: the credential a node keeps at data.credential —
 // the stored credential its parameter of type credential selects; the value in
-// data.inputs of each parameter its inputParams declare of type password; and the
-// credential an agentflow keeps inside a configuration object among its inputs,
-// at credential or FLOWISE_CREDENTIAL_ID — that second name is also read at the
-// top of data.inputs. Each is addressed from the root of the export, and named by
-// its node's id and the field it sits in.
+// data.inputs of each parameter its inputParams declare of type password; the
+// credential an agentflow keeps inside a configuration object among its inputs —
+// directly, or in a list of them, as an agent keeps each tool's configuration —
+// at credential or FLOWISE_CREDENTIAL_ID, that second name also read at the top
+// of data.inputs; and the header and environment values and the address of the
+// server configuration of a Custom MCP tool, its mcpServerConfig input, wherever
+// among the inputs it sits. Each is addressed from the root of the export, and
+// named by its node's id and the field it sits in.
 func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var top struct {
 		Nodes []json.RawMessage `json:"nodes"`
@@ -177,16 +181,163 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 				out = append(out, importer.Credential{Node: node.ID, Field: in.Key, Pointer: at("inputs", in.Key)})
 			case in.Key == credentialIDInput:
 				out = append(out, importer.Credential{Node: node.ID, Field: in.Key, Pointer: at("inputs", in.Key)})
+			case in.Key == serverConfigInput:
+				out = append(out, serverConfigCredentials(node.ID, in.Value, []string{in.Key},
+					[]string{"nodes", strconv.Itoa(i), "data", "inputs", in.Key})...)
+				continue
 			}
-			for _, member := range importer.ObjectEntries(in.Value) {
-				if member.Key == "credential" || member.Key == credentialIDInput {
-					out = append(out, importer.Credential{Node: node.ID, Field: in.Key + "." + member.Key,
-						Pointer: at("inputs", in.Key, member.Key)})
-				}
-			}
+			out = append(out, nestedCredentials(node.ID, in.Value, []string{in.Key},
+				[]string{"nodes", strconv.Itoa(i), "data", "inputs", in.Key})...)
 		}
 	}
 	return out
+}
+
+// nestedCredentials locates the credentials inside one of a node's inputs: at
+// credential or FLOWISE_CREDENTIAL_ID in a configuration object, and in the
+// server configuration of a Custom MCP tool, at any depth of the objects and
+// lists the input holds. field is the input's name and the members on the way,
+// and tokens the reference tokens addressing the input from the root of the
+// export.
+func nestedCredentials(nodeID string, raw json.RawMessage, field, tokens []string) []importer.Credential {
+	var out []importer.Credential
+	if entries := importer.ObjectEntries(raw); entries != nil {
+		for _, e := range entries {
+			f := append(append([]string{}, field...), e.Key)
+			t := append(append([]string{}, tokens...), e.Key)
+			switch e.Key {
+			case "credential", credentialIDInput:
+				out = append(out, importer.Credential{Node: nodeID, Field: strings.Join(f, "."), Pointer: importer.Pointer(t...)})
+			case serverConfigInput:
+				out = append(out, serverConfigCredentials(nodeID, e.Value, f, t)...)
+			default:
+				out = append(out, nestedCredentials(nodeID, e.Value, f, t)...)
+			}
+		}
+		return out
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) != nil {
+		return nil
+	}
+	for j, item := range items {
+		index := strconv.Itoa(j)
+		out = append(out, nestedCredentials(nodeID, item, append(append([]string{}, field...), index),
+			append(append([]string{}, tokens...), index))...)
+	}
+	return out
+}
+
+// serverConfigInput is the input Flowise's Custom MCP tool keeps its server
+// configuration in: JSON text, or an object, holding the server's url and the
+// headers sent to it, or the command starting it and the environment it is
+// started with.
+const serverConfigInput = "mcpServerConfig"
+
+// serverConfigCredentials locates what a Custom MCP tool's server configuration
+// holds of a request's credentials and the server's address — every header
+// value, every environment value, and the url — and returns one credential
+// carrying the configuration with those values written empty and every other
+// part kept, or none where the configuration holds none of them. A
+// configuration written as text that does not read as a JSON object, which
+// Flowise also accepts in the looser forms its own reader repairs, is emptied
+// whole, since what is in it cannot be located.
+func serverConfigCredentials(nodeID string, raw json.RawMessage, field, tokens []string) []importer.Credential {
+	name := strings.Join(field, ".")
+	pointer := importer.Pointer(tokens...)
+	var text string
+	written := raw
+	if json.Unmarshal(raw, &text) == nil {
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		written = json.RawMessage(text)
+	}
+	var config map[string]json.RawMessage
+	if json.Unmarshal(written, &config) != nil || config == nil {
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer,
+			Detail: "it does not read as a JSON object, so nothing inside it can be located"}}
+	}
+	edits, what := serverConfigEdits(written)
+	if len(edits) == 0 {
+		return nil
+	}
+	rewritten, err := importer.Rewrite(written, edits)
+	if err != nil {
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer,
+			Detail: "what is inside it cannot be located in its text"}}
+	}
+	value := json.RawMessage(rewritten)
+	if text != "" {
+		value = jsonText(string(rewritten))
+	}
+	return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer, Value: value, Detail: what}}
+}
+
+// serverConfigEdits returns, for a server configuration read as a JSON object,
+// the edits writing empty each header value — the headers an object of names to
+// values, or a list of key and value items — each environment value, and the
+// url, and says which of the three it found, always in that order.
+func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
+	empty := json.RawMessage(`""`)
+	var edits []importer.Edit
+	var headers, env, url bool
+	for _, e := range importer.ObjectEntries(config) {
+		switch e.Key {
+		case "headers":
+			for _, h := range importer.ObjectEntries(e.Value) {
+				edits = append(edits, importer.Edit{Pointer: importer.Pointer("headers", h.Key), Value: empty})
+				headers = true
+			}
+			var items []struct {
+				Value json.RawMessage `json:"value"`
+			}
+			if json.Unmarshal(e.Value, &items) == nil {
+				for j, item := range items {
+					if item.Value != nil {
+						edits = append(edits, importer.Edit{Pointer: importer.Pointer("headers", strconv.Itoa(j), "value"),
+							Value: empty})
+						headers = true
+					}
+				}
+			}
+		case "env":
+			for _, v := range importer.ObjectEntries(e.Value) {
+				edits = append(edits, importer.Edit{Pointer: importer.Pointer("env", v.Key), Value: empty})
+				env = true
+			}
+		case "url":
+			edits = append(edits, importer.Edit{Pointer: importer.Pointer("url"), Value: empty})
+			url = true
+		}
+	}
+	var found []string
+	for _, f := range []struct {
+		present bool
+		what    string
+	}{{headers, "header values"}, {env, "environment values"}, {url, "server address"}} {
+		if f.present {
+			found = append(found, f.what)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return edits, ""
+	case 1:
+		return edits, found[0]
+	default:
+		return edits, strings.Join(found[:len(found)-1], ", ") + " and " + found[len(found)-1]
+	}
+}
+
+// jsonText writes s as a JSON string, its characters as they are wherever JSON
+// allows it.
+func jsonText(s string) json.RawMessage {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)
+	return json.RawMessage(strings.TrimSuffix(b.String(), "\n"))
 }
 
 // credentialIDInput is the name Flowise keeps a selected credential's

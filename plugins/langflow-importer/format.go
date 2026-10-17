@@ -6,11 +6,7 @@
 package main
 
 import (
-	"maps"
-	"slices"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/selectormatch"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -27,30 +23,23 @@ var langflow = importer.Format{
 
 // platform is the Langflow platform as the standard library's
 // core/ai-agent/langflow Component runs it: the flow is carried as the
-// Component's flow_definition and named by its flow_id, and the inputs the
-// Component requires that a flow cannot supply are left for the Release.
+// Component's flow_definition and named by its flow_id, an MCP Tools node
+// reaches the MCP server it names through the tools connection of that name
+// (wire.go), and the inputs the Component requires that a flow cannot supply
+// are left for the Release.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/langflow",
 	DefinitionValue: "flow_definition",
 	IdentifierValue: "flow_id",
 	Identifier:      flowID,
 	Credentials:     credentialsOf,
-	Match:           matchSelector,
+	Match:           selectormatch.Match,
+	Reach:           reachOf,
+	Wire:            wireOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Langflow",
 		"the admin_password slot, the administrator's password, while values.require_authentication stays true",
 	},
-}
-
-// matchSelector reports whether labels satisfy selector, read in the
-// compiler's own label-selector grammar, which is the grammar a catalog
-// Component writes its sockets' selectors in.
-func matchSelector(sel string, labels map[string]string) (bool, error) {
-	ordered := types.NewOrderedMap[string]()
-	for _, k := range slices.Sorted(maps.Keys(labels)) {
-		ordered.Set(k, labels[k])
-	}
-	return selector.MatchString(sel, *ordered)
 }
 
 // detect is how a Langflow flow is recognised when an import names no format,
@@ -68,10 +57,15 @@ var detect = []aggrega.DetectSignature{{
 // catalog holds the component it names. The whole-flow wrapper component
 // core/ai-agent/langflow is not a row here: where the catalog holds it, the
 // scorer weighs every node against it as it does every other catalog Component.
+//
+// MCPTools is Langflow's MCP Tools component, which calls the tools an MCP
+// server publishes; the server it reaches is core/ai-tool/mcp, a server reached
+// over HTTP that may change what it acts on.
 var mappings = map[string]importer.Mapping{
 	"OpenAIModel":      {Component: "core/ai-model/openai", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
 	"AnthropicModel":   {Component: "core/ai-model/anthropic", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "anthropic"},
 	"OpenAIEmbeddings": {Component: "core/ai-model/openai-embedding", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "embedding", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
 	"Retrieval":        {Component: "core/ai-tool/retrieval", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/impact": "read-only"}, Vendor: "retrieval"},
 	"APIRequest":       {Component: "core/ai-tool/http-request", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/impact": "mutating"}, Vendor: "http"},
+	"MCPTools":         {Component: "core/ai-tool/mcp", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/transport": "http", "tool.aggrega.ai/impact": "mutating"}, Vendor: "mcp"},
 }
