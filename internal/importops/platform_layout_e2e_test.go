@@ -590,8 +590,8 @@ var emptiedField = regexp.MustCompile(`^the value of (\S+), which node (\S+) mar
 //
 // 🔴 PLANTED DEFECT: in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
 // `scrubbed, emptied, err := scrubCredentials(src.Bytes, creds)` with
-// `scrubbed, emptied, err := src.Bytes, []Credential(nil), error(nil)`. The
-// importer fixtures are rebuilt from the kit's sources when they change, and every
+// `scrubbed, emptied, err := src.Bytes, []Credential(nil), error(nil); _ = creds`.
+// The importer fixtures are rebuilt from the kit's sources when they change, and every
 // row under the default layout fails: each planted value is in the drafted
 // aggregate.yaml, and no warning names its field.
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
