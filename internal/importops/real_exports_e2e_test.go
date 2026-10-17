@@ -44,8 +44,12 @@ const (
 	// langflowPromptingProject carries a language model node whose template holds
 	// a max_tokens field and an api_key field.
 	langflowPromptingProject = "langflow/Basic Prompting.json"
-	flowiseChatflow          = "flowise/chatflows/Multiple Documents QnA.json"
-	flowiseAgentflow         = "flowise/agentflowsv2/Agents Handoff.json"
+	// langflowRemixProject carries an MCP Tools node whose mcp_server field has no
+	// server chosen, the one MCP Tools node the Langflow repository's own flows
+	// carry.
+	langflowRemixProject = "langflow/Nvidia Remix.json"
+	flowiseChatflow      = "flowise/chatflows/Multiple Documents QnA.json"
+	flowiseAgentflow     = "flowise/agentflowsv2/Agents Handoff.json"
 )
 
 // realExports are the committed exports and what the reference importer drafts
@@ -84,6 +88,22 @@ var realExports = []struct {
 			"components/imported-ai-model-chatoutput.yaml",
 			"components/imported-ai-model-languagemodelcomponent.yaml",
 			"components/imported-component-prompt.yaml",
+		},
+	},
+	{
+		name:   "a Langflow starter project with an MCP Tools node naming no server",
+		source: langflowRemixProject,
+		format: "langflow",
+		drafts: []string{
+			"aggregate.yaml",
+			"components/imported-ai-agent-agent.yaml",
+			"components/imported-ai-model-chatinput.yaml",
+			"components/imported-ai-model-chatoutput.yaml",
+			"components/imported-ai-model-embeddingmodel.yaml",
+			"components/imported-ai-tool-mcptools.yaml",
+			"components/imported-component-faiss.yaml",
+			"components/imported-component-prompt.yaml",
+			"components/imported-component-remixdocumentation.yaml",
 		},
 	},
 	{

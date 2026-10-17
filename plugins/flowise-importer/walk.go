@@ -144,10 +144,11 @@ func chatflowID(tree json.RawMessage) string {
 // credential an agentflow keeps inside a configuration object among its inputs —
 // directly, or in a list of them, as an agent keeps each tool's configuration —
 // at credential or FLOWISE_CREDENTIAL_ID, that second name also read at the top
-// of data.inputs; and the header and environment values and the address of the
-// server configuration of a Custom MCP tool, its mcpServerConfig input, wherever
-// among the inputs it sits. Each is addressed from the root of the export, and
-// named by its node's id and the field it sits in.
+// of data.inputs; and the header and environment values, the address, the
+// command and the arguments of the server configuration of a Custom MCP tool,
+// its mcpServerConfig input, wherever among the inputs it sits. Each is
+// addressed from the root of the export, and named by its node's id and the
+// field it sits in.
 func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var top struct {
 		Nodes []json.RawMessage `json:"nodes"`
@@ -230,18 +231,18 @@ func nestedCredentials(nodeID string, raw json.RawMessage, field, tokens []strin
 
 // serverConfigInput is the input Flowise's Custom MCP tool keeps its server
 // configuration in: JSON text, or an object, holding the server's url and the
-// headers sent to it, or the command starting it and the environment it is
-// started with.
+// headers sent to it, or the command starting it, the arguments and the
+// environment it is started with.
 const serverConfigInput = "mcpServerConfig"
 
 // serverConfigCredentials locates what a Custom MCP tool's server configuration
-// holds of a request's credentials and the server's address — every header
-// value, every environment value, and the url — and returns one credential
-// carrying the configuration with those values written empty and every other
-// part kept, or none where the configuration holds none of them. A
-// configuration written as text that does not read as a JSON object, which
-// Flowise also accepts in the looser forms its own reader repairs, is emptied
-// whole, since what is in it cannot be located.
+// holds of a request's credentials, the server's address and how it is started
+// — every header value, every environment value, the url, the command and each
+// argument — and returns one credential carrying the configuration with those
+// values written empty and every other part kept, or none where the
+// configuration holds none of them. A configuration written as text that does
+// not read as a JSON object, which Flowise also accepts in the looser forms its
+// own reader repairs, is emptied whole, since what is in it cannot be located.
 func serverConfigCredentials(nodeID string, raw json.RawMessage, field, tokens []string) []importer.Credential {
 	name := strings.Join(field, ".")
 	pointer := importer.Pointer(tokens...)
@@ -276,12 +277,17 @@ func serverConfigCredentials(nodeID string, raw json.RawMessage, field, tokens [
 
 // serverConfigEdits returns, for a server configuration read as a JSON object,
 // the edits writing empty each header value — the headers an object of names to
-// values, or a list of key and value items — each environment value, and the
-// url, and says which of the three it found, always in that order.
+// values, or a list of key and value items — each environment value, the url,
+// the command, and each argument — each element of args where it is a list, the
+// whole value where it is not — and says which of them it found, always in that
+// order. A command or an argument already empty, or null, is left as written.
+// The command and args members stay, their values written empty, so the
+// configuration still reads as starting a server of its own.
 func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
 	empty := json.RawMessage(`""`)
+	blank := func(v json.RawMessage) bool { s := string(v); return s == `""` || s == "null" }
 	var edits []importer.Edit
-	var headers, env, url bool
+	var headers, env, url, command, args bool
 	for _, e := range importer.ObjectEntries(config) {
 		switch e.Key {
 		case "headers":
@@ -309,13 +315,34 @@ func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
 		case "url":
 			edits = append(edits, importer.Edit{Pointer: importer.Pointer("url"), Value: empty})
 			url = true
+		case "command":
+			if !blank(e.Value) {
+				edits = append(edits, importer.Edit{Pointer: importer.Pointer("command"), Value: empty})
+				command = true
+			}
+		case "args":
+			var items []json.RawMessage
+			if json.Unmarshal(e.Value, &items) != nil {
+				if !blank(e.Value) {
+					edits = append(edits, importer.Edit{Pointer: importer.Pointer("args"), Value: empty})
+					args = true
+				}
+				continue
+			}
+			for j, item := range items {
+				if !blank(item) {
+					edits = append(edits, importer.Edit{Pointer: importer.Pointer("args", strconv.Itoa(j)), Value: empty})
+					args = true
+				}
+			}
 		}
 	}
 	var found []string
 	for _, f := range []struct {
 		present bool
 		what    string
-	}{{headers, "header values"}, {env, "environment values"}, {url, "server address"}} {
+	}{{headers, "header values"}, {env, "environment values"}, {url, "server address"}, {command, "command"},
+		{args, "arguments"}} {
 		if f.present {
 			found = append(found, f.what)
 		}

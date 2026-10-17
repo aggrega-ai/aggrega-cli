@@ -1,0 +1,254 @@
+documents:
+  - path: components/imported-ai-model-chatinput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatinput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              files: { type: string }
+              input_value: { type: string }
+              sender: { type: string }
+              sender_name: { type: string }
+              session_id: { type: string }
+              should_store_message: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-chatoutput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatoutput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              data_template: { type: string }
+              input_value: { type: string }
+              sender: { type: string }
+              sender_name: { type: string }
+              session_id: { type: string }
+              should_store_message: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-agent-agent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-agent/agent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: server
+          component.aggrega.ai/category: ai-agent
+      spec:
+        featuresSchema:
+          api_key:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              add_current_date_tool: { type: string }
+              agent_description: { type: string }
+              agent_llm: { type: string }
+              code: { type: string }
+              format_instructions: { type: string }
+              handle_parsing_errors: { type: string }
+              input_value: { type: string }
+              max_iterations: { type: string }
+              max_retries: { type: string }
+              max_tokens: { type: string }
+              model_kwargs: { type: string }
+              model_name: { type: string }
+              n_messages: { type: string }
+              openai_api_base: { type: string }
+              output_schema: { type: string }
+              seed: { type: string }
+              system_prompt: { type: string }
+              temperature: { type: string }
+              timeout: { type: string }
+              tools: { type: string }
+              verbose: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-prompt.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/prompt
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              mcp_prompts: { type: string }
+              remix_documentation: { type: string }
+              remix_mcp_server: { type: string }
+              template: { type: string }
+              tool_placeholder: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-remixdocumentation.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/remixdocumentation
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              exclude_paths: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-embeddingmodel.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/embeddingmodel
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          api_key:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              api_base: { type: string }
+              chunk_size: { type: string }
+              code: { type: string }
+              dimensions: { type: string }
+              max_retries: { type: string }
+              model: { type: string }
+              model_kwargs: { type: string }
+              provider: { type: string }
+              request_timeout: { type: string }
+              show_progress_bar: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-faiss.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/faiss
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              allow_dangerous_deserialization: { type: string }
+              code: { type: string }
+              embedding: { type: string }
+              index_name: { type: string }
+              ingest_data: { type: string }
+              number_of_results: { type: string }
+              persist_directory: { type: string }
+              search_query: { type: string }
+              should_cache_vector_store: { type: string }
+              tools_metadata: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-tool-mcptools.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-tool/mcptools
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: function
+          component.aggrega.ai/category: ai-tool
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              mcp_server: { type: string }
+              tool: { type: string }
+              tool_placeholder: { type: string }
+              tools_metadata: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a langflow source.
+      spec:
+        components:
+          chatinput-8xmju:
+            type: imported/ai-model/chatinput
+          chatoutput-o3obj:
+            type: imported/ai-model/chatoutput
+            uses:
+              agent-9don7:
+                link:
+                  target: agent-9don7
+          agent-9don7:
+            type: imported/ai-agent/agent
+            uses:
+              chatinput-8xmju:
+                link:
+                  target: chatinput-8xmju
+              faiss-uz8o4:
+                link:
+                  target: faiss-uz8o4
+              mcptools-behvj:
+                link:
+                  target: mcptools-behvj
+              prompt-prjbv:
+                link:
+                  target: prompt-prjbv
+          prompt-prjbv:
+            type: imported/component/prompt
+          remixdocumentation-deiws:
+            type: imported/component/remixdocumentation
+          embeddingmodel-x6uru:
+            type: imported/ai-model/embeddingmodel
+          faiss-uz8o4:
+            type: imported/component/faiss
+            uses:
+              embeddingmodel-x6uru:
+                link:
+                  target: embeddingmodel-x6uru
+              remixdocumentation-deiws:
+                link:
+                  target: remixdocumentation-deiws
+          mcptools-behvj:
+            type: imported/ai-tool/mcptools

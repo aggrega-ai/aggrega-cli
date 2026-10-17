@@ -116,9 +116,12 @@ func flowID(tree json.RawMessage) string {
 // marks Langflow itself writes: the value of each template field whose object
 // carries password set to true, and each header and environment value of the
 // server configuration an MCP Tools node carries in its mcp_server field, where
-// a request's credentials travel. Each is addressed from the root of the export,
-// and named by its node's id and the field it sits in. A field holding no value
-// member is not located, since there is nothing in it to write empty.
+// a request's credentials travel — and, in that configuration, the command
+// starting a server and each argument it is started with, which Langflow marks
+// as no credential and which can carry one all the same. Each is addressed from
+// the root of the export, and named by its node's id and the field it sits in. A
+// field holding no value member is not located, since there is nothing in it to
+// write empty.
 func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var top struct {
 		Data struct {
@@ -164,15 +167,20 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 }
 
 // serverCredentials locates the header and environment values of the server
-// configuration an MCP Tools node's mcp_server value carries: an object with a
+// configuration an MCP Tools node's mcp_server value carries — an object with a
 // name and a config, whose headers are an object of names to values or a list
-// of key and value items, and whose env is an object of names to values. A value
-// naming a server alone carries no configuration and holds none.
+// of key and value items, and whose env is an object of names to values — and
+// its command and its args: each element of args where it is a list, and the
+// whole value where it is not. A command or an argument is written empty and its
+// member kept, so a configuration that starts a server of its own still reads
+// as one. A value naming a server alone carries no configuration and holds none.
 func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...string) string) []importer.Credential {
 	var server struct {
 		Config struct {
 			Headers json.RawMessage `json:"headers"`
 			Env     json.RawMessage `json:"env"`
+			Command json.RawMessage `json:"command"`
+			Args    json.RawMessage `json:"args"`
 		} `json:"config"`
 	}
 	if err := json.Unmarshal(value, &server); err != nil {
@@ -200,5 +208,29 @@ func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...s
 		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.env." + e.Key,
 			Pointer: at("mcp_server", "value", "config", "env", e.Key)})
 	}
+	if server.Config.Command != nil {
+		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.command",
+			Pointer: at("mcp_server", "value", "config", "command"), Detail: commandDetail})
+	}
+	var args []json.RawMessage
+	switch {
+	case server.Config.Args == nil:
+	case json.Unmarshal(server.Config.Args, &args) == nil:
+		for j := range args {
+			out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.args." + strconv.Itoa(j),
+				Pointer: at("mcp_server", "value", "config", "args", strconv.Itoa(j)), Detail: argumentDetail})
+		}
+	default:
+		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.args",
+			Pointer: at("mcp_server", "value", "config", "args"), Detail: argumentDetail})
+	}
 	return out
 }
+
+// commandDetail and argumentDetail say why the command an MCP server is started
+// with, and each of its arguments, is written empty though Langflow marks
+// neither as a credential.
+const (
+	commandDetail  = "the command an MCP server is started with can carry a credential, though Langflow marks it as none"
+	argumentDetail = "an argument an MCP server is started with can carry a credential, though Langflow marks it as none"
+)

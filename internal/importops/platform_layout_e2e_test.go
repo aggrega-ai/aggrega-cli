@@ -99,6 +99,9 @@ var flowFixtures = []flowFixture{
 	langflowFixture(realExportPath(langflowStarterProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Research_Translation_Loop",
 		"7eb7c081-888c-4f25-ba81-c84e6aab2778", nil),
+	langflowFixture(realExportPath(langflowRemixProject),
+		"internal_compiler_importersocket_testdata_real-exports_langflow_Nvidia_Remix",
+		"faac3377-a15b-459b-a6bd-c47c318dcc78", nil),
 }
 
 // platformSockets are the sockets the standard library declares on both flow
@@ -490,7 +493,8 @@ type plantedSource struct {
 // Langflow field marked password, the credential a Flowise chat model selects and
 // an input of type password beside it, the credential an agentflow agent keeps in
 // its model configuration — and in a Langflow flow whose MCP Tools nodes carry a
-// server configuration with header and environment values.
+// server configuration with header and environment values, or with a command and
+// arguments starting a server: a list of them, and a single one written as text.
 func plantedSources(t *testing.T) []plantedSource {
 	t.Helper()
 	decode := func(rel string) map[string]any {
@@ -516,6 +520,8 @@ func plantedSources(t *testing.T) []plantedSource {
 		agentKey    = "sk-plantedAGENTFLOWkey0123456789abcd"
 		mcpHeader   = "Bearer sk-plantedMCPheader012345678"
 		mcpEnv      = "sk-plantedMCPenv0123456789abcdef01"
+		mcpArg      = "sk-plantedMCParg0123456789abcdef01"
+		mcpArgText  = "--token=sk-plantedMCPargTEXT01234567"
 	)
 
 	lf := decode(langflowPromptingProject)
@@ -558,8 +564,16 @@ func plantedSources(t *testing.T) []plantedSource {
 	docs["id"] = "MCPTools-a1"
 	search := server("search", []any{map[string]any{"key": "Authorization", "value": mcpHeader}}, nil)
 	search["id"] = "MCPTools-b2"
+	started := func(id, name string, args any) map[string]any {
+		return map[string]any{"id": id, "data": map[string]any{"type": "MCPTools", "node": map[string]any{"template": map[string]any{
+			"mcp_server": map[string]any{"type": "mcp", "value": map[string]any{"name": name,
+				"config": map[string]any{"command": "uvx", "args": args}}},
+		}}}}
+	}
+	fetch := started("MCPTools-c3", "fetch", []any{"--api-key", mcpArg})
+	files := started("MCPTools-d4", "files", mcpArgText)
 	mcp := map[string]any{"id": "0a0b0c0d-1111-4222-8333-444455556666",
-		"data": map[string]any{"nodes": []any{docs, search}, "edges": []any{}}}
+		"data": map[string]any{"nodes": []any{docs, search, fetch, files}, "edges": []any{}}}
 
 	return []plantedSource{
 		{name: "langflow-password.json", body: encode(lf), keys: []string{langflowKey},
@@ -568,21 +582,29 @@ func plantedSources(t *testing.T) []plantedSource {
 			fields: []string{"chatOpenAI_0 credential", "chatOpenAI_0 apiKeyOverride"}},
 		{name: "agentflow-credential.json", body: encode(af), keys: []string{agentKey},
 			fields: []string{"agentAgentflow_0 agentModelConfig.credential"}},
-		{name: "langflow-mcp-server.json", body: encode(mcp), keys: []string{mcpHeader, mcpEnv},
+		{name: "langflow-mcp-server.json", body: encode(mcp), keys: []string{mcpHeader, mcpEnv, mcpArg, mcpArgText},
 			fields: []string{"MCPTools-a1 mcp_server.config.headers.Authorization", "MCPTools-a1 mcp_server.config.env.API_KEY",
-				"MCPTools-b2 mcp_server.config.headers.Authorization"}},
+				"MCPTools-b2 mcp_server.config.headers.Authorization", "MCPTools-c3 mcp_server.config.command",
+				"MCPTools-c3 mcp_server.config.args.0", "MCPTools-c3 mcp_server.config.args.1",
+				"MCPTools-d4 mcp_server.config.command", "MCPTools-d4 mcp_server.config.args"}},
 	}
 }
 
-// emptiedField reads the node and the field a credential-emptied warning names,
-// and nothing else of it.
-var emptiedField = regexp.MustCompile(`^the value of (\S+), which node (\S+) marks as a credential, is written empty in the flow the draft carries: no credential from the source reaches the draft$`)
+// emptiedField and emptiedWhole read the node and the field a credential-emptied
+// warning names, and nothing else of it: the first for a field the format marks
+// as a credential, the second for one it writes empty whole for the reason the
+// warning gives.
+var (
+	emptiedField = regexp.MustCompile(`^the value of (\S+), which node (\S+) marks as a credential, is written empty in the flow the draft carries: no credential from the source reaches the draft$`)
+	emptiedWhole = regexp.MustCompile(`^the whole value of (\S+) of node (\S+) is written empty in the flow the draft carries, since [^:]+: no credential from the source reaches the draft$`)
+)
 
 // TestNoCredentialValueAnExportHoldsReachesTheDraft plants key-shaped values in
 // the fields Langflow and Flowise mark as credentials — a field marked password,
 // the credential a node's credential parameter selects, an input of type password,
 // an agentflow model's credential, an MCP server's header and environment values —
-// and imports each planted source under both layouts, writing the drafts. The
+// and in the arguments an MCP server is started with, which neither marks, and
+// imports each planted source under both layouts, writing the drafts. The
 // search below finds every planted value in its planted source, which is what says
 // it fires; it finds none in any file the import wrote, nor in the decisions or the
 // diagnostics. Under the default layout one warning names each field it wrote empty
@@ -658,6 +680,9 @@ func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 						continue
 					}
 					m := emptiedField.FindStringSubmatch(d.Message)
+					if m == nil {
+						m = emptiedWhole.FindStringSubmatch(d.Message)
+					}
 					if m == nil {
 						t.Errorf("the warning %q is not of the form that names a node and a field alone", d.Message)
 						continue

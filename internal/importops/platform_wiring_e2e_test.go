@@ -10,15 +10,19 @@ package importops
 // their parts resemble — the folder importopstest lays down, and the path every
 // surface reaches.
 //
-// The sources below are committed real exports with authored parts added — MCP
-// Tools nodes naming servers, a model whose address and key are written as
-// literals, a Custom MCP tool's server configuration — since no export Langflow
-// or Flowise publish carries those parts with values to plant. Each says so where
-// it is built; none is presented as an export.
+// One case imports a committed real export as it is: the one MCP Tools node the
+// Langflow repository's own flows carry, which has no server chosen. Every other
+// source below is a committed real export with authored parts added — MCP Tools
+// nodes naming servers, an MCP Tools node keeping its server outside an
+// mcp_server field, a model whose address and key are written as literals, a
+// Custom MCP tool's server configuration — since no export Langflow or Flowise
+// publish carries those parts with values to plant. Each says so where it is
+// built; none is presented as an export.
 
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -178,19 +182,22 @@ func mcpToolsNode(id string, value any) map[string]any {
 }
 
 // The values the authored MCP Tools nodes carry: two server addresses, one
-// carrying a key in its query, a request header and an environment value.
+// carrying a key in its query, a request header, an environment value, and an
+// argument a server is started with carrying a key.
 const (
 	remixAddress = "http://remix-mcp.internal.example:8000/sse?key=sk-plantedURLkey0123456789abcd"
 	docsAddress  = "https://docs-mcp.internal.example/mcp"
 	mcpHeader    = "Bearer sk-plantedMCPheaderVALUE0123456789"
 	mcpEnv       = "sk-plantedMCPenvVALUE0123456789abcd"
+	mcpArgument  = "--api-key=sk-plantedMCPargVALUE0123456789ab"
 )
 
 // mcpSource is the committed Langflow export Basic Prompting with five authored
 // MCP Tools nodes added: two naming the server remix at an address, the first
 // with a request header; one naming "Docs Server", which a connection's alias
 // cannot be, with an environment value; one naming fetch whose configuration
-// starts a server of its own; and one naming no server.
+// starts a server of its own, with a command and two arguments, the second
+// carrying a key; and one naming no server.
 func mcpSource(t *testing.T) []byte {
 	t.Helper()
 	flow := decoded(t, readRealExport(t, langflowPromptingProject))
@@ -202,7 +209,7 @@ func mcpSource(t *testing.T) []byte {
 		mcpToolsNode("MCPTools-docs", map[string]any{"name": "Docs Server", "config": map[string]any{
 			"url": docsAddress, "env": map[string]any{"TOKEN": mcpEnv}}}),
 		mcpToolsNode("MCPTools-fetch", map[string]any{"name": "fetch", "config": map[string]any{
-			"command": "uvx", "args": []any{"mcp-server-fetch"}}}),
+			"command": "uvx", "args": []any{"mcp-server-fetch", mcpArgument}}}),
 		mcpToolsNode("MCPTools-empty", map[string]any{}),
 	)
 	return encoded(t, flow)
@@ -219,10 +226,13 @@ func mcpSource(t *testing.T) []byte {
 //     the carried flow then gives that node's server; under auto-apply each part
 //     is core/ai-tool/mcp;
 //   - the carried flow is the export with exactly these values written: each
-//     wired node's server address empty, docs-server's name, and the request
-//     header and the environment value empty; the node starting a server of its
-//     own and the one naming none are carried as written, wired to nothing, and
-//     reported — the first with the halt the platform's build makes on it;
+//     wired node's server address empty, docs-server's name, the request header
+//     and the environment value empty, and the command and each argument of the
+//     node starting a server of its own empty, each reported by its node and
+//     field; that node and the one naming no server are otherwise carried as
+//     written, wired to nothing, and reported — the first with the halt the
+//     platform's build makes on it, its command member kept, so the flow it
+//     carries still reads as starting a server of its own;
 //   - no address and no credential the export holds is in any file the import
 //     wrote, nor in its decisions or diagnostics — the search finds each in the
 //     source, which says it fires — and the Aggregate leaves each wired server's
@@ -236,7 +246,10 @@ func mcpSource(t *testing.T) []byte {
 //     drafted aggregate.yaml and docs keeping the name "Docs Server";
 //   - in wireServer (plugins/langflow-importer/wire.go), replace
 //     `if server.hasURL {` with `if server.hasURL && false {`: both rows fail,
-//     the server addresses in the drafted aggregate.yaml.
+//     the server addresses in the drafted aggregate.yaml;
+//   - in serverCredentials (plugins/langflow-importer/walk.go), replace
+//     `case server.Config.Args == nil:` with `case true:`: both rows fail, the
+//     planted argument in the drafted aggregate.yaml.
 func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *testing.T) {
 	t.Parallel()
 	source := mcpSource(t)
@@ -253,7 +266,7 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			t.Parallel()
 			res, outputDir := writtenImport(t, wiringWorkspace(t, tc.settings), "mcp-flow.json", source)
 			assertNoneReaches(t, []string{remixAddress, "remix-mcp.internal.example", docsAddress,
-				"docs-mcp.internal.example", mcpHeader, mcpEnv}, source, res, outputDir)
+				"docs-mcp.internal.example", mcpHeader, mcpEnv, mcpArgument}, source, res, outputDir)
 
 			flow, text := carriedFlow(t, outputDir, "langflow")
 			want := decoded(t, source)
@@ -267,10 +280,17 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			server(want, "MCPTools-docs")["name"] = "docs-server"
 			asObject(server(want, "MCPTools-docs")["config"])["url"] = ""
 			asObject(asObject(server(want, "MCPTools-docs")["config"])["env"])["TOKEN"] = ""
+			asObject(server(want, "MCPTools-fetch")["config"])["command"] = ""
+			asObject(server(want, "MCPTools-fetch")["config"])["args"] = []any{"", ""}
 			if !reflect.DeepEqual(flow, want) {
-				got, _ := json.Marshal(langflowNode(t, flow, "MCPTools-docs"))
+				docs, _ := json.Marshal(langflowNode(t, flow, "MCPTools-docs"))
+				fetch, _ := json.Marshal(langflowNode(t, flow, "MCPTools-fetch"))
 				t.Errorf("the carried flow is not the export with exactly the expected values written; its docs node "+
-					"reads %s", got)
+					"reads %s and its fetch node %s", docs, fetch)
+			}
+			if _, kept := asObject(server(flow, "MCPTools-fetch")["config"])["command"]; !kept {
+				t.Error("the carried flow drops the fetch node's command, so it no longer reads as starting a server of " +
+					"its own, which is what the platform's build halts on")
 			}
 
 			agg := readAsTheCompilerDoes(t, text)
@@ -304,14 +324,33 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			}
 
 			reported := map[string][]string{}
+			var fetchEmptied []string
 			for _, d := range res.Diagnostics {
 				reported[d.Code] = append(reported[d.Code], d.SourceRef)
-				if d.SourceRef == "MCPTools-fetch" && !strings.Contains(d.Message, "starts a server of its own") {
+				if d.SourceRef == "MCPTools-fetch" && d.Code == "credential-emptied" {
+					fetchEmptied = append(fetchEmptied, d.Message)
+				}
+				if d.SourceRef != "MCPTools-fetch" || d.Code != "part-not-placed" {
+					continue
+				}
+				if !strings.Contains(d.Message, "starts a server of its own") {
 					t.Errorf("the node starting a server is reported as %q", d.Message)
 				}
-				if d.SourceRef == "MCPTools-fetch" && !strings.Contains(d.Message, "the platform's build halts on it") {
+				if !strings.Contains(d.Message, "the platform's build halts on it") {
 					t.Errorf("the report of the node starting a server does not say the build halts on it: %q", d.Message)
 				}
+			}
+			const since = " of node MCPTools-fetch is written empty in the flow the draft carries, since "
+			const none = ", though Langflow marks it as none: no credential from the source reaches the draft"
+			if want := []string{
+				"the whole value of mcp_server.config.command" + since + "the command an MCP server is started with can " +
+					"carry a credential" + none,
+				"the whole value of mcp_server.config.args.0" + since + "an argument an MCP server is started with can " +
+					"carry a credential" + none,
+				"the whole value of mcp_server.config.args.1" + since + "an argument an MCP server is started with can " +
+					"carry a credential" + none,
+			}; !slices.Equal(fetchEmptied, want) {
+				t.Errorf("the fetch node's emptied fields are reported as\n%q\nwant\n%q", fetchEmptied, want)
 			}
 			if got := reported["part-not-placed"]; !slices.Equal(got, []string{"MCPTools-fetch", "MCPTools-empty"}) {
 				t.Errorf("the nodes reported as wired to no socket are %v, want the one starting a server and the one "+
@@ -335,6 +374,201 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 				case "MCPTools-fetch", "MCPTools-empty":
 					if d.Chosen != nil {
 						t.Errorf("%s, wired to nothing, chose %+v", d.SourceNode.ID, d.Chosen)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestTheMCPToolsNodeOfARealExportNamingNoServerIsReportedAndNeverWired imports
+// the committed real export Nvidia Remix — a Langflow starter project whose MCP
+// Tools node has no MCP server chosen — under the default layout, with the reuse
+// mode drafting every part and with the one referencing a HIGH match, over a
+// catalog holding core/ai-tool/mcp, which the node's type maps to:
+//
+//   - the node's decision chooses nothing and says the flow keeps it because it
+//     names no server, and one warning says so by the node's id;
+//   - no connection of the platform's tools socket is drawn and no Component
+//     stands for the node;
+//   - the flow the platform carries is the export, byte for byte, the node
+//     included as the export writes it.
+//
+// 🔴 PLANTED DEFECT: in reachOf (plugins/langflow-importer/wire.go), replace
+// `case server.name == "":` with `case server.name == "\x00":`, rebuilt into the
+// importer fixture: both rows fail, the node wired to the tools socket.
+func TestTheMCPToolsNodeOfARealExportNamingNoServerIsReportedAndNeverWired(t *testing.T) {
+	t.Parallel()
+	const (
+		node   = "MCPTools-beHVJ"
+		reason = "it names no MCP server, so no tools connection can reach it"
+	)
+	export := readRealExport(t, langflowRemixProject)
+	for _, tc := range []struct {
+		name     string
+		settings map[string]any
+	}{
+		{name: "drafting every part"},
+		{name: "referencing a HIGH match", settings: map[string]any{"reuse_mode": "auto-apply-above-threshold"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			res := importFlow(t, wiringWorkspace(t, tc.settings), realExportPath(langflowRemixProject))
+			if res.Halted() {
+				t.Fatalf("the import halted: %+v", res.Diagnostics)
+			}
+
+			decided := false
+			for _, d := range res.Decisions {
+				if d.SourceNode.ID != node {
+					continue
+				}
+				decided = true
+				if want := "kept in the flow core/ai-agent/langflow carries, with no Component of its own: " + reason; d.Chosen != nil || d.Rationale != want {
+					t.Errorf("the node was decided %+v: %q, want no choice and %q", d.Chosen, d.Rationale, want)
+				}
+			}
+			if !decided {
+				t.Fatalf("no decision was recorded for %s", node)
+			}
+			want := "node " + node + " (MCPTools) is wired to no socket of core/ai-agent/langflow: " + reason + "; it stays in the flow"
+			var reported []abi.Diagnostic
+			for _, d := range res.Diagnostics {
+				if d.SourceRef == node {
+					reported = append(reported, d)
+				}
+			}
+			if len(reported) != 1 || reported[0].Code != "part-not-placed" || reported[0].Message != want {
+				t.Errorf("the node is reported as %+v, want one part-not-placed warning reading\n%s", reported, want)
+			}
+
+			agg := readAsTheCompilerDoes(t, draftedAggregateOf(t, res))
+			if tools := agg.Spec.Components["langflow"].Uses["tools"]; len(tools) != 0 {
+				t.Errorf("the platform's tools socket draws %v, want nothing", tools)
+			}
+			for key, c := range agg.Spec.Components {
+				if key == "mcptools-behvj" || c.Type == "core/ai-tool/mcp" || c.Type == "imported/ai-tool/mcptools" {
+					t.Errorf("a Component stands for the node naming no server: %s, a %s", key, c.Type)
+				}
+			}
+			if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(export) {
+				t.Errorf("the flow the platform carries is not the export, byte for byte (%d bytes carried, %d exported)",
+					len(got), len(export))
+			}
+		})
+	}
+}
+
+// langflowToolsRefusal is why the Langflow importer refuses the tools socket to
+// a node whose template carries no mcp_server field.
+const langflowToolsRefusal = "Langflow reaches a tools connection only through an MCP Tools node naming it in its " +
+	"mcp_server field, which this node does not carry, so a tools connection wired to it would be named by no node " +
+	"of the flow and the platform's build would halt on it"
+
+// inlineMCPToolsNode is an authored Langflow MCP Tools node whose template keeps
+// its server in fields of its own rather than in an mcp_server field.
+func inlineMCPToolsNode(id string) map[string]any {
+	return map[string]any{"id": id, "type": "genericNode", "data": map[string]any{"id": id, "type": "MCPTools",
+		"node": map[string]any{"template": map[string]any{
+			"_type": "Component",
+			"mode":  map[string]any{"_input_type": "TabInput", "name": "mode", "type": "tab", "value": "SSE"},
+			"tool":  map[string]any{"_input_type": "DropdownInput", "name": "tool", "type": "str", "value": "search"},
+		}}}}
+}
+
+// TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket imports the
+// committed Langflow export Basic Prompting with one authored MCP Tools node
+// added whose template carries no mcp_server field, over a catalog holding
+// core/ai-tool/mcp, which that node's type maps to, and a tool that is a vector
+// store as well, with a mapping override mapping the export's language model to
+// a tool:
+//
+//   - mapped to a tool reached over HTTP, which the tools socket alone takes,
+//     the language model stays in the flow, chooses nothing, and is reported
+//     with why Langflow cannot reach a tools connection through it;
+//   - mapped to the tool that is a vector store too, it passes the tools socket
+//     over and is wired to the vector_store socket, its decision saying so;
+//   - in both, the MCP Tools node carrying no mcp_server field stays in the flow
+//     and is reported the same way, and the tools socket draws no connection.
+//
+// 🔴 PLANTED DEFECT: in platform (plugins/langflow-importer/format.go), delete
+// the line setting the Refuse field to refuseOf, rebuilt into the importer
+// fixture: both rows fail, both nodes wired to the tools socket.
+func TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket(t *testing.T) {
+	t.Parallel()
+	vectorTool := partComponent("acme/ai-tool/vector-search", "    component.aggrega.ai/type: function\n"+
+		"    component.aggrega.ai/category: ai-tool\n    tool.aggrega.ai/transport: http\n"+
+		"    tool.aggrega.ai/impact: read-only\n    datastore.aggrega.ai/engine: search\n", "index")
+	flow := decoded(t, readRealExport(t, langflowPromptingProject))
+	data := asObject(flow["data"])
+	data["nodes"] = append(data["nodes"].([]any), inlineMCPToolsNode("MCPTools-inline"))
+	source := encoded(t, flow)
+
+	refused := func(ref, nodeType, target string) string {
+		return "node " + ref + " (" + nodeType + ") is wired to no socket of core/ai-agent/langflow: it maps to " + target +
+			", which satisfies the selector of the tools socket of core/ai-agent/langflow, but " + langflowToolsRefusal +
+			"; no other socket of core/ai-agent/langflow takes it; it stays in the flow"
+	}
+	inline := refused("MCPTools-inline", "MCPTools", "core/ai-tool/mcp")
+	for _, tc := range []struct {
+		name, tool string
+		reported   []string
+		vector     map[string]string
+	}{
+		{name: "a tool the tools socket alone takes", tool: "acme/ai-tool/web-fetch",
+			reported: []string{refused("LanguageModelComponent-FLeYF", "LanguageModelComponent", "acme/ai-tool/web-fetch"), inline}},
+		{name: "a tool a later socket takes", tool: "acme/ai-tool/vector-search",
+			reported: []string{inline}, vector: map[string]string{"languagemodelcomponent-fleyf": "languagemodelcomponent-fleyf"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rw, folder := catalogFolderImportWorkspaceAttaching(t, map[string]any{"mapping_overrides": map[string]any{
+				"langflow": map[string]any{"LanguageModelComponent": map[string]any{"component": tc.tool, "category": "ai-tool"}}}})
+			writeCatalogComponents(t, folder.Dir, append(append([]catalogComponent{}, platformComponents...), mcpTool, vectorTool)...)
+			res, outputDir := writtenImport(t, rw, "inline-mcp-flow.json", source)
+
+			var reported []string
+			for _, d := range res.Diagnostics {
+				if d.Code == "part-not-placed" {
+					reported = append(reported, d.Message)
+				}
+			}
+			if !slices.Equal(reported, tc.reported) {
+				t.Errorf("the parts reported as wired to no socket are\n%q\nwant\n%q", reported, tc.reported)
+			}
+
+			_, text := carriedFlow(t, outputDir, "langflow")
+			agg := readAsTheCompilerDoes(t, text)
+			inst := agg.Spec.Components["langflow"]
+			if tools := inst.Uses["tools"]; len(tools) != 0 {
+				t.Errorf("the platform's tools socket draws %v, want nothing", tools)
+			}
+			vector := map[string]string{}
+			for alias, c := range inst.Uses["vector_store"] {
+				vector[alias] = c.Target
+			}
+			if !maps.Equal(vector, tc.vector) {
+				t.Errorf("the vector_store socket draws %v, want %v", vector, tc.vector)
+			}
+
+			for _, d := range res.Decisions {
+				switch d.SourceNode.ID {
+				case "MCPTools-inline":
+					if d.Chosen != nil {
+						t.Errorf("the MCP Tools node carrying no mcp_server field chose %+v", d.Chosen)
+					}
+				case "LanguageModelComponent-FLeYF":
+					if tc.vector == nil {
+						if d.Chosen != nil {
+							t.Errorf("the language model mapped to a tool chose %+v", d.Chosen)
+						}
+						continue
+					}
+					want := "; wired to the vector_store socket of core/ai-agent/langflow as languagemodelcomponent-fleyf; " +
+						"not to the tools socket, whose selector its Component satisfies too, since " + langflowToolsRefusal
+					if d.Chosen == nil || !strings.Contains(d.Rationale, want) {
+						t.Errorf("the language model was decided %+v: %q, want a choice and a rationale holding %q", d.Chosen,
+							d.Rationale, want)
 					}
 				}
 			}
@@ -521,25 +755,32 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 }
 
 // TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty plants a
-// request header, an environment value and a server address in the server
-// configuration of Flowise's Custom MCP tool — written as JSON text on a
-// chatflow's node, as text in the looser form Flowise also reads, and inside the
+// request header, an environment value, a server address and arguments a server
+// is started with in the server configuration of Flowise's Custom MCP tool —
+// written as JSON text on a chatflow's node, its arguments a list or a single
+// text, as text in the looser form Flowise also reads, and inside the
 // configuration of a tool an agentflow's agent keeps beside a stored credential's
 // id — and imports each under the default layout:
 //
 //   - none of the planted values is in any file the import wrote, nor in its
 //     decisions or diagnostics, and the search finds each in its source;
 //   - the JSON text is carried with exactly the header value, the environment
-//     value and the address written empty, every other member kept; the looser
-//     text, which does not read as JSON, is carried empty; the agent's
+//     value, the address, the command and each argument written empty, every
+//     other member kept — the command and args members too, their values empty;
+//     the looser text, which does not read as JSON, is carried empty; the agent's
 //     configuration is carried with the address and the credential's id empty;
 //   - one warning names each field by its node and says what of it was emptied.
 //
-// 🔴 PLANTED DEFECT: in serverConfigCredentials (plugins/flowise-importer/walk.go),
-// replace `edits, what := serverConfigEdits(written)` with
-// `edits, what := []importer.Edit(nil), ""`, rebuilt into the importer fixture:
-// the chatflow row fails, the header, the environment value and the address in
-// the drafted aggregate.yaml.
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixture:
+//
+//   - in serverConfigCredentials (plugins/flowise-importer/walk.go), replace
+//     `edits, what := serverConfigEdits(written)` with
+//     `edits, what := []importer.Edit(nil), ""`: the chatflow row fails, the
+//     header, the environment value, the address and the arguments in the
+//     drafted aggregate.yaml;
+//   - in serverConfigEdits (the same file), replace `case "args":` with
+//     `case "args-never":`: the chatflow row fails, the planted arguments in the
+//     drafted aggregate.yaml.
 func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.T) {
 	t.Parallel()
 	const (
@@ -549,6 +790,8 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 		loose   = "sk-plantedFWloose0123456789abcd"
 		agent   = "https://agent-mcp.internal.example/mcp"
 		credID  = "planted-credential-id-0123456789abcdef"
+		argList = "--api-key=sk-plantedFWargLIST0123456789"
+		argText = "--token=sk-plantedFWargTEXT0123456789"
 	)
 	customMCP := func(id string, config string) map[string]any {
 		return map[string]any{"id": id, "type": "customNode", "position": map[string]any{"x": 0, "y": 0},
@@ -558,26 +801,36 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 	}
 	config, _ := json.MarshalIndent(map[string]any{"url": address, "headers": map[string]any{"Authorization": header},
 		"env": map[string]any{"API_KEY": env}, "transport": "http"}, "", "    ")
+	started, _ := json.MarshalIndent(map[string]any{"command": "npx", "args": []any{"-y", "@acme/mcp-server", argList},
+		"env": map[string]any{"API_KEY": env}}, "", "    ")
+	startedText, _ := json.Marshal(map[string]any{"command": "npx", "args": argText})
 
 	t.Run("a chatflow", func(t *testing.T) {
 		t.Parallel()
 		flow := decoded(t, readRealExport(t, flowiseChatflow))
 		flow["nodes"] = append(flow["nodes"].([]any), customMCP("customMCP_0", string(config)),
-			customMCP("customMCP_1", "{\n  url: 'https://loose.example/mcp',\n  headers: {Authorization: '"+loose+"'},\n}"))
+			customMCP("customMCP_1", "{\n  url: 'https://loose.example/mcp',\n  headers: {Authorization: '"+loose+"'},\n}"),
+			customMCP("customMCP_2", string(started)), customMCP("customMCP_3", string(startedText)))
 		source := encoded(t, flow)
 		res, outputDir := writtenImport(t, wiringWorkspace(t, nil), "custom-mcp.json", source)
-		assertNoneReaches(t, []string{address, "flowise-mcp.internal.example", header, env, loose}, source, res, outputDir)
+		assertNoneReaches(t, []string{address, "flowise-mcp.internal.example", header, env, loose, argList, argText},
+			source, res, outputDir)
 
 		carried, _ := carriedFlow(t, outputDir, "flowise")
-		var got map[string]any
-		text, _ := asObject(flowiseNode(t, carried, "customMCP_0")["inputs"])["mcpServerConfig"].(string)
-		if err := json.Unmarshal([]byte(text), &got); err != nil {
-			t.Fatalf("the carried configuration does not read as JSON: %v\n%s", err, text)
-		}
-		want := map[string]any{"url": "", "headers": map[string]any{"Authorization": ""}, "env": map[string]any{"API_KEY": ""},
-			"transport": "http"}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("the carried configuration reads %v, want %v", got, want)
+		for id, want := range map[string]map[string]any{
+			"customMCP_0": {"url": "", "headers": map[string]any{"Authorization": ""}, "env": map[string]any{"API_KEY": ""},
+				"transport": "http"},
+			"customMCP_2": {"command": "", "args": []any{"", "", ""}, "env": map[string]any{"API_KEY": ""}},
+			"customMCP_3": {"command": "", "args": ""},
+		} {
+			var got map[string]any
+			text, _ := asObject(flowiseNode(t, carried, id)["inputs"])["mcpServerConfig"].(string)
+			if err := json.Unmarshal([]byte(text), &got); err != nil {
+				t.Fatalf("the carried configuration of %s does not read as JSON: %v\n%s", id, err, text)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("the carried configuration of %s reads %v, want %v", id, got, want)
+			}
 		}
 		if got := asObject(flowiseNode(t, carried, "customMCP_1")["inputs"])["mcpServerConfig"]; got != "" {
 			t.Errorf("the configuration that does not read as JSON is carried as %v, want it empty", got)
@@ -589,6 +842,8 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 			"the whole value of mcpServerConfig of node customMCP_1 is written empty in the flow the draft carries, since " +
 				"it does not read as a JSON object, so nothing inside it can be located: no credential from the source " +
 				"reaches the draft",
+			"mcpServerConfig of node customMCP_2 is written with its environment values, command and arguments empty" + tail,
+			"mcpServerConfig of node customMCP_3 is written with its command and arguments empty" + tail,
 		} {
 			if !slices.ContainsFunc(res.Diagnostics, func(d abi.Diagnostic) bool {
 				return d.Code == "credential-emptied" && d.Message == msg

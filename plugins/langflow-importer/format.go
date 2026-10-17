@@ -24,9 +24,9 @@ var langflow = importer.Format{
 // platform is the Langflow platform as the standard library's
 // core/ai-agent/langflow Component runs it: the flow is carried as the
 // Component's flow_definition and named by its flow_id, an MCP Tools node
-// reaches the MCP server it names through the tools connection of that name
-// (wire.go), and the inputs the Component requires that a flow cannot supply
-// are left for the Release.
+// reaches the MCP server it names through the tools connection of that name,
+// and no other node reaches a tools connection (wire.go), and the inputs the
+// Component requires that a flow cannot supply are left for the Release.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/langflow",
 	DefinitionValue: "flow_definition",
@@ -35,6 +35,7 @@ var platform = importer.Platform{
 	Credentials:     credentialsOf,
 	Match:           selectormatch.Match,
 	Reach:           reachOf,
+	Refuse:          refuseOf,
 	Wire:            wireOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Langflow",

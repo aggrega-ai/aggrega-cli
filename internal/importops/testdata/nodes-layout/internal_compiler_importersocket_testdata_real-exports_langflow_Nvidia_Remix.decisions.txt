@@ -1,0 +1,8 @@
+mapped ChatInput-8XmJU (ChatInput) to imported/ai-model/chatinput as a draft, NONE
+mapped ChatOutput-o3obj (ChatOutput) to imported/ai-model/chatoutput as a draft, NONE
+mapped Agent-9dON7 (Agent) to imported/ai-agent/agent as a draft, NONE
+mapped Prompt-PrjbV (Prompt) to imported/component/prompt as a draft, NONE
+mapped RemixDocumentation-DEIws (RemixDocumentation) to imported/component/remixdocumentation as a draft, NONE
+mapped EmbeddingModel-X6URU (EmbeddingModel) to imported/ai-model/embeddingmodel as a draft, NONE
+mapped FAISS-Uz8O4 (FAISS) to imported/component/faiss as a draft, NONE
+mapped MCPTools-beHVJ (MCPTools) to imported/ai-tool/mcptools as a draft, NONE

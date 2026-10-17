@@ -57,6 +57,25 @@ func reachOf(tree json.RawMessage, node importer.Node) importer.Reach {
 	return importer.Reach{Name: server.name}
 }
 
+// refuseOf says why a Langflow node cannot reach a part through a connection of
+// socket. The platform writes a tools connection's address only into an MCP
+// Tools node whose mcp_server field names the connection, so a node whose
+// template carries no mcp_server field — whatever its type, and whatever a
+// mapping row or override maps it to — is refused the tools socket: a tools
+// connection wired to it would be named by no node, and the platform's build
+// halts on such a connection. Every other socket it may take.
+func refuseOf(tree json.RawMessage, node importer.Node, socket string) string {
+	if socket != "tools" {
+		return ""
+	}
+	if _, template, ok := nodeTemplate(tree, node.ID); ok && memberOf(template, "mcp_server") != nil {
+		return ""
+	}
+	return "Langflow reaches a tools connection only through an MCP Tools node naming it in its mcp_server field, " +
+		"which this node does not carry, so a tools connection wired to it would be named by no node of the flow and " +
+		"the platform's build would halt on it"
+}
+
 // wireOf says how the flow reaches a part wired to a socket of the platform. An
 // MCP Tools node wired to the tools socket reaches its server through the
 // connection: the address its server configuration holds is written empty, since
@@ -171,11 +190,6 @@ func socketVariables(socket, alias string) []string {
 func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...string) string) importer.Wiring {
 	fields, known := connectionFields[part.Node.Type][part.Socket]
 	if !known {
-		if part.Socket == "tools" {
-			return importer.Wiring{Literal: fmt.Sprintf("Langflow reaches a tools connection through an MCP Tools node "+
-				"naming it alone, and a %s node is not one, so it reaches the part as the flow writes it; the platform's "+
-				"build halts on a tools connection no MCP Tools node names", part.Node.Type)}
-		}
 		return importer.Wiring{Literal: fmt.Sprintf("the importer knows no field of a Langflow %s node that names a "+
 			"variable the platform delivers for its %s connection (%s), so the node reaches the part at the address its "+
 			"own fields or its component's defaults give", part.Node.Type, part.Socket,
