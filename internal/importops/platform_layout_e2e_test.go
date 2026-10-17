@@ -526,8 +526,14 @@ type plantedSource struct {
 // server configuration with an address, a key in the query of one and in the user
 // part of the other, and header and environment values, or with a command and
 // arguments starting a server: a list of them, and a single one written as text.
-// The catalog the planted sources are imported over holds no platform, so no
-// MCP Tools node of that flow is wired to anything.
+// It plants them too in a Langflow flow AUTHORED here, after the layout of an MCP
+// Tools node that carries no mcp_server field and writes its server in fields of
+// its own, which no committed export holds: a key in the address in sse_url, in
+// its query and in its user part; in a header value of headers_input, written as
+// a list of key and value items and as an object; in an entry of env, written as
+// a list and as one text; and in the command line in command. The catalog the
+// planted sources are imported over holds no platform, so no MCP Tools node of
+// either flow is wired to anything.
 func plantedSources(t *testing.T) []plantedSource {
 	t.Helper()
 	decode := func(rel string) map[string]any {
@@ -557,6 +563,15 @@ func plantedSources(t *testing.T) []plantedSource {
 		mcpArgText  = "--token=sk-plantedMCPargTEXT01234567"
 		mcpQuery    = "sk-plantedMCPaddressQUERY0123456789"
 		mcpUser     = "sk-plantedMCPaddressUSER01234567890"
+
+		fieldsQuery       = "sk-plantedFIELDSaddressQUERY01234567"
+		fieldsUser        = "sk-plantedFIELDSaddressUSER012345678"
+		fieldsHeader      = "Bearer sk-plantedFIELDSheader012345678"
+		fieldsHeaderValue = "sk-plantedFIELDSheaderOBJECT0123456"
+		fieldsEnv         = "sk-plantedFIELDSenv0123456789abcdef"
+		fieldsEnvText     = "sk-plantedFIELDSenvTEXT0123456789ab"
+		fieldsCommand     = "sk-plantedFIELDScommand0123456789ab"
+		fieldsCommandText = "sk-plantedFIELDScommandTEXT01234567"
 	)
 
 	lf := decode(langflowPromptingProject)
@@ -612,6 +627,25 @@ func plantedSources(t *testing.T) []plantedSource {
 	mcp := map[string]any{"id": "0a0b0c0d-1111-4222-8333-444455556666",
 		"data": map[string]any{"nodes": []any{docs, search, fetch, files}, "edges": []any{}}}
 
+	// inFields AUTHORS an MCP Tools node in the layout that carries no mcp_server
+	// field, which no committed export holds: its server in the fields mode,
+	// sse_url, headers_input, env and command, each holding its value in a value
+	// member.
+	inFields := func(id, mode, address string, headers, env any, command string) map[string]any {
+		field := func(typ string, value any) map[string]any { return map[string]any{"type": typ, "value": value} }
+		return map[string]any{"id": id, "data": map[string]any{"type": "MCPTools", "node": map[string]any{"template": map[string]any{
+			"mode": field("tab", mode), "sse_url": field("str", address), "headers_input": field("table", headers),
+			"env": field("str", env), "command": field("str", command), "tool": field("str", "fetch"),
+		}}}}
+	}
+	sse := inFields("MCPTools-e5", "SSE", "http://mcp.example/sse?token="+fieldsQuery,
+		[]any{map[string]any{"key": "Authorization", "value": fieldsHeader}},
+		[]any{"DEBUG=true", "API_KEY=" + fieldsEnv}, "uvx mcp-server-fetch --api-key="+fieldsCommand)
+	stdio := inFields("MCPTools-f6", "Stdio", "http://"+fieldsUser+"@mcp.example/sse",
+		map[string]any{"X-Api-Key": fieldsHeaderValue}, "TOKEN="+fieldsEnvText, "npx -y mcp-server --token "+fieldsCommandText)
+	fieldsFlow := map[string]any{"id": "0a0b0c0d-2222-4333-8444-555566667777",
+		"data": map[string]any{"nodes": []any{sse, stdio}, "edges": []any{}}}
+
 	return []plantedSource{
 		{name: "langflow-password.json", body: encode(lf), keys: []string{langflowKey},
 			fields: []string{"LanguageModelComponent-FLeYF api_key"}},
@@ -626,6 +660,12 @@ func plantedSources(t *testing.T) []plantedSource {
 				"MCPTools-b2 mcp_server.config.url", "MCPTools-c3 mcp_server.config.command",
 				"MCPTools-c3 mcp_server.config.args.0", "MCPTools-c3 mcp_server.config.args.1",
 				"MCPTools-d4 mcp_server.config.command", "MCPTools-d4 mcp_server.config.args"}},
+		{name: "langflow-mcp-fields.json", body: encode(fieldsFlow),
+			keys: []string{fieldsQuery, fieldsUser, fieldsHeader, fieldsHeaderValue, fieldsEnv, fieldsEnvText, fieldsCommand,
+				fieldsCommandText},
+			fields: []string{"MCPTools-e5 headers_input.Authorization", "MCPTools-e5 env.0", "MCPTools-e5 env.1",
+				"MCPTools-e5 sse_url", "MCPTools-e5 command", "MCPTools-f6 headers_input.X-Api-Key", "MCPTools-f6 env",
+				"MCPTools-f6 sse_url", "MCPTools-f6 command"}},
 	}
 }
 
@@ -643,12 +683,14 @@ var (
 // the credential a node's credential parameter selects, an input of type password,
 // an agentflow model's credential, an MCP server's header and environment values —
 // and in the address of an MCP server wired to nothing and the arguments an MCP
-// server is started with, which neither marks, and imports each planted source
-// under both layouts, writing the drafts. The search below finds every planted
-// value in its planted source, which is what says it fires; it finds none in any
-// file the import wrote, nor in the decisions or the diagnostics. Under the
-// default layout one warning names each field it wrote empty by its node and
-// field, and the warning carries no value.
+// server is started with, which neither marks, and in the address, the header
+// values, the environment entries and the command line an MCP Tools node writes
+// in fields of its own, none of which Langflow marks, and imports each planted
+// source under both layouts, writing the drafts. The search below finds every
+// planted value in its planted source, which is what says it fires; it finds
+// none in any file the import wrote, nor in the decisions or the diagnostics.
+// Under the default layout one warning names each field it wrote empty by its
+// node and field, and the warning carries no value.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
@@ -661,7 +703,18 @@ var (
 //     `case mcpconfig.Address:` with `case mcpconfig.Address + 100:`: the row
 //     langflow-mcp-server.json under the default layout fails, both planted
 //     addresses in the drafted aggregate.yaml and no warning naming either
-//     node's url.
+//     node's url;
+//   - in credentialsOf (plugins/langflow-importer/walk.go), replace
+//     `if node.typ == mcpToolsType && node.template.member("mcp_server") == nil {`
+//     with `if node.typ == mcpToolsType && node.template.member("mcp_server") == nil && false {`:
+//     the row langflow-mcp-fields.json under the default layout fails, every
+//     value planted in it in the drafted aggregate.yaml and no warning naming
+//     any of its fields;
+//   - in FieldMembers (plugins/internal/mcpconfig/mcpconfig.go), replace
+//     `out = append(out, listMembers(Env, v, "env", "value")...)` with `_ = v`:
+//     the row langflow-mcp-fields.json under the default layout fails, both
+//     planted environment entries in the drafted aggregate.yaml and no warning
+//     naming env of either node.
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 	t.Parallel()
 	for _, src := range plantedSources(t) {

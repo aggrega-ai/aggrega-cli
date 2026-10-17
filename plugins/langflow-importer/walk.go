@@ -115,6 +115,8 @@ func flowID(tree json.RawMessage) string {
 // a request's credentials travel — and, in that configuration, the server's
 // address, the command starting a server and each argument it is started with,
 // which Langflow marks as no credential and which can carry one all the same.
+// An MCP Tools node carrying no mcp_server field writes its server in fields of
+// its own instead, whose values are located as fieldServerCredentials says.
 // Each is addressed from the root of the export, and named by its node's id and
 // the field it sits in. A field holding no value member is not located, since
 // there is nothing in it to write empty.
@@ -140,9 +142,15 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 				out = append(out, serverCredentials(node.id, field.Value, at)...)
 			}
 		}
+		if node.typ == mcpToolsType && node.template.member("mcp_server") == nil {
+			out = append(out, fieldServerCredentials(node.id, node.template.raw, at)...)
+		}
 	}
 	return out
 }
+
+// mcpToolsType is the type Langflow gives its MCP Tools node.
+const mcpToolsType = "MCPTools"
 
 // serverCredentials locates, in the server configuration an MCP Tools node's
 // mcp_server value carries — an object with a name and a config — each header
@@ -185,13 +193,57 @@ func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...s
 	return out
 }
 
+// fieldServerCredentials locates the server an MCP Tools node carrying no
+// mcp_server field writes in fields of its own template, as mcpconfig reads
+// that layout: each header value of headers_input, each entry of env, the
+// address in sse_url, and the whole command line in command, the arguments it
+// starts the server with included. Langflow marks none of them as a credential,
+// and each can carry one, so each is written empty, its member kept. Each is
+// named by the template field it sits in: a header by its name, and an entry of
+// env, which is written empty whole since the variable's name and its value
+// share one text, by its position where env is a list, so a report names no
+// part of a value. Such a node names no MCP server, so no tools connection
+// reaches it and nothing else is written into its server.
+func fieldServerCredentials(nodeID string, template json.RawMessage,
+	at func(tokens ...string) string) []importer.Credential {
+	var out []importer.Credential
+	for _, m := range mcpconfig.FieldMembers(template) {
+		detail, ok := fieldDetails[m.Kind]
+		if !ok {
+			continue
+		}
+		c := importer.Credential{Node: nodeID, Field: m.Tokens[0], Pointer: at(m.Tokens...), Detail: detail}
+		if m.Name != "" {
+			c.Field += "." + m.Name
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// fieldDetails says, by kind, why a value an MCP Tools node writes in fields of
+// its own is written empty.
+var fieldDetails = map[mcpconfig.Kind]string{
+	mcpconfig.Header:  headerDetail,
+	mcpconfig.Env:     envDetail,
+	mcpconfig.Address: addressDetail,
+	mcpconfig.Command: commandLineDetail,
+}
+
 // addressDetail, commandDetail and argumentDetail say why the address an MCP
 // server is reached at, the command it is started with, and each of its
 // arguments, is written empty though Langflow marks none of them as a
-// credential.
+// credential; headerDetail, envDetail and commandLineDetail say why a header
+// value, an environment entry and a whole command line are, where an MCP Tools
+// node writes its server in fields of its own.
 const (
 	addressDetail = "the address an MCP server is reached at can carry a credential in its user part, its path or " +
 		"its query, though Langflow marks it as none"
 	commandDetail  = "the command an MCP server is started with can carry a credential, though Langflow marks it as none"
 	argumentDetail = "an argument an MCP server is started with can carry a credential, though Langflow marks it as none"
+	headerDetail   = "a header sent to an MCP server can carry a credential, though Langflow marks it as none"
+	envDetail      = "an environment entry an MCP server is started with can carry a credential, though Langflow " +
+		"marks it as none"
+	commandLineDetail = "the command line an MCP server is started with, its arguments included, can carry a credential, " +
+		"though Langflow marks it as none"
 )

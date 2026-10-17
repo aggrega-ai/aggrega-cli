@@ -501,24 +501,28 @@ func nodeTemplate(tree json.RawMessage, id string) (int, flowTemplate, bool) {
 }
 
 // flowNode is one node of a Langflow flow's node list: its position in the
-// list, its id, and the template its data.node carries.
+// list, its id, its type — the string at its data.type, empty where that holds
+// none — and the template its data.node carries.
 type flowNode struct {
 	position int
 	id       string
+	typ      string
 	template flowTemplate
 }
 
-// flowTemplate is the template a Langflow node's data.node carries: its members
-// in the order the template writes them, as importer.ObjectEntries reads them,
-// and, by name, the value of the first member of each name.
+// flowTemplate is the template a Langflow node's data.node carries: the
+// template as the flow writes it, its members in the order the template writes
+// them, as importer.ObjectEntries reads them, and, by name, the value of the
+// first member of each name.
 type flowTemplate struct {
+	raw     json.RawMessage
 	entries []importer.ObjectEntry
 	first   map[string]json.RawMessage
 }
 
 // readTemplate reads a node's template once, for every question asked of it.
 func readTemplate(raw json.RawMessage) flowTemplate {
-	t := flowTemplate{entries: importer.ObjectEntries(raw), first: map[string]json.RawMessage{}}
+	t := flowTemplate{raw: raw, entries: importer.ObjectEntries(raw), first: map[string]json.RawMessage{}}
 	for _, e := range t.entries {
 		if _, seen := t.first[e.Key]; !seen {
 			t.first[e.Key] = e.Value
@@ -552,10 +556,12 @@ func nodesOf(tree json.RawMessage) flowNodes {
 }
 
 // readNodes reads the node list of a Langflow flow's tree, at data.nodes: each
-// element that decodes as a node, with the template its data.node carries, its
-// members read once. A tree whose node list does not decode holds none. It
-// reads the flow's top-level id in the same decoding, as decoding the id alone
-// would: a member whose value does not fit the node list leaves the id read.
+// element that decodes as a node, with its type and the template its data.node
+// carries, its members read once. A type that is not a string reads as none
+// and leaves the node read. A tree whose node list does not decode holds none.
+// It reads the flow's top-level id in the same decoding, as decoding the id
+// alone would: a member whose value does not fit the node list leaves the id
+// read.
 func readNodes(tree json.RawMessage) flowNodes {
 	nodes := flowNodes{first: map[string]int{}}
 	var top struct {
@@ -576,6 +582,7 @@ func readNodes(tree json.RawMessage) flowNodes {
 		var node struct {
 			ID   string `json:"id"`
 			Data struct {
+				Type json.RawMessage `json:"type"`
 				Node struct {
 					Template json.RawMessage `json:"template"`
 				} `json:"node"`
@@ -587,8 +594,10 @@ func readNodes(tree json.RawMessage) flowNodes {
 		if _, seen := nodes.first[node.ID]; !seen {
 			nodes.first[node.ID] = len(nodes.list)
 		}
+		var typ string
+		_ = json.Unmarshal(node.Data.Type, &typ)
 		nodes.list = append(nodes.list,
-			flowNode{position: i, id: node.ID, template: readTemplate(node.Data.Node.Template)})
+			flowNode{position: i, id: node.ID, typ: typ, template: readTemplate(node.Data.Node.Template)})
 	}
 	return nodes
 }
