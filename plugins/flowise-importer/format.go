@@ -25,8 +25,10 @@ var flowise = importer.Format{
 // core/ai-agent/flowise Component runs it: the chatflow is carried as the
 // Component's flow_definition and named by its chatflow_id, each part wired to
 // it is reached as the platform delivers its connection (wire.go), the model
-// socket draws a single connection, and the inputs the Component requires that
-// a chatflow cannot supply are left for the Release.
+// socket draws a single connection, a referenced model is given the model its
+// node selects (model.go), the inputs the Component requires that a chatflow
+// cannot supply are left for the Release, and the lines the compose Recipe
+// needs for the owner's password are shown for an author building for compose.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/flowise",
 	DefinitionValue: "flow_definition",
@@ -37,11 +39,29 @@ var platform = importer.Platform{
 	Wire:            wireOf,
 	Single:          singleSockets,
 	Standing:        standingOf,
+	Model:           modelOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Flowise",
 		"infra.owner_email, the email address of the platform's owner account, required while values.flow_definition is set",
 		"the owner_password slot, that account's password, required while values.flow_definition is set",
 	},
+	TargetAttachments: []importer.TargetAttachment{composeOwnerPassword},
+}
+
+// composeOwnerPassword declares the owner's password with the key the compose
+// Recipe reads it under where an Aggregate names one. On compose the Recipe
+// reads every secret the Release alone attaches under the key value, so the
+// owner's password and a model connection's credential, both attached by the
+// Release, would arrive under one key and halt the build; the Kubernetes Recipe
+// references each secret where the Release keeps it and needs no such line.
+var composeOwnerPassword = importer.TargetAttachment{
+	Target: "compose",
+	Slot:   "owner_password",
+	Type:   "core/secret-value",
+	Key:    "OWNER_PASSWORD",
+	Why: "the compose Recipe reads every secret the Release alone attaches under the key value, so the owner's " +
+		"password and a connection's credential would both arrive under it and halt the build; the Release still " +
+		"attaches owner_password, naming this type or none",
 }
 
 // detect is how a Flowise flow is recognised when an import names no format,

@@ -26,8 +26,10 @@ var langflow = importer.Format{
 // Component's flow_definition and named by its flow_id, an MCP Tools node
 // reaches the MCP server it names through the tools connection of that name,
 // and no other node reaches a tools connection (wire.go), the model socket
-// draws a single connection, and the inputs the Component requires that a flow
-// cannot supply are left for the Release.
+// draws a single connection, a referenced model is given the model its node
+// selects (model.go), the inputs the Component requires that a flow cannot
+// supply are left for the Release, and the lines the compose Recipe needs for
+// the administrator's password are shown for an author building for compose.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/langflow",
 	DefinitionValue: "flow_definition",
@@ -40,10 +42,29 @@ var platform = importer.Platform{
 	Wire:            wireOf,
 	Single:          singleSockets,
 	Standing:        standingOf,
+	Model:           modelOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Langflow",
 		"the admin_password slot, the administrator's password, while values.require_authentication stays true",
 	},
+	TargetAttachments: []importer.TargetAttachment{composeAdminPassword},
+}
+
+// composeAdminPassword declares the administrator's password with the key the
+// compose Recipe reads it under where an Aggregate names one. On compose the
+// Recipe reads every secret the Release alone attaches under the key value, so
+// the administrator's password and a model connection's credential, both
+// attached by the Release, would arrive under one key and halt the build; the
+// Kubernetes Recipe references each secret where the Release keeps it and needs
+// no such line.
+var composeAdminPassword = importer.TargetAttachment{
+	Target: "compose",
+	Slot:   "admin_password",
+	Type:   "core/secret-value",
+	Key:    "LANGFLOW_SUPERUSER_PASSWORD",
+	Why: "the compose Recipe reads every secret the Release alone attaches under the key value, so the " +
+		"administrator's password and a connection's credential would both arrive under it and halt the build; the " +
+		"Release still attaches admin_password, naming this type or none",
 }
 
 // detect is how a Langflow flow is recognised when an import names no format,

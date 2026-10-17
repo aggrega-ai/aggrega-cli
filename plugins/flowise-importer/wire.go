@@ -113,6 +113,22 @@ func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
 // whose id is id, and the value of its basepath input; false where no node has
 // that id or it holds no basepath input.
 func basePathOf(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
+	i, inputs, ok := nodeInputs(tree, id)
+	if !ok {
+		return 0, nil, false
+	}
+	for _, e := range importer.ObjectEntries(inputs) {
+		if e.Key == "basepath" {
+			return i, e.Value, true
+		}
+	}
+	return 0, nil, false
+}
+
+// nodeInputs returns the position, in the chatflow's node list, of the node
+// whose id is id, and the inputs its data holds; false where no node has that
+// id.
+func nodeInputs(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
 	var top struct {
 		Nodes []json.RawMessage `json:"nodes"`
 	}
@@ -126,15 +142,9 @@ func basePathOf(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
 				Inputs json.RawMessage `json:"inputs"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(raw, &node) != nil || node.ID != id {
-			continue
+		if json.Unmarshal(raw, &node) == nil && node.ID == id {
+			return i, node.Data.Inputs, true
 		}
-		for _, e := range importer.ObjectEntries(node.Data.Inputs) {
-			if e.Key == "basepath" {
-				return i, e.Value, true
-			}
-		}
-		return 0, nil, false
 	}
 	return 0, nil, false
 }
