@@ -92,7 +92,7 @@ var flowFixtures = []flowFixture{
 		"internal_compiler_importersocket_testdata_real-exports_flowise_agentflowsv2_Agents_Handoff", nil),
 	flowiseFixture(realExportPath(flowiseChatflow),
 		"internal_compiler_importersocket_testdata_real-exports_flowise_chatflows_Multiple_Documents_QnA",
-		map[string][]string{"model": {"openaiembeddings-0", "openaiembeddings-1", "chatopenai-0"}}),
+		map[string][]string{"model": {"chatopenai-0"}}),
 	langflowFixture(realExportPath(langflowPromptingProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Basic_Prompting",
 		"c1cb7b3c-2589-4754-ac61-8cf88df4a07e", nil),
@@ -340,7 +340,8 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 // a vector store for the Pinecone nodes: each part is wired to the socket whose
 // selector its Component satisfies — the tools socket, the vector_store socket —
 // the sockets are written in the order the platform declares them, and a part no
-// socket takes is reported and stays in the flow.
+// socket takes is reported and stays in the flow, as is each embedding model the
+// model socket's single connection does not reach.
 func TestAPartIsWiredToTheSocketItsComponentSatisfies(t *testing.T) {
 	t.Parallel()
 	overrides := map[string]any{"mapping_overrides": map[string]any{"flowise": map[string]any{
@@ -355,12 +356,10 @@ func TestAPartIsWiredToTheSocketItsComponentSatisfies(t *testing.T) {
 			uses: "      uses:\n        model:\n          chatopenai-0:\n            target: chatopenai-0\n" +
 				"        tools:\n          httprequest-0:\n            target: httprequest-0\n"},
 		{name: "a vector store", source: realExportPath(flowiseChatflow),
-			uses: "      uses:\n        model:\n          openaiembeddings-0:\n            target: openaiembeddings-0\n" +
-				"          openaiembeddings-1:\n            target: openaiembeddings-1\n" +
-				"          chatopenai-0:\n            target: chatopenai-0\n" +
+			uses: "      uses:\n        model:\n          chatopenai-0:\n            target: chatopenai-0\n" +
 				"        vector_store:\n          pinecone-0:\n            target: pinecone-0\n" +
 				"          pinecone-1:\n            target: pinecone-1\n",
-			reported: []string{"retrieverTool_2", "retrieverTool_1"}},
+			reported: []string{"openAIEmbeddings_0", "openAIEmbeddings_1", "retrieverTool_2", "retrieverTool_1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

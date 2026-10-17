@@ -48,6 +48,8 @@ var everyAgentFlowFixture = []struct {
 	{"flowise", "../../internal/compiler/importersocket/testdata/real-exports/flowise/chatflows/Multiple Documents QnA.json"},
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Basic Prompting.json"},
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Research Translation Loop.json"},
+	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Nvidia Remix.json"},
+	{"flowise", "../../internal/compiler/testdata/flow-definition-escape/exports/flowise-chatflow.json"},
 }
 
 // toolImportAnswer is what the assistant's import tool answered one call with.

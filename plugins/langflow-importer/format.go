@@ -25,8 +25,9 @@ var langflow = importer.Format{
 // core/ai-agent/langflow Component runs it: the flow is carried as the
 // Component's flow_definition and named by its flow_id, an MCP Tools node
 // reaches the MCP server it names through the tools connection of that name,
-// and no other node reaches a tools connection (wire.go), and the inputs the
-// Component requires that a flow cannot supply are left for the Release.
+// and no other node reaches a tools connection (wire.go), the model socket
+// draws a single connection, and the inputs the Component requires that a flow
+// cannot supply are left for the Release.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/langflow",
 	DefinitionValue: "flow_definition",
@@ -37,6 +38,8 @@ var platform = importer.Platform{
 	Reach:           reachOf,
 	Refuse:          refuseOf,
 	Wire:            wireOf,
+	Single:          singleSockets,
+	Standing:        standingOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Langflow",
 		"the admin_password slot, the administrator's password, while values.require_authentication stays true",

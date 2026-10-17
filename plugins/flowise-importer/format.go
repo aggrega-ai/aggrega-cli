@@ -24,9 +24,9 @@ var flowise = importer.Format{
 // platform is the Flowise platform as the standard library's
 // core/ai-agent/flowise Component runs it: the chatflow is carried as the
 // Component's flow_definition and named by its chatflow_id, each part wired to
-// it is reached as the platform delivers its connection (wire.go), and the
-// inputs the Component requires that a chatflow cannot supply are left for the
-// Release.
+// it is reached as the platform delivers its connection (wire.go), the model
+// socket draws a single connection, and the inputs the Component requires that
+// a chatflow cannot supply are left for the Release.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/flowise",
 	DefinitionValue: "flow_definition",
@@ -35,6 +35,8 @@ var platform = importer.Platform{
 	Credentials:     credentialsOf,
 	Match:           selectormatch.Match,
 	Wire:            wireOf,
+	Single:          singleSockets,
+	Standing:        standingOf,
 	LeftForRelease: []string{
 		"infra.image, the container image running Flowise",
 		"infra.owner_email, the email address of the platform's owner account, required while values.flow_definition is set",

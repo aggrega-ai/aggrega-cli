@@ -186,14 +186,19 @@ func socketVariables(socket, alias string) []string {
 	return nil
 }
 
+// unknownFields says that the importer knows no field of a node of a part's
+// type naming a variable the platform delivers for its socket's connection.
+func unknownFields(part importer.Part) string {
+	return fmt.Sprintf("the importer knows no field of a Langflow %s node that names a variable the platform delivers "+
+		"for its %s connection (%s), so the node reaches the part at the address its own fields or its component's "+
+		"defaults give", part.Node.Type, part.Socket, strings.Join(socketVariables(part.Socket, part.Alias), ", "))
+}
+
 // wireFields is wireOf for a part reached through the fields of its node.
 func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...string) string) importer.Wiring {
 	fields, known := connectionFields[part.Node.Type][part.Socket]
 	if !known {
-		return importer.Wiring{Literal: fmt.Sprintf("the importer knows no field of a Langflow %s node that names a "+
-			"variable the platform delivers for its %s connection (%s), so the node reaches the part at the address its "+
-			"own fields or its component's defaults give", part.Node.Type, part.Socket,
-			strings.Join(socketVariables(part.Socket, part.Alias), ", "))}
+		return importer.Wiring{Literal: unknownFields(part)}
 	}
 	var w importer.Wiring
 	var reads, literal []string
@@ -228,6 +233,49 @@ func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...
 	}
 	w.Literal = strings.Join(literal, "; ")
 	return w
+}
+
+// singleSockets are the sockets of the Langflow platform that draw a single
+// connection: the model socket, whose connection both Recipes deliver as one
+// OPENAI_BASE_URL and one OPENAI_API_KEY. Where several model parts are placed
+// in it, the connection goes to the first whose Component is a generative
+// model, the model a flow's chat node calls.
+var singleSockets = []importer.SingleSocket{
+	{Name: "model", Prefer: map[string]string{"model.aggrega.ai/capability": "generative"}},
+}
+
+// standingOf says how the flow reaches the part of a node left in the flow
+// because another part holds its socket's single connection, as the node is
+// written: through that connection where the field of the node carrying the
+// part's address names the variable the platform delivers for it, read as a
+// global variable; otherwise at the address that field or the node's component
+// gives.
+func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
+	_, template, ok := nodeTemplate(tree, part.Node.ID)
+	if !ok {
+		return false, ""
+	}
+	fields, known := connectionFields[part.Node.Type][part.Socket]
+	if !known {
+		return false, unknownFields(part)
+	}
+	for _, f := range fields {
+		if !f.address {
+			continue
+		}
+		variable := f.variable(part.Alias)
+		raw := memberOf(template, f.field)
+		var value string
+		if string(memberOf(raw, "load_from_db")) == "true" && json.Unmarshal(memberOf(raw, "value"), &value) == nil &&
+			value == variable {
+			return true, fmt.Sprintf("its field %s names the variable %s, which the platform delivers for that "+
+				"connection and Langflow reads as a global variable", f.field, variable)
+		}
+		return false, fmt.Sprintf("its field %s does not name %s, the variable the platform delivers for that "+
+			"connection, so the node reaches the part at the address that field or its component's defaults give",
+			f.field, variable)
+	}
+	return false, ""
 }
 
 // mcpServer is the MCP server an MCP Tools node names in its mcp_server field:

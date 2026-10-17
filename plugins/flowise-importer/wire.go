@@ -77,6 +77,38 @@ func wireOf(tree json.RawMessage, part importer.Part) importer.Wiring {
 		"connection, so the node reaches the part at the address the chatflow holds", part.Socket)}
 }
 
+// singleSockets are the sockets of the Flowise platform that draw a single
+// connection: the model socket, whose connection both Recipes deliver as one
+// OPENAI_BASE_URL and one OPENAI_API_KEY. Where several model parts are placed
+// in it, the connection goes to the first whose Component is a generative
+// model, the model a chatflow's chat node calls.
+var singleSockets = []importer.SingleSocket{
+	{Name: "model", Prefer: map[string]string{"model.aggrega.ai/capability": "generative"}},
+}
+
+// standingOf says how the chatflow reaches the part of a node left in the flow
+// because another part holds the model socket's single connection, as the node
+// is written: an OpenAI node whose Base Path is empty reads the variables the
+// platform delivers for that connection, through its client's environment
+// fallback; any other reaches the address its Base Path, or its own defaults,
+// give.
+func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
+	if part.Socket != "model" {
+		return false, ""
+	}
+	if !openAINodes[part.Node.Type] {
+		return false, fmt.Sprintf("a %s node does not read OPENAI_BASE_URL, so it reaches a model at the address the "+
+			"chatflow or its own defaults give", part.Node.Type)
+	}
+	if _, basepath, ok := basePathOf(tree, part.Node.ID); ok && string(basepath) != `""` && string(basepath) != "null" {
+		return false, "its Base Path holds an address of its own, which the chatflow carries as the export wrote it, " +
+			"so the OpenAI client Flowise runs it on reaches that address"
+	}
+	return true, "its Base Path is empty, so the OpenAI client Flowise runs it on reads OPENAI_BASE_URL, the address " +
+		"the platform delivers for that connection, and, since it selects no credential, the key delivered as " +
+		"OPENAI_API_KEY"
+}
+
 // basePathOf returns the position, in the chatflow's node list, of the node
 // whose id is id, and the value of its basepath input; false where no node has
 // that id or it holds no basepath input.

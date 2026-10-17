@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpconfig"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -276,74 +277,30 @@ func serverConfigCredentials(nodeID string, raw json.RawMessage, field, tokens [
 }
 
 // serverConfigEdits returns, for a server configuration read as a JSON object,
-// the edits writing empty each header value — the headers an object of names to
-// values, or a list of key and value items — each environment value, the url,
-// the command, and each argument — each element of args where it is a list, the
-// whole value where it is not — and says which of them it found, always in that
-// order. A command or an argument already empty, or null, is left as written.
-// The command and args members stay, their values written empty, so the
-// configuration still reads as starting a server of its own.
+// the edits writing empty each header value, each environment value, the url,
+// the command and each argument, as mcpconfig reads such a configuration, and
+// says which of them it found, always in that order. A command or an argument
+// already empty, or null, is left as written. The command and args members
+// stay, their values written empty, so the configuration still reads as
+// starting a server of its own.
 func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
 	empty := json.RawMessage(`""`)
-	blank := func(v json.RawMessage) bool { s := string(v); return s == `""` || s == "null" }
 	var edits []importer.Edit
-	var headers, env, url, command, args bool
-	for _, e := range importer.ObjectEntries(config) {
-		switch e.Key {
-		case "headers":
-			for _, h := range importer.ObjectEntries(e.Value) {
-				edits = append(edits, importer.Edit{Pointer: importer.Pointer("headers", h.Key), Value: empty})
-				headers = true
-			}
-			var items []struct {
-				Value json.RawMessage `json:"value"`
-			}
-			if json.Unmarshal(e.Value, &items) == nil {
-				for j, item := range items {
-					if item.Value != nil {
-						edits = append(edits, importer.Edit{Pointer: importer.Pointer("headers", strconv.Itoa(j), "value"),
-							Value: empty})
-						headers = true
-					}
-				}
-			}
-		case "env":
-			for _, v := range importer.ObjectEntries(e.Value) {
-				edits = append(edits, importer.Edit{Pointer: importer.Pointer("env", v.Key), Value: empty})
-				env = true
-			}
-		case "url":
-			edits = append(edits, importer.Edit{Pointer: importer.Pointer("url"), Value: empty})
-			url = true
-		case "command":
-			if !blank(e.Value) {
-				edits = append(edits, importer.Edit{Pointer: importer.Pointer("command"), Value: empty})
-				command = true
-			}
-		case "args":
-			var items []json.RawMessage
-			if json.Unmarshal(e.Value, &items) != nil {
-				if !blank(e.Value) {
-					edits = append(edits, importer.Edit{Pointer: importer.Pointer("args"), Value: empty})
-					args = true
-				}
-				continue
-			}
-			for j, item := range items {
-				if !blank(item) {
-					edits = append(edits, importer.Edit{Pointer: importer.Pointer("args", strconv.Itoa(j)), Value: empty})
-					args = true
-				}
-			}
+	present := map[mcpconfig.Kind]bool{}
+	for _, m := range mcpconfig.Members(config) {
+		if (m.Kind == mcpconfig.Command || m.Kind == mcpconfig.Argument) && mcpconfig.Blank(m.Value) {
+			continue
 		}
+		edits = append(edits, importer.Edit{Pointer: importer.Pointer(m.Tokens...), Value: empty})
+		present[m.Kind] = true
 	}
 	var found []string
 	for _, f := range []struct {
-		present bool
-		what    string
-	}{{headers, "header values"}, {env, "environment values"}, {url, "server address"}, {command, "command"},
-		{args, "arguments"}} {
-		if f.present {
+		kind mcpconfig.Kind
+		what string
+	}{{mcpconfig.Header, "header values"}, {mcpconfig.Env, "environment values"}, {mcpconfig.Address, "server address"},
+		{mcpconfig.Command, "command"}, {mcpconfig.Argument, "arguments"}} {
+		if present[f.kind] {
 			found = append(found, f.what)
 		}
 	}

@@ -248,8 +248,8 @@ func mcpSource(t *testing.T) []byte {
 //     `if server.hasURL {` with `if server.hasURL && false {`: both rows fail,
 //     the server addresses in the drafted aggregate.yaml;
 //   - in serverCredentials (plugins/langflow-importer/walk.go), replace
-//     `case server.Config.Args == nil:` with `case true:`: both rows fail, the
-//     planted argument in the drafted aggregate.yaml.
+//     `case mcpconfig.Argument:` with `case mcpconfig.Argument + 1:`: both rows
+//     fail, the planted argument in the drafted aggregate.yaml.
 func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *testing.T) {
 	t.Parallel()
 	source := mcpSource(t)
@@ -713,6 +713,128 @@ func TestEachPartWiredToAPlatformReadsItsConnectionOrIsReported(t *testing.T) {
 	})
 }
 
+// TestAPlatformsModelSocketDrawsOneConnection imports a flow holding several
+// models under the default layout, over a catalog whose generative and
+// embedding model Components both satisfy the platforms' model socket, which
+// each platform's Recipes deliver as one OPENAI_BASE_URL and one
+// OPENAI_API_KEY:
+//
+//   - the committed Flowise export Multiple Documents QnA, two embedding models
+//     ahead of its chat model: the model socket draws one connection, to the chat
+//     model, and each embedding model stays in the flow, reported as reaching
+//     that connection, its Base Path being empty;
+//   - the committed Langflow export Basic Prompting with three authored models
+//     added — an embedding model whose address field names the variable the
+//     platform delivers, one holding an address of its own, and an OpenAI chat
+//     model after them: the connection goes to the chat model, and each embedding
+//     model is reported as its address field reads.
+//
+// Each held-out model chooses nothing, is no Component of the draft, and its
+// decision carries the reason it is reported with.
+//
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
+//
+//   - in the Flowise importer's format (plugins/flowise-importer/format.go),
+//     delete the line setting the Single field to singleSockets: the Flowise row
+//     fails, the platform drawing three model connections;
+//   - in standingOf (plugins/langflow-importer/wire.go), replace `value ==
+//     variable {` with `value == "never" {`: the Langflow row fails, the embedding
+//     model naming the variable reported as reaching an address of its own.
+func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
+	t.Parallel()
+	const embeddingAddress = "https://planted-embeddings.example/v1"
+	held := func(platform, ref, typ, holderRef, holderKey, how string) string {
+		return "node " + ref + " (" + typ + ") is wired to no socket of " + platform + ": it maps to " +
+			"core/ai-model/openai-embedding, which satisfies the selector of the model socket of " + platform + ", but " +
+			"that socket draws a single connection, which reaches " + holderKey + ", wired from node " + holderRef +
+			" since its Component carries model.aggrega.ai/capability: generative; as its node is written, the flow " +
+			"reaches it " + how + "; it stays in the flow"
+	}
+	field := func(load bool, value string) map[string]any {
+		return map[string]any{"_input_type": "MessageTextInput", "type": "str", "load_from_db": load, "value": value}
+	}
+	model := func(id, typ string, template map[string]any) map[string]any {
+		template["_type"] = "Component"
+		return map[string]any{"id": id, "type": "genericNode", "data": map[string]any{"id": id, "type": typ,
+			"node": map[string]any{"template": template}}}
+	}
+	langflow := decoded(t, readRealExport(t, langflowPromptingProject))
+	data := asObject(langflow["data"])
+	data["nodes"] = append(data["nodes"].([]any),
+		model("OpenAIEmbeddings-e1", "OpenAIEmbeddings", map[string]any{"openai_api_base": field(true, "OPENAI_BASE_URL")}),
+		model("OpenAIEmbeddings-e2", "OpenAIEmbeddings", map[string]any{"openai_api_base": field(false, embeddingAddress)}),
+		model("OpenAIModel-m1", "OpenAIModel", map[string]any{"openai_api_base": field(false, "")}))
+
+	for _, tc := range []struct {
+		name, source, key, holderRef, holderKey string
+		reports                                 map[string]string
+	}{
+		{name: "a Flowise chatflow", source: string(readRealExport(t, flowiseChatflow)), key: "flowise",
+			holderRef: "chatOpenAI_0", holderKey: "chatopenai-0", reports: map[string]string{
+				"openAIEmbeddings_0": held(flowisePlatform, "openAIEmbeddings_0", "openAIEmbeddings", "chatOpenAI_0",
+					"chatopenai-0", "through the connection chatopenai-0: its Base Path is empty, so the OpenAI client "+
+						"Flowise runs it on reads OPENAI_BASE_URL, the address the platform delivers for that connection, "+
+						"and, since it selects no credential, the key delivered as OPENAI_API_KEY"),
+				"openAIEmbeddings_1": held(flowisePlatform, "openAIEmbeddings_1", "openAIEmbeddings", "chatOpenAI_0",
+					"chatopenai-0", "through the connection chatopenai-0: its Base Path is empty, so the OpenAI client "+
+						"Flowise runs it on reads OPENAI_BASE_URL, the address the platform delivers for that connection, "+
+						"and, since it selects no credential, the key delivered as OPENAI_API_KEY"),
+			}},
+		{name: "a Langflow flow with authored models", source: string(encoded(t, langflow)), key: "langflow",
+			holderRef: "OpenAIModel-m1", holderKey: "openaimodel-m1", reports: map[string]string{
+				"OpenAIEmbeddings-e1": held(langflowPlatform, "OpenAIEmbeddings-e1", "OpenAIEmbeddings", "OpenAIModel-m1",
+					"openaimodel-m1", "through the connection openaimodel-m1: its field openai_api_base names the "+
+						"variable OPENAI_BASE_URL, which the platform delivers for that connection and Langflow reads as a "+
+						"global variable"),
+				"OpenAIEmbeddings-e2": held(langflowPlatform, "OpenAIEmbeddings-e2", "OpenAIEmbeddings", "OpenAIModel-m1",
+					"openaimodel-m1", "other than through the connection openaimodel-m1: its field openai_api_base does "+
+						"not name OPENAI_BASE_URL, the variable the platform delivers for that connection, so the node "+
+						"reaches the part at the address that field or its component's defaults give"),
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			res, outputDir := writtenImport(t, wiringWorkspace(t, nil), "models.json", []byte(tc.source))
+			_, text := carriedFlow(t, outputDir, tc.key)
+			agg := readAsTheCompilerDoes(t, text)
+			uses := map[string]string{}
+			for alias, c := range agg.Spec.Components[tc.key].Uses["model"] {
+				uses[alias] = c.Target
+			}
+			if want := map[string]string{tc.holderKey: tc.holderKey}; !reflect.DeepEqual(uses, want) {
+				t.Errorf("the model socket draws %v, want %v", uses, want)
+			}
+			reported := map[string]string{}
+			for _, d := range res.Diagnostics {
+				if _, ok := tc.reports[d.SourceRef]; ok && d.Code == "part-not-placed" {
+					reported[d.SourceRef] = d.Message
+				}
+			}
+			if !reflect.DeepEqual(reported, tc.reports) {
+				t.Errorf("the held-out models are reported\n%v\nwant\n%v", reported, tc.reports)
+			}
+			for _, d := range res.Decisions {
+				msg, isHeld := tc.reports[d.SourceNode.ID]
+				if !isHeld {
+					continue
+				}
+				reason := strings.TrimSuffix(msg[strings.Index(msg, ": it maps to ")+2:], "; it stays in the flow")
+				if d.Chosen != nil || d.Rationale != "kept in the flow "+agg.Spec.Components[tc.key].Type+" carries, with "+
+					"no Component of its own: "+reason {
+					t.Errorf("%s was decided %+v: %q", d.SourceNode.ID, d.Chosen, d.Rationale)
+				}
+			}
+			var components []string
+			for key := range agg.Spec.Components {
+				components = append(components, key)
+			}
+			if slices.Sort(components); !slices.Equal(components, slices.Sorted(slices.Values([]string{tc.key, tc.holderKey}))) {
+				t.Errorf("the draft's components are %v, want the platform and the one model it reaches", components)
+			}
+		})
+	}
+}
+
 // TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads imports a copy of
 // the committed Langflow export Basic Prompting with every line break written CR
 // LF: the platform carries the export itself, byte for byte — each CR LF written
@@ -778,9 +900,10 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 //     `edits, what := []importer.Edit(nil), ""`: the chatflow row fails, the
 //     header, the environment value, the address and the arguments in the
 //     drafted aggregate.yaml;
-//   - in serverConfigEdits (the same file), replace `case "args":` with
-//     `case "args-never":`: the chatflow row fails, the planted arguments in the
-//     drafted aggregate.yaml.
+//   - in serverConfigEdits (the same file), replace
+//     `if (m.Kind == mcpconfig.Command || m.Kind == mcpconfig.Argument) && mcpconfig.Blank(m.Value) {`
+//     with `if m.Kind == mcpconfig.Argument || (m.Kind == mcpconfig.Command && mcpconfig.Blank(m.Value)) {`:
+//     the chatflow row fails, the planted arguments in the drafted aggregate.yaml.
 func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.T) {
 	t.Parallel()
 	const (

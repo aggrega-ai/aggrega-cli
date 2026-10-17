@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpconfig"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -166,63 +167,36 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 	return out
 }
 
-// serverCredentials locates the header and environment values of the server
-// configuration an MCP Tools node's mcp_server value carries — an object with a
-// name and a config, whose headers are an object of names to values or a list
-// of key and value items, and whose env is an object of names to values — and
-// its command and its args: each element of args where it is a list, and the
-// whole value where it is not. A command or an argument is written empty and its
-// member kept, so a configuration that starts a server of its own still reads
-// as one. A value naming a server alone carries no configuration and holds none.
+// serverCredentials locates, in the server configuration an MCP Tools node's
+// mcp_server value carries — an object with a name and a config — each header
+// value, each environment value, the command and each argument, as mcpconfig
+// reads such a configuration. The server's address is not located here: where
+// the node is wired, the platform writes the connection's address over it
+// (wire.go). A command or an argument is written empty and its member kept, so
+// a configuration that starts a server of its own still reads as one; one
+// already empty is left as written. A value naming a server alone carries no
+// configuration and holds none.
 func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...string) string) []importer.Credential {
-	var server struct {
-		Config struct {
-			Headers json.RawMessage `json:"headers"`
-			Env     json.RawMessage `json:"env"`
-			Command json.RawMessage `json:"command"`
-			Args    json.RawMessage `json:"args"`
-		} `json:"config"`
-	}
-	if err := json.Unmarshal(value, &server); err != nil {
-		return nil
-	}
 	var out []importer.Credential
-	for _, e := range importer.ObjectEntries(server.Config.Headers) {
-		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.headers." + e.Key,
-			Pointer: at("mcp_server", "value", "config", "headers", e.Key)})
-	}
-	var items []struct {
-		Key   string          `json:"key"`
-		Value json.RawMessage `json:"value"`
-	}
-	if err := json.Unmarshal(server.Config.Headers, &items); err == nil {
-		for j, item := range items {
-			if item.Value == nil {
-				continue
+	for _, m := range mcpconfig.Members(memberOf(value, "config")) {
+		c := importer.Credential{Node: nodeID,
+			Pointer: at(append([]string{"mcp_server", "value", "config"}, m.Tokens...)...)}
+		switch m.Kind {
+		case mcpconfig.Header:
+			c.Field = "mcp_server.config.headers." + m.Name
+		case mcpconfig.Env:
+			c.Field = "mcp_server.config.env." + m.Name
+		case mcpconfig.Command:
+			c.Field, c.Detail = "mcp_server.config.command", commandDetail
+		case mcpconfig.Argument:
+			c.Field, c.Detail = "mcp_server.config.args", argumentDetail
+			if m.Name != "" {
+				c.Field += "." + m.Name
 			}
-			out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.headers." + item.Key,
-				Pointer: at("mcp_server", "value", "config", "headers", strconv.Itoa(j), "value")})
+		default:
+			continue
 		}
-	}
-	for _, e := range importer.ObjectEntries(server.Config.Env) {
-		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.env." + e.Key,
-			Pointer: at("mcp_server", "value", "config", "env", e.Key)})
-	}
-	if server.Config.Command != nil {
-		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.command",
-			Pointer: at("mcp_server", "value", "config", "command"), Detail: commandDetail})
-	}
-	var args []json.RawMessage
-	switch {
-	case server.Config.Args == nil:
-	case json.Unmarshal(server.Config.Args, &args) == nil:
-		for j := range args {
-			out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.args." + strconv.Itoa(j),
-				Pointer: at("mcp_server", "value", "config", "args", strconv.Itoa(j)), Detail: argumentDetail})
-		}
-	default:
-		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.args",
-			Pointer: at("mcp_server", "value", "config", "args"), Detail: argumentDetail})
+		out = append(out, c)
 	}
 	return out
 }
