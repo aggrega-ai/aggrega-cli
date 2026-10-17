@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -772,13 +773,38 @@ func mutatorCompilationContext(rel *types.Release) topology.CompilationContext {
 	}
 }
 
-// pluginRefName derives a short diagnostic label from a plugin URI — the final
-// path segment, or the whole URI when it carries no separator. It feeds the
-// loader's program-name label and the policy diagnostic; it is a display label,
-// not a resolution key.
+// pluginRefName derives a short diagnostic label from a plugin URI: its final
+// path segment, read after any digest (`@sha256:<hex>`) and any version tag
+// (`:1.0.0`, `:^1.0.0`) are removed, so `hub.aggrega.ai/governance/rego:0.8.5`
+// reads `rego` rather than its version. The tag is split by the OCI-safe rule,
+// which looks for the colon only after the last slash, so a registry host's
+// port is never mistaken for one. A URI whose final segment is empty is
+// returned whole. It feeds the loader's program-name label and the policy
+// diagnostic; it is a display label, not a resolution key.
 func pluginRefName(uri string) string {
-	if i := strings.LastIndexAny(uri, "/:"); i >= 0 && i < len(uri)-1 {
-		return uri[i+1:]
+	ref := ociref.VersionlessBase(withoutDigest(uri))
+	i := strings.LastIndex(ref, "/")
+	if i < 0 && ref != "" {
+		return ref
+	}
+	if i >= 0 && i < len(ref)-1 {
+		return ref[i+1:]
+	}
+	return uri
+}
+
+// ociDigestSuffix matches a trailing OCI digest — an `@`, an algorithm, a colon
+// and the encoded hash — in the grammar an OCI reference gives it. Matching the
+// whole grammar rather than cutting at any `@` keeps a local path whose file
+// name carries an `@` (`./plugins/policy@v2.wasm`) intact.
+var ociDigestSuffix = regexp.MustCompile(`@[a-z0-9]+(?:[+._-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$`)
+
+// withoutDigest returns uri with a trailing OCI digest removed, or uri unchanged
+// when it ends in none. A digest follows any version tag in a reference, so it
+// comes off first: left in place, its own colon would be read as the tag's.
+func withoutDigest(uri string) string {
+	if loc := ociDigestSuffix.FindStringIndex(uri); loc != nil {
+		return uri[:loc[0]]
 	}
 	return uri
 }

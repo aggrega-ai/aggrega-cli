@@ -212,18 +212,39 @@ func TestPolicyVerdictLocation_SpanWinsOverStructured(t *testing.T) {
 }
 
 // TestPluginRefName proves the diagnostic-label derivation takes the final URI
-// segment across the reference shapes a plugin attachment may carry.
+// segment across the reference shapes a plugin attachment may carry: a version
+// tag and a digest are removed before the segment is read, a registry host's
+// port is never read as a tag, and a reference carrying neither reads as its
+// final segment unchanged.
 func TestPluginRefName(t *testing.T) {
-	cases := map[string]string{
-		"oci://registry.example/plugin/policy/house-rules": "house-rules",
-		"proof://mutator":              "mutator",
-		"./plugins/local-mutator.wasm": "local-mutator.wasm",
-		"bare-name":                    "bare-name",
+	const sha256Hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"registry reference, tagged", "hub.aggrega.ai/governance/rego:0.8.5", "rego"},
+		{"bare identity, tagged", "governance/rego:0.8.5", "rego"},
+		{"bare identity, range-pinned", "governance/rego:^1.0.0", "rego"},
+		{"bare name, tagged", "rego:1.0.0", "rego"},
+		{"registry reference, digested", "hub.aggrega.ai/governance/rego@sha256:" + sha256Hex, "rego"},
+		{"registry reference, tagged and digested", "hub.aggrega.ai/governance/rego:0.8.5@sha256:" + sha256Hex, "rego"},
+		{"host with port, tagged", "localhost:5000/governance/rego:1.0", "rego"},
+		{"host with port, bare", "localhost:5000/governance/rego", "rego"},
+		{"scheme, host with port, tagged and digested by another algorithm", "oci://reg.example:5000/governance/rego:1.0@sha512:" + sha256Hex, "rego"},
+		{"registry reference, bare", "oci://registry.example/plugin/policy/house-rules", "house-rules"},
+		{"scheme with no host", "proof://mutator", "mutator"},
+		{"local path", "./plugins/local-mutator.wasm", "local-mutator.wasm"},
+		{"local path whose file name carries an at sign", "./plugins/policy@v2.wasm", "policy@v2.wasm"},
+		{"bare name", "bare-name", "bare-name"},
+		{"trailing slash", "oci://hub.aggrega.ai/plugins/", "oci://hub.aggrega.ai/plugins/"},
 	}
-	for in, want := range cases {
-		if got := pluginRefName(in); got != want {
-			t.Errorf("pluginRefName(%q) = %q, want %q", in, got, want)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pluginRefName(tc.in); got != tc.want {
+				t.Errorf("pluginRefName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
