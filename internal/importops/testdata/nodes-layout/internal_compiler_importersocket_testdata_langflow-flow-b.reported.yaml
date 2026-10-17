@@ -1,0 +1,35 @@
+documents:
+  - path: components/imported-ai-model-anthropicmodel.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/anthropicmodel
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          api_key:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              model: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a langflow source.
+      spec:
+        components:
+          anthropicmodel-z9:
+            type: imported/ai-model/anthropicmodel

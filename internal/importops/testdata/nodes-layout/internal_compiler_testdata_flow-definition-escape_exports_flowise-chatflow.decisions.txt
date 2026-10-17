@@ -1,0 +1,3 @@
+mapped chatOpenAI_0 (chatOpenAI) to imported/ai-model/chatopenai as a draft, NONE
+mapped promptTemplate_0 (promptTemplate) to imported/component/prompttemplate as a draft, NONE
+mapped llmChain_0 (llmChain) to imported/ai-model/llmchain as a draft, NONE

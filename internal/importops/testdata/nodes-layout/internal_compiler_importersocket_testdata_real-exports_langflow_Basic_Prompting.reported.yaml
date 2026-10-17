@@ -1,0 +1,131 @@
+documents:
+  - path: components/imported-ai-model-chatinput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatinput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              context_id: { type: string }
+              files: { type: string }
+              input_value: { type: string }
+              sender: { type: string }
+              sender_name: { type: string }
+              session_id: { type: string }
+              should_store_message: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-prompt.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/prompt
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              template: { type: string }
+              tool_placeholder: { type: string }
+              use_double_brackets: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-chatoutput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatoutput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              clean_data: { type: string }
+              code: { type: string }
+              context_id: { type: string }
+              data_template: { type: string }
+              input_value: { type: string }
+              sender: { type: string }
+              sender_name: { type: string }
+              session_id: { type: string }
+              should_store_message: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-languagemodelcomponent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/languagemodelcomponent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          api_key:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              base_url_ibm_watsonx: { type: string }
+              code: { type: string }
+              input_value: { type: string }
+              max_tokens: { type: string }
+              model: { type: string }
+              model_name: { type: string }
+              ollama_base_url: { type: string }
+              project_id: { type: string }
+              provider: { type: string }
+              stream: { type: string }
+              system_message: { type: string }
+              temperature: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a langflow source.
+      spec:
+        components:
+          chatinput-b6ucc:
+            type: imported/ai-model/chatinput
+          prompt-t2oak:
+            type: imported/component/prompt
+          chatoutput-yk0au:
+            type: imported/ai-model/chatoutput
+            uses:
+              languagemodelcomponent-fleyf:
+                link:
+                  target: languagemodelcomponent-fleyf
+          languagemodelcomponent-fleyf:
+            type: imported/ai-model/languagemodelcomponent
+            uses:
+              chatinput-b6ucc:
+                link:
+                  target: chatinput-b6ucc
+              prompt-t2oak:
+                link:
+                  target: prompt-t2oak

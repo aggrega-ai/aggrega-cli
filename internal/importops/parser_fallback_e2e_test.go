@@ -161,11 +161,14 @@ func TestTheBinarysParsersAreTheOnesItEmbeds(t *testing.T) {
 }
 
 // parserlessWorkspace resolves a scratch workspace whose catalog folder holds the
-// reference importer of each format, attached, and no parser.
+// reference importer of each format, attached, and no parser. The attachments
+// hand each importer the node-by-node layout, so what a source is drafted as
+// names the nodes of the tree the parser returned for it, one Component each.
 func parserlessWorkspace(t *testing.T) (*workspaceconfig.ResolvedWorkspace, importopstest.CatalogFolder) {
 	t.Helper()
 	wsDir := aWorkspaceDir(t)
-	folder := importopstest.LayAttachedImporterFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir))
+	folder := importopstest.LayAttachedImporterFolderWith(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir),
+		importopstest.NodesLayout())
 	return resolveWorkspaceAt(t, wsDir), folder
 }
 
@@ -297,9 +300,7 @@ func TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImport
 	if res.Format != src.format {
 		t.Errorf("the source was read as the %q format, want %q", res.Format, src.format)
 	}
-	if got := draftPaths(res); !slices.Equal(got, src.drafts) {
-		t.Errorf("the importer drafted %v, want %v", got, src.drafts)
-	}
+	assertTheDefaultDraft(t, res, src)
 	for _, p := range parsersResolved(cascade) {
 		if p.uri != "parser/json" || p.tier != pluginpath.TierEmbed {
 			t.Errorf("the import loaded the parser %s from the %q tier; want only the binary's parser/json", p.uri, p.tier)

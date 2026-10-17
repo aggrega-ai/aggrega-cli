@@ -274,9 +274,7 @@ func TestABinaryCoreImporterCompetesWithAWorkspaceImporterOfAnotherName(t *testi
 				importers[0].tier != pluginpath.TierColocated {
 				t.Fatalf("the import resolved %+v; want the workspace's importer read from beside its entity", importers)
 			}
-			if got := draftPaths(res); !slices.Equal(got, src.drafts) {
-				t.Errorf("the importer drafted %v, want %v", got, src.drafts)
-			}
+			assertTheDefaultDraft(t, res, src)
 		})
 	}
 }
@@ -394,9 +392,7 @@ func TestAWorkspaceImporterAtTheIdentityAndVersionOfACoreImporterKeepsItsPlace(t
 	if len(importers) != 1 || importers[0].uri != "importer/langflow" || importers[0].tier != pluginpath.TierColocated {
 		t.Fatalf("the import resolved %+v; want the workspace's importer/langflow read from beside its entity", importers)
 	}
-	if got := draftPaths(res); !slices.Equal(got, src.drafts) {
-		t.Errorf("the importer drafted %v, want %v", got, src.drafts)
-	}
+	assertTheDefaultDraft(t, res, src)
 }
 
 // TestACoreImporterAtAHigherVersionIsNeverReadFromBesideAWorkspaceEntity drives a
@@ -526,9 +522,7 @@ func TestACoreImporterRunsOnlyFromTheModuleTheBinaryAccepts(t *testing.T) {
 			if res.Halted() {
 				t.Fatalf("the importer halted: %+v", res.Diagnostics)
 			}
-			if got := draftPaths(res); !slices.Equal(got, src.drafts) {
-				t.Errorf("the importer drafted %v, want %v", got, src.drafts)
-			}
+			assertTheDefaultDraft(t, res, src)
 		})
 	}
 }

@@ -9,7 +9,8 @@ package importops
 // folder holds the reference importers and a JSON parser — the folder importopstest
 // lays down — together with the Components the case writes beside them, and reads
 // the importer's decision record: the configuration attaches both importers with
-// render_mode llm, so the record is the one file the import returns.
+// render_mode llm, so the record is the one file the import returns, and with the
+// node-by-node layout, so every node is decided as a Component of its own.
 
 import (
 	"context"
@@ -177,7 +178,7 @@ func TestImportScoresTheWorkspaceCatalogsOwnComponents(t *testing.T) {
 		{
 			name:       "a catalog holding an enterprise model Component scores it as a candidate",
 			components: []catalogComponent{enterpriseModel, enterpriseStore},
-			settings:   map[string]any{"render_mode": "llm", "reuse_mode": autoApply},
+			settings:   map[string]any{"render_mode": "llm", "layout": "nodes", "reuse_mode": autoApply},
 			want: &abi.ImportDecision{
 				Candidates: []abi.ImportCandidate{{
 					ComponentName: enterpriseModel.name, Score: 0.3138, Tier: "LOW",
@@ -190,7 +191,7 @@ func TestImportScoresTheWorkspaceCatalogsOwnComponents(t *testing.T) {
 		{
 			name:       "a mapping override naming the enterprise Component references it",
 			components: []catalogComponent{enterpriseModel, enterpriseStore},
-			settings:   map[string]any{"render_mode": "llm", "reuse_mode": autoApply, "mapping_overrides": override},
+			settings:   map[string]any{"render_mode": "llm", "layout": "nodes", "reuse_mode": autoApply, "mapping_overrides": override},
 			want: &abi.ImportDecision{
 				Candidates: []abi.ImportCandidate{{
 					ComponentName: enterpriseModel.name, Score: 0.92, Tier: "HIGH",
@@ -203,7 +204,7 @@ func TestImportScoresTheWorkspaceCatalogsOwnComponents(t *testing.T) {
 		},
 		{
 			name:     "a catalog holding no Component drafts every node and references none",
-			settings: map[string]any{"render_mode": "llm", "reuse_mode": autoApply},
+			settings: map[string]any{"render_mode": "llm", "layout": "nodes", "reuse_mode": autoApply},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

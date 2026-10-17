@@ -1,0 +1,6 @@
+mapped ArXivComponent-zGqWh (ArXivComponent) to imported/component/arxivcomponent as a draft, NONE
+mapped ChatOutput-scvYG (ChatOutput) to imported/ai-model/chatoutput as a draft, NONE
+mapped ChatInput-MBlfD (ChatInput) to imported/ai-model/chatinput as a draft, NONE
+mapped LanguageModelComponent-ps5yd (LanguageModelComponent) to imported/ai-model/languagemodelcomponent as a draft, NONE
+mapped LoopComponent-E7Ur0 (LoopComponent) to imported/component/loopcomponent as a draft, NONE
+mapped ParserComponent-V2o48 (ParserComponent) to imported/component/parsercomponent as a draft, NONE

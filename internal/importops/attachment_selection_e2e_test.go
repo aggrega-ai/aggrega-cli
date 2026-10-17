@@ -78,21 +78,29 @@ func attachedImportWorkspace(t *testing.T, importers []importopstest.Importer,
 }
 
 // handing returns an attachment naming the laid plugin by its identity and
-// version, handing it the namespace given.
+// version, handing it the namespace given and the node-by-node layout, under
+// which every node's draft is named in that namespace.
 func handing(p importopstest.LaidPlugin, namespace string) importopstest.Attachment {
-	return importopstest.Attachment{URI: p.Identity, Settings: map[string]any{"target_namespace": namespace}}
+	return importopstest.Attachment{URI: p.Identity, Settings: nodesLayoutIn(namespace)}
+}
+
+// nodesLayoutIn is the settings handing hands an importer.
+func nodesLayoutIn(namespace string) map[string]any {
+	settings := importopstest.NodesLayout()
+	settings["target_namespace"] = namespace
+	return settings
 }
 
 // sourceFor returns the committed source fixture of the format given.
-func sourceFor(t *testing.T, format string) (path string, drafts []string) {
+func sourceFor(t *testing.T, format string) catalogFolderSource {
 	t.Helper()
 	for _, src := range catalogFolderSources {
 		if src.format == format {
-			return src.source, src.drafts
+			return src
 		}
 	}
 	t.Fatalf("no committed source fixture is of the %s format", format)
-	return "", nil
+	return catalogFolderSource{}
 }
 
 // importFromTheFolder runs Import over the committed source of format through
@@ -101,7 +109,7 @@ func sourceFor(t *testing.T, format string) (path string, drafts []string) {
 // import was refused.
 func importFromTheFolder(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, format string) (Result, []string, error) {
 	t.Helper()
-	path, _ := sourceFor(t, format)
+	path := sourceFor(t, format).source
 	cascade := &recordingCascade{}
 	res, err := Import(context.Background(), rw, Options{
 		SourcePath:    path,
@@ -120,11 +128,12 @@ func importFromTheFolder(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, fo
 }
 
 // assertDraftedBy holds an import's result to the importer that should have run
-// it and the namespace that importer should have been handed: the cascade was
-// asked for that importer and no other, every drafted path is the reference
-// importer's draft of the source under that namespace, and the drafted Aggregate
-// is named in it.
-func assertDraftedBy(t *testing.T, res Result, importers []string, format, wantImporter, namespace string) {
+// it and the settings that importer should have been handed: the cascade was
+// asked for that importer and no other, and the drafted Aggregate is named in the
+// namespace handed. Handed the node-by-node layout, every drafted path is the
+// reference importer's draft of the source under that namespace; handed nothing,
+// the draft is the default layout's.
+func assertDraftedBy(t *testing.T, res Result, importers []string, format, wantImporter, namespace string, nodes bool) {
 	t.Helper()
 	if want := []string{"importer/" + wantImporter}; !slices.Equal(importers, want) {
 		t.Errorf("the import resolved the importers %v; want exactly %v", importers, want)
@@ -132,13 +141,17 @@ func assertDraftedBy(t *testing.T, res Result, importers []string, format, wantI
 	if res.Halted() {
 		t.Fatalf("the importer halted: %+v", res.Diagnostics)
 	}
-	_, defaults := sourceFor(t, format)
-	want := make([]string, 0, len(defaults))
-	for _, d := range defaults {
-		want = append(want, strings.Replace(d, "components/"+defaultNamespace+"-", "components/"+namespace+"-", 1))
-	}
-	if got := draftPaths(res); !slices.Equal(got, want) {
-		t.Errorf("the importer drafted %v; want %v, the drafts under the namespace %q", got, want, namespace)
+	src := sourceFor(t, format)
+	if !nodes {
+		assertTheDefaultDraft(t, res, src)
+	} else {
+		want := make([]string, 0, len(src.drafts))
+		for _, d := range src.drafts {
+			want = append(want, strings.Replace(d, "components/"+defaultNamespace+"-", "components/"+namespace+"-", 1))
+		}
+		if got := draftPaths(res); !slices.Equal(got, want) {
+			t.Errorf("the importer drafted %v; want %v, the drafts under the namespace %q", got, want, namespace)
+		}
 	}
 	for _, f := range res.Files {
 		if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "name: "+namespace+"/flow") {
@@ -177,7 +190,7 @@ func TestEachImporterAttachmentConfiguresOnlyTheImporterItNames(t *testing.T) {
 			if err != nil {
 				t.Fatalf("the import was refused: %v", err)
 			}
-			assertDraftedBy(t, res, importers, row.format, row.importer, row.namespace)
+			assertDraftedBy(t, res, importers, row.format, row.importer, row.namespace, true)
 		})
 	}
 }
@@ -261,7 +274,7 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("the import was refused: %v", err)
 			}
-			assertDraftedBy(t, res, importers, row.format, row.importer, defaultNamespace)
+			assertDraftedBy(t, res, importers, row.format, row.importer, defaultNamespace, false)
 		})
 	}
 }
@@ -328,7 +341,7 @@ func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
 				if err != nil {
 					t.Fatalf("the import was refused: %v", err)
 				}
-				assertDraftedBy(t, res, importers, "langflow", row.importer, row.namespace)
+				assertDraftedBy(t, res, importers, "langflow", row.importer, row.namespace, true)
 				return
 			}
 			if !errors.Is(err, catalog.ErrAmbiguousImporterPlugin()) {
@@ -379,7 +392,7 @@ func TestAnAttachmentVersionChoosesThatVersionOfItsImporter(t *testing.T) {
 				if row.uri == "" {
 					return nil
 				}
-				return []importopstest.Attachment{{URI: row.uri, Settings: map[string]any{"target_namespace": northNamespace}}}
+				return []importopstest.Attachment{{URI: row.uri, Settings: nodesLayoutIn(northNamespace)}}
 			})
 
 			seam, err := BuildSeam(rw, (&recordingCascade{}).resolve)
@@ -404,7 +417,7 @@ func TestAnAttachmentVersionChoosesThatVersionOfItsImporter(t *testing.T) {
 			if row.uri != "" {
 				namespace = northNamespace
 			}
-			assertDraftedBy(t, res, importers, "langflow", importerAlpha, namespace)
+			assertDraftedBy(t, res, importers, "langflow", importerAlpha, namespace, row.uri != "")
 		})
 	}
 }

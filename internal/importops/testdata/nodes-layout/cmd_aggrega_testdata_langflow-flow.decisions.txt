@@ -1,0 +1,2 @@
+mapped OpenAIModel-abc12 (OpenAIModel) to imported/ai-model/openaimodel as a draft, NONE
+mapped ChatOutput-def34 (ChatOutput) to imported/ai-model/chatoutput as a draft, NONE

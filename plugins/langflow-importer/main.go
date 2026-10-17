@@ -4,13 +4,19 @@
 //go:build wasip1
 
 // Command langflow-importer is the Langflow importer Wasm guest. It reads
-// Langflow flow JSON and drafts an Aggregate composing the flow's nodes as
-// components, referencing Components of the workspace's catalog where a node
-// matches one with high confidence and drafting new components where none does.
+// Langflow flow JSON and drafts an Aggregate. By default the draft is the
+// Langflow platform, core/ai-agent/langflow, carrying the flow as written with
+// its credential values emptied, and each node of the flow the workspace's
+// catalog matches as a model, a tool or a store drafted as a Component of its
+// own, wired to the platform's socket that takes it; with the layout setting
+// nodes, every node of the flow is drafted as a Component, referencing a
+// Component of the catalog where it matches one with high confidence and
+// drafting a new one where none does.
 //
 // The guest holds only what is particular to Langflow: this descriptor and the
-// export wiring, the walker lifting a flow's nodes and edges (walk.go), and the
-// format's mapping arm and syntactic format (format.go). The rest — the
+// export wiring, the walker lifting a flow's nodes and edges and locating its
+// credential values (walk.go), and the format's mapping arm, syntactic format
+// and platform (format.go). The rest — the
 // confidence scorer, the decisions, the drafts, the renderers and the settings —
 // is the plugin kit's importer package,
 // github.com/aggrega-ai/aggrega-pdk-go/pkg/importer, which every importer built on
@@ -58,7 +64,7 @@ func descriptor() aggrega.PluginDescriptor {
 	return aggrega.PluginDescriptor{
 		AbiVersion:   aggrega.APIVersion,
 		PluginType:   "importer",
-		Description:  "Import Langflow agent-flow JSON into a draft Aggregate, referencing Components of the workspace's catalog where a node matches and drafting new components where none does.",
+		Description:  "Import Langflow agent-flow JSON into a draft Aggregate: by default the Langflow platform carrying the flow, with the flow's models, tools and stores that match the workspace's catalog wired to it as Components; with the layout setting nodes, every node drafted as a Component of its own.",
 		Capabilities: []string{"import:" + langflow.Name},
 		Exports: []aggrega.PluginExport{{
 			Name:          "import",

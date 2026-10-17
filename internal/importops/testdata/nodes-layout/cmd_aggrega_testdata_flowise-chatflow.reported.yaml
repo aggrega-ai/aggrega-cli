@@ -1,0 +1,46 @@
+documents:
+  - path: components/imported-ai-model-chatopenai.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatopenai
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              modelName: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-conversationchain.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/conversationchain
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec: {}
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a flowise source.
+      spec:
+        components:
+          chatopenai-0:
+            type: imported/ai-model/chatopenai
+          conversationchain-0:
+            type: imported/component/conversationchain
+            uses:
+              chatopenai-0:
+                link:
+                  target: chatopenai-0

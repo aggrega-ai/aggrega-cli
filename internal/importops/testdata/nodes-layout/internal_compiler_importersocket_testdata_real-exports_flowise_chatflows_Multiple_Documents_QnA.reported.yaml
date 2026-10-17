@@ -1,0 +1,271 @@
+documents:
+  - path: components/imported-component-pinecone.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/pinecone
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        featuresSchema:
+          credential:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              fetchK: { type: string }
+              lambda: { type: string }
+              pineconeIndex: { type: string }
+              pineconeMetadataFilter: { type: string }
+              pineconeNamespace: { type: string }
+              searchType: { type: string }
+              topK: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-openaiembeddings.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/openaiembeddings
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          credential:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              basepath: { type: string }
+              batchSize: { type: string }
+              dimensions: { type: string }
+              modelName: { type: string }
+              stripNewLines: { type: string }
+              timeout: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-pinecone.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/pinecone
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        featuresSchema:
+          credential:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              fetchK: { type: string }
+              lambda: { type: string }
+              pineconeIndex: { type: string }
+              pineconeMetadataFilter: { type: string }
+              pineconeNamespace: { type: string }
+              searchType: { type: string }
+              topK: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-openaiembeddings.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/openaiembeddings
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          credential:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              basepath: { type: string }
+              batchSize: { type: string }
+              dimensions: { type: string }
+              modelName: { type: string }
+              stripNewLines: { type: string }
+              timeout: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-buffermemory.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/buffermemory
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              memoryKey: { type: string }
+              sessionId: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-tool-retrievertool.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-tool/retrievertool
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: function
+          component.aggrega.ai/category: ai-tool
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              description: { type: string }
+              name: { type: string }
+              returnSourceDocuments: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-tool-retrievertool.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-tool/retrievertool
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: function
+          component.aggrega.ai/category: ai-tool
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              description: { type: string }
+              name: { type: string }
+              returnSourceDocuments: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-chatopenai.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatopenai
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          credential:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              allowImageUploads: { type: string }
+              baseOptions: { type: string }
+              basepath: { type: string }
+              frequencyPenalty: { type: string }
+              imageResolution: { type: string }
+              maxTokens: { type: string }
+              modelName: { type: string }
+              presencePenalty: { type: string }
+              temperature: { type: string }
+              timeout: { type: string }
+              topP: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-tool-toolagent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-tool/toolagent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: function
+          component.aggrega.ai/category: ai-tool
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              maxIterations: { type: string }
+              systemMessage: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a flowise source.
+      spec:
+        components:
+          pinecone-0:
+            type: imported/component/pinecone
+            uses:
+              openaiembeddings-0:
+                link:
+                  target: openaiembeddings-0
+          openaiembeddings-0:
+            type: imported/ai-model/openaiembeddings
+          pinecone-1:
+            type: imported/component/pinecone
+            uses:
+              openaiembeddings-1:
+                link:
+                  target: openaiembeddings-1
+          openaiembeddings-1:
+            type: imported/ai-model/openaiembeddings
+          buffermemory-0:
+            type: imported/component/buffermemory
+          retrievertool-2:
+            type: imported/ai-tool/retrievertool
+            uses:
+              pinecone-0:
+                link:
+                  target: pinecone-0
+          retrievertool-1:
+            type: imported/ai-tool/retrievertool
+            uses:
+              pinecone-1:
+                link:
+                  target: pinecone-1
+          chatopenai-0:
+            type: imported/ai-model/chatopenai
+          toolagent-0:
+            type: imported/ai-tool/toolagent
+            uses:
+              buffermemory-0:
+                link:
+                  target: buffermemory-0
+              chatopenai-0:
+                link:
+                  target: chatopenai-0
+              retrievertool-1:
+                link:
+                  target: retrievertool-1
+              retrievertool-2:
+                link:
+                  target: retrievertool-2

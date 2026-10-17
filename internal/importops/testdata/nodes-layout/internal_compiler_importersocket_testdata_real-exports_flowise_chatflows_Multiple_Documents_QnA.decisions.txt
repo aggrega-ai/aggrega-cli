@@ -1,0 +1,9 @@
+mapped pinecone_0 (pinecone) to imported/component/pinecone as a draft, NONE
+mapped openAIEmbeddings_0 (openAIEmbeddings) to imported/ai-model/openaiembeddings as a draft, NONE
+mapped pinecone_1 (pinecone) to imported/component/pinecone as a draft, NONE
+mapped openAIEmbeddings_1 (openAIEmbeddings) to imported/ai-model/openaiembeddings as a draft, NONE
+mapped bufferMemory_0 (bufferMemory) to imported/component/buffermemory as a draft, NONE
+mapped retrieverTool_2 (retrieverTool) to imported/ai-tool/retrievertool as a draft, NONE
+mapped retrieverTool_1 (retrieverTool) to imported/ai-tool/retrievertool as a draft, NONE
+mapped chatOpenAI_0 (chatOpenAI) to imported/ai-model/chatopenai as a draft, NONE
+mapped toolAgent_0 (toolAgent) to imported/ai-tool/toolagent as a draft, NONE

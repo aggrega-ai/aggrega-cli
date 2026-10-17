@@ -1,0 +1,41 @@
+documents:
+  - path: components/imported-ai-model-openaimodel.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/openaimodel
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec: {}
+  - path: components/imported-ai-model-chatoutput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatoutput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec: {}
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a langflow source.
+      spec:
+        components:
+          openaimodel-abc12:
+            type: imported/ai-model/openaimodel
+          chatoutput-def34:
+            type: imported/ai-model/chatoutput
+            uses:
+              openaimodel-abc12:
+                link:
+                  target: openaimodel-abc12

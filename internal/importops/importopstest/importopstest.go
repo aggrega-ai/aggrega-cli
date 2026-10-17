@@ -352,13 +352,27 @@ func LayCatalogFolder(t *testing.T, workspaceRoot, dir string, withModules bool)
 // workspaceRoot.
 func LayAttachedImporterFolder(t *testing.T, workspaceRoot, dir string) CatalogFolder {
 	t.Helper()
+	return LayAttachedImporterFolderWith(t, workspaceRoot, dir, nil)
+}
+
+// LayAttachedImporterFolderWith is LayAttachedImporterFolder whose attachments
+// hand each importer the settings given — none where settings is nil.
+func LayAttachedImporterFolderWith(t *testing.T, workspaceRoot, dir string, settings map[string]any) CatalogFolder {
+	t.Helper()
 	folder := CatalogFolder{Dir: dir}
 	for _, r := range referenceImporters {
 		module := wasmtest.EnsureFixtureBuilt(t, r.fixture)
 		folder.Importers = append(folder.Importers, layPlugin(t, workspaceRoot, dir, module, r.name, true))
 	}
-	WriteConfiguration(t, workspaceRoot, folder.Attachments(nil)...)
+	WriteConfiguration(t, workspaceRoot, folder.Attachments(settings)...)
 	return folder
+}
+
+// NodesLayout is the settings an attachment hands an importer to have a format
+// whose flows a platform runs drafted node by node: every node a Component of
+// its own, as a format describing no platform is drafted.
+func NodesLayout() map[string]any {
+	return map[string]any{"layout": "nodes"}
 }
 
 // PlantedParserName is the metadata.name the planted parser's entity carries.

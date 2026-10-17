@@ -7,6 +7,8 @@ package main
 
 import (
 	"encoding/json"
+	"regexp"
+	"strconv"
 
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -111,6 +113,104 @@ func orderedKeys(raw json.RawMessage) []string {
 		keys = append(keys, e.Key)
 	}
 	return keys
+}
+
+// chatflowUUID is the shape of a chatflow identifier Flowise accepts: a UUID.
+var chatflowUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// chatflowID returns the identifier a Flowise export gives its chatflow: the
+// string at its top-level id where it is a UUID, the only identifier Flowise
+// gives a chatflow, and empty otherwise. An export of the editor's canvas
+// carries none.
+func chatflowID(tree json.RawMessage) string {
+	var top struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(tree, &top); err != nil {
+		return ""
+	}
+	var id string
+	if err := json.Unmarshal(top.ID, &id); err != nil || !chatflowUUID.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
+// credentialsOf locates every credential value a Flowise flow holds, by the
+// marks Flowise itself writes: the credential a node keeps at data.credential —
+// the stored credential its parameter of type credential selects; the value in
+// data.inputs of each parameter its inputParams declare of type password; and the
+// credential an agentflow keeps inside a configuration object among its inputs,
+// at credential or FLOWISE_CREDENTIAL_ID — that second name is also read at the
+// top of data.inputs. Each is addressed from the root of the export, and named by
+// its node's id and the field it sits in.
+func credentialsOf(tree json.RawMessage) []importer.Credential {
+	var top struct {
+		Nodes []json.RawMessage `json:"nodes"`
+	}
+	if err := json.Unmarshal(tree, &top); err != nil {
+		return nil
+	}
+	var out []importer.Credential
+	for i, raw := range top.Nodes {
+		var node struct {
+			ID   string                     `json:"id"`
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(raw, &node); err != nil {
+			continue
+		}
+		at := func(tokens ...string) string {
+			return importer.Pointer(append([]string{"nodes", strconv.Itoa(i), "data"}, tokens...)...)
+		}
+		if _, ok := node.Data["credential"]; ok {
+			out = append(out, importer.Credential{Node: node.ID, Field: "credential", Pointer: at("credential")})
+		}
+		inputs := importer.ObjectEntries(node.Data["inputs"])
+		password := map[string]bool{}
+		for _, name := range passwordParams(node.Data["inputParams"]) {
+			password[name] = true
+		}
+		for _, in := range inputs {
+			switch {
+			case password[in.Key]:
+				out = append(out, importer.Credential{Node: node.ID, Field: in.Key, Pointer: at("inputs", in.Key)})
+			case in.Key == credentialIDInput:
+				out = append(out, importer.Credential{Node: node.ID, Field: in.Key, Pointer: at("inputs", in.Key)})
+			}
+			for _, member := range importer.ObjectEntries(in.Value) {
+				if member.Key == "credential" || member.Key == credentialIDInput {
+					out = append(out, importer.Credential{Node: node.ID, Field: in.Key + "." + member.Key,
+						Pointer: at("inputs", in.Key, member.Key)})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// credentialIDInput is the name Flowise keeps a selected credential's
+// identifier under among a node's inputs, or inside a configuration object
+// among them.
+const credentialIDInput = "FLOWISE_CREDENTIAL_ID"
+
+// passwordParams returns the names of a flowise node's input parameters of type
+// password, in the order its inputParams list them.
+func passwordParams(raw json.RawMessage) []string {
+	var entries []struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.Type == "password" && e.Name != "" {
+			names = append(names, e.Name)
+		}
+	}
+	return names
 }
 
 // subtract returns the elements of a not present in b, preserving a's order.

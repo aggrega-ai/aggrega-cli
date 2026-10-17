@@ -1,0 +1,2 @@
+mapped chatOpenAI_0 (chatOpenAI) to imported/ai-model/chatopenai as a draft, NONE
+mapped httpRequest_0 (httpRequest) to imported/ai-tool/httprequest as a draft, NONE

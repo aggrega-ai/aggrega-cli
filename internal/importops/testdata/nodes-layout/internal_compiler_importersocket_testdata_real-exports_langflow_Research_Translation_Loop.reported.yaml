@@ -1,0 +1,183 @@
+documents:
+  - path: components/imported-component-arxivcomponent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/arxivcomponent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              max_results: { type: string }
+              search_query: { type: string }
+              search_type: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-chatoutput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatoutput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              clean_data: { type: string }
+              code: { type: string }
+              context_id: { type: string }
+              data_template: { type: string }
+              input_value: { type: string }
+              sender: { type: string }
+              sender_name: { type: string }
+              session_id: { type: string }
+              should_store_message: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-chatinput.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatinput
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              context_id: { type: string }
+              files: { type: string }
+              input_value: { type: string }
+              sender: { type: string }
+              sender_name: { type: string }
+              session_id: { type: string }
+              should_store_message: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-languagemodelcomponent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/languagemodelcomponent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          api_key:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              base_url_ibm_watsonx: { type: string }
+              code: { type: string }
+              input_value: { type: string }
+              model: { type: string }
+              model_name: { type: string }
+              ollama_base_url: { type: string }
+              project_id: { type: string }
+              provider: { type: string }
+              stream: { type: string }
+              system_message: { type: string }
+              temperature: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-loopcomponent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/loopcomponent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              data: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-parsercomponent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/parsercomponent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+              input_data: { type: string }
+              mode: { type: string }
+              pattern: { type: string }
+              sep: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a langflow source.
+      spec:
+        components:
+          arxivcomponent-zgqwh:
+            type: imported/component/arxivcomponent
+            uses:
+              chatinput-mblfd:
+                link:
+                  target: chatinput-mblfd
+          chatoutput-scvyg:
+            type: imported/ai-model/chatoutput
+            uses:
+              loopcomponent-e7ur0:
+                link:
+                  target: loopcomponent-e7ur0
+          chatinput-mblfd:
+            type: imported/ai-model/chatinput
+          languagemodelcomponent-ps5yd:
+            type: imported/ai-model/languagemodelcomponent
+            uses:
+              parsercomponent-v2o48:
+                link:
+                  target: parsercomponent-v2o48
+          loopcomponent-e7ur0:
+            type: imported/component/loopcomponent
+            uses:
+              arxivcomponent-zgqwh:
+                link:
+                  target: arxivcomponent-zgqwh
+              languagemodelcomponent-ps5yd:
+                link:
+                  target: languagemodelcomponent-ps5yd
+          parsercomponent-v2o48:
+            type: imported/component/parsercomponent
+            uses:
+              loopcomponent-e7ur0:
+                link:
+                  target: loopcomponent-e7ur0

@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -93,4 +94,111 @@ func templateFields(raw json.RawMessage) (fields, secrets []string) {
 		}
 	}
 	return fields, secrets
+}
+
+// flowID returns the identifier a Langflow export gives its flow: the string at
+// its top-level id, empty where it carries none.
+func flowID(tree json.RawMessage) string {
+	var top struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(tree, &top); err != nil {
+		return ""
+	}
+	var id string
+	if err := json.Unmarshal(top.ID, &id); err != nil {
+		return ""
+	}
+	return id
+}
+
+// credentialsOf locates every credential value a Langflow flow holds, by the
+// marks Langflow itself writes: the value of each template field whose object
+// carries password set to true, and each header and environment value of the
+// server configuration an MCP Tools node carries in its mcp_server field, where
+// a request's credentials travel. Each is addressed from the root of the export,
+// and named by its node's id and the field it sits in. A field holding no value
+// member is not located, since there is nothing in it to write empty.
+func credentialsOf(tree json.RawMessage) []importer.Credential {
+	var top struct {
+		Data struct {
+			Nodes []json.RawMessage `json:"nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(tree, &top); err != nil {
+		return nil
+	}
+	var out []importer.Credential
+	for i, raw := range top.Data.Nodes {
+		var node struct {
+			ID   string `json:"id"`
+			Data struct {
+				Node struct {
+					Template json.RawMessage `json:"template"`
+				} `json:"node"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(raw, &node); err != nil {
+			continue
+		}
+		at := func(tokens ...string) string {
+			return importer.Pointer(append([]string{"data", "nodes", strconv.Itoa(i), "data", "node", "template"}, tokens...)...)
+		}
+		for _, e := range importer.ObjectEntries(node.Data.Node.Template) {
+			var field struct {
+				Password json.RawMessage `json:"password"`
+				Value    json.RawMessage `json:"value"`
+			}
+			if err := json.Unmarshal(e.Value, &field); err != nil || field.Value == nil {
+				continue
+			}
+			if string(field.Password) == "true" {
+				out = append(out, importer.Credential{Node: node.ID, Field: e.Key, Pointer: at(e.Key, "value")})
+			}
+			if e.Key == "mcp_server" {
+				out = append(out, serverCredentials(node.ID, field.Value, at)...)
+			}
+		}
+	}
+	return out
+}
+
+// serverCredentials locates the header and environment values of the server
+// configuration an MCP Tools node's mcp_server value carries: an object with a
+// name and a config, whose headers are an object of names to values or a list
+// of key and value items, and whose env is an object of names to values. A value
+// naming a server alone carries no configuration and holds none.
+func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...string) string) []importer.Credential {
+	var server struct {
+		Config struct {
+			Headers json.RawMessage `json:"headers"`
+			Env     json.RawMessage `json:"env"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(value, &server); err != nil {
+		return nil
+	}
+	var out []importer.Credential
+	for _, e := range importer.ObjectEntries(server.Config.Headers) {
+		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.headers." + e.Key,
+			Pointer: at("mcp_server", "value", "config", "headers", e.Key)})
+	}
+	var items []struct {
+		Key   string          `json:"key"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(server.Config.Headers, &items); err == nil {
+		for j, item := range items {
+			if item.Value == nil {
+				continue
+			}
+			out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.headers." + item.Key,
+				Pointer: at("mcp_server", "value", "config", "headers", strconv.Itoa(j), "value")})
+		}
+	}
+	for _, e := range importer.ObjectEntries(server.Config.Env) {
+		out = append(out, importer.Credential{Node: nodeID, Field: "mcp_server.config.env." + e.Key,
+			Pointer: at("mcp_server", "value", "config", "env", e.Key)})
+	}
+	return out
 }

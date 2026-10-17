@@ -1,0 +1,157 @@
+documents:
+  - path: components/imported-ai-agent-startagentflow.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-agent/startagentflow
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: server
+          component.aggrega.ai/category: ai-agent
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              formDescription: { type: string }
+              formInputTypes: { type: string }
+              formTitle: { type: string }
+              startInputType: { type: string }
+              startState: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-agent-conditionagentagentflow.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-agent/conditionagentagentflow
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: server
+          component.aggrega.ai/category: ai-agent
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              conditionAgentInput: { type: string }
+              conditionAgentInstructions: { type: string }
+              conditionAgentModel: { type: string }
+              conditionAgentModelConfig: { type: string }
+              conditionAgentScenarios: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-agent-agentagentflow.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-agent/agentagentflow
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: server
+          component.aggrega.ai/category: ai-agent
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              agentEnableMemory: { type: string }
+              agentKnowledgeDocumentStores: { type: string }
+              agentMemoryType: { type: string }
+              agentMessages: { type: string }
+              agentModel: { type: string }
+              agentModelConfig: { type: string }
+              agentReturnResponseAs: { type: string }
+              agentTools: { type: string }
+              agentUpdateState: { type: string }
+              agentUserMessage: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-agent-agentagentflow.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-agent/agentagentflow
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: server
+          component.aggrega.ai/category: ai-agent
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              agentEnableMemory: { type: string }
+              agentKnowledgeDocumentStores: { type: string }
+              agentMemoryType: { type: string }
+              agentMessages: { type: string }
+              agentModel: { type: string }
+              agentModelConfig: { type: string }
+              agentReturnResponseAs: { type: string }
+              agentTools: { type: string }
+              agentUpdateState: { type: string }
+              agentUserMessage: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-agent-agentagentflow.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-agent/agentagentflow
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: server
+          component.aggrega.ai/category: ai-agent
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              agentEnableMemory: { type: string }
+              agentKnowledgeDocumentStores: { type: string }
+              agentMemoryType: { type: string }
+              agentMessages: { type: string }
+              agentModel: { type: string }
+              agentModelConfig: { type: string }
+              agentReturnResponseAs: { type: string }
+              agentTools: { type: string }
+              agentUpdateState: { type: string }
+              agentUserMessage: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a flowise source.
+      spec:
+        components:
+          startagentflow-0:
+            type: imported/ai-agent/startagentflow
+          conditionagentagentflow-0:
+            type: imported/ai-agent/conditionagentagentflow
+            uses:
+              startagentflow-0:
+                link:
+                  target: startagentflow-0
+          agentagentflow-0:
+            type: imported/ai-agent/agentagentflow
+            uses:
+              conditionagentagentflow-0:
+                link:
+                  target: conditionagentagentflow-0
+          agentagentflow-1:
+            type: imported/ai-agent/agentagentflow
+            uses:
+              conditionagentagentflow-0:
+                link:
+                  target: conditionagentagentflow-0
+          agentagentflow-2:
+            type: imported/ai-agent/agentagentflow
+            uses:
+              conditionagentagentflow-0:
+                link:
+                  target: conditionagentagentflow-0

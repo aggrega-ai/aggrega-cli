@@ -1,0 +1,78 @@
+documents:
+  - path: components/imported-ai-model-chatopenai.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/chatopenai
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              basePath: { type: string }
+              modelName: { type: string }
+              temperature: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-prompttemplate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/prompttemplate
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              promptValues: { type: string }
+              template: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-model-llmchain.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/llmchain
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              model: { type: string }
+              prompt: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a flowise source.
+      spec:
+        components:
+          chatopenai-0:
+            type: imported/ai-model/chatopenai
+          prompttemplate-0:
+            type: imported/component/prompttemplate
+          llmchain-0:
+            type: imported/ai-model/llmchain
+            uses:
+              chatopenai-0:
+                link:
+                  target: chatopenai-0
+              prompttemplate-0:
+                link:
+                  target: prompttemplate-0

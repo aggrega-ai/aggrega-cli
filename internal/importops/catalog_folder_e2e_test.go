@@ -33,15 +33,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
-// catalogFolderSources are the two committed agent-flow fixtures and the files
-// the reference importer of each one's format drafts from it under its default
-// posture, in which every node is drafted. The paths are compared as a set: the
-// importer's own order is the reported order, and these cases are not about it.
-var catalogFolderSources = []struct {
-	format string
-	source string
-	drafts []string
-}{
+// catalogFolderSources are the two committed agent-flow fixtures and what the
+// reference importer of each one's format drafts from each over a catalog
+// holding no Component.
+//
+// drafts are the files the node-by-node layout drafts, in which every node is
+// drafted; they are compared as a set, since the importer's own order is the
+// reported order and these cases are not about it. Under the default layout the
+// one file drafted is the Aggregate, naming platform as the platform carrying
+// the flow — the catalog holds no Component a part could be drafted after — and
+// nodes are the source's nodes, by id in the importer's order, each of which keeps
+// a decision whichever layout drafts it.
+var catalogFolderSources = []catalogFolderSource{
 	{
 		format: "langflow",
 		source: "../compiler/importersocket/testdata/langflow-flow.json",
@@ -51,6 +54,8 @@ var catalogFolderSources = []struct {
 			"components/imported-ai-tool-retrieval.yaml",
 			"components/imported-component-custompythoncomponent.yaml",
 		},
+		platform: "core/ai-agent/langflow",
+		nodes:    []string{"OpenAIModel-a1b2", "Retrieval-c3d4", "CustomLogic-e5f6"},
 	},
 	{
 		format: "flowise",
@@ -60,7 +65,49 @@ var catalogFolderSources = []struct {
 			"components/imported-ai-model-chatopenai.yaml",
 			"components/imported-ai-tool-httprequest.yaml",
 		},
+		platform: "core/ai-agent/flowise",
+		nodes:    []string{"chatOpenAI_0", "httpRequest_0"},
 	},
+}
+
+// catalogFolderSource is one committed agent-flow fixture and what its format's
+// reference importer drafts from it; catalogFolderSources says what each field
+// holds.
+type catalogFolderSource struct {
+	format   string
+	source   string
+	drafts   []string
+	platform string
+	nodes    []string
+}
+
+// assertTheDefaultDraft holds an import's result to what the default layout
+// drafts from src over a catalog holding no Component: the Aggregate alone, its
+// one component the platform src names, carrying the flow, and a decision for
+// every node of the source, in the importer's order — what says the importer read
+// the source's real tree.
+func assertTheDefaultDraft(t *testing.T, res Result, src catalogFolderSource) {
+	t.Helper()
+	if got := draftPaths(res); !slices.Equal(got, []string{"aggregate.yaml"}) {
+		t.Errorf("the importer drafted %v, want the Aggregate alone", got)
+	}
+	for _, f := range res.Files {
+		if f.Path != "aggregate.yaml" {
+			continue
+		}
+		for _, want := range []string{"      type: " + src.platform + "\n", "        flow_definition: |"} {
+			if !strings.Contains(f.Content, want) {
+				t.Errorf("the drafted Aggregate does not carry %q:\n%s", want, f.Content)
+			}
+		}
+	}
+	var nodes []string
+	for _, d := range res.Decisions {
+		nodes = append(nodes, d.SourceNode.ID)
+	}
+	if !slices.Equal(nodes, src.nodes) {
+		t.Errorf("the importer decided the nodes %v, want %v", nodes, src.nodes)
+	}
 }
 
 // cascadeResolution is one call the import made to the resolver it was handed.
@@ -113,7 +160,7 @@ func (r *recordingCascade) resolutions() []cascadeResolution {
 // importer: the binary's own importers advertise the same two formats, so with
 // none the import would halt as ambiguous between the two. An attachment carrying
 // no settings hands its importer nothing, so the importer runs exactly as one no
-// attachment names would.
+// attachment names would, in its default layout.
 //
 // The workspace is required to have resolved at the directory its configuration
 // was written in, so the folder is laid inside the scratch tree and nowhere else.
@@ -154,9 +201,9 @@ func draftPaths(res Result) []string {
 // a JSON parser, each with its module beside its entity, for a Langflow and a
 // Flowise source.
 //
-// Three claims per source, and none stands in for another. The drafted files are
-// the end-to-end one: the importer of the source's format ran, and so did the
-// parser it calls back to, since the drafts are built from the tree the parser
+// Three claims per source, and none stands in for another. The draft is the
+// end-to-end one: the importer of the source's format ran, and so did the parser
+// it calls back to, since its decisions name the nodes of the tree the parser
 // returns. Each module being read at the beside-the-entity tier is the location
 // claim: there is nowhere else this cascade could have read either from. And the
 // directories every call was handed being the ones the catalog indexed — each
@@ -192,9 +239,7 @@ func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
 			if res.Format != src.format {
 				t.Errorf("the source was read as the %q format, want %q", res.Format, src.format)
 			}
-			if got := draftPaths(res); !slices.Equal(got, src.drafts) {
-				t.Errorf("the importer drafted %v, want %v", got, src.drafts)
-			}
+			assertTheDefaultDraft(t, res, src)
 			for _, f := range res.Files {
 				if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "kind: Aggregate") {
 					t.Errorf("aggregate.yaml is not an Aggregate:\n%s", f.Content)
@@ -236,10 +281,11 @@ func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
 // TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced is the writing
 // delivery over the same folder: what the importer drafted is on disk beneath the
 // output directory, carrying the content the import reported, and the output
-// directory holds nothing else.
+// directory holds nothing else. The importer is handed the node-by-node layout, so
+// the drafts are several files, some of them in a directory of their own.
 func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.T) {
 	t.Parallel()
-	rw, _ := catalogFolderImportWorkspace(t)
+	rw, _ := catalogFolderImportWorkspaceAttaching(t, importopstest.NodesLayout())
 	src := catalogFolderSources[0]
 	outputDir := filepath.Join(rw.Root(), "drafts")
 
@@ -294,7 +340,8 @@ func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.
 // directory itself, and the importer also drafts a file that does not pass
 // through it, so a containment judged per file as it is written would leave that
 // one on disk: nothing being written beside the link is what says every path was
-// judged before the first write.
+// judged before the first write. The importer is handed the node-by-node layout,
+// which drafts every node as a Component under that directory.
 //
 // 🔴 PLANTED DEFECT: delete the checkFiles call in Import
 // (internal/importops/import.go) and both rows redden, each on the refusal it no
@@ -313,7 +360,7 @@ func TestImportRefusesADraftWhosePathALinkLeadsOutOfTheWorkspace(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			rw, _ := catalogFolderImportWorkspace(t)
+			rw, _ := catalogFolderImportWorkspaceAttaching(t, importopstest.NodesLayout())
 
 			outside := t.TempDir()
 			outputDir := filepath.Join(rw.Root(), "drafts")

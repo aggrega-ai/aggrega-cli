@@ -50,8 +50,9 @@ var attachedImportRows = []struct {
 // attachedImportWorkspace lays the attached workspace down at a fresh root and
 // returns it: the two importers and the parser in its catalog folder, its
 // configuration attaching each importer by identity and version with the
-// namespace its row names, and the committed source of each format at the root.
-// A case calls isolateMachineConfiguration first.
+// namespace its row names and the node-by-node layout — under which every node is
+// drafted as a component named in that namespace — and the committed source of
+// each format at the root. A case calls isolateMachineConfiguration first.
 func attachedImportWorkspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -60,8 +61,8 @@ func attachedImportWorkspace(t *testing.T) string {
 		importopstest.Importer{Name: "import-beta", Format: "flowise"},
 	)
 	importopstest.WriteConfiguration(t, root,
-		importopstest.Attachment{URI: laid[0].Identity, Settings: map[string]any{"target_namespace": "north"}},
-		importopstest.Attachment{URI: laid[1].Identity, Settings: map[string]any{"target_namespace": "south"}},
+		importopstest.Attachment{URI: laid[0].Identity, Settings: map[string]any{"target_namespace": "north", "layout": "nodes"}},
+		importopstest.Attachment{URI: laid[1].Identity, Settings: map[string]any{"target_namespace": "south", "layout": "nodes"}},
 	)
 	for _, src := range catalogFolderImportSources {
 		body := readCatalogFolderSource(t, src.path)

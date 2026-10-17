@@ -1,0 +1,5 @@
+mapped startAgentflow_0 (startAgentflow) to imported/ai-agent/startagentflow as a draft, NONE
+mapped conditionAgentAgentflow_0 (conditionAgentAgentflow) to imported/ai-agent/conditionagentagentflow as a draft, NONE
+mapped agentAgentflow_0 (agentAgentflow) to imported/ai-agent/agentagentflow as a draft, NONE
+mapped agentAgentflow_1 (agentAgentflow) to imported/ai-agent/agentagentflow as a draft, NONE
+mapped agentAgentflow_2 (agentAgentflow) to imported/ai-agent/agentagentflow as a draft, NONE

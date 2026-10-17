@@ -33,13 +33,15 @@ import (
 )
 
 // parserlessFolderWorkspace declares an isolated workspace whose conventional
-// catalog folder holds the reference importer of each format, attached, and no
-// parser, and returns its root and what the folder holds. A case calls
-// isolateMachineConfiguration first.
+// catalog folder holds the reference importer of each format, attached with the
+// node-by-node layout — so what a source is drafted as is a component per node of
+// the tree the parser returned — and no parser, and returns its root and what the
+// folder holds. A case calls isolateMachineConfiguration first.
 func parserlessFolderWorkspace(t *testing.T) (string, importopstest.CatalogFolder) {
 	t.Helper()
 	root := t.TempDir()
-	folder := importopstest.LayAttachedImporterFolder(t, root, filepath.Join(root, workspaceconfig.ConventionalCatalogDir))
+	folder := importopstest.LayAttachedImporterFolderWith(t, root, filepath.Join(root, workspaceconfig.ConventionalCatalogDir),
+		importopstest.NodesLayout())
 	return resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}).Root(), folder
 }
 

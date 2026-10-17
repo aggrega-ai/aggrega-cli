@@ -38,14 +38,16 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // decisionLineCasesFile is the case manifest the mapping-decision line is held to
 // on both sides of the language boundary, relative to this package. Its Langflow
 // entries are the decisions the Langflow fixture imports to over the workspace
-// this file lays, and the test below requires the live answer to equal them —
-// which is what lets the editor's own spec render real decisions from it.
+// this file lays, its importers handed the node-by-node layout, and the test below
+// requires the live answer to equal them — which is what lets the editor's own
+// spec render real decisions from it.
 const decisionLineCasesFile = "../../internal/importops/testdata/decision_line_cases.json"
 
 // mappingDecisionComponents are the Components the workspace's catalog folder
@@ -92,12 +94,16 @@ spec:
 }
 
 // mappingDecisionWorkspace lays the catalog folder workspace with the Components
-// beside the importers, seeds the Langflow fixture at its root as flow.json, and
-// returns the root and the source's bytes. A case calls
+// beside the importers, its attachments handing each importer the settings given
+// — none where settings is nil — seeds the Langflow fixture at its root as
+// flow.json, and returns the root and the source's bytes. A case calls
 // isolateMachineConfiguration first.
-func mappingDecisionWorkspace(t *testing.T) (string, []byte) {
+func mappingDecisionWorkspace(t *testing.T, settings map[string]any) (string, []byte) {
 	t.Helper()
 	root, folder := catalogFolderWorkspace(t, true)
+	if settings != nil {
+		importopstest.WriteConfiguration(t, root, folder.Attachments(settings)...)
+	}
 	for _, c := range mappingDecisionComponents {
 		path := filepath.Join(folder.Dir, "component", filepath.FromSlash(c.name), c.version, "component.yaml")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -266,7 +272,7 @@ func TestTheMappingDecisionsReachEverySurfaceAlike(t *testing.T) {
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
-	root, _ := mappingDecisionWorkspace(t)
+	root, _ := mappingDecisionWorkspace(t, importopstest.NodesLayout())
 
 	raw, err := os.ReadFile(decisionLineCasesFile)
 	if err != nil {
@@ -453,6 +459,172 @@ func TestTheMappingDecisionsReachEverySurfaceAlike(t *testing.T) {
 
 		// The answer validates against the published wire contract's import
 		// result, every decision through the definitions it names.
+		resource, err := jsonschema.UnmarshalJSON(strings.NewReader(schemas.ServeWireV1alpha1))
+		if err != nil {
+			t.Fatalf("the shipped session wire schema is not a usable schema resource: %v", err)
+		}
+		const contract = "mem://serve-wire.json"
+		compiler := jsonschema.NewCompiler()
+		if err := compiler.AddResource(contract, resource); err != nil {
+			t.Fatalf("add the session wire schema as a resource: %v", err)
+		}
+		position, err := compiler.Compile(contract + "#/$defs/ImportResult")
+		if err != nil {
+			t.Fatalf("compile the import result's position: %v", err)
+		}
+		instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(frame["result"]))
+		if err != nil {
+			t.Fatalf("decode the answer for validation: %v", err)
+		}
+		if err := position.Validate(instance); err != nil {
+			t.Errorf("the session's import result does not validate against the published contract:\n%v\n%s",
+				err, frame["result"])
+		}
+	})
+}
+
+// keptInTheFlow is how the rationale of a node the Langflow platform's flow keeps
+// opens: it names where the node went.
+const keptInTheFlow = "kept in the flow core/ai-agent/langflow carries, with no Component of its own: "
+
+// TestANodeTheFlowKeepsReadsAsNoChoiceOnEverySurface imports the Langflow fixture
+// under the default layout, in which the drafted Aggregate is the Langflow
+// platform carrying the flow, over the same workspace: its catalog holds no
+// platform Component, so no node becomes a Component of its own and every node
+// stays in the flow. Each such node's decision chooses nothing and says why in its
+// rationale, and every surface renders it as such:
+//
+//   - the command writes "made no choice for <node id> (<node type>)" for it on its
+//     error stream, after the diagnostics — never a mapping to a Component the
+//     draft does not hold;
+//   - the assistant tool's answer carries the decision whole, the rationale naming
+//     the flow that keeps the node, and its text the same line as the command;
+//   - the session's result carries the decision whole, exactly as the importer
+//     returned it, and validates against the published wire contract.
+//
+// The editor renders the same line from a decision that chooses nothing — the
+// case manifest's "no choice recorded" shape, held on both sides of the language
+// boundary.
+func TestANodeTheFlowKeepsReadsAsNoChoiceOnEverySurface(t *testing.T) {
+	// Not parallel: captureStderr swaps process-global os.Stderr, and the
+	// environment is set for the whole test.
+	withCLIRegistrations(t, nil)
+	isolateMachineConfiguration(t)
+	root, _ := mappingDecisionWorkspace(t, nil)
+
+	rw, err := workspaceconfig.Resolve(root, root)
+	if err != nil {
+		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)
+	}
+	shared, err := importops.Import(context.Background(), rw, importops.Options{
+		SourcePath:    filepath.Join(root, "flow.json"),
+		SourceName:    "flow.json",
+		Delivery:      authoredcontent.DeliveryFor(true),
+		ResolvePlugin: importPluginBytes,
+	})
+	if err != nil {
+		t.Fatalf("the shared import was refused: %v", err)
+	}
+	var wantLines []string
+	for _, d := range shared.Decisions {
+		if d.Chosen != nil || !strings.HasPrefix(d.Rationale, keptInTheFlow) {
+			t.Fatalf("%s was decided %+v (%q); over a catalog holding no platform Component every node stays in the flow",
+				d.SourceNode.ID, d.Chosen, d.Rationale)
+		}
+		wantLines = append(wantLines, "made no choice for "+d.SourceNode.ID+" ("+d.SourceNode.Type+")")
+	}
+	if len(wantLines) != 3 {
+		t.Fatalf("the import decided %d nodes; the fixture holds three", len(wantLines))
+	}
+	if len(shared.Files) != 1 || !strings.Contains(shared.Files[0].Content, "      type: core/ai-agent/langflow\n") {
+		t.Fatalf("the draft is not the Langflow platform carrying the flow: %+v", shared.Files)
+	}
+
+	t.Run("the command's error stream", func(t *testing.T) {
+		code, stdout, stderr, process := runImportAtTheRoot(t, root, filepath.Join(root, "flow.json"), "--dry-run")
+		if code != 0 {
+			t.Fatalf("aggrega import exited %d\nstdout:\n%s\ncommand error writer:\n%s\nprocess error stream:\n%s",
+				code, stdout, stderr, process)
+		}
+		var head strings.Builder
+		head.WriteString("read as the langflow format, with drafted paths relative to " + root + "\n")
+		reportImportDiagnostics(&head, shared.Diagnostics)
+		rest, found := strings.CutPrefix(stderr, head.String())
+		if !found {
+			t.Fatalf("the error stream does not open with the preamble and the diagnostics:\n%s\nwant it to open with\n%s",
+				stderr, head.String())
+		}
+		if lines := strings.Split(strings.TrimSuffix(rest, "\n"), "\n"); !reflect.DeepEqual(lines, wantLines) {
+			t.Errorf("the error stream carries the decision lines\n  %q\nwant exactly\n  %q", lines, wantLines)
+		}
+	})
+
+	t.Run("the assistant tool's answer", func(t *testing.T) {
+		var stdin, stdout, stderr bytes.Buffer
+		stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+		stdin.WriteString(rpcLine(2, "tools/call", `{"name":"import","arguments":{"source":"flow.json","dry_run":true}}`))
+		cmd := newRootCmd()
+		cmd.SetIn(&stdin)
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		cmd.SetArgs([]string{"mcp", "--workspace-root", root})
+		if code := executeRoot(context.Background(), cmd); code != 0 {
+			t.Fatalf("aggrega mcp exited %d\nstderr:\n%s", code, stderr.String())
+		}
+		answer := answersByID(t, stdout.String(), 1, 2)[2]
+		if answer.Error != nil {
+			t.Fatalf("the import call was not dispatched: %s", answer.Error.Message)
+		}
+		var call struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent struct {
+				Decisions json.RawMessage `json:"decisions"`
+			} `json:"structuredContent"`
+			IsError bool `json:"isError"`
+		}
+		if err := json.Unmarshal(answer.Result, &call); err != nil {
+			t.Fatalf("decode the import answer: %v (body %s)", err, answer.Result)
+		}
+		if call.IsError || len(call.Content) == 0 {
+			t.Fatalf("the import was refused or answered no text: %s", answer.Result)
+		}
+		var decisions []toolDecision
+		strictDecode(t, "the tool's decisions", call.StructuredContent.Decisions, &decisions)
+		got := make([]abi.ImportDecision, 0, len(decisions))
+		for _, d := range decisions {
+			got = append(got, d.asImporterDecision())
+		}
+		if !sameDecisions(t, got, shared.Decisions) {
+			t.Errorf("the tool's decisions are\n%+v\nwant\n%+v", got, shared.Decisions)
+		}
+		var textLines []string
+		for _, line := range strings.Split(call.Content[0].Text, "\n") {
+			if strings.HasPrefix(line, "  mapped ") || strings.HasPrefix(line, "  made no choice for ") {
+				textLines = append(textLines, strings.TrimPrefix(line, "  "))
+			}
+		}
+		if !reflect.DeepEqual(textLines, wantLines) {
+			t.Errorf("the tool's text answer carries the decision lines\n  %q\nwant exactly\n  %q", textLines, wantLines)
+		}
+	})
+
+	t.Run("the session's result", func(t *testing.T) {
+		frame, stderr := callSession(t, root, "aggrega/import", map[string]any{"source": "flow.json", "outputDir": "drafts",
+			"dryRun": true})
+		if refusal, refused := frame["error"]; refused {
+			t.Fatalf("aggrega/import was refused: %s\nstderr:\n%s", refusal, stderr)
+		}
+		var result struct {
+			Decisions []abi.ImportDecision `json:"decisions"`
+		}
+		if err := json.Unmarshal(frame["result"], &result); err != nil {
+			t.Fatalf("decode the import answer: %v\n%s", err, frame["result"])
+		}
+		if !sameDecisions(t, result.Decisions, shared.Decisions) {
+			t.Errorf("the session's decisions are\n%+v\nwant\n%+v", result.Decisions, shared.Decisions)
+		}
 		resource, err := jsonschema.UnmarshalJSON(strings.NewReader(schemas.ServeWireV1alpha1))
 		if err != nil {
 			t.Fatalf("the shipped session wire schema is not a usable schema resource: %v", err)

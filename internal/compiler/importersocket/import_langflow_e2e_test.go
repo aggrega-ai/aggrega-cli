@@ -30,7 +30,8 @@ import (
 // built Langflow importer guest and the flowise format to the built Flowise one,
 // and the REAL embedded JSON parser serves the guest its source tree through the
 // parser socket. So the guest obtains its tree host-mediated (never re-parsing),
-// decomposes each node, scores it against the Components of the catalog view it is
+// decomposes each node — every case hands it the node-by-node layout — scores it
+// against the Components of the catalog view it is
 // handed — standardComponents, loaded as the import loads a workspace's catalog
 // and projected by ProjectCatalog — and drafts or references components: the
 // whole semantic path, proven against a genuine parsed tree.
@@ -216,6 +217,13 @@ func realJSONParserSeam(t *testing.T) (parsersocket.ParserResolver, parsersocket
 	return res, load, probe
 }
 
+// nodesLayout is the settings that hand an importer the node-by-node layout,
+// in which every node of a flow is drafted as a Component of its own — the
+// draft each case below reads.
+func nodesLayout() map[string]any {
+	return map[string]any{"layout": "nodes"}
+}
+
 func settingsJSON(t *testing.T, m map[string]any) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(m)
@@ -270,7 +278,7 @@ func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 	parserRes, parserLoad, probe := realJSONParserSeam(t)
 	source := readFixture(t, "langflow-flow.json")
 
-	settings := settingsJSON(t, map[string]any{"reuse_mode": "auto-apply-above-threshold"})
+	settings := settingsJSON(t, map[string]any{"reuse_mode": "auto-apply-above-threshold", "layout": "nodes"})
 	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settings, standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
@@ -330,7 +338,7 @@ func TestImportLangflow_HintsOnlyDraftsEverything(t *testing.T) {
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "langflow-flow.json")
 
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, nil, standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -359,7 +367,7 @@ func TestImportLangflow_Deterministic(t *testing.T) {
 
 	run := func() []byte {
 		parserRes, parserLoad, _ := realJSONParserSeam(t)
-		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, nil, standardCatalogView(t))
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
 		if err != nil {
 			t.Fatalf("ImportArtifact: %v", err)
 		}
@@ -386,7 +394,7 @@ func TestImportLangflow_MultiFile(t *testing.T) {
 		{Name: "flow-a.json", Bytes: readFixture(t, "langflow-flow.json")},
 		{Name: "flow-b.json", Bytes: readFixture(t, "langflow-flow-b.json")},
 	}
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", sources[0].Bytes, sources, nil, standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", sources[0].Bytes, sources, settingsJSON(t, nodesLayout()), standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -422,7 +430,7 @@ func TestImportLangflow_TwoRenderersOneRecord(t *testing.T) {
 
 	do := func(mode string) abi.ImportOutput {
 		parserRes, parserLoad, _ := realJSONParserSeam(t)
-		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settingsJSON(t, map[string]any{"render_mode": mode}), standardCatalogView(t))
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, nil, settingsJSON(t, map[string]any{"render_mode": mode, "layout": "nodes"}), standardCatalogView(t))
 		if err != nil {
 			t.Fatalf("ImportArtifact(%s): %v", mode, err)
 		}
@@ -473,7 +481,7 @@ func TestImportLangflow_TieBrokenByName(t *testing.T) {
 	// candidate shares — so every ai-model candidate scores exactly the category
 	// weight and ties.
 	tie := []byte(`{"data":{"nodes":[{"id":"GenericModel-1","data":{"type":"GenericModel","node":{"template":{"unshared_param":{"type":"str"}}}}}],"edges":[]}}`)
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", tie, nil, nil, standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", tie, nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -505,7 +513,7 @@ func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "flowise-flow.json")
 
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "flowise", source, nil, nil, standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "flowise", source, nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}

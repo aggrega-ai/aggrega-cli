@@ -66,11 +66,12 @@ func readDecisionLineCases(t *testing.T, path string) decisionLineCases {
 // out in the manifest rather than composed here.
 //
 // The Langflow cases are the decisions a real import of the committed fixture
-// returns; the command's end-to-end spec requires the live answer to equal them.
-// The shapes are those the reference importers do not produce from that fixture,
-// and each pins one rule of the line: a reference, the top score taken whatever
-// order the candidates are listed in, a whole number, a score whose shortest form
-// runs past four places, no candidate, and no choice.
+// returns under the node-by-node layout; the command's end-to-end spec requires
+// the live answer to equal them. The shapes are those the reference importers do
+// not produce from that fixture under that layout, and each pins one rule of the
+// line: a reference, the top score taken whatever order the candidates are listed
+// in, a whole number, a score whose shortest form runs past four places, no
+// candidate, and no choice — the line every node a platform's flow keeps reads as.
 //
 // 🔴 PLANTED DEFECTS: format the score with %.4f in DecisionLine and the whole and
 // long-score shapes redden; take the first candidate's score rather than the

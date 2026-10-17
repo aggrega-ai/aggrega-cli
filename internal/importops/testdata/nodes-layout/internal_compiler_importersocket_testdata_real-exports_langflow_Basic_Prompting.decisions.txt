@@ -1,0 +1,4 @@
+mapped ChatInput-b6UCc (ChatInput) to imported/ai-model/chatinput as a draft, NONE
+mapped Prompt-t2oaK (Prompt) to imported/component/prompt as a draft, NONE
+mapped ChatOutput-yK0AU (ChatOutput) to imported/ai-model/chatoutput as a draft, NONE
+mapped LanguageModelComponent-FLeYF (LanguageModelComponent) to imported/ai-model/languagemodelcomponent as a draft, NONE

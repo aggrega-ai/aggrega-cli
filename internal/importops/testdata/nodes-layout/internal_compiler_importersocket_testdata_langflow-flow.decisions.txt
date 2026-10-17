@@ -1,0 +1,3 @@
+mapped OpenAIModel-a1b2 (OpenAIModel) to imported/ai-model/openaimodel as a draft, NONE
+mapped Retrieval-c3d4 (Retrieval) to imported/ai-tool/retrieval as a draft, NONE
+mapped CustomLogic-e5f6 (CustomPythonComponent) to imported/component/custompythoncomponent as a draft, NONE

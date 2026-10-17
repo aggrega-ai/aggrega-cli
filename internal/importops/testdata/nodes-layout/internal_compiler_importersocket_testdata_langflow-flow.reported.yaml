@@ -1,0 +1,81 @@
+documents:
+  - path: components/imported-ai-model-openaimodel.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-model/openaimodel
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+          component.aggrega.ai/category: ai-model
+      spec:
+        featuresSchema:
+          api_key:
+            required: true
+            inject: []
+            description: Credential slot inferred from the source node; the recipe controls delivery.
+        schema:
+          values:
+            type: object
+            properties:
+              model_name: { type: string }
+              temperature: { type: string }
+            additionalProperties: false
+  - path: components/imported-ai-tool-retrieval.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/ai-tool/retrieval
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: function
+          component.aggrega.ai/category: ai-tool
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              search_query: { type: string }
+              top_k: { type: string }
+            additionalProperties: false
+  - path: components/imported-component-custompythoncomponent.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Component
+      metadata:
+        name: imported/component/custompythoncomponent
+        version: 0.1.0
+        labels:
+          component.aggrega.ai/type: resource
+      spec:
+        schema:
+          values:
+            type: object
+            properties:
+              code: { type: string }
+            additionalProperties: false
+  - path: aggregate.yaml
+    content: |
+      apiVersion: aggrega.ai/v1alpha1
+      kind: Aggregate
+      metadata:
+        name: imported/flow
+        version: 0.1.0
+        description: Draft aggregate imported from a langflow source.
+      spec:
+        components:
+          openaimodel-a1b2:
+            type: imported/ai-model/openaimodel
+          retrieval-c3d4:
+            type: imported/ai-tool/retrieval
+          customlogic-e5f6:
+            type: imported/component/custompythoncomponent
+            uses:
+              openaimodel-a1b2:
+                link:
+                  target: openaimodel-a1b2
+              retrieval-c3d4:
+                link:
+                  target: retrieval-c3d4

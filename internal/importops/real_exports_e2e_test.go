@@ -10,6 +10,10 @@ package importops
 // reference importer of each format and a JSON parser beside their entities — the
 // folder importopstest lays down, and the path every surface reaches. Nothing here
 // stands in for the importers, the parser or the catalog.
+//
+// The cases here read how the importers draft each node, so the attachments hand
+// the importers the node-by-node layout; what the default layout drafts from the
+// same exports is covered beside this file.
 
 import (
 	"bytes"
@@ -25,6 +29,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -44,7 +49,7 @@ const (
 )
 
 // realExports are the committed exports and what the reference importer drafts
-// from each under its default posture, in which every node is drafted.
+// from each under the node-by-node layout, in which every node is drafted.
 //
 // drafts is every path the import reports, sorted. A path is reported once per
 // node that drafts it, so two nodes of one type list the component they share
@@ -118,6 +123,14 @@ func realExportPath(rel string) string {
 	return filepath.Join(realExportsDir, filepath.FromSlash(rel))
 }
 
+// nodesLayoutWorkspace is catalogFolderImportWorkspace whose attachments hand
+// each importer the node-by-node layout, the draft the cases in this file read.
+func nodesLayoutWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	rw, _ := catalogFolderImportWorkspaceAttaching(t, importopstest.NodesLayout())
+	return rw
+}
+
 // readRealExport reads the committed real export at rel.
 func readRealExport(t *testing.T, rel string) []byte {
 	t.Helper()
@@ -166,7 +179,7 @@ func TestImportDraftsRealLangflowAndFlowiseExports(t *testing.T) {
 	for _, ex := range realExports {
 		t.Run(ex.name, func(t *testing.T) {
 			t.Parallel()
-			rw, _ := catalogFolderImportWorkspace(t)
+			rw := nodesLayoutWorkspace(t)
 
 			first := importRealExport(t, rw, ex.source, authoredcontent.DeliveryFor(true), "")
 			if first.Format != ex.format {
@@ -357,7 +370,7 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 	} {
 		t.Run(tc.shape, func(t *testing.T) {
 			t.Parallel()
-			rw, _ := catalogFolderImportWorkspace(t)
+			rw := nodesLayoutWorkspace(t)
 			res := importRealExport(t, rw, tc.source, authoredcontent.DeliveryFor(true), "")
 			got := tc.keys(draftedDocumentNamed(t, res, tc.document))
 			if !slices.Equal(got, tc.want) {
@@ -460,7 +473,7 @@ func markedCredentials(t *testing.T, format string, source []byte) map[string][]
 // was drafted as, by the node's id in the export.
 func draftedTargets(t *testing.T, rel string) map[string]string {
 	t.Helper()
-	rw, _ := catalogFolderImportWorkspaceAttaching(t, map[string]any{"render_mode": "llm"})
+	rw, _ := catalogFolderImportWorkspaceAttaching(t, map[string]any{"render_mode": "llm", "layout": "nodes"})
 	res := importRealExport(t, rw, rel, authoredcontent.DeliveryFor(true), "")
 	if len(res.Files) != 1 || res.Files[0].Path != "import-decisions.json" {
 		t.Fatalf("the decision record was not the one file the import returned: %+v", draftPaths(res))
@@ -579,7 +592,7 @@ func TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker(t *t
 				}
 			}
 
-			rw, _ := catalogFolderImportWorkspace(t)
+			rw := nodesLayoutWorkspace(t)
 			docs := draftedDocuments(t, importRealExport(t, rw, tc.source, authoredcontent.DeliveryFor(true), ""))
 			for _, id := range slices.Sorted(maps.Keys(targets)) {
 				doc, ok := docs[targets[id]]
@@ -649,7 +662,7 @@ func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 	for _, ex := range realExports {
 		t.Run(ex.name, func(t *testing.T) {
 			t.Parallel()
-			rw, _ := catalogFolderImportWorkspace(t)
+			rw := nodesLayoutWorkspace(t)
 			target := aWorkspace(t)
 			catalogDir := filepath.Join(target.Root(), workspaceconfig.ConventionalCatalogDir)
 
