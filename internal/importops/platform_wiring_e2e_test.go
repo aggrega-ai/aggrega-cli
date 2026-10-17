@@ -10,18 +10,21 @@ package importops
 // their parts resemble — the folder importopstest lays down, and the path every
 // surface reaches.
 //
-// One case imports a committed real export as it is: the one MCP Tools node the
-// Langflow repository's own flows carry, which has no server chosen. Every other
-// source below is a committed real export with authored parts added — MCP Tools
-// nodes naming servers, an MCP Tools node keeping its server outside an
+// Some cases import a committed real export as it is: the one MCP Tools node the
+// Langflow repository's own flows carry, which has no server chosen, and the
+// Language Model and Embedding Model nodes Langflow's own flows carry. Every
+// other source below is a committed real export with authored parts added — MCP
+// Tools nodes naming servers, an MCP Tools node keeping its server outside an
 // mcp_server field, a model whose address and key are written as literals, a
-// Custom MCP tool's server configuration — since no export Langflow or Flowise
-// publish carries those parts with values to plant. Each says so where it is
-// built; none is presented as an export.
+// model running on another provider, copies of a flow's model nodes, a Custom
+// MCP tool's server configuration — since no export Langflow or Flowise publish
+// carries those parts with values to plant. Each says so where it is built; none
+// is presented as an export.
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -711,6 +714,302 @@ func TestEachPartWiredToAPlatformReadsItsConnectionOrIsReported(t *testing.T) {
 			}
 		}
 	})
+}
+
+// referencingLangflowModels is referencingLanguageModel with a second mapping
+// override mapping Langflow's Embedding Model component to
+// core/ai-model/openai-embedding, which no row of the importer's own mapping arm
+// does either.
+func referencingLangflowModels() map[string]any {
+	settings := referencingLanguageModel()
+	overrides := settings["mapping_overrides"].(map[string]any)["langflow"].(map[string]any)
+	overrides["EmbeddingModel"] = map[string]any{
+		"component": "core/ai-model/openai-embedding",
+		"category":  "ai-model",
+		"traits":    map[string]any{"model.aggrega.ai/capability": "embedding", "component.aggrega.ai/hosting": "managed"},
+		"vendor":    "openai",
+	}
+	return settings
+}
+
+// selectingNodeID is the id of the Language Model node of Langflow 1.6.0's Basic
+// Prompting, a committed real export, and remixEmbeddingNodeID that of the
+// Embedding Model node of the committed real export Nvidia Remix.
+const (
+	selectingNodeID      = "LanguageModelComponent-kBOja"
+	remixEmbeddingNodeID = "EmbeddingModel-X6URU"
+)
+
+// The reports a wired Langflow model node of a type running on several
+// providers draws: reached through its connection, or other than through it,
+// and the clauses each carries.
+const (
+	keyNamed        = "its field api_key names the variable OPENAI_API_KEY, which the platform delivers for this connection and Langflow reads as a global variable"
+	fromEnvironment = "no field of it gives its API's address, so the OpenAI client it runs takes OPENAI_BASE_URL, the address the platform delivers for %s, from the environment"
+	offOpenAI       = "the node %s, while the platform delivers its model connection (OPENAI_BASE_URL, OPENAI_API_KEY) to a node running on the OpenAI provider, so none of them is written into it, and the node reaches the part at the address its own fields or its component's defaults give"
+)
+
+// TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI
+// imports, under the default layout and over a catalog whose generative and
+// embedding model Components satisfy the platform's model socket, flows whose one
+// model part is a node of a Langflow type running on one of several providers —
+// the Language Model and Embedding Model components — mapped by an override to a
+// model Component, so the model socket draws one connection to it:
+//
+//   - Langflow 1.6.0's Basic Prompting, whose Language Model node runs on OpenAI
+//     and names the key in its api_key field as the global variable
+//     OPENAI_API_KEY: that field is written with the variable the platform
+//     delivers, so the flow is carried as the export, byte for byte, the key not
+//     reported as emptied, and the node, holding no field for its API's address,
+//     is reported as reaching the address the platform delivers from the
+//     environment;
+//   - Nvidia Remix, whose Embedding Model node runs on OpenAI with an empty
+//     api_base and api_key: both are written with the variables the platform
+//     delivers;
+//   - a Language Model node running on another provider, its key a literal: no
+//     variable is written into it, the key is written empty and reaches nothing,
+//     and the node is reported as reached other than through its connection —
+//     the connection's key never reaches a provider it is not delivered for;
+//   - the committed Basic Prompting, whose Language Model node selects no model:
+//     no variable is written into it, and it is reported the same way.
+//
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
+//
+//   - in connectionFields (plugins/langflow-importer/wire.go), replace
+//     `"LanguageModelComponent": {"model": {` with
+//     `"LanguageModelComponentX": {"model": {`: every Language Model row fails,
+//     the node reported as of a type whose fields the importer does not know —
+//     the Basic Prompting 1.6.0 row with its api_key written empty and reported
+//     as emptied too — and the Embedding Model row passes;
+//   - in offProvider (plugins/langflow-importer/wire.go), replace
+//     `case provider == node.provider:` with
+//     `case provider == node.provider || provider != "":`: the other-provider row
+//     fails, the node written with the variables and reported as reaching its
+//     connection;
+//   - in connectionFields (plugins/langflow-importer/wire.go), replace
+//     `{field: "api_base", variable: named("OPENAI_BASE_URL"), address: true},`
+//     with
+//     `{field: "api_base_url", variable: named("OPENAI_BASE_URL"), address: true},`:
+//     the Nvidia Remix row fails, its api_base not written with the variable.
+func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t *testing.T) {
+	t.Parallel()
+	const plantedKey = "sk-plantedANTHROPICkeyVALUE0123456789ab"
+	named := func(template map[string]any, field, variable string) {
+		f := asObject(template[field])
+		f["value"], f["load_from_db"] = variable, true
+	}
+	for _, tc := range []struct {
+		name string
+		// source is a committed real export by its path beneath realExportsDir, or,
+		// where it is empty, the authored flow build writes.
+		source string
+		build  func(t *testing.T) []byte
+		node   string
+		// reads is the report of a node reaching its connection; where it is
+		// empty, literal is the report of one reaching the part other than
+		// through it.
+		reads, literal string
+		// carried writes, into the decoded source, what the flow the draft carries
+		// holds written anew; where it is nil, the flow is carried byte for byte.
+		carried func(flow map[string]any)
+		// emptied marks a node whose api_key the import reports written empty, and
+		// planted the values that must reach nothing the import wrote.
+		emptied bool
+		planted []string
+	}{
+		{name: "Langflow 1.6.0's Basic Prompting, its Language Model on OpenAI naming its key's variable",
+			source: langflowSelectingProject, node: selectingNodeID,
+			reads: keyNamed + "; " + fmt.Sprintf(fromEnvironment, "this connection")},
+		{name: "Nvidia Remix, its Embedding Model on OpenAI with an empty address and key",
+			source: langflowRemixProject, node: remixEmbeddingNodeID,
+			reads: "its field api_base names the variable OPENAI_BASE_URL, and its field api_key names the variable " +
+				"OPENAI_API_KEY, which the platform delivers for this connection and Langflow reads as a global variable",
+			carried: func(flow map[string]any) {
+				template := langflowNode(t, flow, remixEmbeddingNodeID)
+				named(template, "api_base", "OPENAI_BASE_URL")
+				named(template, "api_key", "OPENAI_API_KEY")
+			}},
+		{name: "a Language Model on another provider, its key a literal (authored)",
+			build: func(t *testing.T) []byte {
+				flow := decoded(t, readRealExport(t, langflowSelectingProject))
+				template := langflowNode(t, flow, selectingNodeID)
+				asObject(template["provider"])["value"] = "Anthropic"
+				key := asObject(template["api_key"])
+				key["value"], key["load_from_db"] = plantedKey, false
+				return encoded(t, flow)
+			},
+			node: selectingNodeID, literal: fmt.Sprintf(offOpenAI, "runs on a model provider other than OpenAI"),
+			carried: func(flow map[string]any) {
+				asObject(langflowNode(t, flow, selectingNodeID)["api_key"])["value"] = ""
+			},
+			emptied: true, planted: []string{plantedKey}},
+		{name: "the committed Basic Prompting, its Language Model selecting no model",
+			source: langflowPromptingProject, node: promptingNodeID,
+			literal: fmt.Sprintf(offOpenAI, "selects no model provider")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			source := tc.build
+			if tc.source != "" {
+				source = func(t *testing.T) []byte { return readRealExport(t, tc.source) }
+			}
+			body := source(t)
+			res, outputDir := writtenImport(t, wiringWorkspace(t, referencingLangflowModels()), "models-flow.json", body)
+			if len(tc.planted) > 0 {
+				assertNoneReaches(t, tc.planted, body, res, outputDir)
+			}
+			key := strings.ToLower(tc.node)
+
+			flow, text := carriedFlow(t, outputDir, "langflow")
+			agg := readAsTheCompilerDoes(t, text)
+			if tc.carried == nil {
+				if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(body) {
+					t.Errorf("the flow is not carried as the export, byte for byte (%d bytes carried, %d exported)",
+						len(got), len(body))
+				}
+			} else {
+				want := decoded(t, body)
+				tc.carried(want)
+				if !reflect.DeepEqual(flow, want) {
+					got, _ := json.Marshal(langflowNode(t, flow, tc.node))
+					t.Errorf("the carried flow is not the export with exactly the expected values written; its node "+
+						"%s reads %s", tc.node, got)
+				}
+			}
+			uses := map[string]string{}
+			for alias, c := range agg.Spec.Components["langflow"].Uses["model"] {
+				uses[alias] = c.Target
+			}
+			if want := map[string]string{key: key}; !reflect.DeepEqual(uses, want) {
+				t.Errorf("the model socket draws %v, want %v", uses, want)
+			}
+
+			code, want, other := "part-reads-connection", "node "+tc.node+" reaches "+key+" through the model "+
+				"connection "+key+" of "+langflowPlatform+": "+tc.reads, "part-address-in-flow"
+			if tc.reads == "" {
+				code, want, other = "part-address-in-flow", "node "+tc.node+" reaches "+key+", wired to the model "+
+					"socket of "+langflowPlatform+" as "+key+", other than through that connection: "+tc.literal,
+					"part-reads-connection"
+			}
+			var reported []string
+			emptied := false
+			for _, d := range res.Diagnostics {
+				if d.SourceRef != tc.node {
+					continue
+				}
+				switch d.Code {
+				case code:
+					reported = append(reported, d.Message)
+				case other:
+					t.Errorf("the node is reported %s: %q", other, d.Message)
+				case "credential-emptied":
+					emptied = emptied || strings.Contains(d.Message, "the value of api_key,")
+				}
+			}
+			if !slices.Equal(reported, []string{want}) {
+				t.Errorf("the node is reported %s as\n%q\nwant\n%q", code, reported, want)
+			}
+			if emptied != tc.emptied {
+				t.Errorf("the node's api_key is reported as written empty: %v, want %v", emptied, tc.emptied)
+			}
+		})
+	}
+}
+
+// nodeCopy returns a copy of the Langflow node of flow whose id is id, under the
+// id as.
+func nodeCopy(t *testing.T, flow map[string]any, id, as string) map[string]any {
+	t.Helper()
+	for _, n := range asObject(flow["data"])["nodes"].([]any) {
+		if asObject(n)["id"] != id {
+			continue
+		}
+		body, err := json.Marshal(n)
+		if err != nil {
+			t.Fatalf("encode the node %s: %v", id, err)
+		}
+		var c map[string]any
+		if err := json.Unmarshal(body, &c); err != nil {
+			t.Fatalf("decode the node %s: %v", id, err)
+		}
+		c["id"] = as
+		asObject(c["data"])["id"] = as
+		return c
+	}
+	t.Fatalf("the flow holds no node %s", id)
+	return nil
+}
+
+// TestALangflowModelLeftInTheFlowIsReportedAsItsProviderAndFieldsReachIt
+// imports Langflow 1.6.0's Basic Prompting with three authored model nodes added
+// after its Language Model node — a copy of that node, one running on another
+// provider, and a copy of Nvidia Remix's Embedding Model node, whose api_base is
+// empty — mapped by overrides to model Components, so the platform's model
+// socket draws its single connection to the export's own Language Model node,
+// the first generative one, and each added node stays in the flow, reported with
+// how the flow reaches its part as the node is written:
+//
+//   - the Language Model copy, holding no field for its API's address, and the
+//     Embedding Model copy, its api_base empty, through the connection, by the
+//     OPENAI_BASE_URL they take from the environment;
+//   - the node on another provider other than through it.
+//
+// 🔴 PLANTED DEFECT, rebuilt into the importer fixture from its source: in
+// standingOf (plugins/langflow-importer/wire.go), replace
+// `if node.environmentAddress != "" && blankAddress(raw) {` with `if false {`:
+// the case fails, the Embedding Model copy reported as reaching the part other
+// than through the connection.
+func TestALangflowModelLeftInTheFlowIsReportedAsItsProviderAndFieldsReachIt(t *testing.T) {
+	t.Parallel()
+	flow := decoded(t, readRealExport(t, langflowSelectingProject))
+	same := nodeCopy(t, flow, selectingNodeID, "LanguageModelComponent-lm2")
+	other := nodeCopy(t, flow, selectingNodeID, "LanguageModelComponent-lm3")
+	for _, n := range []map[string]any{same, other} {
+		key := asObject(asObject(asObject(asObject(n["data"])["node"])["template"])["api_key"])
+		key["value"], key["load_from_db"] = "", false
+	}
+	asObject(asObject(asObject(asObject(other["data"])["node"])["template"])["provider"])["value"] = "Anthropic"
+	embedding := nodeCopy(t, decoded(t, readRealExport(t, langflowRemixProject)), remixEmbeddingNodeID,
+		"EmbeddingModel-em1")
+	data := asObject(flow["data"])
+	data["nodes"] = append(data["nodes"].([]any), same, other, embedding)
+
+	const holder = "languagemodelcomponent-kboja"
+	held := func(ref, typ, target, how string) string {
+		return "node " + ref + " (" + typ + ") is wired to no socket of " + langflowPlatform + ": it maps to " + target +
+			", which satisfies the selector of the model socket of " + langflowPlatform + ", but that socket draws a " +
+			"single connection, which reaches " + holder + ", wired from node " + selectingNodeID + " since its " +
+			"Component carries model.aggrega.ai/capability: generative; as its node is written, the flow reaches it " +
+			how + "; it stays in the flow"
+	}
+	through := "through the connection " + holder + ": " + fmt.Sprintf(fromEnvironment, "that connection")
+	want := map[string]string{
+		"LanguageModelComponent-lm2": held("LanguageModelComponent-lm2", "LanguageModelComponent", "core/ai-model/openai",
+			through),
+		"LanguageModelComponent-lm3": held("LanguageModelComponent-lm3", "LanguageModelComponent", "core/ai-model/openai",
+			"other than through the connection "+holder+": "+fmt.Sprintf(offOpenAI, "runs on a model provider other than OpenAI")),
+		"EmbeddingModel-em1": held("EmbeddingModel-em1", "EmbeddingModel", "core/ai-model/openai-embedding", through),
+	}
+
+	res, outputDir := writtenImport(t, wiringWorkspace(t, referencingLangflowModels()), "models-flow.json",
+		encoded(t, flow))
+	_, text := carriedFlow(t, outputDir, "langflow")
+	uses := map[string]string{}
+	for alias, c := range readAsTheCompilerDoes(t, text).Spec.Components["langflow"].Uses["model"] {
+		uses[alias] = c.Target
+	}
+	if w := map[string]string{holder: holder}; !reflect.DeepEqual(uses, w) {
+		t.Errorf("the model socket draws %v, want %v", uses, w)
+	}
+	reported := map[string]string{}
+	for _, d := range res.Diagnostics {
+		if _, ok := want[d.SourceRef]; ok && d.Code == "part-not-placed" {
+			reported[d.SourceRef] = d.Message
+		}
+	}
+	if !reflect.DeepEqual(reported, want) {
+		t.Errorf("the models left in the flow are reported\n%v\nwant\n%v", reported, want)
+	}
 }
 
 // TestAPlatformsModelSocketDrawsOneConnection imports a flow holding several

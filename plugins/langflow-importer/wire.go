@@ -27,7 +27,10 @@ import (
 //     which Langflow reads through a field naming a global variable: a field
 //     whose object carries load_from_db true holds the variable's name as its
 //     value, and Langflow reads the stored global variable of that name, or the
-//     environment variable of that name where none is stored.
+//     environment variable of that name where none is stored. A model node no
+//     field of which gives its API's address — Langflow's Language Model
+//     component holds no such field for OpenAI — reads the model connection's
+//     address from the environment all the same, as OPENAI_BASE_URL.
 
 // reachOf reads how a Langflow node reaches the part it stands for. A node whose
 // template carries the mcp_server field reaches the MCP server it names — a name
@@ -84,9 +87,11 @@ func refuseOf(tree json.RawMessage, node importer.Node, socket string) string {
 // alias. Any other part reaches its connection through the fields of its node
 // that name the variables the platform delivers for it, each written with that
 // variable's name — a name only, never a value — where the node is of a type
-// whose fields the importer knows and the field can name a variable in this
-// export; otherwise the part is reported as reached other than through its
-// connection.
+// whose fields the importer knows, runs on the model provider those variables
+// are delivered for, and the field can name a variable in this export, and
+// through the environment where no field of it gives the part's address and its
+// type reads that address from there; otherwise the part is reported as reached
+// other than through its connection.
 func wireOf(tree json.RawMessage, part importer.Part) importer.Wiring {
 	index, template, ok := nodeTemplate(tree, part.Node.ID)
 	if !ok {
@@ -152,25 +157,149 @@ func storeVariable(suffix string) func(string) string {
 	}
 }
 
-// connectionFields are, by node type and then by socket, the fields of a Langflow
-// node that name the variables the platform delivers for the connection it is
-// wired through, read off Langflow's own components: its OpenAI chat model and
-// OpenAI embeddings components take their API's address in openai_api_base —
-// the chat model falls back to OpenAI's public address, not to an environment
-// variable, where it is empty — and their key in api_key and openai_api_key; its
+// connectionNode is how a Langflow node of one type reaches the connection of
+// one socket it is wired through.
+type connectionNode struct {
+	// fields are the fields of the node naming the variables the platform
+	// delivers for the connection.
+	fields []connectionField
+	// provider, where set, is the model provider the node must run on for its
+	// fields to be written with those variables. A node of a type running on
+	// several providers hands its key to the provider it runs on, and the
+	// platform delivers its model connection for an OpenAI-compatible client, so
+	// a node running on another provider is written with none of them: the
+	// connection's key would otherwise reach that provider.
+	provider string
+	// environmentAddress, where set, is the variable the OpenAI client the node
+	// runs reads the part's address from in the environment where no field of
+	// the node gives one: none of its fields carries the address, or the one that
+	// does is empty. It is set only beside the OpenAI provider, whose client that
+	// is.
+	environmentAddress string
+}
+
+// connectionFields are, by node type and then by socket, how a Langflow node
+// reaches the connection it is wired through, read off Langflow's own
+// components: its OpenAI chat model and OpenAI embeddings components take their
+// API's address in openai_api_base — the chat model falls back to OpenAI's
+// public address, not to an environment variable, where it is empty — and their
+// key in api_key and openai_api_key; its Language Model and Embedding Model
+// components, which run on one of several providers, take their key in api_key,
+// and reach OPENAI_BASE_URL from the environment where no field gives their
+// API's address — the Language Model component has no such field for OpenAI, the
+// Embedding Model component's api_base is one, read where it is set; its
 // PGVector component takes the whole connection string in pg_server_url.
-var connectionFields = map[string]map[string][]connectionField{
-	"OpenAIModel": {"model": {
+var connectionFields = map[string]map[string]connectionNode{
+	"OpenAIModel": {"model": {fields: []connectionField{
 		{field: "openai_api_base", variable: named("OPENAI_BASE_URL"), address: true},
 		{field: "api_key", variable: named("OPENAI_API_KEY")},
-	}},
-	"OpenAIEmbeddings": {"model": {
+	}}},
+	"OpenAIEmbeddings": {"model": {fields: []connectionField{
 		{field: "openai_api_base", variable: named("OPENAI_BASE_URL"), address: true},
 		{field: "openai_api_key", variable: named("OPENAI_API_KEY")},
+	}}},
+	"LanguageModelComponent": {"model": {
+		fields: []connectionField{
+			{field: "api_key", variable: named("OPENAI_API_KEY")},
+		},
+		provider:           openAIProvider,
+		environmentAddress: "OPENAI_BASE_URL",
 	}},
-	"pgvector": {"vector_store": {
+	"EmbeddingModel": {"model": {
+		fields: []connectionField{
+			{field: "api_base", variable: named("OPENAI_BASE_URL"), address: true},
+			{field: "api_key", variable: named("OPENAI_API_KEY")},
+		},
+		provider:           openAIProvider,
+		environmentAddress: "OPENAI_BASE_URL",
+	}},
+	"pgvector": {"vector_store": {fields: []connectionField{
 		{field: "pg_server_url", variable: storeVariable("CONNECTION_STRING"), address: true},
-	}},
+	}}},
+}
+
+// openAIProvider is the name Langflow gives the OpenAI model provider.
+const openAIProvider = "OpenAI"
+
+// providerOf reads the model provider a Langflow node runs on, as Langflow
+// reads it: none where its model field takes the model from another node
+// connected to it; otherwise the value of its provider field — the provider an
+// earlier Language Model or Embedding Model component selects there, or the
+// override a later one replaces its selection's provider with — and, where that
+// is empty, the provider of the model its model field selects. Where the node
+// runs on none the import can read, it says why. A provider's name is no
+// credential, and the value is read as the flow writes it.
+func providerOf(template json.RawMessage) (string, string) {
+	selection := memberOf(memberOf(template, "model"), "value")
+	var s string
+	if json.Unmarshal(selection, &s) == nil && s == connectedModel {
+		return "", "takes its model from another node connected to it"
+	}
+	if raw := memberOf(template, "provider"); raw != nil && json.Unmarshal(memberOf(raw, "value"), &s) == nil &&
+		strings.TrimSpace(s) != "" {
+		if string(memberOf(raw, "load_from_db")) == "true" {
+			return "", "names its model provider through a global variable, which Langflow reads only when the flow runs"
+		}
+		return strings.TrimSpace(s), ""
+	}
+	var list []json.RawMessage
+	if json.Unmarshal(selection, &list) == nil && len(list) > 0 {
+		selection = list[0]
+	}
+	if raw := memberOf(selection, "provider"); raw != nil && json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
+		return strings.TrimSpace(s), ""
+	}
+	return "", "selects no model provider"
+}
+
+// offProvider says why a node is written with none of the variables the
+// platform delivers for its connection, where its type runs on several model
+// providers and it does not run on the one those variables are for; empty where
+// it does, or its type runs on one.
+func offProvider(template json.RawMessage, node connectionNode) string {
+	if node.provider == "" {
+		return ""
+	}
+	provider, why := providerOf(template)
+	switch {
+	case provider == node.provider:
+		return ""
+	case provider != "":
+		return "runs on a model provider other than " + node.provider
+	}
+	return why
+}
+
+// offProviderReach says how a node of a part's type off the provider its
+// connection's variables are delivered for reaches the part: why it is off,
+// and that it is written with none of them.
+func offProviderReach(why string, part importer.Part, node connectionNode) string {
+	return fmt.Sprintf("the node %s, while the platform delivers its %s connection (%s) to a node running on the %s "+
+		"provider, so none of them is written into it, and the node reaches the part at the address its own fields or "+
+		"its component's defaults give", why, part.Socket, strings.Join(socketVariables(part.Socket, part.Alias), ", "),
+		node.provider)
+}
+
+// environmentReach says how a node no field of which gives its API's address
+// reaches the address its connection delivers as variable: connection names the
+// connection, "this connection" or "that connection".
+func environmentReach(variable, connection string) string {
+	return fmt.Sprintf("no field of it gives its API's address, so the OpenAI client it runs takes %s, the address "+
+		"the platform delivers for %s, from the environment", variable, connection)
+}
+
+// blankAddress reports whether a field carrying a part's address gives none: it
+// is not in the exported flow, or names no global variable and holds an empty
+// value or none.
+func blankAddress(raw json.RawMessage) bool {
+	if raw == nil {
+		return true
+	}
+	if string(memberOf(raw, "load_from_db")) == "true" {
+		return false
+	}
+	value := memberOf(raw, "value")
+	return value == nil || string(value) == "null" || string(value) == `""`
 }
 
 // socketVariables names the variables the platform delivers for a connection of
@@ -196,13 +325,21 @@ func unknownFields(part importer.Part) string {
 
 // wireFields is wireOf for a part reached through the fields of its node.
 func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...string) string) importer.Wiring {
-	fields, known := connectionFields[part.Node.Type][part.Socket]
+	node, known := connectionFields[part.Node.Type][part.Socket]
 	if !known {
 		return importer.Wiring{Literal: unknownFields(part)}
 	}
+	if why := offProvider(template, node); why != "" {
+		return importer.Wiring{Literal: offProviderReach(why, part, node)}
+	}
 	var w importer.Wiring
 	var reads, literal []string
-	for _, f := range fields {
+	// addressed records that a field carrying the part's address is written with
+	// the variable, or holds an address the node reaches as the flow writes it;
+	// where neither, a type reading its address from the environment reads it
+	// there.
+	addressed := false
+	for _, f := range node.fields {
 		variable := f.variable(part.Alias)
 		why := ""
 		raw := memberOf(template, f.field)
@@ -215,7 +352,8 @@ func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...
 			why = "carries no value member in this export"
 		}
 		if why != "" {
-			if f.address {
+			if f.address && (node.environmentAddress == "" || !blankAddress(raw)) {
+				addressed = true
 				literal = append(literal, fmt.Sprintf("its field %s %s, so it cannot name %s, the variable the platform "+
 					"delivers for this connection, and the node reaches the part at the address the flow or its "+
 					"component's defaults give", f.field, why, variable))
@@ -226,11 +364,17 @@ func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...
 			importer.Edit{Pointer: at(f.field, "value"), Value: jsonString(variable)},
 			importer.Edit{Pointer: at(f.field, "load_from_db"), Value: json.RawMessage("true")})
 		reads = append(reads, fmt.Sprintf("its field %s names the variable %s", f.field, variable))
+		addressed = addressed || f.address
 	}
+	var clauses []string
 	if len(reads) > 0 {
-		w.Reads = strings.Join(reads, ", and ") + ", which the platform delivers for this connection and Langflow reads " +
-			"as a global variable"
+		clauses = append(clauses, strings.Join(reads, ", and ")+", which the platform delivers for this connection and "+
+			"Langflow reads as a global variable")
 	}
+	if node.environmentAddress != "" && !addressed {
+		clauses = append(clauses, environmentReach(node.environmentAddress, "this connection"))
+	}
+	w.Reads = strings.Join(clauses, "; ")
 	w.Literal = strings.Join(literal, "; ")
 	return w
 }
@@ -248,18 +392,23 @@ var singleSockets = []importer.SingleSocket{
 // because another part holds its socket's single connection, as the node is
 // written: through that connection where the field of the node carrying the
 // part's address names the variable the platform delivers for it, read as a
-// global variable; otherwise at the address that field or the node's component
-// gives.
+// global variable, or where no field gives the address and the node's type reads
+// it from the environment; otherwise at the address that field or the node's
+// component gives — as a node running on a model provider other than the one the
+// connection's variables are delivered for does.
 func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
 	_, template, ok := nodeTemplate(tree, part.Node.ID)
 	if !ok {
 		return false, ""
 	}
-	fields, known := connectionFields[part.Node.Type][part.Socket]
+	node, known := connectionFields[part.Node.Type][part.Socket]
 	if !known {
 		return false, unknownFields(part)
 	}
-	for _, f := range fields {
+	if why := offProvider(template, node); why != "" {
+		return false, offProviderReach(why, part, node)
+	}
+	for _, f := range node.fields {
 		if !f.address {
 			continue
 		}
@@ -271,9 +420,15 @@ func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
 			return true, fmt.Sprintf("its field %s names the variable %s, which the platform delivers for that "+
 				"connection and Langflow reads as a global variable", f.field, variable)
 		}
+		if node.environmentAddress != "" && blankAddress(raw) {
+			break
+		}
 		return false, fmt.Sprintf("its field %s does not name %s, the variable the platform delivers for that "+
 			"connection, so the node reaches the part at the address that field or its component's defaults give",
 			f.field, variable)
+	}
+	if node.environmentAddress != "" {
+		return true, environmentReach(node.environmentAddress, "that connection")
 	}
 	return false, ""
 }

@@ -634,9 +634,12 @@ func asSeeded(carried string) string {
 // which must be exactly the platform's own secret — the Flowise owner's password,
 // the Langflow administrator's password — declared with its own key. The build
 // succeeds on both, the model part the platform's model socket draws is written
-// with the model its node selects, the flow the platform is seeded with is the
-// flow the draft carries, and the platform reaches the wired model at the address
-// the model publishes.
+// with the model its node selects, the draft carries the export byte for byte,
+// the flow the platform is seeded with is the flow the draft carries, and the
+// platform reaches the wired model at the address the model publishes. The
+// Langflow export's Language Model node names its key as the global variable
+// OPENAI_API_KEY, the one the platform delivers for the model connection, and the
+// seeded flow's node names it still.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
@@ -651,7 +654,12 @@ func asSeeded(carried string) string {
 //     `"LanguageModelComponent": {"model"},`: both Langflow rows fail — the
 //     export's Language Model node names its model in model_name alone, so
 //     values.model is left for the author and the build halts on it — and both
-//     Flowise rows pass.
+//     Flowise rows pass;
+//   - in connectionFields (plugins/langflow-importer/wire.go), replace
+//     `"LanguageModelComponent": {"model": {` with
+//     `"LanguageModelComponentX": {"model": {`: both Langflow rows fail — the
+//     node's api_key is written empty, so the draft no longer carries the export
+//     and the seeded node names no variable — and both Flowise rows pass.
 func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -660,11 +668,14 @@ func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *te
 		// part is the key of the model part the platform's model socket draws,
 		// and model the model its node selects.
 		part, model string
+		// keyNode is the node of a Langflow export naming its key as the global
+		// variable OPENAI_API_KEY in its api_key field.
+		keyNode string
 	}{
 		{platform: "flowise", source: flowiseChatflow, settings: referencing(), part: "chatopenai-0",
 			model: "gpt-3.5-turbo"},
 		{platform: "langflow", source: langflowSelectingProject, settings: referencingLanguageModel(),
-			part: "languagemodelcomponent-kboja", model: "gpt-4.1"},
+			part: "languagemodelcomponent-kboja", model: "gpt-4.1", keyNode: selectingNodeID},
 	} {
 		for _, target := range []string{"helm", "compose"} {
 			t.Run(tc.platform+"/"+target, func(t *testing.T) {
@@ -691,12 +702,28 @@ func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *te
 				if carried == "" {
 					t.Fatal("the draft carries no flow")
 				}
+				if export := string(readRealExport(t, tc.source)); carried != export {
+					t.Errorf("the draft does not carry the export byte for byte (%d bytes carried, %d exported)",
+						len(carried), len(export))
+				}
 
 				artifacts := buildDraftOn(t, dir, platformRelease{platform: tc.platform, target: target,
 					parts: []string{tc.part}, model: tc.part})
-				if got, want := seededFlow(t, artifacts, tc.platform, target), asSeeded(carried); got != want {
+				seeded := seededFlow(t, artifacts, tc.platform, target)
+				if want := asSeeded(carried); seeded != want {
 					t.Errorf("the platform is seeded with a flow of %d bytes that is not the %d the draft carries, ending "+
-						"in one line feed", len(got), len(want))
+						"in one line feed", len(seeded), len(want))
+				}
+				if tc.keyNode != "" {
+					var flow map[string]any
+					if err := json.Unmarshal([]byte(seeded), &flow); err != nil {
+						t.Fatalf("the seeded flow does not read as JSON: %v", err)
+					}
+					key := asObject(langflowNode(t, flow, tc.keyNode)["api_key"])
+					if key["value"] != "OPENAI_API_KEY" || key["load_from_db"] != true {
+						t.Errorf("the seeded node %s's api_key carries %#v (load_from_db %#v), want the variable "+
+							"OPENAI_API_KEY read from the global variables", tc.keyNode, key["value"], key["load_from_db"])
+					}
 				}
 				if got := platformVariable(t, artifacts, tc.platform, target, "OPENAI_BASE_URL"); got != openAIEndpoint {
 					t.Errorf("OPENAI_BASE_URL is %q, want the wired model's address %q", got, openAIEndpoint)

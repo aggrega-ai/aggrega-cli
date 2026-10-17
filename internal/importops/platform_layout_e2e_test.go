@@ -117,6 +117,10 @@ var flowFixtures = []flowFixture{
 	langflowFixture(realExportPath(langflowRemixProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Nvidia_Remix",
 		"faac3377-a15b-459b-a6bd-c47c318dcc78", nil),
+	// Its Language Model node names its key as the global variable OPENAI_API_KEY.
+	// No mapping row places that node, so here it is wired to nothing, and the name
+	// is written empty with every credential value; wired to the model socket, the
+	// node keeps it, as the cases mapping it by an override show.
 	langflowFixture(realExportPath(langflowSelectingProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Basic_Prompting_1.6.0",
 		"0dbee653-41ae-4e51-af2e-55757fb24be3", nil).
