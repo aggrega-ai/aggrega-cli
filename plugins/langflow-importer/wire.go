@@ -7,10 +7,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/treememo"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -71,7 +73,7 @@ func refuseOf(tree json.RawMessage, node importer.Node, socket string) string {
 	if socket != "tools" {
 		return ""
 	}
-	if _, template, ok := nodeTemplate(tree, node.ID); ok && memberOf(template, "mcp_server") != nil {
+	if _, template, ok := nodeTemplate(tree, node.ID); ok && template.member("mcp_server") != nil {
 		return ""
 	}
 	return "Langflow reaches a tools connection only through an MCP Tools node naming it in its mcp_server field, " +
@@ -229,13 +231,13 @@ const openAIProvider = "OpenAI"
 // is empty, the provider of the model its model field selects. Where the node
 // runs on none the import can read, it says why. A provider's name is no
 // credential, and the value is read as the flow writes it.
-func providerOf(template json.RawMessage) (string, string) {
-	selection := memberOf(memberOf(template, "model"), "value")
+func providerOf(template flowTemplate) (string, string) {
+	selection := memberOf(template.member("model"), "value")
 	var s string
 	if json.Unmarshal(selection, &s) == nil && s == connectedModel {
 		return "", "takes its model from another node connected to it"
 	}
-	if raw := memberOf(template, "provider"); raw != nil && json.Unmarshal(memberOf(raw, "value"), &s) == nil &&
+	if raw := template.member("provider"); raw != nil && json.Unmarshal(memberOf(raw, "value"), &s) == nil &&
 		strings.TrimSpace(s) != "" {
 		if string(memberOf(raw, "load_from_db")) == "true" {
 			return "", "names its model provider through a global variable, which Langflow reads only when the flow runs"
@@ -256,7 +258,7 @@ func providerOf(template json.RawMessage) (string, string) {
 // platform delivers for its connection, where its type runs on several model
 // providers and it does not run on the one those variables are for; empty where
 // it does, or its type runs on one.
-func offProvider(template json.RawMessage, node connectionNode) string {
+func offProvider(template flowTemplate, node connectionNode) string {
 	if node.provider == "" {
 		return ""
 	}
@@ -324,7 +326,7 @@ func unknownFields(part importer.Part) string {
 }
 
 // wireFields is wireOf for a part reached through the fields of its node.
-func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...string) string) importer.Wiring {
+func wireFields(template flowTemplate, part importer.Part, at func(tokens ...string) string) importer.Wiring {
 	node, known := connectionFields[part.Node.Type][part.Socket]
 	if !known {
 		return importer.Wiring{Literal: unknownFields(part)}
@@ -342,7 +344,7 @@ func wireFields(template json.RawMessage, part importer.Part, at func(tokens ...
 	for _, f := range node.fields {
 		variable := f.variable(part.Alias)
 		why := ""
-		raw := memberOf(template, f.field)
+		raw := template.member(f.field)
 		switch {
 		case raw == nil:
 			why = "is not in the exported flow"
@@ -413,7 +415,7 @@ func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
 			continue
 		}
 		variable := f.variable(part.Alias)
-		raw := memberOf(template, f.field)
+		raw := template.member(f.field)
 		var value string
 		if string(memberOf(raw, "load_from_db")) == "true" && json.Unmarshal(memberOf(raw, "value"), &value) == nil &&
 			value == variable {
@@ -451,8 +453,8 @@ type mcpServer struct {
 // an object whose name is the server's name and whose config is its server
 // configuration. It reports false for a template carrying no mcp_server field. A
 // name that is not a string names no server.
-func serverOf(template json.RawMessage) (mcpServer, bool) {
-	field := memberOf(template, "mcp_server")
+func serverOf(template flowTemplate) (mcpServer, bool) {
+	field := template.member("mcp_server")
 	if field == nil {
 		return mcpServer{}, false
 	}
@@ -483,16 +485,89 @@ func serverOf(template json.RawMessage) (mcpServer, bool) {
 }
 
 // nodeTemplate returns the position, in the flow's node list, of the node whose
-// id is id, and the template its data.node carries; false where no node has that
-// id.
-func nodeTemplate(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
+// id is id, and the template its data.node carries — of the first such node,
+// where several carry that id; false where no node has that id.
+func nodeTemplate(tree json.RawMessage, id string) (int, flowTemplate, bool) {
+	nodes := nodesOf(tree)
+	at, ok := nodes.first[id]
+	if !ok {
+		return 0, flowTemplate{}, false
+	}
+	n := nodes.list[at]
+	return n.position, n.template, true
+}
+
+// flowNode is one node of a Langflow flow's node list: its position in the
+// list, its id, and the template its data.node carries.
+type flowNode struct {
+	position int
+	id       string
+	template flowTemplate
+}
+
+// flowTemplate is the template a Langflow node's data.node carries: its members
+// in the order the template writes them, as importer.ObjectEntries reads them,
+// and, by name, the value of the first member of each name.
+type flowTemplate struct {
+	entries []importer.ObjectEntry
+	first   map[string]json.RawMessage
+}
+
+// readTemplate reads a node's template once, for every question asked of it.
+func readTemplate(raw json.RawMessage) flowTemplate {
+	t := flowTemplate{entries: importer.ObjectEntries(raw), first: map[string]json.RawMessage{}}
+	for _, e := range t.entries {
+		if _, seen := t.first[e.Key]; !seen {
+			t.first[e.Key] = e.Value
+		}
+	}
+	return t
+}
+
+// member returns the value of the template's first member named key, nil where
+// it holds none, as memberOf reads an object.
+func (t flowTemplate) member(key string) json.RawMessage {
+	return t.first[key]
+}
+
+// flowNodes are the elements of a Langflow flow's node list that read as nodes,
+// in the order the list holds them, and, by id, the first of them carrying each
+// id; and the flow's own top-level id, undecoded.
+type flowNodes struct {
+	list  []flowNode
+	first map[string]int
+	id    json.RawMessage
+}
+
+// nodesMemo holds the nodes last read off a flow's tree.
+var nodesMemo treememo.Memo[flowNodes]
+
+// nodesOf returns the nodes of the flow whose tree is tree, reading its node
+// list once per tree however many questions are asked about its nodes.
+func nodesOf(tree json.RawMessage) flowNodes {
+	return nodesMemo.Of(tree, readNodes)
+}
+
+// readNodes reads the node list of a Langflow flow's tree, at data.nodes: each
+// element that decodes as a node, with the template its data.node carries, its
+// members read once. A tree whose node list does not decode holds none. It
+// reads the flow's top-level id in the same decoding, as decoding the id alone
+// would: a member whose value does not fit the node list leaves the id read.
+func readNodes(tree json.RawMessage) flowNodes {
+	nodes := flowNodes{first: map[string]int{}}
 	var top struct {
+		ID   json.RawMessage `json:"id"`
 		Data struct {
 			Nodes []json.RawMessage `json:"nodes"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(tree, &top); err != nil {
-		return 0, nil, false
+	err := json.Unmarshal(tree, &top)
+	var mismatch *json.UnmarshalTypeError
+	if err == nil || errors.As(err, &mismatch) {
+		nodes.id = top.ID
+	}
+	if err != nil {
+		return nodes
 	}
 	for i, raw := range top.Data.Nodes {
 		var node struct {
@@ -503,11 +578,16 @@ func nodeTemplate(tree json.RawMessage, id string) (int, json.RawMessage, bool) 
 				} `json:"node"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(raw, &node) == nil && node.ID == id {
-			return i, node.Data.Node.Template, true
+		if json.Unmarshal(raw, &node) != nil {
+			continue
 		}
+		if _, seen := nodes.first[node.ID]; !seen {
+			nodes.first[node.ID] = len(nodes.list)
+		}
+		nodes.list = append(nodes.list,
+			flowNode{position: i, id: node.ID, template: readTemplate(node.Data.Node.Template)})
 	}
-	return 0, nil, false
+	return nodes
 }
 
 // memberOf returns the value of the first member of a JSON object named key, nil

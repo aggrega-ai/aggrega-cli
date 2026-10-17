@@ -98,16 +98,11 @@ func templateFields(raw json.RawMessage) (fields, secrets []string) {
 }
 
 // flowID returns the identifier a Langflow export gives its flow: the string at
-// its top-level id, empty where it carries none.
+// its top-level id, empty where it carries none. The id is read with the flow's
+// node list (wire.go), in the one decoding of the tree they share.
 func flowID(tree json.RawMessage) string {
-	var top struct {
-		ID json.RawMessage `json:"id"`
-	}
-	if err := json.Unmarshal(tree, &top); err != nil {
-		return ""
-	}
 	var id string
-	if err := json.Unmarshal(top.ID, &id); err != nil {
+	if err := json.Unmarshal(nodesOf(tree).id, &id); err != nil {
 		return ""
 	}
 	return id
@@ -124,31 +119,13 @@ func flowID(tree json.RawMessage) string {
 // field holding no value member is not located, since there is nothing in it to
 // write empty.
 func credentialsOf(tree json.RawMessage) []importer.Credential {
-	var top struct {
-		Data struct {
-			Nodes []json.RawMessage `json:"nodes"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(tree, &top); err != nil {
-		return nil
-	}
 	var out []importer.Credential
-	for i, raw := range top.Data.Nodes {
-		var node struct {
-			ID   string `json:"id"`
-			Data struct {
-				Node struct {
-					Template json.RawMessage `json:"template"`
-				} `json:"node"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(raw, &node); err != nil {
-			continue
-		}
+	for _, node := range nodesOf(tree).list {
 		at := func(tokens ...string) string {
-			return importer.Pointer(append([]string{"data", "nodes", strconv.Itoa(i), "data", "node", "template"}, tokens...)...)
+			return importer.Pointer(append([]string{"data", "nodes", strconv.Itoa(node.position), "data", "node", "template"},
+				tokens...)...)
 		}
-		for _, e := range importer.ObjectEntries(node.Data.Node.Template) {
+		for _, e := range node.template.entries {
 			var field struct {
 				Password json.RawMessage `json:"password"`
 				Value    json.RawMessage `json:"value"`
@@ -157,10 +134,10 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 				continue
 			}
 			if string(field.Password) == "true" {
-				out = append(out, importer.Credential{Node: node.ID, Field: e.Key, Pointer: at(e.Key, "value")})
+				out = append(out, importer.Credential{Node: node.id, Field: e.Key, Pointer: at(e.Key, "value")})
 			}
 			if e.Key == "mcp_server" {
-				out = append(out, serverCredentials(node.ID, field.Value, at)...)
+				out = append(out, serverCredentials(node.id, field.Value, at)...)
 			}
 		}
 	}

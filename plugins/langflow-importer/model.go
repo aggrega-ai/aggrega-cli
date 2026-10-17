@@ -49,7 +49,7 @@ func modelOf(tree json.RawMessage, node importer.Node) (string, string) {
 		return "", ""
 	}
 	for _, f := range fields {
-		raw := memberOf(template, f)
+		raw := template.member(f)
 		if raw == nil {
 			continue
 		}

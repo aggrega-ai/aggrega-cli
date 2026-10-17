@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/treememo"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -126,14 +127,44 @@ func basePathOf(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
 }
 
 // nodeInputs returns the position, in the chatflow's node list, of the node
-// whose id is id, and the inputs its data holds; false where no node has that
-// id.
+// whose id is id, and the inputs its data holds — of the first such node, where
+// several carry that id; false where no node has that id.
 func nodeInputs(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
+	n, ok := nodesOf(tree)[id]
+	if !ok {
+		return 0, nil, false
+	}
+	return n.position, n.inputs, true
+}
+
+// chatflowNode is one node of a Flowise flow's node list: its position in the
+// list and the inputs its data holds.
+type chatflowNode struct {
+	position int
+	inputs   json.RawMessage
+}
+
+// nodesMemo holds the nodes last read off a chatflow's tree.
+var nodesMemo treememo.Memo[map[string]chatflowNode]
+
+// nodesOf returns, by id, the first node carrying each id among the elements
+// of the node list of the chatflow whose tree is tree that read as nodes,
+// reading its node list once per tree however many questions are asked about
+// its nodes.
+func nodesOf(tree json.RawMessage) map[string]chatflowNode {
+	return nodesMemo.Of(tree, readNodes)
+}
+
+// readNodes reads the node list of a Flowise flow's tree, at nodes: each
+// element that decodes as a node, with the inputs its data holds, by id, the
+// first of each id. A tree whose node list does not decode holds none.
+func readNodes(tree json.RawMessage) map[string]chatflowNode {
+	nodes := map[string]chatflowNode{}
 	var top struct {
 		Nodes []json.RawMessage `json:"nodes"`
 	}
 	if err := json.Unmarshal(tree, &top); err != nil {
-		return 0, nil, false
+		return nodes
 	}
 	for i, raw := range top.Nodes {
 		var node struct {
@@ -142,9 +173,12 @@ func nodeInputs(tree json.RawMessage, id string) (int, json.RawMessage, bool) {
 				Inputs json.RawMessage `json:"inputs"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(raw, &node) == nil && node.ID == id {
-			return i, node.Data.Inputs, true
+		if json.Unmarshal(raw, &node) != nil {
+			continue
+		}
+		if _, seen := nodes[node.ID]; !seen {
+			nodes[node.ID] = chatflowNode{position: i, inputs: node.Data.Inputs}
 		}
 	}
-	return 0, nil, false
+	return nodes
 }
