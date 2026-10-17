@@ -1,0 +1,53 @@
+{
+  "nodes": [
+    {
+      "id": "chatOpenAI_0",
+      "type": "customNode",
+      "data": {
+        "id": "chatOpenAI_0",
+        "name": "chatOpenAI",
+        "inputs": {
+          "modelName": "gpt-4o",
+          "temperature": 0.2,
+          "basePath": "{{$vars.AGGREGA_MODEL_URL}}"
+        }
+      }
+    },
+    {
+      "id": "promptTemplate_0",
+      "type": "customNode",
+      "data": {
+        "id": "promptTemplate_0",
+        "name": "promptTemplate",
+        "inputs": {
+          "template": "Answer {{question}} for {{ $flow.state.customer }}, in {{{language}}}.",
+          "promptValues": "{\"question\":\"{{question}}\"}"
+        }
+      }
+    },
+    {
+      "id": "llmChain_0",
+      "type": "customNode",
+      "data": {
+        "id": "llmChain_0",
+        "name": "llmChain",
+        "inputs": {
+          "model": "{{chatOpenAI_0.data.instance}}",
+          "prompt": "{{promptTemplate_0.data.instance}}"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "chatOpenAI_0",
+      "target": "llmChain_0",
+      "id": "chatOpenAI_0-llmChain_0"
+    },
+    {
+      "source": "promptTemplate_0",
+      "target": "llmChain_0",
+      "id": "promptTemplate_0-llmChain_0"
+    }
+  ]
+}

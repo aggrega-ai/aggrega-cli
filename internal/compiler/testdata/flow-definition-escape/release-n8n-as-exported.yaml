@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: n8n-as-exported
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: n8n-as-exported
+  manifest: n8n-compose
+  boundaries:
+    main:
+      directory: ./dist/n8n-as-exported
+      components:
+        model:
+          infra:
+            endpoint: http://litellm:4000/v1
+        automation:
+          infra:
+            image: n8nio/n8n:1.110.1

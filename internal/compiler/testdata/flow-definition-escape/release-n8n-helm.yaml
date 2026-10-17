@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: n8n-helm
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: n8n-escaped
+  manifest: n8n-helm
+  boundaries:
+    main:
+      directory: ./dist/n8n-helm
+      annotations:
+        aggrega.ai/namespace: automation
+      components:
+        model:
+          infra:
+            endpoint: http://litellm.gateway:4000/v1
+        automation:
+          infra:
+            image: n8nio/n8n:1.110.1

@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: n8n-compose
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/ai-agent/n8n:1.0.0: compose/n8n:1.0.0
+        core/ai-model/openai-compatible:1.0.0: compose/openai-compatible:1.0.0

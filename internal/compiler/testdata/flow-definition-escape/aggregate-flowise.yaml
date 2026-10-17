@@ -1,0 +1,80 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: flowise-escaped
+  version: "1.0.0"
+spec:
+  components:
+    model:
+      type: core/ai-model/openai-compatible
+      values:
+        provider_name: litellm
+        model: gpt-4o
+    chat:
+      type: core/ai-agent/flowise
+      values:
+        chatflow_id: 3f2b8c1e-7a4d-4e9b-8c2f-1a6d5e9b0c47
+        # The definition is the platform's export, with every opening double brace
+        # written as the template action that prints one. The whole Aggregate is read
+        # as a template, this comment included, so no comment here spells the braces
+        # out.
+        flow_definition: |
+          {
+            "nodes": [
+              {
+                "id": "chatOpenAI_0",
+                "type": "customNode",
+                "data": {
+                  "id": "chatOpenAI_0",
+                  "name": "chatOpenAI",
+                  "inputs": {
+                    "modelName": "gpt-4o",
+                    "temperature": 0.2,
+                    "basePath": "{{"{{"}}$vars.AGGREGA_MODEL_URL}}"
+                  }
+                }
+              },
+              {
+                "id": "promptTemplate_0",
+                "type": "customNode",
+                "data": {
+                  "id": "promptTemplate_0",
+                  "name": "promptTemplate",
+                  "inputs": {
+                    "template": "Answer {{"{{"}}question}} for {{"{{"}} $flow.state.customer }}, in {{"{{"}}{language}}}.",
+                    "promptValues": "{\"question\":\"{{"{{"}}question}}\"}"
+                  }
+                }
+              },
+              {
+                "id": "llmChain_0",
+                "type": "customNode",
+                "data": {
+                  "id": "llmChain_0",
+                  "name": "llmChain",
+                  "inputs": {
+                    "model": "{{"{{"}}chatOpenAI_0.data.instance}}",
+                    "prompt": "{{"{{"}}promptTemplate_0.data.instance}}"
+                  }
+                }
+              }
+            ],
+            "edges": [
+              {
+                "source": "chatOpenAI_0",
+                "target": "llmChain_0",
+                "id": "chatOpenAI_0-llmChain_0"
+              },
+              {
+                "source": "promptTemplate_0",
+                "target": "llmChain_0",
+                "id": "promptTemplate_0-llmChain_0"
+              }
+            ]
+          }
+      uses:
+        model:
+          llm:
+            target: model
+            values:
+              unauthenticated: true

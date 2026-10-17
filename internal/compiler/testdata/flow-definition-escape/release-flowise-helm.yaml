@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: flowise-helm
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: flowise-escaped
+  manifest: flowise-helm
+  boundaries:
+    main:
+      directory: ./dist/flowise-helm
+      annotations:
+        aggrega.ai/namespace: flows
+      components:
+        model:
+          infra:
+            endpoint: http://litellm.gateway:4000/v1
+        chat:
+          infra:
+            image: flowiseai/flowise:3.1.3
+            owner_email: owner@example.com
+          features:
+            owner_password:
+              type: core/referenced-secret
+              infra:
+                origin: flowise-owner
