@@ -809,10 +809,15 @@ func mcpBuildSource(t *testing.T) []byte {
 //     configuration holds the address the Release gave, and the flow holds no
 //     copy of the source's host.
 //
-// 🔴 PLANTED DEFECT, rebuilt into the importer fixtures from its source: in
-// wireServer (plugins/langflow-importer/wire.go), replace `if server.hasURL {`
-// with `if server.hasURL && false {`: both rows fail, the source's address in the
-// drafted aggregate.yaml.
+// 🔴 PLANTED DEFECT, rebuilt into the importer fixtures from its source. A wired
+// node's address is written empty twice over — by the edit wireServer makes and
+// by the credential scrub — so the defect removes both: in wireServer
+// (plugins/langflow-importer/wire.go), replace `if server.hasURL {` with
+// `if server.hasURL && false {`, and in serverCredentials
+// (plugins/langflow-importer/walk.go), replace `case mcpconfig.Address:` with
+// `case mcpconfig.Address + 100:`: both rows fail, the source's address in the
+// drafted aggregate.yaml. Either replacement alone leaves the address written
+// empty by the other.
 func TestTheBuiltFlowReachesAnMCPServerAtTheAddressTheReleaseGives(t *testing.T) {
 	t.Parallel()
 	source := mcpBuildSource(t)

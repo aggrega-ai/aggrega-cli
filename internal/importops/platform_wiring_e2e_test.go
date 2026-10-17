@@ -184,12 +184,13 @@ func mcpToolsNode(id string, value any) map[string]any {
 		}}}}
 }
 
-// The values the authored MCP Tools nodes carry: two server addresses, one
-// carrying a key in its query, a request header, an environment value, and an
+// The values the authored MCP Tools nodes carry: three server addresses, two
+// carrying a key in their query, a request header, an environment value, and an
 // argument a server is started with carrying a key.
 const (
 	remixAddress = "http://remix-mcp.internal.example:8000/sse?key=sk-plantedURLkey0123456789abcd"
 	docsAddress  = "https://docs-mcp.internal.example/mcp"
+	fetchAddress = "https://fetch-mcp.internal.example/mcp?token=sk-plantedFETCHurl0123456789ab"
 	mcpHeader    = "Bearer sk-plantedMCPheaderVALUE0123456789"
 	mcpEnv       = "sk-plantedMCPenvVALUE0123456789abcd"
 	mcpArgument  = "--api-key=sk-plantedMCPargVALUE0123456789ab"
@@ -200,7 +201,7 @@ const (
 // with a request header; one naming "Docs Server", which a connection's alias
 // cannot be, with an environment value; one naming fetch whose configuration
 // starts a server of its own, with a command and two arguments, the second
-// carrying a key; and one naming no server.
+// carrying a key, beside an address carrying a key; and one naming no server.
 func mcpSource(t *testing.T) []byte {
 	t.Helper()
 	flow := decoded(t, readRealExport(t, langflowPromptingProject))
@@ -212,7 +213,7 @@ func mcpSource(t *testing.T) []byte {
 		mcpToolsNode("MCPTools-docs", map[string]any{"name": "Docs Server", "config": map[string]any{
 			"url": docsAddress, "env": map[string]any{"TOKEN": mcpEnv}}}),
 		mcpToolsNode("MCPTools-fetch", map[string]any{"name": "fetch", "config": map[string]any{
-			"command": "uvx", "args": []any{"mcp-server-fetch", mcpArgument}}}),
+			"url": fetchAddress, "command": "uvx", "args": []any{"mcp-server-fetch", mcpArgument}}}),
 		mcpToolsNode("MCPTools-empty", map[string]any{}),
 	)
 	return encoded(t, flow)
@@ -230,12 +231,14 @@ func mcpSource(t *testing.T) []byte {
 //     is core/ai-tool/mcp;
 //   - the carried flow is the export with exactly these values written: each
 //     wired node's server address empty, docs-server's name, the request header
-//     and the environment value empty, and the command and each argument of the
-//     node starting a server of its own empty, each reported by its node and
-//     field; that node and the one naming no server are otherwise carried as
-//     written, wired to nothing, and reported — the first with the halt the
-//     platform's build makes on it, its command member kept, so the flow it
-//     carries still reads as starting a server of its own;
+//     and the environment value empty, and the address, the command and each
+//     argument of the node starting a server of its own empty, each reported by
+//     its node and field; that node and the one naming no server are otherwise
+//     carried as written, wired to nothing, and reported — the first with the
+//     halt the platform's build makes on it, its command member kept, so the flow
+//     it carries still reads as starting a server of its own;
+//   - a wired node's address is reported once, with how the node reaches its
+//     connection, and never as an emptied credential;
 //   - no address and no credential the export holds is in any file the import
 //     wrote, nor in its decisions or diagnostics — the search finds each in the
 //     source, which says it fires — and the Aggregate leaves each wired server's
@@ -245,14 +248,21 @@ func mcpSource(t *testing.T) []byte {
 //
 //   - in importPlatform (aggrega-pdk/go/pkg/importer/platform.go), replace
 //     `edits = append(edits, wired[i].wiring.Edits...)` with
-//     `_ = wired[i].wiring.Edits`: both rows fail, each server address in the
-//     drafted aggregate.yaml and docs keeping the name "Docs Server";
+//     `_ = wired[i].wiring.Edits`: both rows fail, docs keeping the name
+//     "Docs Server" and each wired node's address reported as an emptied
+//     credential;
 //   - in wireServer (plugins/langflow-importer/wire.go), replace
 //     `if server.hasURL {` with `if server.hasURL && false {`: both rows fail,
-//     the server addresses in the drafted aggregate.yaml;
+//     each wired node's address reported as an emptied credential, and its
+//     report of how it reaches its connection not saying the address is written
+//     empty — the credential scrub still writes the address empty, so none
+//     reaches the drafts;
 //   - in serverCredentials (plugins/langflow-importer/walk.go), replace
 //     `case mcpconfig.Argument:` with `case mcpconfig.Argument + 1:`: both rows
-//     fail, the planted argument in the drafted aggregate.yaml.
+//     fail, the planted argument in the drafted aggregate.yaml;
+//   - in serverCredentials, replace `case mcpconfig.Address:` with
+//     `case mcpconfig.Address + 100:`: both rows fail, the fetch node's planted
+//     address in the drafted aggregate.yaml.
 func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *testing.T) {
 	t.Parallel()
 	source := mcpSource(t)
@@ -269,7 +279,8 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			t.Parallel()
 			res, outputDir := writtenImport(t, wiringWorkspace(t, tc.settings), "mcp-flow.json", source)
 			assertNoneReaches(t, []string{remixAddress, "remix-mcp.internal.example", docsAddress,
-				"docs-mcp.internal.example", mcpHeader, mcpEnv, mcpArgument}, source, res, outputDir)
+				"docs-mcp.internal.example", fetchAddress, "fetch-mcp.internal.example", mcpHeader, mcpEnv, mcpArgument},
+				source, res, outputDir)
 
 			flow, text := carriedFlow(t, outputDir, "langflow")
 			want := decoded(t, source)
@@ -283,6 +294,7 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			server(want, "MCPTools-docs")["name"] = "docs-server"
 			asObject(server(want, "MCPTools-docs")["config"])["url"] = ""
 			asObject(asObject(server(want, "MCPTools-docs")["config"])["env"])["TOKEN"] = ""
+			asObject(server(want, "MCPTools-fetch")["config"])["url"] = ""
 			asObject(server(want, "MCPTools-fetch")["config"])["command"] = ""
 			asObject(server(want, "MCPTools-fetch")["config"])["args"] = []any{"", ""}
 			if !reflect.DeepEqual(flow, want) {
@@ -328,10 +340,21 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 
 			reported := map[string][]string{}
 			var fetchEmptied []string
+			wired := map[string]bool{"MCPTools-remix1": true, "MCPTools-remix2": true, "MCPTools-docs": true}
 			for _, d := range res.Diagnostics {
 				reported[d.Code] = append(reported[d.Code], d.SourceRef)
 				if d.SourceRef == "MCPTools-fetch" && d.Code == "credential-emptied" {
 					fetchEmptied = append(fetchEmptied, d.Message)
+				}
+				switch {
+				case !wired[d.SourceRef]:
+				case d.Code == "credential-emptied" && strings.Contains(d.Message, "mcp_server.config.url"):
+					t.Errorf("the address of the wired node %s is reported as an emptied credential, beside how the "+
+						"node reaches its connection: %q", d.SourceRef, d.Message)
+				case d.Code == "part-reads-connection" &&
+					!strings.Contains(d.Message, "the address the exported flow held there is written empty"):
+					t.Errorf("the wired node %s's report of how it reaches its connection does not say the address "+
+						"it held is written empty: %q", d.SourceRef, d.Message)
 				}
 				if d.SourceRef != "MCPTools-fetch" || d.Code != "part-not-placed" {
 					continue
@@ -346,6 +369,8 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			const since = " of node MCPTools-fetch is written empty in the flow the draft carries, since "
 			const none = ", though Langflow marks it as none: no credential from the source reaches the draft"
 			if want := []string{
+				"the whole value of mcp_server.config.url" + since + "the address an MCP server is reached at can carry " +
+					"a credential in its user part, its path or its query" + none,
 				"the whole value of mcp_server.config.command" + since + "the command an MCP server is started with can " +
 					"carry a credential" + none,
 				"the whole value of mcp_server.config.args.0" + since + "an argument an MCP server is started with can " +

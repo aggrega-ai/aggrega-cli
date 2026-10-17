@@ -523,8 +523,11 @@ type plantedSource struct {
 // Langflow field marked password, the credential a Flowise chat model selects and
 // an input of type password beside it, the credential an agentflow agent keeps in
 // its model configuration — and in a Langflow flow whose MCP Tools nodes carry a
-// server configuration with header and environment values, or with a command and
+// server configuration with an address, a key in the query of one and in the user
+// part of the other, and header and environment values, or with a command and
 // arguments starting a server: a list of them, and a single one written as text.
+// The catalog the planted sources are imported over holds no platform, so no
+// MCP Tools node of that flow is wired to anything.
 func plantedSources(t *testing.T) []plantedSource {
 	t.Helper()
 	decode := func(rel string) map[string]any {
@@ -552,6 +555,8 @@ func plantedSources(t *testing.T) []plantedSource {
 		mcpEnv      = "sk-plantedMCPenv0123456789abcdef01"
 		mcpArg      = "sk-plantedMCParg0123456789abcdef01"
 		mcpArgText  = "--token=sk-plantedMCPargTEXT01234567"
+		mcpQuery    = "sk-plantedMCPaddressQUERY0123456789"
+		mcpUser     = "sk-plantedMCPaddressUSER01234567890"
 	)
 
 	lf := decode(langflowPromptingProject)
@@ -581,8 +586,8 @@ func plantedSources(t *testing.T) []plantedSource {
 		}
 	}
 
-	server := func(name string, headers any, env any) map[string]any {
-		config := map[string]any{"url": "http://" + name + ".example/mcp", "headers": headers}
+	server := func(name, address string, headers any, env any) map[string]any {
+		config := map[string]any{"url": address, "headers": headers}
 		if env != nil {
 			config["env"] = env
 		}
@@ -590,9 +595,11 @@ func plantedSources(t *testing.T) []plantedSource {
 			"mcp_server": map[string]any{"type": "mcp", "value": map[string]any{"name": name, "config": config}},
 		}}}}
 	}
-	docs := server("docs", map[string]any{"Authorization": mcpHeader, "X-Empty": ""}, map[string]any{"API_KEY": mcpEnv})
+	docs := server("docs", "http://docs.example/mcp?key="+mcpQuery,
+		map[string]any{"Authorization": mcpHeader, "X-Empty": ""}, map[string]any{"API_KEY": mcpEnv})
 	docs["id"] = "MCPTools-a1"
-	search := server("search", []any{map[string]any{"key": "Authorization", "value": mcpHeader}}, nil)
+	search := server("search", "http://"+mcpUser+"@search.example/mcp",
+		[]any{map[string]any{"key": "Authorization", "value": mcpHeader}}, nil)
 	search["id"] = "MCPTools-b2"
 	started := func(id, name string, args any) map[string]any {
 		return map[string]any{"id": id, "data": map[string]any{"type": "MCPTools", "node": map[string]any{"template": map[string]any{
@@ -612,9 +619,11 @@ func plantedSources(t *testing.T) []plantedSource {
 			fields: []string{"chatOpenAI_0 credential", "chatOpenAI_0 apiKeyOverride"}},
 		{name: "agentflow-credential.json", body: encode(af), keys: []string{agentKey},
 			fields: []string{"agentAgentflow_0 agentModelConfig.credential"}},
-		{name: "langflow-mcp-server.json", body: encode(mcp), keys: []string{mcpHeader, mcpEnv, mcpArg, mcpArgText},
+		{name: "langflow-mcp-server.json", body: encode(mcp),
+			keys: []string{mcpQuery, mcpUser, mcpHeader, mcpEnv, mcpArg, mcpArgText},
 			fields: []string{"MCPTools-a1 mcp_server.config.headers.Authorization", "MCPTools-a1 mcp_server.config.env.API_KEY",
-				"MCPTools-b2 mcp_server.config.headers.Authorization", "MCPTools-c3 mcp_server.config.command",
+				"MCPTools-a1 mcp_server.config.url", "MCPTools-b2 mcp_server.config.headers.Authorization",
+				"MCPTools-b2 mcp_server.config.url", "MCPTools-c3 mcp_server.config.command",
 				"MCPTools-c3 mcp_server.config.args.0", "MCPTools-c3 mcp_server.config.args.1",
 				"MCPTools-d4 mcp_server.config.command", "MCPTools-d4 mcp_server.config.args"}},
 	}
@@ -633,19 +642,26 @@ var (
 // the fields Langflow and Flowise mark as credentials — a field marked password,
 // the credential a node's credential parameter selects, an input of type password,
 // an agentflow model's credential, an MCP server's header and environment values —
-// and in the arguments an MCP server is started with, which neither marks, and
-// imports each planted source under both layouts, writing the drafts. The
-// search below finds every planted value in its planted source, which is what says
-// it fires; it finds none in any file the import wrote, nor in the decisions or the
-// diagnostics. Under the default layout one warning names each field it wrote empty
-// by its node and field, and the warning carries no value.
+// and in the address of an MCP server wired to nothing and the arguments an MCP
+// server is started with, which neither marks, and imports each planted source
+// under both layouts, writing the drafts. The search below finds every planted
+// value in its planted source, which is what says it fires; it finds none in any
+// file the import wrote, nor in the decisions or the diagnostics. Under the
+// default layout one warning names each field it wrote empty by its node and
+// field, and the warning carries no value.
 //
-// 🔴 PLANTED DEFECT: in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
-// `scrubbed, emptied, err := rewriteSource(src.Bytes, edits, creds)` with
-// `scrubbed, emptied, err := src.Bytes, []Credential(nil), error(nil); _, _ = edits, creds`.
-// The importer fixtures are rebuilt from the kit's sources when they change, and every
-// row under the default layout fails: each planted value is in the drafted
-// aggregate.yaml, and no warning names its field.
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
+//
+//   - in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
+//     `scrubbed, emptied, err := rewriteSource(src.Bytes, edits, creds)` with
+//     `scrubbed, emptied, err := src.Bytes, []Credential(nil), error(nil); _, _ = edits, creds`:
+//     every row under the default layout fails, each planted value in the
+//     drafted aggregate.yaml and no warning naming its field;
+//   - in serverCredentials (plugins/langflow-importer/walk.go), replace
+//     `case mcpconfig.Address:` with `case mcpconfig.Address + 100:`: the row
+//     langflow-mcp-server.json under the default layout fails, both planted
+//     addresses in the drafted aggregate.yaml and no warning naming either
+//     node's url.
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 	t.Parallel()
 	for _, src := range plantedSources(t) {

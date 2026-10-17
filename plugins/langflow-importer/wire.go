@@ -124,6 +124,9 @@ func wireServer(server mcpServer, part importer.Part, at func(tokens ...string) 
 		w.Edits = append(w.Edits, importer.Edit{Pointer: at(server.nameAt...), Value: jsonString(part.Alias)})
 		reads = append(reads, "the node names its server "+part.Alias+", the connection's alias")
 	}
+	// The credential scrub (walk.go) writes this address empty on every node; the
+	// edit takes its place on a wired one, so the address is reported here, as
+	// part of how the node reaches its connection, and not again as a credential.
 	if server.hasURL {
 		w.Edits = append(w.Edits, importer.Edit{Pointer: at("mcp_server", "value", "config", "url"), Value: jsonString("")})
 		reads = append(reads, "the address the exported flow held there is written empty")
