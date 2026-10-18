@@ -749,7 +749,7 @@ type CrossNode struct {
 //   - injectMapping supplies the delivery keys a FeatureRecipe's own
 //     `injectMapping` put on the pipe on behalf of a slot that declares no
 //     delivery of its own. Such a slot has no `inject` mapping to read, so the
-//     attachment route is structurally blind to it and this one is what covers it.
+//     attachment route structurally does not reach it and this one is what covers it.
 //   - selfInject supplies the delivery keys a node's own component-level
 //     self-inject put on its own pipe. It is the one route where the material and
 //     the declaration that governs it belong to the SAME node, which is why a

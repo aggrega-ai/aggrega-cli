@@ -397,7 +397,7 @@ func derivedNameScopeCaption(contributorKind string) string {
 // different spaces have not collided — neither output displaces the other — and a
 // rule comparing across spaces would refuse authoring that renders correctly.
 //
-// It is blind to what a name means. A space is an opaque string its declarer
+// It does not interpret what a name means. A space is an opaque string its declarer
 // chose, a name is an opaque string its declarer derived, and this compares them
 // for equality and does nothing else — so one rule covers every space any
 // contributor declares, and a second provider needs no second rule.

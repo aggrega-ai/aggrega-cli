@@ -15,7 +15,7 @@ import (
 // the advice that applies to this occurrence.
 //
 // It is deliberately not a diagnostic. The framework converts an objection
-// into whatever shape the caller reading it needs, so a check stays ignorant
+// into whatever shape the caller reading it needs, so a check stays unaware
 // of which boundary its output crosses and no conversion step can drop the
 // provenance the framework supplied.
 //

@@ -21,7 +21,7 @@ import (
 // substitution can reach: its fields carry no link back to the declarations the
 // template read to produce them. What IS key-addressed is the context the template
 // read, so substituting there and evaluating again reaches the same data by the
-// only route that stays blind to what a value means.
+// only route that does not interpret what a value means.
 //
 // Substituting rather than removing is what makes the two documents agree in
 // shape: the template sees a string where a string was, so it takes the same

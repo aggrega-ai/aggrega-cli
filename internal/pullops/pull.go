@@ -806,7 +806,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	cl.ReleaseDocuments = releaseDocs
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
-	// resolution time only. ComputeClosure is config-blind to the provider socket,
+	// resolution time only. ComputeClosure does not read the provider socket's config,
 	// so build / serve reconstruct these entities from the lockfile rather than
 	// from live config — the entity axis stays invariant to a config edit
 	// afterwards.

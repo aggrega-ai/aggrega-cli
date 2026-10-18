@@ -18,7 +18,7 @@ import (
 
 // These literals are the CNCF Helm content and detached-provenance
 // media types. They live here (not in pkg/oci) because pkg/oci is a
-// generic transport that stays blind to any specific artifact media
+// generic transport that stays agnostic to any specific artifact media
 // type — the caller names the content it expects.
 const (
 	testHelmContentMediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"

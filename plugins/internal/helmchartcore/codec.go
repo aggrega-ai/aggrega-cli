@@ -33,7 +33,7 @@ const (
 // even when the blanked scaffold parses it as one (the `include … | nindent`
 // shape). A value-position hole that invokes one of these is NOT a safe PATCH
 // target, so the codec declines a tree for the document carrying it. WHICH
-// functions count is the provider's call (the core stays dumb): this list is
+// functions count is the provider's call (the core stays content-neutral): this list is
 // helm-chart's declared boundary between a patchable value hole and a
 // structural injection, not a core inference about meaning.
 var structureEmittingFuncs = []string{

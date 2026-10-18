@@ -105,7 +105,7 @@ func TestHostClosureCarriesNoProviderGuestCode(t *testing.T) {
 
 	if len(perFormat) > 0 {
 		t.Errorf("the host binary links %d format-specific package(s) inside the render orchestration "+
-			"tree, so the render path is no longer format-blind: %s\nREMEDY: a provider's translation "+
+			"tree, so the render path is no longer format-agnostic: %s\nREMEDY: a provider's translation "+
 			"belongs in the plugin tree's internal segment, which the host cannot import, not under "+
 			"the render orchestration tree.",
 			len(perFormat), strings.Join(perFormat, ", "))
@@ -148,7 +148,7 @@ func TestHostClosureGuardDetectsBothEdges(t *testing.T) {
 
 	// The negative control. Every entry here is a shape the host legitimately
 	// carries, including the source-resolver adapters that are format-named on
-	// purpose and the render-tree packages that are format-blind.
+	// purpose and the render-tree packages that are format-agnostic.
 	clean := []string{
 		modulePath + "/cmd/aggrega",
 		modulePath + "/internal/compiler/renderer",

@@ -328,7 +328,7 @@ func ambiguousMappingKeys(err error) ([]string, bool) {
 // Manifest two-tier precedence per entity kind — the render lookup
 // (componentTypeToRecipeWithManifest / featureTypeToFeatureRecipeWithManifest)
 // and the pull's source-descent joins (ComponentRecipeURI / FeatureRecipeURI)
-// both route through it, so those entry points stay dumb forwarders and the
+// both route through it, so those entry points stay thin forwarders and the
 // precedence cannot drift between the two resolution paths. An empty
 // instanceName (no per-instance name in scope at a call site) cleanly skips the
 // name tier.
@@ -1070,7 +1070,7 @@ func (c *Catalog) ComponentAncestry(componentType string) ([]string, error) {
 // Its readers are the no-mapping diagnostic (pin candidates) and the Manifest
 // recipe-reference completion (implements-aware ranking).
 //
-// Deliberately ancestry-blind, unlike the mapping-consistency rule: extends
+// Deliberately ancestry-agnostic, unlike the mapping-consistency rule: extends
 // ancestry is handled in that rule's outer layer rather than inside the matcher,
 // so it reaches only the caller that resolves it. Widening the suggestion set to
 // recipes implementing a base of the requested type would change which candidates
@@ -1093,7 +1093,7 @@ func recipesImplementing(recipes map[string]types.Recipe, componentType string) 
 }
 
 // featureRecipesImplementing is the FeatureRecipe analogue of
-// recipesImplementing, ancestry-blind for the same reason: it provides
+// recipesImplementing, ancestry-agnostic for the same reason: it provides
 // suggestions, and extends ancestry reaches only the mapping-consistency rule
 // that resolves it. Feature extends carries its own composition semantics, which
 // this surface takes no position on.

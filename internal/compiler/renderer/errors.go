@@ -556,7 +556,7 @@ var errAssembledOutputCollision = cerrors.Register("assembled-output-collision",
 // against every other, because a name whose uniqueness is scoped to something
 // wider than a file still collides across two files.
 //
-// The check is blind to what a key means. It compares declared strings for
+// The check does not interpret what a key means. It compares declared strings for
 // equality within one declared space, so it covers every key space any guest
 // declares — a second provider needs no second guard — and it interprets no
 // provider format, learns no key's meaning, and derives no key itself.

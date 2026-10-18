@@ -43,7 +43,7 @@ import (
 // `registry`, `chart`, `appVersion`, `workspace`, or anything else a provider
 // defines — are carried through uninterpreted, exposed to the Recipe's templates
 // as `.source.*`, and forwarded verbatim to the provider engine that renders the
-// Recipe. The core is blind to them by construction: it holds no list of
+// Recipe. The core does not interpret them, by construction: it holds no list of
 // provider-specific field names to check against, and the block is the
 // provider's contract to define and to check. Adding a key check here would move
 // that contract into the core and make the core opinionated about execution

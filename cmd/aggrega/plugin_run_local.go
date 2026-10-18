@@ -227,7 +227,7 @@ func ensureExportDeclared(desc wasm.PluginDescriptor, export string) error {
 // string) defaults to the minimal empty JSON object {}, a convenience for
 // smoke-testing an export with no input.
 //
-// The empty default is deliberately socket-blind: it is the literal bytes {},
+// The empty default is deliberately socket-agnostic: it is the literal bytes {},
 // independent of any plugin type and of any request envelope shape. It
 // fabricates no intermediate representation and infers no per-socket semantics.
 // The socket enters one step later, where the resolved bytes are converted into

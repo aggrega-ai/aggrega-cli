@@ -424,7 +424,7 @@ func toStepOutput(outputs types.OrderedMap[any]) (types.StepOutput, error) {
 
 // stringifyStepOutput renders one pipeline-step output value into the string
 // form the .steps.<id>.outputs.<field> channel carries. This is the injection
-// boundary — the String Pipe: the host is blind to what an output means and
+// boundary — the String Pipe: the host does not interpret what an output means and
 // pipes it through as a string. A scalar reaches the next step's context in
 // its natural string form — the same stringify every other injection-boundary
 // scalar takes — so a number, boolean, or string lands unquoted; a JSON null

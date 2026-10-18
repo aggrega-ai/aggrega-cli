@@ -64,7 +64,7 @@ var allowedImportModules = map[string]bool{
 // guards which import MODULES a guest may name, not which individual
 // functions it names within an allowed module.
 //
-// The pass is deliberately blind to WASI function names. A guest built
+// The pass is deliberately agnostic to WASI function names. A guest built
 // against a real language runtime statically imports filesystem and
 // socket WASI functions its live code paths never reach — naming an
 // import is not exercising a capability. No-I/O is guaranteed not by

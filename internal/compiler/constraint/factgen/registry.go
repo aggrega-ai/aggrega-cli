@@ -3453,7 +3453,7 @@ var facts = []factDecl{
 			"back sorted. They are gathered from a recipe index that holds no " +
 			"authoring order, so there is no author order to preserve and " +
 			"sorting is what makes the same input produce the same diagnostic on " +
-			"every run.\n\nIt is deliberately blind to a type's extends " +
+			"every run.\n\nIt is deliberately agnostic to a type's extends " +
 			"ancestry, which is a narrower set than the rule judging whether an " +
 			"operator-written mapping is consistent reads. Widening the " +
 			"suggestions to Recipes implementing a base would change which " +

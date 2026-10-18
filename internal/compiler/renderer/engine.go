@@ -58,7 +58,7 @@ type NodeInputValidator interface {
 // engine reports (codec, true) when its provider guest advertises the carve and
 // reassemble exports; the host then drives carve and reassemble across the guest
 // ABI so the provider's own output-shape knowledge (what is a PATCH target
-// versus opaque) lives in the guest rather than the dumb core. An engine that
+// versus opaque) lives in the guest rather than the content-neutral core. An engine that
 // reports (nil, false) — or does not implement the interface at all — borrows
 // the core's stock YAML codec ([NewStockYAMLCodec]).
 //
@@ -96,7 +96,7 @@ type CodecProvider interface {
 // least one end's provider advertises linking; an engine that does not
 // implement this interface, or reports false, wires no cross-boundary edge and
 // the existing per-node scalar value-pipe stands. The wiring itself lives in
-// the provider guest; the host assembles the domain-blind per-edge payload,
+// the provider guest; the host assembles the domain-agnostic per-edge payload,
 // routes it, and applies the returned structural patches.
 type CrossBoundaryLinker interface {
 	LinksCrossBoundary() bool

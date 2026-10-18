@@ -49,7 +49,7 @@ var errPluginEntityNotFound = cerrors.Register("plugin-entity-not-found", cerror
 // the entity's authored runtime limits, and the entity's machine-owned command
 // mirror, returning false when no Plugin entity matches the URI. The caller
 // supplies it as a closure over the catalog's Plugin accessor, so this package
-// stays ignorant of the Plugin entity's shape; resolving the entity once here yields the artifact
+// does not depend on the Plugin entity's shape; resolving the entity once here yields the artifact
 // reference, the claim, the limits, and the command mirror together, so the load
 // path never re-resolves the entity. cascade is the artifact-resolving Lookup (a
 // build-configured Resolver's Resolve method); it keys its pins and verification

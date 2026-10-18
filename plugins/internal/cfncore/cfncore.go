@@ -10,7 +10,7 @@
 // holds all the CloudFormation-specific intelligence — short-form intrinsic
 // expansion, per-fragment resource merging, output-name scoping, the
 // provides-to-Outputs projection, and sourced-template parse validation — so
-// the Wasm host that orchestrates the guest stays blind to CloudFormation
+// the Wasm host that orchestrates the guest stays agnostic to CloudFormation
 // semantics.
 //
 // A logical id is unique within one template, and several nodes assemble into

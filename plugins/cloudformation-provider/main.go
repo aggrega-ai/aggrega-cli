@@ -52,7 +52,7 @@
 // a group carrying one wave records nothing. All CloudFormation domain logic —
 // short-form intrinsic expansion, resource merging, output naming, the
 // provides-to-Outputs projection, the section carrying, and the wave ordering —
-// lives in the cfncore package the guest calls, so the Wasm host stays blind to
+// lives in the cfncore package the guest calls, so the Wasm host stays agnostic to
 // CloudFormation semantics.
 //
 // Two top-level sections state something about a whole template rather than

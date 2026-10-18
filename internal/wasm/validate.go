@@ -50,7 +50,7 @@ type ValidateOptions struct {
 
 // EntityInputs carries the authored entity surface ValidatePlugin cross-checks a
 // binary against, in this package's neutral shapes. The caller maps the catalog
-// entity into these fields so this package stays ignorant of the catalog entity
+// entity into these fields so this package does not depend on the catalog entity
 // types — the same neutral boundary the load gate's per-field cross-checks use.
 type EntityInputs struct {
 	// Claim is the authored capability claim, cross-checked against the binary's

@@ -11,7 +11,7 @@
 // the content digest, populates the cache slot, and returns a
 // ResolvedSource with the commit SHA recorded as PinnedVersion.
 //
-// The adapter is blind to what the archived directory holds. It
+// The adapter does not interpret what the archived directory holds. It
 // retrieves bytes from a repository and asserts nothing about their
 // format; whichever provider consumes the archive is what knows
 // whether the directory is a chart, a module, or anything else.

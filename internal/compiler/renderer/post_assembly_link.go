@@ -56,7 +56,7 @@ type assembledGroup struct {
 //     from the stage at which both providers are known.
 //   - Neither end's provider advertises linking: inert — no file change.
 //
-// The host assembles the domain-blind per-edge payload from the edge, the
+// The host assembles the domain-agnostic per-edge payload from the edge, the
 // endpoints' dispatch identity, the build's Release identity, and both ends'
 // resolved annotations; it interprets no annotation value
 // (Invariants 1/3) and resolves no runtime state (Invariant 2) — the
@@ -223,7 +223,7 @@ func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
 	return out
 }
 
-// buildLinkEdge assembles the domain-blind per-edge payload for one
+// buildLinkEdge assembles the domain-agnostic per-edge payload for one
 // cross-boundary uses edge: both endpoints' identity (node, boundary dispatch
 // path, provider), each end's resolved annotations as an opaque scalar map
 // (the consumed end's and the consuming end's), the socket, and the consumed

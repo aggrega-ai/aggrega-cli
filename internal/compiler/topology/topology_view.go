@@ -685,7 +685,7 @@ func (v *topologyView) Nodes() []constraint.NodeInstance {
 // connection set the composition drew also holds connections an attachment or
 // the Release drew, and a rule over what a developer wrote on a connection has to
 // be asked once per connection a developer wrote — including one the composition
-// drew nothing for, which is the connection set's blind side. Reading the blocks
+// drew nothing for, which is the gap in the connection set. Reading the blocks
 // the flattened nodes carry is what makes a component a sub-module contributes
 // enumerate exactly as one the Aggregate declares, positioned in the document it
 // was written in.

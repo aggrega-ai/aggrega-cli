@@ -229,7 +229,7 @@ func TestComposeAssemble_BodiesEmittingIdenticallyDoNotConflict(t *testing.T) {
 // TestComposeAssemble_OrdinaryContributorsConflictTheSameWay covers the general
 // case rather than the attachment-shaped one it was found through.
 //
-// Boundary assembly is blind to what kind of contributor a node is: its input
+// Boundary assembly is agnostic to what kind of contributor a node is: its input
 // is per-node fragments keyed by node identity, with nothing in that shape
 // distinguishing an attached Feature from a component the author declared
 // directly. So two ordinary components synthesized from their own workloads

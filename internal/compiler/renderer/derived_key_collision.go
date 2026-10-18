@@ -212,7 +212,7 @@ type derivedKeyRepeat struct {
 // were arrived at. Declaring at the deriving site is what keeps a compiler
 // derivation from being the one kind of name nobody reports.
 //
-// Blindness is the property that makes one rule enough for every provider. A
+// Neutrality is the property that makes one rule enough for every provider. A
 // space is an opaque string its declarer chose, a key is an opaque string its
 // declarer derived, and neither this nor the rule reading it does anything but
 // compare keys for equality within a space — no format is recognised, no

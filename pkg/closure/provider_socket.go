@@ -14,7 +14,7 @@ import (
 // (.aggrega-config.yaml plugins.providers) to their Plugin entities on the
 // catalog-entity axis and merges them into the closure. It runs as a pull-time
 // pass, separate from ComputeClosure: ComputeClosure stays hermetic and
-// config-blind to the provider socket, and build / serve reconstruct these
+// agnostic to the provider socket's config, and build / serve reconstruct these
 // provider Plugin entities from the lockfile rather than from live config, so a
 // build's entity axis is invariant to a workspace-config edit made after pull.
 //

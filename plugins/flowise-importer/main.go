@@ -22,7 +22,7 @@
 // is the plugin kit's importer package,
 // github.com/aggrega-ai/aggrega-pdk-go/pkg/importer, which every importer built on
 // the kit shares. All of it runs in this guest: the host mediates the pipeline and
-// stays blind to what a node means. The scorer weighs each node against the
+// stays agnostic to what a node means. The scorer weighs each node against the
 // Components of the workspace's own catalog, which the host hands the guest on its
 // input as a view of their names, versions, labels, key names and sockets; the
 // mapping arm is carried in the guest, and operators extend or override it through

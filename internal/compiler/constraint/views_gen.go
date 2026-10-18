@@ -3336,7 +3336,7 @@ type TopologyView interface {
 	// and sorting is what makes the same input produce the same diagnostic on
 	// every run.
 	//
-	// It is deliberately blind to a type's extends ancestry, which is a
+	// It is deliberately agnostic to a type's extends ancestry, which is a
 	// narrower set than the rule judging whether an operator-written mapping
 	// is consistent reads. Widening the suggestions to Recipes implementing a
 	// base would change which candidates a diagnostic lists, and what to

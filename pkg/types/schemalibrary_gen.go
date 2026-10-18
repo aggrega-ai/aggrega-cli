@@ -24,7 +24,7 @@ type SchemaLibraryMetadata struct {
 	Version string `json:"version" yaml:"version"`
 	// Description A concise summary of what the library covers.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	// Labels Author-declared labels. The compiler does not interpret label values (per the dumb-compiler invariant); labels are metadata for discovery + hub UI surfacing.
+	// Labels Author-declared labels. The compiler does not interpret label values (per the content-neutral compiler invariant); labels are metadata for discovery + hub UI surfacing.
 	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 	// Annotations Author-declared annotations. Same opaque-metadata posture as labels.
 	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
