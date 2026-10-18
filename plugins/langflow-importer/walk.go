@@ -116,16 +116,13 @@ func flowID(tree json.RawMessage) string {
 // address, the command starting a server and each argument it is started with,
 // which Langflow marks as no credential and which can carry one all the same.
 // An MCP Tools node carrying no mcp_server field writes its server in fields of
-// its own instead, whose values are located as fieldServerCredentials says. The
-// headers an MCP Tools node sends its server over those of the server's
-// configuration, in a headers field of its own whether or not it carries
-// mcp_server, are located as headersCredentials says; and the one field each of
-// Langflow's deprecated MCP components keeps its server in — the address of an
-// MCPSse node, the command line of an MCPStdio node — is located whole.
-// Langflow marks none of these as a credential. Each is addressed from the root
-// of the export, and named by its node's id and the field it sits in. A field
-// holding no value member is not located, since there is nothing in it to
-// write empty.
+// its own instead, whose values are located as fieldServerCredentials says.
+// Every other input Langflow marks as no credential and that can carry one is
+// named in unmarkedFields, by node type and field, or in unmarkedAnyType, by
+// field, with how its value is located. Each is addressed from the root of the
+// export, and named by its node's id and the field it sits in. A field holding
+// no value member is not located, since there is nothing in it to write empty;
+// nor is a field marked password, which is located as one.
 func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var out []importer.Credential
 	for _, node := range nodesOf(tree).list {
@@ -151,12 +148,8 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 			if marked {
 				continue
 			}
-			if node.typ == mcpToolsType && e.Key == "headers" {
-				out = append(out, headersCredentials(node.id, e.Value, at)...)
-			}
-			if d, ok := deactivatedServerFields[node.typ]; ok && e.Key == d.field {
-				out = append(out, importer.Credential{Node: node.id, Field: e.Key, Pointer: at(e.Key, "value"),
-					Detail: d.detail})
+			if u, ok := unmarkedOf(node.typ, e.Key); ok {
+				out = append(out, u.locate(node.id, e.Key, e.Value, at)...)
 			}
 		}
 		if node.typ == mcpToolsType && node.template.member("mcp_server") == nil {
@@ -247,80 +240,163 @@ var fieldDetails = map[mcpconfig.Kind]string{
 	mcpconfig.Command: commandLineDetail,
 }
 
-// headersCredentials locates the value of the headers field of an MCP Tools
-// node: the headers Langflow sends the node's server over those of its server
-// configuration, written as an object of names to values or as a list of items
-// carrying them, which Langflow marks as no credential and which can carry one.
-// The whole value is written empty, its kind kept — an object as {}, a list as
-// [] — and reported once, by node and field: a header written with its name
-// kept and its value emptied would, on a node wired to a tools connection, be
-// sent in place of the one the platform writes for the connection, while an
-// empty object or list overrides nothing. A value of any other kind, which
-// Langflow sends as no header, is written as an empty string. A value already
-// empty, an empty string or null is left as written and not located. Each
-// value member the field writes is read, so a field writing one twice is
-// located where any of them holds something.
-func headersCredentials(nodeID string, field json.RawMessage, at func(tokens ...string) string) []importer.Credential {
+// scrub is how the value of an input Langflow marks as no credential is written
+// empty.
+type scrub int
+
+const (
+	// headerValues writes each value the headers hold empty and keeps each
+	// header's name, as mcpconfig.HeaderValues reads headers; each value is
+	// reported by its header's name. A value that is neither an object nor a list
+	// is written empty whole.
+	headerValues scrub = iota
+	// wholeKept writes the whole value empty with its kind kept — an object as
+	// {}, a list as [] — reported once; a value of any other kind is written as
+	// an empty text.
+	wholeKept
+	// wholeText writes the whole value as an empty text, reported once.
+	wholeText
+)
+
+// unmarked is one input Langflow marks as no credential that can carry one: how
+// its value is written empty, why, and, for wholeKept, what of an object or a
+// list is.
+type unmarked struct {
+	scrub scrub
+	why   string
+	parts string
+}
+
+// unmarkedFields are, by the type Langflow gives a node and then by field, the
+// inputs Langflow marks as no credential that can carry one:
+//
+//   - the request headers of an API Request, a URL, a Docling Remote, a Cloudflare
+//     Workers AI Embeddings and a Confluent Kafka Producer node: each value, its
+//     header's name kept, since a name carries no secret;
+//   - the headers of a node the platform's own connection reaches — an MCP Tools
+//     node, into whose server configuration the platform writes a tools
+//     connection, and an OpenAI Embeddings node, which reads the key the
+//     platform delivers for a model connection (wire.go): whole, since a header
+//     whose name is kept and whose value is emptied would be sent in place of
+//     the one the platform's connection supplies, while an empty object or list
+//     overrides nothing;
+//   - a whole request written as a command line: an API Request node's cURL text,
+//     which only fills the node's fields in the editor, and a Webhook node's,
+//     which only shows an example;
+//   - an Olivya node's API key and a Mem0 node's configuration, the second
+//     whole with its kind kept;
+//   - the one field each of Langflow's deprecated MCP components keeps its
+//     server in: an MCPSse node's address in url, an MCPStdio node's command
+//     line, its arguments included, in command. Neither names an MCP server, so
+//     no tools connection reaches it.
+var unmarkedFields = map[string]map[string]unmarked{
+	mcpToolsType:                    {"headers": {scrub: wholeKept, why: mcpHeadersDetail, parts: headerNamesAndValues}},
+	"OpenAIEmbeddings":              {"default_headers": {scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues}},
+	"APIRequest":                    {"headers": {scrub: headerValues, why: headerValueDetail}, "curl_input": {scrub: wholeText, why: requestTextDetail}},
+	"URLComponent":                  {"headers": {scrub: headerValues, why: headerValueDetail}},
+	"DoclingRemote":                 {"api_headers": {scrub: headerValues, why: headerValueDetail}},
+	"CloudflareWorkersAIEmbeddings": {"headers": {scrub: headerValues, why: headerValueDetail}},
+	"ConfluentKafkaProducer":        {"headers": {scrub: headerValues, why: headerValueDetail}},
+	"Webhook":                       {"curl": {scrub: wholeText, why: requestTextDetail}},
+	"OlivyaComponent":               {"api_key": {scrub: wholeText, why: apiKeyDetail}},
+	"mem0_chat_memory":              {"mem0_config": {scrub: wholeKept, why: memoryConfigDetail, parts: "configuration members"}},
+	"MCPSse":                        {"url": {scrub: wholeText, why: addressDetail}},
+	"MCPStdio":                      {"command": {scrub: wholeText, why: commandLineDetail}},
+}
+
+// unmarkedAnyType are, by field, the inputs Langflow marks as no credential that
+// can carry one on whichever node declares them: the verification token every
+// Composio component inherits from the one base that declares it.
+var unmarkedAnyType = map[string]unmarked{
+	"verification_token": {scrub: wholeText, why: verificationTokenDetail},
+}
+
+// unmarkedOf returns how the value of the field named field of a node of type
+// typ is written empty where Langflow marks it as no credential, and false
+// where it is no such input.
+func unmarkedOf(typ, field string) (unmarked, bool) {
+	if u, ok := unmarkedFields[typ][field]; ok {
+		return u, true
+	}
+	u, ok := unmarkedAnyType[field]
+	return u, ok
+}
+
+// locate locates, in the template field named name — field is its object —
+// what u writes empty, reading each value member the field writes, so a field
+// writing one twice is located where any of them holds something. A value
+// already empty, an empty text or null is left as written and not located.
+func (u unmarked) locate(nodeID, name string, field json.RawMessage, at func(tokens ...string) string) []importer.Credential {
+	var out []importer.Credential
+	seen := map[string]bool{}
 	for _, v := range importer.ObjectEntries(field) {
 		if v.Key != "value" {
 			continue
 		}
-		var value any
-		if json.Unmarshal(v.Value, &value) != nil {
-			continue
+		switch u.scrub {
+		case headerValues:
+			for _, c := range headerValueCredentials(nodeID, name, v.Value, u.why, at) {
+				if !seen[c.Pointer] {
+					seen[c.Pointer] = true
+					out = append(out, c)
+				}
+			}
+		case wholeKept:
+			if c, ok := wholeKeptCredential(nodeID, name, v.Value, u, at); ok {
+				return []importer.Credential{c}
+			}
+		case wholeText:
+			return []importer.Credential{{Node: nodeID, Field: name, Pointer: at(name, "value"), Detail: u.why}}
 		}
-		c := importer.Credential{Node: nodeID, Field: "headers", Pointer: at("headers", "value")}
-		switch value := value.(type) {
-		case nil:
-			continue
-		case string:
-			if value == "" {
-				continue
-			}
-			c.Detail = headersDetail
-		case map[string]any:
-			if len(value) == 0 {
-				continue
-			}
-			c.Value, c.Detail = json.RawMessage("{}"), headerNamesAndValues
-		case []any:
-			if len(value) == 0 {
-				continue
-			}
-			c.Value, c.Detail = json.RawMessage("[]"), headerNamesAndValues
-		default:
-			c.Detail = headersDetail
-		}
-		return []importer.Credential{c}
 	}
-	return nil
+	return out
 }
 
-// deactivatedServerField is the one field a deprecated Langflow MCP component
-// keeps its server in, and why its value is written empty.
-type deactivatedServerField struct {
-	field, detail string
+// headerValueCredentials locates each value the headers of the field named name
+// hold, as mcpconfig.HeaderValues reads them, named by the field and the
+// header's name, and the whole value where it is neither an object nor a list
+// and holds something.
+func headerValueCredentials(nodeID, name string, value json.RawMessage, why string,
+	at func(tokens ...string) string) []importer.Credential {
+	if written, ok := mcpconfig.EmptyKept(value); ok && written == nil {
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: at(name, "value"), Detail: why}}
+	}
+	var out []importer.Credential
+	for _, m := range mcpconfig.HeaderValues(value, name, "value") {
+		out = append(out, importer.Credential{Node: nodeID, Field: name + "." + m.Name, Pointer: at(m.Tokens...),
+			Detail: why})
+	}
+	return out
 }
 
-// deactivatedServerFields are, by the type Langflow gives each of its
-// deprecated MCP components, the field it keeps its server in: an MCPSse node
-// the address of a server it reaches over SSE in url, an MCPStdio node the
-// command line starting a server, its arguments included, in command. Langflow
-// marks neither as a credential, and each can carry one, so each is written
-// empty whole. Neither node names an MCP server, so no tools connection reaches
-// it.
-var deactivatedServerFields = map[string]deactivatedServerField{
-	"MCPSse":   {field: "url", detail: addressDetail},
-	"MCPStdio": {field: "command", detail: commandLineDetail},
+// wholeKeptCredential locates the whole value of the field named name, written
+// empty with its kind kept as mcpconfig.EmptyKept writes it: an object or a
+// list reported with what of it is written empty, a value of any other kind
+// with why.
+func wholeKeptCredential(nodeID, name string, value json.RawMessage, u unmarked,
+	at func(tokens ...string) string) (importer.Credential, bool) {
+	written, ok := mcpconfig.EmptyKept(value)
+	c := importer.Credential{Node: nodeID, Field: name, Pointer: at(name, "value"), Detail: u.why}
+	if written != nil {
+		c.Value, c.Detail = written, u.parts
+	}
+	return c, ok
 }
 
-// headersDetail says why the value of an MCP Tools node's headers field that
-// is neither an object nor a list is written empty; headerNamesAndValues names
-// what of an object or a list there is.
+// The details saying why an input Langflow marks as no credential is written
+// empty, and headerNamesAndValues, what of headers written whole is.
 const (
-	headersDetail = "the headers an MCP Tools node sends its server can carry a credential, though Langflow marks them " +
-		"as none"
+	mcpHeadersDetail = "the headers an MCP Tools node sends its server can carry a credential, though Langflow marks " +
+		"them as none"
+	embeddingHeadersDetail = "the headers an OpenAI Embeddings node sends its API can carry a credential, though " +
+		"Langflow marks them as none"
 	headerNamesAndValues = "header names and values"
+	headerValueDetail    = "a header can carry a credential, though Langflow marks it as none"
+	requestTextDetail    = "a request written as a command line can carry a credential in a header or a user part, " +
+		"though Langflow marks it as none"
+	apiKeyDetail            = "the field holds an API key, though Langflow marks it as no credential"
+	memoryConfigDetail      = "a memory store's configuration can carry a credential, though Langflow marks it as none"
+	verificationTokenDetail = "the field holds a verification token, though Langflow marks it as no credential"
 )
 
 // addressDetail, commandDetail and argumentDetail say why the address an MCP

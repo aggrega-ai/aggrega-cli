@@ -147,9 +147,11 @@ func chatflowID(tree json.RawMessage) string {
 // at credential or FLOWISE_CREDENTIAL_ID, that second name also read at the top
 // of data.inputs; and the header and environment values, the address, the
 // command and the arguments of the server configuration of a Custom MCP tool,
-// its mcpServerConfig input, wherever among the inputs it sits. Each is
-// addressed from the root of the export, and named by its node's id and the
-// field it sits in.
+// its mcpServerConfig input, wherever among the inputs it sits; and every input
+// Flowise marks as no credential that can carry one, as unmarkedInputs names
+// them, at the top of a node's inputs or inside a configuration an agentflow
+// keeps of the model or the tool it selects. Each is addressed from the root of
+// the export, and named by its node's id and the field it sits in.
 func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var top struct {
 		Nodes []json.RawMessage `json:"nodes"`
@@ -166,6 +168,8 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 		if err := json.Unmarshal(raw, &node); err != nil {
 			continue
 		}
+		var typ string
+		_ = json.Unmarshal(node.Data["name"], &typ)
 		at := func(tokens ...string) string {
 			return importer.Pointer(append([]string{"nodes", strconv.Itoa(i), "data"}, tokens...)...)
 		}
@@ -178,42 +182,58 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 			password[name] = true
 		}
 		for _, in := range inputs {
+			tokens := []string{"nodes", strconv.Itoa(i), "data", "inputs", in.Key}
 			switch {
 			case password[in.Key]:
 				out = append(out, importer.Credential{Node: node.ID, Field: in.Key, Pointer: at("inputs", in.Key)})
 			case in.Key == credentialIDInput:
 				out = append(out, importer.Credential{Node: node.ID, Field: in.Key, Pointer: at("inputs", in.Key)})
 			case in.Key == serverConfigInput:
-				out = append(out, serverConfigCredentials(node.ID, in.Value, []string{in.Key},
-					[]string{"nodes", strconv.Itoa(i), "data", "inputs", in.Key})...)
+				out = append(out, serverConfigCredentials(node.ID, in.Value, []string{in.Key}, tokens)...)
 				continue
+			default:
+				if u, ok := unmarkedOf(typ, in.Key); ok {
+					out = append(out, u.locate(node.ID, in.Value, []string{in.Key}, tokens)...)
+					continue
+				}
 			}
-			out = append(out, nestedCredentials(node.ID, in.Value, []string{in.Key},
-				[]string{"nodes", strconv.Itoa(i), "data", "inputs", in.Key})...)
+			out = append(out, nestedCredentials(node.ID, typ, in.Value, []string{in.Key}, tokens)...)
 		}
 	}
 	return out
 }
 
 // nestedCredentials locates the credentials inside one of a node's inputs: at
-// credential or FLOWISE_CREDENTIAL_ID in a configuration object, and in the
-// server configuration of a Custom MCP tool, at any depth of the objects and
-// lists the input holds. field is the input's name and the members on the way,
-// and tokens the reference tokens addressing the input from the root of the
-// export.
-func nestedCredentials(nodeID string, raw json.RawMessage, field, tokens []string) []importer.Credential {
+// credential or FLOWISE_CREDENTIAL_ID in a configuration object, in the server
+// configuration of a Custom MCP tool, and in the inputs unmarkedInputs names,
+// at any depth of the objects and lists the input holds. typ is the type of the
+// node whose inputs an object holds: the node's own, or, inside a configuration
+// an agentflow keeps of the model or the tool it selects, the type it selects
+// (selectorKeys). field is the input's name and the members on the way, and
+// tokens the reference tokens addressing the input from the root of the export.
+func nestedCredentials(nodeID, typ string, raw json.RawMessage, field, tokens []string) []importer.Credential {
 	var out []importer.Credential
 	if entries := importer.ObjectEntries(raw); entries != nil {
 		for _, e := range entries {
+			var selected string
+			if selectorKeys[e.Key] && json.Unmarshal(e.Value, &selected) == nil && selected != "" {
+				typ = selected
+			}
+		}
+		for _, e := range entries {
 			f := append(append([]string{}, field...), e.Key)
 			t := append(append([]string{}, tokens...), e.Key)
+			if u, ok := unmarkedOf(typ, e.Key); ok {
+				out = append(out, u.locate(nodeID, e.Value, f, t)...)
+				continue
+			}
 			switch e.Key {
 			case "credential", credentialIDInput:
 				out = append(out, importer.Credential{Node: nodeID, Field: strings.Join(f, "."), Pointer: importer.Pointer(t...)})
 			case serverConfigInput:
 				out = append(out, serverConfigCredentials(nodeID, e.Value, f, t)...)
 			default:
-				out = append(out, nestedCredentials(nodeID, e.Value, f, t)...)
+				out = append(out, nestedCredentials(nodeID, typ, e.Value, f, t)...)
 			}
 		}
 		return out
@@ -224,11 +244,180 @@ func nestedCredentials(nodeID string, raw json.RawMessage, field, tokens []strin
 	}
 	for j, item := range items {
 		index := strconv.Itoa(j)
-		out = append(out, nestedCredentials(nodeID, item, append(append([]string{}, field...), index),
+		out = append(out, nestedCredentials(nodeID, typ, item, append(append([]string{}, field...), index),
 			append(append([]string{}, tokens...), index))...)
 	}
 	return out
 }
+
+// selectorKeys are the members an agentflow node's configuration names the
+// model or the tool it selects in, whose value is that model's or tool's type:
+// the configuration holding one holds that node's inputs.
+var selectorKeys = map[string]bool{
+	"llmModel": true, "conditionAgentModel": true, "humanInputModel": true, "agentModel": true,
+	"embeddingModel": true, "agentSelectedTool": true, "toolAgentflowSelectedTool": true,
+}
+
+// scrub is how the value of an input Flowise marks as no credential is written
+// empty.
+type scrub int
+
+const (
+	// headerValues writes each value the headers hold empty and keeps each
+	// header's name, as mcpconfig.HeaderValues reads headers — headers held as
+	// JSON text are rewritten inside the text — and reports each by its
+	// header's name. A text that does not read as headers is written empty
+	// whole.
+	headerValues scrub = iota
+	// wholeKept writes the whole value empty with its kind kept, as
+	// mcpconfig.EmptyKept writes it.
+	wholeKept
+	// wholeText writes the whole value as an empty text.
+	wholeText
+)
+
+// unmarked is one input Flowise marks as no credential that can carry one: how
+// its value is written empty, and why.
+type unmarked struct {
+	scrub scrub
+	why   string
+}
+
+// unmarkedInputs are, by node type and then by input, the inputs Flowise marks
+// as no credential — of neither type password nor type credential — that can
+// carry one:
+//
+//   - the headers an HTTP node, an API chain, an API loader, an OpenAPI toolkit,
+//     a SearXNG tool and the Requests tools send, and the default headers
+//     (baseOptions) a model's client sends, as an object, a list of key and
+//     value items, or JSON text: each value, its header's name kept, since a
+//     name carries no secret;
+//   - except the default headers of a node the platform's model connection
+//     reaches, the chat model and the embeddings Flowise runs on an OpenAI
+//     client that reads the key the platform delivers from the environment
+//     (wire.go): whole, since a header whose name is kept and whose value is
+//     emptied would be sent in place of the key the platform delivers, while an
+//     empty value sends none;
+//   - the secrets an agentflow's Start node signs and checks a webhook's
+//     requests with, and the bearer token a Teradata MCP tool overrides its
+//     credential with: whole.
+var unmarkedInputs = map[string]map[string]unmarked{
+	"httpAgentflow":          {"headers": requestHeaders},
+	"getApiChain":            {"headers": requestHeaders},
+	"postApiChain":           {"headers": requestHeaders},
+	"openApiChain":           {"headers": requestHeaders},
+	"apiLoader":              {"headers": requestHeaders},
+	"openAPIToolkit":         {"headers": requestHeaders},
+	"searXNG":                {"headers": requestHeaders},
+	"requestsGet":            {"requestsGetHeaders": requestHeaders},
+	"requestsPost":           {"requestsPostHeaders": requestHeaders},
+	"requestsPut":            {"requestsPutHeaders": requestHeaders},
+	"requestsDelete":         {"requestsDeleteHeaders": requestHeaders},
+	"chatOpenAI":             {"baseOptions": {scrub: wholeKept, why: defaultHeadersDetail}},
+	"openAIEmbeddings":       {"baseOptions": {scrub: wholeKept, why: defaultHeadersDetail}},
+	"azureChatOpenAI":        {"baseOptions": requestHeaders},
+	"azureOpenAIEmbeddings":  {"baseOptions": requestHeaders},
+	"chatCerebras":           {"baseOptions": requestHeaders},
+	"chatOpenAICustom":       {"baseOptions": requestHeaders},
+	"openAIEmbeddingsCustom": {"baseOptions": requestHeaders},
+	"chatOpenRouter":         {"baseOptions": requestHeaders},
+	"chatSambanova":          {"baseOptions": requestHeaders},
+	"openAI":                 {"baseOptions": requestHeaders},
+	"startAgentflow": {
+		"webhookSecret":  {scrub: wholeText, why: secretDetail},
+		"callbackSecret": {scrub: wholeText, why: secretDetail},
+	},
+	"teradataMCP": {"bearerToken": {scrub: wholeText, why: bearerTokenDetail}},
+}
+
+// requestHeaders is how the headers a request is sent with are written empty.
+var requestHeaders = unmarked{scrub: headerValues, why: headerValueDetail}
+
+// unmarkedOf returns how the input named input of a node of type typ is written
+// empty where Flowise marks it as no credential, and false where it is no such
+// input.
+func unmarkedOf(typ, input string) (unmarked, bool) {
+	u, ok := unmarkedInputs[typ][input]
+	return u, ok
+}
+
+// locate locates what u writes empty in raw, the value of the input field
+// names, addressed by tokens from the root of the export.
+func (u unmarked) locate(nodeID string, raw json.RawMessage, field, tokens []string) []importer.Credential {
+	name, pointer := strings.Join(field, "."), importer.Pointer(tokens...)
+	switch u.scrub {
+	case headerValues:
+		return headerValueCredentials(nodeID, raw, field, tokens, u.why)
+	case wholeKept:
+		written, ok := mcpconfig.EmptyKept(raw)
+		if !ok {
+			return nil
+		}
+		c := importer.Credential{Node: nodeID, Field: name, Pointer: pointer, Detail: u.why}
+		if written != nil {
+			c.Value, c.Detail = written, headerNamesAndValues
+		}
+		return []importer.Credential{c}
+	case wholeText:
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer, Detail: u.why}}
+	}
+	return nil
+}
+
+// headerValueCredentials locates each value the headers in raw hold, as
+// mcpconfig.HeaderValues reads them: held as an object or a list, each value
+// named by its header; held as JSON text, the text rewritten with every value
+// written empty, reported once with the headers it names; held as any other
+// text, the whole text.
+func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []string, why string) []importer.Credential {
+	name, pointer := strings.Join(field, "."), importer.Pointer(tokens...)
+	written, ok := mcpconfig.EmptyKept(raw)
+	if !ok {
+		return nil
+	}
+	if written != nil {
+		var out []importer.Credential
+		for _, m := range mcpconfig.HeaderValues(raw) {
+			out = append(out, importer.Credential{Node: nodeID, Field: name + "." + m.Name,
+				Pointer: importer.Pointer(append(append([]string{}, tokens...), m.Tokens...)...), Detail: why})
+		}
+		return out
+	}
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer, Detail: why}}
+	}
+	members := mcpconfig.HeaderValues(json.RawMessage(text))
+	if inner, ok := mcpconfig.EmptyKept(json.RawMessage(text)); !ok || inner == nil {
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer,
+			Detail: "it does not read as headers, so what is inside it cannot be located"}}
+	}
+	var edits []importer.Edit
+	var names []string
+	for _, m := range members {
+		if mcpconfig.Blank(m.Value) {
+			continue
+		}
+		edits = append(edits, importer.Edit{Pointer: importer.Pointer(m.Tokens...), Value: json.RawMessage(`""`)})
+		names = append(names, m.Name)
+	}
+	if len(edits) == 0 {
+		return nil
+	}
+	return []importer.Credential{rewrittenCredential(nodeID, name, pointer, json.RawMessage(text), true, edits,
+		"header values ("+strings.Join(names, ", ")+")")}
+}
+
+// The details saying why an input Flowise marks as no credential is written
+// empty.
+const (
+	headerValueDetail    = "a header can carry a credential, though Flowise marks it as none"
+	defaultHeadersDetail = "the default headers a model's client sends can carry a credential, though Flowise marks " +
+		"them as none"
+	secretDetail         = "the input holds a secret, though Flowise marks it as no credential"
+	bearerTokenDetail    = "the input holds a bearer token, though Flowise marks it as no credential"
+	headerNamesAndValues = "header names and values"
+)
 
 // serverConfigInput is the input Flowise's Custom MCP tool keeps its server
 // configuration in: JSON text, or an object, holding the server's url and the
@@ -264,16 +453,26 @@ func serverConfigCredentials(nodeID string, raw json.RawMessage, field, tokens [
 	if len(edits) == 0 {
 		return nil
 	}
+	return []importer.Credential{rewrittenCredential(nodeID, name, pointer, written, text != "", edits, what)}
+}
+
+// rewrittenCredential returns the credential writing a value anew with edits
+// made inside it and every other part kept — written is the value, or the JSON
+// the value holds as text where text is set, and the credential writes it back
+// in the form it was found in — reporting what it writes empty; or, where the
+// edits cannot be located in it, the credential writing it empty whole.
+func rewrittenCredential(nodeID, name, pointer string, written json.RawMessage, text bool, edits []importer.Edit,
+	what string) importer.Credential {
 	rewritten, err := importer.Rewrite(written, edits)
 	if err != nil {
-		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer,
-			Detail: "what is inside it cannot be located in its text"}}
+		return importer.Credential{Node: nodeID, Field: name, Pointer: pointer,
+			Detail: "what is inside it cannot be located in its text"}
 	}
 	value := json.RawMessage(rewritten)
-	if text != "" {
+	if text {
 		value = jsonText(string(rewritten))
 	}
-	return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer, Value: value, Detail: what}}
+	return importer.Credential{Node: nodeID, Field: name, Pointer: pointer, Value: value, Detail: what}
 }
 
 // serverConfigEdits returns, for a server configuration read as a JSON object,

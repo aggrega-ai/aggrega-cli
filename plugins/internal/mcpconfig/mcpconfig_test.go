@@ -16,9 +16,10 @@ import (
 // list or a single text, and its environment — each value returned with its
 // kind, its name and the reference tokens addressing it, by kind in a fixed
 // order whatever order the configuration writes its members in. A header item
-// that is not an object, or that carries no value, holds none, and one whose
-// key is not a string is named as the key is written; a configuration that is
-// not an object, and args written null, hold none.
+// that is not an object is returned whole, named by its position, one carrying
+// a key and no value holds none, and one whose key is not a string is named as
+// the key is written; a configuration that is not an object, and args written
+// null, hold none.
 func TestMembersReadsEveryValueAServerConfigurationHolds(t *testing.T) {
 	t.Parallel()
 	m := func(kind Kind, name string, value string, tokens ...string) Member {
@@ -45,6 +46,7 @@ func TestMembersReadsEveryValueAServerConfigurationHolds(t *testing.T) {
 				`{"key":7,"value":"v"},{"key":"X-Null","value":null}]}`,
 			want: []Member{
 				m(Header, "Authorization", `"Bearer b"`, "headers", "0", "value"),
+				m(Header, "1", `"not an item"`, "headers", "1"),
 				m(Header, "7", `"v"`, "headers", "3", "value"),
 				m(Header, "X-Null", `null`, "headers", "4", "value"),
 			},
@@ -149,6 +151,46 @@ func TestFieldMembersReadsAServerWrittenInFieldsOfANodesOwn(t *testing.T) {
 			got := FieldMembers(json.RawMessage(tc.template))
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("FieldMembers(%s) =\n%+v\nwant\n%+v", tc.template, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHeaderValuesReadsEveryShapeAFlowWritesHeadersIn holds HeaderValues to
+// each shape a flow keeps headers in — an object of names to values, rows of a
+// key and a value, objects merged into the headers whole, and items of any
+// other kind — each value named by its header, and its tokens beneath the ones
+// given. A row carrying a key and no value, and an item that is null, empty
+// text, an empty object or an empty list, hold none; headers that are neither an
+// object nor a list hold none.
+func TestHeaderValuesReadsEveryShapeAFlowWritesHeadersIn(t *testing.T) {
+	t.Parallel()
+	m := func(name string, value string, tokens ...string) Member {
+		return Member{Kind: Header, Name: name, Tokens: tokens, Value: json.RawMessage(value)}
+	}
+	for _, tc := range []struct {
+		name, headers string
+		want          []Member
+	}{
+		{name: "an object", headers: `{"Authorization":"Bearer b","X-Empty":""}`,
+			want: []Member{m("Authorization", `"Bearer b"`, "h", "value", "Authorization"),
+				m("X-Empty", `""`, "h", "value", "X-Empty")}},
+		{name: "rows of a key and a value", headers: `[{"key":"User-Agent","value":"langflow"},{"key":"X-Api-Key","value":null}]`,
+			want: []Member{m("User-Agent", `"langflow"`, "h", "value", "0", "value"),
+				m("X-Api-Key", `null`, "h", "value", "1", "value")}},
+		{name: "objects merged whole", headers: `[{"Authorization":"Bearer b","X-Trace":"t"}]`,
+			want: []Member{m("Authorization", `"Bearer b"`, "h", "value", "0", "Authorization"),
+				m("X-Trace", `"t"`, "h", "value", "0", "X-Trace")}},
+		{name: "items of another kind", headers: `["Authorization: Bearer b",7,null,"",{},[],{"key":"X-Name-Only"}]`,
+			want: []Member{m("0", `"Authorization: Bearer b"`, "h", "value", "0"), m("1", `7`, "h", "value", "1")}},
+		{name: "a text", headers: `"Authorization: Bearer b"`},
+		{name: "null", headers: `null`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := HeaderValues(json.RawMessage(tc.headers), "h", "value")
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("HeaderValues(%s) =\n%+v\nwant\n%+v", tc.headers, got, tc.want)
 			}
 		})
 	}

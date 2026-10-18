@@ -7,9 +7,11 @@
 // started with — for the importer guests built on the plugin kit, which write
 // those values empty before a flow is carried into a draft, since a key can sit
 // in any of them. It reads such a configuration written as one object
-// ([Members]) and written as fields of the node's own ([FieldMembers]). It is
-// the one place the importers walk such a configuration, so the Langflow and
-// the Flowise importer empty the same members of it, in either layout.
+// ([Members]) and written as fields of the node's own ([FieldMembers]), and the
+// headers any node of a flow keeps, in or out of such a configuration
+// ([HeaderValues]). It is the one place the importers walk such a configuration
+// and such headers, so the Langflow and the Flowise importer empty the same
+// members of them, in either layout.
 package mcpconfig
 
 import (
@@ -58,10 +60,7 @@ type Member struct {
 // object, by kind in the order of [Kind] and, within a kind, in the order the
 // configuration writes them, each repetition of a member included:
 //
-//   - each header value, the headers written as an object of names to values,
-//     or as a list of items each carrying a key and a value — an item carrying
-//     no value member, or that is not an object, holds none, and an item's key
-//     that is not a string is named as it is written;
+//   - each header value, read as [HeaderValues] reads headers;
 //   - each environment value, the env written as an object of names to values;
 //   - the url;
 //   - the command;
@@ -74,7 +73,7 @@ func Members(config json.RawMessage) []Member {
 	var out []Member
 	for _, e := range entries {
 		if e.Key == "headers" {
-			out = append(out, headerMembers(e.Value, "headers")...)
+			out = append(out, HeaderValues(e.Value, "headers")...)
 		}
 	}
 	for _, e := range entries {
@@ -111,7 +110,7 @@ func Members(config json.RawMessage) []Member {
 // the template writes them, each repetition of a field or of its value member
 // included:
 //
-//   - each header value of headers_input, read as [Members] reads headers;
+//   - each header value of headers_input, read as [HeaderValues] reads headers;
 //   - each entry of env where it is a list — a text naming a variable and
 //     its value — and the whole of env where it is not;
 //   - sse_url, the address;
@@ -140,7 +139,7 @@ func FieldMembers(template json.RawMessage) []Member {
 	}
 	var out []Member
 	for _, v := range values("headers_input") {
-		out = append(out, headerMembers(v, "headers_input", "value")...)
+		out = append(out, HeaderValues(v, "headers_input", "value")...)
 	}
 	for _, v := range values("env") {
 		out = append(out, listMembers(Env, v, "env", "value")...)
@@ -154,12 +153,24 @@ func FieldMembers(template json.RawMessage) []Member {
 	return out
 }
 
-// headerMembers returns each header value of headers, addressed beneath the
-// tokens at: the headers written as an object of names to values, or as a list
-// of items each carrying a key and a value — an item carrying no value member,
-// or that is not an object, holds none, and an item's key that is not a string
-// is named as it is written.
-func headerMembers(headers json.RawMessage, at ...string) []Member {
+// HeaderValues returns, as members of kind Header addressed beneath the tokens
+// at, every value headers hold in the shapes a flow writes them in, each named
+// by the header it is the value of, so a header's name is kept and only its
+// value is ever written empty:
+//
+//   - an object of names to values: each member's value;
+//   - a list, item by item: of an object carrying a value member — a row of a
+//     key and a value — that value, named by the row's key, a key that is not a
+//     string named as it is written; of an object carrying neither a key nor a
+//     value, which Langflow merges into the headers whole, each member's value;
+//     of any other value holding something, the whole item, named by its
+//     position written in decimal. A row carrying a key and no value names a
+//     header and holds none, and so does an item that is null, an empty text, an
+//     empty object or an empty list.
+//
+// Headers that are neither an object nor a list hold no member here: what a
+// caller writes for one is the caller's.
+func HeaderValues(headers json.RawMessage, at ...string) []Member {
 	var out []Member
 	for _, h := range importer.ObjectEntries(headers) {
 		out = append(out, Member{Kind: Header, Name: h.Key, Tokens: beneath(at, h.Key), Value: h.Value})
@@ -169,22 +180,77 @@ func headerMembers(headers json.RawMessage, at ...string) []Member {
 		return out
 	}
 	for j, raw := range items {
+		position := strconv.Itoa(j)
+		entries := importer.ObjectEntries(raw)
+		if entries == nil {
+			if !holdsNothing(raw) {
+				out = append(out, Member{Kind: Header, Name: position, Tokens: beneath(at, position), Value: raw})
+			}
+			continue
+		}
 		var item struct {
 			Key   json.RawMessage `json:"key"`
 			Value json.RawMessage `json:"value"`
 		}
-		if json.Unmarshal(raw, &item) != nil || item.Value == nil {
-			continue
+		_ = json.Unmarshal(raw, &item)
+		switch {
+		case item.Value != nil:
+			name := string(item.Key)
+			var key string
+			if json.Unmarshal(item.Key, &key) == nil {
+				name = key
+			}
+			out = append(out, Member{Kind: Header, Name: name, Tokens: beneath(at, position, "value"),
+				Value: item.Value})
+		case item.Key == nil:
+			for _, h := range entries {
+				out = append(out, Member{Kind: Header, Name: h.Key, Tokens: beneath(at, position, h.Key),
+					Value: h.Value})
+			}
 		}
-		name := string(item.Key)
-		var key string
-		if json.Unmarshal(item.Key, &key) == nil {
-			name = key
-		}
-		out = append(out, Member{Kind: Header, Name: name, Tokens: beneath(at, strconv.Itoa(j), "value"),
-			Value: item.Value})
 	}
 	return out
+}
+
+// EmptyKept returns what a value is written as where it is written empty whole
+// with its kind kept — headers, or a configuration, whose names are not kept
+// either: {} for an object holding something, [] for a list holding something,
+// and nil, meaning an empty text, for a value of any other kind holding
+// something. ok is false for a value holding nothing to write empty — null, an
+// empty text, an empty object or an empty list — and for bytes that are not
+// JSON.
+func EmptyKept(value json.RawMessage) (written json.RawMessage, ok bool) {
+	var v any
+	if json.Unmarshal(value, &v) != nil || holdsNothing(value) {
+		return nil, false
+	}
+	switch v.(type) {
+	case map[string]any:
+		return json.RawMessage("{}"), true
+	case []any:
+		return json.RawMessage("[]"), true
+	}
+	return nil, true
+}
+
+// holdsNothing reports whether a JSON value holds nothing to write empty: null,
+// an empty text, an empty object or an empty list.
+func holdsNothing(raw json.RawMessage) bool {
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		return false
+	}
+	switch v := v.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case map[string]any:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return false
 }
 
 // listMembers returns, as members of kind addressed beneath the tokens at, each

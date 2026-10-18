@@ -540,9 +540,11 @@ type plantedSource struct {
 // which are left as written and not reported. And it plants them in a Langflow
 // flow AUTHORED here holding a node of each of Langflow's deprecated MCP
 // components, which no committed export holds: the address in the url of an
-// MCPSse node and the command line in the command of an MCPStdio node. The
-// catalog the planted sources are imported over holds no platform, so no MCP
-// node of any of these flows is wired to anything.
+// MCPSse node and the command line in the command of an MCPStdio node. And it
+// plants them in every input either format marks as no credential that can carry
+// one, as unmarkedPlantedSources describes. The catalog the planted sources are
+// imported over holds no platform, so no node of any of these flows is wired to
+// anything.
 func plantedSources(t *testing.T) []plantedSource {
 	t.Helper()
 	decode := func(rel string) map[string]any {
@@ -701,7 +703,7 @@ func plantedSources(t *testing.T) []plantedSource {
 		deactivated("MCPStdio-n4", "MCPStdio", "command", "uvx mcp-server-fetch --api-key "+deactivatedCmd),
 	}, "edges": []any{}}}
 
-	return []plantedSource{
+	return append([]plantedSource{
 		{name: "langflow-password.json", body: encode(lf), keys: []string{langflowKey},
 			fields: []string{"LanguageModelComponent-FLeYF api_key"}},
 		{name: "flowise-credential.json", body: encode(fw), keys: []string{flowiseCred, flowisePass},
@@ -727,6 +729,130 @@ func plantedSources(t *testing.T) []plantedSource {
 		{name: "langflow-mcp-deactivated.json", body: encode(deactivatedFlow),
 			keys:   []string{deactivatedURL, deactivatedCmd},
 			fields: []string{"MCPSse-m3 url", "MCPStdio-n4 command"}},
+	}, unmarkedPlantedSources(encode)...)
+}
+
+// unmarkedPlantedSources plants key-shaped values in a Langflow flow and a Flowise
+// flow AUTHORED here, which no committed export holds with a value, in every input
+// either format marks as no credential that can carry one, in each shape the
+// input takes. In the Langflow flow: request headers as rows of a key and a value
+// (beside a header holding no secret, an empty one and a row naming a header
+// alone), as an object, as objects Langflow merges whole and as text; the default
+// headers of an OpenAI Embeddings node as an object and as a list; a request
+// written as a command line, a Webhook node's command line (and its declared
+// default, written empty too though it holds no key); an Olivya API key; a Mem0
+// configuration; a Composio verification token; and two inputs named like
+// credentials that hold none — an Astra key's name and a user name — left as
+// written. In the Flowise flow: headers as JSON text, as rows, as an object and as
+// text that is not JSON; the default headers of a chat model the platform's
+// connection reaches and of one it does not; a Start node's two secrets; a
+// Teradata MCP tool's bearer token; and, inside an agentflow agent's
+// configurations of the model and the tool it selects, the default headers of an
+// OpenAI chat model and a Requests tool's headers.
+func unmarkedPlantedSources(encode func(any) []byte) []plantedSource {
+	const (
+		lfAuthorization = "Bearer sk-plantedUNMARKEDrows0123456789"
+		lfCurl          = "sk-plantedUNMARKEDcurl0123456789abc"
+		lfMerged        = "sk-plantedUNMARKEDmerged0123456789a"
+		lfItem          = "Authorization: Bearer sk-plantedUNMARKEDitem012"
+		lfDocling       = "sk-plantedUNMARKEDdocling0123456789"
+		lfCloudflare    = "Bearer sk-plantedUNMARKEDcloudflare012"
+		lfKafka         = "trace=sk-plantedUNMARKEDkafka01234567"
+		lfEmbedObject   = "Bearer sk-plantedUNMARKEDembedOBJECT01"
+		lfEmbedList     = "Bearer sk-plantedUNMARKEDembedLIST0123"
+		lfWebhook       = "sk-plantedUNMARKEDwebhook012345678"
+		lfOlivya        = "sk-plantedUNMARKEDolivya0123456789a"
+		lfMem0          = "sk-plantedUNMARKEDmem0password01234"
+		lfComposio      = "sk-plantedUNMARKEDcomposio01234567"
+
+		fwRequestsGet = "Bearer sk-plantedUNMARKEDrequestsGET0"
+		fwHTTP        = "sk-plantedUNMARKEDhttpAGENTFLOW0123"
+		fwLoader      = "sk-plantedUNMARKEDapiLOADER01234567"
+		fwToolkit     = "sk-plantedUNMARKEDtoolkitTEXT01234"
+		fwChatOpenAI  = "Bearer sk-plantedUNMARKEDbaseOPTIONS0"
+		fwAzure       = "sk-plantedUNMARKEDazureBASE01234567"
+		fwWebhook     = "sk-plantedUNMARKEDwebhookSECRET0123"
+		fwCallback    = "sk-plantedUNMARKEDcallbackSECRET012"
+		fwTeradata    = "sk-plantedUNMARKEDteradataBEARER012"
+		fwNestedModel = "Bearer sk-plantedUNMARKEDnestedMODEL0"
+		fwNestedTool  = "sk-plantedUNMARKEDnestedTOOL0123456"
+	)
+	field := func(typ string, value any) map[string]any { return map[string]any{"type": typ, "value": value} }
+	lfNode := func(id, typ string, template map[string]any) map[string]any {
+		return map[string]any{"id": id, "data": map[string]any{"type": typ, "node": map[string]any{"template": template}}}
+	}
+	langflow := map[string]any{"id": "0a0b0c0d-5555-4666-8777-88889999aaaa", "data": map[string]any{"nodes": []any{
+		lfNode("APIRequest-a1", "APIRequest", map[string]any{
+			"headers": field("table", []any{map[string]any{"key": "Authorization", "value": lfAuthorization},
+				map[string]any{"key": "User-Agent", "value": "Langflow/1.0"}, map[string]any{"key": "X-Empty", "value": ""},
+				map[string]any{"key": "X-Name-Only"}}),
+			"curl_input": field("str", "curl -H 'Authorization: Bearer "+lfCurl+"' https://api.example/v1/items")}),
+		lfNode("URLComponent-b2", "URLComponent", map[string]any{
+			"headers": field("table", []any{map[string]any{"X-Api-Key": lfMerged}, lfItem})}),
+		lfNode("DoclingRemote-c3", "DoclingRemote", map[string]any{
+			"api_headers": field("table", []any{map[string]any{"key": "Authorization", "value": lfDocling}})}),
+		lfNode("CloudflareWorkersAIEmbeddings-d4", "CloudflareWorkersAIEmbeddings", map[string]any{
+			"headers": field("dict", map[string]any{"Authorization": lfCloudflare})}),
+		lfNode("ConfluentKafkaProducer-e5", "ConfluentKafkaProducer", map[string]any{"headers": field("dict", lfKafka)}),
+		lfNode("OpenAIEmbeddings-f6", "OpenAIEmbeddings", map[string]any{
+			"default_headers": field("dict", map[string]any{"Authorization": lfEmbedObject})}),
+		lfNode("OpenAIEmbeddings-g7", "OpenAIEmbeddings", map[string]any{
+			"default_headers": field("dict", []any{map[string]any{"key": "Authorization", "value": lfEmbedList}})}),
+		lfNode("Webhook-h8", "Webhook", map[string]any{"curl": field("str", "curl -X POST -u hook:"+lfWebhook+
+			" https://hooks.example/run")}),
+		lfNode("Webhook-h9", "Webhook", map[string]any{"curl": field("str", "CURL_WEBHOOK")}),
+		lfNode("OlivyaComponent-i10", "OlivyaComponent", map[string]any{"api_key": field("str", lfOlivya)}),
+		lfNode("mem0_chat_memory-j11", "mem0_chat_memory", map[string]any{"mem0_config": field("NestedDict",
+			map[string]any{"graph_store": map[string]any{"config": map[string]any{"username": "neo4j", "password": lfMem0}}})}),
+		lfNode("ComposioGmailAPIComponent-k12", "ComposioGmailAPIComponent", map[string]any{
+			"verification_token": field("str", lfComposio)}),
+		lfNode("AstraVectorize-l13", "AstraVectorize", map[string]any{"api_key_name": field("str", "PROVIDER_KEY_NAME")}),
+		lfNode("Elasticsearch-m14", "Elasticsearch", map[string]any{"username": field("str", "elastic")}),
+	}, "edges": []any{}}}
+
+	fwNode := func(id, name string, inputs map[string]any) map[string]any {
+		return map[string]any{"id": id, "data": map[string]any{"id": id, "name": name, "inputs": inputs}}
+	}
+	flowise := map[string]any{"nodes": []any{
+		fwNode("requestsGet_0", "requestsGet", map[string]any{
+			"requestsGetHeaders": `{"Authorization":"` + fwRequestsGet + `","Accept":"application/json"}`}),
+		fwNode("httpAgentflow_0", "httpAgentflow", map[string]any{
+			"headers": []any{map[string]any{"key": "Authorization", "value": fwHTTP}}}),
+		fwNode("apiLoader_0", "apiLoader", map[string]any{"headers": map[string]any{"X-Api-Key": fwLoader}}),
+		fwNode("openAPIToolkit_0", "openAPIToolkit", map[string]any{"headers": "token " + fwToolkit}),
+		fwNode("chatOpenAI_0", "chatOpenAI", map[string]any{"baseOptions": map[string]any{"Authorization": fwChatOpenAI}}),
+		fwNode("azureChatOpenAI_0", "azureChatOpenAI", map[string]any{"baseOptions": `{"api-key":"` + fwAzure + `"}`}),
+		fwNode("startAgentflow_0", "startAgentflow", map[string]any{"webhookSecret": fwWebhook,
+			"callbackSecret": fwCallback, "webhookSignatureHeader": "x-hub-signature-256"}),
+		fwNode("teradataMCP_0", "teradataMCP", map[string]any{"bearerToken": fwTeradata}),
+		fwNode("agentAgentflow_0", "agentAgentflow", map[string]any{
+			"agentModel": "chatOpenAI",
+			"agentModelConfig": map[string]any{"agentModel": "chatOpenAI",
+				"baseOptions": `{"Authorization":"` + fwNestedModel + `"}`},
+			"agentTools": []any{map[string]any{"agentSelectedTool": "requestsPost",
+				"agentSelectedToolConfig": map[string]any{"agentSelectedTool": "requestsPost",
+					"requestsPostHeaders": `{"X-Key":"` + fwNestedTool + `"}`}}},
+		}),
+	}, "edges": []any{}}
+
+	return []plantedSource{
+		{name: "langflow-unmarked-inputs.json", body: encode(langflow),
+			keys: []string{lfAuthorization, lfCurl, lfMerged, lfItem, lfDocling, lfCloudflare, lfKafka, lfEmbedObject,
+				lfEmbedList, lfWebhook, lfOlivya, lfMem0, lfComposio},
+			fields: []string{"APIRequest-a1 curl_input", "APIRequest-a1 headers.Authorization",
+				"APIRequest-a1 headers.User-Agent", "URLComponent-b2 headers.X-Api-Key", "URLComponent-b2 headers.1",
+				"DoclingRemote-c3 api_headers.Authorization", "CloudflareWorkersAIEmbeddings-d4 headers.Authorization",
+				"ConfluentKafkaProducer-e5 headers", "OpenAIEmbeddings-f6 default_headers",
+				"OpenAIEmbeddings-g7 default_headers", "Webhook-h8 curl", "Webhook-h9 curl", "OlivyaComponent-i10 api_key",
+				"mem0_chat_memory-j11 mem0_config", "ComposioGmailAPIComponent-k12 verification_token"}},
+		{name: "flowise-unmarked-inputs.json", body: encode(flowise),
+			keys: []string{fwRequestsGet, fwHTTP, fwLoader, fwToolkit, fwChatOpenAI, fwAzure, fwWebhook, fwCallback,
+				fwTeradata, fwNestedModel, fwNestedTool},
+			fields: []string{"requestsGet_0 requestsGetHeaders", "httpAgentflow_0 headers.Authorization",
+				"apiLoader_0 headers.X-Api-Key", "openAPIToolkit_0 headers", "chatOpenAI_0 baseOptions",
+				"azureChatOpenAI_0 baseOptions", "startAgentflow_0 callbackSecret", "startAgentflow_0 webhookSecret",
+				"teradataMCP_0 bearerToken", "agentAgentflow_0 agentModelConfig.baseOptions",
+				"agentAgentflow_0 agentTools.0.agentSelectedToolConfig.requestsPostHeaders"}},
 	}
 }
 
@@ -748,10 +874,11 @@ var (
 // and in the address of an MCP server wired to nothing and the arguments an MCP
 // server is started with, which neither marks, and in the address, the header
 // values, the environment entries and the command line an MCP Tools node writes
-// in fields of its own, the headers an MCP Tools node sends its server, and the
-// address and the command line of Langflow's deprecated MCP components, none of
-// which Langflow marks, and imports each planted source under both layouts,
-// writing the drafts. The search below finds every
+// in fields of its own, the headers an MCP Tools node sends its server, the
+// address and the command line of Langflow's deprecated MCP components, and every
+// other input either format marks as no credential that can carry one, and
+// imports each planted source under both layouts, writing the drafts. The search
+// below finds every
 // planted value in its planted source, which is what says it fires; it finds
 // none in any file the import wrote, nor in the decisions or the diagnostics.
 // Under the default layout one warning names each field it wrote empty by its
@@ -780,17 +907,37 @@ var (
 //     the row langflow-mcp-fields.json under the default layout fails, both
 //     planted environment entries in the drafted aggregate.yaml and no warning
 //     naming env of either node;
-//   - in credentialsOf (plugins/langflow-importer/walk.go), replace
-//     `if node.typ == mcpToolsType && e.Key == "headers" {` with
-//     `if node.typ == mcpToolsType && e.Key == "headers" && false {`: the row
-//     langflow-mcp-headers.json under the default layout fails, every value
-//     planted in it in the drafted aggregate.yaml and no warning naming headers;
-//   - in credentialsOf (plugins/langflow-importer/walk.go), replace
-//     `if d, ok := deactivatedServerFields[node.typ]; ok && e.Key == d.field {`
-//     with `if d, ok := deactivatedServerFields[node.typ]; ok && e.Key == d.field && false {`:
-//     the row langflow-mcp-deactivated.json under the default layout fails, both
-//     planted values in the drafted aggregate.yaml and no warning naming url or
-//     command.
+//   - in unmarkedOf (plugins/langflow-importer/walk.go), replace
+//     `if u, ok := unmarkedFields[typ][field]; ok {` with
+//     `if u, ok := unmarkedFields[typ][field]; ok && false {`: the rows
+//     langflow-mcp-headers.json, langflow-mcp-deactivated.json and
+//     langflow-unmarked-inputs.json under the default layout fail, every value
+//     planted in them but the Composio token in the drafted aggregate.yaml;
+//   - in unmarkedOf (plugins/langflow-importer/walk.go), replace
+//     `u, ok := unmarkedAnyType[field]` with `u, ok := unmarkedAnyType[field+"-"]`:
+//     the row langflow-unmarked-inputs.json fails, the Composio token in it;
+//   - in locate (plugins/langflow-importer/walk.go), replace each of
+//     `case headerValues:`, `case wholeKept:` and `case wholeText:` with the same
+//     case plus 100: the rows holding a value of that treatment fail — request
+//     headers; the MCP Tools and OpenAI Embeddings headers and the Mem0
+//     configuration; the command lines, the deprecated components' fields, the
+//     Olivya key and the Composio token;
+//   - in HeaderValues (plugins/internal/mcpconfig/mcpconfig.go), replace
+//     `case item.Key == nil:` with `case item.Key == nil && false:`, or
+//     `if !holdsNothing(raw) {` with `if !holdsNothing(raw) && false {`: the row
+//     langflow-unmarked-inputs.json fails, the URL node's merged header, or its
+//     header written as text, in the drafted aggregate.yaml;
+//   - in unmarkedOf (plugins/flowise-importer/walk.go), replace
+//     `u, ok := unmarkedInputs[typ][input]` with `u, ok := unmarkedInputs[typ][input+"-"]`:
+//     the row flowise-unmarked-inputs.json fails, every value planted in it;
+//   - in nestedCredentials (plugins/flowise-importer/walk.go), replace
+//     `if selectorKeys[e.Key] && json.Unmarshal(e.Value, &selected) == nil && selected != "" {`
+//     with the same condition `&& false`: the row flowise-unmarked-inputs.json
+//     fails, both values planted in the agent's configurations;
+//   - in headerValueCredentials (plugins/flowise-importer/walk.go), replace
+//     `edits = append(edits, importer.Edit{Pointer: importer.Pointer(m.Tokens...), Value: json.RawMessage(`""`)})`
+//     with `_ = m`: the row flowise-unmarked-inputs.json fails, every header
+//     planted in JSON text.
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 	t.Parallel()
 	for _, src := range plantedSources(t) {
