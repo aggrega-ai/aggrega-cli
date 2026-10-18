@@ -107,7 +107,7 @@ documents:
       metadata:
         name: imported/flow
         version: 0.1.0
-        description: Draft aggregate imported from a langflow source.
+        description: Draft Aggregate imported from a source in the langflow format.
       spec:
         components:
           chatinput-b6ucc:
