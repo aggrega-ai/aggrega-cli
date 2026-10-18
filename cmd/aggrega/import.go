@@ -220,7 +220,7 @@ source the write would refuse is refused here too.`,
 			return res.Refusal()
 		},
 	}
-	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding detection by the importers' signatures (for example langflow or flowise)")
+	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding detection by the importers' signatures (for example langflow, flowise or n8n)")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the drafted files as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, the importer run included. Without it the drafts are written to disk.")
 	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "Directory the drafted files are written under. A relative path resolves against the directory you run the command in, and a drive named bare on Windows, such as D:, is the current directory on that drive. Without it the drafts are written beneath the root of the workspace the run resolved.")
 	return c

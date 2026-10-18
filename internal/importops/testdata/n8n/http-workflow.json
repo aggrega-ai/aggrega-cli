@@ -1,0 +1,132 @@
+{
+  "id": "Rq5wL0aZ9kE3sY7u",
+  "name": "Nightly price sync",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "6a1f0c33-2b7d-4e9a-8c01-5d3e2f1a0001",
+      "name": "Every night",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://prices.example.test/v1/quotes",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "currency",
+              "value": "EUR"
+            },
+            {
+              "name": "apikey",
+              "value": "plantedQueryKey1111"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer plantedHeaderToken2222"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6a1f0c33-2b7d-4e9a-8c01-5d3e2f1a0002",
+      "name": "Fetch quotes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.body }}",
+        "dataPropertyName": "signature",
+        "secret": "plantedHmacSecret3333"
+      },
+      "id": "6a1f0c33-2b7d-4e9a-8c01-5d3e2f1a0003",
+      "name": "Sign payload",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://warehouse.example.test/prices",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"X-Signature\": \"{{ $json.signature }}\",\n  \"X-Api-Key\": \"plantedJsonHeaderKey4444\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.quotes) }}",
+        "options": {}
+      },
+      "id": "6a1f0c33-2b7d-4e9a-8c01-5d3e2f1a0004",
+      "name": "Store prices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0]
+    }
+  ],
+  "connections": {
+    "Every night": {
+      "main": [
+        [
+          {
+            "node": "Fetch quotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch quotes": {
+      "main": [
+        [
+          {
+            "node": "Sign payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign payload": {
+      "main": [
+        [
+          {
+            "node": "Store prices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

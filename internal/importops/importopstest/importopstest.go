@@ -81,6 +81,7 @@ type referenceImporter struct {
 var referenceImporters = []referenceImporter{
 	{format: "langflow", fixture: "langflow-importer.wasm", name: "import-langflow"},
 	{format: "flowise", fixture: "flowise-importer.wasm", name: "import-flowise"},
+	{format: "n8n", fixture: "n8n-importer.wasm", name: "import-n8n"},
 }
 
 // referenceImporterFor returns the reference importer serving format, failing
@@ -145,7 +146,7 @@ type Importer struct {
 	// fixture's own version.
 	Version string
 	// Format is the format whose reference importer the entity is generated from,
-	// written as the bare format (langflow, flowise) — and so the one format the
+	// written as the bare format (langflow, flowise, n8n) — and so the one format the
 	// entity advertises, which is what the catalog selects an importer by.
 	Format string
 }
@@ -281,8 +282,8 @@ func (f CatalogFolder) Plugins() []LaidPlugin {
 //
 // The binary carries importers of its own that advertise the same formats as the
 // folder's, so a workspace whose catalog holds the folder selects one of the
-// folder's importers only where an entry names it: with none, an import of either
-// format halts as ambiguous between the folder's importer and the binary's.
+// folder's importers only where an entry names it: with none, an import of any of
+// those formats halts as ambiguous between the folder's importer and the binary's.
 func (f CatalogFolder) Attachments(settings map[string]any) []Attachment {
 	attachments := make([]Attachment, 0, len(f.Importers))
 	for _, imp := range f.Importers {
@@ -295,7 +296,7 @@ func (f CatalogFolder) Attachments(settings map[string]any) []Attachment {
 // rooted at workspaceRoot, as LayCatalogFolder does, and writes the workspace's
 // configuration at workspaceRoot with an entry attaching each of the folder's
 // importers and handing it settings (see [CatalogFolder.Attachments]). It is the
-// workspace in which an import of either format runs the folder's importer: what
+// workspace in which an import of any of its formats runs the folder's importer: what
 // a user whose catalog holds an importer of a format the binary's own importers
 // also serve writes to choose it.
 //

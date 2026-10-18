@@ -201,18 +201,22 @@ func referenceDetectionSeam(t *testing.T) Seam {
 	}
 }
 
-// TestSelectFormat exercises the format-selection contract over the two
-// reference importers' declared signatures: a source whose graph is nested
-// under data.nodes is recognised as langflow, and one whose nodes and edges are
-// flat arrays as flowise — the two shapes the host once spelled itself, now read
-// off the importers. A JSON shape matching neither, content that is not JSON, a
-// top-level array and a null data.nodes are refused rather than guessed at, and
-// an explicit format wins over whatever the content would be recognised as.
+// TestSelectFormat exercises the format-selection contract over the reference
+// importers' declared signatures: a source whose graph is nested under
+// data.nodes is recognised as langflow, one whose nodes and edges are flat arrays
+// as flowise, and one carrying a node array and a connections object as n8n —
+// shapes read off the importers, not spelled by the host. A source carrying the
+// n8n shape beside another format's is recognised as that other format alone,
+// never as both. A JSON shape matching none, an n8n-like source whose connections
+// are a list, content that is not JSON, a top-level array and a null data.nodes
+// are refused rather than guessed at, and an explicit format wins over whatever
+// the content would be recognised as.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
 	langflow := []byte(`{"data":{"nodes":[],"edges":[]}}`)
 	flowise := []byte(`{"nodes":[],"edges":[]}`)
+	n8n := []byte(`{"id":"a1","nodes":[],"connections":{}}`)
 
 	cases := []struct {
 		name     string
@@ -224,6 +228,14 @@ func TestSelectFormat(t *testing.T) {
 	}{
 		{name: "langflow nested data.nodes", source: "flow.json", content: langflow, want: "langflow"},
 		{name: "flowise flat nodes+edges", source: "chatflow.json", content: flowise, want: "flowise"},
+		{name: "n8n nodes and connections", source: "workflow.json", content: n8n, want: "n8n"},
+		{name: "n8n's shape beside flowise's edges is flowise alone", source: "x.json",
+			content: []byte(`{"nodes":[],"connections":{},"edges":[]}`), want: "flowise"},
+		{name: "n8n's shape beside langflow's data.nodes is langflow alone", source: "x.json",
+			content: []byte(`{"nodes":[],"connections":{},"data":{"nodes":[]}}`), want: "langflow"},
+		{name: "connections that are a list are no n8n workflow", source: "x.json",
+			content: []byte(`{"nodes":[],"connections":[]}`), wantErr: true},
+		{name: "explicit format wins over n8n content", explicit: "flowise", source: "workflow.json", content: n8n, want: "flowise"},
 		{name: "a json shape matching neither is refused", source: "x.json", content: []byte(`{"foo":"bar"}`), wantErr: true},
 		{name: "content that is not json is refused", source: "x.json", content: []byte("not json at all"), wantErr: true},
 		{name: "a top-level array is refused", source: "x.json", content: []byte(`[1,2,3]`), wantErr: true},
@@ -246,7 +258,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}

@@ -43,14 +43,15 @@ func importDemoEchoBody(format string) string {
 	return "kind: Component\nmetadata:\n  name: " + format + "\n"
 }
 
-// A Langflow export and a Flowise export, as the committed source fixtures
-// carry them. They are read from the compiler's own importer-socket fixtures
-// rather than written out here: what these cases drive is recognition of a real
+// A Langflow export, a Flowise export and an n8n workflow, as the committed
+// source fixtures carry them. They are read from the compiler's own fixtures
+// rather than written out here: what these cases drive is recognition of an
 // exported shape, and a shape invented in this file would be recognised by
 // construction.
 const (
 	langflowFixture = "../compiler/importersocket/testdata/langflow-flow.json"
 	flowiseFixture  = "../compiler/importersocket/testdata/flowise-flow.json"
+	n8nFixture      = "../importops/testdata/n8n/agent-workflow.json"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here
@@ -489,8 +490,8 @@ const unadvertisedFormat = "unadvertised"
 // rather than with the seam the cases above point.
 //
 // The format is named, and it is one no importer advertises. The binary's own
-// importers serve the Langflow and Flowise formats whatever the workspace's
-// catalog holds, so naming either would resolve one of them rather than reach
+// importers serve the Langflow, Flowise and n8n formats whatever the workspace's
+// catalog holds, so naming any of them would resolve one of them rather than reach
 // this refusal; and naming a format is what takes the case past recognition, to
 // where the format is settled and no importer serves it.
 //

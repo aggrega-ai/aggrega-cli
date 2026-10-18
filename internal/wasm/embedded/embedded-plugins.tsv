@@ -40,3 +40,4 @@ governance	rego	plugins/rego-governance	rust	../aggrega-pdk/rust,../aggrega-abi/
 governance	cel	plugins/cel-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore
 importer	langflow	./plugins/langflow-importer	go		no
 importer	flowise	./plugins/flowise-importer	go		no
+importer	n8n	./plugins/n8n-importer	go		no

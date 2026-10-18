@@ -152,13 +152,13 @@ func (r *recordingCascade) resolutions() []cascadeResolution {
 }
 
 // catalogFolderImportWorkspace resolves a scratch workspace whose conventional
-// catalog directory holds the catalog folder, with both modules beside their
-// entities, and whose configuration attaches each of the folder's importers with
+// catalog directory holds the catalog folder, with every module beside its
+// entity, and whose configuration attaches each of the folder's importers with
 // no settings.
 //
-// The attachments are what make an import of either format run the folder's
-// importer: the binary's own importers advertise the same two formats, so with
-// none the import would halt as ambiguous between the two. An attachment carrying
+// The attachments are what make an import of any of its formats run the folder's
+// importer: the binary's own importers advertise the same formats, so with none
+// the import would halt as ambiguous between the two. An attachment carrying
 // no settings hands its importer nothing, so the importer runs exactly as one no
 // attachment names would, in its default layout.
 //

@@ -321,6 +321,7 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 	}{
 		{"a Langflow export, whose graph is nested", "langflow.json", readImportFixture(t, langflowFixture), "langflow"},
 		{"a Flowise export, whose graph is flat", "flowise.json", readImportFixture(t, flowiseFixture), "flowise"},
+		{"an n8n workflow, whose connections are keyed by node", "n8n.json", readImportFixture(t, n8nFixture), "n8n"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)

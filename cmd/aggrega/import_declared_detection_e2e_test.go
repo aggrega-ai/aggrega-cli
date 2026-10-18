@@ -32,9 +32,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// everyAgentFlowFixture is every Langflow and Flowise export committed in this
-// module, keyed by the format the host recognised it as before the formats were
-// declared by their importers — the census a change to recognition is held to.
+// everyAgentFlowFixture is every Langflow, Flowise and n8n export committed in
+// this module, keyed by its format — the Langflow and Flowise ones by the format
+// the host recognised them as before the formats were declared by their
+// importers — the census a change to recognition is held to.
 var everyAgentFlowFixture = []struct {
 	format string
 	path   string
@@ -51,6 +52,8 @@ var everyAgentFlowFixture = []struct {
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Nvidia Remix.json"},
 	{"langflow", "../../internal/compiler/importersocket/testdata/real-exports/langflow/Basic Prompting 1.6.0.json"},
 	{"flowise", "../../internal/compiler/testdata/flow-definition-escape/exports/flowise-chatflow.json"},
+	{"n8n", "../../internal/importops/testdata/n8n/agent-workflow.json"},
+	{"n8n", "../../internal/importops/testdata/n8n/http-workflow.json"},
 }
 
 // toolImportAnswer is what the assistant's import tool answered one call with.
@@ -172,9 +175,10 @@ func commentaryFormat(commentary string) string {
 }
 
 // TestEveryAgentFlowFixtureIsRecognisedByItsImportersDeclaration holds every
-// Langflow and Flowise export committed in this module to the format the host
-// recognised it as before the two shapes moved into the importers' declarations —
-// at the command, the tool and the session, with no format named. The folder's
+// Langflow, Flowise and n8n export committed in this module to its format — the
+// Langflow and Flowise ones to the format the host recognised them as before the
+// shapes moved into the importers' declarations — at the command, the tool and
+// the session, with no format named. The folder's
 // importer entities are generated from the reference importers' built modules, so
 // what recognises each source is the signature each module declares and nothing
 // the host spells.
@@ -309,15 +313,15 @@ func TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats(t *testi
 	seedSource(t, root, "mystery.json", []byte(`{"foo":"bar"}`))
 
 	code, _, _, process := runImportAtTheRoot(t, root, filepath.Join(root, "mystery.json"), "--dry-run")
-	if code == 0 || !strings.Contains(process, "(for example --format flowise or --format langflow)") {
+	if code == 0 || !strings.Contains(process, "(for example --format flowise, --format langflow or --format n8n)") {
 		t.Errorf("the command's refusal (exit %d) does not offer the advertised formats:\n%s", code, process)
 	}
 	if answer := importThroughTheTool(t, root, map[string]any{"source": "mystery.json"}); !answer.refused ||
-		!strings.Contains(answer.text, `one of "flowise", "langflow"`) {
+		!strings.Contains(answer.text, `one of "flowise", "langflow", "n8n"`) {
 		t.Errorf("the tool's refusal (refused=%v) does not offer the advertised formats: %s", answer.refused, answer.text)
 	}
 	if answer := importThroughTheSession(t, root, map[string]any{"source": "mystery.json", "outputDir": "drafts"}); !strings.Contains(
-		answer.refusal, "(for example flowise or langflow)") {
+		answer.refusal, "(for example flowise or langflow or n8n)") {
 		t.Errorf("the session's refusal does not offer the advertised formats: %q", answer.refusal)
 	}
 }
