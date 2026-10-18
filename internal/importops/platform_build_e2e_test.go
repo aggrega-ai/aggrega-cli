@@ -773,25 +773,32 @@ func TestAFlowiseDefinitionDraftedFromAnExportRendersAsTheExport(t *testing.T) {
 }
 
 // The values the authored MCP Tools node carries: the address of the server it
-// names, with a key in its query, and a request header carrying a key.
+// names, with a key in its query, a request header carrying a key, and a header
+// carrying a key in the headers field the node sends its server over those of
+// the server's configuration.
 const (
 	sourceServerHost    = "docs-mcp.source-address.example"
 	sourceServerKey     = "sk-plantedSOURCEurl0123456789"
 	sourceServerAddress = "https://" + sourceServerHost + "/mcp?key=" + sourceServerKey
 	sourceServerHeader  = "Bearer sk-plantedSOURCEheader0123456789ab"
+	sourceNodeHeader    = "Bearer sk-plantedSOURCEnodeHEADERS0123456"
 	// releaseServerAddress is the address the Release gives the MCP server.
 	releaseServerAddress = "https://docs.tools.example/mcp"
 )
 
 // mcpBuildSource is the committed real export Basic Prompting with a model
 // selected on its Language Model node and one MCP Tools node added, naming the
-// server docs at sourceServerAddress with sourceServerHeader — an authored flow.
+// server docs at sourceServerAddress with sourceServerHeader, and carrying
+// sourceNodeHeader in its own headers field — an authored flow.
 func mcpBuildSource(t *testing.T) []byte {
 	t.Helper()
 	flow := decoded(t, promptingWith(t, aSelectedModel))
 	data := asObject(flow["data"])
-	data["nodes"] = append(data["nodes"].([]any), mcpToolsNode("MCPTools-docs1", map[string]any{"name": "docs",
-		"config": map[string]any{"url": sourceServerAddress, "headers": map[string]any{"Authorization": sourceServerHeader}}}))
+	node := mcpToolsNode("MCPTools-docs1", map[string]any{"name": "docs",
+		"config": map[string]any{"url": sourceServerAddress, "headers": map[string]any{"Authorization": sourceServerHeader}}})
+	asObject(asObject(asObject(node["data"])["node"])["template"])["headers"] = map[string]any{"_input_type": "DictInput",
+		"name": "headers", "type": "dict", "list": true, "value": map[string]any{"Authorization": sourceNodeHeader}}
+	data["nodes"] = append(data["nodes"].([]any), node)
 	return encoded(t, flow)
 }
 
@@ -802,12 +809,14 @@ func mcpBuildSource(t *testing.T) []byte {
 // drafted, and on compose with the lines the draft shows for compose uncommented.
 //
 //   - nothing the import wrote, decided or reported holds the source's address,
-//     its host, the key in its query or the request header — each found in the
+//     its host, the key in its query, the request header or the header in the
+//     node's own headers field — each found in the
 //     source, which says the search fires — and the draft wires the server's
 //     Component to the platform's tools socket under the name the flow gives it;
 //   - in the flow the platform is seeded with, the MCP Tools node's server
-//     configuration holds the address the Release gave, and the flow holds no
-//     copy of the source's host.
+//     configuration holds the address the Release gave, its own headers field
+//     holds an empty object, which overrides no header of the server's
+//     configuration, and the flow holds no copy of the source's host.
 //
 // 🔴 PLANTED DEFECT, rebuilt into the importer fixtures from its source. A wired
 // node's address is written empty twice over — by the edit wireServer makes and
@@ -821,7 +830,7 @@ func mcpBuildSource(t *testing.T) []byte {
 func TestTheBuiltFlowReachesAnMCPServerAtTheAddressTheReleaseGives(t *testing.T) {
 	t.Parallel()
 	source := mcpBuildSource(t)
-	planted := []string{sourceServerAddress, sourceServerHost, sourceServerKey, sourceServerHeader}
+	planted := []string{sourceServerAddress, sourceServerHost, sourceServerKey, sourceServerHeader, sourceNodeHeader}
 	for _, target := range []string{"helm", "compose"} {
 		t.Run(target, func(t *testing.T) {
 			t.Parallel()
@@ -854,6 +863,10 @@ func TestTheBuiltFlowReachesAnMCPServerAtTheAddressTheReleaseGives(t *testing.T)
 			if got := asObject(server["config"])["url"]; got != releaseServerAddress {
 				t.Errorf("the MCP Tools node reaches its server at %#v, want the address the Release gave, %q", got,
 					releaseServerAddress)
+			}
+			headers := asObject(langflowNode(t, flow, "MCPTools-docs1")["headers"])["value"]
+			if h, ok := headers.(map[string]any); !ok || len(h) != 0 {
+				t.Errorf("the MCP Tools node's own headers field holds %#v, want an empty object", headers)
 			}
 		})
 	}

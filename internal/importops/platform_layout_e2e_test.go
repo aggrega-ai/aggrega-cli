@@ -531,9 +531,18 @@ type plantedSource struct {
 // its own, which no committed export holds: a key in the address in sse_url, in
 // its query and in its user part; in a header value of headers_input, written as
 // a list of key and value items and as an object; in an entry of env, written as
-// a list and as one text; and in the command line in command. The catalog the
-// planted sources are imported over holds no platform, so no MCP Tools node of
-// either flow is wired to anything.
+// a list and as one text; and in the command line in command. It plants them in a
+// Langflow flow AUTHORED here whose MCP Tools nodes carry the headers field
+// Langflow gives the node beside its server, which no committed export holds with
+// a value: written as an object, as a list of key and value items, as a list of
+// objects Langflow merges into one, and as text, on nodes naming their server in
+// mcp_server and on one carrying no mcp_server, beside an empty object and null,
+// which are left as written and not reported. And it plants them in a Langflow
+// flow AUTHORED here holding a node of each of Langflow's deprecated MCP
+// components, which no committed export holds: the address in the url of an
+// MCPSse node and the command line in the command of an MCPStdio node. The
+// catalog the planted sources are imported over holds no platform, so no MCP
+// node of any of these flows is wired to anything.
 func plantedSources(t *testing.T) []plantedSource {
 	t.Helper()
 	decode := func(rel string) map[string]any {
@@ -572,6 +581,13 @@ func plantedSources(t *testing.T) []plantedSource {
 		fieldsEnvText     = "sk-plantedFIELDSenvTEXT0123456789ab"
 		fieldsCommand     = "sk-plantedFIELDScommand0123456789ab"
 		fieldsCommandText = "sk-plantedFIELDScommandTEXT01234567"
+
+		headersObject  = "Bearer sk-plantedHEADERSobject01234567"
+		headersItem    = "sk-plantedHEADERSitem0123456789abcde"
+		headersMerged  = "Bearer sk-plantedHEADERSmerged0123456"
+		headersText    = "Authorization: Bearer sk-plantedHEADERStext0123"
+		deactivatedURL = "sk-plantedSSEaddress0123456789abcdef"
+		deactivatedCmd = "sk-plantedSTDIOcommand0123456789abcd"
 	)
 
 	lf := decode(langflowPromptingProject)
@@ -646,6 +662,45 @@ func plantedSources(t *testing.T) []plantedSource {
 	fieldsFlow := map[string]any{"id": "0a0b0c0d-2222-4333-8444-555566667777",
 		"data": map[string]any{"nodes": []any{sse, stdio}, "edges": []any{}}}
 
+	// withHeaders AUTHORS an MCP Tools node carrying the headers field Langflow
+	// gives the node beside its server — a dict field holding the headers as
+	// written — which no committed export holds with a value. A node naming its
+	// server in mcp_server names it alone, so nothing else of it is written
+	// empty; one carrying no mcp_server holds an empty address and an empty
+	// command line in fields of its own, which are left as written.
+	withHeaders := func(id, server string, headers any) map[string]any {
+		template := map[string]any{"headers": map[string]any{"type": "dict", "list": true, "value": headers},
+			"tool": map[string]any{"type": "str", "value": "fetch"}}
+		if server != "" {
+			template["mcp_server"] = map[string]any{"type": "mcp", "value": server}
+		} else {
+			template["sse_url"] = map[string]any{"type": "str", "value": ""}
+			template["command"] = map[string]any{"type": "str", "value": ""}
+		}
+		return map[string]any{"id": id, "data": map[string]any{"type": "MCPTools", "node": map[string]any{"template": template}}}
+	}
+	headersFlow := map[string]any{"id": "0a0b0c0d-3333-4444-8555-666677778888", "data": map[string]any{"nodes": []any{
+		withHeaders("MCPTools-g7", "docs", map[string]any{"Authorization": headersObject}),
+		withHeaders("MCPTools-h8", "search", []any{map[string]any{"key": "X-Api-Key", "value": headersItem}}),
+		withHeaders("MCPTools-i9", "", []any{map[string]any{"Authorization": headersMerged}}),
+		withHeaders("MCPTools-j0", "files", headersText),
+		withHeaders("MCPTools-k1", "fetch", map[string]any{}),
+		withHeaders("MCPTools-l2", "notes", nil),
+	}, "edges": []any{}}}
+
+	// deactivated AUTHORS a node of one of Langflow's deprecated MCP components,
+	// which no committed export holds: its one field, holding the server's
+	// address or the command line starting it.
+	deactivated := func(id, typ, field, value string) map[string]any {
+		return map[string]any{"id": id, "data": map[string]any{"type": typ, "node": map[string]any{"template": map[string]any{
+			field: map[string]any{"type": "str", "value": value},
+		}}}}
+	}
+	deactivatedFlow := map[string]any{"id": "0a0b0c0d-4444-4555-8666-777788889999", "data": map[string]any{"nodes": []any{
+		deactivated("MCPSse-m3", "MCPSse", "url", "http://mcp.example/sse?token="+deactivatedURL),
+		deactivated("MCPStdio-n4", "MCPStdio", "command", "uvx mcp-server-fetch --api-key "+deactivatedCmd),
+	}, "edges": []any{}}}
+
 	return []plantedSource{
 		{name: "langflow-password.json", body: encode(lf), keys: []string{langflowKey},
 			fields: []string{"LanguageModelComponent-FLeYF api_key"}},
@@ -666,16 +721,24 @@ func plantedSources(t *testing.T) []plantedSource {
 			fields: []string{"MCPTools-e5 headers_input.Authorization", "MCPTools-e5 env.0", "MCPTools-e5 env.1",
 				"MCPTools-e5 sse_url", "MCPTools-e5 command", "MCPTools-f6 headers_input.X-Api-Key", "MCPTools-f6 env",
 				"MCPTools-f6 sse_url", "MCPTools-f6 command"}},
+		{name: "langflow-mcp-headers.json", body: encode(headersFlow),
+			keys:   []string{headersObject, headersItem, headersMerged, headersText},
+			fields: []string{"MCPTools-g7 headers", "MCPTools-h8 headers", "MCPTools-i9 headers", "MCPTools-j0 headers"}},
+		{name: "langflow-mcp-deactivated.json", body: encode(deactivatedFlow),
+			keys:   []string{deactivatedURL, deactivatedCmd},
+			fields: []string{"MCPSse-m3 url", "MCPStdio-n4 command"}},
 	}
 }
 
-// emptiedField and emptiedWhole read the node and the field a credential-emptied
-// warning names, and nothing else of it: the first for a field the format marks
-// as a credential, the second for one it writes empty whole for the reason the
-// warning gives.
+// emptiedField, emptiedWhole and emptiedParts read the node and the field a
+// credential-emptied warning names, and nothing else of it: the first for a
+// field the format marks as a credential, the second for one it writes empty
+// whole for the reason the warning gives, the third for one it writes with what
+// the warning names of it emptied.
 var (
 	emptiedField = regexp.MustCompile(`^the value of (\S+), which node (\S+) marks as a credential, is written empty in the flow the draft carries: no credential from the source reaches the draft$`)
 	emptiedWhole = regexp.MustCompile(`^the whole value of (\S+) of node (\S+) is written empty in the flow the draft carries, since [^:]+: no credential from the source reaches the draft$`)
+	emptiedParts = regexp.MustCompile(`^(\S+) of node (\S+) is written with its [^:]+ empty in the flow the draft carries: no credential from the source reaches the draft$`)
 )
 
 // TestNoCredentialValueAnExportHoldsReachesTheDraft plants key-shaped values in
@@ -685,8 +748,10 @@ var (
 // and in the address of an MCP server wired to nothing and the arguments an MCP
 // server is started with, which neither marks, and in the address, the header
 // values, the environment entries and the command line an MCP Tools node writes
-// in fields of its own, none of which Langflow marks, and imports each planted
-// source under both layouts, writing the drafts. The search below finds every
+// in fields of its own, the headers an MCP Tools node sends its server, and the
+// address and the command line of Langflow's deprecated MCP components, none of
+// which Langflow marks, and imports each planted source under both layouts,
+// writing the drafts. The search below finds every
 // planted value in its planted source, which is what says it fires; it finds
 // none in any file the import wrote, nor in the decisions or the diagnostics.
 // Under the default layout one warning names each field it wrote empty by its
@@ -714,7 +779,18 @@ var (
 //     `out = append(out, listMembers(Env, v, "env", "value")...)` with `_ = v`:
 //     the row langflow-mcp-fields.json under the default layout fails, both
 //     planted environment entries in the drafted aggregate.yaml and no warning
-//     naming env of either node.
+//     naming env of either node;
+//   - in credentialsOf (plugins/langflow-importer/walk.go), replace
+//     `if node.typ == mcpToolsType && e.Key == "headers" {` with
+//     `if node.typ == mcpToolsType && e.Key == "headers" && false {`: the row
+//     langflow-mcp-headers.json under the default layout fails, every value
+//     planted in it in the drafted aggregate.yaml and no warning naming headers;
+//   - in credentialsOf (plugins/langflow-importer/walk.go), replace
+//     `if d, ok := deactivatedServerFields[node.typ]; ok && e.Key == d.field {`
+//     with `if d, ok := deactivatedServerFields[node.typ]; ok && e.Key == d.field && false {`:
+//     the row langflow-mcp-deactivated.json under the default layout fails, both
+//     planted values in the drafted aggregate.yaml and no warning naming url or
+//     command.
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 	t.Parallel()
 	for _, src := range plantedSources(t) {
@@ -781,6 +857,9 @@ func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 					m := emptiedField.FindStringSubmatch(d.Message)
 					if m == nil {
 						m = emptiedWhole.FindStringSubmatch(d.Message)
+					}
+					if m == nil {
+						m = emptiedParts.FindStringSubmatch(d.Message)
 					}
 					if m == nil {
 						t.Errorf("the warning %q is not of the form that names a node and a field alone", d.Message)
