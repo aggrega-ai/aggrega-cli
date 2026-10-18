@@ -96,6 +96,9 @@ func sharedAttachedImport(t *testing.T, root, file, namespace, other string) imp
 		t.Fatalf("the shared import of %s halted or drafted nothing: %+v", file, res.Diagnostics)
 	}
 	for _, f := range res.Files {
+		if f.Path == importops.RecordFileName {
+			continue
+		}
 		if f.Path != "aggregate.yaml" && !strings.HasPrefix(f.Path, "components/"+namespace+"-") {
 			t.Fatalf("the shared import of %s drafted %s, which is not named in the namespace %q its "+
 				"importer's attachment hands it", file, f.Path, namespace)

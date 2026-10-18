@@ -522,10 +522,10 @@ func shortDigest(d string) string {
 	return d[:keep] + "..."
 }
 
-// exitCodeError carries a configured CLI plugin's non-zero exit status up to the
-// single process-exit boundary. It lets a plugin command's RunE report an
-// arbitrary exit code without calling os.Exit itself, so Execute stays the one
-// place the process exits and the plugin's status still reaches the shell
+// exitCodeError carries a non-zero exit status that is not an error — a configured
+// CLI plugin's own, or import's drift status — up to the single process-exit
+// boundary. A RunE reports it without calling os.Exit itself, so Execute stays
+// the one place the process exits and the status still reaches the shell
 // verbatim.
 type exitCodeError struct {
 	code int

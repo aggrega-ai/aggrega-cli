@@ -346,11 +346,14 @@ func TestImportWritesTheDraftedFiles(t *testing.T) {
 	if string(got) != demoEchoBody {
 		t.Fatalf("written demo.yaml = %q; want %q", string(got), demoEchoBody)
 	}
-	if len(res.Written) != 1 || res.Written[0] != "demo.yaml" {
-		t.Fatalf("Written = %v; want exactly [demo.yaml]", res.Written)
+	if !slices.Equal(res.Written, []string{"demo.yaml", RecordFileName}) {
+		t.Fatalf("Written = %v; want exactly [demo.yaml %s], the draft and then the record", res.Written, RecordFileName)
 	}
-	if len(res.Files) != 1 || res.Files[0].Content != demoEchoBody {
-		t.Fatalf("Files must carry the content as well as the path; got %+v", res.Files)
+	if len(res.Files) != 2 || res.Files[0].Content != demoEchoBody || res.Files[1].Path != RecordFileName {
+		t.Fatalf("Files must carry the content as well as the path, the record last; got %+v", res.Files)
+	}
+	if record, rerr := os.ReadFile(filepath.Join(out, RecordFileName)); rerr != nil || string(record) != res.Files[1].Content {
+		t.Fatalf("the record on disk is not the one the result carries (read error %v)", rerr)
 	}
 	if res.Format != "demo" {
 		t.Fatalf("Format = %q; want demo", res.Format)
@@ -380,8 +383,10 @@ func TestImportUnderAReportingDeliveryWritesNothing(t *testing.T) {
 	if len(res.Written) != 0 {
 		t.Fatalf("Written = %v; want empty under a reporting delivery", res.Written)
 	}
-	if len(res.Files) != 1 || res.Files[0].Path != "demo.yaml" || res.Files[0].Content != demoEchoBody {
-		t.Fatalf("a reporting delivery must carry the same set a write puts on disk; got %+v", res.Files)
+	if len(res.Files) != 2 || res.Files[0].Path != "demo.yaml" || res.Files[0].Content != demoEchoBody ||
+		res.Files[1].Path != RecordFileName {
+		t.Fatalf("a reporting delivery must carry the same set a write puts on disk, the record among it; got %+v",
+			res.Files)
 	}
 	entries, _ := os.ReadDir(out)
 	if len(entries) != 0 {
@@ -805,8 +810,8 @@ func TestSettingsReachTheGuest(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(out, "demo.yaml")); !os.IsNotExist(statErr) {
 		t.Fatalf("demo.yaml must not exist when target_namespace prefixes the name; stat err = %v", statErr)
 	}
-	if len(res.Written) != 1 || res.Written[0] != "prod-demo.yaml" {
-		t.Fatalf("Written = %v; want [prod-demo.yaml]", res.Written)
+	if !slices.Equal(res.Written, []string{"prod-demo.yaml", RecordFileName}) {
+		t.Fatalf("Written = %v; want [prod-demo.yaml %s]", res.Written, RecordFileName)
 	}
 }
 

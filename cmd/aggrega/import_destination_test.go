@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -115,14 +116,14 @@ func TestWhereAnImportWritesItsDrafts(t *testing.T) {
 			from:        func(l importDestinationLayout) string { return l.root },
 			args:        func(l importDestinationLayout) []string { return []string{"import", l.source, "--format", "demo"} },
 			wantRoot:    func(l importDestinationLayout) string { return l.root },
-			wantChanges: []string{"ws/demo.yaml was created"},
+			wantChanges: []string{"ws/" + importops.RecordFileName + " was created", "ws/demo.yaml was created"},
 		},
 		{
 			name:        "naming no destination from a sub-folder of the workspace",
 			from:        func(l importDestinationLayout) string { return l.sub },
 			args:        func(l importDestinationLayout) []string { return []string{"import", l.source, "--format", "demo"} },
 			wantRoot:    func(l importDestinationLayout) string { return l.root },
-			wantChanges: []string{"ws/demo.yaml was created"},
+			wantChanges: []string{"ws/" + importops.RecordFileName + " was created", "ws/demo.yaml was created"},
 		},
 		{
 			name: "naming no destination from another folder, the workspace named with --workspace-root",
@@ -131,7 +132,7 @@ func TestWhereAnImportWritesItsDrafts(t *testing.T) {
 				return []string{"--workspace-root", l.root, "import", l.source, "--format", "demo"}
 			},
 			wantRoot:    func(l importDestinationLayout) string { return l.root },
-			wantChanges: []string{"ws/demo.yaml was created"},
+			wantChanges: []string{"ws/" + importops.RecordFileName + " was created", "ws/demo.yaml was created"},
 		},
 		{
 			name: "naming no destination under --dry-run from a sub-folder",
@@ -148,8 +149,9 @@ func TestWhereAnImportWritesItsDrafts(t *testing.T) {
 			args: func(l importDestinationLayout) []string {
 				return []string{"import", l.source, "--format", "demo", "--output-dir", "drafts"}
 			},
-			wantRoot:    func(l importDestinationLayout) string { return filepath.Join(l.root, "drafts") },
-			wantChanges: []string{"ws/drafts was created", "ws/drafts/demo.yaml was created"},
+			wantRoot: func(l importDestinationLayout) string { return filepath.Join(l.root, "drafts") },
+			wantChanges: []string{"ws/drafts was created", "ws/drafts/" + importops.RecordFileName + " was created",
+				"ws/drafts/demo.yaml was created"},
 		},
 		{
 			name: "a relative --output-dir from a sub-folder resolves against that folder",
@@ -157,8 +159,9 @@ func TestWhereAnImportWritesItsDrafts(t *testing.T) {
 			args: func(l importDestinationLayout) []string {
 				return []string{"import", l.source, "--format", "demo", "--output-dir", "drafts"}
 			},
-			wantRoot:    func(l importDestinationLayout) string { return filepath.Join(l.sub, "drafts") },
-			wantChanges: []string{"ws/sub/drafts was created", "ws/sub/drafts/demo.yaml was created"},
+			wantRoot: func(l importDestinationLayout) string { return filepath.Join(l.sub, "drafts") },
+			wantChanges: []string{"ws/sub/drafts was created",
+				"ws/sub/drafts/" + importops.RecordFileName + " was created", "ws/sub/drafts/demo.yaml was created"},
 		},
 		{
 			name: "an absolute --output-dir outside the workspace is honoured where it was named",
@@ -167,7 +170,7 @@ func TestWhereAnImportWritesItsDrafts(t *testing.T) {
 				return []string{"import", l.source, "--format", "demo", "--output-dir", l.outside}
 			},
 			wantRoot:    func(l importDestinationLayout) string { return l.outside },
-			wantChanges: []string{"outside/demo.yaml was created"},
+			wantChanges: []string{"outside/" + importops.RecordFileName + " was created", "outside/demo.yaml was created"},
 		},
 		{
 			name: "a link beneath an --output-dir outside the workspace that leads out of it is refused",
@@ -237,13 +240,14 @@ func TestWhereAnImportWritesItsDrafts(t *testing.T) {
 				if derr != nil {
 					t.Fatalf("decode the reported drafts: %v\n%s", derr, stdout.String())
 				}
-				if len(docs) != 1 || docs[0].Path != "demo.yaml" || docs[0].Content != demoEchoBody {
-					t.Errorf("the reported drafts are %+v; want one demo.yaml carrying the demo body", docs)
+				if len(docs) != 2 || docs[0].Path != "demo.yaml" || docs[0].Content != demoEchoBody ||
+					docs[1].Path != importops.RecordFileName {
+					t.Errorf("the reported drafts are %+v; want demo.yaml carrying the demo body, then the record", docs)
 				}
 				return
 			}
-			if stdout.String() != "wrote demo.yaml\n" {
-				t.Errorf("the standard output stream carried %q; want %q", stdout.String(), "wrote demo.yaml\n")
+			if want := "wrote demo.yaml\nwrote " + importops.RecordFileName + "\n"; stdout.String() != want {
+				t.Errorf("the standard output stream carried %q; want %q", stdout.String(), want)
 			}
 		})
 	}

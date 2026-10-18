@@ -254,8 +254,9 @@ func TestTheImportToolDraftsIntoTheWorkspaceTheCallResolved(t *testing.T) {
 		t.Errorf("the source's shape was read as the %q format, want langflow — the detection did not reach "+
 			"this tool", p.Format)
 	}
-	if len(p.Written) != 1 || p.Written[0] != "langflow.yaml" {
-		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml]", p.Written)
+	if !slices.Equal(p.Written, []string{"langflow.yaml", importops.RecordFileName}) {
+		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml %s], the draft and its "+
+			"record", p.Written, importops.RecordFileName)
 	}
 	if told(p.WorkspaceRoot) != root {
 		t.Errorf("the answer names %q as the root the drafts are relative to, want the resolved workspace %q",
@@ -279,8 +280,9 @@ func TestTheImportToolDraftsIntoTheWorkspaceTheCallResolved(t *testing.T) {
 	if string(got) != importDemoEchoBody("langflow") {
 		t.Errorf("the drafted file carries %q, want %q", string(got), importDemoEchoBody("langflow"))
 	}
-	if added := treeAdditions(before, treeUnder(t, root)); !slices.Equal(added, []string{"langflow.yaml"}) {
-		t.Errorf("the import put %v into the workspace, want exactly [langflow.yaml]", added)
+	want := []string{importops.RecordFileName, "langflow.yaml"}
+	if added := treeAdditions(before, treeUnder(t, root)); !slices.Equal(added, want) {
+		t.Errorf("the import put %v into the workspace, want exactly %v", added, want)
 	}
 }
 
@@ -318,8 +320,8 @@ func TestTheImportToolsDryRunWritesNothingAndHandsBackTheDrafts(t *testing.T) {
 	if len(p.Written) != 0 {
 		t.Errorf("a reporting delivery named %v as written; nothing reaches disk under it", p.Written)
 	}
-	if len(p.Drafts) != 1 || p.Drafts[0].Path != "langflow.yaml" {
-		t.Fatalf("the answer carries %+v, want one draft for langflow.yaml", p.Drafts)
+	if len(p.Drafts) != 2 || p.Drafts[0].Path != "langflow.yaml" || p.Drafts[1].Path != importops.RecordFileName {
+		t.Fatalf("the answer carries %+v, want the draft for langflow.yaml, then the record", p.Drafts)
 	}
 	if p.Drafts[0].Content != importDemoEchoBody("langflow") {
 		t.Errorf("the reported draft carries %q, want the content a write would have put on disk, %q",
@@ -724,8 +726,10 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 					if len(added) != 0 {
 						t.Errorf("a dry run put %v into the workspace", added)
 					}
-					if len(answer.Drafts) != 1 || answer.Drafts[0].Path != "langflow.yaml" {
-						t.Fatalf("the dry run handed back %+v, want one draft for langflow.yaml", answer.Drafts)
+					if len(answer.Drafts) != 2 || answer.Drafts[0].Path != "langflow.yaml" ||
+						answer.Drafts[1].Path != importops.RecordFileName {
+						t.Fatalf("the dry run handed back %+v, want the draft for langflow.yaml, then the record",
+							answer.Drafts)
 					}
 					draft := filepath.Join(outputDir, filepath.FromSlash(answer.Drafts[0].Path))
 					if _, err := os.Stat(draft); !errors.Is(err, os.ErrNotExist) {
@@ -737,20 +741,21 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 				// The tree, which is the claim. Each written path, resolved against the
 				// directory the answer names, is a file carrying the drafted bytes, and
 				// the written set is exactly what the import added under the root.
-				if !slices.Equal(answer.Written, []string{"langflow.yaml"}) {
-					t.Fatalf("the answer names %v as written, want exactly [langflow.yaml]", answer.Written)
+				if !slices.Equal(answer.Written, []string{"langflow.yaml", importops.RecordFileName}) {
+					t.Fatalf("the answer names %v as written, want exactly [langflow.yaml %s]", answer.Written,
+						importops.RecordFileName)
 				}
 				for _, name := range answer.Written {
 					got, err := os.ReadFile(filepath.Join(outputDir, filepath.FromSlash(name)))
 					if err != nil {
 						t.Fatalf("%s is not under the directory the answer names, %q: %v", name, outputDir, err)
 					}
-					if string(got) != importDemoEchoBody("langflow") {
+					if name != importops.RecordFileName && string(got) != importDemoEchoBody("langflow") {
 						t.Errorf("%s under %q carries %q, want %q", name, outputDir, string(got),
 							importDemoEchoBody("langflow"))
 					}
 				}
-				if !slices.Equal(added, answer.Written) {
+				if !slices.Equal(added, slices.Sorted(slices.Values(answer.Written))) {
 					t.Errorf("the import added %v under the workspace and the answer names %v as written",
 						added, answer.Written)
 				}

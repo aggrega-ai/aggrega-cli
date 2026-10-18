@@ -341,7 +341,7 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 				t.Errorf("the Aggregate's other components are %v and the connections reach %v; want exactly the parts %v",
 					parts, targets, wantParts)
 			}
-			if components := len(res.Files) - 1; components != len(wantParts) {
+			if components := len(draftPaths(res)) - 1; components != len(wantParts) {
 				t.Errorf("the import drafted %d Component(s) beside the Aggregate, want one per part, %d", components,
 					len(wantParts))
 			}
@@ -431,8 +431,13 @@ func TestTheNodesLayoutDraftsEveryFixtureAsItsGolden(t *testing.T) {
 				t.Errorf("the import raised %+v; the node-by-node draft of this source raises none", res.Diagnostics)
 			}
 
+			// The goldens hold what the importer drafts; the record the import writes
+			// beside the drafts is a digest of them, held by the sync's own cases.
 			docs := make([]authoredcontent.Document, 0, len(res.Files))
 			for _, f := range res.Files {
+				if f.Path == RecordFileName {
+					continue
+				}
 				docs = append(docs, authoredcontent.Document{Path: f.Path, Content: f.Content})
 			}
 			var reported bytes.Buffer

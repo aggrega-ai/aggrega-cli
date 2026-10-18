@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -83,7 +84,7 @@ func TestEveryWritingCommandWritesWhereItsDestinationSays(t *testing.T) {
 		{
 			name:        "import naming no destination",
 			args:        []string{"import", sourcePath, "--format", "demo"},
-			wantChanges: []string{"ws/demo.yaml was created"},
+			wantChanges: []string{"ws/" + importops.RecordFileName + " was created", "ws/demo.yaml was created"},
 		},
 		{
 			name:        "a configuration write with --workspace",

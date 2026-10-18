@@ -58,6 +58,24 @@ type importArgs struct {
 
 	DryRun        bool   `json:"dry_run"`
 	WorkspaceRoot string `json:"workspace_root"`
+
+	// Sync is the command line's --sync, a request field for the reason DryRun is
+	// one: it asks for what an earlier import drafted to be brought up to date with
+	// the source, changing only what the import wrote, rather than the draft being
+	// written whole.
+	Sync bool `json:"sync"`
+}
+
+// importDrift is one part a sync brought up to date, or under `dry_run` would:
+// how it drifted, the drafted file it is in, and the keys leading to it in a
+// drafted Aggregate, empty where the part is the whole file.
+//
+// The keys are a list rather than one joined string, so a key holding a full
+// stop is read back as the one key it is.
+type importDrift struct {
+	Change string   `json:"change"`
+	File   string   `json:"file"`
+	Key    []string `json:"key"`
 }
 
 // importedDraft is one drafted file in the answer: the path it is for, relative
@@ -186,6 +204,12 @@ type importDecisionChoice struct {
 // order, under both deliveries and whether or not the import halted — what tells
 // a caller where the import guessed. It is always an array, empty for an importer
 // that reports none rather than absent.
+//
+// Drift is every part a `sync` call brought up to date with the source, or under
+// `dry_run` would, in the order the draft names them: the answer a command line
+// gives through its exit status, carried here as data because this surface has
+// none. It is always an array, empty for a call that is not a sync and for a sync
+// in step.
 type importPayload struct {
 	WorkspaceRoot         *string `json:"workspace_root"`
 	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
@@ -196,6 +220,7 @@ type importPayload struct {
 	Format      string             `json:"format"`
 	Written     []string           `json:"written"`
 	Drafts      []importedDraft    `json:"drafts,omitempty"`
+	Drift       []importDrift      `json:"drift"`
 	Diagnostics []importDiagnostic `json:"diagnostics"`
 	Decisions   []importDecision   `json:"decisions"`
 	Halted      bool               `json:"halted"`
@@ -237,7 +262,22 @@ var importToolSpec = toolSpec{
 		"signatures of more than one format match is refused naming them, rather than guessed at. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
-		"write would refuse is refused under it too. What the importer could not translate comes back as " +
+		"write would refuse is refused under it too. Every import that drafts anything also writes, beside its " +
+		"drafts, `.aggrega-import.json`, the record of what it wrote — each drafted file, and each key of a " +
+		"drafted Aggregate at every depth, with a digest of its text — and `dry_run` hands it back among the " +
+		"drafts. A call whose drafts would be written over an Aggregate " +
+		"already in the workspace is refused, naming it, and nothing is written — under `dry_run` too — because " +
+		"an Aggregate is the document an author goes on editing once it is drafted; every other file already at " +
+		"a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
+		"source instead, changing only what the import wrote: a part the source left alone stays as it is on " +
+		"disk, edited or not; a part it changed, dropped or gained is written anew, removed — a drafted file " +
+		"deleted whole — or added, where what is on disk is what the import last wrote; and everything else — a " +
+		"key an author added anywhere, a comment not written directly above a drafted key, a file the record does " +
+		"not list — stays byte for byte. The answer's `drift` lists each part brought up to date, or under " +
+		"`dry_run` each part that would be, empty when the drafts are in step. A sync that would change or remove " +
+		"what an author edited or added, or add a part where an author already wrote one, is refused naming each " +
+		"part and why, and nothing is written; so is a sync over an Aggregate no record lists, and one whose " +
+		"importer could not finish writes nothing. What the importer could not translate comes back as " +
 		"diagnostics, one per construct, and an import it could not finish still drafts what it could — read " +
 		"`halted` for that outcome and the diagnostics beside it for what stopped it. The drafts are a " +
 		"starting point an author owns and goes on editing; whether what they say is admissible is what " +
@@ -261,6 +301,10 @@ var importToolSpec = toolSpec{
     "dry_run": {
       "type": "boolean",
       "description": "Do everything except write, and hand back each drafted file's path and content. Every other behaviour is the write's, so a source the write would refuse is refused under it too."
+    },
+    "sync": {
+      "type": "boolean",
+      "description": "Bring what an earlier import drafted up to date with the source, changing only what the import wrote, as the record beside the drafts lists it. The answer's drift names each part brought up to date, or under dry_run each part that would be."
     },
     "workspace_root": {
       "type": "string",
@@ -335,6 +379,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		SourcePath:    path,
 		SourceName:    source,
 		Format:        named,
+		Sync:          a.Sync,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})
@@ -350,6 +395,15 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	if refusal, unsettled := importFormatRefusal(err); unsettled {
 		return errorResult(refusal)
 	}
+	if existing := (*importops.ExistingAggregateError)(nil); errors.As(err, &existing) {
+		return errorResult(importExistingAggregateRefusal(existing))
+	}
+	if conflicts := (*importops.SyncConflictError)(nil); errors.As(err, &conflicts) {
+		return errorResult(importConflictRefusal(conflicts))
+	}
+	if record := (*importops.ImportRecordError)(nil); errors.As(err, &record) {
+		return tw.answer(errorResult(importRecordRefusal(tw, record)))
+	}
 	if err != nil {
 		return errorResult(explainDiagnostic(importRefusal(source, err), ""))
 	}
@@ -358,6 +412,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Source:      source,
 		Format:      res.Format,
 		Written:     importWritten(res, delivery),
+		Drift:       importDriftFor(res.Drift),
 		Diagnostics: importDiagnosticsFor(tw, res.Diagnostics),
 		Decisions:   importDecisionsFor(tw, res.Decisions),
 		Halted:      res.Halted(),
@@ -378,9 +433,9 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	// the payload beside the sentence.
 	if halt := res.Refusal(); halt != nil {
 		return tw.answer(structuredErrorResult(explainDiagnostic(
-			importHaltedText(payload, res.Decisions, delivery, halt), ""), payload))
+			importHaltedText(payload, res, delivery, a.Sync, halt), ""), payload))
 	}
-	return tw.answer(textResult(renderImportText(payload, res.Decisions, delivery), payload))
+	return tw.answer(textResult(renderImportText(payload, res, delivery, a.Sync), payload))
 }
 
 // importFormatRefusal composes this surface's sentence for a source whose format
@@ -465,6 +520,54 @@ func (tw *toolWorkspace) importLinkRefusal(source string, err error) (string, bo
 	return b.String(), true
 }
 
+// importExistingAggregateRefusal composes this surface's sentence for a call
+// whose drafts would be written over an Aggregate already in the workspace,
+// naming the argument a caller here sends rather than the command line's flag.
+//
+// The Aggregate is named by its drafted path alone. This tool writes beneath the
+// root of the workspace the call resolved, so that path is relative to the root a
+// caller names its own paths against, and the root itself — a place on this host
+// — is not named.
+func importExistingAggregateRefusal(e *importops.ExistingAggregateError) string {
+	return fmt.Sprintf("%s would write the draft %s over the Aggregate already at that path in the workspace, which "+
+		"an author may have edited since it was drafted, so nothing was written. Send 'sync' to ask for it to be "+
+		"brought up to date with the source.", importToolName, strconv.Quote(e.Path))
+}
+
+// importConflictRefusal composes this surface's sentence for a sync that would
+// change or remove what an author wrote, naming each conflicting part in the
+// shared wording ([importops.ConflictLine]) and the argument a caller here sent
+// rather than the command line's flag.
+//
+// Each part is named by its drafted path, relative to the workspace root, and
+// its keys; the root itself is not named.
+func importConflictRefusal(e *importops.SyncConflictError) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s was sent 'sync', and bringing the drafts up to date with the source would change or remove "+
+		"what an author wrote, so nothing was written. Reconcile each part below by hand, or put back what the "+
+		"import wrote there, and call again:", importToolName)
+	for _, c := range e.Conflicts {
+		b.WriteString("\n  ")
+		b.WriteString(importops.ConflictLine(c))
+	}
+	return b.String()
+}
+
+// importRecordRefusal composes this surface's sentence for a sync the record
+// beside the drafts cannot answer for: no record lists the Aggregate it would
+// bring up to date, or the record cannot be read. Why it cannot be read is
+// prose the operation composed, so it is told the way every such sentence here
+// is, keeping back a place on this host from a caller who is not told one.
+func importRecordRefusal(tw *toolWorkspace, e *importops.ImportRecordError) string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s was sent 'sync', and the record of what an import wrote, %s, cannot be read: %s. "+
+			"Nothing was written.", importToolName, strconv.Quote(e.Record), tw.reportedText(e.Err.Error()))
+	}
+	return fmt.Sprintf("%s was sent 'sync', and no record of what an import wrote lists the Aggregate at %s (%s, "+
+		"which every import writes beside its drafts), so its parts cannot be told from parts an author wrote. "+
+		"Nothing was written.", importToolName, strconv.Quote(e.Aggregate), strconv.Quote(e.Record))
+}
+
 // formatChoices names the formats a caller may send, or says the catalog
 // advertises none.
 func formatChoices(formats []string) string {
@@ -517,7 +620,7 @@ func importRefusal(source string, err error) string {
 // The outcome sentence is composed here while what happened is rendered by the
 // one renderer, so a caller reading a halted answer and a caller reading a clean
 // one are told what was written in the same words.
-func importHaltedText(p importPayload, decisions []abi.ImportDecision, delivery authoredcontent.Delivery,
+func importHaltedText(p importPayload, res importops.Result, delivery authoredcontent.Delivery, sync bool,
 	halt error) string {
 	var b strings.Builder
 	if short, ok := cerrors.ShortCodeOf(halt); ok {
@@ -526,8 +629,12 @@ func importHaltedText(p importPayload, decisions []abi.ImportDecision, delivery 
 	}
 	b.WriteString("the importer could not translate the whole of ")
 	b.WriteString(p.Source)
-	b.WriteString(", so what it drafted is partial. The diagnostics below name what it could not translate.\n\n")
-	b.WriteString(renderImportText(p, decisions, delivery))
+	if sync {
+		b.WriteString(", so the sync wrote nothing. The diagnostics below name what it could not translate.\n\n")
+	} else {
+		b.WriteString(", so what it drafted is partial. The diagnostics below name what it could not translate.\n\n")
+	}
+	b.WriteString(renderImportText(p, res, delivery, sync))
 	return b.String()
 }
 
@@ -545,31 +652,66 @@ func importHaltedText(p importPayload, decisions []abi.ImportDecision, delivery 
 // The decision lines come after the diagnostics, as they do on the command
 // line's error stream, and each is the shared sentence ([importops.DecisionLine])
 // rendered from the importer's own decision, so a reader of either surface reads
-// one decision in one wording. They are rendered from decisions, the importer's
+// one decision in one wording. They are rendered from the result, the importer's
 // own values, rather than from the payload's projection of them, because the
 // projection exists to carry this surface's keys and the sentence carries none.
-func renderImportText(p importPayload, decisions []abi.ImportDecision, delivery authoredcontent.Delivery) string {
+// A sync's drift lines come last, in the shared wording ([importops.DriftLine])
+// the command line prints them in.
+//
+// A sync is reported by what it did: a sync in step wrote nothing because
+// nothing drifted, which is neither a reporting delivery nor an importer that
+// drafted nothing.
+func renderImportText(p importPayload, res importops.Result, delivery authoredcontent.Delivery, sync bool) string {
 	var b strings.Builder
 	b.WriteString("read " + p.Source + " as the " + p.Format + " format\n")
 	switch {
+	case sync && res.Halted():
+		b.WriteString("  nothing was written: a sync writes nothing from a draft the importer could not finish\n")
+	case sync && len(res.Drift) == 0 && len(p.Written) == 0:
+		b.WriteString("  nothing was written: the drafts are in step with the source\n")
+	case delivery.Reports() && sync:
+		b.WriteString("  nothing was written: each file the sync would write, with its content, is in this result\n")
 	case delivery.Reports():
 		b.WriteString("  nothing was written: each drafted file's path and content is in this result\n")
+	case sync && len(p.Written) == 0 && len(res.Removed) == 0:
+		b.WriteString("  nothing was written: the drafts are in step with the source\n")
 	case len(p.Written) == 0:
 		b.WriteString("  the importer drafted no files, so nothing was written\n")
 	default:
 		// On this tool the directory the paths are relative to is always the
 		// workspace root, so where it is kept back it is named as the served
 		// workspace — the root the caller names its own paths against.
-		b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " +
-			workspaceRootWords(p.OutputDir) + "\n")
+		if len(p.Written) > 0 {
+			b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " +
+				workspaceRootWords(p.OutputDir) + "\n")
+		}
+		if len(res.Removed) > 0 {
+			b.WriteString("  removed " + strings.Join(res.Removed, ", ") + ", relative to " +
+				workspaceRootWords(p.OutputDir) + "\n")
+		}
 	}
 	for _, d := range p.Diagnostics {
 		b.WriteString("  " + d.Severity + ": " + d.Message + "\n")
 	}
-	for _, d := range decisions {
+	for _, d := range res.Decisions {
 		b.WriteString("  " + importops.DecisionLine(d) + "\n")
 	}
+	for _, d := range res.Drift {
+		b.WriteString("  " + importops.DriftLine(d) + "\n")
+	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// importDriftFor projects the parts a sync brought up to date onto this
+// surface's shape, in the operation's order, always as an array — and each
+// part's keys as an array too, empty for a whole file — so a call that is not a
+// sync, or a sync in step, arrives as an empty list rather than a missing field.
+func importDriftFor(drift []importops.Drift) []importDrift {
+	out := make([]importDrift, 0, len(drift))
+	for _, d := range drift {
+		out = append(out, importDrift{Change: d.Change, File: d.File, Key: append([]string{}, d.Key...)})
+	}
+	return out
 }
 
 // importWritten projects what reached disk, always as an array so a caller

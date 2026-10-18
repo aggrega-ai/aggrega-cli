@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -216,7 +217,7 @@ func importViaLanguageServer(t *testing.T, bin, root string) {
 // "." is the workspace root.
 //
 // Every one of them lands the same draft, byte for byte, at the workspace root,
-// and changes nothing else. One more row passes the command tool its generated
+// with the record of what it wrote beside it, and changes nothing else. One more row passes the command tool its generated
 // output_dir argument, which reaches the command's --output-dir flag and lands
 // the draft beneath that directory, resolved in the folder the command runs in —
 // here the root the launch names.
@@ -235,7 +236,8 @@ func TestEverySurfaceLandsAnImportAtTheWorkspaceRoot(t *testing.T) {
 	t.Parallel()
 	bin := buildServeBinary(t)
 
-	atTheRoot := []string{"ws/demo.yaml was created"}
+	// Every surface writes the record of what the import wrote beside the draft.
+	atTheRoot := []string{"ws/" + importops.RecordFileName + " was created", "ws/demo.yaml was created"}
 	for _, row := range []struct {
 		name        string
 		run         func(t *testing.T, l cachedImportLayout)
@@ -304,8 +306,9 @@ func TestEverySurfaceLandsAnImportAtTheWorkspaceRoot(t *testing.T) {
 					"args": []string{demoImportSourceName}, "format": "demo", "output_dir": "drafts",
 				})
 			},
-			wantChanges: []string{"ws/drafts was created", "ws/drafts/demo.yaml was created"},
-			wantDraft:   "ws/drafts/demo.yaml",
+			wantChanges: []string{"ws/drafts was created", "ws/drafts/" + importops.RecordFileName + " was created",
+				"ws/drafts/demo.yaml was created"},
+			wantDraft: "ws/drafts/demo.yaml",
 		},
 	} {
 		t.Run(row.name, func(t *testing.T) {

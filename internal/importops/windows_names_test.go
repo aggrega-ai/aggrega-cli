@@ -130,8 +130,9 @@ func TestImportOnWindowsRefusesADraftTheImporterNamedForADevice(t *testing.T) {
 				if err != nil {
 					t.Fatalf("off Windows the draft %q is written as it always was; got %v", drafted, err)
 				}
-				if len(res.Written) != 1 || res.Written[0] != drafted {
-					t.Fatalf("the import wrote %v; want [%q]", res.Written, drafted)
+				if len(res.Written) != 2 || res.Written[0] != drafted || res.Written[1] != RecordFileName {
+					t.Fatalf("the import wrote %v; want [%q %q], the draft and its record", res.Written, drafted,
+						RecordFileName)
 				}
 				return
 			}

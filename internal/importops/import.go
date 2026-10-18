@@ -52,6 +52,34 @@ func (e *EscapingPathError) Error() string {
 // refusal names the same path without parsing the message.
 func (e *EscapingPathError) Offending() string { return e.Path }
 
+// ExistingAggregateError reports an import refused because one of its drafts
+// would be written over an Aggregate already on disk.
+//
+// 🔴 An Aggregate is the document an author goes on editing once it is drafted,
+// so an import never writes over one unasked: the same command doing different
+// things depending on what the destination holds would be a guess. Every other
+// existing file a draft lands on is written over as before, so the refusal is
+// bounded to the one document an author is expected to own. Bringing the
+// Aggregate up to date with the source is what a sync does instead.
+//
+// Its message names the command line's flag, which is the remedy at a terminal;
+// a protocol surface recognises the refusal by its type and words it with the
+// field its caller sends instead.
+type ExistingAggregateError struct {
+	// Path is the drafted path that would be written over the Aggregate, exactly
+	// as the importer returned it, relative to OutputDir.
+	Path string
+	// OutputDir is the directory the drafted paths are relative to.
+	OutputDir string
+}
+
+// Error names the Aggregate and what the reader may do about it.
+func (e *ExistingAggregateError) Error() string {
+	return fmt.Sprintf("the import would write over the Aggregate %q beneath %q, which an author may have edited "+
+		"since it was drafted, so no files were written; pass --sync to bring it up to date with the source, or "+
+		"--output-dir to draft beneath another directory", e.Path, e.OutputDir)
+}
+
 // Options carries the resolved inputs for one import.
 //
 // SourcePath is where the source description is read from on this host, after the
@@ -78,6 +106,20 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // named bare as the current directory on that drive. A reporting delivery writes
 // nothing, and the reported paths are still relative to it.
 //
+// Sync asks the import to bring what an earlier import drafted beneath the
+// output directory up to date with the source, rather than writing the draft
+// whole. Without it an import whose drafts would be written over an existing
+// Aggregate is refused before anything is written or reported
+// ([ExistingAggregateError]). With it, the import reads the record an import
+// writes beside its drafts ([RecordFileName]) and judges every part three ways —
+// see [Import].
+//
+// BeforeWrite, where set, is handed the result once every part is judged and
+// before anything is written or removed, under both deliveries: a caller
+// printing what the import found prints it before the write, so a write that
+// fails part way leaves the reader knowing what it set out to do. It is not
+// called for an import that is refused.
+//
 // There is no field for the importer's with-config. What an importer is handed
 // is read by [Import] from the workspace's own plugins.importer attachments,
 // once the importer is resolved, because which attachment's inputs apply
@@ -88,8 +130,10 @@ type Options struct {
 	SourceName    string
 	Format        string
 	OutputDir     string
+	Sync          bool
 	Delivery      authoredcontent.Delivery
 	ResolvePlugin PluginBytesResolver
+	BeforeWrite   func(Result)
 }
 
 // Result is what one import produced.
@@ -99,15 +143,29 @@ type Options struct {
 // from here rather than from what the caller passed, so a surface reporting where
 // the drafts went reports the directory the import actually used.
 //
-// Files is every drafted file the importer returned, in the importer's own
-// order, carrying content whether or not it was written — so a reporting
-// delivery answers with the same set a writing one puts on disk.
+// Files is every file the import writes, carrying content whether or not it was
+// written — so a reporting delivery answers with the same set a writing one puts
+// on disk. For an import that is not a sync, that is every drafted file the
+// importer returned, in its own order, followed by the record of what the import
+// wrote ([RecordFileName]) wherever the importer drafted anything. For a sync it
+// is each drafted file whose content the sync changes, with the content the sync
+// gives it, followed by the record where that changes too; a sync in step with
+// its source writes nothing, and Files is empty.
 //
 // Written is the output-root-relative path of each file actually written, in the
 // order written, and is empty under a reporting delivery. It is separate from
 // Files rather than a flag on each entry because "what was produced" and "what
 // reached disk" are different questions, and a caller under a reporting delivery
 // is asking only the first.
+//
+// Drift is every part a sync brings up to date with the source, in the order the
+// draft names them, and is empty for an import that is not a sync. It is the same
+// under both deliveries: under a reporting delivery it is what a write would
+// change.
+//
+// Removed is the output-root-relative path of each drafted file a sync deleted
+// because the source no longer drafts it, in the order deleted, and is empty
+// under a reporting delivery and for an import that is not a sync.
 //
 // Diagnostics is what the importer reported, in its own order. A halt-severity
 // entry is carried here as data rather than returned as an error: an import that
@@ -127,6 +185,8 @@ type Result struct {
 	OutputDir   string
 	Files       []abi.ScaffoldFile
 	Written     []string
+	Drift       []Drift
+	Removed     []string
 	Diagnostics []abi.Diagnostic
 	Decisions   []abi.ImportDecision
 }
@@ -222,7 +282,42 @@ func (r Result) Halted() bool {
 // compiler's release that is not on the machine and could not be fetched, or whose
 // fetched module did not verify, a guest that failed,
 // an escaping path, a draft Windows cannot hold where the import runs on Windows,
-// or a write that failed.
+// a draft that would be written over an Aggregate already on disk
+// ([*ExistingAggregateError]), a drafted path at the record's own place, a sync
+// whose record is missing, does not list the Aggregate or cannot be read
+// ([*ImportRecordError]), a sync that would change or remove what an author
+// wrote ([*SyncConflictError]), or a write that failed.
+//
+// Every import that drafts anything writes, beside its drafts, the record of
+// what it wrote ([RecordFileName]): each drafted file, and for a drafted
+// Aggregate each of its mapping entries at every depth, with a digest of the text
+// written there. An entry's text is its key line, its value's lines for an entry
+// whose value is not a mapping of entries, and the comment lines written directly
+// above its key at the key's own column. A reporting delivery hands the record
+// back among the files.
+//
+// Without Options.Sync, an Aggregate already at a drafted path refuses the import
+// whatever the delivery, before anything is written or reported, so a dry run
+// refuses it as the write does. Every other file already at a drafted path is
+// written over, and a file an earlier import drafted that this one does not draft
+// is left where it is.
+//
+// With Options.Sync, the import judges every part three ways — what the record
+// says the import last wrote there, what is on disk, and what the source drafts
+// now — and changes only what the import owns. A part the source left as the
+// import last wrote it stays exactly as it is on disk, whether or not an author
+// edited it. A part the source changed is written anew where it is on disk as
+// the import last wrote it; a part the source dropped is removed where it is as
+// the import last wrote it and holds nothing an author added — a drafted file
+// deleted whole; a part the source gained is added beside the parts the draft
+// names around it. Everything else on disk — a key an author added, a comment
+// not written directly above an owned key, a file no record lists — is left byte
+// for byte. A sync that would change or remove a part an author edited, add a
+// part where an author already wrote one, or remove a part holding what an author
+// added, is refused naming each, and nothing is written. An Aggregate on disk at
+// a drafted path that no record lists refuses the sync. A sync whose importer
+// reported a halt writes nothing. A sync into a directory holding no record and
+// nothing at its drafted paths writes the whole draft, as a plain import does.
 func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options) (Result, error) {
 	if _, err := workspaceOrRefuse(rw); err != nil {
 		return Result{}, err
@@ -291,21 +386,66 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		Diagnostics: imported.Diagnostics,
 		Decisions:   imported.Decisions,
 	}
+	// The record of what the import writes is composed from the draft, and placed
+	// after it, so it is judged with the drafted paths below.
+	drafted := draftedFiles(imported.Files)
+	files := imported.Files
+	if len(drafted) > 0 {
+		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...), recordScaffold(drafted))
+	}
 	// Every drafted path is judged before anything is written and before anything
 	// is reported, so a reporting delivery refuses exactly what the write refuses.
-	if err := checkFiles(rw.Root(), outputDir, imported.Files); err != nil {
+	if err := checkFiles(rw.Root(), outputDir, files); err != nil {
 		return Result{}, err
+	}
+	if err := checkRecordPlace(outputDir, imported.Files); err != nil {
+		return Result{}, err
+	}
+	if opts.Sync {
+		return syncImport(rw.Root(), outputDir, opts, res, drafted)
+	}
+	// An Aggregate already at a drafted path is judged after the paths are, so it
+	// is read only at a place already held inside the root, and before either
+	// delivery answers, so a dry run refuses what the write refuses.
+	if err := checkExistingAggregate(outputDir, imported.Files); err != nil {
+		return Result{}, err
+	}
+	res.Files = files
+	if opts.BeforeWrite != nil {
+		opts.BeforeWrite(res)
 	}
 	if opts.Delivery.Reports() {
 		return res, nil
 	}
 
-	written, err := writeFiles(outputDir, imported.Files)
+	written, err := writeFiles(outputDir, files)
 	if err != nil {
 		return Result{}, err
 	}
 	res.Written = written
 	return res, nil
+}
+
+// checkRecordPlace refuses a draft the importer placed where the import keeps
+// its record: the record is written after the drafts, so such a draft would be
+// written and then written over, and a later sync would read the importer's
+// bytes as the record.
+func checkRecordPlace(outputDir string, files []abi.ScaffoldFile) error {
+	record, err := draftPlace(outputDir, RecordFileName)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		place, err := draftPlace(outputDir, f.Path)
+		if err != nil {
+			return err
+		}
+		if place == record {
+			return fmt.Errorf("the importer returned the file path %q, which is where an import keeps the record of "+
+				"what it wrote (%s); no files were written", f.Path, RecordFileName)
+		}
+	}
+	return nil
 }
 
 // resolvedImporter hands the import socket the outcome of the resolution [Import]
@@ -401,6 +541,46 @@ func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error
 		}
 	}
 	return nil
+}
+
+// checkExistingAggregate refuses an import one of whose drafts would be written
+// over an Aggregate already on disk, as an [ExistingAggregateError] naming the
+// first such draft in the importer's order.
+//
+// What is judged is the file already at the place: a regular file whose
+// top-level kind is Aggregate. The draft's own content is not read, because what
+// an import must not do is write over the document an author owns, whatever the
+// importer drafted in its place. A file that does not read as YAML, or reads as
+// another kind, is not an Aggregate, and a draft lands on it as before.
+//
+// Every path has already passed checkFiles, and each is placed by [draftPlace]
+// again, so the place read is the place that was judged.
+func checkExistingAggregate(outputDir string, files []abi.ScaffoldFile) error {
+	for _, f := range files {
+		place, err := draftPlace(outputDir, f.Path)
+		if err != nil {
+			return err
+		}
+		if isAggregateFile(place) {
+			return &ExistingAggregateError{Path: f.Path, OutputDir: outputDir}
+		}
+	}
+	return nil
+}
+
+// isAggregateFile reports whether a regular file at place reads as a document
+// whose top-level kind is Aggregate. Anything it cannot read as one — no file, a
+// directory, bytes that are not YAML — is not one.
+func isAggregateFile(place string) bool {
+	info, err := os.Stat(place)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	data, err := os.ReadFile(place)
+	if err != nil {
+		return false
+	}
+	return isAggregateBytes(data)
 }
 
 // writeFiles writes each drafted file under root at its own path, creating

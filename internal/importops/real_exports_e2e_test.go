@@ -281,6 +281,9 @@ func draftedDocuments(t *testing.T, res Result) map[string]draftedDocument {
 	docs := map[string]draftedDocument{}
 	contents := map[string]string{}
 	for _, f := range res.Files {
+		if f.Path == RecordFileName {
+			continue
+		}
 		var doc draftedDocument
 		if err := yaml.Unmarshal([]byte(f.Content), &doc); err != nil {
 			t.Fatalf("the drafted %s is not YAML: %v", f.Path, err)
@@ -512,8 +515,8 @@ func draftedTargets(t *testing.T, rel string) map[string]string {
 	t.Helper()
 	rw, _ := catalogFolderImportWorkspaceAttaching(t, map[string]any{"render_mode": "llm", "layout": "nodes"})
 	res := importRealExport(t, rw, rel, authoredcontent.DeliveryFor(true), "")
-	if len(res.Files) != 1 || res.Files[0].Path != "import-decisions.json" {
-		t.Fatalf("the decision record was not the one file the import returned: %+v", draftPaths(res))
+	if !slices.Equal(draftPaths(res), []string{"import-decisions.json"}) || res.Files[0].Path != "import-decisions.json" {
+		t.Fatalf("the decision record was not the one file the importer returned: %+v", draftPaths(res))
 	}
 	var decisions []abi.ImportDecision
 	if err := json.Unmarshal([]byte(res.Files[0].Content), &decisions); err != nil {

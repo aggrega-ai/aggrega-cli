@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -79,8 +80,9 @@ func TestAWriteScopedCredentialDraftsIntoTheServedWorkspace(t *testing.T) {
 	if p.Format != "langflow" {
 		t.Errorf("the source was read as the %q format, want langflow", p.Format)
 	}
-	if !slices.Equal(p.Written, []string{"langflow.yaml"}) {
-		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml]", p.Written)
+	if !slices.Equal(p.Written, []string{"langflow.yaml", importops.RecordFileName}) {
+		t.Errorf("the answer names %v as what reached disk, want exactly [langflow.yaml %s]", p.Written,
+			importops.RecordFileName)
 	}
 	// The root the drafts are relative to is the served workspace's, which is a
 	// directory on the host a caller reaching a listener is not told about: both
@@ -102,8 +104,9 @@ func TestAWriteScopedCredentialDraftsIntoTheServedWorkspace(t *testing.T) {
 	if string(body) != importDemoEchoBody("langflow") {
 		t.Errorf("the drafted file carries %q, want %q", string(body), importDemoEchoBody("langflow"))
 	}
-	if added := treeAdditions(before, treeUnder(t, f.root)); !slices.Equal(added, []string{"langflow.yaml"}) {
-		t.Errorf("the import put %v under the served root, want exactly [langflow.yaml]", added)
+	want := []string{importops.RecordFileName, "langflow.yaml"}
+	if added := treeAdditions(before, treeUnder(t, f.root)); !slices.Equal(added, want) {
+		t.Errorf("the import put %v under the served root, want exactly %v, the draft and its record", added, want)
 	}
 }
 
@@ -251,7 +254,7 @@ func TestADraftedPathClimbingOutOfTheServedWorkspaceIsRefused(t *testing.T) {
 	credential := f.grantOf(t, scopeWorkspaceWrite)
 	control := importPayloadOf(t, toolResultOf(t, importToolName,
 		f.callTool(t, credential, importToolName, importCallArguments("flow.json"))))
-	if !slices.Equal(control.Written, []string{"langflow.yaml"}) {
+	if !slices.Equal(control.Written, []string{"langflow.yaml", importops.RecordFileName}) {
 		t.Fatalf("the control import drafted %v; nothing below is attributable", control.Written)
 	}
 	if err := os.Remove(filepath.Join(f.root, "langflow.yaml")); err != nil {

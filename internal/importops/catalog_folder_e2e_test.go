@@ -186,14 +186,27 @@ func catalogFolderImportWorkspaceAttaching(t *testing.T, settings map[string]any
 	return rw, folder
 }
 
-// draftPaths returns the drafted paths a result carries, sorted.
+// draftPaths returns the drafted paths a result carries, sorted: the files the
+// importer drafted, without the record the import composes beside them.
 func draftPaths(res Result) []string {
 	paths := make([]string, 0, len(res.Files))
 	for _, f := range res.Files {
+		if f.Path == RecordFileName {
+			continue
+		}
 		paths = append(paths, f.Path)
 	}
 	slices.Sort(paths)
 	return paths
+}
+
+// withRecord returns drafts, the importer's drafted paths, with the record every
+// import that drafts anything writes beside them, sorted: what such an import
+// writes.
+func withRecord(drafts []string) []string {
+	out := append(slices.Clone(drafts), RecordFileName)
+	slices.Sort(out)
+	return out
 }
 
 // TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn drives Import over a
@@ -301,8 +314,8 @@ func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.
 	}
 	written := slices.Clone(res.Written)
 	slices.Sort(written)
-	if !slices.Equal(written, src.drafts) {
-		t.Fatalf("the import names %v as written, want %v", written, src.drafts)
+	if want := withRecord(src.drafts); !slices.Equal(written, want) {
+		t.Fatalf("the import names %v as written, want %v", written, want)
 	}
 	for _, f := range res.Files {
 		got, rerr := os.ReadFile(filepath.Join(outputDir, filepath.FromSlash(f.Path)))
@@ -325,8 +338,8 @@ func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.
 		t.Fatalf("walk the output directory: %v", werr)
 	}
 	slices.Sort(onDisk)
-	if !slices.Equal(onDisk, src.drafts) {
-		t.Errorf("the output directory holds %v, want exactly %v", onDisk, src.drafts)
+	if want := withRecord(src.drafts); !slices.Equal(onDisk, want) {
+		t.Errorf("the output directory holds %v, want exactly %v", onDisk, want)
 	}
 }
 

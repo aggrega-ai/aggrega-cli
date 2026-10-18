@@ -536,8 +536,9 @@ func TestANodeTheFlowKeepsReadsAsNoChoiceOnEverySurface(t *testing.T) {
 	if len(wantLines) != 3 {
 		t.Fatalf("the import decided %d nodes; the fixture holds three", len(wantLines))
 	}
-	if len(shared.Files) != 1 || !strings.Contains(shared.Files[0].Content, "      type: core/ai-agent/langflow\n") {
-		t.Fatalf("the draft is not the Langflow platform carrying the flow: %+v", shared.Files)
+	if len(shared.Files) != 2 || !strings.Contains(shared.Files[0].Content, "      type: core/ai-agent/langflow\n") ||
+		shared.Files[1].Path != importops.RecordFileName {
+		t.Fatalf("the draft is not the Langflow platform carrying the flow, then its record: %+v", shared.Files)
 	}
 
 	t.Run("the command's error stream", func(t *testing.T) {

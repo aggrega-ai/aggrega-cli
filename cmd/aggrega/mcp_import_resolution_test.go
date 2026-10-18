@@ -166,9 +166,9 @@ func TestTheMCPEntryPointSuppliesThePluginResolutionAnImportRunsThrough(t *testi
 	if payload.Format != "demo" {
 		t.Errorf("the source was read as the %q format, want demo", payload.Format)
 	}
-	if !slices.Equal(payload.Written, []string{demoDraftedFileName}) {
-		t.Errorf("the answer names %v as what reached disk, want exactly [%s]",
-			payload.Written, demoDraftedFileName)
+	if !slices.Equal(payload.Written, []string{demoDraftedFileName, importops.RecordFileName}) {
+		t.Errorf("the answer names %v as what reached disk, want exactly [%s %s]",
+			payload.Written, demoDraftedFileName, importops.RecordFileName)
 	}
 	if payload.WorkspaceRoot != root {
 		t.Errorf("the answer names %q as the root the drafts are relative to, want the served workspace %q",

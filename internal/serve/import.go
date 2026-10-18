@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
@@ -57,6 +58,9 @@ import (
 // files owes them. It changes nothing else: the same importer runs over the same
 // source and reports the same diagnostics, so a source the write would refuse is
 // refused here too.
+//
+// A request whose drafts would be written over an Aggregate already in outputDir
+// is refused under both deliveries, naming the Aggregate, and nothing is written.
 type importParams struct {
 	Source    string `json:"source"`
 	OutputDir string `json:"outputDir"`
@@ -249,6 +253,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 			fmt.Errorf("%w (source %s, recognised as %s); send format naming the one to read it as",
 				importops.ErrAmbiguousImportFormat(), ambiguous.Path(), strings.Join(ambiguous.Formats(), ", ")))
 	}
+	// An Aggregate already at a drafted path is refused in this surface's words,
+	// for the reason the format refusals above are: the refusal's own sentence
+	// names the command line's flags.
+	if existing := (*importops.ExistingAggregateError)(nil); errors.As(err, &existing) {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionExistingAggregate(existing))
+	}
 	if err != nil {
 		if escaping := (*importops.EscapingPathError)(nil); errors.As(err, &escaping) {
 			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", escaping)
@@ -265,6 +275,15 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Decisions:   importDecisions(res.Decisions),
 		Halted:      res.Halted(),
 	})
+}
+
+// sessionExistingAggregate words the refusal of a request whose drafts would be
+// written over an Aggregate already on disk, naming the Aggregate where it sits
+// and the field a caller here can change.
+func sessionExistingAggregate(e *importops.ExistingAggregateError) string {
+	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Path))
+	return "import: the draft " + e.Path + " would be written over the Aggregate at " + place + ", which an author " +
+		"may have edited since it was drafted, so nothing was written; name another outputDir to draft beneath"
 }
 
 // sessionFormatExamples names the formats a request may send in the field, or

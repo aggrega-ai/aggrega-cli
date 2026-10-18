@@ -9,7 +9,7 @@ package importops
 // folder holds the reference importers and a JSON parser — the folder importopstest
 // lays down — together with the Components the case writes beside them, and reads
 // the importer's decision record: the configuration attaches both importers with
-// render_mode llm, so the record is the one file the import returns, and with the
+// render_mode llm, so the record is the one file the importer returns, and with the
 // node-by-node layout, so every node is decided as a Component of its own.
 
 import (
@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
@@ -116,8 +117,8 @@ func importDecisionRecord(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) [
 	if err != nil {
 		t.Fatalf("the import was refused: %v", err)
 	}
-	if len(res.Files) != 1 || res.Files[0].Path != "import-decisions.json" {
-		t.Fatalf("the decision record was not the one file the import returned: %v", draftPaths(res))
+	if !slices.Equal(draftPaths(res), []string{"import-decisions.json"}) || res.Files[0].Path != "import-decisions.json" {
+		t.Fatalf("the decision record was not the one file the importer returned: %v", draftPaths(res))
 	}
 	var decisions []abi.ImportDecision
 	if err := json.Unmarshal([]byte(res.Files[0].Content), &decisions); err != nil {

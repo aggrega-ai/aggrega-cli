@@ -158,7 +158,7 @@ func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) 
 			}
 			wantCommentary := "read as the " + shared.Format + " format, with drafted paths relative to " +
 				shared.OutputDir + "\n"
-			wantOut := "wrote " + tc.wantFile + "\n"
+			wantOut := "wrote " + tc.wantFile + "\nwrote " + importops.RecordFileName + "\n"
 			if tc.reported {
 				// The reported expectation is the shared result's drafted files put
 				// through the reported form's own writer. Composing it here rather than
@@ -201,7 +201,8 @@ func TestImportCommandCarriesTheSharedResultOnItsCommentaryStream(t *testing.T) 
 			diffs := fingerprintDifferences(before, treeFingerprint(t, rw.Root()))
 			draft := filepath.Join(rw.Root(), tc.wantFile)
 			if tc.writes {
-				if want := []string{tc.wantFile + " was created"}; !slices.Equal(diffs, want) {
+				want := []string{importops.RecordFileName + " was created", tc.wantFile + " was created"}
+				if !slices.Equal(diffs, want) {
 					t.Fatalf("the writing delivery changed the workspace as %v; want exactly %v", diffs, want)
 				}
 				body, rerr := os.ReadFile(draft)

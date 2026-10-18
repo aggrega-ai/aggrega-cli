@@ -210,10 +210,10 @@ func Execute() {
 }
 
 // executeRoot runs root and maps its outcome to a process exit code without
-// exiting itself, so the exit boundary is testable. An installed plugin that ran
-// and exited non-zero surfaces as an exitCodeError, whose code is propagated
-// verbatim with no formatted diagnostic — a non-zero command result is the
-// plugin's status, not a host error. Any other error is the single formatted
+// exiting itself, so the exit boundary is testable. A status that is not an error
+// — an installed plugin that ran and exited non-zero, or the drift import --sync
+// --dry-run found — surfaces as an exitCodeError, whose code is propagated
+// verbatim with no formatted diagnostic. Any other error is the single formatted
 // diagnostic to stderr and exit 1; when it is cobra's unknown-command error for a
 // discoverable plugin name, an install hint is appended.
 //
