@@ -74,11 +74,11 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // The fallback is what keeps the split cheap. An ordinary component's NodeID is
 // its deployed name and reaches here unmodified; a per-component FR attachment
 // leaves DerivedNameBasis empty, so its author's chart renders against the host
-// component's name exactly as it did before this value existed. Only a node
-// whose NodeID a target's name alphabet refuses carries the basis explicitly,
-// and a boundary-scope attachment is that case: its NodeID is a dispatch marker
-// whose first character the release-name alphabet does not admit, so every
-// escape would open the name with a hyphen and no shortening would repair it.
+// component's name. Only a node whose NodeID a target's name alphabet refuses
+// carries the basis explicitly, and a boundary-scope attachment is that case: its
+// NodeID is a dispatch marker whose first character the release-name alphabet
+// does not admit, so every escape would open the name with a hyphen and no
+// shortening would repair it.
 //
 // Deliberately NOT read by a surface that names a workload an FR attachment
 // synthesizes, or a standalone artifact set. Those have no author templates, so

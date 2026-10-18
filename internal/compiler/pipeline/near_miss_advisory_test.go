@@ -239,7 +239,7 @@ func TestNearMissAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) {
 				// the build prefixes differently. A reading that halted would print
 				// there.
 				for _, line := range strings.Split(stderr, "\n") {
-					if strings.Contains(line, "guard:") && strings.Contains(line, authored) {
+					if strings.Contains(line, "refused:") && strings.Contains(line, authored) {
 						t.Errorf("the near miss reached the halting stream: %q", line)
 					}
 				}

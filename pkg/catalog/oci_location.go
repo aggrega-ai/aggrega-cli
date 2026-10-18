@@ -59,8 +59,8 @@ func RegistryReference(prefix, kind, provider, name string) string {
 // what the declared entity-kind vocabulary hands out; a test holds that no entity
 // kind needs an exception here, so this stays a single rule rather than a table
 // that could fall behind. The one alias is `Wasm`, which is not an entity kind at
-// all — it is the raw plugin artifact, published beneath the same `plugin` prefix
-// as the Plugin entity that pins it, per the plugin URI convention
+// all — it is the raw plugin artifact, published as the single layer of its Plugin
+// entity's own manifest beneath the same `plugin` prefix, per the plugin URI convention
 // (`<registry>/plugin/<pluginType>/<name>`).
 //
 // A token that is neither an entity kind nor `Wasm` is lowercased unchanged, so a

@@ -968,7 +968,7 @@ func ResolveAndValidate(
 		}
 		if len(guardErrs) > 0 {
 			for _, e := range guardErrs {
-				fmt.Fprintf(os.Stderr, "  guard: %s\n", e)
+				fmt.Fprintf(os.Stderr, "  refused: %s\n", e)
 			}
 			// Carry the per-violation slice on the returned error so a caller can
 			// errors.Is the specific guard sentinel at the pipeline boundary

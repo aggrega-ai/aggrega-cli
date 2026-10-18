@@ -6,9 +6,8 @@
 //  1. Per-pattern table-driven tests with at least one positive and
 //     one negative fixture per pattern. Each test compiles the pattern
 //     it exercises from the exported string constant, which is the only
-//     form the file declares. Positive fixtures for the per-entity-kind
-//     patterns come from the hub catalog (the empirical source-of-truth
-//     for what catalog names exist in practice). Negative fixtures are
+//     form the file declares. Positive fixtures are well-formed names
+//     of each entity kind and negative fixtures malformed ones, both
 //     author-constructed.
 //
 //  2. A guard on the declarations' literal form. The publishing
@@ -33,7 +32,7 @@ func TestComponentNameShape_MatchesThreeKebabSegments(t *testing.T) {
 		input string
 		want  bool
 	}{
-		// Hub catalog fixtures
+		// Well-formed Component names: three kebab-case segments
 		{"core/datastore/mariadb", true},
 		{"core/gateway/kong", true},
 		{"core/ai-model/azure-openai", true},
@@ -66,7 +65,7 @@ func TestFeatureNameShape_MatchesTwoKebabSegments(t *testing.T) {
 		input string
 		want  bool
 	}{
-		// Hub catalog fixtures
+		// Well-formed Feature names: two kebab-case segments
 		{"core/cryptographic-signature", true},
 		{"core/human-approval-gate", true},
 		{"core/tls-pinning", true},
@@ -95,7 +94,7 @@ func TestRecipeNameShape_MatchesSingleKebabSegment(t *testing.T) {
 		input string
 		want  bool
 	}{
-		// Hub catalog fixtures
+		// Well-formed Recipe names: one kebab-case segment
 		{"mariadb", true},
 		{"mariadb-bitnami", true},
 		{"mariadb-rds", true},
@@ -123,7 +122,7 @@ func TestFeatureRecipeNameShape_MatchesSingleKebabSegment(t *testing.T) {
 		input string
 		want  bool
 	}{
-		// Hub catalog fixtures
+		// Well-formed FeatureRecipe names: one kebab-case segment
 		{"k8s-secret-from-parameter", true},
 		{"dotenv-secret", true},
 		{"compose-bridge-fr", true},

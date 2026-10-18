@@ -270,10 +270,10 @@ func TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender(t *testing.T) {
 // two.
 //
 // The pair below differs only in a character a label value may not carry, which
-// is where an identity written into the label alphabet by substitution ran two
-// keys together: substitution is many-to-one. The identity is now composed
-// through an encoding that writes such a character out instead of folding it onto
-// a hyphen, so the two keys reach two identities and the build completes.
+// an identity written into the label alphabet by substitution would run together,
+// substitution being many-to-one. The identity is composed through an encoding
+// that writes such a character out instead of folding it onto a hyphen, so the
+// two keys reach two identities and the build completes.
 //
 // The expected identities are written out by hand rather than composed here: a
 // value the composition produced would agree with the composition whatever it

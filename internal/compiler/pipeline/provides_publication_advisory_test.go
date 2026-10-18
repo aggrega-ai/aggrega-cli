@@ -161,7 +161,7 @@ func TestProvidesPublicationAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) 
 		t.Errorf("the advisory did not reach the advisory drain.\nstderr:\n%s", stderr)
 	}
 	for _, line := range strings.Split(stderr, "\n") {
-		if strings.Contains(line, extraPublishedKey) && strings.Contains(line, "guard:") {
+		if strings.Contains(line, extraPublishedKey) && strings.Contains(line, "refused:") {
 			t.Errorf("the finding reached the halting stream: %q", line)
 		}
 	}

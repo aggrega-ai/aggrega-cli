@@ -85,8 +85,8 @@ var referenceKeywords = map[string]bool{
 
 // jsonSchemaReservedKeywords names the JSON Schema 2020-12 keywords the
 // compactform compiler recognises as JSON-Schema-native rather than
-// compact-form-specific. Their presence on a node steers dispatch toward
-// the JSON Schema YAML path; per-node passthrough emits them unchanged.
+// compact-form-specific; per-node passthrough emits them unchanged. Only those
+// hasSchemaContainerShape also lists steer dispatch, so `minimum` alone does not.
 var jsonSchemaReservedKeywords = map[string]bool{
 	"$schema":               true,
 	"$id":                   true,
