@@ -60,7 +60,7 @@ func (f *fakeLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxi
 }
 
 // fakeBaseName strips an optional `:version` so the mock resolves a versioned
-// library URI by its bare name, mirroring the production lookup's version-blind
+// library URI by its bare name, mirroring the production lookup's version-agnostic
 // schemaLibraryNameFromURI.
 func fakeBaseName(uri string) string {
 	if i := strings.LastIndex(uri, ":"); i >= 0 {

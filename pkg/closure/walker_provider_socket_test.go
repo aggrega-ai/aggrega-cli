@@ -39,7 +39,7 @@ func TestComputeClosureIsBlindToProviderSocket(t *testing.T) {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
 	if len(c.Entities) != 0 {
-		t.Errorf("ComputeClosure recorded %d entities for a provider socket binding; want 0 (config-blind): %+v",
+		t.Errorf("ComputeClosure recorded %d entities for a provider socket binding; want 0 (config-agnostic): %+v",
 			len(c.Entities), c.Entities)
 	}
 	if len(c.Plugins) != 0 {

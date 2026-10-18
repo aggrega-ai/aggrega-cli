@@ -197,7 +197,7 @@ func TestLazy_TwoProvidersCoexist_SameProviderShadows(t *testing.T) {
 //
 // A version pin the catalog could not satisfy used to resolve to whatever single
 // recipe carried the name. That tolerance was designed, not stumbled into: a
-// versioned reference whose exact version was absent fell back to a version-blind
+// versioned reference whose exact version was absent fell back to a version-agnostic
 // scan so a versioned reference behaved like a bare one. It is a miss now, because
 // a version pin is a request and answering it with a version the author did not
 // write is a silent substitution — the identical typo on a component type has
@@ -232,7 +232,7 @@ func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 	if r, ok := one.RecipeByURI("mariadb-rds"); !ok || r.Metadata.Version != "1.0.0" {
 		t.Errorf("bare unversioned single-provider: ok=%v", ok)
 	}
-	// Reversed: see this test's own note on the retired version-blind fallback.
+	// Reversed: see this test's own note on the retired version-agnostic fallback.
 	if r, ok := one.RecipeByURI("mariadb-rds:9.9.9"); ok {
 		t.Errorf("an unsatisfiable version pin must miss, not substitute another version; resolved %q", r.Metadata.Version)
 	}
@@ -264,7 +264,7 @@ func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 		t.Errorf("qualified caret at the higher major: ok=%v version=%q", ok, r.Metadata.Version)
 	}
 	// A named capability that holds the recipe but not the pinned version misses on
-	// the pin; it does not fall through to a version-blind reading of the same name.
+	// the pin; it does not fall through to a version-agnostic reading of the same name.
 	if r, ok := two.RecipeByURI("terraform/mariadb-rds:9.9.9"); ok {
 		t.Errorf("qualified unsatisfiable pin must miss; resolved %q", r.Metadata.Version)
 	}
