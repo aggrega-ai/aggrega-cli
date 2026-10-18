@@ -862,9 +862,9 @@ func unmarkedPlantedSources(encode func(any) []byte) []plantedSource {
 // whole for the reason the warning gives, the third for one it writes with what
 // the warning names of it emptied.
 var (
-	emptiedField = regexp.MustCompile(`^the value of (\S+), which node (\S+) marks as a credential, is written empty in the flow the draft carries: no credential from the source reaches the draft$`)
-	emptiedWhole = regexp.MustCompile(`^the whole value of (\S+) of node (\S+) is written empty in the flow the draft carries, since [^:]+: no credential from the source reaches the draft$`)
-	emptiedParts = regexp.MustCompile(`^(\S+) of node (\S+) is written with its [^:]+ empty in the flow the draft carries: no credential from the source reaches the draft$`)
+	emptiedField = regexp.MustCompile(`^the value of (\S+), which node (\S+) marks as a credential, is written empty in the flow the draft carries$`)
+	emptiedWhole = regexp.MustCompile(`^the whole value of (\S+) of node (\S+) is written empty in the flow the draft carries, since [^:]+$`)
+	emptiedParts = regexp.MustCompile(`^(\S+) of node (\S+) is written with its [^:]+ empty in the flow the draft carries$`)
 )
 
 // TestNoCredentialValueAnExportHoldsReachesTheDraft plants key-shaped values in

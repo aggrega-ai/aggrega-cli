@@ -367,7 +367,7 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 				}
 			}
 			const since = " of node MCPTools-fetch is written empty in the flow the draft carries, since "
-			const none = ", though Langflow marks it as none: no credential from the source reaches the draft"
+			const none = ", though Langflow marks it as none"
 			if want := []string{
 				"the whole value of mcp_server.config.url" + since + "the address an MCP server is reached at can carry " +
 					"a credential in its user part, its path or its query" + none,
@@ -1282,13 +1282,12 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 		if got := asObject(flowiseNode(t, carried, "customMCP_1")["inputs"])["mcpServerConfig"]; got != "" {
 			t.Errorf("the configuration that does not read as JSON is carried as %v, want it empty", got)
 		}
-		const tail = " in the flow the draft carries: no credential from the source reaches the draft"
+		const tail = " in the flow the draft carries"
 		for _, msg := range []string{
 			"mcpServerConfig of node customMCP_0 is written with its header values, environment values and server " +
 				"address empty" + tail,
 			"the whole value of mcpServerConfig of node customMCP_1 is written empty in the flow the draft carries, since " +
-				"it does not read as a JSON object, so nothing inside it can be located: no credential from the source " +
-				"reaches the draft",
+				"it does not read as a JSON object, so nothing inside it can be located",
 			"mcpServerConfig of node customMCP_2 is written with its environment values, command and arguments empty" + tail,
 			"mcpServerConfig of node customMCP_3 is written with its command and arguments empty" + tail,
 		} {
@@ -1325,7 +1324,7 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 		if cfg["FLOWISE_CREDENTIAL_ID"] != "" || cfg["mcpServerConfig"] != `{"url":""}` {
 			t.Errorf("the agent's tool configuration is carried as %v, want the credential's id and the address empty", cfg)
 		}
-		const tail = " in the flow the draft carries: no credential from the source reaches the draft"
+		const tail = " in the flow the draft carries"
 		for _, msg := range []string{
 			"the value of agentTools.0.agentSelectedToolConfig.FLOWISE_CREDENTIAL_ID, which node agentAgentflow_0 marks " +
 				"as a credential, is written empty" + tail,
