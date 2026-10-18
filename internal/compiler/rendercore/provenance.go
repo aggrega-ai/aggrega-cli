@@ -65,11 +65,11 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // back to NodeID.
 //
 // It sits beside [ProvenanceComponentID] rather than inside it because the two
-// answer different questions, and a single value answering both is what made an
-// FR attachment's sourced resources indistinguishable from its host's: the
-// identity had to stay the host's in order to keep the release name the host's.
-// Separating them lets the identity say which attachment emitted a resource
-// while the name an author's own templates render against stays put.
+// answer different questions: the identity says which FeatureRecipe (FR)
+// attachment emitted a resource, so an attachment's sourced resources are told
+// apart from its host's, while the name an author's own templates render against
+// stays the host's. One value cannot do both, since keeping the release name the
+// host's would keep the identity the host's too.
 //
 // The fallback is what keeps the split cheap. An ordinary component's NodeID is
 // its deployed name and reaches here unmodified; a per-component FR attachment
