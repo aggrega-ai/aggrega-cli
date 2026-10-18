@@ -60,12 +60,23 @@ import (
 // refused here too.
 //
 // A request whose drafts would be written over an Aggregate already in outputDir
-// is refused under both deliveries, naming the Aggregate, and nothing is written.
+// is refused under both deliveries, naming the Aggregate and sync, and nothing is
+// written.
+//
+// sync asks for what an earlier import drafted beneath outputDir to be brought up
+// to date with the source, changing only what the import wrote as the record
+// beside the drafts lists it, rather than the draft being written whole. It is
+// the command line's --sync, carried as a field for the reason dryRun is one, and
+// it composes with dryRun: the two together answer with what the sync would
+// write and every part that would drift, and write nothing. A sync that would
+// change or remove what an author wrote, or that no record answers for, is
+// refused in this surface's words, naming this field.
 type importParams struct {
 	Source    string `json:"source"`
 	OutputDir string `json:"outputDir"`
 	Format    string `json:"format"`
 	DryRun    bool   `json:"dryRun"`
+	Sync      bool   `json:"sync"`
 }
 
 // importedFile is one drafted file on the wire: the path it is for, relative to
@@ -101,14 +112,39 @@ type importDiagnostic struct {
 	Code     string `json:"code,omitempty"`
 }
 
+// importDrift is one part a sync brought up to date with the source, or under
+// dryRun would: how it drifted, the drafted file it is in, relative to the output
+// directory, and the keys leading to it in a drafted Aggregate, empty where the
+// part is the whole file.
+//
+// The keys are a list rather than one joined string, so a key holding a full
+// stop is read back as the one key it is.
+type importDrift struct {
+	Change string   `json:"change"`
+	File   string   `json:"file"`
+	Key    []string `json:"key"`
+}
+
 // importResult is the aggrega/import response.
 //
-// files carries every drafted file the importer produced, with its content,
-// whether or not it was written — so a reporting delivery answers with the same
-// set a writing one puts on disk. written names the files that reached disk, and
-// is empty under a reporting delivery: what was produced and what was written are
-// different questions, and a caller that asked to be reported to is asking only
-// the first.
+// files carries every file the import writes, with its content, whether or not
+// it was written — so a reporting delivery answers with the same set a writing
+// one puts on disk. For a request that is not a sync that is every drafted file
+// the importer produced, followed by the record of what the import wrote, which
+// every import that drafts anything writes beside its drafts; for a sync it is
+// each drafted file the sync changes, with its new content, followed by the
+// record where that changes too, and a sync in step answers an empty list.
+// written names the files that reached disk, and is empty under a reporting
+// delivery: what was produced and what was written are different questions, and
+// a caller that asked to be reported to is asking only the first.
+//
+// drift is every part a sync brought up to date with the source, or under dryRun
+// would, in the order the draft names them — a drafted file the sync deletes is
+// one of them, removed with no keys. It is what the command line answers through
+// its exit status under --sync --dry-run, carried here as data because this
+// surface has none, and it is an empty list for a request that is not a sync, for
+// a sync in step and for a sync whose importer could not finish, which writes
+// nothing.
 //
 // 🔴 halted is what a client branches on for the outcome, and it is NOT an error.
 // An import that could not convert everything still drafts what it could, and
@@ -127,14 +163,15 @@ type importDiagnostic struct {
 // choice, a rationale or a swap hint the importer did not write is absent from
 // its entry, as it is on the importer's own answer.
 //
-// files, written, diagnostics and decisions are always arrays, empty rather than
-// absent, so a client reads an import that produced nothing as an empty answer
-// rather than as a missing field.
+// files, written, drift, diagnostics and decisions are always arrays, empty
+// rather than absent, so a client reads an import that produced nothing as an
+// empty answer rather than as a missing field.
 type importResult struct {
 	Format      string               `json:"format"`
 	OutputDir   string               `json:"outputDir"`
 	Written     []string             `json:"written"`
 	Files       []importedFile       `json:"files"`
+	Drift       []importDrift        `json:"drift"`
 	Diagnostics []importDiagnostic   `json:"diagnostics"`
 	Decisions   []abi.ImportDecision `json:"decisions"`
 	Halted      bool                 `json:"halted"`
@@ -224,6 +261,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		SourceName:    params.Source,
 		Format:        params.Format,
 		OutputDir:     outputDir,
+		Sync:          params.Sync,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})
@@ -253,11 +291,18 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 			fmt.Errorf("%w (source %s, recognised as %s); send format naming the one to read it as",
 				importops.ErrAmbiguousImportFormat(), ambiguous.Path(), strings.Join(ambiguous.Formats(), ", ")))
 	}
-	// An Aggregate already at a drafted path is refused in this surface's words,
-	// for the reason the format refusals above are: the refusal's own sentence
-	// names the command line's flags.
+	// An Aggregate already at a drafted path, a sync that would rewrite what an
+	// author wrote, and a sync no record answers for are refused in this surface's
+	// words, for the reason the format refusals above are: each refusal's own
+	// sentence names the command line's flags.
 	if existing := (*importops.ExistingAggregateError)(nil); errors.As(err, &existing) {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionExistingAggregate(existing))
+	}
+	if conflicts := (*importops.SyncConflictError)(nil); errors.As(err, &conflicts) {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionSyncConflict(conflicts))
+	}
+	if record := (*importops.ImportRecordError)(nil); errors.As(err, &record) {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionImportRecord(record))
 	}
 	if err != nil {
 		if escaping := (*importops.EscapingPathError)(nil); errors.As(err, &escaping) {
@@ -271,6 +316,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		OutputDir:   res.OutputDir,
 		Written:     importWrittenPaths(res, delivery),
 		Files:       importedFiles(res.Files),
+		Drift:       importDrifts(res.Drift),
 		Diagnostics: importDiagnostics(res.Diagnostics),
 		Decisions:   importDecisions(res.Decisions),
 		Halted:      res.Halted(),
@@ -279,11 +325,44 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 
 // sessionExistingAggregate words the refusal of a request whose drafts would be
 // written over an Aggregate already on disk, naming the Aggregate where it sits
-// and the field a caller here can change.
+// and the fields a caller here can send instead.
 func sessionExistingAggregate(e *importops.ExistingAggregateError) string {
 	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Path))
 	return "import: the draft " + e.Path + " would be written over the Aggregate at " + place + ", which an author " +
-		"may have edited since it was drafted, so nothing was written; name another outputDir to draft beneath"
+		"may have edited since it was drafted, so nothing was written; send sync to bring it up to date with the " +
+		"source, or name another outputDir to draft beneath"
+}
+
+// sessionSyncConflict words the refusal of a sync that would change or remove
+// what an author wrote, naming the field the caller sent rather than the command
+// line's flag, and each conflicting part in the one sentence every surface prints
+// for it ([importops.ConflictLine]), in the order the draft names them.
+func sessionSyncConflict(e *importops.SyncConflictError) string {
+	var b strings.Builder
+	b.WriteString("import: sync was sent, and bringing the drafts beneath " + e.OutputDir + " up to date with the " +
+		"source would change or remove what an author wrote, so nothing was written; reconcile each part below by " +
+		"hand, or put back what the import wrote there, and send the request again:")
+	for _, c := range e.Conflicts {
+		b.WriteString("\n  ")
+		b.WriteString(importops.ConflictLine(c))
+	}
+	return b.String()
+}
+
+// sessionImportRecord words the refusal of a sync the record beside the drafts
+// cannot answer for — no record lists the Aggregate it would bring up to date,
+// or the record cannot be read — naming the field the caller sent rather than
+// the command line's flag, and the record and the Aggregate where they sit.
+func sessionImportRecord(e *importops.ImportRecordError) string {
+	record := filepath.Join(e.OutputDir, filepath.FromSlash(e.Record))
+	if e.Err != nil {
+		return "import: sync was sent, and the record of what an import wrote, " + record + ", cannot be read: " +
+			e.Err.Error() + "; nothing was written"
+	}
+	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Aggregate))
+	return "import: sync was sent, and no record of what an import wrote lists the Aggregate at " + place + " (" +
+		record + ", which every import writes beside its drafts), so its parts cannot be told from parts an author " +
+		"wrote; nothing was written"
 }
 
 // sessionFormatExamples names the formats a request may send in the field, or
@@ -310,6 +389,18 @@ func importedFiles(files []abi.ScaffoldFile) []importedFile {
 	out := make([]importedFile, 0, len(files))
 	for _, f := range files {
 		out = append(out, importedFile{Path: f.Path, Content: f.Content})
+	}
+	return out
+}
+
+// importDrifts projects the parts a sync brought up to date onto the wire shape,
+// in the operation's order, always as an array — and each part's keys as an
+// array too, empty for a whole file — so a request that is not a sync, or a sync
+// in step, answers an empty list rather than a missing field.
+func importDrifts(drift []importops.Drift) []importDrift {
+	out := make([]importDrift, 0, len(drift))
+	for _, d := range drift {
+		out = append(out, importDrift{Change: d.Change, File: d.File, Key: append([]string{}, d.Key...)})
 	}
 	return out
 }

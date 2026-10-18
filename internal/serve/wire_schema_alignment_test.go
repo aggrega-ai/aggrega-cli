@@ -214,6 +214,7 @@ func wireSubjects() []wireSubject {
 		{name: "hoverParams", typ: reflect.TypeOf(hoverParams{}), def: "#/$defs/HoverParams"},
 		{name: "hoverResult", typ: reflect.TypeOf(hoverResult{}), def: "#/$defs/HoverResult"},
 		{name: "importDiagnostic", typ: reflect.TypeOf(importDiagnostic{}), def: "#/$defs/ImportDiagnostic"},
+		{name: "importDrift", typ: reflect.TypeOf(importDrift{}), def: "#/$defs/ImportDrift"},
 		{name: "importParams", typ: reflect.TypeOf(importParams{}), def: "#/$defs/ImportParams"},
 		{name: "importResult", typ: reflect.TypeOf(importResult{}), def: "#/$defs/ImportResult"},
 		{name: "importedFile", typ: reflect.TypeOf(importedFile{}), def: "#/$defs/ImportedFile"},
