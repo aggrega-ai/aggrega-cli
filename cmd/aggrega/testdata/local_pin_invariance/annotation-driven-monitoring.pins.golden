@@ -1,7 +1,7 @@
 entities:
     - uri: core/prometheus-exporter
       resolved_version: 1.0.0
-      digest: sha256:7af982b42d2ec6191103122db96aab7f52b8d28f5345e28a06706d9410a2791b
+      digest: sha256:55d0cecadaec91928415330b576cab188d1c7c87e0764cd9014480c2e85de8ef
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: example/compute/service
@@ -21,12 +21,12 @@ entities:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - uri: helm/prometheus-exporter:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:9969ffb43be158db00e9ba5f4206f9d26b2370952e8be37a5f4c3f45108467c8
+      digest: sha256:048ee3c699621f5d68c016827b73faafe14c32419960353834b10a2761ba0f89
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: helm/service:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:a9777d28e1614844e16932b9730b5777873b8b49b80c542d5c99b73350eb765f
+      digest: sha256:2a265f179ce59caf200b44269cd17b3d9bd62e48018d0ee56bcd8209e38abe48
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - uri: monitoring-demo

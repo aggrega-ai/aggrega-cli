@@ -11,7 +11,7 @@ entities:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
     - uri: compose/postgres:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:8a15334e5ce34a9b801183086b68510c957013ce989c76d92c4ccdf4fecf812b
+      digest: sha256:f69836b400a243ac248c9bfa2f239993686c2426922812ec3675e4fa850d6bfc
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/compose-bridge:1.0.0
@@ -22,7 +22,7 @@ entities:
         - release.spec.boundaries.bridge.features.gateway.type
     - uri: core/datastore/postgres
       resolved_version: 1.0.0
-      digest: sha256:9dcc913a666bd8ed6e504b5a53e4ca0fe4238193db64b4b013ac15a43f91d359
+      digest: sha256:3e4d90cc4419a79881c541546dd9b597eedb8705e8df7ca48667946e3cd892c8
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
         - manifest.spec.mappings.components.type.core/datastore/postgres
