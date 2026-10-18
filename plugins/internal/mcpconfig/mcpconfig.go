@@ -8,10 +8,11 @@
 // those values empty before a flow is carried into a draft, since a key can sit
 // in any of them. It reads such a configuration written as one object
 // ([Members]) and written as fields of the node's own ([FieldMembers]), and the
-// headers any node of a flow keeps, in or out of such a configuration
-// ([HeaderValues]). It is the one place the importers walk such a configuration
-// and such headers, so the Langflow and the Flowise importer empty the same
-// members of them, in either layout.
+// headers any node of a flow keeps, in or out of such a configuration, and the
+// query parameters, which a flow writes in the same shapes ([HeaderValues]). It
+// is the one place the importers walk such a configuration and such headers and
+// parameters, so the Langflow and the Flowise importer empty the same members
+// of them, in either layout.
 package mcpconfig
 
 import (
@@ -167,6 +168,9 @@ func FieldMembers(template json.RawMessage) []Member {
 //     position written in decimal. A row carrying a key and no value names a
 //     header and holds none, and so does an item that is null, an empty text, an
 //     empty object or an empty list.
+//
+// A flow writes the query parameters a request is sent with in the same shapes,
+// so they are read here too, each value named by its parameter.
 //
 // Headers that are neither an object nor a list hold no member here: what a
 // caller writes for one is the caller's.

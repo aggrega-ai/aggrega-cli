@@ -542,9 +542,9 @@ type plantedSource struct {
 // components, which no committed export holds: the address in the url of an
 // MCPSse node and the command line in the command of an MCPStdio node. And it
 // plants them in every input either format marks as no credential that can carry
-// one, as unmarkedPlantedSources describes. The catalog the planted sources are
-// imported over holds no platform, so no node of any of these flows is wired to
-// anything.
+// one, as unmarkedPlantedSources and queryPlantedSources describe. The catalog
+// the planted sources are imported over holds no platform, so no node of any of
+// these flows is wired to anything.
 func plantedSources(t *testing.T) []plantedSource {
 	t.Helper()
 	decode := func(rel string) map[string]any {
@@ -729,7 +729,89 @@ func plantedSources(t *testing.T) []plantedSource {
 		{name: "langflow-mcp-deactivated.json", body: encode(deactivatedFlow),
 			keys:   []string{deactivatedURL, deactivatedCmd},
 			fields: []string{"MCPSse-m3 url", "MCPStdio-n4 command"}},
-	}, unmarkedPlantedSources(encode)...)
+	}, append(unmarkedPlantedSources(encode), queryPlantedSources(encode)...)...)
+}
+
+// queryPlantedSources plants key-shaped values in a Langflow flow and a Flowise
+// flow AUTHORED here, which no committed export holds with a value, in every input
+// either format sends as a request's query parameters, in each shape the input
+// takes. In the Langflow flow: an API Request node's query parameters as an
+// object and as text, a Google Serper node's as an object, a SerpAPI node's as
+// rows of a key and a value, a Serp node's as an object, a SearchApi node's as an
+// object Langflow merges whole and a second SearchApi node's as an object, each
+// beside a parameter holding no secret, which is written empty too; the default
+// query of an OpenAI Embeddings node; and, left as written and not reported, an
+// API Request node's body and a ClickHouse node's index settings, which are no
+// query parameters. In the Flowise flow: an HTTP node's query parameters as rows,
+// beside its body, which is left as written; a SearchApi loader's custom
+// parameters as JSON text and as an object; and, left as written, a Spider
+// loader's parameters, which it sends as a request body.
+func queryPlantedSources(encode func(any) []byte) []plantedSource {
+	const (
+		lfObject   = "sk-plantedQUERYapiREQUEST0123456789"
+		lfText     = "sk-plantedQUERYapiREQUESTtext012345"
+		lfSerper   = "sk-plantedQUERYserper0123456789abcd"
+		lfSerpAPI  = "sk-plantedQUERYserpAPI0123456789abc"
+		lfSerp     = "sk-plantedQUERYserp0123456789abcdef"
+		lfMerged   = "sk-plantedQUERYsearchAPImerged01234"
+		lfSearch   = "sk-plantedQUERYsearchCOMPONENT01234"
+		lfEmbedQry = "sk-plantedQUERYembedDEFAULT01234567"
+
+		fwHTTP       = "sk-plantedQUERYhttpAGENTFLOW012345"
+		fwCustomText = "sk-plantedQUERYsearchApiTEXT012345"
+		fwCustomObj  = "sk-plantedQUERYsearchApiOBJECT0123"
+	)
+	field := func(typ string, value any) map[string]any { return map[string]any{"type": typ, "value": value} }
+	lfNode := func(id, typ string, template map[string]any) map[string]any {
+		return map[string]any{"id": id, "data": map[string]any{"type": typ, "node": map[string]any{"template": template}}}
+	}
+	langflow := map[string]any{"id": "0a0b0c0d-6666-4777-8888-9999aaaabbbb", "data": map[string]any{"nodes": []any{
+		lfNode("APIRequest-q1", "APIRequest", map[string]any{
+			"query_params": field("other", map[string]any{"api_key": lfObject, "page": "2"}),
+			"body":         field("table", []any{map[string]any{"key": "topic", "value": "left as written"}})}),
+		lfNode("APIRequest-q2", "APIRequest", map[string]any{"query_params": field("other", "api_key="+lfText+"&page=2")}),
+		lfNode("GoogleSerperAPI-q3", "GoogleSerperAPI", map[string]any{
+			"query_params": field("dict", map[string]any{"gl": "us", "hl": "en", "api_key": lfSerper})}),
+		lfNode("SerpAPI-q4", "SerpAPI", map[string]any{"search_params": field("dict", []any{
+			map[string]any{"key": "api_key", "value": lfSerpAPI}, map[string]any{"key": "engine", "value": "google"}})}),
+		lfNode("Serp-q5", "Serp", map[string]any{"search_params": field("dict", map[string]any{"api_key": lfSerp})}),
+		lfNode("SearchAPI-q6", "SearchAPI", map[string]any{"search_params": field("dict",
+			[]any{map[string]any{"api_key": lfMerged}})}),
+		lfNode("SearchComponent-q7", "SearchComponent", map[string]any{"search_params": field("dict",
+			map[string]any{"api_key": lfSearch, "location": "Rome"})}),
+		lfNode("OpenAIEmbeddings-q8", "OpenAIEmbeddings", map[string]any{
+			"default_query": field("dict", map[string]any{"api-version": "1", "api_key": lfEmbedQry})}),
+		lfNode("Clickhouse-q9", "Clickhouse", map[string]any{
+			"index_query_params": field("dict", map[string]any{"allow_experimental_annoy_index": "1"})}),
+	}, "edges": []any{}}}
+
+	fwNode := func(id, name string, inputs map[string]any) map[string]any {
+		return map[string]any{"id": id, "data": map[string]any{"id": id, "name": name, "inputs": inputs}}
+	}
+	flowise := map[string]any{"nodes": []any{
+		fwNode("httpAgentflow_0", "httpAgentflow", map[string]any{
+			"queryParams": []any{map[string]any{"key": "api_key", "value": fwHTTP}, map[string]any{"key": "page", "value": "2"}},
+			"body":        []any{map[string]any{"key": "topic", "value": "left as written"}}}),
+		fwNode("searchApi_0", "searchApi", map[string]any{
+			"customParameters": `{"engine":"google","api_key":"` + fwCustomText + `"}`}),
+		fwNode("searchApi_1", "searchApi", map[string]any{"customParameters": map[string]any{"api_key": fwCustomObj}}),
+		fwNode("spiderDocumentLoaders_0", "spiderDocumentLoaders", map[string]any{"params": `{"limit":5}`}),
+	}, "edges": []any{}}
+
+	return []plantedSource{
+		{name: "langflow-query-parameters.json", body: encode(langflow),
+			keys: []string{lfObject, lfText, lfSerper, lfSerpAPI, lfSerp, lfMerged, lfSearch, lfEmbedQry},
+			fields: []string{"APIRequest-q1 query_params.api_key", "APIRequest-q1 query_params.page",
+				"APIRequest-q2 query_params", "GoogleSerperAPI-q3 query_params.api_key", "GoogleSerperAPI-q3 query_params.gl",
+				"GoogleSerperAPI-q3 query_params.hl", "SerpAPI-q4 search_params.api_key", "SerpAPI-q4 search_params.engine",
+				"Serp-q5 search_params.api_key", "SearchAPI-q6 search_params.api_key",
+				"SearchComponent-q7 search_params.api_key", "SearchComponent-q7 search_params.location",
+				"OpenAIEmbeddings-q8 default_query"}},
+		{name: "flowise-query-parameters.json", body: encode(flowise),
+			keys: []string{fwHTTP, fwCustomText, fwCustomObj},
+			fields: []string{"httpAgentflow_0 queryParams.api_key", "httpAgentflow_0 queryParams.page",
+				"searchApi_0 customParameters", "searchApi_1 customParameters.api_key"}},
+	}
 }
 
 // unmarkedPlantedSources plants key-shaped values in a Langflow flow and a Flowise
@@ -937,7 +1019,19 @@ var (
 //   - in headerValueCredentials (plugins/flowise-importer/walk.go), replace
 //     `edits = append(edits, importer.Edit{Pointer: importer.Pointer(m.Tokens...), Value: json.RawMessage(`""`)})`
 //     with `_ = m`: the row flowise-unmarked-inputs.json fails, every header
-//     planted in JSON text.
+//     planted in JSON text, and the row flowise-query-parameters.json, the
+//     SearchApi loader's custom parameters planted as JSON text;
+//   - in unmarkedFields (plugins/langflow-importer/walk.go), delete the entries
+//     `"default_query": {...}` and `"query_params": queryParameters` and the rows
+//     of GoogleSerperAPI, SerpAPI, Serp, SearchAPI and SearchComponent: the row
+//     langflow-query-parameters.json under the default layout fails, every value
+//     planted in it in the drafted aggregate.yaml and no warning naming any of its
+//     fields;
+//   - in unmarkedInputs (plugins/flowise-importer/walk.go), delete the entry
+//     `"queryParams": queryParameters` and the row of searchApi: the row
+//     flowise-query-parameters.json under the default layout fails, every value
+//     planted in it in the drafted aggregate.yaml and no warning naming any of its
+//     fields.
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 	t.Parallel()
 	for _, src := range plantedSources(t) {

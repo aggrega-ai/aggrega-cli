@@ -246,9 +246,10 @@ type scrub int
 
 const (
 	// headerValues writes each value the headers hold empty and keeps each
-	// header's name, as mcpconfig.HeaderValues reads headers; each value is
-	// reported by its header's name. A value that is neither an object nor a list
-	// is written empty whole.
+	// header's name, as mcpconfig.HeaderValues reads headers — and so for query
+	// parameters, which a flow writes in the same shapes; each value is reported
+	// by its header's or its parameter's name. A value that is neither an object
+	// nor a list is written empty whole.
 	headerValues scrub = iota
 	// wholeKept writes the whole value empty with its kind kept — an object as
 	// {}, a list as [] — reported once; a value of any other kind is written as
@@ -273,13 +274,18 @@ type unmarked struct {
 //   - the request headers of an API Request, a URL, a Docling Remote, a Cloudflare
 //     Workers AI Embeddings and a Confluent Kafka Producer node: each value, its
 //     header's name kept, since a name carries no secret;
+//   - the query parameters an API Request node appends to its address and those
+//     a Google Serper, a SerpAPI, a Serp and a SearchApi node send their search
+//     API: each value, its parameter's name kept, as a header's;
 //   - the headers of a node the platform's own connection reaches — an MCP Tools
 //     node, into whose server configuration the platform writes a tools
 //     connection, and an OpenAI Embeddings node, which reads the key the
-//     platform delivers for a model connection (wire.go): whole, since a header
-//     whose name is kept and whose value is emptied would be sent in place of
-//     the one the platform's connection supplies, while an empty object or list
-//     overrides nothing;
+//     platform delivers for a model connection (wire.go) — and that OpenAI
+//     Embeddings node's default query parameters: whole, since a header or a
+//     parameter whose name is kept and whose value is emptied would be sent in
+//     place of the one the platform's connection supplies — the client merges
+//     its default query over the query of the address it calls — while an
+//     empty object or list overrides nothing;
 //   - a whole request written as a command line: an API Request node's cURL text,
 //     which only fills the node's fields in the editor, and a Webhook node's,
 //     which only shows an example;
@@ -291,8 +297,13 @@ type unmarked struct {
 //     no tools connection reaches it.
 var unmarkedFields = map[string]map[string]unmarked{
 	mcpToolsType:                    {"headers": {scrub: wholeKept, why: mcpHeadersDetail, parts: headerNamesAndValues}},
-	"OpenAIEmbeddings":              {"default_headers": {scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues}},
-	"APIRequest":                    {"headers": {scrub: headerValues, why: headerValueDetail}, "curl_input": {scrub: wholeText, why: requestTextDetail}},
+	"OpenAIEmbeddings":              {"default_headers": {scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues}, "default_query": {scrub: wholeKept, why: embeddingQueryDetail, parts: queryNamesAndValues}},
+	"APIRequest":                    {"headers": {scrub: headerValues, why: headerValueDetail}, "curl_input": {scrub: wholeText, why: requestTextDetail}, "query_params": queryParameters},
+	"GoogleSerperAPI":               {"query_params": queryParameters},
+	"SerpAPI":                       {"search_params": queryParameters},
+	"Serp":                          {"search_params": queryParameters},
+	"SearchAPI":                     {"search_params": queryParameters},
+	"SearchComponent":               {"search_params": queryParameters},
 	"URLComponent":                  {"headers": {scrub: headerValues, why: headerValueDetail}},
 	"DoclingRemote":                 {"api_headers": {scrub: headerValues, why: headerValueDetail}},
 	"CloudflareWorkersAIEmbeddings": {"headers": {scrub: headerValues, why: headerValueDetail}},
@@ -303,6 +314,10 @@ var unmarkedFields = map[string]map[string]unmarked{
 	"MCPSse":                        {"url": {scrub: wholeText, why: addressDetail}},
 	"MCPStdio":                      {"command": {scrub: wholeText, why: commandLineDetail}},
 }
+
+// queryParameters is how the query parameters a request is sent with are
+// written empty.
+var queryParameters = unmarked{scrub: headerValues, why: queryParameterDetail}
 
 // unmarkedAnyType are, by field, the inputs Langflow marks as no credential that
 // can carry one on whichever node declares them: the verification token every
@@ -352,10 +367,10 @@ func (u unmarked) locate(nodeID, name string, field json.RawMessage, at func(tok
 	return out
 }
 
-// headerValueCredentials locates each value the headers of the field named name
-// hold, as mcpconfig.HeaderValues reads them, named by the field and the
-// header's name, and the whole value where it is neither an object nor a list
-// and holds something.
+// headerValueCredentials locates each value the headers, or the query
+// parameters, of the field named name hold, as mcpconfig.HeaderValues reads
+// them, named by the field and the header's or the parameter's name, and the
+// whole value where it is neither an object nor a list and holds something.
 func headerValueCredentials(nodeID, name string, value json.RawMessage, why string,
 	at func(tokens ...string) string) []importer.Credential {
 	if written, ok := mcpconfig.EmptyKept(value); ok && written == nil {
@@ -384,14 +399,19 @@ func wholeKeptCredential(nodeID, name string, value json.RawMessage, u unmarked,
 }
 
 // The details saying why an input Langflow marks as no credential is written
-// empty, and headerNamesAndValues, what of headers written whole is.
+// empty, and headerNamesAndValues and queryNamesAndValues, what of headers and of
+// query parameters written whole is.
 const (
 	mcpHeadersDetail = "the headers an MCP Tools node sends its server can carry a credential, though Langflow marks " +
 		"them as none"
 	embeddingHeadersDetail = "the headers an OpenAI Embeddings node sends its API can carry a credential, though " +
 		"Langflow marks them as none"
+	embeddingQueryDetail = "the query parameters an OpenAI Embeddings node sends its API can carry a credential, " +
+		"though Langflow marks them as none"
 	headerNamesAndValues = "header names and values"
+	queryNamesAndValues  = "query parameter names and values"
 	headerValueDetail    = "a header can carry a credential, though Langflow marks it as none"
+	queryParameterDetail = "a query parameter can carry a credential, though Langflow marks it as none"
 	requestTextDetail    = "a request written as a command line can carry a credential in a header or a user part, " +
 		"though Langflow marks it as none"
 	apiKeyDetail            = "the field holds an API key, though Langflow marks it as no credential"

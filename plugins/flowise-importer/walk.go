@@ -264,10 +264,11 @@ type scrub int
 
 const (
 	// headerValues writes each value the headers hold empty and keeps each
-	// header's name, as mcpconfig.HeaderValues reads headers — headers held as
-	// JSON text are rewritten inside the text — and reports each by its
-	// header's name. A text that does not read as headers is written empty
-	// whole.
+	// header's name, as mcpconfig.HeaderValues reads headers — and so for query
+	// parameters, which a flow writes in the same shapes; headers or parameters
+	// held as JSON text are rewritten inside the text — and reports each by its
+	// header's or its parameter's name. A text that does not read as headers, or
+	// as parameters, is written empty whole.
 	headerValues scrub = iota
 	// wholeKept writes the whole value empty with its kind kept, as
 	// mcpconfig.EmptyKept writes it.
@@ -277,10 +278,12 @@ const (
 )
 
 // unmarked is one input Flowise marks as no credential that can carry one: how
-// its value is written empty, and why.
+// its value is written empty, and why; and, for headerValues, what each of its
+// members is — a header or a query parameter.
 type unmarked struct {
-	scrub scrub
-	why   string
+	scrub  scrub
+	why    string
+	member string
 }
 
 // unmarkedInputs are, by node type and then by input, the inputs Flowise marks
@@ -292,6 +295,9 @@ type unmarked struct {
 //     (baseOptions) a model's client sends, as an object, a list of key and
 //     value items, or JSON text: each value, its header's name kept, since a
 //     name carries no secret;
+//   - the query parameters an HTTP node appends to its address, and the custom
+//     parameters a SearchApi loader sends its search API in the query of the
+//     request: each value, its parameter's name kept, as a header's;
 //   - except the default headers of a node the platform's model connection
 //     reaches, the chat model and the embeddings Flowise runs on an OpenAI
 //     client that reads the key the platform delivers from the environment
@@ -302,7 +308,8 @@ type unmarked struct {
 //     requests with, and the bearer token a Teradata MCP tool overrides its
 //     credential with: whole.
 var unmarkedInputs = map[string]map[string]unmarked{
-	"httpAgentflow":          {"headers": requestHeaders},
+	"httpAgentflow":          {"headers": requestHeaders, "queryParams": queryParameters},
+	"searchApi":              {"customParameters": queryParameters},
 	"getApiChain":            {"headers": requestHeaders},
 	"postApiChain":           {"headers": requestHeaders},
 	"openApiChain":           {"headers": requestHeaders},
@@ -330,8 +337,12 @@ var unmarkedInputs = map[string]map[string]unmarked{
 	"teradataMCP": {"bearerToken": {scrub: wholeText, why: bearerTokenDetail}},
 }
 
-// requestHeaders is how the headers a request is sent with are written empty.
-var requestHeaders = unmarked{scrub: headerValues, why: headerValueDetail}
+// requestHeaders and queryParameters are how the headers and the query
+// parameters a request is sent with are written empty.
+var (
+	requestHeaders  = unmarked{scrub: headerValues, why: headerValueDetail, member: "header"}
+	queryParameters = unmarked{scrub: headerValues, why: queryParameterDetail, member: "query parameter"}
+)
 
 // unmarkedOf returns how the input named input of a node of type typ is written
 // empty where Flowise marks it as no credential, and false where it is no such
@@ -347,7 +358,7 @@ func (u unmarked) locate(nodeID string, raw json.RawMessage, field, tokens []str
 	name, pointer := strings.Join(field, "."), importer.Pointer(tokens...)
 	switch u.scrub {
 	case headerValues:
-		return headerValueCredentials(nodeID, raw, field, tokens, u.why)
+		return headerValueCredentials(nodeID, raw, field, tokens, u)
 	case wholeKept:
 		written, ok := mcpconfig.EmptyKept(raw)
 		if !ok {
@@ -364,12 +375,13 @@ func (u unmarked) locate(nodeID string, raw json.RawMessage, field, tokens []str
 	return nil
 }
 
-// headerValueCredentials locates each value the headers in raw hold, as
-// mcpconfig.HeaderValues reads them: held as an object or a list, each value
-// named by its header; held as JSON text, the text rewritten with every value
-// written empty, reported once with the headers it names; held as any other
-// text, the whole text.
-func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []string, why string) []importer.Credential {
+// headerValueCredentials locates each value the headers, or the query
+// parameters, in raw hold — u.member says which — as mcpconfig.HeaderValues
+// reads them: held as an object or a list, each value named by its header or
+// its parameter; held as JSON text, the text rewritten with every value written
+// empty, reported once with the names it holds; held as any other text, the
+// whole text.
+func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []string, u unmarked) []importer.Credential {
 	name, pointer := strings.Join(field, "."), importer.Pointer(tokens...)
 	written, ok := mcpconfig.EmptyKept(raw)
 	if !ok {
@@ -379,18 +391,18 @@ func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []
 		var out []importer.Credential
 		for _, m := range mcpconfig.HeaderValues(raw) {
 			out = append(out, importer.Credential{Node: nodeID, Field: name + "." + m.Name,
-				Pointer: importer.Pointer(append(append([]string{}, tokens...), m.Tokens...)...), Detail: why})
+				Pointer: importer.Pointer(append(append([]string{}, tokens...), m.Tokens...)...), Detail: u.why})
 		}
 		return out
 	}
 	var text string
 	if json.Unmarshal(raw, &text) != nil {
-		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer, Detail: why}}
+		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer, Detail: u.why}}
 	}
 	members := mcpconfig.HeaderValues(json.RawMessage(text))
 	if inner, ok := mcpconfig.EmptyKept(json.RawMessage(text)); !ok || inner == nil {
 		return []importer.Credential{{Node: nodeID, Field: name, Pointer: pointer,
-			Detail: "it does not read as headers, so what is inside it cannot be located"}}
+			Detail: "it does not read as " + u.member + "s, so what is inside it cannot be located"}}
 	}
 	var edits []importer.Edit
 	var names []string
@@ -405,13 +417,14 @@ func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []
 		return nil
 	}
 	return []importer.Credential{rewrittenCredential(nodeID, name, pointer, json.RawMessage(text), true, edits,
-		"header values ("+strings.Join(names, ", ")+")")}
+		u.member+" values ("+strings.Join(names, ", ")+")")}
 }
 
 // The details saying why an input Flowise marks as no credential is written
 // empty.
 const (
 	headerValueDetail    = "a header can carry a credential, though Flowise marks it as none"
+	queryParameterDetail = "a query parameter can carry a credential, though Flowise marks it as none"
 	defaultHeadersDetail = "the default headers a model's client sends can carry a credential, though Flowise marks " +
 		"them as none"
 	secretDetail         = "the input holds a secret, though Flowise marks it as no credential"
