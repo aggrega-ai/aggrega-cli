@@ -509,14 +509,22 @@ func TestThePlatformDraftOfEveryFixtureIsByteIdenticalAcrossRuns(t *testing.T) {
 	}
 }
 
-// plantedSource is a source carrying key-shaped values in fields its format marks
-// as credentials, and the fields, by node and field, the default layout writes
-// empty.
+// plantedSource is a source carrying key-shaped values: keys, in fields written
+// empty whatever the empty_unmarked_credentials setting says — those its format
+// marks as credentials, an MCP server's members, the default headers and query
+// of a node the platform's connection reaches; gated, in inputs its format
+// marks as no credential, written empty only where the setting is true and
+// carried as written where it is false or absent. fields are the fields, by
+// node and field, the default layout writes empty with the setting true, and
+// unset those it writes empty with it false or absent — fields itself for a
+// source planting nothing gated.
 type plantedSource struct {
 	name   string
 	body   []byte
 	keys   []string
 	fields []string
+	gated  []string
+	unset  []string
 }
 
 // plantedSources plants key-shaped values in copies of the real exports — a
@@ -800,15 +808,17 @@ func queryPlantedSources(encode func(any) []byte) []plantedSource {
 
 	return []plantedSource{
 		{name: "langflow-query-parameters.json", body: encode(langflow),
-			keys: []string{lfObject, lfText, lfSerper, lfSerpAPI, lfSerp, lfMerged, lfSearch, lfEmbedQry},
+			keys:  []string{lfEmbedQry},
+			gated: []string{lfObject, lfText, lfSerper, lfSerpAPI, lfSerp, lfMerged, lfSearch},
 			fields: []string{"APIRequest-q1 query_params.api_key", "APIRequest-q1 query_params.page",
 				"APIRequest-q2 query_params", "GoogleSerperAPI-q3 query_params.api_key", "GoogleSerperAPI-q3 query_params.gl",
 				"GoogleSerperAPI-q3 query_params.hl", "SerpAPI-q4 search_params.api_key", "SerpAPI-q4 search_params.engine",
 				"Serp-q5 search_params.api_key", "SearchAPI-q6 search_params.api_key",
 				"SearchComponent-q7 search_params.api_key", "SearchComponent-q7 search_params.location",
-				"OpenAIEmbeddings-q8 default_query"}},
+				"OpenAIEmbeddings-q8 default_query"},
+			unset: []string{"OpenAIEmbeddings-q8 default_query"}},
 		{name: "flowise-query-parameters.json", body: encode(flowise),
-			keys: []string{fwHTTP, fwCustomText, fwCustomObj},
+			gated: []string{fwHTTP, fwCustomText, fwCustomObj},
 			fields: []string{"httpAgentflow_0 queryParams.api_key", "httpAgentflow_0 queryParams.page",
 				"searchApi_0 customParameters", "searchApi_1 customParameters.api_key"}},
 	}
@@ -919,22 +929,26 @@ func unmarkedPlantedSources(encode func(any) []byte) []plantedSource {
 
 	return []plantedSource{
 		{name: "langflow-unmarked-inputs.json", body: encode(langflow),
-			keys: []string{lfAuthorization, lfCurl, lfMerged, lfItem, lfDocling, lfCloudflare, lfKafka, lfEmbedObject,
-				lfEmbedList, lfWebhook, lfOlivya, lfMem0, lfComposio},
+			keys: []string{lfEmbedObject, lfEmbedList},
+			gated: []string{lfAuthorization, lfCurl, lfMerged, lfItem, lfDocling, lfCloudflare, lfKafka, lfWebhook, lfOlivya,
+				lfMem0, lfComposio},
 			fields: []string{"APIRequest-a1 curl_input", "APIRequest-a1 headers.Authorization",
 				"APIRequest-a1 headers.User-Agent", "URLComponent-b2 headers.X-Api-Key", "URLComponent-b2 headers.1",
 				"DoclingRemote-c3 api_headers.Authorization", "CloudflareWorkersAIEmbeddings-d4 headers.Authorization",
 				"ConfluentKafkaProducer-e5 headers", "OpenAIEmbeddings-f6 default_headers",
 				"OpenAIEmbeddings-g7 default_headers", "Webhook-h8 curl", "Webhook-h9 curl", "OlivyaComponent-i10 api_key",
-				"mem0_chat_memory-j11 mem0_config", "ComposioGmailAPIComponent-k12 verification_token"}},
+				"mem0_chat_memory-j11 mem0_config", "ComposioGmailAPIComponent-k12 verification_token"},
+			unset: []string{"OpenAIEmbeddings-f6 default_headers", "OpenAIEmbeddings-g7 default_headers"}},
 		{name: "flowise-unmarked-inputs.json", body: encode(flowise),
-			keys: []string{fwRequestsGet, fwHTTP, fwLoader, fwToolkit, fwChatOpenAI, fwAzure, fwWebhook, fwCallback,
-				fwTeradata, fwNestedModel, fwNestedTool},
+			keys: []string{fwChatOpenAI, fwNestedModel},
+			gated: []string{fwRequestsGet, fwHTTP, fwLoader, fwToolkit, fwAzure, fwWebhook, fwCallback, fwTeradata,
+				fwNestedTool},
 			fields: []string{"requestsGet_0 requestsGetHeaders", "httpAgentflow_0 headers.Authorization",
 				"apiLoader_0 headers.X-Api-Key", "openAPIToolkit_0 headers", "chatOpenAI_0 baseOptions",
 				"azureChatOpenAI_0 baseOptions", "startAgentflow_0 callbackSecret", "startAgentflow_0 webhookSecret",
 				"teradataMCP_0 bearerToken", "agentAgentflow_0 agentModelConfig.baseOptions",
-				"agentAgentflow_0 agentTools.0.agentSelectedToolConfig.requestsPostHeaders"}},
+				"agentAgentflow_0 agentTools.0.agentSelectedToolConfig.requestsPostHeaders"},
+			unset: []string{"chatOpenAI_0 baseOptions", "agentAgentflow_0 agentModelConfig.baseOptions"}},
 	}
 }
 
@@ -959,20 +973,36 @@ var (
 // in fields of its own, the headers an MCP Tools node sends its server, the
 // address and the command line of Langflow's deprecated MCP components, and every
 // other input either format marks as no credential that can carry one, and
-// imports each planted source under both layouts, writing the drafts. The search
-// below finds every
-// planted value in its planted source, which is what says it fires; it finds
-// none in any file the import wrote, nor in the decisions or the diagnostics.
-// Under the default layout one warning names each field it wrote empty by its
-// node and field, and the warning carries no value.
+// imports each planted source under both layouts, with the
+// empty_unmarked_credentials setting true, false and absent, writing the drafts,
+// as plantedNoCredentialRow holds each. With the setting true no planted value is
+// in anything the import wrote; with it false or absent, the values planted in
+// inputs either format marks as no credential and that belong to no part of the
+// flow are carried as written, and every other one is still written empty.
 //
-// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source. A
+// row named below is the source imported with the setting true, unless the
+// defect names the setting:
 //
+//   - in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
+//     `creds = p.Credentials(tree, emptyUnmarked)` with
+//     `creds = p.Credentials(tree, true)` — the setting ignored: every row
+//     planting a gated value with the setting false or absent under the default
+//     layout fails, its gated values missing from the drafted aggregate.yaml and
+//     a warning naming each; with `p.Credentials(tree, false)` instead, the same
+//     rows with the setting true fail, their gated values in the drafted
+//     aggregate.yaml;
+//   - in applies (plugins/langflow-importer/walk.go, and likewise
+//     plugins/flowise-importer/walk.go), replace `return u.always || emptyUnmarked`
+//     with `return u.always`: that format's rows planting a gated value with the
+//     setting true fail; with `return true`, the same rows with it false or
+//     absent fail;
 //   - in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
 //     `scrubbed, emptied, err := rewriteSource(src.Bytes, edits, creds)` with
 //     `scrubbed, emptied, err := src.Bytes, []Credential(nil), error(nil); _, _ = edits, creds`:
-//     every row under the default layout fails, each planted value in the
-//     drafted aggregate.yaml and no warning naming its field;
+//     every row under the default layout fails, whatever the setting, each
+//     value written empty under it in the drafted aggregate.yaml and no warning
+//     naming its field;
 //   - in serverCredentials (plugins/langflow-importer/walk.go), replace
 //     `case mcpconfig.Address:` with `case mcpconfig.Address + 100:`: the row
 //     langflow-mcp-server.json under the default layout fails, both planted
@@ -992,9 +1022,10 @@ var (
 //   - in unmarkedOf (plugins/langflow-importer/walk.go), replace
 //     `if u, ok := unmarkedFields[typ][field]; ok {` with
 //     `if u, ok := unmarkedFields[typ][field]; ok && false {`: the rows
-//     langflow-mcp-headers.json, langflow-mcp-deactivated.json and
-//     langflow-unmarked-inputs.json under the default layout fail, every value
-//     planted in them but the Composio token in the drafted aggregate.yaml;
+//     langflow-mcp-headers.json, langflow-mcp-deactivated.json,
+//     langflow-unmarked-inputs.json and langflow-query-parameters.json under the
+//     default layout fail, every value planted in them but the Composio token in
+//     the drafted aggregate.yaml;
 //   - in unmarkedOf (plugins/langflow-importer/walk.go), replace
 //     `u, ok := unmarkedAnyType[field]` with `u, ok := unmarkedAnyType[field+"-"]`:
 //     the row langflow-unmarked-inputs.json fails, the Composio token in it;
@@ -1035,83 +1066,124 @@ var (
 func TestNoCredentialValueAnExportHoldsReachesTheDraft(t *testing.T) {
 	t.Parallel()
 	for _, src := range plantedSources(t) {
-		for _, layout := range []string{"platform", "nodes"} {
-			t.Run(src.name+", "+layout, func(t *testing.T) {
-				t.Parallel()
-				holds := func(b []byte) []string {
-					var found []string
-					for _, key := range src.keys {
-						if bytes.Contains(b, []byte(key)) {
-							found = append(found, key)
-						}
-					}
-					return found
-				}
-				if found := holds(src.body); len(found) != len(src.keys) {
-					t.Fatalf("the needle: the search finds %d of the %d values planted in the source, so it does not fire",
-						len(found), len(src.keys))
-				}
-
-				rw, _ := catalogFolderImportWorkspaceAttaching(t, map[string]any{"layout": layout})
-				path := importopstest.WriteSource(t, filepath.Join(t.TempDir(), src.name), string(src.body))
-				outputDir := filepath.Join(rw.Root(), "drafts")
-				res, err := Import(context.Background(), rw, Options{
-					SourcePath:    path,
-					SourceName:    src.name,
-					OutputDir:     outputDir,
-					Delivery:      authoredcontent.DeliveryFor(false),
-					ResolvePlugin: (&recordingCascade{}).resolve,
+		for _, setting := range []string{"true", "false", "absent"} {
+			for _, layout := range []string{"platform", "nodes"} {
+				t.Run(src.name+", "+setting+", "+layout, func(t *testing.T) {
+					t.Parallel()
+					plantedNoCredentialRow(t, src, setting, layout)
 				})
-				if err != nil {
-					t.Fatalf("the import was refused: %v", err)
-				}
-				if len(res.Written) == 0 {
-					t.Fatal("the import wrote nothing to search")
-				}
-				for _, rel := range res.Written {
-					content, err := os.ReadFile(filepath.Join(outputDir, filepath.FromSlash(rel)))
-					if err != nil {
-						t.Fatalf("read the written %s: %v", rel, err)
-					}
-					if found := holds(content); len(found) != 0 {
-						t.Errorf("the written %s holds the planted values %q", rel, found)
-					}
-				}
-				for _, part := range []struct {
-					what  string
-					value any
-				}{{"decisions", res.Decisions}, {"diagnostics", res.Diagnostics}} {
-					raw, _ := json.Marshal(part.value)
-					if found := holds(raw); len(found) != 0 {
-						t.Errorf("the import's %s hold the planted values %q", part.what, found)
-					}
-				}
-
-				if layout != "platform" {
-					return
-				}
-				var fields []string
-				for _, d := range res.Diagnostics {
-					if d.Code != "credential-emptied" {
-						continue
-					}
-					m := emptiedField.FindStringSubmatch(d.Message)
-					if m == nil {
-						m = emptiedWhole.FindStringSubmatch(d.Message)
-					}
-					if m == nil {
-						m = emptiedParts.FindStringSubmatch(d.Message)
-					}
-					if m == nil {
-						t.Errorf("the warning %q is not of the form that names a node and a field alone", d.Message)
-						continue
-					}
-					fields = append(fields, m[2]+" "+m[1])
-				}
-				if !slices.Equal(fields, src.fields) {
-					t.Errorf("the warnings name the emptied fields %q, want %q", fields, src.fields)
-				}
-			})
+			}
 		}
+	}
+}
+
+// plantedNoCredentialRow imports one planted source with the
+// empty_unmarked_credentials setting true, false or absent and the layout given,
+// writing the drafts, and holds them to the source's expectations: every value
+// written empty under that setting is in no file the import wrote, nor in the
+// decisions or the diagnostics; under the default layout, with the setting false
+// or absent, every value planted in an input carried as written is in the
+// drafted aggregate.yaml, as written; and one warning names each field written
+// empty by its node and field, carrying no value. The search finds every
+// planted value in the source, which is what says it fires.
+func plantedNoCredentialRow(t *testing.T, src plantedSource, setting, layout string) {
+	t.Helper()
+	settings := map[string]any{"layout": layout}
+	emptied, carried, wantFields := src.keys, []string(nil), src.fields
+	switch setting {
+	case "true":
+		settings["empty_unmarked_credentials"] = true
+		emptied = append(append([]string{}, src.keys...), src.gated...)
+	case "false":
+		settings["empty_unmarked_credentials"] = false
+	}
+	if setting != "true" {
+		carried = src.gated
+		if len(src.gated) > 0 {
+			wantFields = src.unset
+		}
+	}
+	holds := func(b []byte, keys []string) []string {
+		var found []string
+		for _, key := range keys {
+			if bytes.Contains(b, []byte(key)) {
+				found = append(found, key)
+			}
+		}
+		return found
+	}
+	planted := append(append([]string{}, src.keys...), src.gated...)
+	if found := holds(src.body, planted); len(found) != len(planted) {
+		t.Fatalf("the needle: the search finds %d of the %d values planted in the source, so it does not fire",
+			len(found), len(planted))
+	}
+
+	rw, _ := catalogFolderImportWorkspaceAttaching(t, settings)
+	path := importopstest.WriteSource(t, filepath.Join(t.TempDir(), src.name), string(src.body))
+	outputDir := filepath.Join(rw.Root(), "drafts")
+	res, err := Import(context.Background(), rw, Options{
+		SourcePath:    path,
+		SourceName:    src.name,
+		OutputDir:     outputDir,
+		Delivery:      authoredcontent.DeliveryFor(false),
+		ResolvePlugin: (&recordingCascade{}).resolve,
+	})
+	if err != nil {
+		t.Fatalf("the import was refused: %v", err)
+	}
+	if len(res.Written) == 0 {
+		t.Fatal("the import wrote nothing to search")
+	}
+	for _, rel := range res.Written {
+		content, err := os.ReadFile(filepath.Join(outputDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read the written %s: %v", rel, err)
+		}
+		if found := holds(content, emptied); len(found) != 0 {
+			t.Errorf("the written %s holds the planted values %q", rel, found)
+		}
+		if rel == "aggregate.yaml" && layout == "platform" {
+			if found := holds(content, carried); len(found) != len(carried) {
+				t.Errorf("the drafted aggregate.yaml carries %q of the values planted in inputs carried as written, want %q",
+					found, carried)
+			}
+		}
+	}
+	for _, part := range []struct {
+		what  string
+		value any
+	}{{"decisions", res.Decisions}, {"diagnostics", res.Diagnostics}} {
+		raw, _ := json.Marshal(part.value)
+		if found := holds(raw, emptied); len(found) != 0 {
+			t.Errorf("the import's %s hold the planted values %q", part.what, found)
+		}
+	}
+
+	if layout != "platform" {
+		return
+	}
+	if !slices.Contains(res.Written, "aggregate.yaml") {
+		t.Fatalf("the import wrote %q, no aggregate.yaml to carry the flow", res.Written)
+	}
+	var fields []string
+	for _, d := range res.Diagnostics {
+		if d.Code != "credential-emptied" {
+			continue
+		}
+		m := emptiedField.FindStringSubmatch(d.Message)
+		if m == nil {
+			m = emptiedWhole.FindStringSubmatch(d.Message)
+		}
+		if m == nil {
+			m = emptiedParts.FindStringSubmatch(d.Message)
+		}
+		if m == nil {
+			t.Errorf("the warning %q is not of the form that names a node and a field alone", d.Message)
+			continue
+		}
+		fields = append(fields, m[2]+" "+m[1])
+	}
+	if !slices.Equal(fields, wantFields) {
+		t.Errorf("the warnings name the emptied fields %q, want %q", fields, wantFields)
 	}
 }

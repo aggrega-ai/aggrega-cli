@@ -150,9 +150,12 @@ func chatflowID(tree json.RawMessage) string {
 // its mcpServerConfig input, wherever among the inputs it sits; and every input
 // Flowise marks as no credential that can carry one, as unmarkedInputs names
 // them, at the top of a node's inputs or inside a configuration an agentflow
-// keeps of the model or the tool it selects. Each is addressed from the root of
-// the export, and named by its node's id and the field it sits in.
-func credentialsOf(tree json.RawMessage) []importer.Credential {
+// keeps of the model or the tool it selects, where unmarked.applies says it is
+// written empty under emptyUnmarked, the empty_unmarked_credentials setting; an
+// input it does not apply to is walked as any other input is. Each is
+// addressed from the root of the export, and named by its node's id and the
+// field it sits in.
+func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credential {
 	var top struct {
 		Nodes []json.RawMessage `json:"nodes"`
 	}
@@ -192,12 +195,12 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 				out = append(out, serverConfigCredentials(node.ID, in.Value, []string{in.Key}, tokens)...)
 				continue
 			default:
-				if u, ok := unmarkedOf(typ, in.Key); ok {
+				if u, ok := unmarkedOf(typ, in.Key); ok && u.applies(emptyUnmarked) {
 					out = append(out, u.locate(node.ID, in.Value, []string{in.Key}, tokens)...)
 					continue
 				}
 			}
-			out = append(out, nestedCredentials(node.ID, typ, in.Value, []string{in.Key}, tokens)...)
+			out = append(out, nestedCredentials(node.ID, typ, in.Value, []string{in.Key}, tokens, emptyUnmarked)...)
 		}
 	}
 	return out
@@ -210,8 +213,11 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 // node whose inputs an object holds: the node's own, or, inside a configuration
 // an agentflow keeps of the model or the tool it selects, the type it selects
 // (selectorKeys). field is the input's name and the members on the way, and
-// tokens the reference tokens addressing the input from the root of the export.
-func nestedCredentials(nodeID, typ string, raw json.RawMessage, field, tokens []string) []importer.Credential {
+// tokens the reference tokens addressing the input from the root of the export;
+// emptyUnmarked is the empty_unmarked_credentials setting, as credentialsOf
+// reads it.
+func nestedCredentials(nodeID, typ string, raw json.RawMessage, field, tokens []string,
+	emptyUnmarked bool) []importer.Credential {
 	var out []importer.Credential
 	if entries := importer.ObjectEntries(raw); entries != nil {
 		for _, e := range entries {
@@ -223,7 +229,7 @@ func nestedCredentials(nodeID, typ string, raw json.RawMessage, field, tokens []
 		for _, e := range entries {
 			f := append(append([]string{}, field...), e.Key)
 			t := append(append([]string{}, tokens...), e.Key)
-			if u, ok := unmarkedOf(typ, e.Key); ok {
+			if u, ok := unmarkedOf(typ, e.Key); ok && u.applies(emptyUnmarked) {
 				out = append(out, u.locate(nodeID, e.Value, f, t)...)
 				continue
 			}
@@ -233,7 +239,7 @@ func nestedCredentials(nodeID, typ string, raw json.RawMessage, field, tokens []
 			case serverConfigInput:
 				out = append(out, serverConfigCredentials(nodeID, e.Value, f, t)...)
 			default:
-				out = append(out, nestedCredentials(nodeID, typ, e.Value, f, t)...)
+				out = append(out, nestedCredentials(nodeID, typ, e.Value, f, t, emptyUnmarked)...)
 			}
 		}
 		return out
@@ -245,7 +251,7 @@ func nestedCredentials(nodeID, typ string, raw json.RawMessage, field, tokens []
 	for j, item := range items {
 		index := strconv.Itoa(j)
 		out = append(out, nestedCredentials(nodeID, typ, item, append(append([]string{}, field...), index),
-			append(append([]string{}, tokens...), index))...)
+			append(append([]string{}, tokens...), index), emptyUnmarked)...)
 	}
 	return out
 }
@@ -278,17 +284,30 @@ const (
 )
 
 // unmarked is one input Flowise marks as no credential that can carry one: how
-// its value is written empty, and why; and, for headerValues, what each of its
-// members is — a header or a query parameter.
+// its value is written empty, and why; for headerValues, what each of its
+// members is — a header or a query parameter; and whether it is written empty
+// whatever the empty_unmarked_credentials setting says, as what a node the
+// platform's connection reaches would send in place of what that connection
+// supplies is.
 type unmarked struct {
 	scrub  scrub
 	why    string
 	member string
+	always bool
+}
+
+// applies reports whether the input is written empty where the
+// empty_unmarked_credentials setting is emptyUnmarked: always where it is
+// always, and otherwise only where the setting is true.
+func (u unmarked) applies(emptyUnmarked bool) bool {
+	return u.always || emptyUnmarked
 }
 
 // unmarkedInputs are, by node type and then by input, the inputs Flowise marks
 // as no credential — of neither type password nor type credential — that can
-// carry one:
+// carry one. The default headers of a node the platform's model connection
+// reaches are written empty always; every other one only where the
+// empty_unmarked_credentials setting is true:
 //
 //   - the headers an HTTP node, an API chain, an API loader, an OpenAPI toolkit,
 //     a SearXNG tool and the Requests tools send, and the default headers
@@ -320,8 +339,8 @@ var unmarkedInputs = map[string]map[string]unmarked{
 	"requestsPost":           {"requestsPostHeaders": requestHeaders},
 	"requestsPut":            {"requestsPutHeaders": requestHeaders},
 	"requestsDelete":         {"requestsDeleteHeaders": requestHeaders},
-	"chatOpenAI":             {"baseOptions": {scrub: wholeKept, why: defaultHeadersDetail}},
-	"openAIEmbeddings":       {"baseOptions": {scrub: wholeKept, why: defaultHeadersDetail}},
+	"chatOpenAI":             {"baseOptions": {scrub: wholeKept, why: defaultHeadersDetail, always: true}},
+	"openAIEmbeddings":       {"baseOptions": {scrub: wholeKept, why: defaultHeadersDetail, always: true}},
 	"azureChatOpenAI":        {"baseOptions": requestHeaders},
 	"azureOpenAIEmbeddings":  {"baseOptions": requestHeaders},
 	"chatCerebras":           {"baseOptions": requestHeaders},

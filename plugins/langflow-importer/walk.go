@@ -119,11 +119,14 @@ func flowID(tree json.RawMessage) string {
 // its own instead, whose values are located as fieldServerCredentials says.
 // Every other input Langflow marks as no credential and that can carry one is
 // named in unmarkedFields, by node type and field, or in unmarkedAnyType, by
-// field, with how its value is located. Each is addressed from the root of the
+// field, with how its value is located; emptyUnmarked, the
+// empty_unmarked_credentials setting, says whether such an input belonging to
+// no part of the flow is located, as unmarked.applies says, one it does not
+// apply to being carried as written. Each is addressed from the root of the
 // export, and named by its node's id and the field it sits in. A field holding
 // no value member is not located, since there is nothing in it to write empty;
 // nor is a field marked password, which is located as one.
-func credentialsOf(tree json.RawMessage) []importer.Credential {
+func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credential {
 	var out []importer.Credential
 	for _, node := range nodesOf(tree).list {
 		at := func(tokens ...string) string {
@@ -148,7 +151,7 @@ func credentialsOf(tree json.RawMessage) []importer.Credential {
 			if marked {
 				continue
 			}
-			if u, ok := unmarkedOf(node.typ, e.Key); ok {
+			if u, ok := unmarkedOf(node.typ, e.Key); ok && u.applies(emptyUnmarked) {
 				out = append(out, u.locate(node.id, e.Key, e.Value, at)...)
 			}
 		}
@@ -261,15 +264,30 @@ const (
 
 // unmarked is one input Langflow marks as no credential that can carry one: how
 // its value is written empty, why, and, for wholeKept, what of an object or a
-// list is.
+// list is; and whether it belongs to a part of the flow — an MCP server, or the
+// model connection whose key and address a node's own default headers and query
+// would override — which is written empty whatever the
+// empty_unmarked_credentials setting says.
 type unmarked struct {
-	scrub scrub
-	why   string
-	parts string
+	scrub  scrub
+	why    string
+	parts  string
+	always bool
+}
+
+// applies reports whether the input is written empty where the
+// empty_unmarked_credentials setting is emptyUnmarked: always where it belongs
+// to a part of the flow, and otherwise only where the setting is true.
+func (u unmarked) applies(emptyUnmarked bool) bool {
+	return u.always || emptyUnmarked
 }
 
 // unmarkedFields are, by the type Langflow gives a node and then by field, the
-// inputs Langflow marks as no credential that can carry one:
+// inputs Langflow marks as no credential that can carry one. Those belonging to
+// a part of the flow — an MCP Tools node's own headers, an OpenAI Embeddings
+// node's default headers and query, and the deprecated MCP components' fields —
+// are written empty always; every other one only where the
+// empty_unmarked_credentials setting is true:
 //
 //   - the request headers of an API Request, a URL, a Docling Remote, a Cloudflare
 //     Workers AI Embeddings and a Confluent Kafka Producer node: each value, its
@@ -296,8 +314,8 @@ type unmarked struct {
 //     line, its arguments included, in command. Neither names an MCP server, so
 //     no tools connection reaches it.
 var unmarkedFields = map[string]map[string]unmarked{
-	mcpToolsType:                    {"headers": {scrub: wholeKept, why: mcpHeadersDetail, parts: headerNamesAndValues}},
-	"OpenAIEmbeddings":              {"default_headers": {scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues}, "default_query": {scrub: wholeKept, why: embeddingQueryDetail, parts: queryNamesAndValues}},
+	mcpToolsType:                    {"headers": {scrub: wholeKept, why: mcpHeadersDetail, parts: headerNamesAndValues, always: true}},
+	"OpenAIEmbeddings":              {"default_headers": {scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues, always: true}, "default_query": {scrub: wholeKept, why: embeddingQueryDetail, parts: queryNamesAndValues, always: true}},
 	"APIRequest":                    {"headers": {scrub: headerValues, why: headerValueDetail}, "curl_input": {scrub: wholeText, why: requestTextDetail}, "query_params": queryParameters},
 	"GoogleSerperAPI":               {"query_params": queryParameters},
 	"SerpAPI":                       {"search_params": queryParameters},
@@ -311,8 +329,8 @@ var unmarkedFields = map[string]map[string]unmarked{
 	"Webhook":                       {"curl": {scrub: wholeText, why: requestTextDetail}},
 	"OlivyaComponent":               {"api_key": {scrub: wholeText, why: apiKeyDetail}},
 	"mem0_chat_memory":              {"mem0_config": {scrub: wholeKept, why: memoryConfigDetail, parts: "configuration members"}},
-	"MCPSse":                        {"url": {scrub: wholeText, why: addressDetail}},
-	"MCPStdio":                      {"command": {scrub: wholeText, why: commandLineDetail}},
+	"MCPSse":                        {"url": {scrub: wholeText, why: addressDetail, always: true}},
+	"MCPStdio":                      {"command": {scrub: wholeText, why: commandLineDetail, always: true}},
 }
 
 // queryParameters is how the query parameters a request is sent with are
@@ -321,7 +339,8 @@ var queryParameters = unmarked{scrub: headerValues, why: queryParameterDetail}
 
 // unmarkedAnyType are, by field, the inputs Langflow marks as no credential that
 // can carry one on whichever node declares them: the verification token every
-// Composio component inherits from the one base that declares it.
+// Composio component inherits from the one base that declares it, written empty
+// only where the empty_unmarked_credentials setting is true.
 var unmarkedAnyType = map[string]unmarked{
 	"verification_token": {scrub: wholeText, why: verificationTokenDetail},
 }
