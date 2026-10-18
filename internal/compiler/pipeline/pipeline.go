@@ -962,8 +962,8 @@ func ResolveAndValidate(
 			// catalog reference momentarily absent from the view (a drifted cache
 			// slot skipped on read) is a drift signal, not an authoring fault.
 			// Drop it from the halt set so the IR still builds with the entity
-			// skipped; the condition surfaces as a diagnostic. Every other guard
-			// violation still halts.
+			// skipped; the condition surfaces as a diagnostic. Every other
+			// refusal still halts.
 			guardErrs = dropCatalogViewInconsistencies(guardErrs)
 		}
 		if len(guardErrs) > 0 {
@@ -972,12 +972,11 @@ func ResolveAndValidate(
 			}
 			// Carry the per-violation slice on the returned error so a caller can
 			// errors.Is the specific guard sentinel at the pipeline boundary
-			// (parity with the analyzer path, which joins). The summary text is
-			// unchanged: the rendered summary reads "resolution: N guard
-			// violation(s)".
+			// (parity with the analyzer path, which joins). The rendered summary
+			// reads "resolution: N refusal(s)".
 			return &resolver.MultiResolverError{
 				Entity:     "resolution",
-				Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
+				Summary:    fmt.Sprintf("%d refusal(s)", len(guardErrs)),
 				Violations: guardErrs,
 			}
 		}

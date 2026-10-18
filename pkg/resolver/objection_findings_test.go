@@ -84,7 +84,7 @@ func TestAConvertedFindingStaysMatchableByItsSentinel(t *testing.T) {
 	// returns, which carries the findings rather than re-wrapping them.
 	aggregated := &MultiResolverError{
 		Entity:     "resolution",
-		Summary:    "guard violations",
+		Summary:    "refusals",
 		Violations: findings,
 	}
 	if !errors.Is(aggregated, sentinel) {

@@ -262,8 +262,8 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 		if !errors.Is(err, resolver.ErrSchemaConformance()) {
 			t.Fatalf("want ErrSchemaConformance for an out-of-range per-edge infra; got %v", err)
 		}
-		if !strings.Contains(err.Error(), "1 guard violation") {
-			t.Fatalf("want exactly one Step-1 guard violation; got %v", err)
+		if !strings.Contains(err.Error(), "1 refusal(s)") {
+			t.Fatalf("want exactly one Step-1 refusal; got %v", err)
 		}
 	})
 

@@ -164,13 +164,13 @@ func TestSubAggregateConformanceGroupIsARollUp(t *testing.T) {
 	t.Parallel()
 	rollup := &resolver.MultiResolverError{
 		Entity:     "sub-aggregate conformance",
-		Summary:    "2 sub-aggregate guard violation(s)",
+		Summary:    "2 sub-aggregate refusal(s)",
 		Violations: nil,
 	}
 	if rollup.Sentinel != nil {
 		t.Fatal("fixture no longer models a roll-up")
 	}
-	if got, want := rollup.Error(), "sub-aggregate conformance: 2 sub-aggregate guard violation(s)"; got != want {
+	if got, want := rollup.Error(), "sub-aggregate conformance: 2 sub-aggregate refusal(s)"; got != want {
 		t.Errorf("a roll-up must open with its subject\n  got : %q\n  want: %q", got, want)
 	}
 }

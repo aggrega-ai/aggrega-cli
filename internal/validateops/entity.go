@@ -1023,7 +1023,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // runRenderTiers drives the synthesized harness through the real pipeline: Tier
 // 2 runs resolution, guards, and IR construction with render skipped; Tier 3
 // runs the real render and records the emitted artifacts. Pipeline diagnostics
-// (guard violations, render warnings) surface on the process diagnostic stream
+// (refusals, render warnings) surface on the process diagnostic stream
 // through the pipeline itself; the accumulated result carries only this scope's
 // deterministic report.
 //

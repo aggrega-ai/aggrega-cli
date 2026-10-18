@@ -12,8 +12,8 @@ import (
 
 // TestDropCatalogViewInconsistencies pins the halt-set filter that backs
 // Inputs.TolerateCatalogViewInconsistency: a resilient-inspection caller drops
-// the resolved-set / view divergence while every other guard violation still
-// halts. Order is preserved so the surviving halt renders deterministically.
+// the resolved-set / view divergence while every other refusal still halts.
+// Order is preserved so the surviving halt renders deterministically.
 func TestDropCatalogViewInconsistencies(t *testing.T) {
 	viewInconsistency := &resolver.ResolverError{Entity: "A", Field: "f", Message: "absent", Err: resolver.ErrGuardEntityViewInconsistency()}
 	realViolation := &resolver.ResolverError{Entity: "B", Field: "g", Message: "bad", Err: resolver.ErrSchemaConformance()}

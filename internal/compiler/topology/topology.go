@@ -807,7 +807,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			// halt path.
 			return result, &resolver.MultiResolverError{
 				Entity:     "sub-aggregate conformance",
-				Summary:    fmt.Sprintf("%d sub-aggregate guard violation(s)", len(subErrs)),
+				Summary:    fmt.Sprintf("%d sub-aggregate refusal(s)", len(subErrs)),
 				Violations: subErrs,
 			}
 		}
