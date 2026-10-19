@@ -220,6 +220,11 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // matches any of them. A client file whose name names no client, one in the other
 // client's shape, and one holding a comment, which does not parse as JSON, are
 // refused, the last imported by naming its format.
+//
+// A Compose file is recognised as compose by its name — any of the names Compose
+// reads a Compose file or its override file under by default — and an object at
+// services, read as YAML; the same file under another name, and a file of a
+// Compose name holding no services object, are refused.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
@@ -233,6 +238,9 @@ func TestSelectFormat(t *testing.T) {
 	commentedServers := []byte("{\n  // the workspace's servers\n  \"servers\": {\"docs\": {\"type\": \"http\", \"url\": \"https://docs.example.com/mcp\"}}\n}\n")
 	serverDescription := []byte(`{"$schema":"https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",` +
 		`"name":"io.github.example/weather","description":"Weather","version":"1.2.0"}`)
+	// A Compose file, and a YAML file of a Compose name that holds no services.
+	composeFile := []byte("services:\n  web:\n    image: nginx:1.27\n")
+	noServices := []byte("volumes:\n  data: {}\n")
 
 	cases := []struct {
 		name     string
@@ -275,6 +283,14 @@ func TestSelectFormat(t *testing.T) {
 			content: commentedServers, wantErr: true},
 		{name: "explicit mcp wins over the commented file", explicit: "mcp", source: ".vscode/mcp.json",
 			content: commentedServers, want: "mcp"},
+		{name: "a compose.yaml", source: "compose.yaml", content: composeFile, want: "compose"},
+		{name: "a docker-compose.yml named with its directory", source: "app/docker-compose.yml", content: composeFile,
+			want: "compose"},
+		{name: "an override file", source: "compose.override.yaml", content: composeFile, want: "compose"},
+		{name: "a Compose file under another name is refused", source: "stack.yaml", content: composeFile, wantErr: true},
+		{name: "a compose.yaml holding no services is refused", source: "compose.yaml", content: noServices, wantErr: true},
+		{name: "explicit compose wins over the name", explicit: "compose", source: "stack.yaml", content: composeFile,
+			want: "compose"},
 	}
 
 	for _, tc := range cases {
@@ -291,7 +307,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n", "mcp"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}

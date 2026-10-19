@@ -3,8 +3,8 @@
 
 // Package importopstest lays down, for a test, a catalog folder from which an
 // import runs end to end: the reference importer of each format the compiler's
-// core importers serve — the agent-flow formats and MCP's files — and a
-// JSON parser, each as a real Plugin entity with its built module beside it — or
+// core importers serve — the agent-flow formats, MCP's files and Compose's — and
+// a JSON parser, each as a real Plugin entity with its built module beside it — or
 // importers generated from those modules under names and versions of the
 // caller's choosing — and the workspace configuration attaching them.
 //
@@ -84,6 +84,7 @@ var referenceImporters = []referenceImporter{
 	{format: "flowise", fixture: "flowise-importer.wasm", name: "import-flowise"},
 	{format: "n8n", fixture: "n8n-importer.wasm", name: "import-n8n"},
 	{format: "mcp", fixture: "mcp-importer.wasm", name: "import-mcp"},
+	{format: "compose", fixture: "compose-importer.wasm", name: "import-compose"},
 }
 
 // referenceImporterFor returns the reference importer serving format, failing
@@ -148,7 +149,7 @@ type Importer struct {
 	// fixture's own version.
 	Version string
 	// Format is the format whose reference importer the entity is generated from,
-	// written as the bare format (langflow, flowise, n8n, mcp) — and so the one format the
+	// written as the bare format (langflow, flowise, n8n, mcp, compose) — and so the one format the
 	// entity advertises, which is what the catalog selects an importer by.
 	Format string
 }

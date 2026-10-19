@@ -1,0 +1,12 @@
+# An authored Compose project whose override file changes the web service's
+# image and environment and adds a port and a worker service.
+services:
+  web:
+    image: nginx:1.27
+    ports:
+      - "8080:80"
+    environment:
+      MODE: base
+      LOG_LEVEL: info
+  db:
+    image: postgres:16

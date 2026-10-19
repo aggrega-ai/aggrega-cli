@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -543,24 +544,8 @@ func isReference(text string) bool {
 	return !strings.ContainsAny(inner, "${}\n\r") && !strings.Contains(inner, ":-")
 }
 
-// scalarText returns the text a scalar JSON value is written as: a string's
-// text, and a number's or a boolean's as written. An object, a list and null
-// have none.
-func scalarText(raw json.RawMessage) (string, bool) {
-	var text string
-	if json.Unmarshal(raw, &text) == nil {
-		return text, true
-	}
-	var v any
-	if json.Unmarshal(raw, &v) != nil {
-		return "", false
-	}
-	switch v.(type) {
-	case float64, bool:
-		return strings.TrimSpace(string(raw)), true
-	}
-	return "", false
-}
+// scalarText is the drafts' shared reading of a scalar of the parsed tree.
+var scalarText = draftyaml.ScalarText
 
 // members returns the members of a JSON object in the order the text writes
 // them, each name once: a name written more than once keeps the place it was

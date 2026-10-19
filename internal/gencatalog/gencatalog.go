@@ -154,7 +154,9 @@ func writeEntities(docs []authoredcontent.Document, out io.Writer) error {
 // composeFromEmbedded composes an entity for every embedded guest, matching
 // each guest to its overlay by the guest's bare name — the final segment of the
 // embed-tier identity coordinate <pluginType>/<name>, which is the identity an
-// overlay authors as metadata.name. The coordinate the guest's own pluginType
+// overlay authors as metadata.name — and, where overlays of several sockets
+// declare that name, by the socket directory the overlay sits in
+// (overlayFor). The coordinate the guest's own pluginType
 // derives is verified against the embed-tier identity, so an overlay filed under
 // the wrong socket halts rather than generating under a mismatched identity. A
 // guest with no matching overlay halts loudly: the overlay set is the authored
@@ -188,7 +190,7 @@ func composeFromEmbedded(ctx context.Context, opts Options) ([]authoredcontent.D
 			return nil, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 		}
 		bareName := coordinateLeaf(uri)
-		overlay, ok := overlays[bareName]
+		overlay, ok := overlayFor(overlays, uri)
 		if !ok {
 			return nil, fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has metadata.name %q for embedded guest %q; author the overlay before generating", opts.OverlayPath, bareName, uri)
 		}
@@ -355,10 +357,39 @@ func genCatalogDiagName(ref string) string {
 	return s
 }
 
+// placedOverlay is one overlay the walk read: the socket directory it sits in
+// beneath the overlay directory — the first segment of its path there, empty for
+// an overlay at the top — and the overlay itself.
+type placedOverlay struct {
+	socket  string
+	overlay types.Plugin
+}
+
+// overlayFor returns the overlay of the embedded guest at the coordinate uri,
+// <pluginType>/<name>, among the overlays declaring its bare name: the one there
+// is, or, where overlays of several sockets declare the name, the one sitting in
+// the socket directory uri names — a bare plugin name is unique only within its
+// own socket. It reports false where none does.
+func overlayFor(overlays map[string][]placedOverlay, uri string) (types.Plugin, bool) {
+	candidates := overlays[coordinateLeaf(uri)]
+	if len(candidates) == 1 {
+		return candidates[0].overlay, true
+	}
+	socket, _, _ := strings.Cut(uri, "/")
+	for _, c := range candidates {
+		if c.socket == socket {
+			return c.overlay, true
+		}
+	}
+	return types.Plugin{}, false
+}
+
 // loadOverlaysByPlugin reads every *.yaml overlay under dir and indexes them by
 // their metadata.name identity — the join key the embedded path matches a guest
-// against. Two overlays declaring the same identity halt loudly: the identity
-// must be unique, and silently keeping one would drop the other.
+// against — each with the socket directory it sits in, which tells apart overlays
+// of one name in different sockets. Two overlays declaring the same identity in
+// one socket directory halt loudly: the identity must be unique within a socket,
+// and silently keeping one would drop the other.
 //
 // dir is the overlay directory the caller named, and a directory named through a
 // link is the directory it leads to, so it is walked there, each overlay still
@@ -374,7 +405,7 @@ func genCatalogDiagName(ref string) string {
 // asking for an overlay that was authored. One leading elsewhere inside root is met
 // as any entry is: a link to an overlay is read where it leads, and a link to a
 // directory is not entered.
-func loadOverlaysByPlugin(root, dir string) (map[string]types.Plugin, error) {
+func loadOverlaysByPlugin(root, dir string) (map[string][]placedOverlay, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("aggrega plugin gen-catalog: overlay directory %s: %w", dir, err)
@@ -411,7 +442,7 @@ func loadOverlaysByPlugin(root, dir string) (map[string]types.Plugin, error) {
 	// Sort so a duplicate-identity halt names paths deterministically.
 	sort.Strings(paths)
 
-	out := make(map[string]types.Plugin, len(paths))
+	out := make(map[string][]placedOverlay, len(paths))
 	for _, path := range paths {
 		overlay, err := loadOverlayFile(path)
 		if err != nil {
@@ -421,10 +452,18 @@ func loadOverlaysByPlugin(root, dir string) (map[string]types.Plugin, error) {
 		if key == "" {
 			return nil, fmt.Errorf("aggrega plugin gen-catalog: overlay %s has no metadata.name identity", path)
 		}
-		if _, dup := out[key]; dup {
-			return nil, fmt.Errorf("aggrega plugin gen-catalog: two overlays declare metadata.name %q; identity must be unique", key)
+		socket := ""
+		if rel, err := filepath.Rel(dir, path); err == nil {
+			if first, _, nested := strings.Cut(filepath.ToSlash(rel), "/"); nested {
+				socket = first
+			}
 		}
-		out[key] = overlay
+		for _, prior := range out[key] {
+			if prior.socket == socket {
+				return nil, fmt.Errorf("aggrega plugin gen-catalog: two overlays declare metadata.name %q; identity must be unique", key)
+			}
+		}
+		out[key] = append(out[key], placedOverlay{socket: socket, overlay: overlay})
 	}
 	return out, nil
 }

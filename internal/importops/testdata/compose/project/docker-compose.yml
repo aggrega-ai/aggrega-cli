@@ -1,0 +1,5 @@
+# A second Compose file in the project's directory, which Compose does not read
+# since compose.yaml precedes it.
+services:
+  ignored:
+    image: busybox:1.36

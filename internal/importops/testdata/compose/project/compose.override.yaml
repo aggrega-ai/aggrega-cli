@@ -1,0 +1,13 @@
+services:
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+      - "8443:443"
+    environment:
+      MODE: override
+      DEBUG: "1"
+  worker:
+    image: ghcr.io/example/worker:2.0
+    depends_on:
+      - db

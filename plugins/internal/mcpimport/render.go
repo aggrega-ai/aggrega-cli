@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -163,59 +163,14 @@ func writeServer(b *strings.Builder, s server) {
 	}
 }
 
-// yamlString writes s as a double-quoted YAML scalar reading back as exactly s:
-// a double quote and a backslash escaped, every printable ASCII character as it
-// is, and every other character as its \u or \U escape, so no character a YAML
-// reader could take for a line break, and no control character, is written
-// raw. A byte that is not part of a UTF-8 sequence is written as U+FFFD.
-func yamlString(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch {
-		case r == '"':
-			b.WriteString(`\"`)
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r >= 0x20 && r < 0x7f:
-			b.WriteRune(r)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04X`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08X`, r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
-
-// commentText writes text read from a source into a comment: as it is where it
-// holds only letters, digits and the punctuation a name or a variable reference
-// is written with, and otherwise quoted as yamlString writes it, so nothing a
-// source holds can end the comment's line.
-func commentText(text string) string {
-	if text == "" {
-		return `""`
-	}
-	for _, r := range text {
-		if r >= utf8.RuneSelf || !(r == '-' || r == '_' || r == '.' || r == '/' || r == ':' || r == '@' || r == '$' ||
-			r == '{' || r == '}' || r == '#' || r == '+' || r == '=' || r == ' ' ||
-			(r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
-			return yamlString(text)
-		}
-	}
-	return text
-}
-
-// commentList writes names into a comment, each through commentText, joined by
-// commas.
-func commentList(names []string) string {
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		out = append(out, commentText(n))
-	}
-	return strings.Join(out, ", ")
-}
+// Every value read from a source is written through the drafts' shared writers:
+// a scalar reading back as exactly the source's text, and text inside a comment
+// that nothing a source holds can end.
+var (
+	yamlString  = draftyaml.String
+	commentText = draftyaml.Comment
+	commentList = draftyaml.CommentList
+)
 
 // jsonString writes s as a JSON string.
 func jsonString(s string) string {
