@@ -51,7 +51,8 @@ import (
 // capability, such as compose or helm, the import drafts a Manifest for beside
 // the importer's drafts and points the drafted Release at. It is handed to the
 // import as sent, so the Manifest is the one every surface drafts for the same
-// source; absent drafts none, and a capability no Recipe in the workspace's
+// source; absent drafts none — or, under sync, drafts for the target the record
+// of the earlier import names — and a capability no Recipe in the workspace's
 // catalog binds to is refused before the importer runs, in the condition's own
 // words, which name no flag.
 //
@@ -121,8 +122,8 @@ type importDiagnostic struct {
 
 // importDrift is one part a sync brought up to date with the source, or under
 // dryRun would: how it drifted, the drafted file it is in, relative to the output
-// directory, and the keys leading to it in a drafted Aggregate, empty where the
-// part is the whole file.
+// directory, and the keys leading to it in a drafted Aggregate or Release, empty
+// where the part is the whole file.
 //
 // The keys are a list rather than one joined string, so a key holding a full
 // stop is read back as the one key it is.
@@ -321,6 +322,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
+	// projection-omits internal/importops.Result.Removed: every file a sync deleted
+	// reaches this answer already, as its drift entry — change removed, the file,
+	// an empty key — in the order the files were deleted, because the operation
+	// names each removal in its drift as it plans it; under dryRun the same entry
+	// names the file a write would delete. A second list would be a second home for
+	// that one fact.
 	return s.writeResult(ctx, req.ID, importResult{
 		Format:      res.Format,
 		OutputDir:   res.OutputDir,

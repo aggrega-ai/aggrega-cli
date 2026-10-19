@@ -28,11 +28,11 @@ const (
 )
 
 // Drift is one part a sync brings up to date with the source: a drafted file,
-// or, inside a drafted Aggregate, one of its entries.
+// or, inside a drafted Aggregate or Release, one of its entries.
 //
 // Change is [DriftAdded], [DriftRemoved] or [DriftChanged]. File is the drafted
 // path, relative to the directory the drafted paths are relative to. Key is the
-// keys leading to the entry from the top of the Aggregate, and is empty where the
+// keys leading to the entry from the top of the document, and is empty where the
 // part is the whole file.
 type Drift struct {
 	Change string
@@ -197,19 +197,21 @@ func readRecord(root, outputDir string) (*importRecord, string, error) {
 }
 
 // syncImport brings the drafts beneath outputDir up to date with drafted, the
-// fresh draft, as [Import] does under Options.Sync, and fills res with what it
-// writes, what it removes and every part that drifted.
+// fresh draft composed for target, as [Import] does under Options.Sync, and fills
+// res with what it writes, what it removes and every part that drifted.
+//
+// rec and onDisk are the record beside the drafts and its bytes as [readRecord]
+// read them — rec nil where there is none — read by [Import] before the draft was
+// composed, because a sync given no target takes the one the record names. The
+// record the sync writes names target, the one the draft was composed for.
 //
 // Nothing is written or removed until every part is judged, and a sync with any
 // conflict writes nothing; a sync whose importer reported a halt writes nothing
 // either, because a draft the importer could not finish would read as the
 // source having dropped the parts it did not reach.
-func syncImport(workspaceRoot, outputDir string, opts Options, res Result, drafted []draftedFile) (Result, error) {
+func syncImport(workspaceRoot, outputDir, target string, opts Options, res Result, drafted []draftedFile,
+	rec *importRecord, onDisk string) (Result, error) {
 	root := writescope.RootFor(workspaceRoot, outputDir)
-	rec, onDisk, err := readRecord(root, outputDir)
-	if err != nil {
-		return Result{}, err
-	}
 	for _, f := range drafted {
 		place, err := draftPlace(outputDir, f.path)
 		if err != nil {
@@ -235,7 +237,7 @@ func syncImport(workspaceRoot, outputDir string, opts Options, res Result, draft
 	}
 	files := plan.writes
 	if rec != nil || len(drafted) > 0 {
-		if record := recordScaffold(drafted); record.Content != onDisk {
+		if record := recordScaffold(target, drafted); record.Content != onDisk {
 			files = append(files, record)
 		}
 	}
@@ -435,7 +437,8 @@ func sameEntry(a, b recordFile) bool {
 
 // fileUnedited reports whether content is exactly what the import last wrote,
 // as the record entry e describes it: the same bytes for a file owned whole; for
-// an Aggregate, the same entries with the same text, and no line no entry owns.
+// a file owned entry by entry, the same entries with the same text, and no line
+// no entry owns.
 func fileUnedited(e recordFile, content string) bool {
 	if e.Digest != "" {
 		return digestOf(content) == e.Digest
@@ -470,7 +473,7 @@ type lineEdit struct {
 	seq      int
 }
 
-// partsSync is the state of one drafted Aggregate's sync.
+// partsSync is the state of the sync of one drafted file owned entry by entry.
 type partsSync struct {
 	file      string
 	fresh     *yamlDoc
@@ -483,9 +486,9 @@ type partsSync struct {
 	conflicts []SyncConflict
 }
 
-// syncParts brings the drafted Aggregate on disk up to date with f, entry by
-// entry, as e records the import last wrote it, and returns the content it
-// would write, the parts that drifted and the parts that conflict.
+// syncParts brings the drafted Aggregate or Release on disk up to date with f,
+// entry by entry, as e records the import last wrote it, and returns the content
+// it would write, the parts that drifted and the parts that conflict.
 func syncParts(f draftedFile, e recordFile, disk string) (string, []Drift, []SyncConflict, error) {
 	d, err := indexYAML(disk)
 	if err != nil {

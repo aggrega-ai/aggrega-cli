@@ -128,7 +128,8 @@ func (e *ExistingAggregateError) Error() string {
 // exactly the importer's drafts. A Target no Recipe of that catalog binds to is
 // refused before the importer runs ([ErrImportTargetUnbound]). Every surface
 // hands its target here as it received it, so the Manifest is composed in one
-// place for all of them — see [Import].
+// place for all of them — see [Import]. Under Sync an empty Target is the target
+// the record of the import being brought up to date names, where it names one.
 //
 // There is no field for the importer's with-config. What an importer is handed
 // is read by [Import] from the workspace's own plugins.importer attachments,
@@ -310,12 +311,13 @@ func (r Result) Halted() bool {
 // the catalog is loaded, before the source is recognised or the importer runs.
 //
 // Every import that drafts anything writes, beside its drafts, the record of
-// what it wrote ([RecordFileName]): each drafted file, and for a drafted
-// Aggregate each of its mapping entries at every depth, with a digest of the text
-// written there. An entry's text is its key line, its value's lines for an entry
-// whose value is not a mapping of entries, and the comment lines written directly
-// above its key at the key's own column. A reporting delivery hands the record
-// back among the files.
+// what it wrote ([RecordFileName]): the target it was given, where it was given
+// one, and each drafted file, and for a drafted Aggregate or Release each of its
+// mapping entries at every depth, with a digest of the text written there; any
+// other drafted file is recorded whole, under one digest. An entry's text is its
+// key line, its value's lines for an entry whose value is not a mapping of
+// entries, and the comment lines written directly above its key at the key's own
+// column. A reporting delivery hands the record back among the files.
 //
 // Without Options.Sync, an Aggregate already at a drafted path refuses the import
 // whatever the delivery, before anything is written or reported, so a dry run
@@ -323,9 +325,12 @@ func (r Result) Halted() bool {
 // written over, and a file an earlier import drafted that this one does not draft
 // is left where it is.
 //
-// With Options.Sync, the import judges every part three ways — what the record
-// says the import last wrote there, what is on disk, and what the source drafts
-// now — and changes only what the import owns. A part the source left as the
+// With Options.Sync, the record is read before the target is settled: a sync
+// given no target drafts for the target the record names, and one given a target
+// drafts for it and records it in place of the one recorded. The import then
+// judges every part three ways — what the record says the import last wrote
+// there, what is on disk, and what the source drafts now — and changes only what
+// the import owns. A part the source left as the
 // import last wrote it stays exactly as it is on disk, whether or not an author
 // edited it. A part the source changed is written anew where it is on disk as
 // the import last wrote it; a part the source dropped is removed where it is as
@@ -363,10 +368,31 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
+	outputDir, err := outputDirFor(rw, opts.OutputDir)
+	if err != nil {
+		return Result{}, err
+	}
+
+	// A sync reads the record of the import it brings up to date before the target
+	// is settled, because a sync given no target takes the one that import was
+	// given: the drafts it judges were composed for that target, and composing them
+	// for none would read as the source having dropped the drafted Manifest.
+	target := opts.Target
+	var rec *importRecord
+	var recordOnDisk string
+	if opts.Sync {
+		if rec, recordOnDisk, err = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir); err != nil {
+			return Result{}, err
+		}
+		if target == "" && rec != nil {
+			target = rec.Target
+		}
+	}
+
 	// A target no Recipe of the catalog binds to is refused as soon as the catalog
 	// is in hand, before the source is recognised or the importer runs, so nothing
 	// is read through a parser, nothing is drafted and nothing is written.
-	if err := checkTarget(opts.Target, seam.Recipes); err != nil {
+	if err := checkTarget(target, target != opts.Target, seam.Recipes); err != nil {
 		return Result{}, err
 	}
 
@@ -407,7 +433,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// else, before the record of it is written and before any path is judged — so
 	// a drafted Manifest and an edited Release are recorded, contained and
 	// reported exactly as the importer's own drafts are.
-	draft, composed, err := composeDraftSet(opts.Target, seam.Recipes, imported.Files)
+	draft, composed, err := composeDraftSet(target, seam.Recipes, imported.Files)
 	if err != nil {
 		return Result{}, err
 	}
@@ -417,10 +443,6 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 			composed...)
 	}
 
-	outputDir, err := outputDirFor(rw, opts.OutputDir)
-	if err != nil {
-		return Result{}, err
-	}
 	res := Result{
 		Format:      format,
 		OutputDir:   outputDir,
@@ -433,7 +455,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	drafted := draftedFiles(draft)
 	files := draft
 	if len(drafted) > 0 {
-		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...), recordScaffold(drafted))
+		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...), recordScaffold(target, drafted))
 	}
 	// Every drafted path is judged before anything is written and before anything
 	// is reported, so a reporting delivery refuses exactly what the write refuses.
@@ -444,7 +466,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 	if opts.Sync {
-		return syncImport(rw.Root(), outputDir, opts, res, drafted)
+		return syncImport(rw.Root(), outputDir, target, opts, res, drafted, rec, recordOnDisk)
 	}
 	// An Aggregate already at a drafted path is judged after the paths are, so it
 	// is read only at a place already held inside the root, and before either

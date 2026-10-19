@@ -132,7 +132,7 @@ func planOver(t *testing.T, previous, fresh []abi.ScaffoldFile, disk map[string]
 			t.Fatalf("write %s: %v", path, err)
 		}
 	}
-	rec := recordFor(draftedFiles(previous))
+	rec := recordFor("", draftedFiles(previous))
 	plan, err := planSync(out, draftedFiles(fresh), &rec)
 	if err != nil {
 		t.Fatalf("plan the sync: %v", err)
@@ -445,30 +445,220 @@ func TestTheSamePlanTwice(t *testing.T) {
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("two plans over the same inputs differ:\n%+v\n%+v", a, b)
 	}
-	if recordBytes(recordFor(draftedFiles(aggregateDraft(syncFresh)))) !=
-		recordBytes(recordFor(draftedFiles(aggregateDraft(syncFresh)))) {
+	if recordBytes(recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))) !=
+		recordBytes(recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))) {
 		t.Error("two records of one draft differ")
 	}
 }
 
 // TestTheRecordListsEveryEntryOfADraftedAggregate pins what the record owns in a
-// drafted Aggregate: every mapping entry at every depth, in document order, and
-// no file of another kind entry by entry.
+// drafted Aggregate and a drafted Release: every mapping entry at every depth, in
+// document order, by the one text rule — and no file of another kind entry by
+// entry, a Component and a Manifest each recorded whole.
+//
+// 🔴 PLANTED DEFECT: have draftedFiles (internal/importops/record.go) select by
+// isAggregateBytes again: the Release row reddens, recorded whole.
 func TestTheRecordListsEveryEntryOfADraftedAggregate(t *testing.T) {
 	t.Parallel()
-	rec := recordFor(draftedFiles([]abi.ScaffoldFile{
+	rec := recordFor("", draftedFiles([]abi.ScaffoldFile{
 		{Path: "components/b.yaml", Content: "kind: Component\nmetadata:\n  name: b\n"},
 		{Path: "aggregate.yaml", Content: "kind: Aggregate\nspec:\n  components:\n    a:\n      type: x\n"},
+		{Path: "release.yaml", Content: "kind: Release\nmetadata:\n  # environment: left for the operator\n  name: r\n" +
+			"spec:\n  components:\n    a:\n      infra:\n        port: 80\n"},
+		{Path: "manifest.yaml", Content: "kind: Manifest\nspec:\n  mappings: {}\n"},
 	}))
-	if len(rec.Files) != 2 || rec.Files[0].Digest == "" || len(rec.Files[0].Parts) != 0 {
-		t.Fatalf("the Component is not recorded whole: %+v", rec.Files)
+	if len(rec.Files) != 4 {
+		t.Fatalf("the record lists %d files, want 4: %+v", len(rec.Files), rec.Files)
 	}
-	var keys []string
-	for _, p := range rec.Files[1].Parts {
-		keys = append(keys, RenderKey(p.Key))
+	for _, i := range []int{0, 3} {
+		if rec.Files[i].Digest == "" || len(rec.Files[i].Parts) != 0 {
+			t.Errorf("%s is not recorded whole: %+v", rec.Files[i].Path, rec.Files[i])
+		}
 	}
-	if want := []string{"kind", "spec", "spec.components", "spec.components.a", "spec.components.a.type"}; !slices.Equal(keys, want) {
-		t.Errorf("the Aggregate's record lists %v, want %v", keys, want)
+	for _, row := range []struct {
+		at   int
+		want []string
+	}{
+		{1, []string{"kind", "spec", "spec.components", "spec.components.a", "spec.components.a.type"}},
+		{2, []string{"kind", "metadata", "metadata.name", "spec", "spec.components", "spec.components.a",
+			"spec.components.a.infra", "spec.components.a.infra.port"}},
+	} {
+		f := rec.Files[row.at]
+		if f.Digest != "" {
+			t.Errorf("%s is recorded whole; want it entry by entry", f.Path)
+		}
+		var keys []string
+		for _, p := range f.Parts {
+			keys = append(keys, RenderKey(p.Key))
+		}
+		if !slices.Equal(keys, row.want) {
+			t.Errorf("the record of %s lists %v, want %v", f.Path, keys, row.want)
+		}
+	}
+	// The comment written directly above a key is that key's text, in a Release as
+	// in an Aggregate: replacing it with a key of the author's own edits the key it
+	// sat above.
+	doc, err := indexYAML("kind: Release\nmetadata:\n  # environment: left for the operator\n  name: r\n")
+	if err != nil {
+		t.Fatalf("index the Release: %v", err)
+	}
+	if u := doc.byKey[joinKey([]string{"metadata", "name"})]; u == nil || u.start != 2 {
+		t.Errorf("the comment above metadata.name is not that key's: %+v", u)
+	}
+}
+
+// draftedRelease is a Release as an import drafts it beside its Aggregate: the
+// environment left for its author in a comment, one server's settings.
+const draftedRelease = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment: left for the operator, since no source names it.
+  version: 0.1.0
+spec:
+  aggregate: imported/flow
+  components:
+    filesystem:
+      infra:
+        stdio_command:
+          - "npx"
+        stdio_runtime: npm
+`
+
+// gitServer is the server entry the source gains in draftedRelease.
+const gitServer = "    git:\n      infra:\n        stdio_command:\n          - \"uvx\"\n        stdio_runtime: python\n"
+
+// filledIn is draftedRelease with the environment its comment asks for written
+// where the comment was, as its author fills it in.
+func filledIn(t *testing.T, release string) string {
+	t.Helper()
+	return replaceOnce(t, release, "\n  # environment: left for the operator, since no source names it.\n",
+		"\n  environment: staging\n")
+}
+
+// releaseDraft is one drafted Release at release.yaml.
+func releaseDraft(content string) []abi.ScaffoldFile {
+	return []abi.ScaffoldFile{{Path: "release.yaml", Content: content}}
+}
+
+// writtenFile is the content the plan writes for path, or what is on disk where
+// it writes none.
+func writtenFile(plan syncPlan, path, disk string) string {
+	for _, w := range plan.writes {
+		if w.Path == path {
+			return w.Content
+		}
+	}
+	return disk
+}
+
+// TestAReleaseItsAuthorFilledInIsSyncedEntryByEntry is the filled-in Release's
+// case: its author wrote the environment where the import left a comment for it,
+// and the source gained a server. The sync adds the server's entry and keeps the
+// environment byte for byte, because the record lists the Release entry by entry
+// and the environment is a key the author wrote; the drift names the one entry
+// the source gained.
+//
+// 🔴 PLANTED DEFECT: have draftedFiles (internal/importops/record.go) record a
+// Release whole: the sync conflicts on release.yaml as a file edited since the
+// import wrote it, and this test reddens.
+func TestAReleaseItsAuthorFilledInIsSyncedEntryByEntry(t *testing.T) {
+	t.Parallel()
+	fresh := draftedRelease + gitServer
+	disk := filledIn(t, draftedRelease)
+	plan, _ := planOver(t, releaseDraft(draftedRelease), releaseDraft(fresh), map[string]string{"release.yaml": disk})
+	if len(plan.conflicts) != 0 {
+		t.Fatalf("the sync of a filled-in Release conflicts: %+v", plan.conflicts)
+	}
+	if got, want := writtenFile(plan, "release.yaml", disk), filledIn(t, fresh); got != want {
+		t.Errorf("the synced Release reads\n%s\nwant the fresh draft with the author's environment\n%s", got, want)
+	}
+	want := []Drift{{Change: DriftAdded, File: "release.yaml", Key: []string{"spec", "components", "git"}}}
+	if !reflect.DeepEqual(plan.drift, want) {
+		t.Errorf("the drift is %+v, want %+v", plan.drift, want)
+	}
+}
+
+// TestAnEditedReleaseEntryTheSourceChangesConflicts holds a filled-in Release to
+// the conflict rule an Aggregate is held to: an author's edit to an entry the
+// source also changes refuses the sync, naming the entry and the file, and
+// nothing is planned for writing.
+func TestAnEditedReleaseEntryTheSourceChangesConflicts(t *testing.T) {
+	t.Parallel()
+	previous := draftedRelease + gitServer
+	fresh := replaceOnce(t, previous, "\n          - \"uvx\"\n", "\n          - \"uvx\"\n          - \"mcp-server-git\"\n")
+	disk := replaceOnce(t, filledIn(t, previous), "\n          - \"uvx\"\n", "\n          - \"pipx\"\n")
+	plan, _ := planOver(t, releaseDraft(previous), releaseDraft(fresh), map[string]string{"release.yaml": disk})
+	want := []SyncConflict{{File: "release.yaml", Key: []string{"spec", "components", "git", "infra", "stdio_command"},
+		Reason: conflictEditedChanged}}
+	if !reflect.DeepEqual(plan.conflicts, want) {
+		t.Errorf("the conflicts are %+v\nwant %+v", plan.conflicts, want)
+	}
+	if len(plan.writes) != 0 {
+		t.Errorf("a conflicting sync plans writes: %+v", plan.writes)
+	}
+}
+
+// TestAReleaseRecordedWholeIsJudgedWhole holds the record an import wrote while a
+// drafted Release was owned whole: a sync judges that Release as the file it was
+// recorded as, writing the entry-by-entry draft where the Release is untouched
+// and refusing where it was edited, rather than reading the old record as
+// something it is not.
+func TestAReleaseRecordedWholeIsJudgedWhole(t *testing.T) {
+	t.Parallel()
+	fresh := draftedRelease + gitServer
+	whole := importRecord{Files: []recordFile{{Path: "release.yaml", Digest: digestOf(draftedRelease)}}}
+	for _, row := range []struct {
+		name      string
+		disk      string
+		writes    bool
+		conflicts []SyncConflict
+	}{
+		{name: "untouched", disk: draftedRelease, writes: true},
+		{name: "filled in", disk: filledIn(t, draftedRelease),
+			conflicts: []SyncConflict{{File: "release.yaml", Reason: conflictEditedChanged}}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			out := t.TempDir()
+			if err := os.WriteFile(filepath.Join(out, "release.yaml"), []byte(row.disk), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			rec := whole
+			plan, err := planSync(out, draftedFiles(releaseDraft(fresh)), &rec)
+			if err != nil {
+				t.Fatalf("plan the sync: %v", err)
+			}
+			if !reflect.DeepEqual(plan.conflicts, row.conflicts) {
+				t.Errorf("the conflicts are %+v, want %+v", plan.conflicts, row.conflicts)
+			}
+			if got := len(plan.writes) == 1 && plan.writes[0].Content == fresh; got != row.writes {
+				t.Errorf("the plan writes %+v; want the fresh Release written: %v", plan.writes, row.writes)
+			}
+		})
+	}
+}
+
+// TestTheRecordCarriesTheTarget pins where the target an import was given sits in
+// the record: first, under target, for an import given one, and absent for an
+// import given none; and a record carrying one reads back with it.
+//
+// 🔴 PLANTED DEFECT: drop omitempty from importRecord.Target
+// (internal/importops/record.go): the no-target row reddens on an empty target
+// written into the record.
+func TestTheRecordCarriesTheTarget(t *testing.T) {
+	t.Parallel()
+	files := draftedFiles(aggregateDraft("kind: Aggregate\nspec: {}\n"))
+	with := recordBytes(recordFor("compose", files))
+	if !strings.HasPrefix(with, "{\n  \"target\": \"compose\",\n  \"files\": [") {
+		t.Errorf("the record of an import given the target compose opens\n%s", with)
+	}
+	rec, err := parseRecord([]byte(with))
+	if err != nil || rec.Target != "compose" {
+		t.Errorf("the record reads back with the target %q (%v); want compose", rec.Target, err)
+	}
+	if without := recordBytes(recordFor("", files)); strings.Contains(without, "target") {
+		t.Errorf("the record of an import given no target names one:\n%s", without)
 	}
 }
 

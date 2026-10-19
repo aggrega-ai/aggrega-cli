@@ -34,11 +34,16 @@ const manifestKindToken = "manifest"
 // given and the capabilities the catalog's Recipes do bind to. An empty target
 // asks for no Manifest and is never refused.
 //
+// recorded says the target is the one the record of an earlier import names,
+// taken by a sync given none of its own. Leaving the target out does not leave
+// such a target out, so the refusal names where it came from and offers only
+// naming another.
+//
 // [Import] asks it once the catalog is loaded and before the source is recognised
 // or the importer runs, so a refused target runs no parser and no importer and
 // writes nothing — on every surface alike, because every surface reaches it only
 // through [Import].
-func checkTarget(target string, recipes RecipeIndex) error {
+func checkTarget(target string, recorded bool, recipes RecipeIndex) error {
 	if target == "" {
 		return nil
 	}
@@ -47,12 +52,21 @@ func checkTarget(target string, recipes RecipeIndex) error {
 		return nil
 	}
 	values := []string{"target " + strconv.Quote(target)}
+	if recorded {
+		values = append(values, "recorded by the earlier import in "+RecordFileName)
+	}
 	advice := "Name one of those capabilities as the target, or leave the target out and no Manifest is drafted; " +
 		"nothing was drafted or written"
+	if recorded {
+		advice = "Name one of those capabilities as the target; nothing was drafted or written"
+	}
 	if len(capabilities) == 0 {
 		values = append(values, "the catalog holds no Recipe")
 		advice = "Add a Recipe of the provider to the workspace's catalog, or leave the target out and no Manifest " +
 			"is drafted; nothing was drafted or written"
+		if recorded {
+			advice = "Add a Recipe of the provider to the workspace's catalog; nothing was drafted or written"
+		}
 	} else {
 		values = append(values, "the catalog's Recipes bind to "+quotedList(capabilities))
 	}

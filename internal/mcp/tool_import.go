@@ -65,9 +65,10 @@ type importArgs struct {
 
 	// Target is the command line's --target: the provider capability the import
 	// drafts a Manifest for. It is a pointer for the reason Format is one — absent
-	// drafts no Manifest, and a value sent empty is refused rather than read as
-	// absent. A value sent is handed to the layer as sent, so the Manifest is the
-	// one the command line and the editor's session draft for the same source.
+	// drafts no Manifest, or under Sync the one the record of the earlier import
+	// names, and a value sent empty is refused rather than read as absent. A value
+	// sent is handed to the layer as sent, so the Manifest is the one the command
+	// line and the editor's session draft for the same source.
 	Target *string `json:"target"`
 
 	DryRun        bool   `json:"dry_run"`
@@ -82,7 +83,7 @@ type importArgs struct {
 
 // importDrift is one part a sync brought up to date, or under `dry_run` would:
 // how it drifted, the drafted file it is in, and the keys leading to it in a
-// drafted Aggregate, empty where the part is the whole file.
+// drafted Aggregate or Release, empty where the part is the whole file.
 //
 // The keys are a list rather than one joined string, so a key holding a full
 // stop is read back as the one key it is.
@@ -290,13 +291,15 @@ var importToolSpec = toolSpec{
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
 		"write would refuse is refused under it too. Every import that drafts anything also writes, beside its " +
-		"drafts, `.aggrega-import.json`, the record of what it wrote — each drafted file, and each key of a " +
-		"drafted Aggregate at every depth, with a digest of its text — and `dry_run` hands it back among the " +
+		"drafts, `.aggrega-import.json`, the record of what it wrote — the `target` it was sent, where it was sent " +
+		"one, each drafted file, and each key of a drafted Aggregate or Release at every depth, with a digest of " +
+		"its text, any other drafted file recorded whole — and `dry_run` hands it back among the " +
 		"drafts. A call whose drafts would be written over an Aggregate " +
 		"already in the output directory is refused, naming it, and nothing is written — under `dry_run` too — because " +
 		"an Aggregate is the document an author goes on editing once it is drafted; every other file already at " +
 		"a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
-		"source instead, changing only what the import wrote: a part the source left alone stays as it is on " +
+		"source instead, changing only what the import wrote — with no `target`, for the target the record names, " +
+		"and with one, for that target, which the record then names: a part the source left alone stays as it is on " +
 		"disk, edited or not; a part it changed, dropped or gained is written anew, removed — a drafted file " +
 		"deleted whole — or added, where what is on disk is what the import last wrote; and everything else — a " +
 		"key an author added anywhere, a comment not written directly above a drafted key, a file the record does " +
@@ -329,7 +332,7 @@ var importToolSpec = toolSpec{
     "target": {
       "type": "string",
       "minLength": 1,
-      "description": "A provider capability, such as compose or helm — the word a Recipe's spec.capability binds to — to draft a Manifest for beside the importer's drafts, mapping each drafted component type to the one Recipe of that capability the workspace's catalog offers for it and pointing the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Leave it out and no Manifest is drafted."
+      "description": "A provider capability, such as compose or helm — the word a Recipe's spec.capability binds to — to draft a Manifest for beside the importer's drafts, mapping each drafted component type to the one Recipe of that capability the workspace's catalog offers for it and pointing the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Leave it out and no Manifest is drafted, except under sync, which uses the target the earlier import was sent."
     },
     "output_dir": {
       "type": "string",
@@ -382,7 +385,8 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		if target = *a.Target; target == "" {
 			return errorResult(importToolName + " was sent an empty 'target'. Name the provider capability to " +
 				"draft a Manifest for, such as compose or helm, or leave 'target' out altogether and no Manifest is " +
-				"drafted; an empty value is neither, so nothing was read and nothing was written.")
+				"drafted — or, under 'sync', the target the earlier import was sent is used; an empty value is " +
+				"neither, so nothing was read and nothing was written.")
 		}
 	}
 	// A destination sent blank is refused for the reason a blank format is: the

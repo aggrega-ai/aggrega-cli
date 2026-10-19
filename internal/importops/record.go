@@ -34,12 +34,18 @@ const RecordFileName = ".aggrega-import.json"
 
 // importRecord is the record's document.
 //
+// Target is the target the import was given — the provider capability its
+// drafted Manifest is for — and is empty, and left out of the record, for an
+// import given none. A sync given no target reuses it, so a sync that leaves the
+// target out drafts the same Manifest the import it brings up to date drafted.
+//
 // Files is in the order the importer drafted the files, each path once. A file
-// owned whole carries Digest; a drafted Aggregate carries Parts, one per mapping
-// entry, in document order. Both are slices rather than maps, so the record's
-// bytes are a function of the draft alone.
+// owned whole carries Digest; a drafted Aggregate or Release carries Parts, one
+// per mapping entry, in document order. Both are slices rather than maps, so the
+// record's bytes are a function of the draft alone.
 type importRecord struct {
-	Files []recordFile `json:"files"`
+	Target string       `json:"target,omitempty"`
+	Files  []recordFile `json:"files"`
 }
 
 // recordFile is one drafted file in the record.
@@ -49,8 +55,9 @@ type recordFile struct {
 	Parts  []recordPart `json:"parts,omitempty"`
 }
 
-// recordPart is one mapping entry of a drafted Aggregate in the record: the keys
-// leading to it from the top of the document, and the digest of its text.
+// recordPart is one mapping entry of a drafted Aggregate or Release in the
+// record: the keys leading to it from the top of the document, and the digest of
+// its text.
 type recordPart struct {
 	Key    []string `json:"key"`
 	Digest string   `json:"digest"`
@@ -59,8 +66,8 @@ type recordPart struct {
 // draftedFile is one file of a draft, each path once, with the content the
 // import writes there.
 //
-// doc is set where the content is a drafted Aggregate the import owns entry by
-// entry; a file whose doc is nil is owned whole.
+// doc is set where the content is a drafted Aggregate or Release the import owns
+// entry by entry; a file whose doc is nil is owned whole.
 type draftedFile struct {
 	path    string
 	content string
@@ -71,6 +78,12 @@ type draftedFile struct {
 // each path once, at the place it first appears, holding the content it is
 // written with last — which is what a write of the importer's files in order
 // leaves on disk.
+//
+// A drafted Aggregate and a drafted Release are each owned entry by entry,
+// because each is a document an author goes on editing once it is drafted — the
+// drafted Release asks for its environment to be filled in — so a key an author
+// adds to either is a key the author wrote, and a sync changes only the entries
+// the source changed. Every other drafted file is owned whole.
 func draftedFiles(files []abi.ScaffoldFile) []draftedFile {
 	at := make(map[string]int, len(files))
 	out := make([]draftedFile, 0, len(files))
@@ -83,7 +96,7 @@ func draftedFiles(files []abi.ScaffoldFile) []draftedFile {
 		out = append(out, draftedFile{path: f.Path, content: f.Content})
 	}
 	for i := range out {
-		if isAggregateBytes([]byte(out[i].content)) {
+		if ownedByEntries([]byte(out[i].content)) {
 			if doc, err := indexYAML(out[i].content); err == nil {
 				out[i].doc = doc
 			}
@@ -92,9 +105,10 @@ func draftedFiles(files []abi.ScaffoldFile) []draftedFile {
 	return out
 }
 
-// recordFor composes the record of what a draft writes.
-func recordFor(files []draftedFile) importRecord {
-	rec := importRecord{Files: make([]recordFile, 0, len(files))}
+// recordFor composes the record of what a draft writes, for the target the draft
+// was composed for.
+func recordFor(target string, files []draftedFile) importRecord {
+	rec := importRecord{Target: target, Files: make([]recordFile, 0, len(files))}
 	for _, f := range files {
 		rec.Files = append(rec.Files, recordEntryFor(f))
 	}
@@ -126,8 +140,8 @@ func recordBytes(rec importRecord) string {
 
 // recordScaffold is the record as one more file an import writes, placed after
 // the drafts it describes.
-func recordScaffold(files []draftedFile) abi.ScaffoldFile {
-	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(recordFor(files))}
+func recordScaffold(target string, files []draftedFile) abi.ScaffoldFile {
+	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(recordFor(target, files))}
 }
 
 // parseRecord reads a record's bytes, refusing anything that is not a record an
@@ -199,10 +213,10 @@ func wellFormedDigest(d string) bool {
 	return err == nil && strings.ToLower(hexPart) == hexPart
 }
 
-// RenderKey writes the keys leading to a part of a drafted Aggregate as a
-// reader reads them: joined by full stops, with a key that holds a full stop,
-// whitespace or a quotation mark, or is empty, written quoted, so two different
-// parts are never written alike.
+// RenderKey writes the keys leading to a part of a drafted Aggregate or Release
+// as a reader reads them: joined by full stops, with a key that holds a full
+// stop, whitespace or a quotation mark, or is empty, written quoted, so two
+// different parts are never written alike.
 func RenderKey(key []string) string {
 	segs := make([]string, 0, len(key))
 	for _, k := range key {
@@ -224,13 +238,14 @@ func joinKey(key []string) string {
 // isAggregateBytes reports whether data reads as a document whose top-level
 // kind is Aggregate.
 func isAggregateBytes(data []byte) bool {
-	var head struct {
-		Kind string `yaml:"kind"`
-	}
-	if err := yaml.Unmarshal(data, &head); err != nil {
-		return false
-	}
-	return head.Kind == string(entitykind.Aggregate)
+	return draftKind(string(data)) == entitykind.Aggregate
+}
+
+// ownedByEntries reports whether data reads as a document the record lists entry
+// by entry: one whose top-level kind is Aggregate or Release.
+func ownedByEntries(data []byte) bool {
+	kind := draftKind(string(data))
+	return kind == entitykind.Aggregate || kind == entitykind.Release
 }
 
 // yamlDoc is a YAML document read as the entries a sync judges: its lines, as
