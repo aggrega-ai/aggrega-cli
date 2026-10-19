@@ -61,7 +61,7 @@ func descriptor() aggrega.PluginDescriptor {
 			"draft Aggregate holding one instance per service — of the catalog Component its image matches, or of " +
 			"core/compute/server running its image — connected as depends_on says, a drafted model Component per " +
 			"model, and a draft Release carrying each service's image, ports, volumes and environment. Images are " +
-			"matched through a table generated from the Compose Recipes of aggrega-hub at " +
+			"matched through a table generated from the Compose Recipes and Components of aggrega-hub at " +
 			composeimport.TableRevision + ".",
 		Capabilities: []string{"import:" + composeimport.Format},
 		Exports: []aggrega.PluginExport{{

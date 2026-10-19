@@ -4,7 +4,8 @@
 // Command imagetable generates the Compose importer's image table from the
 // Compose Recipes of an aggrega-hub checkout: a table from image repository to
 // the catalog Component a Recipe running an image of that repository implements,
-// written as the Go source the importer embeds.
+// with that Component's labels as the row's traits, written as the Go source the
+// importer embeds.
 //
 // It reads, of each Recipe under aggrega-catalog/recipe/compose/, two things and
 // nothing else: the Component its spec.implements names, and the image of the
@@ -19,10 +20,19 @@
 // image is. The rows are ordered by repository, so one set of Recipes always
 // writes the same bytes.
 //
+// Of each Component a row names it takes the labels, and nothing else, from the
+// checkout's catalog (aggrega-catalog/component/, loaded with the schema
+// libraries the Components read), as an import is handed them: the version a reference naming
+// the Component without a version resolves to, its extends chain resolved. Every
+// label but the category label is written as one of the row's traits, ordered by
+// key; the category scores in a signal of its own, so it is not weighed again as a
+// trait. A row naming a Component the checkout holds no version of is refused,
+// naming the Recipe, and no table is written.
+//
 // The table names the aggrega-hub commit it was generated from: the checkout's
-// HEAD, read through git, which is refused where the checkout's Compose Recipes
-// hold changes no commit records, unless -revision names what the table is read
-// from.
+// HEAD, read through git, which is refused where the checkout's Compose Recipes,
+// Components or schema libraries hold changes no commit records, unless -revision
+// names what the table is read from.
 //
 // Usage:
 //
@@ -35,6 +45,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/format"
 	"maps"
 	"os"
 	"os/exec"
@@ -44,11 +55,22 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
 )
 
-// recipeDir is where a hub checkout keeps its Compose Recipes, beneath its root.
-var recipeDir = filepath.Join("aggrega-catalog", "recipe", "compose")
+// Where a hub checkout keeps, beneath its root, its Compose Recipes, its
+// Components and the schema libraries its Components may read.
+var (
+	recipeDir    = filepath.Join("aggrega-catalog", "recipe", "compose")
+	componentDir = filepath.Join("aggrega-catalog", "component")
+	libraryDir   = filepath.Join("aggrega-catalog", "schemalibrary")
+)
+
+// categoryLabel is the label a Component's category is written under, which the
+// importer's scorer weighs in a signal of its own.
+const categoryLabel = "component.aggrega.ai/category"
 
 func main() {
 	hub := flag.String("hub", "", "the aggrega-hub checkout whose Compose Recipes the table is generated from (required)")
@@ -68,7 +90,7 @@ func main() {
 
 // run generates the table from the checkout at hub and writes it to out.
 func run(hub, out, revision string, report bool) error {
-	rows, notes, err := generate(filepath.Join(hub, recipeDir))
+	rows, notes, err := generateFromHub(hub)
 	if report {
 		for _, n := range notes {
 			fmt.Fprintln(os.Stderr, n)
@@ -82,7 +104,10 @@ func run(hub, out, revision string, report bool) error {
 			return err
 		}
 	}
-	content := render(rows, revision)
+	content, err := render(rows, revision)
+	if err != nil {
+		return err
+	}
 	if out == "" {
 		_, err = os.Stdout.Write(content)
 		return err
@@ -90,9 +115,84 @@ func run(hub, out, revision string, report bool) error {
 	return os.WriteFile(out, content, 0o644)
 }
 
-// row is one row of the table.
+// row is one row of the table: a repository, the Component it maps to, and the
+// traits the Component's labels give it, which are absent until withTraits
+// writes them.
 type row struct {
 	repository, component string
+	traits                map[string]string
+}
+
+// generateFromHub generates the table's rows from the Compose Recipes of the
+// checkout at hub, each with the traits its Component's labels give it there, and
+// one note per Recipe saying what it contributed.
+func generateFromHub(hub string) ([]row, []string, error) {
+	rows, notes, err := generate(filepath.Join(hub, recipeDir))
+	if err != nil {
+		return nil, notes, err
+	}
+	labels, err := componentLabels(hub)
+	if err != nil {
+		return nil, notes, err
+	}
+	rows, err = withTraits(rows, labels)
+	return rows, notes, err
+}
+
+// componentLabels returns the labels of each Component the catalog of the
+// checkout at hub holds, keyed by name, exactly as an import is handed them: the
+// catalog is loaded as the compiler loads one and projected as the importer
+// socket projects it, so the version a name resolves to and the extends chain a
+// Component inherits labels through are the import's own.
+func componentLabels(hub string) (map[string]map[string]string, error) {
+	dirs := []string{filepath.Join(hub, componentDir)}
+	if info, err := os.Stat(filepath.Join(hub, libraryDir)); err == nil && info.IsDir() {
+		dirs = append(dirs, filepath.Join(hub, libraryDir))
+	}
+	cat, err := catalog.LoadAll("", dirs...)
+	if err != nil {
+		return nil, fmt.Errorf("load the Components of %s: %w", hub, err)
+	}
+	out := map[string]map[string]string{}
+	if view := importersocket.ProjectCatalog(cat); view != nil {
+		for _, c := range view.Components {
+			out[c.Name] = c.Labels
+		}
+	}
+	return out, nil
+}
+
+// withTraits returns the rows, each carrying as its traits every label the
+// Component it names carries in labels but the category label. A row naming a
+// Component labels holds no entry for is refused, every such row named, and no
+// rows are returned.
+func withTraits(rows []row, labels map[string]map[string]string) ([]row, error) {
+	out := make([]row, 0, len(rows))
+	var missing []string
+	for _, r := range rows {
+		componentLabels, ok := labels[r.component]
+		if !ok {
+			missing = append(missing, "the image repository "+r.repository+" maps to "+r.component)
+			continue
+		}
+		var traits map[string]string
+		for k, v := range componentLabels {
+			if k == categoryLabel {
+				continue
+			}
+			if traits == nil {
+				traits = map[string]string{}
+			}
+			traits[k] = v
+		}
+		r.traits = traits
+		out = append(out, r)
+	}
+	if len(missing) > 0 {
+		return nil, errors.New(strings.Join(missing, "; ") + ", which the hub's catalog holds no version of, so " +
+			"no row can carry its labels and no table is written")
+	}
+	return out, nil
 }
 
 // generate reads every Recipe under dir, by the order of its path, and returns
@@ -360,41 +460,58 @@ func quoted(value string) string {
 }
 
 // hubRevision returns the commit the checkout at hub has checked out, refusing a
-// checkout whose Compose Recipes hold changes no commit records.
+// checkout whose Compose Recipes, Components or schema libraries hold changes no
+// commit records.
 func hubRevision(hub string) (string, error) {
 	head, err := exec.Command("git", "-C", hub, "rev-parse", "HEAD").Output()
 	if err != nil {
 		return "", fmt.Errorf("read the commit %s has checked out (pass -revision to name it): %w", hub, err)
 	}
-	status, err := exec.Command("git", "-C", hub, "status", "--porcelain", "--", filepath.ToSlash(recipeDir)).Output()
+	status, err := exec.Command("git", "-C", hub, "status", "--porcelain", "--", filepath.ToSlash(recipeDir),
+		filepath.ToSlash(componentDir), filepath.ToSlash(libraryDir)).Output()
 	if err != nil {
-		return "", fmt.Errorf("read whether the Compose Recipes of %s hold changes: %w", hub, err)
+		return "", fmt.Errorf("read whether the Compose Recipes and Components of %s hold changes: %w", hub, err)
 	}
 	if len(bytes.TrimSpace(status)) > 0 {
-		return "", fmt.Errorf("the Compose Recipes of %s hold changes no commit records, so no commit names what the "+
-			"table is read from (pass -revision to name it)", hub)
+		return "", fmt.Errorf("the Compose Recipes, Components or schema libraries of %s hold changes no commit "+
+			"records, so no commit names what the table is read from (pass -revision to name it)", hub)
 	}
 	return strings.TrimSpace(string(head)), nil
 }
 
 // render writes the rows as the Go source the importer embeds, naming revision
-// as the revision they were read from.
-func render(rows []row, revision string) []byte {
+// as the revision they were read from, formatted as gofmt formats it. A row's
+// traits are written ordered by key, so one set of rows always writes the same
+// bytes.
+func render(rows []row, revision string) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString("// SPDX-License-Identifier: Apache-2.0\n")
 	b.WriteString("// Copyright 2026 Cognitio S.r.l.\n\n")
-	b.WriteString("// Code generated by imagetable from the Compose Recipes of aggrega-hub. DO NOT EDIT.\n\n")
+	b.WriteString("// Code generated by imagetable from the Compose Recipes and Components of aggrega-hub. DO NOT EDIT.\n\n")
 	b.WriteString("package composeimport\n\n")
-	b.WriteString("// TableRevision is the aggrega-hub revision whose Compose Recipes the image\n")
-	b.WriteString("// table was generated from.\n")
+	b.WriteString("// TableRevision is the aggrega-hub revision whose Compose Recipes and\n")
+	b.WriteString("// Components the image table was generated from.\n")
 	fmt.Fprintf(&b, "const TableRevision = %q\n\n", revision)
 	b.WriteString("// imageTable maps each image repository the main container of a Compose\n")
 	b.WriteString("// Recipe of the hub names literally to the Component the Recipe implements,\n")
+	b.WriteString("// with every label of that Component but its category as the row's traits,\n")
 	b.WriteString("// ordered by repository.\n")
 	b.WriteString("var imageTable = []imageRow{\n")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "\t{Repository: %q, Component: %q},\n", r.repository, r.component)
+		if len(r.traits) == 0 {
+			fmt.Fprintf(&b, "\t{Repository: %q, Component: %q},\n", r.repository, r.component)
+			continue
+		}
+		fmt.Fprintf(&b, "\t{Repository: %q, Component: %q, Traits: map[string]string{\n", r.repository, r.component)
+		for _, k := range slices.Sorted(maps.Keys(r.traits)) {
+			fmt.Fprintf(&b, "\t\t%q: %q,\n", k, r.traits[k])
+		}
+		b.WriteString("\t}},\n")
 	}
 	b.WriteString("}\n")
-	return b.Bytes()
+	formatted, err := format.Source(b.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("format the generated table: %w", err)
+	}
+	return formatted, nil
 }

@@ -5,6 +5,7 @@ package composeimport
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,12 +49,14 @@ func fixture(t *testing.T, name string) []byte {
 // them.
 var catalog = &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
 	{Name: "core/compute/server", Version: "1.0.0", Labels: map[string]string{
-		"component.aggrega.ai/type": "server", "component.aggrega.ai/category": "compute"}},
+		"component.aggrega.ai/type": "server", "component.aggrega.ai/category": "compute",
+		"component.aggrega.ai/upstream-licensing": "not-applicable"}},
 	{Name: "core/datastore/postgres", Version: "1.0.0", Labels: map[string]string{
-		"component.aggrega.ai/type": "stateful-server", "component.aggrega.ai/category": "datastore"}},
+		"component.aggrega.ai/type": "stateful-server", "component.aggrega.ai/category": "datastore",
+		"component.aggrega.ai/hosting": "mixed", "component.aggrega.ai/upstream-licensing": "osi-approved"}},
 	{Name: "core/datastore/redis", Version: "1.0.0", Labels: map[string]string{
 		"component.aggrega.ai/type": "server", "component.aggrega.ai/category": "datastore",
-		"datastore.aggrega.ai/engine": "kv"}},
+		"datastore.aggrega.ai/engine": "kv", "component.aggrega.ai/upstream-licensing": "osi-approved"}},
 }}
 
 // importOne imports body as the one file of a request, against catalog, with
@@ -134,7 +137,8 @@ const (
 // TestAComposeFileIsDraftedAsAnAggregateAndARelease imports the authored fixture
 // with no setting: its services in the order the file writes them; the
 // PostgreSQL and Redis services, whose images rows of the image table map,
-// drafted with the hint naming core/datastore/postgres and core/datastore/redis;
+// drafted with the hint naming core/datastore/postgres and core/datastore/redis
+// at the HIGH tier, since the rows carry those Components' labels as traits;
 // the API, whose image no row maps, an instance of core/compute/server running
 // its image on its port, connected to the database it depends on; the
 // environment value naming the cache it does not depend on recorded as a hint
@@ -178,6 +182,14 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 
 	if len(out.Decisions) != 3 {
 		t.Fatalf("the import made %d decisions, want one per service", len(out.Decisions))
+	}
+	for i, want := range []string{"core/datastore/postgres", "core/datastore/redis"} {
+		d := out.Decisions[i]
+		if len(d.Candidates) == 0 || d.Candidates[0].ComponentName != want || d.Candidates[0].Tier != "HIGH" ||
+			!strings.Contains(d.SwapHint, "reference it by setting type: "+want) {
+			t.Errorf("the decision for %s hints %q over %+v, want %s at the HIGH tier", d.SourceNode.ID, d.SwapHint,
+				d.Candidates, want)
+		}
 	}
 	api := out.Decisions[2]
 	if api.Chosen == nil || api.Chosen.Target != Server || api.Chosen.Mode != "reference" {
@@ -378,10 +390,44 @@ func TestAnOverrideMapsAnImageNoRowNames(t *testing.T) {
 	}
 }
 
+// TestAServiceTheTableMatchesIsReferencedUnderAutoApply imports the authored
+// fixture with auto-apply and no other setting: the PostgreSQL and Redis
+// services, whose rows carry their Components' labels as traits, are referenced
+// as core/datastore/postgres and core/datastore/redis at a HIGH match at or above
+// the default threshold, and no Component is drafted for either.
+//
+// 🔴 PLANTED DEFECT: in mappings (images.go), leave Traits unset: each match falls
+// to the MEDIUM tier, both services are drafted, and the case fails.
+func TestAServiceTheTableMatchesIsReferencedUnderAutoApply(t *testing.T) {
+	t.Parallel()
+	out := importOne(fixture(t, "authored/compose.yaml"), `{"reuse_mode":"auto-apply-above-threshold"}`)
+	if out.Error != "" {
+		t.Fatalf("the import failed: %s %+v", out.Error, out.Diagnostics)
+	}
+	if want := []string{"aggregate.yaml", "release.yaml"}; !slices.Equal(paths(out), want) {
+		t.Errorf("the import wrote %v, want %v and no drafted Component", paths(out), want)
+	}
+	aggregate := fileContent(t, out, "aggregate.yaml")
+	for _, want := range []string{"    db:\n      type: core/datastore/postgres\n", "    cache:\n      type: core/datastore/redis\n"} {
+		if !strings.Contains(aggregate, want) {
+			t.Errorf("the Aggregate does not hold\n%s\nin\n%s", want, aggregate)
+		}
+	}
+	for i, want := range []string{"core/datastore/postgres", "core/datastore/redis"} {
+		d := out.Decisions[i]
+		if d.Chosen == nil || d.Chosen.Target != want || d.Chosen.Mode != "reference" || d.Chosen.Tier != "HIGH" ||
+			len(d.Candidates) == 0 || d.Candidates[0].Score < 0.85 {
+			t.Errorf("the decision for %s chose %+v over %+v, want a reference to %s at HIGH, scoring at least 0.85",
+				d.SourceNode.ID, d.Chosen, d.Candidates, want)
+		}
+	}
+}
+
 // TestTheImageTableIsTheImportersMappingArm holds the image table, read as the
 // mapping arm, to its rows: the PostgreSQL and Redis repositories map to the
 // Components their Recipes implement, under the category their names place them
-// in, and every row is keyed by its repository, in order.
+// in, with traits that leave the category out; every row's traits are the arm's;
+// and every row is keyed by its repository, in order.
 func TestTheImageTableIsTheImportersMappingArm(t *testing.T) {
 	t.Parallel()
 	arm := mappings()
@@ -389,6 +435,14 @@ func TestTheImageTableIsTheImportersMappingArm(t *testing.T) {
 		got, ok := arm[repository]
 		if !ok || got.Component != want || got.Category != "datastore" || got.Vendor != want[strings.LastIndex(want, "/")+1:] {
 			t.Errorf("the arm maps %s to %+v, want %s in datastore", repository, got, want)
+		}
+		if _, category := got.Traits["component.aggrega.ai/category"]; len(got.Traits) == 0 || category {
+			t.Errorf("the arm gives %s the traits %v, want its Component's labels but its category", repository, got.Traits)
+		}
+	}
+	for _, row := range imageTable {
+		if !maps.Equal(arm[row.Repository].Traits, row.Traits) {
+			t.Errorf("the arm gives %s the traits %v, not its row's %v", row.Repository, arm[row.Repository].Traits, row.Traits)
 		}
 	}
 	if len(arm) != len(imageTable) {

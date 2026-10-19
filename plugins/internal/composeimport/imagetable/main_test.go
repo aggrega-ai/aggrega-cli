@@ -14,44 +14,70 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
 )
 
-// hubRecipes are the Compose Recipes of the aggrega-hub repository checked out
-// beside this one. The check below reads them, and without that checkout it fails
-// rather than skipping, so check out aggrega-hub beside this repository first.
-var hubRecipes = filepath.Join("..", "..", "..", "..", "..", "aggrega-hub", "aggrega-catalog", "recipe", "compose")
+// hub is the aggrega-hub repository checked out beside this one, and hubRecipes
+// its Compose Recipes. The checks below read them, and without that checkout they
+// fail rather than skipping, so check out aggrega-hub beside this repository
+// first.
+var (
+	hub        = filepath.Join("..", "..", "..", "..", "..", "aggrega-hub")
+	hubRecipes = filepath.Join(hub, "aggrega-catalog", "recipe", "compose")
+)
 
 // committedTable is the generated table the importer embeds.
 const committedTable = "../imagetable_gen.go"
 
+// renderOrFail renders rows naming revision, failing the test where they do not
+// render.
+func renderOrFail(t *testing.T, rows []row, revision string) []byte {
+	t.Helper()
+	content, err := render(rows, revision)
+	if err != nil {
+		t.Fatalf("render the table: %v", err)
+	}
+	return content
+}
+
 // TestTheImageTableIsWhatTheHubsComposeRecipesName regenerates the image table
-// from the hub's Compose Recipes, naming the revision the committed table names,
-// and requires the committed table to be exactly what the regeneration writes —
-// so a change to a Recipe's image or implements, a Recipe added or one removed
+// from the hub's Compose Recipes and Components, naming the revision the
+// committed table names, and requires the committed table to be exactly what the
+// regeneration writes — so a change to a Recipe's image or implements, a Recipe
+// added or one removed, or a change to the labels of a Component a row names,
 // fails here until the table is regenerated with
 // `go generate ./plugins/internal/composeimport`. It also requires the rows the
-// importer's PostgreSQL and Redis cases rest on.
+// importer's PostgreSQL and Redis cases rest on, each carrying its Component's
+// labels as traits and not its category.
 //
 // 🔴 PLANTED DEFECT: edit one row of imagetable_gen.go by hand — say redis to
-// core/datastore/valkey — and the case fails naming the regeneration.
+// core/datastore/valkey, or drop one of its traits — and the case fails naming
+// the regeneration.
 func TestTheImageTableIsWhatTheHubsComposeRecipesName(t *testing.T) {
 	t.Parallel()
-	rows, _, err := generate(hubRecipes)
+	rows, _, err := generateFromHub(hub)
 	if err != nil {
-		t.Fatalf("generate the table from %s: %v", hubRecipes, err)
+		t.Fatalf("generate the table from %s: %v", hub, err)
 	}
-	want := render(rows, composeimport.TableRevision)
+	want := renderOrFail(t, rows, composeimport.TableRevision)
 	got, err := os.ReadFile(committedTable)
 	if err != nil {
 		t.Fatalf("read the committed table: %v", err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("the committed image table is not what the hub's Compose Recipes generate; regenerate it with "+
-			"`go generate ./plugins/internal/composeimport` from the aggrega-cli module root\n--- committed ---\n%s\n"+
-			"--- generated ---\n%s", got, want)
+		t.Errorf("the committed image table is not what the hub's Compose Recipes and Components generate; "+
+			"regenerate it with `go generate ./plugins/internal/composeimport` from the aggrega-cli module root\n"+
+			"--- committed ---\n%s\n--- generated ---\n%s", got, want)
 	}
-	for _, r := range []row{{"postgres", "core/datastore/postgres"}, {"redis", "core/datastore/redis"}} {
+	for _, r := range []row{{repository: "postgres", component: "core/datastore/postgres"},
+		{repository: "redis", component: "core/datastore/redis"}} {
 		found := false
 		for _, g := range rows {
-			found = found || g == r
+			if g.repository != r.repository || g.component != r.component {
+				continue
+			}
+			found = true
+			if _, category := g.traits[categoryLabel]; len(g.traits) == 0 || category {
+				t.Errorf("the row %s -> %s carries the traits %v, want its Component's labels but its category",
+					g.repository, g.component, g.traits)
+			}
 		}
 		if !found {
 			t.Errorf("the table holds no row %s -> %s", r.repository, r.component)
@@ -164,13 +190,106 @@ func TestTheTableMovesWithARecipesImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	want := []row{{"planted/postgres-needle", "core/datastore/postgres"}, {"redis", "core/datastore/redis"}}
+	want := []row{{repository: "planted/postgres-needle", component: "core/datastore/postgres"},
+		{repository: "redis", component: "core/datastore/redis"}}
 	if !reflect.DeepEqual(rows, want) {
 		t.Errorf("the planted table holds %v, want %v", rows, want)
 	}
 	again, _, _ := generate(dir)
-	if !bytes.Equal(render(rows, "r"), render(again, "r")) {
+	if !bytes.Equal(renderOrFail(t, rows, "r"), renderOrFail(t, again, "r")) {
 		t.Errorf("two generations from one set of Recipes differ")
+	}
+}
+
+// copyHubFile copies the hub's file at rel, beneath its root, to the same place
+// beneath root, passing its content through edit.
+func copyHubFile(t *testing.T, root, rel string, edit func(string) string) {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(hub, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read the hub's %s: %v", rel, err)
+	}
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(edit(string(body))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestTheTraitsMoveWithAComponentsLabels generates the table from a copy of the
+// hub holding its PostgreSQL and Redis Compose Recipes and Components, in which
+// one label of the Redis Component is changed: the Redis row's traits move with
+// it, so the traits are read from the Component rather than written by hand;
+// neither row carries the category label; and two runs write the same bytes.
+//
+// 🔴 PLANTED DEFECT: in withTraits, stop skipping the category label: both rows
+// carry it and the case fails.
+func TestTheTraitsMoveWithAComponentsLabels(t *testing.T) {
+	t.Parallel()
+	const label = "    datastore.aggrega.ai/engine: kv\n"
+	const planted = "    datastore.aggrega.ai/engine: planted-engine-needle\n"
+	root := t.TempDir()
+	same := func(s string) string { return s }
+	for _, name := range []string{"postgres", "redis"} {
+		copyHubFile(t, root, "aggrega-catalog/recipe/compose/"+name+"/1.0.0/recipe.yaml", same)
+	}
+	copyHubFile(t, root, "aggrega-catalog/component/core/datastore/postgres/1.0.0/component.yaml", same)
+	copyHubFile(t, root, "aggrega-catalog/component/core/datastore/redis/1.0.0/component.yaml", func(s string) string {
+		if strings.Count(s, label) != 1 {
+			t.Fatalf("the hub's Redis Component no longer carries %q once, so the plant would change nothing", label)
+		}
+		return strings.Replace(s, label, planted, 1)
+	})
+	rows, _, err := generateFromHub(root)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if len(rows) != 2 || rows[1].repository != "redis" {
+		t.Fatalf("the planted hub generated %v, want the postgres and redis rows", rows)
+	}
+	if got := rows[1].traits["datastore.aggrega.ai/engine"]; got != "planted-engine-needle" {
+		t.Errorf("the redis row's engine trait is %q, want the planted label's value; traits %v", got, rows[1].traits)
+	}
+	for _, r := range rows {
+		if _, category := r.traits[categoryLabel]; category || len(r.traits) == 0 {
+			t.Errorf("the row %s carries the traits %v, want its Component's labels but its category", r.repository, r.traits)
+		}
+	}
+	again, _, err := generateFromHub(root)
+	if err != nil {
+		t.Fatalf("generate again: %v", err)
+	}
+	if !bytes.Equal(renderOrFail(t, rows, "r"), renderOrFail(t, again, "r")) {
+		t.Errorf("two generations from one hub differ")
+	}
+}
+
+// TestARowWhoseComponentTheHubDoesNotHoldIsRefused gives rows their traits from
+// labels holding one row's Component and not the other's, and requires a refusal
+// naming the missing Component and its repository, with no rows; and from labels
+// holding both, the rows with every label but the category as traits, a
+// Component carrying the category alone giving a row no traits.
+func TestARowWhoseComponentTheHubDoesNotHoldIsRefused(t *testing.T) {
+	t.Parallel()
+	rows := []row{{repository: "acme/db", component: "core/x/db"}, {repository: "acme/web", component: "core/x/web"}}
+	labels := map[string]map[string]string{
+		"core/x/db": {categoryLabel: "x", "component.aggrega.ai/type": "stateful-server", "x.aggrega.ai/engine": "sql"},
+	}
+	got, err := withTraits(rows, labels)
+	if err == nil || got != nil || !strings.Contains(err.Error(), "acme/web maps to core/x/web") {
+		t.Errorf("a row naming a Component the hub does not hold gave %v, %v; want a refusal naming it", got, err)
+	}
+	labels["core/x/web"] = map[string]string{categoryLabel: "x"}
+	got, err = withTraits(rows, labels)
+	want := []row{
+		{repository: "acme/db", component: "core/x/db",
+			traits: map[string]string{"component.aggrega.ai/type": "stateful-server", "x.aggrega.ai/engine": "sql"}},
+		{repository: "acme/web", component: "core/x/web"},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("rows whose Components the hub holds gave %v, %v; want %v", got, err, want)
 	}
 }
 
@@ -193,7 +312,7 @@ func TestTwoRecipesNamingOneRepositoryForDifferentComponentsAreRefused(t *testin
 	}
 	dir = writeRecipes(t, map[string]string{"a": recipeDoc("core/x/a", "", workload), "b": recipeDoc("core/x/a", "", workload)})
 	rows, _, err = generate(dir)
-	if err != nil || !reflect.DeepEqual(rows, []row{{"acme/db", "core/x/a"}}) {
+	if err != nil || !reflect.DeepEqual(rows, []row{{repository: "acme/db", component: "core/x/a"}}) {
 		t.Errorf("two Recipes naming acme/db for one Component generated %v, %v; want one row", rows, err)
 	}
 }
