@@ -68,8 +68,10 @@
 // Each tool of kind mcp is drafted as the MCP importer drafts a server someone
 // else runs: an instance of core/ai-tool/mcp, keyed by the tool's name and
 // carrying its description, whose Release entry holds its url as infra.endpoint
-// without any part that carries a key, wired to the agent's instance on its
-// tools socket. Its approval mode and the tools it allows are the application's,
+// without any part that carries a key — each part it leaves out, the url's user
+// part, its query and its fragment, written in the comment above the entry —
+// wired to the agent's instance on its tools socket. Its approval mode and the
+// tools it allows are the application's,
 // named in a comment above it. A tool of any other kind is reported in a decision
 // choosing nothing.
 //
@@ -90,12 +92,14 @@
 // agent's entry of the Release, for the author to attach where the Component
 // takes it, and handed to the plugin kit's credential decision,
 // importer.CarryCredentials, as a value its format marks as a credential; an MCP
-// server's url, written as its instance's infra.endpoint, as a member of an MCP
-// server's configuration; and a model's endpoint as an input its format marks as
-// no credential. By default each is carried as written and named in a
-// credential-carried warning by its agent and its field, never by its value;
-// where the empty_credentials setting asks for its class, each is written with
-// no value and reported under credential-emptied. A value written as a
+// server's url, written as its instance's infra.endpoint, and each part of it
+// the endpoint leaves out, as members of an MCP server's configuration; and a
+// model's endpoint as an input its format marks as no credential. By default
+// each is carried as written and named in a credential-carried warning by its
+// agent and its field — a part of a url by the url's field and the part's name —
+// never by its value; where the empty_credentials setting asks for its class,
+// each is written with no value and reported under credential-emptied, a part of
+// a url named alone in the comment. A value written as a
 // reference to an environment variable holds none, so it is named by its
 // variable whatever the setting says, and a value written as any other
 // expression is named as one and never written.
@@ -403,8 +407,10 @@ func unwiredWhy(a *agent) string {
 }
 
 // address writes the address an MCP server is reached at as its instance's
-// infra.endpoint takes it — as the MCP importer writes a remote server's — and,
-// where none is written, why.
+// infra.endpoint takes it — as the MCP importer writes a remote server's — and
+// keeps the parts of its url it leaves out, each as the url writes it, since a
+// literal url holds no reference of the format's inside it; and, where no
+// address is written, why.
 func address(t *tool) {
 	switch {
 	case t.url.variable != "":
@@ -417,8 +423,8 @@ func address(t *tool) {
 		t.left = "infra.endpoint, since the tool names no url"
 		return
 	}
-	endpoint, note := mcpimport.RemoteEndpoint(t.url.value)
-	t.note = note
+	endpoint, parts := mcpimport.RemoteEndpoint(t.url.value)
+	t.parts = parts
 	if endpoint == "" {
 		t.left = "infra.endpoint, since the url holds no address"
 		return
@@ -452,7 +458,8 @@ func statedValues(a *agent) []statedValue {
 // judges: under each agent's key, the text of each value it states, in the order
 // the draft writes them, empty for one that is no literal; under each model
 // part's and each MCP server's key, the endpoint the draft writes, null where it
-// writes none.
+// writes none, and under each MCP server's key the text of each part of its url
+// the endpoint leaves out, in the order the url writes them.
 func draftedValues(agents []*agent, parts []*modelPart) []byte {
 	doc := map[string]map[string]any{}
 	for _, a := range agents {
@@ -463,7 +470,11 @@ func draftedValues(agents []*agent, parts []*modelPart) []byte {
 		doc[a.key] = map[string]any{"stated": texts}
 		for _, t := range a.tools {
 			if t.mcp() {
-				doc[t.key] = map[string]any{"endpoint": t.endpoint}
+				address := make([]string, 0, len(t.parts))
+				for _, p := range t.parts {
+					address = append(address, p.Text)
+				}
+				doc[t.key] = map[string]any{"endpoint": t.endpoint, "address": address}
 			}
 		}
 	}
@@ -484,11 +495,13 @@ func literalText(t text) string {
 
 // located returns every value of draftedValues the credential decision judges,
 // agent by agent — its stated values, its model's endpoint where it is the first
-// agent wired to the part, then its MCP servers' addresses — each named by its
-// agent and its field: a
-// key a connection presents as a value its format marks as a credential, an MCP
-// server's address as a member of an MCP server's configuration, and every other
-// value as an input its format marks as no credential.
+// agent wired to the part, then each MCP server's address and the parts of its
+// url the address leaves out — each named by its agent and its field: a key a
+// connection presents as a value its format marks as a credential, an MCP
+// server's address and each part of its url, named as
+// mcpimport.AddressPartCredential names one, as a member of an MCP server's
+// configuration, and every other value as an input its format marks as no
+// credential.
 func located(agents []*agent, parts []*modelPart) []importer.Credential {
 	var out []importer.Credential
 	for _, a := range agents {
@@ -508,9 +521,19 @@ func located(agents []*agent, parts []*modelPart) []importer.Credential {
 				Pointer: importer.Pointer(a.part.key, "endpoint"), Class: importer.CredentialUnmarked})
 		}
 		for _, t := range a.tools {
-			if t.mcp() && t.endpoint != nil {
-				out = append(out, importer.Credential{Node: a.ref, Field: "tools." + firstOf(t.name, mcpKind) + ".url",
+			if !t.mcp() {
+				continue
+			}
+			field := "tools." + firstOf(t.name, mcpKind) + ".url"
+			if t.endpoint != nil {
+				out = append(out, importer.Credential{Node: a.ref, Field: field,
 					Pointer: importer.Pointer(t.key, "endpoint"), Class: importer.CredentialServerMember})
+			}
+			for j, p := range t.parts {
+				if p.Text != "" {
+					out = append(out, mcpimport.AddressPartCredential(a.ref, field,
+						importer.Pointer(t.key, "address", strconv.Itoa(j)), p))
+				}
 			}
 		}
 	}
@@ -519,13 +542,16 @@ func located(agents []*agent, parts []*modelPart) []importer.Credential {
 
 // readBack reads the values the credential decision wrote empty back onto the
 // agents, the model parts and the MCP servers: a stated value that held
-// something and is written empty is written with no value, and an endpoint that
-// held something and is written empty is left for the Release. A value the
-// decision carried is left exactly as the declaration writes it.
+// something and is written empty is written with no value, an endpoint that
+// held something and is written empty is left for the Release, and a part of an
+// MCP server's url that held something and is written empty is left out, named
+// alone. A value the decision carried is left exactly as the declaration writes
+// it.
 func readBack(agents []*agent, parts []*modelPart, written []byte) error {
 	var values map[string]struct {
 		Stated   []string `json:"stated"`
 		Endpoint *string  `json:"endpoint"`
+		Address  []string `json:"address"`
 	}
 	if err := json.Unmarshal(written, &values); err != nil {
 		return err
@@ -543,9 +569,18 @@ func readBack(agents []*agent, parts []*modelPart, written []byte) error {
 			}
 		}
 		for _, t := range a.tools {
-			if t.mcp() && emptied(t.key, t.endpoint) {
-				t.endpoint, t.note = nil, ""
+			if !t.mcp() {
+				continue
+			}
+			if emptied(t.key, t.endpoint) {
+				t.endpoint = nil
 				t.left = "infra.endpoint, " + emptiedNote
+			}
+			address := values[t.key].Address
+			for j := range t.parts {
+				if t.parts[j].Text != "" && j < len(address) && address[j] == "" {
+					t.parts[j].Emptied = true
+				}
 			}
 		}
 	}

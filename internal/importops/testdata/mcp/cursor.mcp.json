@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "remote-search": {
-      "url": "https://search.example.com/mcp?api_key=planted-query-needle-5d81",
+      "url": "https://reader:planted-userpart-needle-3e6a@search.example.com/mcp?api_key=planted-query-needle-5d81#planted-fragment-needle-c08f",
       "headers": {
         "x-api-key": "planted-header-needle-b902",
         "Authorization": "${env:SEARCH_TOKEN}"

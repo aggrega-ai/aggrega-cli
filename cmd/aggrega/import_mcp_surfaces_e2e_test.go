@@ -27,14 +27,17 @@ const mcpFixtureDir = "../../internal/importops/testdata/mcp"
 // mcpSurfaceConfigurations are the committed configurations the surfaces
 // import, each under the name its client reads it by: Claude Desktop's, with a
 // search server holding a key in its environment and a database server whose
-// connection string, an argument, holds a password; and Visual Studio Code's,
+// connection string, an argument, holds a password; Visual Studio Code's,
 // written as JSON with comments — line and block comments and trailing commas —
-// with the copy of it without them its drafts are held to.
+// with the copy of it without them its drafts are held to; and Cursor's, with a
+// remote server whose address carries a key in its user part, its query and its
+// fragment, each carried in the comment above the server's entry.
 var mcpSurfaceConfigurations = []struct {
 	fixture, name, uncommented string
 }{
 	{fixture: "claude_desktop_config.json", name: "claude_desktop_config.json"},
 	{fixture: "vscode-commented.mcp.json", name: ".vscode/mcp.json", uncommented: "vscode-uncommented.mcp.json"},
+	{fixture: "cursor.mcp.json", name: ".cursor/mcp.json"},
 }
 
 // TestAnMCPConfigurationIsDraftedAlikeAtEverySurface imports each of

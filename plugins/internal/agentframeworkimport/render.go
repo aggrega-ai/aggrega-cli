@@ -336,14 +336,16 @@ func writePartEntry(b *strings.Builder, p *modelPart) {
 
 // writeToolEntry writes one MCP server's entry of the Release: its address as
 // infra.endpoint, as the MCP importer writes a remote server's, or why none is
-// written, with the note naming what of its url is not written.
+// written, with the comment the MCP importer writes above it naming each part
+// of its url the address leaves out, beside its text or, where the
+// empty_credentials setting leaves it out, alone.
 func writeToolEntry(b *strings.Builder, t *tool) {
 	if t.left != "" {
 		b.WriteString("    # Left for the Release, since the draft does not write it:\n")
 		b.WriteString("    #   - " + t.left + "\n")
 	}
-	if t.note != "" {
-		b.WriteString("    # " + t.note + "\n")
+	for _, line := range mcpimport.AddressComment(t.parts) {
+		b.WriteString("    # " + line + "\n")
 	}
 	b.WriteString("    " + t.key + ":\n")
 	if t.endpoint == nil {

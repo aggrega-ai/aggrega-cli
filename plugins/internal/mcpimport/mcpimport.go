@@ -41,7 +41,9 @@
 // operational inputs the source states: a server started from a command line as
 // infra.stdio_command, and the launcher it runs from as infra.stdio_runtime where
 // the command names one a bridge image carries; a server reached at an address as
-// infra.endpoint, the address without any part that carries a key; a package
+// infra.endpoint, the address without any part that carries a key — its user
+// part, its query and its fragment, each written in the comment above its entry
+// beside the address; a package
 // published as an image as infra.image; and a server's environment as the
 // server_env attachment, core/referenced-secret-set, one entry per variable. What
 // the source cannot state is left unset and named in a comment, so the build
@@ -51,22 +53,26 @@
 // # Credential values
 //
 // A value of a server's configuration can carry a key: a header's value, an
-// environment value, the address, the command and each argument. Each one the
-// draft writes that is not a single variable reference is located in the drafted
-// values and handed to the plugin kit's credential decision,
-// importer.CarryCredentials, which reads the empty_credentials setting: by
-// default each is carried as written and named in a credential-carried warning
-// by its server and its place, never by its value; where the setting asks for an
-// MCP server's members, each is written empty and reported under
-// credential-emptied — an argument as an empty item of the command line, an
-// address or an environment value left unset, a header's value left out. A
-// variable reference — ${NAME}, ${env:NAME}, ${input:id}, ${workspaceFolder} —
-// holds no value, so it is written as the text it is whatever the setting says,
-// and a variable or a header whose value is one is written with the reference it
-// reads from. No key of the Release takes a header's value — a remote server's
-// credential is held by each consumer on its connection to the tool, and the
-// draft drafts no consumer — so the headers a server is sent are written in the
-// comment above its entry, each beside its value.
+// environment value, the address, each part of the address infra.endpoint
+// leaves out, the command and each argument. Each one the draft writes that is
+// not a single variable reference is located in the drafted values and handed
+// to the plugin kit's credential decision, importer.CarryCredentials, which
+// reads the empty_credentials setting: by default each is carried as written
+// and named in a credential-carried warning by its server and its place, never
+// by its value; where the setting asks for an MCP server's members, each is
+// written empty and reported under credential-emptied — an argument as an empty
+// item of the command line, an address or an environment value left unset, a
+// header's value or a part of the address left out of the comment, which names
+// the header or the part alone. A variable reference — ${NAME}, ${env:NAME},
+// ${input:id}, ${workspaceFolder} — holds no value, so it is written as the text
+// it is whatever the setting says, and a variable, a header or a part of the
+// address whose value is one is written with the reference it reads from. No
+// key of the Release takes a header's value — a remote server's credential is
+// held by each consumer on its connection to the tool, and the draft drafts no
+// consumer — so the headers a server is sent are written in the comment above
+// its entry, each beside its value; and infra.endpoint takes the address
+// without any part that carries a key, so the parts it leaves out are written
+// in that comment too, each beside its name.
 package mcpimport
 
 import (
@@ -107,6 +113,11 @@ const (
 
 // where completes each credential report, naming where the value is written.
 const where = "in the Release the draft writes"
+
+// addressField is the field a report names the parts of a server's address
+// infra.endpoint leaves out by: the url a client's server and a registry
+// description's remote write it under.
+const addressField = "url"
 
 // Import turns one import request into the drafts: each source — the request's
 // named sources, or its primary bytes — is read through parse, the host's
@@ -229,9 +240,11 @@ func serversOf(text []byte) []server {
 
 // draftedValues writes, as one JSON document, the values of every server the
 // credential decision judges: under each server's key, its headers' values, its
-// command line, its address and its environment's values, in the order the draft
-// writes them. A value the source leaves for its user is written empty; a header
-// or a variable whose value the draft does not write is written with none.
+// command line, its address, the text of each part of its address the address
+// leaves out, and its environment's values, in the order the draft writes them.
+// A value the source leaves for its user is written empty; a header, a variable
+// or a part of the address whose value the draft does not write is written with
+// none.
 func draftedValues(servers []server) []byte {
 	var b strings.Builder
 	b.WriteString("{")
@@ -254,7 +267,18 @@ func draftedValues(servers []server) []byte {
 		} else {
 			b.WriteString("null")
 		}
-		b.WriteString(`,"env":` + namedValues(s.env) + "}")
+		b.WriteString(`,"address":[`)
+		for j, p := range s.addressParts {
+			if j > 0 {
+				b.WriteString(",")
+			}
+			if p.Reference {
+				b.WriteString("null")
+			} else {
+				b.WriteString(jsonString(p.Text))
+			}
+		}
+		b.WriteString(`],"env":` + namedValues(s.env) + "}")
 	}
 	b.WriteString("}")
 	return []byte(b.String())
@@ -282,10 +306,13 @@ func namedValues(named []namedValue) string {
 
 // located returns every value of draftedValues the credential decision judges,
 // in the order the draft writes them: each header's value, each item of a
-// command line, the address and each environment value, where the value is not a
-// single variable reference, as the plugin kit reads one for every format, and
-// is not left for the user — named by its server and by its place: a header as
-// headers.<name>, and every other value by its place in the Release.
+// command line, the address, each part of the source's address the address
+// leaves out, and each environment value, where the value is not a single
+// variable reference, as the plugin kit reads one for every format, and is not
+// left for the user — named by its server and by its place: a header as
+// headers.<name>, a part of the address by the source's url and the part's name,
+// as AddressPartCredential names one, and every other value by its place in the
+// Release.
 func located(servers []server) []importer.Credential {
 	var out []importer.Credential
 	for _, s := range servers {
@@ -307,6 +334,13 @@ func located(servers []server) []importer.Credential {
 			out = append(out, importer.Credential{Node: s.ref, Field: "infra.endpoint",
 				Pointer: importer.Pointer(s.key, "endpoint"), Class: s.endpoint.class})
 		}
+		for j, p := range s.addressParts {
+			if p.Reference || p.Text == "" {
+				continue
+			}
+			out = append(out, AddressPartCredential(s.ref, addressField, importer.Pointer(s.key, "address",
+				strconv.Itoa(j)), p))
+		}
 		for j, e := range s.env {
 			if e.value == nil || e.value.reference {
 				continue
@@ -321,14 +355,16 @@ func located(servers []server) []importer.Credential {
 // readBack reads the values the credential decision wrote empty back onto the
 // servers: a command-line item that held something and is written empty is
 // written empty, an address or an environment value that held something and is
-// written empty is left for the Release, and a header's value that held
-// something and is written empty is left out, the header named alone. A value
-// the decision carried is left exactly as the source writes it.
+// written empty is left for the Release, and a header's value or a part of the
+// address that held something and is written empty is left out, the header or
+// the part named alone. A value the decision carried is left exactly as the
+// source writes it.
 func readBack(servers []server, written []byte) error {
 	var values map[string]struct {
 		Headers  []*string `json:"headers"`
 		Command  []string  `json:"stdio_command"`
 		Endpoint *string   `json:"endpoint"`
+		Address  []*string `json:"address"`
 		Env      []*string `json:"env"`
 	}
 	if err := json.Unmarshal(written, &values); err != nil {
@@ -351,6 +387,12 @@ func readBack(servers []server, written []byte) error {
 		if s.endpoint != nil && v.Endpoint != nil && *v.Endpoint == "" && s.endpoint.text != "" {
 			s.endpoint = nil
 			s.left = append(s.left, "infra.endpoint")
+		}
+		for j := range s.addressParts {
+			p := &s.addressParts[j]
+			if !p.Reference && p.Text != "" && j < len(v.Address) && v.Address[j] != nil && *v.Address[j] == "" {
+				p.Emptied = true
+			}
 		}
 		for j := range s.env {
 			if emptiedAt(s.env[j], v.Env, j) {

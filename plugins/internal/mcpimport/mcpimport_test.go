@@ -524,7 +524,13 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 				"          - \"--user-agent=https://example.com//agent\"\n        stdio_runtime: pypi\n",
 		}},
 		{"cursor.mcp.json", []string{
-			"    # The address's query is not written",
+			"    # The address's user part, query and fragment are not written in infra.endpoint, which holds the " +
+				"address without any part that carries a key; a consumer reading its key from the address supplies the " +
+				"whole address on its own connection to the tool:\n" +
+				"    #   - user part: \"reader:planted-userpart-needle-3e6a\"\n" +
+				"    #   - query: \"api_key=planted-query-needle-5d81\"\n" +
+				"    #   - fragment: \"planted-fragment-needle-c08f\"\n" +
+				"    remote-search:\n",
 			"    #   - x-api-key: \"planted-header-needle-b902\"\n" +
 				"    #   - Authorization, its value read from ${env:SEARCH_TOKEN}\n",
 			"    remote-search:\n      infra:\n        endpoint: \"https://search.example.com/mcp\"\n",
@@ -559,7 +565,7 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 					t.Errorf("the Release does not hold %q:\n%s", want, release)
 				}
 			}
-			for _, needle := range []string{"planted-query-needle", "planted-client-secret", "planted-client-id"} {
+			for _, needle := range []string{"planted-client-secret", "planted-client-id"} {
 				everything, _ := json.Marshal(out)
 				if strings.Contains(string(everything), needle) {
 					t.Errorf("the import's output holds %q, which nothing carries", needle)
@@ -631,48 +637,220 @@ func TestTwoImportsAreByteIdentical(t *testing.T) {
 	}
 }
 
-// TestEndpointOf writes an address without its user part, its query and its
-// fragment, and names each part it left out.
-func TestEndpointOf(t *testing.T) {
+// TestRemoteEndpointWritesTheAddressAndThePartsItLeavesOut writes a remote
+// server's address as infra.endpoint takes it — without its user part, its query
+// and its fragment — and returns each part it leaves out, by name and as the
+// address writes it, in the order the address writes them: a ? inside the
+// fragment is the fragment's, and an @ past the authority is the path's.
+//
+// 🔴 PLANTED DEFECT: in RemoteEndpoint (servers.go), cut the query at the first ?
+// before the fragment is found: the "a ? inside the fragment" row keeps "#top"
+// in its endpoint and the case fails on it.
+func TestRemoteEndpointWritesTheAddressAndThePartsItLeavesOut(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
-		in, want string
-		dropped  []string
+		name, in, want string
+		parts          []AddressPart
 	}{
-		{"https://mcp.example.com/mcp", "https://mcp.example.com/mcp", nil},
-		{"https://user:pw@mcp.example.com/mcp", "https://mcp.example.com/mcp", []string{"user part"}},
-		{"https://mcp.example.com/mcp?key=k#top", "https://mcp.example.com/mcp", []string{"query", "fragment"}},
-		{"https://mcp.example.com/mcp#top", "https://mcp.example.com/mcp", []string{"fragment"}},
-		{"https://mcp.example.com/a@b", "https://mcp.example.com/a@b", nil},
-		{"${BASE:-https://api.example.com}/mcp", "${BASE:-https://api.example.com}/mcp", nil},
+		{"no part", "https://mcp.example.com/mcp", "https://mcp.example.com/mcp", nil},
+		{"a user part", "https://user:pw@mcp.example.com/mcp", "https://mcp.example.com/mcp",
+			[]AddressPart{{Name: "user part", Text: "user:pw"}}},
+		{"a query and a fragment", "https://mcp.example.com/mcp?key=k#top", "https://mcp.example.com/mcp",
+			[]AddressPart{{Name: "query", Text: "key=k"}, {Name: "fragment", Text: "top"}}},
+		{"every part", "https://u:p@mcp.example.com:8443/mcp?key=k&x=1#top", "https://mcp.example.com:8443/mcp",
+			[]AddressPart{{Name: "user part", Text: "u:p"}, {Name: "query", Text: "key=k&x=1"},
+				{Name: "fragment", Text: "top"}}},
+		{"a user part with no path", "https://u:p@mcp.example.com?key=k", "https://mcp.example.com",
+			[]AddressPart{{Name: "user part", Text: "u:p"}, {Name: "query", Text: "key=k"}}},
+		{"a fragment alone", "https://mcp.example.com/mcp#top", "https://mcp.example.com/mcp",
+			[]AddressPart{{Name: "fragment", Text: "top"}}},
+		{"a ? inside the fragment", "https://mcp.example.com/mcp#top?key=k", "https://mcp.example.com/mcp",
+			[]AddressPart{{Name: "fragment", Text: "top?key=k"}}},
+		{"an @ in the path", "https://mcp.example.com/a@b", "https://mcp.example.com/a@b", nil},
+		{"an empty query", "https://mcp.example.com/mcp?", "https://mcp.example.com/mcp",
+			[]AddressPart{{Name: "query", Text: ""}}},
+		{"a reference with a default", "${BASE:-https://api.example.com}/mcp", "${BASE:-https://api.example.com}/mcp",
+			nil},
 	} {
-		got, dropped := endpointOf(row.in)
-		if got != row.want || !reflect.DeepEqual(dropped, row.dropped) {
-			t.Errorf("endpointOf(%q) = %q, %q; want %q, %q", row.in, got, dropped, row.want, row.dropped)
+		got, parts := RemoteEndpoint(row.in)
+		if got != row.want || !reflect.DeepEqual(parts, row.parts) {
+			t.Errorf("%s: RemoteEndpoint(%q) = %q, %+v; want %q, %+v", row.name, row.in, got, parts, row.want, row.parts)
 		}
 	}
 }
 
-// TestRemoteEndpointWritesTheAddressAndTheNote writes a remote server's address
-// as infra.endpoint takes it, and the note naming what it leaves out — none
-// where it leaves out nothing — as the MCP importer writes it on its own servers
-// and every other importer drafting a remote MCP server writes it too.
-func TestRemoteEndpointWritesTheAddressAndTheNote(t *testing.T) {
+// addressLead is the line opening the comment above a server whose address
+// leaves out parts, for the parts named.
+func addressLead(names, verb string) string {
+	return "The address's " + names + " " + verb + " not written in infra.endpoint, which holds the address without " +
+		"any part that carries a key; a consumer reading its key from the address supplies the whole address on its " +
+		"own connection to the tool:"
+}
+
+// TestAddressCommentNamesEachPart writes the comment for one part, two and
+// three — the verb agreeing with however many it names — and for a part carried,
+// one that is wholly a variable reference and one the setting leaves out; and no
+// comment for an address that leaves out nothing.
+func TestAddressCommentNamesEachPart(t *testing.T) {
 	t.Parallel()
-	for _, row := range []struct{ in, want, note string }{
-		{"https://mcp.example.com/mcp", "https://mcp.example.com/mcp", ""},
-		{"https://mcp.example.com/mcp?key=k", "https://mcp.example.com/mcp", "The address's query is not written: " +
-			"infra.endpoint holds the address without any part that carries a key, and a consumer reading its key " +
-			"from the address supplies the whole address on its own connection to the tool."},
-		{"https://user:pw@mcp.example.com/mcp#top", "https://mcp.example.com/mcp",
-			"The address's user part and fragment is not written: infra.endpoint holds the address without any part " +
-				"that carries a key, and a consumer reading its key from the address supplies the whole address on its " +
-				"own connection to the tool."},
+	for _, row := range []struct {
+		name  string
+		parts []AddressPart
+		want  []string
+	}{
+		{"none", nil, nil},
+		{"one", []AddressPart{{Name: "query", Text: `k="v"`}},
+			[]string{addressLead("query", "is"), `  - query: "k=\"v\""`}},
+		{"two", []AddressPart{{Name: "user part", Text: "u:p"}, {Name: "query", Text: "${Q}", Reference: true}},
+			[]string{addressLead("user part and query", "are"), `  - user part: "u:p"`,
+				"  - query, its value read from ${Q}"}},
+		{"three", []AddressPart{{Name: "user part", Text: "u:p", Emptied: true}, {Name: "query", Text: "k=v"},
+			{Name: "fragment", Text: "top", Emptied: true}},
+			[]string{addressLead("user part, query and fragment", "are"),
+				"  - user part, its value left out, as the empty_credentials setting asks", `  - query: "k=v"`,
+				"  - fragment, its value left out, as the empty_credentials setting asks"}},
 	} {
-		got, note := RemoteEndpoint(row.in)
-		if got != row.want || note != row.note {
-			t.Errorf("RemoteEndpoint(%q) = %q, %q; want %q, %q", row.in, got, note, row.want, row.note)
+		if got := AddressComment(row.parts); !reflect.DeepEqual(got, row.want) {
+			t.Errorf("%s: AddressComment(%+v) = %q, want %q", row.name, row.parts, got, row.want)
 		}
+	}
+}
+
+// The key-shaped values TestTheAddressCarriesItsLeftOutPartsInTheComment plants
+// in a remote server's address: one in its user part, one in its query and one
+// in its fragment.
+const (
+	plantedUserPart = "planted-userpart-needle-5a17"
+	plantedQuery    = "planted-query-needle-2c90"
+	plantedFragment = "planted-fragment-needle-e4b3"
+)
+
+// TestTheAddressCarriesItsLeftOutPartsInTheComment imports a client's remote
+// server whose address carries a planted user part, query and fragment, and a
+// second server whose query is wholly a variable reference, under every value
+// of the empty_credentials setting, after a needle proves each planted value is
+// in the source:
+//
+//   - absent or none: infra.endpoint is the address without the three parts;
+//     each planted value is in the Release on one line alone, the line naming its
+//     part in the comment above its server; each part is named in a
+//     credential-carried warning by its server and its name — "url of node
+//     <server> is carried with its <part> as written" — and no planted value is
+//     in any diagnostic, entity or other draft;
+//   - marked or all: no planted value is in any file, entity or diagnostic,
+//     infra.endpoint is left for the Release, the comment names each part alone,
+//     and each part is reported under credential-emptied by its server and its
+//     name;
+//   - under every value, the query that is a reference is written as the
+//     reference it reads from and reported by nothing.
+//
+// 🔴 PLANTED DEFECT: in located (mcpimport.go), skip the address's parts: no
+// report names a part, and under marked or all the planted values are carried in
+// the comment, so the case fails on both.
+func TestTheAddressCarriesItsLeftOutPartsInTheComment(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"mcpServers":{"alpha-api":{"type":"http","url":"https://user:` + plantedUserPart +
+		`@api.example.com/mcp?k=` + plantedQuery + `#` + plantedFragment + `"},` +
+		`"beta-api":{"type":"http","url":"https://beta.example.com/mcp?${env:BETA_QUERY}"}}}`)
+	parts := map[string]string{"user part": "user:" + plantedUserPart, "query": "k=" + plantedQuery,
+		"fragment": plantedFragment}
+	for _, needle := range []string{plantedUserPart, plantedQuery, plantedFragment} {
+		if !strings.Contains(string(body), needle) {
+			t.Fatalf("the needle: %q is not in the source, so the search finds nothing", needle)
+		}
+	}
+	for _, settings := range []string{"", `{"empty_credentials":"none"}`, `{"empty_credentials":"marked"}`,
+		`{"empty_credentials":"all"}`} {
+		t.Run(settings, func(t *testing.T) {
+			t.Parallel()
+			emptied := strings.Contains(settings, "marked") || strings.Contains(settings, "all")
+			out := importOne(body, settings)
+			release := fileContent(t, out, "release.yaml")
+			diagnostics, _ := json.Marshal(out.Diagnostics)
+			decisions, _ := json.Marshal(out.Decisions)
+			// others is everything the import wrote but the Release: every other file,
+			// and every entity's body but the Release's, which is the Release itself.
+			var others strings.Builder
+			for _, f := range out.Files {
+				if f.Path != "release.yaml" {
+					others.WriteString(f.Content)
+				}
+			}
+			for _, e := range out.Entities {
+				if e.Kind != "Release" {
+					others.WriteString(e.Name + e.Body + e.SourceRef)
+				} else if e.Body != release {
+					t.Errorf("the Release entity's body is not the drafted release.yaml")
+				}
+			}
+
+			lead := "    # " + addressLead("user part, query and fragment", "are") + "\n"
+			if !strings.Contains(release, lead) {
+				t.Errorf("the Release does not open the comment with %q:\n%s", lead, release)
+			}
+			if !strings.Contains(release, "    #   - query, its value read from ${env:BETA_QUERY}\n    beta-api:\n") {
+				t.Errorf("the Release does not write the reference the second server's query reads from:\n%s", release)
+			}
+			endpoint := "    alpha-api:\n      infra:\n        endpoint: \"https://api.example.com/mcp\"\n"
+			if emptied {
+				endpoint = "    alpha-api:\n      infra: {}\n"
+			}
+			if !strings.Contains(release, endpoint) {
+				t.Errorf("the Release does not write %q:\n%s", endpoint, release)
+			}
+
+			code, other := "credential-carried", "credential-emptied"
+			if emptied {
+				code, other = other, code
+			}
+			reported := strings.Join(codes(out, code), "\n")
+			for name, text := range parts {
+				line := "    #   - " + name + ": " + yamlString(text) + "\n"
+				report := "url of node alpha-api is carried with its " + name + " as written in the Release the draft " +
+					"writes: the field belongs to an MCP server's configuration, which can carry a key, and setting " +
+					"empty_credentials to marked or all writes its " + name + " empty"
+				if emptied {
+					line = "    #   - " + name + ", its value left out, as the empty_credentials setting asks\n"
+					report = "url of node alpha-api is written with its " + name + " empty in the Release the draft writes"
+				}
+				if !strings.Contains(release, line) {
+					t.Errorf("the Release does not hold %q:\n%s", line, release)
+				}
+				if !strings.Contains(reported, report) {
+					t.Errorf("no %s says %q:\n%s", code, report, reported)
+				}
+			}
+			for _, stray := range codes(out, other) {
+				if strings.Contains(stray, "url of node") {
+					t.Errorf("the import reports a part of the address under %s as well: %q", other, stray)
+				}
+			}
+			if strings.Contains(string(diagnostics), "url of node beta-api") {
+				t.Errorf("a report names the query that is a reference, which holds no value: %s", diagnostics)
+			}
+			for _, needle := range []string{plantedUserPart, plantedQuery, plantedFragment} {
+				if strings.Contains(string(diagnostics), needle) || strings.Contains(string(decisions), needle) ||
+					strings.Contains(others.String(), needle) {
+					t.Errorf("the planted %q reaches a diagnostic, a decision, an entity or another draft", needle)
+				}
+				lines := 0
+				for _, l := range strings.Split(release, "\n") {
+					if strings.Contains(l, needle) {
+						lines++
+						if !strings.HasPrefix(l, "    #   - ") {
+							t.Errorf("the planted %q is on a line other than its part's in the comment: %q", needle, l)
+						}
+					}
+				}
+				want := 1
+				if emptied {
+					want = 0
+				}
+				if lines != want {
+					t.Errorf("the Release holds the planted %q on %d lines, want %d", needle, lines, want)
+				}
+			}
+		})
 	}
 }
 

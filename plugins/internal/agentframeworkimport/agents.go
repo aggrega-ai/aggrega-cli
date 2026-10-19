@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpimport"
 )
 
 // agent is one declarative agent a source declares, as the draft writes it.
@@ -79,10 +80,10 @@ type tool struct {
 	// an instance of the MCP tool; ref names it in a report.
 	key, ref string
 	// endpoint is the address the instance is reached at, as the draft writes it,
-	// and note what the draft says of it; left says why no address is written,
-	// empty where one is.
+	// and parts the parts of the url it leaves out, in the order the url writes
+	// them; left says why no address is written, empty where one is.
 	endpoint *string
-	note     string
+	parts    []mcpimport.AddressPart
 	left     string
 }
 

@@ -32,8 +32,11 @@ type server struct {
 	runtime     string
 	runtimeFrom bool
 	// endpoint is the address of a server someone else runs, as the draft writes
-	// it; nil for a server that runs otherwise.
-	endpoint *item
+	// it; nil for a server that runs otherwise. addressParts are the parts of the
+	// address the source writes that endpoint leaves out, in the order the address
+	// writes them.
+	endpoint     *item
+	addressParts []AddressPart
 	// image is the image a server published as an image runs from.
 	image string
 	// env is the environment the server is started with, in the order the source
@@ -498,13 +501,14 @@ func remoteName(fields []importer.ObjectEntry) string {
 }
 
 // addressItem returns the address a server is reached at as infra.endpoint
-// takes it, as RemoteEndpoint writes it, and notes on the server what it leaves
-// out.
+// takes it, as RemoteEndpoint writes it, and keeps on the server the parts it
+// leaves out, a part that is wholly a variable reference marked as one.
 func addressItem(s *server, url string) *item {
-	address, note := RemoteEndpoint(url)
-	if note != "" {
-		s.notes = append(s.notes, note)
+	address, parts := RemoteEndpoint(url)
+	for i := range parts {
+		parts[i].Reference = importer.IsVariableReference(parts[i].Text)
 	}
+	s.addressParts = parts
 	if address == "" {
 		return nil
 	}
@@ -512,50 +516,114 @@ func addressItem(s *server, url string) *item {
 	return &v
 }
 
-// RemoteEndpoint returns the address an MCP server someone else runs is reached
-// at, url, as the infra.endpoint of Component takes it — without any part that
-// carries a key: the user part, the query and the fragment are left out — and
-// the note a draft writes beside it naming what it leaves out, empty where it
-// leaves out nothing. It is how every importer drafting a remote MCP server
-// writes its address, the MCP importer's own servers and an MCP tool another
-// format names alike.
-func RemoteEndpoint(url string) (endpoint, note string) {
-	address, dropped := endpointOf(url)
-	if len(dropped) > 0 {
-		note = "The address's " + strings.Join(dropped, " and ") + " is not written: infra.endpoint holds the " +
-			"address without any part that carries a key, and a consumer reading its key from the address supplies the " +
-			"whole address on its own connection to the tool."
-	}
-	return address, note
+// AddressPart is one part of the address an MCP server someone else runs is
+// reached at that infra.endpoint leaves out, since it can carry a key: the
+// address's user part, its query or its fragment, as the address writes it.
+type AddressPart struct {
+	// Name names the part: user part, query or fragment.
+	Name string
+	// Text is the part as the address writes it, without the @, ? or # setting it
+	// off.
+	Text string
+	// Reference is set by the importer for a part that is wholly a variable
+	// reference in its format's grammar, which holds no value of its own.
+	Reference bool
+	// Emptied is set by the importer for a part the empty_credentials setting
+	// leaves out.
+	Emptied bool
 }
 
-// endpointOf returns url without its user part, its query and its fragment, and
-// names each part it left out, in that order.
-func endpointOf(url string) (string, []string) {
-	var dropped []string
+// RemoteEndpoint returns the address an MCP server someone else runs is reached
+// at, url, as the infra.endpoint of Component takes it — without any part that
+// carries a key — and the parts it leaves out, in the order url writes them:
+// its user part, its query and its fragment, each where url holds one. It is how
+// every importer drafting a remote MCP server writes its address, the MCP
+// importer's own servers and an MCP tool another format names alike: the
+// endpoint as infra.endpoint, each part beside it in the comment AddressComment
+// writes, and each part that holds a value located with AddressPartCredential.
+func RemoteEndpoint(url string) (endpoint string, parts []AddressPart) {
+	var fragment *AddressPart
+	if f := strings.IndexByte(url, '#'); f >= 0 {
+		fragment = &AddressPart{Name: "fragment", Text: url[f+1:]}
+		url = url[:f]
+	}
 	if at := strings.Index(url, "://"); at >= 0 {
 		authority := url[at+3:]
-		end := strings.IndexAny(authority, "/?#")
+		end := strings.IndexAny(authority, "/?")
 		if end < 0 {
 			end = len(authority)
 		}
 		if user := strings.LastIndex(authority[:end], "@"); user >= 0 {
+			parts = append(parts, AddressPart{Name: "user part", Text: authority[:user]})
 			url = url[:at+3] + authority[user+1:]
-			dropped = append(dropped, "user part")
 		}
 	}
 	if q := strings.IndexByte(url, '?'); q >= 0 {
-		fragment := strings.IndexByte(url, '#')
+		parts = append(parts, AddressPart{Name: "query", Text: url[q+1:]})
 		url = url[:q]
-		dropped = append(dropped, "query")
-		if fragment > q {
-			dropped = append(dropped, "fragment")
-		}
-	} else if f := strings.IndexByte(url, '#'); f >= 0 {
-		url = url[:f]
-		dropped = append(dropped, "fragment")
 	}
-	return url, dropped
+	if fragment != nil {
+		parts = append(parts, *fragment)
+	}
+	return url, parts
+}
+
+// AddressComment returns the lines of the comment a draft writes above the
+// entry of a server reached at an address, for the parts of the address
+// infra.endpoint leaves out — none where it leaves out none: a line naming the
+// parts, then one per part, writing its text as written, as a double-quoted
+// scalar reading back as exactly the source's text; for a part that is wholly a
+// variable reference, the reference it reads from; and for a part the
+// empty_credentials setting leaves out, its name alone, saying so. Each line is
+// the text following the comment's "# ".
+func AddressComment(parts []AddressPart) []string {
+	if len(parts) == 0 {
+		return nil
+	}
+	names := make([]string, len(parts))
+	for i, p := range parts {
+		names[i] = p.Name
+	}
+	verb := "is"
+	if len(parts) > 1 {
+		verb = "are"
+	}
+	lines := []string{"The address's " + nameList(names) + " " + verb + " not written in infra.endpoint, which holds " +
+		"the address without any part that carries a key; a consumer reading its key from the address supplies the " +
+		"whole address on its own connection to the tool:"}
+	for _, p := range parts {
+		switch {
+		case p.Emptied:
+			lines = append(lines, "  - "+p.Name+", its value left out, as the empty_credentials setting asks")
+		case p.Reference:
+			lines = append(lines, "  - "+p.Name+", its value read from "+commentText(p.Text))
+		default:
+			lines = append(lines, "  - "+p.Name+": "+yamlString(p.Text))
+		}
+	}
+	return lines
+}
+
+// AddressPartCredential returns the credential the plugin kit's decision judges
+// for part, a part of the address node's field holds that infra.endpoint leaves
+// out, located in the drafted values at pointer: a member of an MCP server's
+// configuration, reported by node, field and the part's name — "<field> of node
+// <node> is carried with its <part> as written", or "is written with its <part>
+// empty" — and never by its value. The value at pointer is the part's text, so
+// the part written empty is "", which Value says, giving the report the form of
+// a part inside the field's value. A part that is wholly a variable reference,
+// or that writes no text, holds no value and is not located.
+func AddressPartCredential(node, field, pointer string, part AddressPart) importer.Credential {
+	return importer.Credential{Node: node, Field: field, Pointer: pointer, Class: importer.CredentialServerMember,
+		Value: json.RawMessage(`""`), Detail: part.Name}
+}
+
+// nameList joins names as a sentence lists them: "a", "a and b", "a, b and c".
+func nameList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // valueItem returns the item writing text, of class, marking it a reference

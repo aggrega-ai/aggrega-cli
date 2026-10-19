@@ -20,9 +20,10 @@ package importops
 //   - by default the literal values a declarative agent states for its
 //     connections are carried as written into the Release and named in a
 //     warning; the empty_credentials setting at marked writes its keys and its
-//     MCP server's address empty, and at all its model's endpoint too; a
-//     reference to an environment variable is named by its variable under every
-//     setting, and an MCP server's query reaches nothing;
+//     MCP server's address empty, and at all its model's endpoint too; an MCP
+//     server's query is carried in the comment above its entry by default and
+//     written empty at marked or all; a reference to an environment variable is
+//     named by its variable under every setting;
 //   - two imports of one declarative agent are byte-identical;
 //   - a declarative agent the parser refuses halts the import with the parser's
 //     reason;
@@ -220,15 +221,15 @@ func TestADirectoryIsNeverHandedToTheAgentFrameworkImporter(t *testing.T) {
 // TestTheEmptyCredentialsSettingDecidesWhatAnAgentFrameworkImportCarries imports
 // the learn agent with the empty_credentials setting absent, none, marked and
 // all, after a needle proves each planted value is in its declarative agent:
-// where it is absent or none, the model's key and the MCP server's key are
-// carried as written into release.yaml, reach nothing else, and are named in a
-// credential-carried warning; where it is marked or all, neither reaches
-// anything, each is named in a credential-emptied warning, and so is the MCP
-// server's address; the model's endpoint is carried under marked and emptied
-// under all; each report opens with the exact words the kit gives its class and
-// its fate; the session its address carries in its query reaches nothing under
-// any value. The docs agent's references are named by their
-// variables, and reported under neither code, whatever the setting says.
+// where it is absent or none, the model's key, the MCP server's key and the
+// session the server's address carries in its query are carried as written into
+// release.yaml, reach nothing else, and are named in a credential-carried
+// warning; where it is marked or all, none reaches anything, each is named in a
+// credential-emptied warning, and so is the MCP server's address; the model's
+// endpoint is carried under marked and emptied under all; each report opens with
+// the exact words the kit gives its class and its fate. The docs agent's
+// references are named by their variables, and reported under neither code,
+// whatever the setting says.
 //
 // 🔴 PLANTED DEFECT: in located (plugins/internal/agentframeworkimport/agentframeworkimport.go),
 // give every value the class importer.CredentialUnmarked: the marked row carries
@@ -251,12 +252,11 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnAgentFrameworkImportCarries(t *t
 			}
 			emptied := setting == "marked" || setting == "all"
 			res, dir := writtenImport(t, agentFrameworkWorkspace(t, settings), "learn.yaml", learn)
-			keys := []string{plantedModelKey, plantedToolKey}
+			planted := []string{plantedModelKey, plantedToolKey, plantedQuery}
 			if emptied {
-				assertNoneReaches(t, append(keys, plantedQuery), learn, res, dir)
+				assertNoneReaches(t, planted, learn, res, dir)
 			} else {
-				assertCarriedOnlyInTheRelease(t, keys, learn, res, dir)
-				assertNoneReaches(t, []string{plantedQuery}, learn, res, dir)
+				assertCarriedOnlyInTheRelease(t, planted, learn, res, dir)
 			}
 			// Each value is reported once, in the order the draft writes them, under the
 			// message the kit words its class and its fate with.
@@ -276,12 +276,16 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnAgentFrameworkImportCarries(t *t
 				endpoint = "model.connection.endpoint"
 				url      = "tools.microsoft_learn.url"
 			)
-			want := []string{carried(modelKey), carried(toolKey), carried(endpoint), carried(url)}
+			carriedQuery := "credential-carried: " + url + " of node LearnAgent is carried with its query as written "
+			emptiedQuery := "credential-emptied: " + url + " of node LearnAgent is written with its query empty "
+			want := []string{carried(modelKey), carried(toolKey), carried(endpoint), carried(url), carriedQuery}
 			switch setting {
 			case "marked":
-				want = []string{emptiedMarked(modelKey), emptiedMarked(toolKey), carried(endpoint), emptiedWhole(url)}
+				want = []string{emptiedMarked(modelKey), emptiedMarked(toolKey), carried(endpoint), emptiedWhole(url),
+					emptiedQuery}
 			case "all":
-				want = []string{emptiedMarked(modelKey), emptiedMarked(toolKey), emptiedWhole(endpoint), emptiedWhole(url)}
+				want = []string{emptiedMarked(modelKey), emptiedMarked(toolKey), emptiedWhole(endpoint), emptiedWhole(url),
+					emptiedQuery}
 			}
 			var reported []string
 			for _, d := range res.Diagnostics {
@@ -451,7 +455,8 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part, server string) str
 // for the Release — the build halts naming the image where the Release names
 // none, so its completing is the image's proof: the agent's Deployment is given
 // the model's endpoint the declarative agent states as OPENAI_BASE_URL, its id as
-// OPENAI_MODEL and the MCP server's address, without its query, as
+// OPENAI_MODEL and the MCP server's address, without the query the comment above
+// its entry carries, as
 // AGGREGA_TOOL_MICROSOFT_LEARN_URL; the model's and the server's Services reach
 // their hosts; and the compiled graph carries the agent's description as the
 // declarative agent writes it.

@@ -21,7 +21,9 @@
 // EnsureFixtureBuilt detects the layout from the artifact-name shape
 // and dispatches accordingly. The cache + freshness semantics are
 // identical across both layouts: artifact mtime ≥ newest source
-// mtime under the source directory. Both layouts hand back a path under
+// mtime under the source directory and the trees it builds against —
+// for a Go guest, also every file of each package of this module it
+// imports. Both layouts hand back a path under
 // `aggrega-cli/internal/wasm/testdata/`, written only by this package and
 // only by rename, so a test never reads an artifact another test process
 // is in the middle of writing.
@@ -545,6 +547,104 @@ func isGoGuest(pluginDir string) bool {
 	return err == nil
 }
 
+// guestInputsListing is one Go guest's guestModuleInputs, listed once.
+type guestInputsListing struct {
+	once   sync.Once
+	inputs []string
+	err    error
+}
+
+// guestInputs holds a *guestInputsListing per module root and guest, so a test
+// process lists a guest's packages once however many fixtures — an unstamped
+// build and its stamped ones — are built from it.
+var guestInputs sync.Map
+
+// guestModuleInputs returns what the build of the Go guest at
+// aggrega-cli/plugins/<name>/ reads from this module, as
+// listGuestModuleInputs lists it, listed once per test process.
+func guestModuleInputs(moduleRoot, name string) ([]string, error) {
+	actual, _ := guestInputs.LoadOrStore(moduleRoot+"\x00"+name, &guestInputsListing{})
+	l := actual.(*guestInputsListing)
+	l.once.Do(func() { l.inputs, l.err = listGuestModuleInputs(moduleRoot, name) })
+	return l.inputs, l.err
+}
+
+// guestPackagesTemplate is the go list template writing, for each package of a
+// guest's build that is not the standard library's, one line: its directory,
+// then each Go file it compiles and each file it embeds, relative to that
+// directory, tab-separated.
+const guestPackagesTemplate = `{{if not .Standard}}{{.Dir}}{{range .GoFiles}}{{"\t"}}{{.}}{{end}}` +
+	`{{range .CgoFiles}}{{"\t"}}{{.}}{{end}}{{range .EmbedFiles}}{{"\t"}}{{.}}{{end}}{{end}}`
+
+// listGuestModuleInputs lists what the build of the Go guest at
+// aggrega-cli/plugins/<name>/ reads from the module at moduleRoot: the module's
+// go.mod and go.sum, where each exists, and for every package of the module the
+// guest imports, its own included, the package's directory — whose time moves
+// when a file is added to it or removed from it — and each file the package
+// compiles and embeds. The packages are those `go list -deps` reports for the
+// guest under the environment its build runs in (GOWORK=off, GOOS=wasip1,
+// GOARCH=wasm), kept to the ones inside moduleRoot; a package the guest does
+// not import, a test file and a file another platform's build compiles are not
+// among them.
+func listGuestModuleInputs(moduleRoot, name string) ([]string, error) {
+	cmd := exec.Command("go", "list", "-deps", "-f", guestPackagesTemplate, "./plugins/"+name)
+	cmd.Dir = moduleRoot
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list the packages the guest %s imports: %v\n%s", name, err, stderr.String())
+	}
+	root, err := filepath.EvalSymlinks(moduleRoot)
+	if err != nil {
+		return nil, err
+	}
+	var inputs []string
+	for _, file := range []string{"go.mod", "go.sum"} {
+		if _, err := os.Stat(filepath.Join(moduleRoot, file)); err == nil {
+			inputs = append(inputs, filepath.Join(moduleRoot, file))
+		}
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Split(line, "\t")
+		dir := fields[0]
+		if dir == "" {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return nil, err
+		}
+		if rel, err := filepath.Rel(root, real); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		inputs = append(inputs, dir)
+		for _, file := range fields[1:] {
+			inputs = append(inputs, filepath.Join(dir, file))
+		}
+	}
+	return inputs, nil
+}
+
+// isFreshAgainst reports whether artifactPath exists and its time is at or after
+// the time of every one of paths, each a file or a directory read as itself
+// rather than walked. A path that no longer exists leaves the artifact not
+// fresh, since the build it was listed for read it.
+func isFreshAgainst(artifactPath string, paths []string) bool {
+	artifactInfo, err := os.Stat(artifactPath)
+	if err != nil {
+		return false
+	}
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil || info.ModTime().After(artifactInfo.ModTime()) {
+			return false
+		}
+	}
+	return true
+}
+
 // buildGoPluginArtifact builds the Go guest at aggrega-cli/plugins/<name>/ and
 // publishes it under outName in the shared testdata directory, stamped with
 // version as the version it reports through describe().
@@ -552,8 +652,11 @@ func isGoGuest(pluginDir string) bool {
 // The guest is a package of this module rather than a module of its own, so it is
 // built from the module root against the module's own go.mod — GOWORK=off, as the
 // core-plugin build runs it — with that build's reproducibility flags (-trimpath,
-// -buildvcs=false, an empty build id). Freshness watches the guest's own directory
-// and the Go plugin kit and ABI source trees it builds against.
+// -buildvcs=false, an empty build id). Freshness watches the guest's own directory,
+// the Go plugin kit and ABI source trees it builds against, and every package of
+// this module the guest imports, as guestModuleInputs lists them: a guest keeps
+// most of what it does in packages beside it under plugins/internal/, so a change
+// there rebuilds every guest importing the changed package and no other.
 //
 // There is no toolchain-absent skip, for the reason EnsureLocalGuestBuilt gives:
 // the standard Go toolchain targeting wasip1 is present whenever a test runs at
@@ -565,7 +668,16 @@ func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, 
 	artifactPath := filepath.Join(testdataDir, outName)
 
 	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, "go")
-	if isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+	fresh := func() bool {
+		if !isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+			return false
+		}
+		inputs, err := guestModuleInputs(moduleRoot, name)
+		// A guest whose packages cannot be listed is built, and the build says why
+		// it cannot be.
+		return err == nil && isFreshAgainst(artifactPath, inputs)
+	}
+	if fresh() {
 		return artifactPath, nil
 	}
 	if err := os.MkdirAll(testdataDir, 0o755); err != nil {
@@ -575,7 +687,7 @@ func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, 
 	release := lockFixtureBuild(testdataDir, artifactName)
 	defer release()
 
-	if isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+	if fresh() {
 		return artifactPath, nil
 	}
 

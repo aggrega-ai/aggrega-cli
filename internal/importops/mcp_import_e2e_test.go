@@ -12,10 +12,11 @@ package importops
 //     format with no format named and drafted as an Aggregate holding one
 //     core/ai-tool/mcp instance per server and a Release beside it;
 //   - by default every value of a server's configuration is carried as written
-//     into the Release — a header's value in the comment above its server — and
-//     named in a warning, and the empty_credentials setting at marked or all
-//     writes each empty; what the draft never writes — an address's query, a
-//     static OAuth client — reaches no draft whatever the setting says;
+//     into the Release — a header's value, and each part of an address
+//     infra.endpoint leaves out, in the comment above its server — and named in
+//     a warning, and the empty_credentials setting at marked or all writes each
+//     empty; what the draft never writes — a static OAuth client — reaches no
+//     draft whatever the setting says;
 //   - a directory holding a project's client files is imported as one Aggregate;
 //   - a commented Visual Studio Code configuration is recognised naming no format
 //     and drafted exactly as its copy without comments, while a commented
@@ -155,14 +156,17 @@ func TestEveryMCPFileIsRecognisedAndDraftedAsAnAggregateAndARelease(t *testing.T
 
 // The key-shaped values the MCP fixtures plant: the key the Claude Desktop
 // fixture's search server holds in its environment and the password its
-// database server's connection string holds; and, in the Cursor fixture, the key
-// a remote server's address carries in its query, the key it is sent in a header
-// and the static OAuth client another server signs in with. The Cursor fixture's
-// remote server is sent a variable reference in a second header.
+// database server's connection string holds; and, in the Cursor fixture, the
+// keys a remote server's address carries in its user part, its query and its
+// fragment, the key it is sent in a header and the static OAuth client another
+// server signs in with. The Cursor fixture's remote server is sent a variable
+// reference in a second header.
 const (
 	plantedMCPEnvKey     = "BSA-planted-key-shaped-needle-7f3a9c2e"
 	plantedMCPArgument   = "planted-password-needle-91b4"
+	plantedMCPUserPart   = "planted-userpart-needle-3e6a"
 	plantedMCPQueryKey   = "planted-query-needle-5d81"
+	plantedMCPFragment   = "planted-fragment-needle-c08f"
 	plantedMCPHeaderKey  = "planted-header-needle-b902"
 	plantedMCPClientID   = "planted-client-id-needle-0a17"
 	plantedMCPClientCode = "planted-client-secret-needle-4e1c"
@@ -175,17 +179,19 @@ const (
 // fixture:
 //
 //   - where the setting is absent or none, the environment's key, the
-//     connection string's password and the header's key are carried as written
-//     into release.yaml — the header's key in the comment above its server,
-//     beside the header — and reach nothing else — no other file, no decision,
-//     no diagnostic — and each is named in a credential-carried warning by its
-//     server and its place;
+//     connection string's password, the header's key and the keys the remote
+//     server's address carries in its user part, its query and its fragment are
+//     carried as written into release.yaml — the header's key and the address's
+//     parts in the comment above their server, beside the header and the part's
+//     name, infra.endpoint holding the address without them — and reach nothing
+//     else — no other file, no decision, no diagnostic — and each is named in a
+//     credential-carried warning by its server and its place;
 //   - where it is marked or all, none reaches anything, the comment names the
-//     header alone, and each is named in a credential-emptied warning by its
-//     server and its place;
+//     header and each part alone, and each is named in a credential-emptied
+//     warning by its server and its place;
 //   - the header holding a variable reference is written as the reference it
-//     reads from, and the address's query key and the OAuth client reach
-//     nothing, under any value of the setting.
+//     reads from, and the OAuth client reaches nothing, under any value of the
+//     setting.
 //
 // 🔴 PLANTED DEFECT: in located (plugins/internal/mcpimport/mcpimport.go), give
 // every value the class importer.CredentialUnmarked: the marked rows fail, the
@@ -224,29 +230,49 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnMCPImportCarries(t *testing.T) {
 			}
 
 			res, dir = writtenImport(t, mcpWorkspace(t, settings), ".cursor/mcp.json", cursor)
+			address := []string{plantedMCPUserPart, plantedMCPQueryKey, plantedMCPFragment}
 			header := "    #   - x-api-key: \"" + plantedMCPHeaderKey + "\"\n"
+			parts := []string{"    #   - user part: \"reader:" + plantedMCPUserPart + "\"\n",
+				"    #   - query: \"api_key=" + plantedMCPQueryKey + "\"\n",
+				"    #   - fragment: \"" + plantedMCPFragment + "\"\n",
+				"    remote-search:\n      infra:\n        endpoint: \"https://search.example.com/mcp\"\n"}
+			partReport := func(part string) string { return "url of node remote-search is carried with its " + part }
 			if emptied {
 				header = "    #   - x-api-key, its value left out, as the empty_credentials setting asks\n"
-				assertNoneReaches(t, []string{plantedMCPQueryKey, plantedMCPHeaderKey, plantedMCPClientID,
-					plantedMCPClientCode}, cursor, res, dir)
+				parts = []string{"    #   - user part, its value left out, as the empty_credentials setting asks\n",
+					"    #   - query, its value left out, as the empty_credentials setting asks\n",
+					"    #   - fragment, its value left out, as the empty_credentials setting asks\n",
+					"    remote-search:\n      infra: {}\n"}
+				partReport = func(part string) string { return "url of node remote-search is written with its " + part }
+				assertNoneReaches(t, append([]string{plantedMCPHeaderKey, plantedMCPClientID, plantedMCPClientCode},
+					address...), cursor, res, dir)
 			} else {
-				assertCarriedOnlyInTheRelease(t, []string{plantedMCPHeaderKey}, cursor, res, dir)
-				assertNoneReaches(t, []string{plantedMCPQueryKey, plantedMCPClientID, plantedMCPClientCode}, cursor,
-					res, dir)
+				assertCarriedOnlyInTheRelease(t, append([]string{plantedMCPHeaderKey}, address...), cursor, res, dir)
+				assertNoneReaches(t, []string{plantedMCPClientID, plantedMCPClientCode}, cursor, res, dir)
 			}
 			release, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
 			if err != nil {
 				t.Fatalf("read the drafted Release: %v", err)
 			}
-			for _, want := range []string{header,
-				"    #   - Authorization, its value read from " + mcpHeaderReference + "\n"} {
+			for _, want := range append([]string{header,
+				"    #   - Authorization, its value read from " + mcpHeaderReference + "\n"}, parts...) {
 				if !strings.Contains(string(release), want) {
 					t.Errorf("the drafted Release does not hold %q:\n%s", want, release)
 				}
 			}
+			for _, needle := range address {
+				for _, line := range strings.Split(string(release), "\n") {
+					if strings.Contains(line, needle) && !strings.HasPrefix(line, "    #   - ") {
+						t.Errorf("the planted %q is on a line other than its part's in the comment: %q", needle, line)
+					}
+				}
+			}
 			named = strings.Join(diagnosticsCoded(res.Diagnostics, code), "\n")
-			if field := "headers.x-api-key of node remote-search"; !strings.Contains(named, field) {
-				t.Errorf("no %s names %q:\n%s", code, field, named)
+			for _, field := range []string{"headers.x-api-key of node remote-search", partReport("user part"),
+				partReport("query"), partReport("fragment")} {
+				if !strings.Contains(named, field) {
+					t.Errorf("no %s names %q:\n%s", code, field, named)
+				}
 			}
 			if strings.Contains(strings.Join(diagnosticsCoded(res.Diagnostics, "credential-carried"), "\n")+
 				strings.Join(diagnosticsCoded(res.Diagnostics, "credential-emptied"), "\n"), "headers.Authorization") {

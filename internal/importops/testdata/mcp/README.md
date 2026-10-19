@@ -27,8 +27,9 @@ client reads it by before importing it:
   configuration above with its comments and trailing commas removed, which an
   import drafts exactly as it drafts the commented one.
 - `cursor.mcp.json` — laid down as `.cursor/mcp.json`, Cursor's project
-  configuration: a remote server whose address carries a key in its query and
-  which is sent a key in one header and a variable reference in another, a server
+  configuration: a remote server whose address carries a key in its user part, in
+  its query and in its fragment, and which is sent a key in one header and a
+  variable reference in another, a server
   started with `node` reading Cursor's variables, and a remote server signing in
   with a static OAuth client.
 - `registry-npm.server.json` — laid down as `server.json`, a registry server

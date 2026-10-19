@@ -44,8 +44,9 @@ func renderAggregate(name string, servers []server) string {
 // Aggregate of that name: for each server, under its key, the infrastructure the
 // source states and the server_env attachment carrying its environment, with a
 // comment above it naming what the draft leaves for the Release, what it does
-// not carry and the headers the server is sent. The Release's environment and its Manifest are left unset, each
-// named in a comment where it belongs.
+// not carry, the headers the server is sent and the parts of its address
+// infra.endpoint leaves out. The Release's environment and its Manifest are left
+// unset, each named in a comment where it belongs.
 func renderRelease(name string, servers []server) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -115,6 +116,9 @@ func writeServer(b *strings.Builder, s server) {
 		for _, h := range s.headers {
 			b.WriteString("    #   - " + headerLine(h) + "\n")
 		}
+	}
+	for _, line := range AddressComment(s.addressParts) {
+		b.WriteString("    # " + line + "\n")
 	}
 	for _, n := range s.notes {
 		b.WriteString("    # " + n + "\n")

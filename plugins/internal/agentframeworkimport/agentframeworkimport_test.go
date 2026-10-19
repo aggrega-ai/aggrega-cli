@@ -169,9 +169,10 @@ func decision(t *testing.T, out aggrega.ImportOutput, id string) aggrega.ImportD
 // where its provider is OpenAI and to nothing otherwise, and on its tools socket
 // to an instance of core/ai-tool/mcp per MCP server; the Release carrying the
 // model's endpoint and each server's address as their infra.endpoint, the
-// server's without its query; every other tool reported in a decision choosing
-// nothing; and nothing reported but one credential-carried warning, in order,
-// for each literal value the draft writes.
+// server's without its query, which the comment above the server's entry
+// carries as written; every other tool reported in a decision choosing nothing;
+// and nothing reported but one credential-carried warning, in order, for each
+// literal value the draft writes and each part of a url it leaves out.
 //
 // 🔴 PLANTED DEFECT: in unwiredWhy (agentframeworkimport.go), compare the provider
 // with "openai": the learn and docs agents are left unwired and both rows fail.
@@ -197,9 +198,11 @@ func TestEachCommittedAgentIsDraftedAsOneInstanceWiredToItsModelAndServers(t *te
 				"its approval mode, never; the tools of the server it allows, microsoft_docs_search, " +
 					"microsoft_docs_fetch.\n"},
 			unchosen: []string{"LearnAgent#GetRelease", "LearnAgent#search"},
-			carried: []string{"model.connection.key of node LearnAgent",
-				"tools.microsoft_learn.connection.key of node LearnAgent",
-				"model.connection.endpoint of node LearnAgent", "tools.microsoft_learn.url of node LearnAgent"},
+			carried: []string{"the value of model.connection.key of node LearnAgent is carried as written",
+				"the value of tools.microsoft_learn.connection.key of node LearnAgent is carried as written",
+				"the value of model.connection.endpoint of node LearnAgent is carried as written",
+				"the value of tools.microsoft_learn.url of node LearnAgent is carried as written",
+				"tools.microsoft_learn.url of node LearnAgent is carried with its query as written"},
 		},
 		{
 			fixture: "docs-agent.yaml", key: "docsagent", part: "openai-model",
@@ -217,7 +220,7 @@ func TestEachCommittedAgentIsDraftedAsOneInstanceWiredToItsModelAndServers(t *te
 			notes: []string{"# The model connection is left for the author, since its model names no provider, so " +
 				"Agent Framework uses the default provider the application sets"},
 			unchosen: []string{"ResearchAgent#model", "ResearchAgent#python"},
-			carried:  []string{"tools.github.url of node ResearchAgent"},
+			carried:  []string{"the value of tools.github.url of node ResearchAgent is carried as written"},
 		},
 	}
 	for _, tc := range cases {
@@ -227,9 +230,8 @@ func TestEachCommittedAgentIsDraftedAsOneInstanceWiredToItsModelAndServers(t *te
 			if len(got) != len(tc.carried) {
 				t.Fatalf("the import reported %q, want one credential-carried warning per field %q", got, tc.carried)
 			}
-			for i, field := range tc.carried {
-				if want := "credential-carried: the value of " + field + " is carried as written"; !strings.HasPrefix(
-					got[i], want) {
+			for i, report := range tc.carried {
+				if want := "credential-carried: " + report; !strings.HasPrefix(got[i], want) {
 					t.Errorf("diagnostic %d is %q, want it to open %q", i, got[i], want)
 				}
 			}
@@ -291,8 +293,15 @@ func TestEachCommittedAgentIsDraftedAsOneInstanceWiredToItsModelAndServers(t *te
 					t.Errorf("%s is decided as %+v; it becomes no Component", id, got)
 				}
 			}
-			if strings.Contains(release+text, plantedQuery) {
-				t.Errorf("the MCP server's query reaches a draft")
+			if strings.Contains(text, plantedQuery) {
+				t.Errorf("the MCP server's query reaches the Aggregate")
+			}
+			if tc.fixture == "learn-agent.yaml" {
+				if want := "    #   - query: \"session=" + plantedQuery + "\"\n    microsoft-learn:\n"; !strings.Contains(
+					release, want) {
+					t.Errorf("the Release does not carry the MCP server's query in the comment above it, %q:\n%s", want,
+						release)
+				}
 			}
 		})
 	}
@@ -372,12 +381,14 @@ func TestACatalogHoldingNoOpenAIComponentDraftsOne(t *testing.T) {
 
 // TestTheEmptyCredentialsSettingDecidesWhatADeclarativeAgentCarries imports the
 // learn agent with empty_credentials none, marked and all: none carries every
-// literal value as written and names each in a credential-carried warning;
-// marked writes the keys and the MCP server's address empty, naming each under
-// credential-emptied, and carries the model's endpoint; all writes all four
+// literal value as written — the MCP server's query in the comment above its
+// entry — and names each in a credential-carried warning; marked writes the
+// keys, the MCP server's address and its query empty, naming each under
+// credential-emptied, and carries the model's endpoint; all writes all five
 // empty. No value reaches a diagnostic or a decision under any setting, and the
-// MCP server's query reaches nothing. The docs agent's references are named by
-// their variables under every setting and reported under neither code.
+// query reaches no file but the Release, and that only under none. The docs
+// agent's references are named by their variables under every setting and
+// reported under neither code.
 //
 // 🔴 PLANTED DEFECT: in statedValues (agentframeworkimport.go), mark no value: the
 // marked row carries both keys as written.
@@ -409,18 +420,30 @@ func TestTheEmptyCredentialsSettingDecidesWhatADeclarativeAgentCarries(t *testin
 					t.Errorf("the drafts carry %q, which the setting writes empty:\n%s", v, release)
 				}
 			}
-			if got := len(reported(out)); got != 4 {
-				t.Errorf("the import reported %d diagnostics, want 4: %q", got, reported(out))
+			if got := len(reported(out)); got != 5 {
+				t.Errorf("the import reported %d diagnostics, want 5: %q", got, reported(out))
 			}
-			emptiedCount := 0
+			// The query is a fifth value, reported apart from the four the case lists:
+			// carried under none, written empty under marked and all.
+			emptiedCount, queryEmptied := 0, tc.setting != "none"
+			if queryEmptied {
+				emptiedCount--
+			}
 			for _, d := range out.Diagnostics {
 				if d.Code == "credential-emptied" {
 					emptiedCount++
 				}
 			}
 			if emptiedCount != len(tc.emptied) {
-				t.Errorf("%d values are reported under credential-emptied, want %d: %q", emptiedCount, len(tc.emptied),
-					reported(out))
+				t.Errorf("%d values are reported under credential-emptied, want %d and the query: %q", emptiedCount,
+					len(tc.emptied), reported(out))
+			}
+			query := "credential-carried: tools.microsoft_learn.url of node LearnAgent is carried with its query as written "
+			if queryEmptied {
+				query = "credential-emptied: tools.microsoft_learn.url of node LearnAgent is written with its query empty "
+			}
+			if got := reported(out); !strings.HasPrefix(got[len(got)-1], query) {
+				t.Errorf("the last report is %q, want it to open %q", got[len(got)-1], query)
 			}
 			reports, _ := json.Marshal(struct {
 				D []aggrega.Diagnostic
@@ -432,9 +455,17 @@ func TestTheEmptyCredentialsSettingDecidesWhatADeclarativeAgentCarries(t *testin
 				}
 			}
 			for _, f := range out.Files {
-				if strings.Contains(f.Content, plantedQuery) {
-					t.Errorf("%s carries the MCP server's query", f.Path)
+				want := f.Path == "release.yaml" && !queryEmptied
+				if got := strings.Contains(f.Content, plantedQuery); got != want {
+					t.Errorf("%s carries the MCP server's query: %v, want %v", f.Path, got, want)
 				}
+			}
+			queryLine := "    #   - query: \"session=" + plantedQuery + "\"\n"
+			if queryEmptied {
+				queryLine = "    #   - query, its value left out, as the empty_credentials setting asks\n"
+			}
+			if !strings.Contains(release, queryLine) {
+				t.Errorf("the Release does not hold %q:\n%s", queryLine, release)
 			}
 
 			docs := importFile(catalog, `{"empty_credentials":"`+tc.setting+`"}`, fixture(t, "docs-agent.yaml"))
@@ -447,6 +478,105 @@ func TestTheEmptyCredentialsSettingDecidesWhatADeclarativeAgentCarries(t *testin
 			}
 			if got := reported(docs); len(got) != 0 {
 				t.Errorf("a reference, which holds no value, is reported: %q", got)
+			}
+		})
+	}
+}
+
+// TestAnMCPServersAddressCarriesItsLeftOutPartsInTheComment imports a
+// declarative agent whose MCP server is reached at an address carrying a planted
+// user part, query and fragment, under every value of the empty_credentials
+// setting, after a needle proves each planted value is in the source:
+//
+//   - absent or none: the server's infra.endpoint is the address without the
+//     three parts; each planted value is in the Release on one line alone, the
+//     line naming its part in the comment above the server's entry, beside the
+//     address; each part is named in a credential-carried warning by the agent,
+//     the url's field and the part's name; no planted value is in the Aggregate,
+//     a diagnostic or a decision;
+//   - marked or all: no planted value is in any file, entity, diagnostic or
+//     decision, infra.endpoint is left for the Release, the comment names each
+//     part alone, and each is reported under credential-emptied.
+//
+// 🔴 PLANTED DEFECT: in located (agentframeworkimport.go), skip the parts of an
+// MCP server's url: no report names a part, and under marked or all the planted
+// values are carried in the comment, so the case fails on both.
+func TestAnMCPServersAddressCarriesItsLeftOutPartsInTheComment(t *testing.T) {
+	const (
+		userPart = "planted-af-userpart-needle-81d2"
+		query    = "planted-af-query-needle-0f3c"
+		fragment = "planted-af-fragment-needle-b6e5"
+	)
+	body := []byte("kind: Prompt\nname: Probe\nmodel:\n  id: gpt-4o\n  provider: OpenAI\ntools:\n  - kind: mcp\n" +
+		"    name: docs\n    url: https://reader:" + userPart + "@docs.example.com/mcp?key=" + query + "#" + fragment +
+		"\n")
+	parts := []struct{ name, text string }{{"user part", "reader:" + userPart}, {"query", "key=" + query},
+		{"fragment", fragment}}
+	for _, needle := range []string{userPart, query, fragment} {
+		if !strings.Contains(string(body), needle) {
+			t.Fatalf("the needle: %q is not in the source, so the search finds nothing", needle)
+		}
+	}
+	for _, settings := range []string{"", `{"empty_credentials":"none"}`, `{"empty_credentials":"marked"}`,
+		`{"empty_credentials":"all"}`} {
+		t.Run(settings, func(t *testing.T) {
+			emptied := strings.Contains(settings, "marked") || strings.Contains(settings, "all")
+			out := importFile(catalog, settings, body)
+			_, text, r, release := drafted(t, out)
+			lead := "    # The address's user part, query and fragment are not written in infra.endpoint, which holds " +
+				"the address without any part that carries a key; a consumer reading its key from the address supplies " +
+				"the whole address on its own connection to the tool:\n"
+			if !strings.Contains(release, lead) {
+				t.Errorf("the Release does not open the comment with %q:\n%s", lead, release)
+			}
+			endpoint, _ := r.Spec.Components["docs"].Infra["endpoint"].(string)
+			if want := "https://docs.example.com/mcp"; !emptied && endpoint != want || emptied && endpoint != "" {
+				t.Errorf("the server's infra.endpoint is %q under %q:\n%s", endpoint, settings, release)
+			}
+			got := strings.Join(reported(out), "\n")
+			for _, p := range parts {
+				line := "    #   - " + p.name + ": " + yamlString(p.text) + "\n"
+				report := "credential-carried: tools.docs.url of node Probe is carried with its " + p.name +
+					" as written in the Release the draft writes"
+				if emptied {
+					line = "    #   - " + p.name + ", " + emptiedNote + "\n"
+					report = "credential-emptied: tools.docs.url of node Probe is written with its " + p.name +
+						" empty in the Release the draft writes"
+				}
+				if !strings.Contains(release, line) {
+					t.Errorf("the Release does not hold %q:\n%s", line, release)
+				}
+				if !strings.Contains(got, report) {
+					t.Errorf("no report says %q:\n%s", report, got)
+				}
+			}
+			reports, _ := json.Marshal(struct {
+				D []aggrega.Diagnostic
+				E []aggrega.ImportDecision
+				N []aggrega.EmittedEntity
+			}{out.Diagnostics, out.Decisions, out.Entities})
+			for _, needle := range []string{userPart, query, fragment} {
+				lines := 0
+				for _, l := range strings.Split(release, "\n") {
+					if strings.Contains(l, needle) {
+						lines++
+						if !strings.HasPrefix(l, "    #   - ") {
+							t.Errorf("the planted %q is on a line other than its part's in the comment: %q", needle, l)
+						}
+					}
+				}
+				want := 1
+				if emptied {
+					want = 0
+				}
+				if lines != want {
+					t.Errorf("the Release holds the planted %q on %d lines, want %d", needle, lines, want)
+				}
+				// The Release entity's body is the Release itself; every other entity,
+				// every decision and every diagnostic holds no planted value.
+				if strings.Contains(text, needle) || strings.Count(string(reports), needle) != want {
+					t.Errorf("the planted %q reaches the Aggregate, a diagnostic, a decision or another entity", needle)
+				}
 			}
 		})
 	}
