@@ -51,8 +51,20 @@ type service struct {
 	// dependsOn names the services it depends on, and models the models it
 	// uses, each once, sorted.
 	dependsOn, models []string
+	// modelVars holds, for each model a long-form entry of models names, the
+	// variables the entry names the model's address and identifier under, in
+	// the order the entries are first read.
+	modelVars []modelVars
 	// others names the members of the service the draft does not carry, sorted.
 	others []string
+}
+
+// modelVars is what one long-form entry of a service's models states: the model
+// it names, and the variables it names the model's address and identifier under
+// — its endpoint_var and its model_var — each empty where the entry names none.
+// The names are carried as the source writes them and never read for meaning.
+type modelVars struct {
+	model, endpoint, identifier string
 }
 
 // port is one entry of a service's ports: its text as written, the key Compose
@@ -216,8 +228,10 @@ func (p *project) model(name string) *model {
 // address, protocol and container port, volumes by their path in the container,
 // the environment by variable name, a later entry replacing an earlier one in
 // its place and a new one following; expose appended; depends_on and models
-// joined. A member written null is read as absent. envOrder returns the names of
-// an environment written as a mapping in the order the file writes them.
+// joined, a long-form models entry's endpoint_var and model_var each replacing
+// what an earlier file states for that model. A member written null is read as
+// absent. envOrder returns the names of an environment written as a mapping in
+// the order the file writes them.
 func (s *service) merge(fields map[string]json.RawMessage, envOrder func([]string) []string) {
 	for _, name := range sortedKeys(fields) {
 		raw := fields[name]
@@ -268,10 +282,46 @@ func (s *service) merge(fields map[string]json.RawMessage, envOrder func([]strin
 			s.dependsOn = joined(s.dependsOn, namesOf(raw))
 		case "models":
 			s.models = joined(s.models, namesOf(raw))
+			for _, e := range importer.ObjectEntries(raw) {
+				s.readModelVars(e.Key, e.Value)
+			}
 		default:
 			s.addOther(name)
 		}
 	}
+}
+
+// readModelVars reads one long-form entry of the service's models, naming model:
+// each of its endpoint_var and model_var that is a scalar replaces what the
+// service holds for that model. An entry naming neither — a short-form item, or
+// a mapping entry written empty — leaves nothing.
+func (s *service) readModelVars(model string, entry json.RawMessage) {
+	for _, f := range importer.ObjectEntries(entry) {
+		text, ok := scalarText(f.Value)
+		if !ok || text == "" || (f.Key != "endpoint_var" && f.Key != "model_var") {
+			continue
+		}
+		i := slices.IndexFunc(s.modelVars, func(v modelVars) bool { return v.model == model })
+		if i < 0 {
+			s.modelVars = append(s.modelVars, modelVars{model: model})
+			i = len(s.modelVars) - 1
+		}
+		if f.Key == "endpoint_var" {
+			s.modelVars[i].endpoint = text
+		} else {
+			s.modelVars[i].identifier = text
+		}
+	}
+}
+
+// varsOf returns what the service's long-form models entry for model states, and
+// whether it states either variable.
+func (s *service) varsOf(model string) (modelVars, bool) {
+	i := slices.IndexFunc(s.modelVars, func(v modelVars) bool { return v.model == model })
+	if i < 0 {
+		return modelVars{}, false
+	}
+	return s.modelVars[i], true
 }
 
 // addOther names a member of the service the draft does not carry.

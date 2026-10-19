@@ -339,6 +339,8 @@ func TestModelsAreDraftedAsModelComponentsAndConnected(t *testing.T) {
 	for _, want := range []string{
 		"    qwen3:\n      type: imported/ai-model/qwen3\n      values:\n        model: \"ai/qwen3:14B-Q6_K\"\n",
 		"    agent:\n      type: core/compute/server\n      uses:\n        database:\n          link:\n            target: database\n" +
+			"        # The service agent reads the address of the model qwen3 as MODEL_RUNNER_URL and its identifier as " +
+			"MODEL_RUNNER_MODEL, the names its models entry gives them; no key of the draft holds either name.\n" +
 			"        qwen3:\n          link:\n            target: qwen3\n",
 		"    mcp-gateway:\n      type: core/compute/server\n",
 	} {
@@ -352,6 +354,181 @@ func TestModelsAreDraftedAsModelComponentsAndConnected(t *testing.T) {
 	}
 	if !strings.Contains(release, "    mcp-gateway:\n      infra:\n        image: \"docker/mcp-gateway:latest\"\n") {
 		t.Errorf("the Release does not run the gateway's image:\n%s", release)
+	}
+}
+
+// The variables the models fixture's long-form entry names its model's address
+// and identifier under.
+const (
+	longFormEndpointVar = "AI_MODEL_URL"
+	longFormModelVar    = "AI_MODEL_NAME"
+)
+
+// TestALongFormModelsEntryIsReportedAndAShortFormOneDraftsAsBefore imports the
+// models fixture with no setting: the chat service names its model in the short
+// form and drafts exactly as a short-form entry always has, with no comment above
+// its connection and nothing added to its decision; the search service names its
+// model in the long form, with an endpoint_var and a model_var, and both names
+// are stated, as the entry writes them, in the comment above its connection and in
+// its decision, and are held by no key or value of any draft.
+//
+// 🔴 PLANTED DEFECT: in service.merge (services.go), delete the loop calling
+// readModelVars under case "models": the long-form entry's names are dropped
+// again, and the case fails on the comment and on the decision.
+func TestALongFormModelsEntryIsReportedAndAShortFormOneDraftsAsBefore(t *testing.T) {
+	t.Parallel()
+	source := fixture(t, "authored/models.compose.yaml")
+	for _, needle := range []string{longFormEndpointVar, longFormModelVar} {
+		if !strings.Contains(string(source), needle) {
+			t.Fatalf("the needle: %q is not in the fixture, so the search finds nothing", needle)
+		}
+	}
+	out := importOne(source, "")
+	if out.Error != "" || len(out.Diagnostics) > 0 {
+		t.Fatalf("the import failed or reported: %s %+v", out.Error, out.Diagnostics)
+	}
+	aggregate := fileContent(t, out, "aggregate.yaml")
+
+	// The short-form service: the bytes a short-form entry has always drafted.
+	short := "    chat:\n      type: core/compute/server\n      uses:\n        llm:\n          link:\n            target: llm\n" +
+		"    search:\n"
+	if !strings.Contains(aggregate, short) {
+		t.Errorf("the short-form service does not draft as before:\n%s\nin\n%s", short, aggregate)
+	}
+	report := "the service search reads the address of the model embedder as " + longFormEndpointVar +
+		" and its identifier as " + longFormModelVar +
+		", the names its models entry gives them; no key of the draft holds either name"
+	long := "    search:\n      type: core/compute/server\n      uses:\n        # T" + report[1:] + ".\n" +
+		"        embedder:\n          link:\n            target: embedder\n"
+	if !strings.Contains(aggregate, long) {
+		t.Errorf("the long-form service's connection is not\n%s\nin\n%s", long, aggregate)
+	}
+
+	if len(out.Decisions) != 2 {
+		t.Fatalf("the import made %d decisions, want one per service", len(out.Decisions))
+	}
+	chat, search := out.Decisions[0], out.Decisions[1]
+	want := "no row of the image table or of the mapping_overrides setting maps the repository ghcr.io/example/chat, " +
+		"so the service is drafted as an instance of " + Server + " running its image"
+	if chat.SourceNode.ID != "chat" || chat.Rationale != want {
+		t.Errorf("the short-form service's decision for %s records %q, want %q", chat.SourceNode.ID, chat.Rationale, want)
+	}
+	if search.SourceNode.ID != "search" || !strings.HasSuffix(search.Rationale, "; "+report) {
+		t.Errorf("the long-form service's decision for %s records %q, want it to end %q", search.SourceNode.ID,
+			search.Rationale, "; "+report)
+	}
+
+	// No key or value of any draft holds either name; the walk finds a value the
+	// draft does write, so its silence over the names is a finding.
+	var scalars []string
+	for _, f := range out.Files {
+		text := f.Content
+		if f.Path == "aggregate.yaml" {
+			text = evaluatedAggregate(t, text)
+		}
+		scalars = append(scalars, scalarsOf(t, f.Path, text)...)
+	}
+	if !slices.Contains(scalars, "ai/mxbai-embed-large") {
+		t.Fatalf("the walk over the drafts' keys and values found no model identifier, so its silence proves nothing: %v",
+			scalars)
+	}
+	for _, s := range scalars {
+		for _, needle := range []string{longFormEndpointVar, longFormModelVar} {
+			if strings.Contains(s, needle) {
+				t.Errorf("a key or value of a draft holds %q: %q", needle, s)
+			}
+		}
+	}
+}
+
+// scalarsOf reads a draft as YAML and returns every key and value it writes, its
+// comments left out, failing the test where it does not read as YAML.
+func scalarsOf(t *testing.T, path, text string) []string {
+	t.Helper()
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &root); err != nil {
+		t.Fatalf("%s does not read as YAML: %v\n%s", path, err, text)
+	}
+	var out []string
+	var walk func(*yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.ScalarNode {
+			out = append(out, n.Value)
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(&root)
+	return out
+}
+
+// TestALongFormModelsEntryIsReadAsComposeMergesIt holds the report of a long-form
+// models entry to what the entry states: a model_var alone is reported alone; an
+// override file's endpoint_var replaces the Compose file's, which keeps its
+// model_var; and an entry written empty states neither, so the service drafts
+// byte for byte as the short form drafts it.
+func TestALongFormModelsEntryIsReadAsComposeMergesIt(t *testing.T) {
+	t.Parallel()
+	const models = "models:\n  llm:\n    model: ai/smollm2\n"
+	sources := func(files ...string) []aggrega.ImportSource {
+		var out []aggrega.ImportSource
+		for i := 0; i+1 < len(files); i += 2 {
+			out = append(out, aggrega.ImportSource{Name: files[i], Bytes: []byte(files[i+1])})
+		}
+		return out
+	}
+	shortForm := Import(aggrega.ImportInput{Format: Format, Catalog: catalog, Sources: sources("compose.yaml",
+		"services:\n  app:\n    image: ghcr.io/example/app:1.0.0\n    models:\n      - llm\n"+models)}, hostParse)
+	for _, row := range []struct {
+		name        string
+		sources     []aggrega.ImportSource
+		wantComment string
+	}{
+		{
+			name: "a model_var alone",
+			sources: sources("compose.yaml", "services:\n  app:\n    image: ghcr.io/example/app:1.0.0\n    models:\n"+
+				"      llm:\n        model_var: LLM_IDENTIFIER\n"+models),
+			wantComment: "        # The service app reads the identifier of the model llm as LLM_IDENTIFIER, the name its models " +
+				"entry gives it; no key of the draft holds that name.\n        llm:\n",
+		},
+		{
+			name: "an override file's endpoint_var",
+			sources: sources(
+				"compose.yaml", "services:\n  app:\n    image: ghcr.io/example/app:1.0.0\n    models:\n      llm:\n"+
+					"        endpoint_var: BASE_URL\n        model_var: BASE_NAME\n"+models,
+				"compose.override.yaml", "services:\n  app:\n    models:\n      llm:\n        endpoint_var: OVERRIDE_URL\n"),
+			wantComment: "        # The service app reads the address of the model llm as OVERRIDE_URL and its identifier as " +
+				"BASE_NAME, the names its models entry gives them; no key of the draft holds either name.\n        llm:\n",
+		},
+		{
+			name: "an entry written empty",
+			sources: sources("compose.yaml", "services:\n  app:\n    image: ghcr.io/example/app:1.0.0\n    models:\n"+
+				"      llm: {}\n"+models),
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Catalog: catalog, Sources: row.sources}, hostParse)
+			aggregate := fileContent(t, out, "aggregate.yaml")
+			if row.wantComment == "" {
+				if want := fileContent(t, shortForm, "aggregate.yaml"); aggregate != want {
+					t.Errorf("an entry stating neither variable drafts\n%s\nnot as the short form does\n%s", aggregate, want)
+				}
+				if out.Decisions[0].Rationale != shortForm.Decisions[0].Rationale {
+					t.Errorf("an entry stating neither variable records %q, not %q", out.Decisions[0].Rationale,
+						shortForm.Decisions[0].Rationale)
+				}
+				return
+			}
+			if !strings.Contains(aggregate, row.wantComment) {
+				t.Errorf("the connection is not reported as\n%s\nin\n%s", row.wantComment, aggregate)
+			}
+			report := strings.TrimSuffix(strings.TrimPrefix(row.wantComment, "        # T"), ".\n        llm:\n")
+			if !strings.HasSuffix(out.Decisions[0].Rationale, "; t"+report) {
+				t.Errorf("the decision records %q, want it to end %q", out.Decisions[0].Rationale, "; t"+report)
+			}
+		})
 	}
 }
 
@@ -504,11 +681,12 @@ func TestASourceTheParserRefusesHaltsAndAFileHoldingNoServiceWarns(t *testing.T)
 	}
 }
 
-// TestTwoImportsAreByteIdentical imports the authored fixture and the LangGraph
+// TestTwoImportsAreByteIdentical imports the authored fixtures and the LangGraph
 // application twice each and requires the same output, byte for byte.
 func TestTwoImportsAreByteIdentical(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"authored/compose.yaml", "compose-for-agents/langgraph.compose.yaml"} {
+	for _, name := range []string{"authored/compose.yaml", "authored/models.compose.yaml",
+		"compose-for-agents/langgraph.compose.yaml"} {
 		body := fixture(t, name)
 		first, _ := json.Marshal(importOne(body, ""))
 		second, _ := json.Marshal(importOne(body, ""))

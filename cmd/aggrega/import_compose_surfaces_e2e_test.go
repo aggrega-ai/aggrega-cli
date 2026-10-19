@@ -15,7 +15,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 )
 
 // composeApplication is the committed compose-for-agents LangGraph application the
@@ -23,12 +26,44 @@ import (
 // from the project, an MCP gateway and a model.
 const composeApplication = "../../internal/importops/testdata/compose/compose-for-agents/langgraph.compose.yaml"
 
+// longFormModelsReport is what the shared operation reports of the LangGraph
+// agent's long-form models entry, which names the variables its model's address
+// and identifier reach it under.
+const longFormModelsReport = "he service agent reads the address of the model qwen3 as MODEL_RUNNER_URL and its " +
+	"identifier as MODEL_RUNNER_MODEL, the names its models entry gives them; no key of the draft holds either name"
+
+// assertTheLongFormModelsEntryIsReported holds the shared operation's result to
+// the report of the agent's long-form models entry: in the comment above the
+// agent's connection to the model, and in the agent's decision. Every surface is
+// then held to the shared drafts byte for byte, so each carries the comment.
+func assertTheLongFormModelsEntryIsReported(t *testing.T, shared importops.Result) {
+	t.Helper()
+	var aggregate string
+	for _, f := range shared.Files {
+		if f.Path == "aggregate.yaml" {
+			aggregate = f.Content
+		}
+	}
+	if !strings.Contains(aggregate, "        # T"+longFormModelsReport+".\n        qwen3:\n") {
+		t.Errorf("the shared Aggregate does not report the agent's long-form models entry above its connection:\n%s",
+			aggregate)
+	}
+	reported := false
+	for _, d := range shared.Decisions {
+		reported = reported || (d.SourceNode.ID == "agent" && strings.HasSuffix(d.Rationale, "; t"+longFormModelsReport))
+	}
+	if !reported {
+		t.Errorf("no decision of the shared operation reports the agent's long-form models entry: %+v", shared.Decisions)
+	}
+}
+
 // TestAComposeApplicationIsDraftedAlikeAtEverySurface imports the LangGraph
 // application, naming no format, at the command under both deliveries, at the
 // assistant's tool and at the session, and holds each to the shared operation's
 // result: the command's commentary names the compose format and its drafts are
 // the shared ones, and the tool and the session write exactly the shared drafts,
-// the Release included, byte for byte.
+// the Release included, byte for byte. The shared result reports the agent's
+// long-form models entry, so every surface carries that report too.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/compose-importer/main.go), write
 // `Files: composeimport.OverrideFileNames`: no signature recognises compose.yaml,
@@ -42,6 +77,7 @@ func TestAComposeApplicationIsDraftedAlikeAtEverySurface(t *testing.T) {
 	body := readCatalogFolderSource(t, composeApplication)
 	const name = "compose.yaml"
 	shared := sharedCatalogFolderImport(t, body, name)
+	assertTheLongFormModelsEntryIsReported(t, shared)
 
 	for _, dryRun := range []bool{true, false} {
 		root, _ := catalogFolderWorkspace(t, true)

@@ -47,7 +47,11 @@
 // an environment value naming another service the service does not depend on is
 // recorded as a hint in its decision and draws nothing. Each model is drafted as
 // a model Component of its own, its identifier, context size and runtime flags
-// written as values, and a service naming it is connected to it.
+// written as values, and a service naming it is connected to it. A service naming
+// a model in the long form, with an endpoint_var or a model_var, names the
+// variables the model's address and identifier reach it under; no key of the
+// draft holds a variable's name, so each is named, as the entry writes it, in a
+// comment above the connection and in the service's decision.
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // carries per service what the source states for its operation: for an instance
@@ -235,7 +239,8 @@ func refOf(read []*project, p *project, name string) string {
 // decide makes the decision for one service: a service whose image a row of the
 // image table or of the mapping_overrides setting maps is decided by the kit; a
 // service no row maps, or that names no image, is an instance of Server. Either
-// way, hints are recorded in the decision's rationale.
+// way, hints, and the variables a long-form models entry names a model's address
+// and identifier under, are recorded in the decision's rationale.
 func decide(in aggrega.ImportInput, s *service, hints []string) (aggrega.ImportDecision, aggrega.EmittedEntity) {
 	repository, ok := Repository(s.image)
 	var decision aggrega.ImportDecision
@@ -265,8 +270,8 @@ func decide(in aggrega.ImportInput, s *service, hints []string) (aggrega.ImportD
 		entity = aggrega.EmittedEntity{Kind: "Component", Name: Server, Mode: "reference", SourceRef: s.ref,
 			DecisionRef: "decision:" + s.ref}
 	}
-	if len(hints) > 0 {
-		decision.Rationale += "; " + strings.Join(hints, "; ")
+	if notes := append(slices.Clone(hints), modelVarsReports(s)...); len(notes) > 0 {
+		decision.Rationale += "; " + strings.Join(notes, "; ")
 	}
 	return decision, entity
 }
@@ -294,6 +299,46 @@ func environmentHints(p *project, s *service) []string {
 		}
 	}
 	return hints
+}
+
+// modelVarsReports returns, for each model s names in the long form with an
+// endpoint_var or a model_var, in the order s names its models, the report
+// modelVarsReport writes of it with each name as it is.
+func modelVarsReports(s *service) []string {
+	var out []string
+	for _, m := range s.models {
+		if v, ok := s.varsOf(m); ok {
+			out = append(out, modelVarsReport(s.ref, v, func(name string) string { return name }))
+		}
+	}
+	return out
+}
+
+// modelVarsReport is the one sentence reporting the variables a service's
+// long-form models entry names a model's address and identifier under — its
+// endpoint_var and its model_var — as the entry names them, each name written
+// through name: the sentence the service's decision records and the comment
+// above its connection to the model states. No key of the draft holds a
+// variable's name: the connection is written on a socket named after the model,
+// which declares no value, and an importer is handed no Component's
+// infrastructure keys. It starts in lower case, as a clause of the decision's
+// rationale.
+func modelVarsReport(serviceRef string, v modelVars, name func(string) string) string {
+	type stated struct{ what, variable string }
+	var parts []stated
+	if v.endpoint != "" {
+		parts = append(parts, stated{"address", v.endpoint})
+	}
+	if v.identifier != "" {
+		parts = append(parts, stated{"identifier", v.identifier})
+	}
+	text := "the service " + name(serviceRef) + " reads the " + parts[0].what + " of the model " + name(v.model) +
+		" as " + name(parts[0].variable)
+	if len(parts) == 2 {
+		return text + " and its " + parts[1].what + " as " + name(parts[1].variable) +
+			", the names its models entry gives them; no key of the draft holds either name"
+	}
+	return text + ", the name its models entry gives it; no key of the draft holds that name"
 }
 
 // modelName is the name a model's drafted Component is given: the

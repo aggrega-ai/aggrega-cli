@@ -9,6 +9,11 @@ Authored here, by hand, to the shape the Compose file reference documents:
   image of its own, depends on the database, reaches the cache through an
   environment value naming it, and holds the planted values described below and a
   variable reference.
+- `authored/models.compose.yaml` — two services, each running an image of its own
+  and using a model of the file's top-level `models`: one names its model in the
+  short form, as a list item, and the other in the long form, naming the variables
+  the model's address and identifier reach it under with `endpoint_var` and
+  `model_var`.
 - `project/` — a Compose project directory: `compose.yaml`, the
   `compose.override.yaml` Compose merges over it, changing a service's image,
   ports and environment and adding a service, and a `docker-compose.yml` Compose

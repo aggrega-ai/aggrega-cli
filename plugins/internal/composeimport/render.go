@@ -37,10 +37,12 @@ func aggregateText(text string) string {
 
 // renderAggregate writes the drafted Aggregate, named name: one instance per
 // service, of the Component its decision chose, in the order the projects write
-// them, connected to each service it depends on and each model it uses; then one
-// instance per model, of its drafted Component, writing the model's identifier,
-// context size and runtime flags as values. Comments above it state the files
-// read and what of them the draft does not read.
+// them, connected to each service it depends on and each model it uses, a
+// comment above a connection to a model the service names in the long form
+// stating the variables it names; then one instance per model, of its drafted
+// Component, writing the model's identifier, context size and runtime flags as
+// values. Comments above it state the files read and what of them the draft does
+// not read.
 func renderAggregate(name string, settings json.RawMessage, read []*project, types map[*service]string) string {
 	var b strings.Builder
 	writeFilesRead(&b, read)
@@ -65,9 +67,15 @@ func renderAggregate(name string, settings json.RawMessage, read []*project, typ
 					producers = append(producers, p.services[i].key)
 				}
 			}
+			// The report above a connection to a model, keyed by the model's
+			// instance key; read by key alone, never iterated.
+			reports := map[string]string{}
 			for _, m := range s.models {
 				if i := slices.IndexFunc(p.models, func(o *model) bool { return o.name == m }); i >= 0 {
 					producers = append(producers, p.models[i].key)
+					if v, ok := s.varsOf(m); ok {
+						reports[p.models[i].key] = modelVarsReport(s.ref, v, commentText)
+					}
 				}
 			}
 			slices.Sort(producers)
@@ -75,6 +83,9 @@ func renderAggregate(name string, settings json.RawMessage, read []*project, typ
 			if len(producers) > 0 {
 				b.WriteString("      uses:\n")
 				for _, producer := range producers {
+					if report, ok := reports[producer]; ok {
+						b.WriteString(commentLine("        ", "T"+report[1:]+"."))
+					}
 					b.WriteString("        " + producer + ":\n")
 					b.WriteString("          link:\n")
 					b.WriteString("            target: " + producer + "\n")

@@ -9,7 +9,7 @@ package importops
 // Components — the YAML a Compose file is read as is parsed by the parser the
 // binary carries, since the folder serves none:
 //
-//   - the authored application and three applications of the compose-for-agents
+//   - the two authored applications and three applications of the compose-for-agents
 //     repository, each laid down as compose.yaml, are recognised as the compose
 //     format with no format named and drafted as an Aggregate and a Release;
 //   - by default every environment value is carried as written into the Release
@@ -86,6 +86,7 @@ var composeFixtures = []struct {
 	keys    []string
 }{
 	{"authored/compose.yaml", []string{"db", "cache", "api"}},
+	{"authored/models.compose.yaml", []string{"chat", "search", "llm", "embedder"}},
 	{"compose-for-agents/langgraph.compose.yaml", []string{"database", "importer", "agent", "mcp-gateway", "qwen3"}},
 	{"compose-for-agents/adk.compose.yaml", []string{"adk", "mcp-gateway", "gemma3"}},
 	{"compose-for-agents/crew-ai.compose.yaml", []string{"agents", "mcp-gateway", "qwen3"}},
@@ -117,7 +118,9 @@ func TestEveryComposeApplicationIsRecognisedAndDraftedAsAnAggregateAndARelease(t
 			if !slices.Equal(aggregateKeys, f.keys) {
 				t.Errorf("the Aggregate holds %v, want %v", aggregateKeys, f.keys)
 			}
-			services := slices.DeleteFunc(slices.Clone(f.keys), func(k string) bool { return k == "qwen3" || k == "gemma3" })
+			services := slices.DeleteFunc(slices.Clone(f.keys), func(k string) bool {
+				return slices.Contains([]string{"qwen3", "gemma3", "llm", "embedder"}, k)
+			})
 			if !slices.Equal(releaseKeys, services) {
 				t.Errorf("the Release holds %v, want the services %v", releaseKeys, services)
 			}
