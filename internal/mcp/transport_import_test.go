@@ -331,6 +331,8 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 			readImportFixture(t, mcpServerFixture), "mcp"},
 		{"a Compose application, told by its name and its services", "compose.yaml",
 			readImportFixture(t, composeFixture), "compose"},
+		{"a Dify application, told by its kind, its mode and its version", "support-answers.yml",
+			readImportFixture(t, difyFixture), "dify"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)

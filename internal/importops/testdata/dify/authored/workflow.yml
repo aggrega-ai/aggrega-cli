@@ -1,0 +1,298 @@
+app:
+  description: Answers a support question from a knowledge base and files it.
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: Support Answers
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.2.6@4c0f3b9a2e7d1f6c8b5a0e3d9c2b7f1a6e4d8c0b3a9f2e5d7c1b6a0f4e8d2c9b
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/time:0.0.3@9e2d7c1b6a0f4e8d2c9b4c0f3b9a2e7d1f6c8b5a0e3d9c2b7f1a6e4d8c0b3a9f
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: ''
+    id: 6a1f1e2c-0b7d-4e3a-9c5f-2d8e1a4b7c01
+    name: support_api_token
+    selector:
+    - env
+    - support_api_token
+    value: ''
+    value_type: secret
+  - description: Key the ticketing service accepts.
+    id: 6a1f1e2c-0b7d-4e3a-9c5f-2d8e1a4b7c02
+    name: ticketing_api_key
+    selector:
+    - env
+    - ticketing_api_key
+    value: sk-planted-dify-secret-needle-4f9c2a7e
+    value_type: secret
+  - description: ''
+    id: 6a1f1e2c-0b7d-4e3a-9c5f-2d8e1a4b7c03
+    name: greeting
+    selector:
+    - env
+    - greeting
+    value: Hello
+    value_type: string
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: tool
+      id: 1760000000001-source-1760000000002-target
+      source: '1760000000001'
+      sourceHandle: source
+      target: '1760000000002'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: knowledge-retrieval
+      id: 1760000000002-source-1760000000003-target
+      source: '1760000000002'
+      sourceHandle: source
+      target: '1760000000003'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1760000000003-source-1760000000004-target
+      source: '1760000000003'
+      sourceHandle: source
+      target: '1760000000004'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: http-request
+      id: 1760000000004-source-1760000000005-target
+      source: '1760000000004'
+      sourceHandle: source
+      target: '1760000000005'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: end
+      id: 1760000000005-source-1760000000006-target
+      source: '1760000000005'
+      sourceHandle: source
+      target: '1760000000006'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: Start
+        type: start
+        variables:
+        - label: question
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: question
+      height: 90
+      id: '1760000000001'
+      position:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: ''
+        provider_id: langgenius/time/time
+        provider_name: langgenius/time/time
+        provider_type: builtin
+        selected: false
+        title: Current Time
+        tool_configurations:
+          format:
+            type: constant
+            value: '%Y-%m-%d %H:%M:%S'
+          timezone:
+            type: constant
+            value: UTC
+        tool_label: Current Time
+        tool_name: current_time
+        tool_node_version: '2'
+        tool_parameters: {}
+        type: tool
+      height: 116
+      id: '1760000000002'
+      position:
+        x: 384
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        dataset_ids:
+        - 6f1b0c5e-2a7d-4c1e-9b3f-0d2e8a4c7b10
+        desc: ''
+        multiple_retrieval_config:
+          reranking_enable: false
+          top_k: 4
+        query_variable_selector:
+        - '1760000000001'
+        - question
+        retrieval_mode: multiple
+        selected: false
+        title: Knowledge Retrieval
+        type: knowledge-retrieval
+      height: 92
+      id: '1760000000003'
+      position:
+        x: 688
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: true
+          variable_selector:
+          - '1760000000003'
+          - result
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: 2b9e4d1a-7c3f-4a8e-b5d2-9f1c6e0a3b47
+          role: system
+          text: 'Answer {{#1760000000001.question#}} from {{#context#}} only, or
+            say "I do not know".'
+        selected: false
+        title: LLM
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 98
+      id: '1760000000004'
+      position:
+        x: 992
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        authorization:
+          config:
+            api_key: sk-planted-dify-request-needle-8b3d61f0
+            header: ''
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - id: key-1
+            key: ''
+            type: text
+            value: '{"answer": "{{#1760000000004.text#}}"}'
+          type: json
+        desc: ''
+        headers: X-Source:dify
+        method: post
+        params: ''
+        selected: false
+        timeout:
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+        title: File Ticket
+        type: http-request
+        url: https://tickets.example.com/api/answers
+        variables: []
+      height: 110
+      id: '1760000000005'
+      position:
+        x: 1296
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - '1760000000004'
+          - text
+          value_type: string
+          variable: answer
+        selected: false
+        title: End
+        type: end
+      height: 90
+      id: '1760000000006'
+      position:
+        x: 1600
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 1
+  rag_pipeline_variables: []

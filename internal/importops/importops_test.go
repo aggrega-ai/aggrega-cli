@@ -225,6 +225,11 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // reads a Compose file or its override file under by default — and an object at
 // services, read as YAML; the same file under another name, and a file of a
 // Compose name holding no services object, are refused.
+//
+// A Dify DSL is recognised as dify under any name by app at its kind and the
+// presence of app.mode and version, read as YAML — under a Compose name too,
+// since it holds no services object; one of another kind, and one holding no
+// version, are refused.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
@@ -241,6 +246,11 @@ func TestSelectFormat(t *testing.T) {
 	// A Compose file, and a YAML file of a Compose name that holds no services.
 	composeFile := []byte("services:\n  web:\n    image: nginx:1.27\n")
 	noServices := []byte("volumes:\n  data: {}\n")
+	// A Dify DSL in its smallest shape, the same with another kind, and the same
+	// with no version.
+	difyApp := []byte("app:\n  mode: workflow\n  name: Probe\nkind: app\nversion: 0.7.0\n")
+	otherKind := []byte("app:\n  mode: workflow\nkind: rag_pipeline\nversion: 0.7.0\n")
+	noVersion := []byte("app:\n  mode: workflow\nkind: app\n")
 
 	cases := []struct {
 		name     string
@@ -291,6 +301,14 @@ func TestSelectFormat(t *testing.T) {
 		{name: "a compose.yaml holding no services is refused", source: "compose.yaml", content: noServices, wantErr: true},
 		{name: "explicit compose wins over the name", explicit: "compose", source: "stack.yaml", content: composeFile,
 			want: "compose"},
+		{name: "a Dify DSL under a name of its author's choosing", source: "support-answers.yml", content: difyApp,
+			want: "dify"},
+		{name: "a Dify DSL named as a Compose file is told by its content", source: "compose.yaml", content: difyApp,
+			want: "dify"},
+		{name: "a DSL of another kind is refused", source: "pipeline.yml", content: otherKind, wantErr: true},
+		{name: "a DSL holding no version is refused", source: "app.yml", content: noVersion, wantErr: true},
+		{name: "explicit dify wins over a Compose file", explicit: "dify", source: "compose.yaml", content: composeFile,
+			want: "dify"},
 	}
 
 	for _, tc := range cases {
@@ -307,7 +325,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}

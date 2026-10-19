@@ -184,17 +184,40 @@ func parsersResolved(cascade *recordingCascade) []cascadeResolution {
 	return out
 }
 
+// parserLoads returns each parser a recorded cascade was asked for, written as
+// "<reference> from <tier>", once each and sorted — the set of parsers an import
+// loaded, and from where, whatever their order or how often each was read.
+func parserLoads(cascade *recordingCascade) []string {
+	var out []string
+	for _, p := range parsersResolved(cascade) {
+		load := fmt.Sprintf("%s from %s", p.uri, p.tier)
+		if !slices.Contains(out, load) {
+			out = append(out, load)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// binaryYAMLParser is the load of the binary's own YAML parser, from the binary's
+// own tier. A recognition of a lone file reads it in YAML for the signature the
+// reference Dify importer declares, which names no file and reads YAML, so the
+// file is parsed through it wherever the workspace serves no YAML parser.
+var binaryYAMLParser = fmt.Sprintf("parser/yaml from %s", pluginpath.TierEmbed)
+
 // TestAWorkspaceHoldingNoParserImportsThroughTheBinarysParser drives Import over a
 // workspace whose catalog folder holds the reference importer of each format and
 // no parser, for a Langflow and a Flowise source, with the format named and with
 // it recognised.
 //
 // Each import completes and drafts what the importer drafts from the source's
-// real tree — which only a parser that read the source can have produced — and
-// the one parser the import loaded is the binary's JSON parser, read from the
-// binary's own tier. With the format recognised, the recognition read the source
-// through that parser as well, since nothing else could have told the formats
-// apart.
+// real tree — which only a parser that read the source can have produced. With
+// the format named, the one parser the import loaded is the binary's JSON parser,
+// read from the binary's own tier. With the format recognised, the recognition
+// read the source through that parser as well, since nothing else could have told
+// the formats apart, and through the binary's YAML parser, from the same tier, for
+// the one signature naming no file and reading YAML, the Dify importer's — and
+// through no other parser.
 //
 // 🔴 PLANTED DEFECT: in buildSeam (internal/importops/seam.go), set ParserRes back
 // to the catalog view alone, and every row fails: the recognising rows are refused
@@ -233,15 +256,15 @@ func TestAWorkspaceHoldingNoParserImportsThroughTheBinarysParser(t *testing.T) {
 				if got := draftPaths(res); !slices.Equal(got, src.drafts) {
 					t.Errorf("the importer drafted %v, want %v", got, src.drafts)
 				}
-				parsers := parsersResolved(cascade)
-				if len(parsers) == 0 {
-					t.Fatalf("the import loaded no parser; it resolved %+v", cascade.resolutions())
+				want := []string{fmt.Sprintf("parser/json from %s", pluginpath.TierEmbed)}
+				if !named {
+					want = append(want, binaryYAMLParser)
+					slices.Sort(want)
 				}
-				for _, p := range parsers {
-					if p.uri != "parser/json" || p.tier != pluginpath.TierEmbed {
-						t.Errorf("the import loaded the parser %s from the %q tier; want only the binary's parser/json "+
-							"from the binary's own tier", p.uri, p.tier)
-					}
+				if got := parserLoads(cascade); !slices.Equal(got, want) {
+					t.Errorf("the import loaded the parsers %v; want exactly %v — the binary's parser/json from the "+
+						"binary's own tier, and, with the format recognised, its parser/yaml from that tier for the one "+
+						"signature naming no file and reading YAML", got, want)
 				}
 			})
 		}
@@ -314,7 +337,9 @@ func TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImport
 // handed — for a Langflow source.
 //
 // The catalog serves the json syntax, so its parser is the one read through, and
-// the binary's is never loaded. What the import did shows it: recognised with no
+// the binary's JSON parser is never loaded; with no format named, the recognition
+// reads the file in YAML too, for the Dify importer's signature, through the
+// binary's YAML parser, since the catalog serves none. What the import did shows it: recognised with no
 // format named, the Langflow source is read as the format the planted tree's shape
 // is — Flowise — and drafted as the one planted node; with the Langflow format
 // named, the Langflow importer finds no Langflow node in the planted tree and
@@ -376,15 +401,16 @@ func TestAWorkspacesOwnParserIsTheOneAnImportReadsThrough(t *testing.T) {
 				}
 			}
 
-			parsers := parsersResolved(cascade)
-			if len(parsers) == 0 {
-				t.Fatalf("the import loaded no parser; it resolved %+v", cascade.resolutions())
+			want := []string{fmt.Sprintf("%s from %s", planted.Reference, pluginpath.TierColocated)}
+			if row.format == "" {
+				want = append(want, binaryYAMLParser)
+				slices.Sort(want)
 			}
-			for _, p := range parsers {
-				if p.uri != planted.Reference || p.tier != pluginpath.TierColocated {
-					t.Errorf("the import loaded the parser %s from the %q tier; want only the workspace's %s from "+
-						"beside its entity", p.uri, p.tier, planted.Reference)
-				}
+			if got := parserLoads(cascade); !slices.Equal(got, want) {
+				t.Errorf("the import loaded the parsers %v; want exactly %v — the workspace's %s from beside its "+
+					"entity, never the binary's parser/json, and, with the format recognised, the binary's parser/yaml "+
+					"for the one signature naming no file and reading YAML, a syntax the workspace serves no parser for",
+					got, want, planted.Reference)
 			}
 		})
 	}
