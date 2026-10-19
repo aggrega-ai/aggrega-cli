@@ -59,6 +59,31 @@ var errAmbiguousImportFormat = cerrors.Register("ambiguous-import-format", cerro
 		"no declared stage of a compilation holds the signatures or the source the rule reads."),
 })
 
+// ErrUnrecognisedImportFormat fires when an import names no format and the
+// signatures of no format recognise its source.
+//
+// It is a registered condition because it is a refusal an author acts on and may
+// need to match: the import would otherwise have to guess a format no importer
+// claims, and guessing would hand the source to an importer that never declared it
+// reads that shape. Its occurrence names the source and every format the
+// catalog's importers advertise, so the reader can name the one they meant, and a
+// client of a protocol surface recognises it by its code rather than by the words
+// of the remedy, which differ per surface.
+//
+// It is the counterpart of [ErrAmbiguousImportFormat]: there more than one format
+// claims the source, here none does, and in both only naming the format settles
+// it.
+func ErrUnrecognisedImportFormat() error { return errUnrecognisedImportFormat }
+
+var errUnrecognisedImportFormat = cerrors.Register("unrecognised-import-format", cerrors.Meta{
+	ShortCode: "E0350",
+	Message:   "no importer recognises the source",
+	RulePlace: cerrors.RuleNoStageReaches("An import naming no format evaluates the rule, when the signatures the " +
+		"importers it resolves among record are matched against the source and those of no format match. The " +
+		"import translates a foreign source description into entities before there is anything to compile, so no " +
+		"declared stage of a compilation holds the signatures or the source the rule reads."),
+})
+
 // ErrImporterDeclaresNoFilePatterns fires when an import names a directory and the
 // importer serving the source's format declares no file patterns.
 //

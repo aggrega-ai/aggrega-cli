@@ -106,6 +106,18 @@ func TestImportReadsASourceTheAuthorSelectedOutsideTheWorkspace(t *testing.T) {
 	if !strings.Contains(resp.Error.Message, outside) {
 		t.Errorf("the answer does not name the file that was read: %q, want it to name %q", resp.Error.Message, outside)
 	}
+	// The refusal names its condition in the answer's data, which is what a client
+	// keys asking for the format on, and the short code opens the message for the
+	// person reading it. The words stay this surface's own, naming the field.
+	// 🔴 PLANTED DEFECT: answer it through writeError again (import.go) and the data
+	// is gone, so this reddens.
+	if d := resp.Error.Data; d == nil || d.Code != "unrecognised-import-format" || d.ShortCode != "E0350" {
+		t.Errorf("the refusal's data = %+v; want code unrecognised-import-format and short code E0350", d)
+	}
+	if !strings.HasPrefix(resp.Error.Message, "E0350: import: ") || !strings.Contains(resp.Error.Message, "send format") ||
+		strings.Contains(resp.Error.Message, "--format") {
+		t.Errorf("the refusal %q does not open with its short code and name the field rather than the flag", resp.Error.Message)
+	}
 }
 
 // TestImportStillConfinesItsDestination is the other direction over the same

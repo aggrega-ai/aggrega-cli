@@ -284,11 +284,17 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	// command line's flag, which is the right remedy at a terminal and
 	// unreachable from a request, so each is recognised through its type rather
 	// than by reading the sentence, and the formats it names are read off it.
+	// Each answer carries the refusal as its cause, so the condition it names
+	// rides in the answer's data and a client keys its remedy on that code rather
+	// than on these words.
 	if undetected := (*importops.UndetectedFormatError)(nil); errors.As(err, &undetected) {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"import: the source format of "+undetected.Path()+" was not recognised from its shape by the "+
-				"signatures the importers declare; send format to name it explicitly ("+
-				sessionFormatExamples(undetected.Formats())+")")
+		return s.writeErrorEnvelope(ctx, req.ID, &jsonRPCError{
+			Code: jsonRPCInvalidParams,
+			Message: "import: the source format of " + undetected.Path() + " was not recognised from its shape by the " +
+				"signatures the importers declare; send format to name it explicitly (" +
+				sessionFormatExamples(undetected.Formats()) + ")",
+			cause: undetected,
+		})
 	}
 	if ambiguous := (*importops.AmbiguousFormatError)(nil); errors.As(err, &ambiguous) {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ",

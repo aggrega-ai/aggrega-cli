@@ -22,10 +22,12 @@ import (
 )
 
 // UndetectedFormatError reports a source no importer in the catalog recognises.
+// It carries the occurrence of [ErrUnrecognisedImportFormat], so a surface reading
+// the condition's codes off the chain reports that condition.
 //
-// It is a distinct type rather than a plain error because the surfaces that
-// meet this condition correct it differently: a reader at a terminal passes a
-// flag, and a caller on a protocol sends a field. Its message is the terminal's
+// It is a distinct type rather than the occurrence alone because the surfaces
+// that meet this condition correct it differently: a reader at a terminal passes
+// a flag, and a caller on a protocol sends a field. Its message is the terminal's
 // remedy; a protocol surface recognises the condition through this type and
 // words its own refusal around the field a request can actually carry.
 //
@@ -40,12 +42,24 @@ type UndetectedFormatError struct {
 	Advertised []string
 }
 
-// Error renders the terminal's remedy for a source whose format was not
-// recognised: the file, the flag that names a format explicitly, and the
-// formats the catalog's importers advertise.
-func (e *UndetectedFormatError) Error() string {
-	return fmt.Sprintf("cannot detect the source format of %q; pass --format to name it explicitly (%s)",
-		e.Source, formatExamples(e.Advertised, "--format "))
+// Error renders the condition's registered sentence, the source, and the
+// terminal's remedy: the flag that names a format explicitly, and the formats the
+// catalog's importers advertise.
+func (e *UndetectedFormatError) Error() string { return e.occurrence().Error() }
+
+// Unwrap returns the occurrence of the registered condition, so errors.Is
+// against [ErrUnrecognisedImportFormat] and the code reads both reach it.
+func (e *UndetectedFormatError) Unwrap() error { return e.occurrence() }
+
+// occurrence builds the raised condition this refusal carries. It is built from
+// the fields rather than held, so the value a caller constructs and the value
+// the recognition returns render the same text.
+func (e *UndetectedFormatError) occurrence() *cerrors.CompilerError {
+	return cerrors.Raise(errUnrecognisedImportFormat, "", cerrors.SourceLocation{},
+		cerrors.ComposeMessage(errUnrecognisedImportFormat,
+			[]string{"source " + strconv.Quote(e.Source)},
+			"Pass --format to name it explicitly ("+formatExamples(e.Advertised, "--format ")+")"),
+		nil)
 }
 
 // Path returns the source path the detection could not classify, so a surface

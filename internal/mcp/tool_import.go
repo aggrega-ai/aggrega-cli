@@ -523,13 +523,20 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 // The formats it names are read off the refusal itself — the ones the importers
 // advertise, or the ones the source was recognised as — so they are the import's
 // statement rather than a list of this surface's that would stop being true the
-// first time the importers changed.
+// first time the importers changed. Each opens with its condition's short code, as
+// every refusal naming a registered condition does.
 func importFormatRefusal(err error) (string, bool) {
 	var undetected *importops.UndetectedFormatError
 	if errors.As(err, &undetected) {
-		return fmt.Sprintf("%s did not recognise the source format of %s from the signatures the importers "+
+		var b strings.Builder
+		if short, ok := cerrors.ShortCodeOf(err); ok {
+			b.WriteString(short)
+			b.WriteString(": ")
+		}
+		fmt.Fprintf(&b, "%s did not recognise the source format of %s from the signatures the importers "+
 			"declare, and it does not guess: send 'format' naming the format outright (%s) and "+
-			"call again. Nothing was written.", importToolName, undetected.Path(), formatChoices(undetected.Formats())), true
+			"call again. Nothing was written.", importToolName, undetected.Path(), formatChoices(undetected.Formats()))
+		return b.String(), true
 	}
 	var ambiguous *importops.AmbiguousFormatError
 	if errors.As(err, &ambiguous) {

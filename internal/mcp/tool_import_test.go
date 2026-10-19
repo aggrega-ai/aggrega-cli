@@ -455,8 +455,8 @@ func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
 // argument a caller here can send and never the terminal's flag, names the
 // source, and names the formats the refusal itself carries — the ones the
 // catalog's importers advertise, or the ones the source was recognised as — and
-// the ambiguity opens with its condition's short code. Any other error is left
-// to the caller.
+// each opens with its condition's short code. Any other error is left to the
+// caller.
 func TestTheImportToolRewordsAnUnsettledFormatByItsType(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -466,10 +466,10 @@ func TestTheImportToolRewordsAnUnsettledFormatByItsType(t *testing.T) {
 	}{
 		{"no importer recognises the source",
 			&importops.UndetectedFormatError{Source: "mystery.json", Advertised: []string{"langflow", "flowise"}},
-			[]string{"mystery.json", "'format'", `one of "langflow", "flowise"`}},
+			[]string{"E0350: ", "mystery.json", "'format'", `one of "langflow", "flowise"`}},
 		{"no importer advertises a format",
 			&importops.UndetectedFormatError{Source: "mystery.json"},
-			[]string{"mystery.json", "'format'", "no importer in this workspace's catalog advertises a format to name"}},
+			[]string{"E0350: ", "mystery.json", "'format'", "no importer in this workspace's catalog advertises a format to name"}},
 		{"importers of two formats recognise the source",
 			&importops.AmbiguousFormatError{Source: "flow.json", Matched: []string{"langflow", "nested-flow"}},
 			[]string{"E0339: ", "flow.json", "'format'", `"langflow", "nested-flow"`}},

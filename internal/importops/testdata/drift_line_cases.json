@@ -1,0 +1,57 @@
+{
+  "_comment": "Single source of the cases the drift line is held to on both sides of a language boundary. The compiler renders the line in Go for the command line's error stream under --sync and for the assistant's import tool; the VS Code extension renders the same line in TypeScript for its import channel, from the drift entries the session answers with. Both sides' specs render every entry here and require exactly its line. Each drift is written as the session answers it: change, file, and key, the keys leading to the part from the top of a drafted Aggregate, empty where the part is the whole file. The cases pin each rule of the line: a whole file, a plain key path, and each kind of key that is written quoted — one holding a full stop, a space, a tab, a quotation mark, an apostrophe, a control character, and an empty key.",
+  "_revision_comment": "revision names this case set. Each side pins its OWN copy of the number and refuses a manifest declaring a different one, so a green from a side is evidence that side READ this revision, not merely that it agreed with the other. Change, add or remove a case and bump revision: both sides then refuse until each side's own pinned copy is moved, which cannot be done without running both.",
+  "revision": 1,
+  "cases": [
+    {
+      "name": "a whole file the source dropped",
+      "drift": { "change": "removed", "file": "components/old.yaml", "key": [] },
+      "line": "removed components/old.yaml"
+    },
+    {
+      "name": "a whole file the source gained",
+      "drift": { "change": "added", "file": "components/new.yaml", "key": [] },
+      "line": "added components/new.yaml"
+    },
+    {
+      "name": "a plain key path",
+      "drift": { "change": "changed", "file": "aggregate.yaml", "key": ["spec", "components", "api", "values"] },
+      "line": "changed spec.components.api.values in aggregate.yaml"
+    },
+    {
+      "name": "a key holding a full stop",
+      "drift": { "change": "added", "file": "aggregate.yaml", "key": ["spec", "components", "web.v2"] },
+      "line": "added spec.components.\"web.v2\" in aggregate.yaml"
+    },
+    {
+      "name": "a key holding a space",
+      "drift": { "change": "changed", "file": "aggregate.yaml", "key": ["metadata", "labels", "team name"] },
+      "line": "changed metadata.labels.\"team name\" in aggregate.yaml"
+    },
+    {
+      "name": "a key holding a tab",
+      "drift": { "change": "changed", "file": "aggregate.yaml", "key": ["metadata", "a\tb"] },
+      "line": "changed metadata.\"a\\tb\" in aggregate.yaml"
+    },
+    {
+      "name": "a key holding a quotation mark",
+      "drift": { "change": "removed", "file": "aggregate.yaml", "key": ["spec", "say \"hi\""] },
+      "line": "removed spec.\"say \\\"hi\\\"\" in aggregate.yaml"
+    },
+    {
+      "name": "a key holding an apostrophe",
+      "drift": { "change": "changed", "file": "aggregate.yaml", "key": ["spec", "it's"] },
+      "line": "changed spec.\"it's\" in aggregate.yaml"
+    },
+    {
+      "name": "a key holding a control character and a newline",
+      "drift": { "change": "changed", "file": "aggregate.yaml", "key": ["spec", "a\u0001b\nc"] },
+      "line": "changed spec.\"a\\x01b\\nc\" in aggregate.yaml"
+    },
+    {
+      "name": "an empty key",
+      "drift": { "change": "added", "file": "aggregate.yaml", "key": ["spec", ""] },
+      "line": "added spec.\"\" in aggregate.yaml"
+    }
+  ]
+}

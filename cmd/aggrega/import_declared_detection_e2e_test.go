@@ -242,7 +242,7 @@ func TestAYAMLSourceIsRecognisedByAnImportersDeclarationWithNoHostChange(t *test
 	// recognises nothing, so the case above is attributable to the predicate.
 	seedSource(t, root, "other.yaml", []byte("kind: Other\n"))
 	if code, _, _, process := runImportAtTheRoot(t, root, filepath.Join(root, "other.yaml"), "--dry-run"); code == 0 ||
-		!strings.Contains(process, "cannot detect the source format") {
+		!strings.Contains(process, "E0350") || !strings.Contains(process, "no importer recognises the source") {
 		t.Errorf("a YAML source of another kind was not refused as unrecognised (exit %d):\n%s", code, process)
 	}
 }

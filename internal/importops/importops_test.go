@@ -6,6 +6,7 @@ package importops
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -458,28 +459,51 @@ func TestSelectFormat(t *testing.T) {
 }
 
 // TestUndetectedFormatMessageNamesTheTerminalRemedy pins the sentence the
-// command line prints: the file, the flag, and the formats the catalog's
-// importers advertise as the examples — or, where they advertise none, that
-// there is nothing to name. A protocol surface re-words it through the type.
+// command line prints: the condition's registered sentence and the file, then the
+// flag, and the formats the catalog's importers advertise as the examples — or,
+// where they advertise none, that there is nothing to name. A protocol surface
+// re-words it through the type.
 func TestUndetectedFormatMessageNamesTheTerminalRemedy(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		formats []string
 		want    string
 	}{
-		{[]string{"langflow", "flowise"}, `cannot detect the source format of "flow.json"; pass --format to name it ` +
-			`explicitly (for example --format langflow or --format flowise)`},
-		{[]string{"langflow"}, `cannot detect the source format of "flow.json"; pass --format to name it ` +
+		{[]string{"langflow", "flowise"}, `no importer recognises the source (source "flow.json"). Pass --format to ` +
+			`name it explicitly (for example --format langflow or --format flowise)`},
+		{[]string{"langflow"}, `no importer recognises the source (source "flow.json"). Pass --format to name it ` +
 			`explicitly (for example --format langflow)`},
-		{[]string{"a", "b", "c"}, `cannot detect the source format of "flow.json"; pass --format to name it ` +
-			`explicitly (for example --format a, --format b or --format c)`},
-		{nil, `cannot detect the source format of "flow.json"; pass --format to name it explicitly ` +
+		{[]string{"a", "b", "c"}, `no importer recognises the source (source "flow.json"). Pass --format to name ` +
+			`it explicitly (for example --format a, --format b or --format c)`},
+		{nil, `no importer recognises the source (source "flow.json"). Pass --format to name it explicitly ` +
 			`(no importer plugin in the workspace's catalog advertises a format to name)`},
 	} {
 		err := &UndetectedFormatError{Source: "flow.json", Advertised: tc.formats}
 		if err.Error() != tc.want {
 			t.Errorf("Error() with %v advertised = %q; want %q", tc.formats, err.Error(), tc.want)
 		}
+	}
+}
+
+// TestAnUnrecognisedSourceIsRefusedUnderItsOwnCondition pins the refusal for a
+// source the signatures of no format recognise to the registered
+// unrecognised-import-format condition: reachable by errors.Is, and carrying both
+// of its codes through the chain, so a protocol surface answering with it hands
+// its client a code to key on rather than words to read.
+//
+// 🔴 PLANTED DEFECT: drop UndetectedFormatError's Unwrap (detect.go) and every
+// assertion here reddens — the type no longer reaches its condition.
+func TestAnUnrecognisedSourceIsRefusedUnderItsOwnCondition(t *testing.T) {
+	t.Parallel()
+	var err error = fmt.Errorf("wrapped: %w", &UndetectedFormatError{Source: "flow.json", Advertised: []string{"langflow"}})
+	if !errors.Is(err, ErrUnrecognisedImportFormat()) {
+		t.Fatalf("the refusal is not the unrecognised-import-format condition: %v", err)
+	}
+	if short, ok := cerrors.ShortCodeOf(err); !ok || short != "E0350" {
+		t.Errorf("the refusal carries short code %q (found %v); want E0350", short, ok)
+	}
+	if code, ok := cerrors.CodeOf(err); !ok || code != "unrecognised-import-format" {
+		t.Errorf("the refusal carries code %q (found %v); want unrecognised-import-format", code, ok)
 	}
 }
 
