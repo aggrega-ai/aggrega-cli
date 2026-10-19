@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"go.yaml.in/yaml/v3"
 
@@ -641,4 +642,38 @@ func TestVariableNamesReadsNamesAlone(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestANameHoldingDoubleBracesReadsBackInTheAggregatesComments imports a
+// configuration whose graph's id holds "{{", written into a comment of the
+// Aggregate, and requires the Aggregate to run as a template — as the compiler
+// evaluates its whole text, comments included — and the comment to read back
+// with the id as the configuration writes it.
+//
+// 🔴 PLANTED DEFECT: in importer.CommentLine
+// (aggrega-pdk/go/pkg/importer/definition.go), return the line unescaped: the
+// Aggregate no longer parses as a template, and the case fails on it.
+func TestANameHoldingDoubleBracesReadsBackInTheAggregatesComments(t *testing.T) {
+	out := importSources(t, "", aggrega.ImportSource{Name: "langgraph.json", Bytes: []byte(
+		`{"dependencies":["."],"graphs":{"agent{{x}}":"./agent.py:graph"}}`)})
+	_, text := drafted(t, out)
+	if got := evaluatedAggregate(t, text); !strings.Contains(got, "# The graph agent{{x}}.\n") {
+		t.Errorf("the evaluated Aggregate does not name the graph agent{{x}}:\n%s", got)
+	}
+}
+
+// evaluatedAggregate evaluates a drafted Aggregate's text as a template, as the
+// compiler does before it reads the Aggregate as YAML, failing the test where it
+// does not parse or run as one, and returns the evaluated text.
+func evaluatedAggregate(t *testing.T, text string) string {
+	t.Helper()
+	tmpl, err := template.New("aggregate").Parse(text)
+	if err != nil {
+		t.Fatalf("the drafted Aggregate does not parse as a template: %v\n%s", err, text)
+	}
+	var evaluated strings.Builder
+	if err := tmpl.Execute(&evaluated, nil); err != nil {
+		t.Fatalf("the drafted Aggregate does not run as a template: %v\n%s", err, text)
+	}
+	return evaluated.String()
 }

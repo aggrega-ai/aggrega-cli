@@ -314,16 +314,16 @@ func TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats(t *testi
 
 	code, _, _, process := runImportAtTheRoot(t, root, filepath.Join(root, "mystery.json"), "--dry-run")
 	if code == 0 || !strings.Contains(process,
-		"(for example --format compose, --format crewai, --format dify, --format flowise, --format google-adk, "+
-			"--format langflow, --format langgraph, --format mcp or --format n8n)") {
+		"(for example --format agent-framework, --format compose, --format crewai, --format dify, --format flowise, "+
+			"--format google-adk, --format langflow, --format langgraph, --format mcp or --format n8n)") {
 		t.Errorf("the command's refusal (exit %d) does not offer the advertised formats:\n%s", code, process)
 	}
 	if answer := importThroughTheTool(t, root, map[string]any{"source": "mystery.json"}); !answer.refused ||
-		!strings.Contains(answer.text, `one of "compose", "crewai", "dify", "flowise", "google-adk", "langflow", "langgraph", "mcp", "n8n"`) {
+		!strings.Contains(answer.text, `one of "agent-framework", "compose", "crewai", "dify", "flowise", "google-adk", "langflow", "langgraph", "mcp", "n8n"`) {
 		t.Errorf("the tool's refusal (refused=%v) does not offer the advertised formats: %s", answer.refused, answer.text)
 	}
 	if answer := importThroughTheSession(t, root, map[string]any{"source": "mystery.json", "outputDir": "drafts"}); !strings.Contains(
-		answer.refusal, "(for example compose or crewai or dify or flowise or google-adk or langflow or langgraph or mcp or n8n)") {
+		answer.refusal, "(for example agent-framework or compose or crewai or dify or flowise or google-adk or langflow or langgraph or mcp or n8n)") {
 		t.Errorf("the session's refusal does not offer the advertised formats: %q", answer.refusal)
 	}
 }

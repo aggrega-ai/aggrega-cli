@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"go.yaml.in/yaml/v3"
 
@@ -515,4 +516,56 @@ func TestTwoImportsAreByteIdentical(t *testing.T) {
 			t.Errorf("two imports of %s differ", name)
 		}
 	}
+}
+
+// TestANameHoldingDoubleBracesReadsBackInTheAggregate imports a Compose file whose
+// service and model are named with "{{" — each name written into a comment of the
+// Aggregate — and whose model's identifier holds one too, written as a value, and
+// requires the Aggregate to run as a template — as the compiler evaluates its
+// whole text, comments included — each comment reading back with the name as the
+// file writes it and the identifier reading back as written.
+//
+// 🔴 PLANTED DEFECT: in importer.CommentLine
+// (aggrega-pdk/go/pkg/importer/definition.go), return the line unescaped; or in
+// renderAggregate (render.go), write the model's identifier through yamlString
+// alone: the Aggregate no longer parses as a template, and the case fails on it.
+func TestANameHoldingDoubleBracesReadsBackInTheAggregate(t *testing.T) {
+	out := importOne([]byte("services:\n  \"web{{x}}\":\n    image: nginx:1.27\n    models:\n      - \"llm{{y}}\"\n"+
+		"models:\n  \"llm{{y}}\":\n    model: \"ai/{{ z }}\"\n"), "")
+	text := fileContent(t, out, "aggregate.yaml")
+	got := evaluatedAggregate(t, text)
+	for _, want := range []string{"# The service web{{x}}.\n", "# The model llm{{y}}.\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the evaluated Aggregate does not say %q:\n%s", want, got)
+		}
+	}
+	var doc struct {
+		Spec struct {
+			Components map[string]struct {
+				Values map[string]any `yaml:"values"`
+			} `yaml:"components"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &doc); err != nil {
+		t.Fatalf("the evaluated Aggregate does not read as YAML: %v\n%s", err, got)
+	}
+	if model := doc.Spec.Components["llm-y"].Values["model"]; model != "ai/{{ z }}" {
+		t.Errorf("the model's identifier reads back as %#v, want %q:\n%s", model, "ai/{{ z }}", got)
+	}
+}
+
+// evaluatedAggregate evaluates a drafted Aggregate's text as a template, as the
+// compiler does before it reads the Aggregate as YAML, failing the test where it
+// does not parse or run as one, and returns the evaluated text.
+func evaluatedAggregate(t *testing.T, text string) string {
+	t.Helper()
+	tmpl, err := template.New("aggregate").Parse(text)
+	if err != nil {
+		t.Fatalf("the drafted Aggregate does not parse as a template: %v\n%s", err, text)
+	}
+	var evaluated strings.Builder
+	if err := tmpl.Execute(&evaluated, nil); err != nil {
+		t.Fatalf("the drafted Aggregate does not run as a template: %v\n%s", err, text)
+	}
+	return evaluated.String()
 }

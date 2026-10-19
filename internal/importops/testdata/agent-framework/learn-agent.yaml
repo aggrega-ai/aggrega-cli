@@ -1,0 +1,42 @@
+kind: Prompt
+name: LearnAgent
+displayName: Learn Assistant
+description: Answers questions about {{ product }} from the Microsoft Learn content.
+instructions: You answer questions by searching the Microsoft Learn content only.
+model:
+  id: gpt-4.1-mini
+  provider: OpenAI
+  apiType: Responses
+  options:
+    temperature: 0.2
+    topP: 0.9
+  connection:
+    kind: key
+    endpoint: https://llm-gateway.example.com/v1
+    key: sk-planted-af-model-key-needle-3c7e91d2
+tools:
+  - kind: mcp
+    name: microsoft_learn
+    description: Get information from Microsoft Learn.
+    url: https://learn.microsoft.com/api/mcp?session=planted-af-query-needle-a41b
+    approvalMode:
+      kind: never
+    allowedTools:
+      - microsoft_docs_search
+      - microsoft_docs_fetch
+    connection:
+      kind: key
+      key: planted-af-tool-key-needle-6d02f5
+  - kind: function
+    name: GetRelease
+    description: Get the notes of a product release.
+    bindings:
+      get_release: get_release
+  - kind: web_search
+    name: search
+outputSchema:
+  properties:
+    answer:
+      kind: string
+      required: true
+      description: The answer text.

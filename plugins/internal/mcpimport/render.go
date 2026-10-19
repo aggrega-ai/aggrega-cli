@@ -32,7 +32,7 @@ func renderAggregate(name string, servers []server) string {
 	b.WriteString("  components:\n")
 	for _, s := range servers {
 		if s.ref != s.key {
-			b.WriteString("    # The MCP server " + commentText(s.ref) + ".\n")
+			b.WriteString(commentLine("    ", "The MCP server "+commentText(s.ref)+"."))
 		}
 		b.WriteString("    " + s.key + ":\n")
 		b.WriteString("      type: " + Component + "\n")
@@ -180,12 +180,14 @@ func headerLine(h namedValue) string {
 }
 
 // Every value read from a source is written through the drafts' shared writers:
-// a scalar reading back as exactly the source's text, and text inside a comment
-// that nothing a source holds can end.
+// a scalar reading back as exactly the source's text, text inside a comment that
+// nothing a source holds can end, and each comment line of the Aggregate escaped
+// so it reads back as written once the Aggregate is evaluated as a template.
 var (
 	yamlString  = draftyaml.String
 	commentText = draftyaml.Comment
 	commentList = draftyaml.CommentList
+	commentLine = draftyaml.CommentLine
 )
 
 // jsonString writes s as a JSON string.

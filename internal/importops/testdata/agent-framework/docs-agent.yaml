@@ -1,0 +1,16 @@
+kind: Prompt
+name: DocsAgent
+description: Answers questions from the team's documentation.
+instructions: You answer questions from the team's documentation, citing the page you read.
+model:
+  id: =Env.OPENAI_MODEL
+  provider: OpenAI
+  connection:
+    kind: ApiKey
+    key: =Env.OPENAI_API_KEY
+tools:
+  - kind: mcp
+    name: team docs
+    description: Search the team's documentation.
+    url: =Env.DOCS_MCP_URL
+    approvalMode: always

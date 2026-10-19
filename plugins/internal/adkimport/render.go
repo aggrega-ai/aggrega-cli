@@ -15,11 +15,14 @@ import (
 // from a source is written as a double-quoted YAML scalar through the drafts'
 // shared writer, which reads back as exactly the source's text — escaped first,
 // in the Aggregate, so it reads back as itself once the Aggregate is evaluated as
-// a template — and every name written into a comment through its comment writer.
+// a template — and every name written into a comment through its comment writer,
+// each comment line of the Aggregate through the drafts' comment-line writer,
+// which escapes it so it too reads back as written once evaluated.
 var (
 	yamlString  = draftyaml.String
 	commentText = draftyaml.Comment
 	commentList = draftyaml.CommentList
+	commentLine = draftyaml.CommentLine
 )
 
 // renderAggregate writes the drafted Aggregate, named name: one instance of
@@ -45,7 +48,7 @@ func renderAggregate(name string, apps []*application, parts []*modelPart, unrea
 		writeApplication(&b, app)
 	}
 	for _, p := range parts {
-		b.WriteString("    # The model " + commentText(p.ref) + ".\n")
+		b.WriteString(commentLine("    ", "The model "+commentText(p.ref)+"."))
 		b.WriteString("    " + p.key + ":\n")
 		b.WriteString("      type: " + p.component + "\n")
 		b.WriteString("      values:\n")
@@ -68,17 +71,17 @@ func writeHeader(b *strings.Builder, apps []*application, unread []string) {
 		}
 	}
 	if len(files) > 0 {
-		b.WriteString("# Google ADK agent configurations read:\n")
+		b.WriteString(commentLine("", "Google ADK agent configurations read:"))
 		for _, f := range files {
-			b.WriteString("#   - " + commentText(f) + "\n")
+			b.WriteString(commentLine("", "  - "+commentText(f)))
 		}
 	}
-	b.WriteString("# Not read: the application's code, which defines the tools, callbacks and agents a configuration " +
-		"names by their code, nor the environment file ADK's scaffold writes beside " + RootFile + "; the " +
-		"application runs in the image the Release names for each instance, and loads its configurations itself.\n")
-	b.WriteString("# ADK states that its Agent Config is experimental and currently supports only Gemini models.\n")
+	b.WriteString(commentLine("", "Not read: the application's code, which defines the tools, callbacks and agents a configuration "+
+		"names by their code, nor the environment file ADK's scaffold writes beside "+RootFile+"; the "+
+		"application runs in the image the Release names for each instance, and loads its configurations itself."))
+	b.WriteString(commentLine("", "ADK states that its Agent Config is experimental and currently supports only Gemini models."))
 	if len(unread) > 0 {
-		b.WriteString("# Not read, since no agent configuration names it: " + commentList(unread) + ".\n")
+		b.WriteString(commentLine("", "Not read, since no agent configuration names it: "+commentList(unread)+"."))
 	}
 }
 
@@ -93,7 +96,7 @@ func writeApplication(b *strings.Builder, app *application) {
 	if app.file != "" {
 		tree = commentText(app.file)
 	}
-	b.WriteString("    # The agent tree of " + tree + ", served from its root agent " + commentText(root.ref) + ".\n")
+	b.WriteString(commentLine("    ", "The agent tree of "+tree+", served from its root agent "+commentText(root.ref)+"."))
 	var subs, missing, deprecated, models []string
 	for _, a := range app.agents {
 		if a != root {
@@ -116,11 +119,11 @@ func writeApplication(b *strings.Builder, app *application) {
 		}
 	}
 	if len(subs) > 0 {
-		b.WriteString("    # Sub-agents ADK builds inside this application, drafted as no instance of their own: " +
-			commentList(subs) + ".\n")
+		b.WriteString(commentLine("    ", "Sub-agents ADK builds inside this application, drafted as no instance of their own: "+
+			commentList(subs)+"."))
 	}
 	for _, m := range missing {
-		b.WriteString("    # Not read: " + m + ".\n")
+		b.WriteString(commentLine("    ", "Not read: "+m+"."))
 	}
 	var shipped, coded []string
 	for _, a := range app.agents {
@@ -135,22 +138,22 @@ func writeApplication(b *strings.Builder, app *application) {
 		}
 	}
 	if len(shipped) > 0 {
-		b.WriteString("    # Tools ADK ships, which run inside the application, drafted as no Component: " +
-			commentList(shipped) + ".\n")
+		b.WriteString(commentLine("    ", "Tools ADK ships, which run inside the application, drafted as no Component: "+
+			commentList(shipped)+"."))
 	}
 	if len(coded) > 0 {
-		b.WriteString("    # Tools the application's code defines, drafted as no Component: " + commentList(coded) + ".\n")
+		b.WriteString(commentLine("    ", "Tools the application's code defines, drafted as no Component: "+commentList(coded)+"."))
 	}
 	if len(deprecated) > 0 {
-		b.WriteString("    # Deprecated by ADK in favour of Workflow: " + strings.Join(deprecated, ", ") + ".\n")
+		b.WriteString(commentLine("    ", "Deprecated by ADK in favour of Workflow: "+strings.Join(deprecated, ", ")+"."))
 	}
 	if len(models) > 0 {
-		b.WriteString("    # Models other agents of the tree ask for, whose requests ADK's Gemini client sends with the " +
-			"key this instance's " + modelSocket + " connection delivers: " + strings.Join(models, ", ") + ".\n")
+		b.WriteString(commentLine("    ", "Models other agents of the tree ask for, whose requests ADK's Gemini client sends with the "+
+			"key this instance's "+modelSocket+" connection delivers: "+strings.Join(models, ", ")+"."))
 	}
 	if app.part == nil {
-		b.WriteString("    # The " + modelSocket + " connection is left for the author, since " + unwiredWhy(app) +
-			"; the build halts naming the socket until one is wired.\n")
+		b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since "+unwiredWhy(app)+
+			"; the build halts naming the socket until one is wired."))
 	}
 	b.WriteString("    " + app.key + ":\n")
 	b.WriteString("      type: " + Component + "\n")

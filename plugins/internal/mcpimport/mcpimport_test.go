@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"text/template"
 
 	"go.yaml.in/yaml/v3"
 
@@ -652,6 +653,29 @@ func TestEndpointOf(t *testing.T) {
 	}
 }
 
+// TestRemoteEndpointWritesTheAddressAndTheNote writes a remote server's address
+// as infra.endpoint takes it, and the note naming what it leaves out — none
+// where it leaves out nothing — as the MCP importer writes it on its own servers
+// and every other importer drafting a remote MCP server writes it too.
+func TestRemoteEndpointWritesTheAddressAndTheNote(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct{ in, want, note string }{
+		{"https://mcp.example.com/mcp", "https://mcp.example.com/mcp", ""},
+		{"https://mcp.example.com/mcp?key=k", "https://mcp.example.com/mcp", "The address's query is not written: " +
+			"infra.endpoint holds the address without any part that carries a key, and a consumer reading its key " +
+			"from the address supplies the whole address on its own connection to the tool."},
+		{"https://user:pw@mcp.example.com/mcp#top", "https://mcp.example.com/mcp",
+			"The address's user part and fragment is not written: infra.endpoint holds the address without any part " +
+				"that carries a key, and a consumer reading its key from the address supplies the whole address on its " +
+				"own connection to the tool."},
+	} {
+		got, note := RemoteEndpoint(row.in)
+		if got != row.want || note != row.note {
+			t.Errorf("RemoteEndpoint(%q) = %q, %q; want %q, %q", row.in, got, note, row.want, row.note)
+		}
+	}
+}
+
 // TestIsReference tells a value that is one variable reference and nothing else
 // from one holding a value.
 func TestIsReference(t *testing.T) {
@@ -684,4 +708,37 @@ func TestYAMLStringReadsBackAsItsText(t *testing.T) {
 			t.Errorf("yamlString(%q) = %s, which reads back as %q (%v)", text, yamlString(text), back, err)
 		}
 	}
+}
+
+// TestANameHoldingDoubleBracesReadsBackInTheAggregatesComments imports a client
+// configuration whose server's name holds "{{", written into a comment of the
+// Aggregate, and requires the Aggregate to run as a template — as the compiler
+// evaluates its whole text, comments included — and the comment to read back
+// with the name as the configuration writes it.
+//
+// 🔴 PLANTED DEFECT: in importer.CommentLine
+// (aggrega-pdk/go/pkg/importer/definition.go), return the line unescaped: the
+// Aggregate no longer parses as a template, and the case fails on it.
+func TestANameHoldingDoubleBracesReadsBackInTheAggregatesComments(t *testing.T) {
+	out := importOne([]byte(`{"mcpServers":{"srv{{x}}":{"command":"npx"}}}`), "")
+	text := fileContent(t, out, "aggregate.yaml")
+	if got := evaluatedAggregate(t, text); !strings.Contains(got, "# The MCP server srv{{x}}.\n") {
+		t.Errorf("the evaluated Aggregate does not name the server srv{{x}}:\n%s", got)
+	}
+}
+
+// evaluatedAggregate evaluates a drafted Aggregate's text as a template, as the
+// compiler does before it reads the Aggregate as YAML, failing the test where it
+// does not parse or run as one, and returns the evaluated text.
+func evaluatedAggregate(t *testing.T, text string) string {
+	t.Helper()
+	tmpl, err := template.New("aggregate").Parse(text)
+	if err != nil {
+		t.Fatalf("the drafted Aggregate does not parse as a template: %v\n%s", err, text)
+	}
+	var evaluated strings.Builder
+	if err := tmpl.Execute(&evaluated, nil); err != nil {
+		t.Fatalf("the drafted Aggregate does not run as a template: %v\n%s", err, text)
+	}
+	return evaluated.String()
 }

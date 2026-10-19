@@ -15,11 +15,14 @@ import (
 // from a source is written as a double-quoted YAML scalar through the drafts'
 // shared writer, which reads back as exactly the source's text — escaped first,
 // in the Aggregate, so it reads back as itself once the Aggregate is evaluated as
-// a template — and every name written into a comment through its comment writer.
+// a template — and every name written into a comment through its comment writer,
+// each comment line of the Aggregate through the drafts' comment-line writer,
+// which escapes it so it too reads back as written once evaluated.
 var (
 	yamlString  = draftyaml.String
 	commentText = draftyaml.Comment
 	commentList = draftyaml.CommentList
+	commentLine = draftyaml.CommentLine
 )
 
 // renderAggregate writes the drafted Aggregate, named name: one instance of
@@ -53,11 +56,11 @@ func renderAggregate(name string, read []*application, parts []*datastorePart, u
 		if p.ref != "checkpointer" {
 			of = ", " + commentText(p.ref)
 		}
-		b.WriteString("    # The " + p.backend.product + " database the configuration's checkpointer" + of +
-			" keeps each graph's state in.\n")
+		b.WriteString(commentLine("    ", "The "+p.backend.product+" database the configuration's checkpointer"+of+
+			" keeps each graph's state in."))
 		if p.drafted {
-			b.WriteString("    # " + p.component + " is drafted beside this Aggregate, since the catalog holds no " +
-				p.backend.component + "; a Recipe publishing its host and port is the author's to supply.\n")
+			b.WriteString(commentLine("    ", p.component+" is drafted beside this Aggregate, since the catalog holds no "+
+				p.backend.component+"; a Recipe publishing its host and port is the author's to supply."))
 		}
 		b.WriteString("    " + p.key + ":\n")
 		b.WriteString("      type: " + p.component + "\n")
@@ -83,60 +86,60 @@ func writeHeader(b *strings.Builder, read []*application, unread []string) {
 		}
 	}
 	if len(files) > 0 {
-		b.WriteString("# LangGraph configurations read:\n")
+		b.WriteString(commentLine("", "LangGraph configurations read:"))
 		for _, f := range files {
-			b.WriteString("#   - " + commentText(f) + "\n")
+			b.WriteString(commentLine("", "  - "+commentText(f)))
 		}
 	}
 	if len(envFiles) > 0 {
-		b.WriteString("# Environment files read for their variables' names alone, never their values:\n")
+		b.WriteString(commentLine("", "Environment files read for their variables' names alone, never their values:"))
 		for _, f := range envFiles {
-			b.WriteString("#   - " + commentText(f) + "\n")
+			b.WriteString(commentLine("", "  - "+commentText(f)))
 		}
 	}
 	if len(unread) > 0 {
-		b.WriteString("# Not read, since no configuration names them: the environment files " + commentList(unread) +
-			".\n")
+		b.WriteString(commentLine("", "Not read, since no configuration names them: the environment files "+commentList(unread)+
+			"."))
 	}
-	b.WriteString("# Not read: the application's code, which defines each graph; langgraph build builds it into the " +
-		"image the Release names for each graph.\n")
+	b.WriteString(commentLine("", "Not read: the application's code, which defines each graph; langgraph build builds it into the "+
+		"image the Release names for each graph."))
 	for _, a := range read {
 		of := ""
 		if len(read) > 1 {
 			of = " of " + commentText(a.name())
 		}
 		if len(a.built) > 0 {
-			b.WriteString("# Not carried, since langgraph build reads them to build the image" + of + ": " +
-				commentList(a.built) + ".\n")
+			b.WriteString(commentLine("", "Not carried, since langgraph build reads them to build the image"+of+": "+
+				commentList(a.built)+"."))
 		}
 		if len(a.others) > 0 {
-			b.WriteString("# Not carried, since " + Component + " takes no value for them" + of + ": " +
-				commentList(a.others) + ".\n")
+			b.WriteString(commentLine("", "Not carried, since "+Component+" takes no value for them"+of+": "+
+				commentList(a.others)+"."))
 		}
 		if a.store != nil {
-			b.WriteString("# The store" + of + " configures the memory store, which LangGraph keeps in the PostgreSQL " +
-				"database its server uses; not carried, since " + Component + " takes no value for it")
+			line := "The store" + of + " configures the memory store, which LangGraph keeps in the PostgreSQL " +
+				"database its server uses; not carried, since " + Component + " takes no value for it"
 			if len(a.store.members) > 0 {
-				b.WriteString(": " + commentList(a.store.members))
+				line += ": " + commentList(a.store.members)
 			}
-			b.WriteString(".\n")
+			b.WriteString(commentLine("", line+"."))
 		}
 		if len(a.checkpointer.members) > 0 {
-			b.WriteString("# Not carried, since " + Component + " takes no value for them" + of + ": " +
-				commentList(prefixed("checkpointer.", a.checkpointer.members)) + ".\n")
+			b.WriteString(commentLine("", "Not carried, since "+Component+" takes no value for them"+of+": "+
+				commentList(prefixed("checkpointer.", a.checkpointer.members))+"."))
 		}
 		for _, g := range a.graphs {
 			if g.entrypoint == "" {
-				b.WriteString("# Not drafted: the graph " + commentText(a.prefix+g.id) + ", which " + g.why + ".\n")
+				b.WriteString(commentLine("", "Not drafted: the graph "+commentText(a.prefix+g.id)+", which "+g.why+"."))
 			}
 		}
 		if a.env.note != "" {
-			b.WriteString("# The " + a.env.note + of + ".\n")
+			b.WriteString(commentLine("", "The "+a.env.note+of+"."))
 		}
 		if a.env.file != "" && a.env.read == "" {
-			b.WriteString("# Not read: the environment file " + commentText(a.env.file) + of + ", which the import " +
-				"was not handed; its variables are left for the Release. Name the file under the LangGraph importer's " +
-				"with.sources to have its variables' names read.\n")
+			b.WriteString(commentLine("", "Not read: the environment file "+commentText(a.env.file)+of+", which the import "+
+				"was not handed; its variables are left for the Release. Name the file under the LangGraph importer's "+
+				"with.sources to have its variables' names read."))
 		}
 	}
 }
@@ -156,14 +159,14 @@ func prefixed(prefix string, names []string) []string {
 // not, and why a connection is left for the author.
 func writeGraph(b *strings.Builder, a *application, g *graph) {
 	if g.ref != g.key {
-		b.WriteString("    # The graph " + commentText(g.ref) + ".\n")
+		b.WriteString(commentLine("    ", "The graph "+commentText(g.ref)+"."))
 	}
 	if a.part == nil {
-		b.WriteString("    # The " + checkpointerSocket + " connection is left for the author, since the checkpointer " +
-			a.checkpointer.why + "; the build halts naming the socket until one is wired.\n")
+		b.WriteString(commentLine("    ", "The "+checkpointerSocket+" connection is left for the author, since the checkpointer "+
+			a.checkpointer.why+"; the build halts naming the socket until one is wired."))
 	}
-	b.WriteString("    # The " + modelSocket + " connection is left for the author, since the configuration names no " +
-		"model; the build halts naming the socket until one is wired.\n")
+	b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since the configuration names no "+
+		"model; the build halts naming the socket until one is wired."))
 	b.WriteString("    " + g.key + ":\n")
 	b.WriteString("      type: " + Component + "\n")
 	b.WriteString("      values:\n")

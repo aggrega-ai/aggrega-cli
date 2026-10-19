@@ -46,22 +46,23 @@ func importDemoEchoBody(format string) string {
 // A Langflow export, a Flowise export, an n8n workflow, a Claude Desktop MCP
 // configuration, an MCP registry server description, a Compose application, a
 // Dify application, a CrewAI crew written as JSON with comments, a LangGraph
-// application's configuration and a Google ADK application's root agent
-// configuration, as the committed source fixtures carry them. They are read from the compiler's
+// application's configuration, a Google ADK application's root agent
+// configuration and an Agent Framework declarative agent, as the committed source fixtures carry them. They are read from the compiler's
 // own fixtures rather than written out here: what these cases drive is
 // recognition of an exported shape, and a shape invented in this file would be
 // recognised by construction.
 const (
-	langflowFixture   = "../compiler/importersocket/testdata/langflow-flow.json"
-	flowiseFixture    = "../compiler/importersocket/testdata/flowise-flow.json"
-	n8nFixture        = "../importops/testdata/n8n/agent-workflow.json"
-	mcpDesktopFixture = "../importops/testdata/mcp/claude_desktop_config.json"
-	mcpServerFixture  = "../importops/testdata/mcp/registry-npm.server.json"
-	composeFixture    = "../importops/testdata/compose/compose-for-agents/langgraph.compose.yaml"
-	difyFixture       = "../importops/testdata/dify/authored/workflow.yml"
-	crewaiCrewFixture = "../importops/testdata/crewai/jsonc/crew.jsonc"
-	langgraphFixture  = "../importops/testdata/langgraph/python/langgraph.json"
-	googleADKFixture  = "../importops/testdata/google-adk/tutor/root_agent.yaml"
+	langflowFixture       = "../compiler/importersocket/testdata/langflow-flow.json"
+	flowiseFixture        = "../compiler/importersocket/testdata/flowise-flow.json"
+	n8nFixture            = "../importops/testdata/n8n/agent-workflow.json"
+	mcpDesktopFixture     = "../importops/testdata/mcp/claude_desktop_config.json"
+	mcpServerFixture      = "../importops/testdata/mcp/registry-npm.server.json"
+	composeFixture        = "../importops/testdata/compose/compose-for-agents/langgraph.compose.yaml"
+	difyFixture           = "../importops/testdata/dify/authored/workflow.yml"
+	crewaiCrewFixture     = "../importops/testdata/crewai/jsonc/crew.jsonc"
+	langgraphFixture      = "../importops/testdata/langgraph/python/langgraph.json"
+	googleADKFixture      = "../importops/testdata/google-adk/tutor/root_agent.yaml"
+	agentFrameworkFixture = "../importops/testdata/agent-framework/learn-agent.yaml"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here

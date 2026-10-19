@@ -498,20 +498,35 @@ func remoteName(fields []importer.ObjectEntry) string {
 }
 
 // addressItem returns the address a server is reached at as infra.endpoint
-// takes it — without any part that carries a key: the user part, the query and
-// the fragment are left out — and notes on the server what it leaves out.
+// takes it, as RemoteEndpoint writes it, and notes on the server what it leaves
+// out.
 func addressItem(s *server, url string) *item {
-	address, dropped := endpointOf(url)
-	if len(dropped) > 0 {
-		s.notes = append(s.notes, "The address's "+strings.Join(dropped, " and ")+" is not written: infra.endpoint "+
-			"holds the address without any part that carries a key, and a consumer reading its key from the address "+
-			"supplies the whole address on its own connection to the tool.")
+	address, note := RemoteEndpoint(url)
+	if note != "" {
+		s.notes = append(s.notes, note)
 	}
 	if address == "" {
 		return nil
 	}
 	v := valueItem(address, importer.CredentialServerMember)
 	return &v
+}
+
+// RemoteEndpoint returns the address an MCP server someone else runs is reached
+// at, url, as the infra.endpoint of Component takes it — without any part that
+// carries a key: the user part, the query and the fragment are left out — and
+// the note a draft writes beside it naming what it leaves out, empty where it
+// leaves out nothing. It is how every importer drafting a remote MCP server
+// writes its address, the MCP importer's own servers and an MCP tool another
+// format names alike.
+func RemoteEndpoint(url string) (endpoint, note string) {
+	address, dropped := endpointOf(url)
+	if len(dropped) > 0 {
+		note = "The address's " + strings.Join(dropped, " and ") + " is not written: infra.endpoint holds the " +
+			"address without any part that carries a key, and a consumer reading its key from the address supplies the " +
+			"whole address on its own connection to the tool."
+	}
+	return address, note
 }
 
 // endpointOf returns url without its user part, its query and its fragment, and

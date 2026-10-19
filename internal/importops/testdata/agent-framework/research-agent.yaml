@@ -1,0 +1,22 @@
+kind: Prompt
+name: ResearchAgent
+description: Researches an open issue and drafts a reply.
+instructions: You research the issue you are given and draft a reply for the maintainers.
+model:
+  id: gpt-4.1
+  options:
+    temperature: 0.4
+  connection:
+    kind: remote
+    endpoint: =Env.FOUNDRY_PROJECT_ENDPOINT
+tools:
+  - kind: mcp
+    name: github
+    description: Read and comment on the repository's issues.
+    url: https://api.githubcopilot.com/mcp/
+    approvalMode:
+      kind: specify
+      alwaysRequireApprovalTools:
+        - add_issue_comment
+  - kind: code_interpreter
+    name: python

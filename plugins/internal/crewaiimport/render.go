@@ -15,11 +15,14 @@ import (
 // a source is written as a double-quoted YAML scalar through the drafts' shared
 // writer, which reads back as exactly the source's text — escaped first, in the
 // Aggregate, so it reads back as itself once the Aggregate is evaluated as a
-// template — and every name written into a comment through its comment writer.
+// template — and every name written into a comment through its comment writer,
+// each comment line of the Aggregate through the drafts' comment-line writer,
+// which escapes it so it too reads back as written once evaluated.
 var (
 	yamlString  = draftyaml.String
 	commentText = draftyaml.Comment
 	commentList = draftyaml.CommentList
+	commentLine = draftyaml.CommentLine
 )
 
 // The values of log_level an agent is drafted with: DEBUG for an agent declared
@@ -56,7 +59,7 @@ func renderAggregate(name string, read []*crew, parts []*modelPart) string {
 	}
 	for _, p := range parts {
 		if p.ref != p.key {
-			b.WriteString("    # The model " + commentText(p.ref) + ".\n")
+			b.WriteString(commentLine("    ", "The model "+commentText(p.ref)+"."))
 		}
 		b.WriteString("    " + p.key + ":\n")
 		b.WriteString("      type: " + p.component + "\n")
@@ -76,40 +79,40 @@ func writeHeader(b *strings.Builder, read []*crew) {
 		files = append(files, c.files...)
 	}
 	if len(files) > 0 {
-		b.WriteString("# CrewAI declarations read:\n")
+		b.WriteString(commentLine("", "CrewAI declarations read:"))
 		for _, f := range files {
-			b.WriteString("#   - " + commentText(f) + "\n")
+			b.WriteString(commentLine("", "  - "+commentText(f)))
 		}
 	}
-	b.WriteString("# Not read: the crew's program, which runs its agents and its tasks and defines its tools; it runs " +
-		"in the image the Release names for each agent.\n")
+	b.WriteString(commentLine("", "Not read: the crew's program, which runs its agents and its tasks and defines its tools; it runs "+
+		"in the image the Release names for each agent."))
 	for _, c := range read {
 		if len(c.tasks) > 0 {
-			b.WriteString("# Tasks the crew's program runs, drafted as no Component:\n")
+			b.WriteString(commentLine("", "Tasks the crew's program runs, drafted as no Component:"))
 			for _, t := range c.tasks {
-				line := "#   - " + commentText(c.prefix+t.name)
+				line := "  - " + commentText(c.prefix+t.name)
 				if t.agent != "" {
 					line += ", assigned to " + commentText(t.agent)
 				}
-				b.WriteString(line + "\n")
+				b.WriteString(commentLine("", line))
 			}
 		}
 		if len(c.others) > 0 {
-			b.WriteString("# Not carried, since the draft reads a crew's agents and tasks alone: " + commentList(c.others) +
-				".\n")
+			b.WriteString(commentLine("", "Not carried, since the draft reads a crew's agents and tasks alone: "+commentList(c.others)+
+				"."))
 		}
 		if len(c.shadowed) > 0 {
-			b.WriteString("# Not read, since CrewAI reads the .jsonc file where a crew or an agent is written in both " +
-				"spellings: " + commentList(c.shadowed) + ".\n")
+			b.WriteString(commentLine("", "Not read, since CrewAI reads the .jsonc file where a crew or an agent is written in both "+
+				"spellings: "+commentList(c.shadowed)+"."))
 		}
 		for _, a := range c.agents {
 			if a.missing {
-				b.WriteString("# Not drafted: the agent " + commentText(a.ref) + ", which the crew lists and whose " +
-					"declaration the import was not handed.\n")
+				b.WriteString(commentLine("", "Not drafted: the agent "+commentText(a.ref)+", which the crew lists and whose "+
+					"declaration the import was not handed."))
 			}
 		}
 		for _, n := range c.notes {
-			b.WriteString("# " + n + ".\n")
+			b.WriteString(commentLine("", n+"."))
 		}
 	}
 }
@@ -121,18 +124,18 @@ func writeHeader(b *strings.Builder, read []*crew) {
 // is not.
 func writeAgent(b *strings.Builder, a *agent) {
 	if a.ref != a.key {
-		b.WriteString("    # The agent " + commentText(a.ref) + ".\n")
+		b.WriteString(commentLine("    ", "The agent "+commentText(a.ref)+"."))
 	}
 	if len(a.tools) > 0 {
-		b.WriteString("    # Tools the crew's program defines or loads for this agent, drafted as no Component: " +
-			commentList(a.tools) + ".\n")
+		b.WriteString(commentLine("    ", "Tools the crew's program defines or loads for this agent, drafted as no Component: "+
+			commentList(a.tools)+"."))
 	}
 	if len(a.others) > 0 {
-		b.WriteString("    # Not carried, since " + Component + " takes no value for it: " + commentList(a.others) + ".\n")
+		b.WriteString(commentLine("    ", "Not carried, since "+Component+" takes no value for it: "+commentList(a.others)+"."))
 	}
 	for _, note := range []string{a.delegationNote, a.verboseNote} {
 		if note != "" {
-			b.WriteString("    # Not carried, so the Component's default stands: " + note + ".\n")
+			b.WriteString(commentLine("    ", "Not carried, so the Component's default stands: "+note+"."))
 		}
 	}
 	for _, missing := range []struct {
@@ -140,12 +143,12 @@ func writeAgent(b *strings.Builder, a *agent) {
 		text *string
 	}{{"role", a.role}, {"goal", a.goal}, {"backstory", a.backstory}} {
 		if missing.text == nil {
-			b.WriteString("    # values." + missing.key + " is left for the author, since the declaration states none.\n")
+			b.WriteString(commentLine("    ", "values."+missing.key+" is left for the author, since the declaration states none."))
 		}
 	}
 	if a.part == nil {
-		b.WriteString("    # The " + modelSocket + " connection is left for the author, since the agent's llm " + a.llm.why +
-			"; the build halts naming the socket until one is wired.\n")
+		b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since the agent's llm "+a.llm.why+
+			"; the build halts naming the socket until one is wired."))
 	}
 	b.WriteString("    " + a.key + ":\n")
 	b.WriteString("      type: " + Component + "\n")

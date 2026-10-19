@@ -549,3 +549,40 @@ func TestTwoImportsAreByteIdentical(t *testing.T) {
 		}
 	}
 }
+
+// TestANameHoldingDoubleBracesReadsBackInTheAggregatesComments imports a classic
+// project whose agent and tool are named with "{{", each name written into a
+// comment of the Aggregate, and requires the Aggregate to run as a template — as
+// the compiler evaluates its whole text, comments included — and each comment to
+// read back with the name as the declaration writes it.
+//
+// 🔴 PLANTED DEFECT: in importer.CommentLine
+// (aggrega-pdk/go/pkg/importer/definition.go), return the line unescaped: the
+// Aggregate no longer parses as a template, and the case fails on it.
+func TestANameHoldingDoubleBracesReadsBackInTheAggregatesComments(t *testing.T) {
+	out := importSources("", aggrega.ImportSource{Name: "config/agents.yaml", Bytes: []byte(
+		"\"writer{{x}}\":\n  role: r\n  goal: g\n  backstory: b\n  llm: openai/gpt-4o\n  tools:\n    - \"search{{ y }}\"\n")})
+	_, text := drafted(t, out)
+	got := evaluatedAggregate(t, text)
+	for _, want := range []string{"# The agent writer{{x}}.\n", "drafted as no Component: search{{ y }}.\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the evaluated Aggregate does not say %q:\n%s", want, got)
+		}
+	}
+}
+
+// evaluatedAggregate evaluates a drafted Aggregate's text as a template, as the
+// compiler does before it reads the Aggregate as YAML, failing the test where it
+// does not parse or run as one, and returns the evaluated text.
+func evaluatedAggregate(t *testing.T, text string) string {
+	t.Helper()
+	tmpl, err := template.New("aggregate").Parse(text)
+	if err != nil {
+		t.Fatalf("the drafted Aggregate does not parse as a template: %v\n%s", err, text)
+	}
+	var evaluated strings.Builder
+	if err := tmpl.Execute(&evaluated, nil); err != nil {
+		t.Fatalf("the drafted Aggregate does not run as a template: %v\n%s", err, text)
+	}
+	return evaluated.String()
+}

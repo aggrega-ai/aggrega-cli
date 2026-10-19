@@ -252,6 +252,12 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // instruction or its agent_class; the same configuration under another name — as
 // a sub-agent's configuration is called, which no signature names — and a
 // root_agent.yaml stating no agent are refused.
+//
+// An Agent Framework declarative agent is recognised as agent-framework under
+// any name, read as YAML, by Prompt at its kind and an object at its model —
+// under root_agent.yaml too, since it states no instruction and no agent_class;
+// one of another kind, one written kind: prompt, and one whose model is a
+// string are refused.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
@@ -293,6 +299,13 @@ func TestSelectFormat(t *testing.T) {
 	adkRoot := []byte("name: assistant\nmodel: gemini-flash-latest\ninstruction: Answer the user's questions.\n")
 	adkSequence := []byte("agent_class: SequentialAgent\nname: pipeline\nsub_agents:\n  - config_path: step.yaml\n")
 	adkNoAgent := []byte("description: no agent here\n")
+	// An Agent Framework declarative agent, the same of another kind, the same
+	// written kind: prompt, and the same whose model is a string.
+	declarativeAgent := []byte("kind: Prompt\nname: Assistant\ninstructions: Answer the user's questions.\n" +
+		"model:\n  id: gpt-4.1-mini\n  provider: OpenAI\n")
+	workflowKind := []byte("kind: Workflow\nname: Assistant\nmodel:\n  id: gpt-4.1-mini\n")
+	lowerKind := []byte("kind: prompt\nname: Assistant\nmodel:\n  id: gpt-4.1-mini\n")
+	modelString := []byte("kind: Prompt\nname: Assistant\nmodel: gpt-4.1-mini\n")
 
 	cases := []struct {
 		name     string
@@ -397,6 +410,20 @@ func TestSelectFormat(t *testing.T) {
 			wantErr: true},
 		{name: "explicit google-adk wins over a Compose file", explicit: "google-adk", source: "compose.yaml",
 			content: composeFile, want: "google-adk"},
+		{name: "an Agent Framework declarative agent", source: "assistant.yaml", content: declarativeAgent,
+			want: "agent-framework"},
+		{name: "a declarative agent named with its directory", source: "agents/support/assistant.yml",
+			content: declarativeAgent, want: "agent-framework"},
+		{name: "a declarative agent named root_agent.yaml", source: "root_agent.yaml", content: declarativeAgent,
+			want: "agent-framework"},
+		{name: "a declarative document of another kind is refused", source: "assistant.yaml", content: workflowKind,
+			wantErr: true},
+		{name: "a declarative agent written kind: prompt is refused", source: "assistant.yaml", content: lowerKind,
+			wantErr: true},
+		{name: "a declarative agent whose model is a string is refused", source: "assistant.yaml",
+			content: modelString, wantErr: true},
+		{name: "explicit agent-framework wins over a Compose file", explicit: "agent-framework",
+			source: "compose.yaml", content: composeFile, want: "agent-framework"},
 	}
 
 	for _, tc := range cases {
@@ -413,7 +440,8 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph", "google-adk"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph", "google-adk",
+					"agent-framework"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}

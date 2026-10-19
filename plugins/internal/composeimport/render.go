@@ -16,13 +16,24 @@ import (
 // The drafts are written by hand rather than marshalled, so the key order is
 // fixed and two runs over one source write the same bytes. Every value read
 // from a source is written as a double-quoted YAML scalar through the drafts'
-// shared writer, which reads back as exactly the source's text, and every name
-// written into a comment through its comment writer.
+// shared writer, which reads back as exactly the source's text — escaped first,
+// in the Aggregate, so it reads back as itself once the Aggregate is evaluated as
+// a template — and every name written into a comment through its comment writer,
+// each comment line of the Aggregate through the drafts' comment-line writer,
+// which escapes it so it too reads back as written once evaluated.
 var (
 	yamlString  = draftyaml.String
 	commentText = draftyaml.Comment
 	commentList = draftyaml.CommentList
+	commentLine = draftyaml.CommentLine
 )
+
+// aggregateText writes text read from a source as a value of the drafted
+// Aggregate: escaped so it reads back as itself once the Aggregate is evaluated
+// as a template, then as a double-quoted scalar.
+func aggregateText(text string) string {
+	return yamlString(importer.EscapeTemplateText(text))
+}
 
 // renderAggregate writes the drafted Aggregate, named name: one instance per
 // service, of the Component its decision chose, in the order the projects write
@@ -44,7 +55,7 @@ func renderAggregate(name string, settings json.RawMessage, read []*project, typ
 	for _, p := range read {
 		for _, s := range p.services {
 			if s.ref != s.key {
-				b.WriteString("    # The service " + commentText(s.ref) + ".\n")
+				b.WriteString(commentLine("    ", "The service "+commentText(s.ref)+"."))
 			}
 			b.WriteString("    " + s.key + ":\n")
 			b.WriteString("      type: " + types[s] + "\n")
@@ -74,33 +85,33 @@ func renderAggregate(name string, settings json.RawMessage, read []*project, typ
 	for _, p := range read {
 		for _, m := range p.models {
 			if m.ref != m.key {
-				b.WriteString("    # The model " + commentText(m.ref) + ".\n")
+				b.WriteString(commentLine("    ", "The model "+commentText(m.ref)+"."))
 			}
 			if len(m.others) > 0 {
-				b.WriteString("    # Not carried, since the drafted model declares no value for it: " + commentList(m.others) +
-					".\n")
+				b.WriteString(commentLine("    ", "Not carried, since the drafted model declares no value for it: "+commentList(m.others)+
+					"."))
 			}
 			if m.identifier == nil {
-				b.WriteString("    # values.model is left for the author, since the source names no model.\n")
+				b.WriteString(commentLine("    ", "values.model is left for the author, since the source names no model."))
 			}
 			b.WriteString("    " + m.key + ":\n")
 			b.WriteString("      type: " + modelName(settings, m) + "\n")
 			var values []string
 			if m.identifier != nil {
-				values = append(values, "        model: "+yamlString(*m.identifier)+"\n")
+				values = append(values, "        model: "+aggregateText(*m.identifier)+"\n")
 			}
 			if m.contextSize != nil {
 				var n json.Number
 				if json.Unmarshal(m.contextSize, &n) == nil {
 					values = append(values, "        context_size: "+n.String()+"\n")
 				} else if text, ok := scalarText(m.contextSize); ok {
-					values = append(values, "        context_size: "+yamlString(text)+"\n")
+					values = append(values, "        context_size: "+aggregateText(text)+"\n")
 				}
 			}
 			if len(m.runtimeFlags) > 0 {
 				values = append(values, "        runtime_flags:\n")
 				for _, f := range m.runtimeFlags {
-					values = append(values, "          - "+yamlString(f)+"\n")
+					values = append(values, "          - "+aggregateText(f)+"\n")
 				}
 			}
 			if len(values) > 0 {
@@ -133,24 +144,24 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 	}
 	slices.Sort(others)
 	if named {
-		b.WriteString("# Compose files read, each override file merged over the Compose file before it as Compose merges " +
-			"them:\n")
+		b.WriteString(commentLine("", "Compose files read, each override file merged over the Compose file before it as Compose merges "+
+			"them:"))
 		for _, p := range read {
-			b.WriteString("#   - " + commentText(p.files[0].Name) + "\n")
+			b.WriteString(commentLine("", "  - "+commentText(p.files[0].Name)))
 			for _, f := range p.files[1:] {
-				b.WriteString("#   - " + commentText(f.Name) + ", merged over " + commentText(p.files[0].Name) + "\n")
+				b.WriteString(commentLine("", "  - "+commentText(f.Name)+", merged over "+commentText(p.files[0].Name)))
 			}
 		}
 		for _, p := range read {
 			if len(p.notRead) > 0 {
-				b.WriteString("# Not read, since Compose reads the first Compose file and the first override file of a " +
-					"directory in its order of preference: " + commentList(p.notRead) + ".\n")
+				b.WriteString(commentLine("", "Not read, since Compose reads the first Compose file and the first override file of a "+
+					"directory in its order of preference: "+commentList(p.notRead)+"."))
 			}
 		}
 	}
 	if len(others) > 0 {
-		b.WriteString("# Not carried, since the draft reads the services and the models alone: " + commentList(others) +
-			".\n")
+		b.WriteString(commentLine("", "Not carried, since the draft reads the services and the models alone: "+commentList(others)+
+			"."))
 	}
 }
 

@@ -7,7 +7,8 @@
 // exactly the text, and inside a comment that nothing a source holds can end.
 // The importers that write their drafts line by line, rather than marshalling
 // them, read and write every value through it, so a value is carried one way in
-// every draft.
+// every draft, and write every comment line of a drafted Aggregate through
+// CommentLine.
 package draftyaml
 
 import (
@@ -15,7 +16,20 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
+
+// CommentLine writes one comment line of a drafted Aggregate — indent, the hash,
+// and text, each text read from a source in it written first through Comment —
+// escaped so the line reads back as written once the compiler has evaluated the
+// Aggregate's text as a template, its comments included. It is the plugin kit's
+// importer.CommentLine, the one writer of an Aggregate's comment lines: the kit's
+// own platform drafts write theirs through it too, and the kit cannot reach this
+// package, so the writer lives there and is named here beside the drafts' other
+// writers. A Release is not evaluated as a template, so its comments are written
+// as they are.
+var CommentLine = importer.CommentLine
 
 // String writes s as a double-quoted YAML scalar reading back as exactly s: a
 // double quote and a backslash escaped, every printable ASCII character as it
