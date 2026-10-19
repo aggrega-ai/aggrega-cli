@@ -1,0 +1,13 @@
+{
+  "role": "{product} Release Writer",
+  "goal": "Turn the list of changes into release notes a user reads in two minutes.",
+  "backstory": "You write for users, not for the team: what changed and what to do about it.",
+  /* The llm as an object: the model, a setting, and a key-shaped value planted
+     for the tests. It is no real key. */
+  "llm": {
+    "model": "openai/gpt-4o-mini",
+    "temperature": 0.2,
+    "api_key": "sk-planted-crewai-llm-needle-7c41e9d2",
+  },
+  "allow_delegation": true,
+}

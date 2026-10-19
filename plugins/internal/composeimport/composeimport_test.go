@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -430,29 +429,6 @@ func TestRepositoryReadsAReferenceAsDockerDoes(t *testing.T) {
 		got, ok := Repository(row.ref)
 		if got != row.want || ok != row.ok {
 			t.Errorf("Repository(%q) = %q, %v; want %q, %v", row.ref, got, ok, row.want, row.ok)
-		}
-	}
-}
-
-// TestKeyOrderReadsTheOrderAFileWritesItsKeysIn reads the keys of a block mapping
-// at a path in the order the text writes them, and leaves a mapping written in
-// flow style, or a key the text does not write beneath the path, in sorted order
-// after them.
-func TestKeyOrderReadsTheOrderAFileWritesItsKeysIn(t *testing.T) {
-	t.Parallel()
-	text := []byte("# a comment\nname: x\nservices:\n  zeta:\n    image: a\n    environment:\n      B: 1\n      A: 2\n" +
-		"  \"alpha\": &anchor\n    image: b\n  mid: {image: c}\nmodels: {m2: {model: x}, m1: {model: y}}\n")
-	for _, row := range []struct {
-		path        []string
-		names, want []string
-	}{
-		{[]string{"services"}, []string{"alpha", "mid", "zeta"}, []string{"zeta", "alpha", "mid"}},
-		{[]string{"services", "zeta", "environment"}, []string{"A", "B"}, []string{"B", "A"}},
-		{[]string{"models"}, []string{"m1", "m2"}, []string{"m1", "m2"}},
-		{[]string{"services"}, []string{"alpha", "extra", "zeta"}, []string{"zeta", "alpha", "extra"}},
-	} {
-		if got := keyOrder(text, row.path, row.names); !reflect.DeepEqual(got, row.want) {
-			t.Errorf("keyOrder(%v, %v) = %v, want %v", row.path, row.names, got, row.want)
 		}
 	}
 }

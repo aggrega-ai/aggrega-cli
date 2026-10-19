@@ -81,6 +81,7 @@ func TestManifestDerivedURIsAreStable(t *testing.T) {
 		"parser/toml",
 		"parser/yaml",
 		"parser/json",
+		"parser/jsonc",
 		"governance/label-injector",
 		"governance/selector-tagger",
 		"governance/rego",

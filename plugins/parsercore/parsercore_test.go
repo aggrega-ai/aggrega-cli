@@ -33,6 +33,13 @@ func TestParsers_RoundTripCanonicalTree(t *testing.T) {
 			tree:  `{"enabled":true,"image":"nginx","ports":[80,443],"replicas":3}`,
 		},
 		{
+			name:  "jsonc",
+			parse: parsercore.ParseJSONC,
+			src: "{\n  // the image\n  \"replicas\": 3, \"image\": \"nginx\", /* both ports */ \"ports\": [80, 443,],\n" +
+				"  \"enabled\": true,\n}",
+			tree: `{"enabled":true,"image":"nginx","ports":[80,443],"replicas":3}`,
+		},
+		{
 			name:  "yaml",
 			parse: parsercore.ParseYAML,
 			src:   "replicas: 3\nimage: nginx\nports:\n  - 80\n  - 443\nenabled: true\n",

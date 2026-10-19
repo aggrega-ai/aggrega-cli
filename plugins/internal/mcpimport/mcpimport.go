@@ -67,6 +67,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/jsonc"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -97,7 +98,8 @@ const where = "in the Release the draft writes"
 
 // Import turns one import request into the drafts: each source — the request's
 // named sources, or its primary bytes — has its comments and trailing commas
-// written as spaces (StripJSONC), is parsed as JSON through parse, the host's
+// written as spaces (jsonc.Strip, the one reading of JSON with comments the
+// compiler's guests share), is parsed as JSON through parse, the host's
 // parser, and has its servers read. A source the parser refuses is reported
 // under parse-failed, which halts the import, and one listing no server under
 // no-nodes; the import carries on with the other sources. A request naming a
@@ -114,7 +116,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	used := map[string]bool{}
 	var servers []server
 	for _, src := range sources {
-		text := StripJSONC(src.Bytes)
+		text := jsonc.Strip(src.Bytes)
 		if _, err := parse(Syntax, text); err != nil {
 			out.Diagnostics = append(out.Diagnostics, importer.ParseFailed(src, in.Format, err))
 			continue

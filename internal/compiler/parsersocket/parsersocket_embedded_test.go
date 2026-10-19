@@ -91,6 +91,70 @@ func TestEmbeddedParsers_ResolveAndRun(t *testing.T) {
 	}
 }
 
+// TestTheJSONWithCommentsParserYieldsTheJSONParsersTree runs the embedded parser
+// for JSON with comments through the parser socket — resolved for parse:jsonc,
+// loaded from the binary's embed tier, invoked through its parse export — over a
+// document carrying line comments, a block comment spanning lines, comment
+// markers inside a string, and trailing commas in an object and in a list, and
+// requires the tree it yields to be, byte for byte, the tree the embedded JSON
+// parser yields through the same socket for the same document without them. A
+// block comment never closed is refused rather than read cut short.
+//
+// 🔴 PLANTED DEFECT: in ParseJSONC (plugins/parsercore/jsonc.go), return
+// ParseJSON(src) — the comments and the trailing commas left in place — and
+// rebuild the embedded guests: the JSON decoding refuses the commented document
+// with a halting diagnostic and a null tree, and the comparison fails.
+func TestTheJSONWithCommentsParserYieldsTheJSONParsersTree(t *testing.T) {
+	cat := embeddedParserCatalog()
+	cat.Plugins["parser/jsonc:0.0.0-test"] = types.Plugin{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "Plugin",
+		Metadata:   types.PluginMetadata{Name: "jsonc", Version: "0.0.0-test", PluginType: "parser"},
+		Spec: types.PluginSpec{
+			AbiVersion: "v1alpha1",
+			Parser:     &types.PluginParser{Capabilities: []string{"parse:jsonc"}},
+			Exports:    []types.PluginExport{{Name: "parse"}},
+			Runtime:    &types.PluginRuntime{MaxMemoryPages: 4096},
+		},
+	}
+	load := embeddedParserLoader()
+
+	commented := "// the crew\n{\n  \"name\": \"crew // not a comment /* nor this */\", /* the agents,\n  in order */\n" +
+		"  \"agents\": [\"researcher\", \"analyst\",],\n  \"verbose\": true, // narrates\n  \"limits\": {\"rpm\": 10,},\n}\n"
+	plain := "{\n  \"name\": \"crew // not a comment /* nor this */\",\n  \"agents\": [\"researcher\", \"analyst\"],\n" +
+		"  \"verbose\": true,\n  \"limits\": {\"rpm\": 10}\n}\n"
+
+	jsonc, err := parsersocket.ParseArtifact(context.Background(), cat, load, "jsonc", []byte(commented), nil)
+	if err != nil {
+		t.Fatalf("ParseArtifact(jsonc): %v", err)
+	}
+	fromJSON, err := parsersocket.ParseArtifact(context.Background(), cat, load, "json", []byte(plain), nil)
+	if err != nil {
+		t.Fatalf("ParseArtifact(json): %v", err)
+	}
+	if len(jsonc.Diagnostics) != 0 || len(fromJSON.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: jsonc %+v, json %+v", jsonc.Diagnostics, fromJSON.Diagnostics)
+	}
+	if string(fromJSON.Tree) == "null" || len(fromJSON.Tree) == 0 {
+		t.Fatalf("the JSON parser yields no tree for the plain document: %q", fromJSON.Tree)
+	}
+	if !bytes.Equal(jsonc.Tree, fromJSON.Tree) {
+		t.Fatalf("the JSON-with-comments tree\n%s\nis not the JSON tree\n%s", jsonc.Tree, fromJSON.Tree)
+	}
+
+	open, err := parsersocket.ParseArtifact(context.Background(), cat, load, "jsonc", []byte("{\"a\": 1} /* open"), nil)
+	if err != nil {
+		t.Fatalf("ParseArtifact(jsonc) on an open comment errored at the host boundary: %v", err)
+	}
+	refused := false
+	for _, d := range open.Diagnostics {
+		refused = refused || d.Severity == abi.SeverityHalt
+	}
+	if !refused {
+		t.Fatalf("a block comment never closed was read: tree=%s diags=%+v", open.Tree, open.Diagnostics)
+	}
+}
+
 // TestEmbeddedParsers_Deterministic pins byte-identity end-to-end through the
 // embedded HCL guest: the same source and format yield a byte-identical tree
 // across two independent hermetic invocations.

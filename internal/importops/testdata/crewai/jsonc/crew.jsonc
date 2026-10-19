@@ -1,0 +1,26 @@
+// The crew of a project in CrewAI's JSON-first layout, written with the
+// comments and the trailing commas JSON with comments admits.
+{
+  "name": "Release Notes Crew",
+  "agents": ["researcher", "analyst",],
+  "tasks": [
+    {
+      "name": "collect",
+      "description": "Collect the changes merged into {product} since the last release.",
+      "expected_output": "A list of changes, each with the pull request it came from.",
+      "agent": "researcher",
+    },
+    {
+      "name": "write",
+      "description": "Write the release notes from the list of changes.",
+      "expected_output": "Release notes in markdown, grouped by area.",
+      "agent": "analyst",
+      "context": ["collect"],
+      /* The program writes the notes here. */
+      "output_file": "output/notes.md",
+    },
+  ],
+  "process": "sequential",
+  "verbose": true,
+  "inputs": {"product": "the CLI"},
+}

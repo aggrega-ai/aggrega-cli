@@ -1,0 +1,13 @@
+{
+  // The researcher runs on OpenAI's gpt-4o and searches the repository.
+  "role": "{product} Change Researcher",
+  "goal": "Find every change merged into {product} since the last release.",
+  "backstory": "You read pull requests closely and never guess a change's area.",
+  "llm": "openai/gpt-4o",
+  "tools": ["GithubSearchTool", "custom:changelog_reader",],
+  "settings": {
+    "verbose": true,
+    "allow_delegation": false,
+    "max_iter": 20, /* the program's own limit */
+  },
+}

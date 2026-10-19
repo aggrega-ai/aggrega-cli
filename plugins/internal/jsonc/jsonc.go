@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package mcpimport
+// Package jsonc reads JSON with comments as JSON: it writes what JSON with
+// comments admits and JSON does not as spaces, so a JSON reader reads the rest.
+//
+// It is the one reading of that syntax the compiler's guests do. The parser for
+// JSON with comments strips a document with it and then decodes it exactly as
+// the JSON parser decodes a document, and the MCP importer strips a client's
+// configuration with it before asking the host to parse the text as JSON, so the
+// two read one document alike.
+package jsonc
 
 import "bytes"
 
-// StripJSONC returns src with what JSON with comments admits and JSON does not
+// Strip returns src with what JSON with comments admits and JSON does not
 // written as spaces: each comment — from // to the end of its line, and from /*
 // to the next */ — and each trailing comma, a comma followed by nothing but
 // whitespace and comments before the } or ] closing its object or list. Every
@@ -17,12 +25,7 @@ import "bytes"
 //
 // A comment opened with /* and never closed is left as written, so a parser
 // refuses the source rather than reading a document cut short.
-//
-// It is the one reading of JSON with comments the importer does: Visual Studio
-// Code reads its MCP configuration as JSON with comments, and the parser an
-// import reads a source through reads JSON alone, so the importer hands the
-// parser the text this returns.
-func StripJSONC(src []byte) []byte {
+func Strip(src []byte) []byte {
 	out := append([]byte(nil), src...)
 	blank := func(from, to int) {
 		for i := from; i < to; i++ {

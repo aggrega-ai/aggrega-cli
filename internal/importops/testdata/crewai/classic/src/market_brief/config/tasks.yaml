@@ -1,0 +1,14 @@
+research_task:
+  description: >
+    Research {topic}: who sells it, who buys it, and what changed this year.
+  expected_output: >
+    Ten notes, each with the source it came from.
+  agent: researcher
+
+brief_task:
+  description: >
+    Write the brief from the research notes.
+  expected_output: >
+    A one-page brief in markdown, open questions last.
+  agent: brief_writer
+  output_file: brief.md

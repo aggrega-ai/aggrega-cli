@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package composeimport
+// Package yamlorder reads, from a YAML document's text, the order its block
+// mappings write their keys in.
+//
+// The host's parser writes the members of a mapping in sorted order, so an
+// importer that drafts a source's entries in the order its author wrote them
+// reads that order from the text, and from nothing else there: the tree, which
+// the parser alone produces, is what every value is read from. The reading takes
+// the keys of a block mapping as the lines indented one level beneath its key
+// write them; a mapping written in flow style, or a key the reading does not find
+// there, keeps the tree's sorted order, after the keys it does find.
+package yamlorder
 
 import (
 	"slices"
 	"strings"
 )
 
-// The parser's tree writes the members of a mapping in sorted order, so the
-// order a Compose file lists its services, its models and a service's
-// environment in is read from the file's text, and from nothing else there: the
-// tree, which the parser alone produces, is what every value is read from. The
-// reading takes the keys of a block mapping as the lines indented one level
-// beneath its key write them; a mapping written in flow style, or a key the
-// reading does not find there, keeps the tree's sorted order, after the keys it
-// does find.
-
-// keyOrder returns names, the members of the mapping at path, in the order the
+// KeyOrder returns names, the members of the mapping at path, in the order the
 // text writes them: those the text writes beneath path, in that order, followed
-// by any other, sorted.
-func keyOrder(text []byte, path []string, names []string) []string {
+// by any other, sorted. An empty path names the document's top-level mapping.
+func KeyOrder(text []byte, path []string, names []string) []string {
 	found := blockKeys(text, path...)
 	present := map[string]bool{}
 	for _, n := range names {
@@ -93,7 +94,7 @@ func blockKeys(text []byte, path ...string) []string {
 	child := -1
 	for i := start; i < end; i++ {
 		line := lines[i]
-		if skippable(line) {
+		if skippable(line) || (len(path) == 0 && documentMarker(line)) {
 			continue
 		}
 		indent := indentOf(line)

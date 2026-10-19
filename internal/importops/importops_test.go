@@ -230,6 +230,15 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // presence of app.mode and version, read as YAML — under a Compose name too,
 // since it holds no services object; one of another kind, and one holding no
 // version, are refused.
+//
+// A CrewAI project's declarations are recognised as crewai by their names: a
+// classic project's config/agents.yaml and config/tasks.yaml read as YAML, a
+// crew.jsonc holding a list at agents and an agent's agents/<name>.jsonc holding a
+// role, both read as JSON with comments — a commented file among them, which the
+// JSON signatures refuse — and their strict-JSON spellings crew.json and
+// agents/<name>.json alike. An agents.yaml outside config/, a crew.jsonc listing
+// no agents, an agent's file outside agents/ and a .json file under agents/
+// stating no role are refused.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
@@ -251,6 +260,13 @@ func TestSelectFormat(t *testing.T) {
 	difyApp := []byte("app:\n  mode: workflow\n  name: Probe\nkind: app\nversion: 0.7.0\n")
 	otherKind := []byte("app:\n  mode: workflow\nkind: rag_pipeline\nversion: 0.7.0\n")
 	noVersion := []byte("app:\n  mode: workflow\nkind: app\n")
+	// A classic CrewAI project's agents and tasks, a commented crew.jsonc, one
+	// listing no agents, and a commented agent's file.
+	crewAgents := []byte("researcher:\n  role: Researcher\n  goal: Find facts\n  backstory: Careful\n")
+	crewTasks := []byte("research_task:\n  description: Research\n  expected_output: Notes\n  agent: researcher\n")
+	crewFile := []byte("// the crew\n{\n  \"agents\": [\"researcher\",],\n  \"tasks\": [],\n}\n")
+	crewNoAgents := []byte("{\"tasks\": []}\n")
+	agentFile := []byte("{\n  /* the researcher */\n  \"role\": \"Researcher\",\n  \"goal\": \"Find facts\",\n}\n")
 
 	cases := []struct {
 		name     string
@@ -309,6 +325,24 @@ func TestSelectFormat(t *testing.T) {
 		{name: "a DSL holding no version is refused", source: "app.yml", content: noVersion, wantErr: true},
 		{name: "explicit dify wins over a Compose file", explicit: "dify", source: "compose.yaml", content: composeFile,
 			want: "dify"},
+		{name: "a classic CrewAI project's agents", source: "src/crew/config/agents.yaml", content: crewAgents,
+			want: "crewai"},
+		{name: "a classic CrewAI project's tasks", source: "config/tasks.yaml", content: crewTasks, want: "crewai"},
+		{name: "a commented crew.jsonc", source: "crew.jsonc", content: crewFile, want: "crewai"},
+		{name: "a commented agent's file", source: "project/agents/researcher.jsonc", content: agentFile,
+			want: "crewai"},
+		{name: "an agents.yaml outside config/ is refused", source: "agents.yaml", content: crewAgents, wantErr: true},
+		{name: "a crew.jsonc listing no agents is refused", source: "crew.jsonc", content: crewNoAgents, wantErr: true},
+		{name: "an agent's file outside agents/ is refused", source: "researcher.jsonc", content: agentFile,
+			wantErr: true},
+		{name: "a crew.json in strict JSON", source: "project/crew.json", content: []byte(`{"agents":["researcher"],"tasks":[]}`),
+			want: "crewai"},
+		{name: "an agent's file in strict JSON", source: "agents/researcher.json",
+			content: []byte(`{"role":"Researcher","goal":"Find facts"}`), want: "crewai"},
+		{name: "a .json file under agents/ stating no role is refused", source: "agents/notes.json",
+			content: []byte(`{"notes":["one"]}`), wantErr: true},
+		{name: "explicit crewai wins over a Compose file", explicit: "crewai", source: "compose.yaml",
+			content: composeFile, want: "crewai"},
 	}
 
 	for _, tc := range cases {
@@ -325,7 +359,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}

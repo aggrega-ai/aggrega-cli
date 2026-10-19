@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/yamlorder"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -163,19 +164,19 @@ func (p *project) read(tree json.RawMessage, text []byte) {
 
 	var services map[string]json.RawMessage
 	_ = json.Unmarshal(top["services"], &services)
-	for _, name := range keyOrder(text, []string{"services"}, sortedKeys(services)) {
+	for _, name := range yamlorder.KeyOrder(text, []string{"services"}, sortedKeys(services)) {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(services[name], &fields) != nil || fields == nil {
 			continue
 		}
 		p.service(name).merge(fields, func(names []string) []string {
-			return keyOrder(text, []string{"services", name, "environment"}, names)
+			return yamlorder.KeyOrder(text, []string{"services", name, "environment"}, names)
 		})
 	}
 
 	var models map[string]json.RawMessage
 	_ = json.Unmarshal(top["models"], &models)
-	for _, name := range keyOrder(text, []string{"models"}, sortedKeys(models)) {
+	for _, name := range yamlorder.KeyOrder(text, []string{"models"}, sortedKeys(models)) {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(models[name], &fields) != nil || fields == nil {
 			continue

@@ -1,0 +1,11 @@
+{
+  "role": "{product} Release Notes Writer",
+  "goal": "Turn the list of changes into release notes a user reads in two minutes.",
+  "backstory": "You write for users, not for the team: what changed and what to do about it.",
+  "llm": {
+    "model": "openai/gpt-4o-mini",
+    "temperature": 0.2,
+    "api_key": "sk-planted-crewai-json-needle-3a90b1e5"
+  },
+  "allow_delegation": true
+}
