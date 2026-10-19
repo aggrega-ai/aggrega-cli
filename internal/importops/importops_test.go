@@ -214,12 +214,13 @@ func referenceDetectionSeam(t *testing.T) Seam {
 //
 // An MCP client's configuration is recognised as mcp by its file's name and its
 // top-level object — .mcp.json, claude_desktop_config.json and .cursor/mcp.json
-// by an object at mcpServers, .vscode/mcp.json by one at servers — and a registry
+// by an object at mcpServers, read as JSON, .vscode/mcp.json by one at servers,
+// read as JSON with comments, so a commented one among them — and a registry
 // server description by its $schema alone, whatever the file is called; and since
 // exactly one format is recognised in each case, no other importer's signature
 // matches any of them. A client file whose name names no client, one in the other
-// client's shape, and one holding a comment, which does not parse as JSON, are
-// refused, the last imported by naming its format.
+// client's shape, and a .mcp.json holding a comment, which does not parse as
+// JSON, are refused, the last reaching the importer by naming its format.
 //
 // A Compose file is recognised as compose by its name — any of the names Compose
 // reads a Compose file or its override file under by default — and an object at
@@ -257,11 +258,12 @@ func TestSelectFormat(t *testing.T) {
 	langflow := []byte(`{"data":{"nodes":[],"edges":[]}}`)
 	flowise := []byte(`{"nodes":[],"edges":[]}`)
 	n8n := []byte(`{"id":"a1","nodes":[],"connections":{}}`)
-	// An MCP client's configuration in each of its two shapes, the same file with
-	// a comment, and a registry server description.
+	// An MCP client's configuration in each of its two shapes, each with a
+	// comment, and a registry server description.
 	mcpServers := []byte(`{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`)
+	commentedMCPServers := []byte("{\n  // the project's servers\n  \"mcpServers\": {\"github\": {\"command\": \"npx\"}}\n}\n")
 	vscodeServers := []byte(`{"servers":{"docs":{"type":"http","url":"https://docs.example.com/mcp"}}}`)
-	commentedServers := []byte("{\n  // the workspace's servers\n  \"servers\": {\"docs\": {\"type\": \"http\", \"url\": \"https://docs.example.com/mcp\"}}\n}\n")
+	commentedServers := []byte("{\n  // the workspace's servers\n  \"servers\": {\"docs\": {\"type\": \"http\", \"url\": \"https://docs.example.com/mcp\"},},\n}\n")
 	serverDescription := []byte(`{"$schema":"https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",` +
 		`"name":"io.github.example/weather","description":"Weather","version":"1.2.0"}`)
 	// A Compose file, and a YAML file of a Compose name that holds no services.
@@ -329,10 +331,12 @@ func TestSelectFormat(t *testing.T) {
 		{name: "a client file renamed is refused", source: "servers.json", content: mcpServers, wantErr: true},
 		{name: "a .mcp.json in Visual Studio Code's shape is refused", source: ".mcp.json", content: vscodeServers,
 			wantErr: true},
-		{name: "a commented .vscode/mcp.json does not parse as JSON, so is refused", source: ".vscode/mcp.json",
-			content: commentedServers, wantErr: true},
-		{name: "explicit mcp wins over the commented file", explicit: "mcp", source: ".vscode/mcp.json",
+		{name: "a commented .vscode/mcp.json is read as JSON with comments", source: ".vscode/mcp.json",
 			content: commentedServers, want: "mcp"},
+		{name: "a commented .mcp.json does not parse as JSON, so is refused", source: ".mcp.json",
+			content: commentedMCPServers, wantErr: true},
+		{name: "explicit mcp wins over the commented .mcp.json", explicit: "mcp", source: ".mcp.json",
+			content: commentedMCPServers, want: "mcp"},
 		{name: "a compose.yaml", source: "compose.yaml", content: composeFile, want: "compose"},
 		{name: "a docker-compose.yml named with its directory", source: "app/docker-compose.yml", content: composeFile,
 			want: "compose"},

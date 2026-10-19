@@ -24,10 +24,14 @@
 // the remotes it is served at.
 //
 // The importer reads every one of these shapes alike, so it never needs to know
-// which file a source is, and reads the order the source writes its servers in:
-// the host's parse decides whether a source parses, and the members are read in
-// the order the text writes them through the plugin kit's order-preserving
-// reader, since the parser's tree writes them in sorted order.
+// which file a source is. Visual Studio Code reads its configuration as JSON
+// with comments, and the other clients and the registry read theirs as JSON, so
+// a source is read as the shape it holds asks: one listing its servers under
+// servers is read through the host's parser for JSON with comments, and its
+// members in the order that parser's tree writes them, which is name order; every
+// other source is parsed through the host's JSON parser, which refuses a
+// comment, and its members are read in the order its text writes them, through
+// the plugin kit's order-preserving reader.
 //
 // # What it drafts
 //
@@ -46,28 +50,31 @@
 //
 // # Credential values
 //
-// A value of a server's configuration can carry a key: an environment value, the
-// address, the command and each argument. Each one the draft writes that is not
-// a single variable reference is located in the drafted values and handed to the
-// plugin kit's credential decision, importer.CarryCredentials, which reads the
-// empty_credentials setting: by default each is carried as written and named in
-// a credential-carried warning by its server and its place, never by its value;
-// where the setting asks for an MCP server's members, each is written empty and
-// reported under credential-emptied — an argument as an empty item of the command
-// line, an address or an environment value left unset. A variable reference —
-// ${NAME}, ${env:NAME}, ${input:id}, ${workspaceFolder} — holds no value, so it is
-// written as the text it is whatever the setting says, and a variable whose value
-// is one is left for the Release, its reference named. A header's value is
-// written nowhere: a remote server's credential is held by each consumer on its
-// connection to the tool, and the draft drafts no consumer.
+// A value of a server's configuration can carry a key: a header's value, an
+// environment value, the address, the command and each argument. Each one the
+// draft writes that is not a single variable reference is located in the drafted
+// values and handed to the plugin kit's credential decision,
+// importer.CarryCredentials, which reads the empty_credentials setting: by
+// default each is carried as written and named in a credential-carried warning
+// by its server and its place, never by its value; where the setting asks for an
+// MCP server's members, each is written empty and reported under
+// credential-emptied — an argument as an empty item of the command line, an
+// address or an environment value left unset, a header's value left out. A
+// variable reference — ${NAME}, ${env:NAME}, ${input:id}, ${workspaceFolder} —
+// holds no value, so it is written as the text it is whatever the setting says,
+// and a variable or a header whose value is one is written with the reference it
+// reads from. No key of the Release takes a header's value — a remote server's
+// credential is held by each consumer on its connection to the tool, and the
+// draft drafts no consumer — so the headers a server is sent are written in the
+// comment above its entry, each beside its value.
 package mcpimport
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/jsonc"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -76,8 +83,13 @@ import (
 // and every registry server description.
 const Format = "mcp"
 
-// Syntax is the syntactic format a source is parsed as.
-const Syntax = "json"
+// Syntax is the syntactic format a source is parsed as, and SyntaxJSONC the one
+// a source listing its servers under servers, as Visual Studio Code writes them,
+// is parsed as.
+const (
+	Syntax      = "json"
+	SyntaxJSONC = "jsonc"
+)
 
 // Component is the catalog Component each server is drafted as an instance of.
 const Component = "core/ai-tool/mcp"
@@ -97,13 +109,14 @@ const (
 const where = "in the Release the draft writes"
 
 // Import turns one import request into the drafts: each source — the request's
-// named sources, or its primary bytes — has its comments and trailing commas
-// written as spaces (jsonc.Strip, the one reading of JSON with comments the
-// compiler's guests share), is parsed as JSON through parse, the host's
-// parser, and has its servers read. A source the parser refuses is reported
-// under parse-failed, which halts the import, and one listing no server under
-// no-nodes; the import carries on with the other sources. A request naming a
-// format other than Format reads no server.
+// named sources, or its primary bytes — is read through parse, the host's
+// parser, and has its servers read. A source is parsed as SyntaxJSONC first; one
+// holding an object at servers is read from the tree that parse returns, and
+// every other is parsed again as Syntax and read from its own text, as
+// sourceText says. A source a parser refuses is reported under parse-failed,
+// which halts the import, and one listing no server under no-nodes; the import
+// carries on with the other sources. A request naming a format other than Format
+// reads no server.
 //
 // Where any source lists a server, it returns the drafted Aggregate and Release
 // as files and entities, with a referenced Component entity per server; where the
@@ -116,8 +129,8 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	used := map[string]bool{}
 	var servers []server
 	for _, src := range sources {
-		text := jsonc.Strip(src.Bytes)
-		if _, err := parse(Syntax, text); err != nil {
+		text, err := sourceText(src.Bytes, parse)
+		if err != nil {
 			out.Diagnostics = append(out.Diagnostics, importer.ParseFailed(src, in.Format, err))
 			continue
 		}
@@ -172,6 +185,34 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	return out
 }
 
+// sourceText returns the JSON text a source's servers are read from, through
+// parse: the source parsed as SyntaxJSONC, and, where its tree holds an object at
+// servers — Visual Studio Code's configuration, which that client reads as JSON
+// with comments — that tree, whose members are written in name order. Any other
+// source is held to Syntax: parsed again as JSON, and returned as it is, so its
+// members are read in the order it writes them. It returns the refusal of the
+// parser the source is read through, and no text, where that parser refuses it.
+//
+// The order is not read from a commented source's own text: reading it would
+// take a second reading of JSON with comments beside the parser's, and the
+// parser's is the one the compiler keeps, so a configuration read with comments
+// keeps the order its tree writes, whether or not it holds a comment.
+func sourceText(source []byte, parse func(syntax string, source []byte) (json.RawMessage, error)) (json.RawMessage, error) {
+	tree, err := parse(SyntaxJSONC, source)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range importer.ObjectEntries(tree) {
+		if e.Key == "servers" && bytes.HasPrefix(bytes.TrimSpace(e.Value), []byte("{")) {
+			return tree, nil
+		}
+	}
+	if _, err := parse(Syntax, source); err != nil {
+		return nil, err
+	}
+	return source, nil
+}
+
 // serversOf reads the servers a source's text lists: the one server a registry
 // server description describes, where its $schema opens with SchemaPrefix, and
 // otherwise the servers a client's configuration lists.
@@ -187,10 +228,10 @@ func serversOf(text []byte) []server {
 }
 
 // draftedValues writes, as one JSON document, the values of every server the
-// credential decision judges: under each server's key, its command line, its
-// address and its environment's values, in the order the draft writes them. A
-// value the source leaves for its user is written empty; a variable whose value
-// the draft does not write is written with none.
+// credential decision judges: under each server's key, its headers' values, its
+// command line, its address and its environment's values, in the order the draft
+// writes them. A value the source leaves for its user is written empty; a header
+// or a variable whose value the draft does not write is written with none.
 func draftedValues(servers []server) []byte {
 	var b strings.Builder
 	b.WriteString("{")
@@ -199,6 +240,7 @@ func draftedValues(servers []server) []byte {
 			b.WriteString(",")
 		}
 		b.WriteString(jsonString(s.key) + ":{")
+		b.WriteString(`"headers":` + namedValues(s.headers) + ",")
 		b.WriteString(`"stdio_command":[`)
 		for j, c := range s.command {
 			if j > 0 {
@@ -212,31 +254,48 @@ func draftedValues(servers []server) []byte {
 		} else {
 			b.WriteString("null")
 		}
-		b.WriteString(`,"env":[`)
-		for j, e := range s.env {
-			if j > 0 {
-				b.WriteString(",")
-			}
-			if e.value != nil && !e.value.reference {
-				b.WriteString(jsonString(e.value.text))
-			} else {
-				b.WriteString("null")
-			}
-		}
-		b.WriteString("]}")
+		b.WriteString(`,"env":` + namedValues(s.env) + "}")
 	}
 	b.WriteString("}")
 	return []byte(b.String())
 }
 
+// namedValues writes the values of named as a JSON list, in their order: a value
+// the draft writes as its text, and null for one it writes with none — a value
+// the source does not write, or a single variable reference.
+func namedValues(named []namedValue) string {
+	var b strings.Builder
+	b.WriteString("[")
+	for j, e := range named {
+		if j > 0 {
+			b.WriteString(",")
+		}
+		if e.value != nil && !e.value.reference {
+			b.WriteString(jsonString(e.value.text))
+		} else {
+			b.WriteString("null")
+		}
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
 // located returns every value of draftedValues the credential decision judges,
-// in the order the draft writes them: each item of a command line, the address
-// and each environment value, where the value is not a single variable reference
-// and is not left for the user — named by its server and by its place in the
-// Release.
+// in the order the draft writes them: each header's value, each item of a
+// command line, the address and each environment value, where the value is not a
+// single variable reference and is not left for the user — named by its server
+// and by its place: a header as headers.<name>, and every other value by its
+// place in the Release.
 func located(servers []server) []importer.Credential {
 	var out []importer.Credential
 	for _, s := range servers {
+		for j, h := range s.headers {
+			if h.value == nil || h.value.reference {
+				continue
+			}
+			out = append(out, importer.Credential{Node: s.ref, Field: "headers." + h.name,
+				Pointer: importer.Pointer(s.key, "headers", strconv.Itoa(j)), Class: h.value.class})
+		}
 		for j, c := range s.command {
 			if c.reference || c.unset {
 				continue
@@ -261,11 +320,13 @@ func located(servers []server) []importer.Credential {
 
 // readBack reads the values the credential decision wrote empty back onto the
 // servers: a command-line item that held something and is written empty is
-// written empty, and an address or an environment value that held something and
-// is written empty is left for the Release. A value the decision carried is
-// left exactly as the source writes it.
+// written empty, an address or an environment value that held something and is
+// written empty is left for the Release, and a header's value that held
+// something and is written empty is left out, the header named alone. A value
+// the decision carried is left exactly as the source writes it.
 func readBack(servers []server, written []byte) error {
 	var values map[string]struct {
+		Headers  []*string `json:"headers"`
 		Command  []string  `json:"stdio_command"`
 		Endpoint *string   `json:"endpoint"`
 		Env      []*string `json:"env"`
@@ -276,6 +337,11 @@ func readBack(servers []server, written []byte) error {
 	for i := range servers {
 		s := &servers[i]
 		v := values[s.key]
+		for j := range s.headers {
+			if emptiedAt(s.headers[j], v.Headers, j) {
+				s.headers[j].value, s.headers[j].emptied = nil, true
+			}
+		}
 		for j := range s.command {
 			if j < len(v.Command) && v.Command[j] == "" && s.command[j].text != "" {
 				s.command[j].text = ""
@@ -287,15 +353,20 @@ func readBack(servers []server, written []byte) error {
 			s.left = append(s.left, "infra.endpoint")
 		}
 		for j := range s.env {
-			e := &s.env[j]
-			if e.value == nil || e.value.reference || j >= len(v.Env) || v.Env[j] == nil || *v.Env[j] != "" ||
-				e.value.text == "" {
-				continue
+			if emptiedAt(s.env[j], v.Env, j) {
+				s.env[j].value = nil
 			}
-			e.value = nil
 		}
 	}
 	return nil
+}
+
+// emptiedAt reports whether the credential decision wrote empty the value of e,
+// the j-th of the values written: a value e holds something in, that is not a
+// single variable reference, written as "".
+func emptiedAt(e namedValue, written []*string, j int) bool {
+	return e.value != nil && !e.value.reference && e.value.text != "" && j < len(written) && written[j] != nil &&
+		*written[j] == ""
 }
 
 // launchers are the commands each bridge image carries a launcher for, by the

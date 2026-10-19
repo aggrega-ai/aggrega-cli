@@ -38,9 +38,10 @@ type server struct {
 	image string
 	// env is the environment the server is started with, in the order the source
 	// writes it.
-	env []envEntry
-	// headers names the headers the source sends the server.
-	headers []string
+	env []namedValue
+	// headers are the headers the source sends the server, in the order the source
+	// writes them.
+	headers []namedValue
 	// notCarried names the members of the server the draft writes nowhere.
 	notCarried []string
 	// left names what the draft leaves for the Release, and notes says what else
@@ -62,14 +63,17 @@ type item struct {
 	hint  string
 }
 
-// envEntry is one variable of a server's environment: its name, and its value
-// where the source writes one.
-type envEntry struct {
+// namedValue is one variable of a server's environment, or one header it is
+// sent: its name, and its value where the source writes one.
+type namedValue struct {
 	name  string
 	value *item
-	// hint says, for a variable whose value the source does not write, what it
-	// leaves in its place.
+	// hint says, for a value the source does not write, what it leaves in its
+	// place.
 	hint string
+	// emptied is set for a header whose value the empty_credentials setting
+	// leaves out.
+	emptied bool
 }
 
 // clientServers reads the servers an MCP client's configuration lists: the
@@ -150,15 +154,7 @@ func clientServer(name string, fields []importer.ObjectEntry) server {
 				s.notCarried = append(s.notCarried, f.Key)
 				continue
 			}
-			for _, v := range members(f.Value) {
-				text, ok := scalarText(v.Value)
-				if !ok {
-					s.env = append(s.env, envEntry{name: v.Key, hint: "the source writes no text for it"})
-					continue
-				}
-				value := valueItem(text, importer.CredentialServerMember)
-				s.env = append(s.env, envEntry{name: v.Key, value: &value})
-			}
+			s.env = append(s.env, clientValues(f.Value)...)
 		case !s.stdio && f.Key == "url":
 			if text, ok := scalarText(f.Value); ok {
 				s.endpoint = addressItem(&s, text)
@@ -166,9 +162,7 @@ func clientServer(name string, fields []importer.ObjectEntry) server {
 				s.notCarried = append(s.notCarried, f.Key)
 			}
 		case !s.stdio && f.Key == "headers":
-			for _, h := range members(f.Value) {
-				s.headers = append(s.headers, h.Key)
-			}
+			s.headers = append(s.headers, clientValues(f.Value)...)
 		default:
 			s.notCarried = append(s.notCarried, f.Key)
 		}
@@ -182,6 +176,23 @@ func clientServer(name string, fields []importer.ObjectEntry) server {
 		s.left = append(s.left, "infra.endpoint, since the server names no address")
 	}
 	return s
+}
+
+// clientValues reads the members of a client's env or headers object, each a
+// value of an MCP server's configuration: its name, and its value where the
+// member is written as a scalar.
+func clientValues(raw json.RawMessage) []namedValue {
+	var out []namedValue
+	for _, m := range members(raw) {
+		text, ok := scalarText(m.Value)
+		if !ok {
+			out = append(out, namedValue{name: m.Key, hint: "the source writes no text for it"})
+			continue
+		}
+		value := valueItem(text, importer.CredentialServerMember)
+		out = append(out, namedValue{name: m.Key, value: &value})
+	}
+	return out
 }
 
 // registryServer reads the one server a registry server description describes.
@@ -291,23 +302,34 @@ func registryPackage(s *server, fields []importer.ObjectEntry) {
 	s.command = append(s.command, registryArguments(s, runtimeArgs)...)
 	s.command = append(s.command, valueItem(spec, importer.CredentialServerMember))
 	s.command = append(s.command, registryArguments(s, packageArgs)...)
-	var vars []json.RawMessage
-	_ = json.Unmarshal(env, &vars)
-	for _, raw := range vars {
-		input := registryInput(members(raw))
-		entry := envEntry{name: input.name}
+	s.env = append(s.env, registryValues(env)...)
+}
+
+// registryValues reads a registry server description's list of environment
+// variables or headers: each input's name, and its value or, where it writes
+// none, its default, of the class the input's isSecret decides; an input writing
+// neither leaves its value for the user to supply.
+func registryValues(raw json.RawMessage) []namedValue {
+	var inputs []json.RawMessage
+	_ = json.Unmarshal(raw, &inputs)
+	var out []namedValue
+	for _, in := range inputs {
+		input := registryInput(members(in))
+		entry := namedValue{name: input.name}
 		if input.value != nil {
 			v := valueItem(*input.value, input.class())
 			entry.value = &v
 		} else {
 			entry.hint = "the description leaves it for the user to supply"
 		}
-		s.env = append(s.env, entry)
+		out = append(out, entry)
 	}
+	return out
 }
 
 // registryRemote reads the remote a server is drafted from: its url is the
-// address, and its headers are sent to the server.
+// address, and its headers, read as registryValues reads them, are sent to the
+// server.
 func registryRemote(s *server, fields []importer.ObjectEntry) {
 	for _, f := range fields {
 		switch f.Key {
@@ -317,11 +339,7 @@ func registryRemote(s *server, fields []importer.ObjectEntry) {
 				s.endpoint = addressItem(s, url)
 			}
 		case "headers":
-			var headers []json.RawMessage
-			_ = json.Unmarshal(f.Value, &headers)
-			for _, h := range headers {
-				s.headers = append(s.headers, registryInput(members(h)).name)
-			}
+			s.headers = append(s.headers, registryValues(f.Value)...)
 		case "variables":
 			var names []string
 			for _, v := range members(f.Value) {

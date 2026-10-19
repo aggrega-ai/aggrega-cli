@@ -18,11 +18,13 @@
 // for the settings, the credential decision and the drafts' shared conventions.
 //
 // It obtains each source's tree through the host rather than parsing the source
-// with a grammar of its own: the import export hands the source, its comments and
-// trailing commas written as spaces, to the aggrega_parse_source host function
-// for the JSON syntactic format. So it declares the aggrega_parse_source host
-// function on its import export, and the load-time cross-check of the
-// descriptor's declared host functions against the binary's imports covers it.
+// with a grammar of its own: the import export hands each source to the
+// aggrega_parse_source host function for the syntactic format the source is read
+// in — JSON with comments for a configuration listing its servers under servers,
+// as Visual Studio Code writes it, and JSON for every other. So it declares the
+// aggrega_parse_source host function on its import export, and the load-time
+// cross-check of the descriptor's declared host functions against the binary's
+// imports covers it.
 //
 // The import payload is decoded and the result encoded through the generated ABI
 // codec (github.com/aggrega-ai/aggrega-abi-go/pkg/abi, re-exported by the plugin
@@ -66,20 +68,22 @@ func descriptor() aggrega.PluginDescriptor {
 // declared in describe() and recorded on the importer's Plugin entity. The
 // three client configurations writing their servers under mcpServers are told
 // apart from one another only by their names, so each signature names its file
-// and asks for an object at mcpServers; Visual Studio Code's names its file and
-// asks for an object at servers. A registry server description is told by its
+// and asks for an object at mcpServers, read as JSON, as those clients read it;
+// Visual Studio Code's names its file and asks for an object at servers, read as
+// JSON with comments, as that client reads it, so a file holding comments or
+// trailing commas is recognised. A registry server description is told by its
 // content alone, its $schema opening with the address the registry publishes
 // its schema under, so its signature names no file and applies to any file
-// imported on its own. A file holding comments is not recognised, since the
-// host reads a source as JSON to try a signature: it is imported naming its
-// format. The host evaluates the signatures without knowing what MCP is.
+// imported on its own. The host evaluates the signatures without knowing what
+// MCP is.
 var detect = []aggrega.DetectSignature{
 	{Syntax: mcpimport.Syntax, Files: []string{".mcp.json"}, Match: []aggrega.PathMatch{{Path: "mcpServers", Is: "object"}}},
 	{Syntax: mcpimport.Syntax, Files: []string{"claude_desktop_config.json"},
 		Match: []aggrega.PathMatch{{Path: "mcpServers", Is: "object"}}},
 	{Syntax: mcpimport.Syntax, Files: []string{".cursor/mcp.json"},
 		Match: []aggrega.PathMatch{{Path: "mcpServers", Is: "object"}}},
-	{Syntax: mcpimport.Syntax, Files: []string{".vscode/mcp.json"}, Match: []aggrega.PathMatch{{Path: "servers", Is: "object"}}},
+	{Syntax: mcpimport.SyntaxJSONC, Files: []string{".vscode/mcp.json"},
+		Match: []aggrega.PathMatch{{Path: "servers", Is: "object"}}},
 	{Syntax: mcpimport.Syntax, Match: []aggrega.PathMatch{{Path: "$schema", Is: "string", Prefix: mcpimport.SchemaPrefix}}},
 }
 
@@ -108,7 +112,7 @@ func importArtifact() int32 {
 
 	// The parse callback is the guest's only channel to a parser: it asks the
 	// host to run the parser for the syntactic format, which refuses a source
-	// that is not JSON with the parser's reason.
+	// that is not of that syntax with the parser's reason.
 	out := mcpimport.Import(in, func(syntax string, source []byte) (json.RawMessage, error) {
 		return aggrega.ParseSource(syntax, source, nil)
 	})

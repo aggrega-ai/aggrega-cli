@@ -5,6 +5,7 @@ package mcpimport
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,19 +14,31 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 )
 
 // The MCP importer on the host toolchain: each case hands Import a request and
-// the parse the host would run — the compiler's own JSON parser, its refusal
-// read as the import socket reads it — and reads what it drafts.
+// the parse the host would run — the compiler's own parsers for JSON and for
+// JSON with comments, a refusal read as the import socket reads it — and reads
+// what it drafts.
 
-// hostParse parses source as the host's JSON parser does and refuses it as the
-// import socket hands an importer a parser's refusal.
+// hostParse parses source as the host's parser for syntax does and refuses it as
+// the import socket hands an importer a parser's refusal. A syntax the importer
+// does not read fails the call, so a request for one is caught.
 func hostParse(syntax string, source []byte) (json.RawMessage, error) {
-	out := parsercore.ParseJSON(source)
+	var out abi.ParseOutput
+	switch syntax {
+	case Syntax:
+		out = parsercore.ParseJSON(source)
+	case SyntaxJSONC:
+		out = parsercore.ParseJSONC(source)
+	default:
+		return nil, fmt.Errorf("the importer asked for the %q syntax, which it does not read", syntax)
+	}
 	if err := importersocket.ParseRefusal(out); err != nil {
 		return nil, err
 	}
@@ -298,6 +311,189 @@ func TestAVariableReferenceIsWrittenAsTheTextItIs(t *testing.T) {
 	}
 }
 
+// The header values TestAHeaderValueIsCarriedInTheCommentOrLeftOut plants: one a
+// client sends a remote server, and one a registry description's remote header
+// writes, unmarked.
+const (
+	plantedHeader         = "planted-header-value-needle-c41d"
+	plantedRegistryHeader = "planted-registry-header-needle-e7a0"
+)
+
+// TestAHeaderValueIsCarriedInTheCommentOrLeftOut imports a client's remote server
+// sent a literal header, a header that is one variable reference and a header
+// written as no text, and a registry description's remote sent an unmarked
+// header with a value, one marked secret with a default and one writing neither,
+// under every value of the empty_credentials setting, after a needle proves each
+// planted value is in its source:
+//
+//   - absent or none: each literal value is written as written in the comment
+//     above its server, beside its header, and named in a credential-carried
+//     warning as headers.<name> of its server, never by its value;
+//   - marked or all: no literal value is in any file, entity or diagnostic, the
+//     comment names each header alone, and each is reported under
+//     credential-emptied as headers.<name> of its server, in the form the kit
+//     gives a value of its class — a marked one as a value its server marks as a
+//     credential;
+//   - under every value, the reference is written as the reference it reads
+//     from and reported by nothing, and a header with no value is named as such.
+//
+// 🔴 PLANTED DEFECT: in located (mcpimport.go), skip the headers: no report names
+// a header, and under marked or all the planted values are carried, so the case
+// fails on both.
+func TestAHeaderValueIsCarriedInTheCommentOrLeftOut(t *testing.T) {
+	t.Parallel()
+	client := []byte(`{"mcpServers":{"remote":{"url":"https://mcp.example.com/mcp","headers":{` +
+		`"X-Api-Key":"` + plantedHeader + `","Authorization":"${env:REMOTE_TOKEN}","X-Flags":["a"]}}}}`)
+	registry := []byte(`{"$schema":"` + SchemaPrefix + `2025-12-11/server.schema.json","name":"com.example/hosted",` +
+		`"remotes":[{"type":"streamable-http","url":"https://hosted.example.com/mcp","headers":[` +
+		`{"name":"X-Tenant","value":"` + plantedRegistryHeader + `"},` +
+		`{"name":"Authorization","isSecret":true,"default":"Bearer ` + plantedRegistryHeader + `-default"},` +
+		`{"name":"X-Region","isRequired":true}]}]}`)
+	for _, row := range []struct {
+		name   string
+		body   []byte
+		key    string
+		values map[string]string
+		// marked names the headers the source marks as a credential, which the
+		// kit reports written empty in the form it reports such a value in.
+		marked map[string]bool
+		fixed  []string
+	}{
+		{"client", client, "remote", map[string]string{"X-Api-Key": plantedHeader}, nil,
+			[]string{"    #   - Authorization, its value read from ${env:REMOTE_TOKEN}\n",
+				"    #   - X-Flags, with no value, since the source writes no text for it\n"}},
+		{"registry", registry, "com.example/hosted", map[string]string{"X-Tenant": plantedRegistryHeader,
+			"Authorization": "Bearer " + plantedRegistryHeader + "-default"}, map[string]bool{"Authorization": true},
+			[]string{"    #   - X-Region, with no value, since the description leaves it for the user to supply\n"}},
+	} {
+		for header, value := range row.values {
+			if !strings.Contains(string(row.body), value) {
+				t.Fatalf("%s: the needle: %q, the value of %s, is not in the source", row.name, value, header)
+			}
+		}
+		for _, settings := range []string{"", `{"empty_credentials":"none"}`, `{"empty_credentials":"marked"}`,
+			`{"empty_credentials":"all"}`} {
+			t.Run(row.name+" "+settings, func(t *testing.T) {
+				t.Parallel()
+				emptied := strings.Contains(settings, "marked") || strings.Contains(settings, "all")
+				out := importOne(row.body, settings)
+				release := fileContent(t, out, "release.yaml")
+				everything, _ := json.Marshal(out)
+				diagnostics, _ := json.Marshal(out.Diagnostics)
+				code, other := "credential-carried", "credential-emptied"
+				if emptied {
+					code, other = other, code
+				}
+				reported := strings.Join(codes(out, code), "\n")
+				for header, value := range row.values {
+					line := "    #   - " + header + ": " + yamlString(value) + "\n"
+					if emptied {
+						line = "    #   - " + header + ", its value left out, as the empty_credentials setting asks\n"
+					}
+					if !strings.Contains(release, line) {
+						t.Errorf("the Release does not hold %q:\n%s", line, release)
+					}
+					// The kit names a value it carries, and an MCP server's member it
+					// writes empty, as "<field> of node <ref>", and a value its source
+					// marks as a credential that it writes empty as "<field>, which node
+					// <ref> marks as a credential"; each header is held to the one form
+					// its class and the setting give.
+					field := "the value of headers." + header + " of node " + row.key + " is carried as written "
+					switch {
+					case emptied && row.marked[header]:
+						field = "the value of headers." + header + ", which node " + row.key +
+							" marks as a credential, is written empty "
+					case emptied:
+						field = "the whole value of headers." + header + " of node " + row.key + " is written empty "
+					}
+					if !strings.Contains(reported, field) {
+						t.Errorf("no %s names %q:\n%s", code, field, reported)
+					}
+					if strings.Contains(string(diagnostics), value) {
+						t.Errorf("a diagnostic holds the planted value of %s", header)
+					}
+					if emptied && strings.Contains(string(everything), value) {
+						t.Errorf("the import's output holds the planted value of %s", header)
+					}
+				}
+				for _, line := range row.fixed {
+					if !strings.Contains(release, line) {
+						t.Errorf("the Release does not hold %q:\n%s", line, release)
+					}
+				}
+				for _, stray := range codes(out, other) {
+					if strings.Contains(stray, "headers.") {
+						t.Errorf("the import reports a header under %s as well: %q", other, stray)
+					}
+				}
+				for _, unreported := range []string{"headers.Authorization of node remote", "headers.X-Flags",
+					"headers.X-Region"} {
+					if strings.Contains(string(diagnostics), unreported) {
+						t.Errorf("a report names %s, which holds no value to carry", unreported)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestAConfigurationWithCommentsIsReadAsItsCopyWithout imports Visual Studio
+// Code's configuration written as JSON with comments — a line comment, a block
+// comment and trailing commas — and the same configuration with them removed,
+// and requires the two outputs to be identical, byte for byte; it requires a
+// configuration listing its servers under servers to be drafted in the order of
+// its parsed tree, which is name order, whether or not it holds a comment; and it
+// requires a configuration listing them under mcpServers, which its clients read
+// as JSON, to be refused under parse-failed with the JSON parser's reason where
+// it holds a comment.
+//
+// 🔴 PLANTED DEFECT: in sourceText (mcpimport.go), read every source as Syntax:
+// the commented configuration is refused under parse-failed, and the case fails
+// comparing it with its copy.
+func TestAConfigurationWithCommentsIsReadAsItsCopyWithout(t *testing.T) {
+	t.Parallel()
+	commented := fixture(t, "vscode-commented.mcp.json")
+	for _, needle := range []string{"//", "/*", ",\n    },"} {
+		if !strings.Contains(string(commented), needle) {
+			t.Fatalf("the needle: %q is not in the commented fixture, so it proves nothing", needle)
+		}
+	}
+	out := importOne(commented, "")
+	first, _ := json.Marshal(out)
+	second, _ := json.Marshal(importOne(fixture(t, "vscode-uncommented.mcp.json"), ""))
+	if string(first) != string(second) {
+		t.Errorf("the commented configuration drafts\n%s\nand its copy without comments\n%s", first, second)
+	}
+	// Two outputs drafting nothing are alike too, so the comparison above holds
+	// only where the commented configuration drafts its Release; fileContent fails
+	// the case where it does not.
+	fileContent(t, out, "release.yaml")
+
+	for _, body := range []string{
+		`{"servers":{"zeta":{"command":"npx","env":{"Z":"1","A":"2"}},"alpha":{"url":"https://alpha.example.com/mcp"}}}`,
+		"{\"servers\":{\"zeta\":{\"command\":\"npx\",\"env\":{\"Z\":\"1\",\"A\":\"2\",},}, // a comment\n" +
+			"\"alpha\":{\"url\":\"https://alpha.example.com/mcp\"}}}",
+	} {
+		out := importOne([]byte(body), "")
+		agg := fileContent(t, out, "aggregate.yaml")
+		if want := "    alpha:\n      type: core/ai-tool/mcp\n    zeta:\n"; !strings.Contains(agg, want) {
+			t.Errorf("the servers of %s are not drafted in name order:\n%s", body, agg)
+		}
+		if release := fileContent(t, out, "release.yaml"); !strings.Contains(release,
+			"              - key: \"A\"\n                value: \"2\"\n              - key: \"Z\"\n") {
+			t.Errorf("the environment of %s is not drafted in name order:\n%s", body, release)
+		}
+	}
+
+	out = importOne([]byte("{\"mcpServers\": {\n  // a comment\n  \"x\": {\"command\": \"npx\"}}}"), "")
+	want := []aggrega.Diagnostic{{Severity: "halt", Code: "parse-failed",
+		Message: `could not parse source "" as mcp: json parse: invalid character '/' looking for beginning of object key string`}}
+	if !reflect.DeepEqual(out.Diagnostics, want) || len(out.Files) != 0 {
+		t.Errorf("a commented mcpServers configuration reported %+v and drafted %+v, want %+v and nothing",
+			out.Diagnostics, out.Files, want)
+	}
+}
+
 // TestEachShapeIsReadAlike imports one fixture of each shape and requires what
 // each server is drafted as in the Release.
 func TestEachShapeIsReadAlike(t *testing.T) {
@@ -308,7 +504,9 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 	}{
 		{"claude-code.mcp.json", []string{
 			"    api-server:\n      infra:\n        endpoint: \"${API_BASE_URL:-https://api.example.com}/mcp\"\n",
-			"    # The source sends this server the header Authorization. Its value is not written",
+			"    # The headers the source sends this server, which no infrastructure key of core/ai-tool/mcp takes, " +
+				"since a remote server's credential is held by each consumer, on its connection to the tool:\n" +
+				"    #   - Authorization: \"Bearer ${API_KEY}\"\n",
 			"    #   - the value of server_env.GITHUB_PERSONAL_ACCESS_TOKEN, which the source reads from ${GITHUB_TOKEN}\n",
 			"    github:\n      infra:\n        stdio_command:\n          - \"npx\"\n          - \"-y\"\n" +
 				"          - \"@modelcontextprotocol/server-github\"\n        stdio_runtime: npm\n",
@@ -318,6 +516,7 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 			"    perplexity:\n      infra:\n        stdio_command:\n          - \"uvx\"\n          - \"mcp-server-perplexity\"\n" +
 				"        stdio_runtime: pypi\n",
 			"    docs:\n      infra:\n        endpoint: \"https://docs.example.com/mcp\"\n",
+			"    #   - Authorization: \"Bearer ${input:docs-token}\"\n",
 		}},
 		{"vscode-commented.mcp.json", []string{
 			"    fetch:\n      infra:\n        stdio_command:\n          - \"uvx\"\n          - \"mcp-server-fetch\"\n" +
@@ -325,6 +524,8 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 		}},
 		{"cursor.mcp.json", []string{
 			"    # The address's query is not written",
+			"    #   - x-api-key: \"planted-header-needle-b902\"\n" +
+				"    #   - Authorization, its value read from ${env:SEARCH_TOKEN}\n",
 			"    remote-search:\n      infra:\n        endpoint: \"https://search.example.com/mcp\"\n",
 			"    local-files:\n      infra:\n        stdio_command:\n          - \"node\"\n" +
 				"          - \"${workspaceFolder}/tools/files-server.js\"\n        stdio_runtime: npm\n",
@@ -341,7 +542,7 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 				"                value: \"eu-west\"\n",
 		}},
 		{"registry-remote.server.json", []string{
-			"    # The source sends this server the header Authorization. Its value is not written",
+			"    #   - Authorization, with no value, since the description leaves it for the user to supply\n",
 			"    com-example-tickets:\n      infra:\n        endpoint: \"https://mcp.example.com/tickets\"\n",
 		}},
 		{"registry-oci.server.json", []string{
@@ -357,8 +558,7 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 					t.Errorf("the Release does not hold %q:\n%s", want, release)
 				}
 			}
-			for _, needle := range []string{"planted-query-needle", "planted-header-needle", "planted-client-secret",
-				"planted-client-id"} {
+			for _, needle := range []string{"planted-query-needle", "planted-client-secret", "planted-client-id"} {
 				everything, _ := json.Marshal(out)
 				if strings.Contains(string(everything), needle) {
 					t.Errorf("the import's output holds %q, which nothing carries", needle)
@@ -419,7 +619,8 @@ func TestASourceTheParserRefusesHaltsAndAnEmptyOneWarns(t *testing.T) {
 func TestTwoImportsAreByteIdentical(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"claude-code.mcp.json", "claude_desktop_config.json", "vscode.mcp.json",
-		"vscode-commented.mcp.json", "cursor.mcp.json", "registry-npm.server.json", "registry-remote.server.json",
+		"vscode-commented.mcp.json", "vscode-uncommented.mcp.json", "cursor.mcp.json", "registry-npm.server.json",
+		"registry-remote.server.json",
 		"registry-oci.server.json"} {
 		first, _ := json.Marshal(importOne(fixture(t, name), ""))
 		second, _ := json.Marshal(importOne(fixture(t, name), ""))

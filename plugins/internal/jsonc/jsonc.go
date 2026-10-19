@@ -4,11 +4,11 @@
 // Package jsonc reads JSON with comments as JSON: it writes what JSON with
 // comments admits and JSON does not as spaces, so a JSON reader reads the rest.
 //
-// It is the one reading of that syntax the compiler's guests do. The parser for
+// It is the one reading of that syntax the compiler's guests do: the parser for
 // JSON with comments strips a document with it and then decodes it exactly as
-// the JSON parser decodes a document, and the MCP importer strips a client's
-// configuration with it before asking the host to parse the text as JSON, so the
-// two read one document alike.
+// the JSON parser decodes a document, and an importer reading a source written
+// as JSON with comments asks the host for that parser's tree rather than
+// stripping the text itself.
 package jsonc
 
 import "bytes"

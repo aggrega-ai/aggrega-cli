@@ -3,7 +3,8 @@
     "remote-search": {
       "url": "https://search.example.com/mcp?api_key=planted-query-needle-5d81",
       "headers": {
-        "x-api-key": "planted-header-needle-b902"
+        "x-api-key": "planted-header-needle-b902",
+        "Authorization": "${env:SEARCH_TOKEN}"
       }
     },
     "local-files": {

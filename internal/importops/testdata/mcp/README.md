@@ -23,10 +23,14 @@ client reads it by before importing it:
 - `vscode-commented.mcp.json` — laid down as `.vscode/mcp.json`: the same kind of
   file written as JSON with comments, holding line and block comments, trailing
   commas, and strings holding `//`.
+- `vscode-uncommented.mcp.json` — laid down as `.vscode/mcp.json`: the commented
+  configuration above with its comments and trailing commas removed, which an
+  import drafts exactly as it drafts the commented one.
 - `cursor.mcp.json` — laid down as `.cursor/mcp.json`, Cursor's project
   configuration: a remote server whose address carries a key in its query and
-  which is sent a key in a header, a server started with `node` reading Cursor's
-  variables, and a remote server signing in with a static OAuth client.
+  which is sent a key in one header and a variable reference in another, a server
+  started with `node` reading Cursor's variables, and a remote server signing in
+  with a static OAuth client.
 - `registry-npm.server.json` — laid down as `server.json`, a registry server
   description publishing an npm package — with a named argument, a positional
   argument left for the user, a secret environment variable and one with a

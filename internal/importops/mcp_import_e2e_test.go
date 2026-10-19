@@ -12,12 +12,14 @@ package importops
 //     format with no format named and drafted as an Aggregate holding one
 //     core/ai-tool/mcp instance per server and a Release beside it;
 //   - by default every value of a server's configuration is carried as written
-//     into the Release and named in a warning, and the empty_credentials setting
-//     at marked or all writes each empty; what no infrastructure key takes — a
-//     header's value, an address's query, a static OAuth client — reaches no draft
-//     whatever the setting says;
+//     into the Release — a header's value in the comment above its server — and
+//     named in a warning, and the empty_credentials setting at marked or all
+//     writes each empty; what the draft never writes — an address's query, a
+//     static OAuth client — reaches no draft whatever the setting says;
 //   - a directory holding a project's client files is imported as one Aggregate;
-//   - a commented Visual Studio Code configuration is imported naming its format;
+//   - a commented Visual Studio Code configuration is recognised naming no format
+//     and drafted exactly as its copy without comments, while a commented
+//     configuration of a client reading JSON halts with the JSON parser's reason;
 //   - two imports of one configuration are byte-identical;
 //   - a source the parser refuses halts the import with the parser's reason, for
 //     every importer.
@@ -44,14 +46,16 @@ const mcpFixtureDir = "testdata/mcp"
 
 // mcpFixtures are the committed MCP fixtures, each with the name its client reads
 // it by, which an import is handed it under, and the instance keys its draft
-// holds, in the order the fixture lists its servers.
+// holds, in the order the draft writes them: the order the fixture lists its
+// servers, and name order for Visual Studio Code's configuration, read through
+// the parser for JSON with comments.
 var mcpFixtures = []struct {
 	fixture, name string
 	keys          []string
 }{
 	{"claude-code.mcp.json", ".mcp.json", []string{"api-server", "github"}},
 	{"claude_desktop_config.json", "claude_desktop_config.json", []string{"brave-search", "postgres"}},
-	{"vscode.mcp.json", ".vscode/mcp.json", []string{"perplexity", "docs"}},
+	{"vscode.mcp.json", ".vscode/mcp.json", []string{"docs", "perplexity"}},
 	{"cursor.mcp.json", ".cursor/mcp.json", []string{"remote-search", "local-files", "oauth-server"}},
 	{"registry-npm.server.json", "server.json", []string{"io-github-example-weather"}},
 	{"registry-remote.server.json", "server.json", []string{"com-example-tickets"}},
@@ -117,7 +121,7 @@ func yamlMember(node *yaml.Node, key string) *yaml.Node {
 // requires it read as the mcp format and drafted as aggregate.yaml and
 // release.yaml alone: the Aggregate an instance of core/ai-tool/mcp per server,
 // and the Release naming the Aggregate and holding an entry for each instance,
-// both in the order the source lists its servers.
+// both in the order mcpFixtures gives.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/mcp-importer/main.go), write
 // `{Path: "mcpServers", Is: "array"}` in the .mcp.json signature: the Claude Code
@@ -153,7 +157,8 @@ func TestEveryMCPFileIsRecognisedAndDraftedAsAnAggregateAndARelease(t *testing.T
 // fixture's search server holds in its environment and the password its
 // database server's connection string holds; and, in the Cursor fixture, the key
 // a remote server's address carries in its query, the key it is sent in a header
-// and the static OAuth client another server signs in with.
+// and the static OAuth client another server signs in with. The Cursor fixture's
+// remote server is sent a variable reference in a second header.
 const (
 	plantedMCPEnvKey     = "BSA-planted-key-shaped-needle-7f3a9c2e"
 	plantedMCPArgument   = "planted-password-needle-91b4"
@@ -161,6 +166,7 @@ const (
 	plantedMCPHeaderKey  = "planted-header-needle-b902"
 	plantedMCPClientID   = "planted-client-id-needle-0a17"
 	plantedMCPClientCode = "planted-client-secret-needle-4e1c"
+	mcpHeaderReference   = "${env:SEARCH_TOKEN}"
 )
 
 // TestTheEmptyCredentialsSettingDecidesWhatAnMCPImportCarries imports the Claude
@@ -168,14 +174,18 @@ const (
 // none, marked and all, after a needle proves each planted value is in its
 // fixture:
 //
-//   - where the setting is absent or none, the environment's key and the
-//     connection string's password are carried as written into release.yaml and
-//     reach nothing else — no other file, no decision, no diagnostic — and each
-//     is named in a credential-carried warning by its server and its place;
-//   - where it is marked or all, neither reaches anything, and each is named in
-//     a credential-emptied warning by its server and its place;
-//   - the address's query key, the header's key and the OAuth client reach
-//     nothing under any value of the setting.
+//   - where the setting is absent or none, the environment's key, the
+//     connection string's password and the header's key are carried as written
+//     into release.yaml — the header's key in the comment above its server,
+//     beside the header — and reach nothing else — no other file, no decision,
+//     no diagnostic — and each is named in a credential-carried warning by its
+//     server and its place;
+//   - where it is marked or all, none reaches anything, the comment names the
+//     header alone, and each is named in a credential-emptied warning by its
+//     server and its place;
+//   - the header holding a variable reference is written as the reference it
+//     reads from, and the address's query key and the OAuth client reach
+//     nothing, under any value of the setting.
 //
 // 🔴 PLANTED DEFECT: in located (plugins/internal/mcpimport/mcpimport.go), give
 // every value the class importer.CredentialUnmarked: the marked rows fail, the
@@ -214,8 +224,34 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnMCPImportCarries(t *testing.T) {
 			}
 
 			res, dir = writtenImport(t, mcpWorkspace(t, settings), ".cursor/mcp.json", cursor)
-			assertNoneReaches(t, []string{plantedMCPQueryKey, plantedMCPHeaderKey, plantedMCPClientID,
-				plantedMCPClientCode}, cursor, res, dir)
+			header := "    #   - x-api-key: \"" + plantedMCPHeaderKey + "\"\n"
+			if emptied {
+				header = "    #   - x-api-key, its value left out, as the empty_credentials setting asks\n"
+				assertNoneReaches(t, []string{plantedMCPQueryKey, plantedMCPHeaderKey, plantedMCPClientID,
+					plantedMCPClientCode}, cursor, res, dir)
+			} else {
+				assertCarriedOnlyInTheRelease(t, []string{plantedMCPHeaderKey}, cursor, res, dir)
+				assertNoneReaches(t, []string{plantedMCPQueryKey, plantedMCPClientID, plantedMCPClientCode}, cursor,
+					res, dir)
+			}
+			release, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
+			if err != nil {
+				t.Fatalf("read the drafted Release: %v", err)
+			}
+			for _, want := range []string{header,
+				"    #   - Authorization, its value read from " + mcpHeaderReference + "\n"} {
+				if !strings.Contains(string(release), want) {
+					t.Errorf("the drafted Release does not hold %q:\n%s", want, release)
+				}
+			}
+			named = strings.Join(diagnosticsCoded(res.Diagnostics, code), "\n")
+			if field := "headers.x-api-key of node remote-search"; !strings.Contains(named, field) {
+				t.Errorf("no %s names %q:\n%s", code, field, named)
+			}
+			if strings.Contains(strings.Join(diagnosticsCoded(res.Diagnostics, "credential-carried"), "\n")+
+				strings.Join(diagnosticsCoded(res.Diagnostics, "credential-emptied"), "\n"), "headers.Authorization") {
+				t.Errorf("a report names the header holding a variable reference, which holds no value")
+			}
 		})
 	}
 }
@@ -251,7 +287,7 @@ func assertCarriedOnlyInTheRelease(t *testing.T, planted []string, source []byte
 // holding a project's Claude Code, Visual Studio Code and Cursor configurations,
 // naming no format: the files the importer's patterns select are read, by name,
 // and one Aggregate and one Release compose every server of the three, in the
-// order of the files' names and of each file's servers.
+// order of the files' names and of each file's servers as its draft writes them.
 func TestAProjectDirectoryOfClientFilesImportsAsOneAggregate(t *testing.T) {
 	t.Parallel()
 	rw, _ := catalogFolderImportWorkspace(t)
@@ -282,41 +318,79 @@ func TestAProjectDirectoryOfClientFilesImportsAsOneAggregate(t *testing.T) {
 			keys = append(keys, strings.TrimSuffix(strings.TrimSpace(line), ":"))
 		}
 	}
-	want := []string{"remote-search", "local-files", "oauth-server", "api-server", "github", "perplexity", "docs"}
+	want := []string{"remote-search", "local-files", "oauth-server", "api-server", "github", "docs", "perplexity"}
 	if !slices.Equal(keys, want) {
 		t.Errorf("the Aggregate composes %v, want %v:\n%s", keys, want, aggregate)
 	}
 }
 
-// TestACommentedVSCodeConfigurationImportsNamingItsFormat imports a
-// .vscode/mcp.json written as JSON with comments: naming no format it is refused
-// as unrecognised, since recognition reads it as JSON, and naming the mcp format
-// it is drafted, its comments and trailing commas read as spaces and its strings
-// holding // kept.
-func TestACommentedVSCodeConfigurationImportsNamingItsFormat(t *testing.T) {
+// TestACommentedVSCodeConfigurationIsRecognisedAndDraftedAsItsCopyWithout
+// imports a .vscode/mcp.json written as JSON with comments — a line comment, a
+// block comment and trailing commas — and the same configuration with them
+// removed, each naming no format and naming mcp: each is recognised as the mcp
+// format, and the commented one drafts exactly the files its copy drafts, byte
+// for byte, its strings holding // kept. A .mcp.json holding a comment, which
+// Claude Code reads as JSON, is recognised by no signature, and naming its
+// format halts under parse-failed with the JSON parser's reason.
+//
+// 🔴 PLANTED DEFECT: in detect (plugins/mcp-importer/main.go), read the
+// .vscode/mcp.json signature as mcpimport.Syntax: the commented file naming no
+// format is refused as unrecognised, and the case fails on it.
+func TestACommentedVSCodeConfigurationIsRecognisedAndDraftedAsItsCopyWithout(t *testing.T) {
 	t.Parallel()
-	body := readMCPFixture(t, "vscode-commented.mcp.json")
-	rw, _ := catalogFolderImportWorkspace(t)
-	path := importopstest.WriteSource(t, filepath.Join(t.TempDir(), ".vscode", "mcp.json"), string(body))
-	_, err := importDirectory(t, rw, path, ".vscode/mcp.json", "")
-	var undetected *UndetectedFormatError
-	if !errors.As(err, &undetected) {
-		t.Fatalf("the commented file naming no format was not refused as unrecognised: %v", err)
-	}
-	res, err := importDirectory(t, rw, path, ".vscode/mcp.json", "mcp")
-	if err != nil || res.Halted() {
-		t.Fatalf("the commented file naming its format was not drafted: %v %+v", err, res.Diagnostics)
-	}
-	var release string
-	for _, f := range res.Files {
-		if f.Path == "release.yaml" {
-			release = f.Content
+	commented := readMCPFixture(t, "vscode-commented.mcp.json")
+	for _, needle := range []string{"//", "/*", ",\n    },"} {
+		if !strings.Contains(string(commented), needle) {
+			t.Fatalf("the needle: %q is not in the commented fixture, so it proves nothing", needle)
 		}
 	}
-	want := "    fetch:\n      infra:\n        stdio_command:\n          - \"uvx\"\n          - \"mcp-server-fetch\"\n" +
+	rw, _ := catalogFolderImportWorkspace(t)
+	// drafts imports fixture as .vscode/mcp.json naming format and returns each
+	// drafted file's path and content, in the importer's order.
+	drafts := func(fixture, format string) []string {
+		t.Helper()
+		path := importopstest.WriteSource(t, filepath.Join(t.TempDir(), ".vscode", "mcp.json"),
+			string(readMCPFixture(t, fixture)))
+		res, err := importDirectory(t, rw, path, ".vscode/mcp.json", format)
+		if err != nil || res.Halted() || res.Format != "mcp" {
+			t.Fatalf("%s naming the format %q was not drafted as mcp: %v %q %+v", fixture, format, err, res.Format,
+				res.Diagnostics)
+		}
+		var files []string
+		for _, f := range res.Files {
+			files = append(files, f.Path+"\n"+f.Content)
+		}
+		return files
+	}
+	want := drafts("vscode-uncommented.mcp.json", "")
+	for _, format := range []string{"", "mcp"} {
+		if got := drafts("vscode-commented.mcp.json", format); !slices.Equal(got, want) {
+			t.Errorf("naming the format %q, the commented configuration drafts\n%s\nand its copy without comments\n%s",
+				format, strings.Join(got, "\n"), strings.Join(want, "\n"))
+		}
+	}
+	release := strings.Join(want, "\n")
+	fetch := "    fetch:\n      infra:\n        stdio_command:\n          - \"uvx\"\n          - \"mcp-server-fetch\"\n" +
 		"          - \"--user-agent=https://example.com//agent\"\n        stdio_runtime: pypi\n"
-	if !strings.Contains(release, want) {
-		t.Errorf("the drafted Release does not hold\n%s\nin\n%s", want, release)
+	if !strings.Contains(release, fetch) {
+		t.Errorf("the drafted Release does not hold\n%s\nin\n%s", fetch, release)
+	}
+
+	claude := importopstest.WriteSource(t, filepath.Join(t.TempDir(), ".mcp.json"),
+		"{\"mcpServers\": {\n  // a comment\n  \"x\": {\"command\": \"npx\"}}}\n")
+	_, err := importDirectory(t, rw, claude, ".mcp.json", "")
+	var undetected *UndetectedFormatError
+	if !errors.As(err, &undetected) {
+		t.Errorf("a commented .mcp.json naming no format was not refused as unrecognised: %v", err)
+	}
+	res, err := importDirectory(t, rw, claude, ".mcp.json", "mcp")
+	if err != nil {
+		t.Fatalf("a commented .mcp.json naming its format was refused before the importer ran: %v", err)
+	}
+	failed := diagnosticsCoded(res.Diagnostics, "parse-failed")
+	if !res.Halted() || len(failed) != 1 || !strings.Contains(failed[0], "as mcp: json parse: invalid character '/'") {
+		t.Errorf("a commented .mcp.json naming its format reported parse-failed %q, want the JSON parser's reason",
+			failed)
 	}
 }
 

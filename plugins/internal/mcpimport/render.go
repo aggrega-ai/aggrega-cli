@@ -43,8 +43,8 @@ func renderAggregate(name string, servers []server) string {
 // renderRelease writes the drafted Release, named name and deploying the
 // Aggregate of that name: for each server, under its key, the infrastructure the
 // source states and the server_env attachment carrying its environment, with a
-// comment above it naming what the draft leaves for the Release and what it does
-// not carry. The Release's environment and its Manifest are left unset, each
+// comment above it naming what the draft leaves for the Release, what it does
+// not carry and the headers the server is sent. The Release's environment and its Manifest are left unset, each
 // named in a comment where it belongs.
 func renderRelease(name string, servers []server) string {
 	var b strings.Builder
@@ -85,7 +85,7 @@ func writeServer(b *strings.Builder, s server) {
 	default:
 		left = append(left, "infra.stdio_runtime, since the command names no launcher a bridge image carries")
 	}
-	var entries []envEntry
+	var entries []namedValue
 	for _, e := range s.env {
 		switch {
 		case e.value != nil && e.value.reference:
@@ -109,14 +109,12 @@ func writeServer(b *strings.Builder, s server) {
 		b.WriteString("    # Not carried, since no infrastructure key of " + Component + " takes it: " +
 			commentList(s.notCarried) + ".\n")
 	}
-	switch len(s.headers) {
-	case 0:
-	case 1:
-		b.WriteString("    # The source sends this server the header " + commentText(s.headers[0]) + ". Its value is not " +
-			"written: a remote server's credential is held by each consumer, on its connection to the tool.\n")
-	default:
-		b.WriteString("    # The source sends this server the headers " + commentList(s.headers) + ". Their values are " +
-			"not written: a remote server's credential is held by each consumer, on its connection to the tool.\n")
+	if len(s.headers) > 0 {
+		b.WriteString("    # The headers the source sends this server, which no infrastructure key of " + Component +
+			" takes, since a remote server's credential is held by each consumer, on its connection to the tool:\n")
+		for _, h := range s.headers {
+			b.WriteString("    #   - " + headerLine(h) + "\n")
+		}
 	}
 	for _, n := range s.notes {
 		b.WriteString("    # " + n + "\n")
@@ -161,6 +159,24 @@ func writeServer(b *strings.Builder, s server) {
 			b.WriteString("                value: " + yamlString(e.value.text) + "\n")
 		}
 	}
+}
+
+// headerLine writes one header a server is sent, for the comment above its
+// entry: its name and its value as written, as a double-quoted scalar reading
+// back as exactly the source's text; for a value that is one variable reference,
+// the reference it reads from; for a value the empty_credentials setting leaves
+// out, or one the source does not write, its name alone, saying why.
+func headerLine(h namedValue) string {
+	name := commentText(h.name)
+	switch {
+	case h.emptied:
+		return name + ", its value left out, as the empty_credentials setting asks"
+	case h.value == nil:
+		return name + ", with no value, since " + h.hint
+	case h.value.reference:
+		return name + ", its value read from " + commentText(h.value.text)
+	}
+	return name + ": " + yamlString(h.value.text)
 }
 
 // Every value read from a source is written through the drafts' shared writers:
