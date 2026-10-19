@@ -34,17 +34,24 @@ const importToolName = "import"
 // surface, so it is a request field rather than a second tool and it defaults
 // to writing — the operation's product is a set of files.
 //
-// 🔴 There is deliberately NO argument naming the directory the drafts land in,
-// and its absence is a design choice rather than a bound this surface could not
-// lift. The workspace a call resolves is already settled before the importer
-// runs, a path reaching outside it is already refused, and a second way to say
-// where files go would only add a way to get the destination wrong. The drafts
-// land beneath that workspace's root, which is where the command writes them too
-// when it is given no destination. A caller that wants another destination names
-// one to the command with its --output-dir, which the command's generated tool
-// carries as an argument over the process's own streams.
+// OutputDir names the directory the drafts land in, on the terms the command's
+// --output-dir and the editor session's outputDir take one: optional, and absent
+// meaning the root of the workspace the call resolved, the default the shared
+// import states once for every surface, so this tool states none of its own.
+// 🔴 A value is resolved by the one path helper every argument here passes
+// through, so its reach is the transport's rather than this argument's: a caller
+// reaching a listener names a directory inside the served workspace, and a client
+// that launched this process names one as it names every path, outside the
+// workspace included — where what is written beneath it is held to that
+// directory, as the command holds what its --output-dir names.
 type importArgs struct {
 	Source string `json:"source"`
+
+	// OutputDir is a pointer for the reason Format is one: absent hands the
+	// import no destination, while a value sent blank is refused rather than
+	// resolved, because the path helper reads an empty path as the workspace root
+	// and a blank sent value would then be an argument quietly substituted.
+	OutputDir *string `json:"output_dir"`
 
 	// Format is a pointer so that a value a caller sent is distinguishable from
 	// one it left out. Absent means the format is recognised by the signatures the
@@ -178,20 +185,19 @@ type importDecisionChoice struct {
 //
 // OutputDir is the directory the drafted paths are relative to, exactly as the
 // layer reports it, under both deliveries — a dry run writes nothing, but each
-// path it hands back is still relative to it. On this tool it is always the
-// root of the workspace the call resolved, because this surface hands the layer
-// no destination and the layer writes beneath the workspace root when none is
-// named, so it names nothing WorkspaceRoot does not already name, on either
-// transport. It is carried all the same because it is the one fact the layer
-// reports about where an import went and every other surface calling the layer
-// hands it on: a caller reading it learns where the drafts are, and no argument
-// here lets it choose.
+// path it hands back is still relative to it. It is the directory the call's
+// output_dir named, or, where it named none, the root of the workspace the call
+// resolved, because the layer writes beneath that root when it is handed no
+// destination. It is read off the layer's result rather than off the argument,
+// so it reports the directory the import actually used.
 //
-// Both are the workspace root, a directory on this host, so both are told the
-// way every location here is: for a caller reaching a listener each is absent and
+// Both are directories on this host, so both are told the way every location
+// here is: for a caller reaching a listener the workspace root is absent and
 // marked by the withheld flag beside it, which is omitted where nothing was kept
-// back. That caller already has the coordinate the drafts are in, because every
-// drafted path is relative to the root it names its own arguments against.
+// back, and a directory inside that workspace is told by its name relative to the
+// root — so output_dir is kept back and marked exactly when it is the root. That
+// caller already has the coordinate the drafts are in either way, because it
+// names its own arguments against that root.
 //
 // A diagnostic's message is prose the importer composed, and is told the same way.
 //
@@ -243,11 +249,16 @@ var importToolSpec = toolSpec{
 		"the importer as exactly the files of it the importer's declared file patterns select, each named by its " +
 		"path inside the directory: an importer declaring no file patterns refuses a directory, and a link among " +
 		"the files it would read, or to a directory, that leads out of it is refused before anything is read. " +
-		"A drafted file lands at a path relative to the workspace root, which is also the coordinate " +
-		"the other tools here report a file under, and THERE IS NO ARGUMENT NAMING A DESTINATION — the drafts " +
-		"go into the workspace the call resolved, and nowhere else. The answer names that directory as " +
-		"`output_dir`, the one every drafted path is relative to, whether the file was written or handed back: " +
-		"it reports where the drafts went and chooses nothing. The importer is one this workspace's catalog " +
+		"Send `output_dir` to name the directory the drafts go in, relative to the workspace root or absolute, " +
+		"as every path here is named; leave it out and they go beneath the workspace root, where the command " +
+		"writes them when it is given no --output-dir. Over HTTP it must lie inside the workspace this server " +
+		"serves: a value climbing out of it, an absolute location outside it, or one leading out of it through a " +
+		"link is refused naming `output_dir`, and nothing is read or written. Over standard input and output it " +
+		"is taken as named, as every path there is, a directory outside the workspace included, and what is " +
+		"written is held, with its links resolved, to the workspace — or, for a directory named outside it, to " +
+		"that directory — as the command holds what its --output-dir names, so a link leading out is refused " +
+		"with nothing written. The answer names the directory as `output_dir`, the one every drafted path is " +
+		"relative to, whether the file was written or handed back. The importer is one this workspace's catalog " +
 		"holds or one of the compiler's core importers, which serve their formats in every workspace; a format " +
 		"no importer advertises is refused naming the capability no plugin advertises. A core importer this " +
 		"server's machine does not hold yet is fetched by the first import that needs it, from the workspace's " +
@@ -282,7 +293,7 @@ var importToolSpec = toolSpec{
 		"drafts, `.aggrega-import.json`, the record of what it wrote — each drafted file, and each key of a " +
 		"drafted Aggregate at every depth, with a digest of its text — and `dry_run` hands it back among the " +
 		"drafts. A call whose drafts would be written over an Aggregate " +
-		"already in the workspace is refused, naming it, and nothing is written — under `dry_run` too — because " +
+		"already in the output directory is refused, naming it, and nothing is written — under `dry_run` too — because " +
 		"an Aggregate is the document an author goes on editing once it is drafted; every other file already at " +
 		"a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
 		"source instead, changing only what the import wrote: a part the source left alone stays as it is on " +
@@ -299,8 +310,9 @@ var importToolSpec = toolSpec{
 		"starting point an author owns and goes on editing; whether what they say is admissible is what " +
 		"validate answers, not this.",
 	listenerNote: "You did not start this server, so you are not told where its workspace sits on its host: " +
-		"`output_dir` is absent and marked `output_dir_withheld`, and so is the answer's workspace root. Every " +
-		"drafted path is still relative to that root, the one your own paths are named against.",
+		"the answer's workspace root is absent and marked as withheld, and so is `output_dir`, marked " +
+		"`output_dir_withheld`, where the drafts went to that root. A directory you named in `output_dir` is " +
+		"told back by its name relative to that root, the one your own paths are named against.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -318,6 +330,11 @@ var importToolSpec = toolSpec{
       "type": "string",
       "minLength": 1,
       "description": "A provider capability, such as compose or helm — the word a Recipe's spec.capability binds to — to draft a Manifest for beside the importer's drafts, mapping each drafted component type to the one Recipe of that capability the workspace's catalog offers for it and pointing the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Leave it out and no Manifest is drafted."
+    },
+    "output_dir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The directory the drafts go in, relative to the workspace root or absolute. Leave it out and they go beneath the workspace root. Over HTTP it must lie inside the workspace this server serves; over standard input and output a directory outside the workspace is drafted into, and what is written beneath it is held to it."
     },
     "dry_run": {
       "type": "boolean",
@@ -368,6 +385,17 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 				"drafted; an empty value is neither, so nothing was read and nothing was written.")
 		}
 	}
+	// A destination sent blank is refused for the reason a blank format is: the
+	// path helper reads an empty path as the workspace root, so resolving it would
+	// substitute the default for a value the caller wrote.
+	destination := ""
+	if a.OutputDir != nil {
+		if destination = strings.TrimSpace(*a.OutputDir); destination == "" {
+			return errorResult(importToolName + " was sent a blank 'output_dir'. Name the directory the drafts go " +
+				"in, or leave 'output_dir' out altogether and they go beneath the workspace root; a blank value is " +
+				"neither, so nothing was read and nothing was written.")
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return errorResult(explainToolError("Could not draft anything from the source.", err, ""))
 	}
@@ -395,13 +423,22 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return errorResult(refusal)
 	}
 
+	// The destination, where one was sent, is resolved by the same helper and
+	// before the import opens anything, so a destination this transport does not
+	// let the call name refuses the call with nothing read and nothing written.
+	// Where none was sent, none is handed: the layer writes beneath the root of
+	// the workspace it is handed — the workspace this call resolved — which is
+	// also where the command writes when it is given none. What is written beneath
+	// a named directory is held by the layer, with its links resolved, to the root
+	// that directory picks, as the command's writes are.
+	outputDir := ""
+	if destination != "" {
+		if outputDir, refusal = tw.workspacePath(importToolName, "output_dir", destination); refusal != "" {
+			return errorResult(refusal)
+		}
+	}
+
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
-	// No destination is handed, and that is the whole of what this surface
-	// decides about one: the layer writes beneath the root of the workspace it is
-	// handed when none is named — the workspace this call resolved — which is
-	// also where the command writes when it is given none. So the two land the
-	// same drafts in one place, and no argument here names another.
-	//
 	// The format the caller named, or none, is handed on as it is: the layer
 	// settles it, recognising an unnamed one from the signatures of the importers
 	// in the workspace's catalog, and a source it cannot settle is refused here in
@@ -412,6 +449,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		SourceName:    source,
 		Format:        named,
 		Target:        target,
+		OutputDir:     outputDir,
 		Sync:          a.Sync,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
@@ -429,10 +467,10 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		return errorResult(refusal)
 	}
 	if existing := (*importops.ExistingAggregateError)(nil); errors.As(err, &existing) {
-		return errorResult(importExistingAggregateRefusal(existing))
+		return tw.answer(errorResult(importExistingAggregateRefusal(tw, existing)))
 	}
 	if conflicts := (*importops.SyncConflictError)(nil); errors.As(err, &conflicts) {
-		return errorResult(importConflictRefusal(conflicts))
+		return tw.answer(errorResult(importConflictRefusal(tw, conflicts)))
 	}
 	if record := (*importops.ImportRecordError)(nil); errors.As(err, &record) {
 		return tw.answer(errorResult(importRecordRefusal(tw, record)))
@@ -553,18 +591,31 @@ func (tw *toolWorkspace) importLinkRefusal(source string, err error) (string, bo
 	return b.String(), true
 }
 
-// importExistingAggregateRefusal composes this surface's sentence for a call
-// whose drafts would be written over an Aggregate already in the workspace,
-// naming the argument a caller here sends rather than the command line's flag.
+// importOutputDirWords names, for a sentence this surface composes, the
+// directory an import's drafted paths are relative to, as the caller of this
+// call may be told it: in full over the process's own streams, and over a
+// listener by its name relative to the workspace root, or as the served
+// workspace where it is that root.
 //
-// The Aggregate is named by its drafted path alone. This tool writes beneath the
-// root of the workspace the call resolved, so that path is relative to the root a
-// caller names its own paths against, and the root itself — a place on this host
-// — is not named.
-func importExistingAggregateRefusal(e *importops.ExistingAggregateError) string {
-	return fmt.Sprintf("%s would write the draft %s over the Aggregate already at that path in the workspace, which "+
+// The directory is named beside a drafted path rather than joined to it, so the
+// one place a location is composed from a caller's value stays the path helper.
+func (tw *toolWorkspace) importOutputDirWords(outputDir string) string {
+	told, _ := tw.reportedLocationField(outputDir)
+	return workspaceRootWords(told)
+}
+
+// importExistingAggregateRefusal composes this surface's sentence for a call
+// whose drafts would be written over an Aggregate already in the output
+// directory, naming the arguments a caller here sends rather than the command
+// line's flags.
+//
+// The Aggregate is named by its drafted path and the directory that path is
+// relative to, told as every location in an answer here is told.
+func importExistingAggregateRefusal(tw *toolWorkspace, e *importops.ExistingAggregateError) string {
+	return fmt.Sprintf("%s would write the draft %s over the Aggregate already at that path beneath %s, which "+
 		"an author may have edited since it was drafted, so nothing was written. Send 'sync' to ask for it to be "+
-		"brought up to date with the source.", importToolName, strconv.Quote(e.Path))
+		"brought up to date with the source, or name another 'output_dir' to draft beneath.", importToolName,
+		strconv.Quote(e.Path), tw.importOutputDirWords(e.OutputDir))
 }
 
 // importConflictRefusal composes this surface's sentence for a sync that would
@@ -572,13 +623,13 @@ func importExistingAggregateRefusal(e *importops.ExistingAggregateError) string 
 // shared wording ([importops.ConflictLine]) and the argument a caller here sent
 // rather than the command line's flag.
 //
-// Each part is named by its drafted path, relative to the workspace root, and
-// its keys; the root itself is not named.
-func importConflictRefusal(e *importops.SyncConflictError) string {
+// Each part is named by its drafted path and its keys, beneath the output
+// directory the sentence names, told as every location in an answer here is.
+func importConflictRefusal(tw *toolWorkspace, e *importops.SyncConflictError) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s was sent 'sync', and bringing the drafts up to date with the source would change or remove "+
-		"what an author wrote, so nothing was written. Reconcile each part below by hand, or put back what the "+
-		"import wrote there, and call again:", importToolName)
+	fmt.Fprintf(&b, "%s was sent 'sync', and bringing the drafts beneath %s up to date with the source would change "+
+		"or remove what an author wrote, so nothing was written. Reconcile each part below by hand, or put back what "+
+		"the import wrote there, and call again:", importToolName, tw.importOutputDirWords(e.OutputDir))
 	for _, c := range e.Conflicts {
 		b.WriteString("\n  ")
 		b.WriteString(importops.ConflictLine(c))
@@ -596,9 +647,10 @@ func importRecordRefusal(tw *toolWorkspace, e *importops.ImportRecordError) stri
 		return fmt.Sprintf("%s was sent 'sync', and the record of what an import wrote, %s, cannot be read: %s. "+
 			"Nothing was written.", importToolName, strconv.Quote(e.Record), tw.reportedText(e.Err.Error()))
 	}
-	return fmt.Sprintf("%s was sent 'sync', and no record of what an import wrote lists the Aggregate at %s (%s, "+
-		"which every import writes beside its drafts), so its parts cannot be told from parts an author wrote. "+
-		"Nothing was written.", importToolName, strconv.Quote(e.Aggregate), strconv.Quote(e.Record))
+	return fmt.Sprintf("%s was sent 'sync', and no record of what an import wrote lists the Aggregate at %s beneath "+
+		"%s (%s, which every import writes beside its drafts), so its parts cannot be told from parts an author "+
+		"wrote. Nothing was written.", importToolName, strconv.Quote(e.Aggregate), tw.importOutputDirWords(e.OutputDir),
+		strconv.Quote(e.Record))
 }
 
 // formatChoices names the formats a caller may send, or says the catalog
@@ -711,9 +763,10 @@ func renderImportText(p importPayload, res importops.Result, delivery authoredco
 	case len(p.Written) == 0:
 		b.WriteString("  the importer drafted no files, so nothing was written\n")
 	default:
-		// On this tool the directory the paths are relative to is always the
-		// workspace root, so where it is kept back it is named as the served
-		// workspace — the root the caller names its own paths against.
+		// The directory the paths are relative to is the one the answer names. It
+		// is kept back only where it is the workspace root, so where it is kept
+		// back it is named as the served workspace — the root the caller names its
+		// own paths against.
 		if len(p.Written) > 0 {
 			b.WriteString("  wrote " + strings.Join(p.Written, ", ") + ", relative to " +
 				workspaceRootWords(p.OutputDir) + "\n")

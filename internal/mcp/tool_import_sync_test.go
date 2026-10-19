@@ -65,22 +65,43 @@ func TestTheToolsTextNamesTheSyncByWhatItDid(t *testing.T) {
 }
 
 // TestTheToolRewordsASyncConflictForItsCaller pins the conflict refusal: the
-// argument a caller here sent, each part in the shared wording, and no flag of
-// the command line's.
+// argument a caller here sent, each part in the shared wording, the directory the
+// parts are relative to as this caller is told it, and no flag of the command
+// line's. A caller at the keyboard is told the directory in full; a caller
+// reaching a listener is told a directory inside the served workspace by its name
+// relative to the root, and the root itself as the served workspace.
 func TestTheToolRewordsASyncConflictForItsCaller(t *testing.T) {
 	t.Parallel()
 	conflict := importops.SyncConflict{File: "aggregate.yaml", Key: []string{"spec", "components", "a", "type"},
 		Reason: "edited since the import wrote it, and the source changes it"}
-	text := importConflictRefusal(&importops.SyncConflictError{OutputDir: "/srv/ws",
-		Conflicts: []importops.SyncConflict{conflict}})
-	for _, want := range []string{"'sync'", "nothing was written", "\n  " + importops.ConflictLine(conflict)} {
-		if !strings.Contains(text, want) {
-			t.Errorf("the refusal does not carry %q:\n%s", want, text)
-		}
-	}
-	for _, unwanted := range []string{"--sync", "/srv/ws"} {
-		if strings.Contains(text, unwanted) {
-			t.Errorf("the refusal names %q, which a caller here neither sends nor is told:\n%s", unwanted, text)
-		}
+	for _, tc := range []struct {
+		name      string
+		transport transportMode
+		outputDir string
+		names     string
+		keptBack  []string
+	}{
+		{"at the keyboard, the root", transportStdio, "/srv/ws", "beneath /srv/ws up to date", nil},
+		{"over a listener, the root", transportHTTP, "/srv/ws", "beneath " + servedWorkspaceWords + " up to date",
+			[]string{"/srv/ws"}},
+		{"over a listener, a directory inside the root", transportHTTP, "/srv/ws/drafts", "beneath drafts up to date",
+			[]string{"/srv/ws"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tw := &toolWorkspace{root: "/srv/ws", transport: tc.transport}
+			text := importConflictRefusal(tw, &importops.SyncConflictError{OutputDir: tc.outputDir,
+				Conflicts: []importops.SyncConflict{conflict}})
+			for _, want := range []string{"'sync'", "nothing was written", tc.names,
+				"\n  " + importops.ConflictLine(conflict)} {
+				if !strings.Contains(text, want) {
+					t.Errorf("the refusal does not carry %q:\n%s", want, text)
+				}
+			}
+			for _, unwanted := range append([]string{"--sync"}, tc.keptBack...) {
+				if strings.Contains(text, unwanted) {
+					t.Errorf("the refusal names %q, which this caller neither sends nor is told:\n%s", unwanted, text)
+				}
+			}
+		})
 	}
 }

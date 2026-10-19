@@ -155,20 +155,17 @@ func TestImportStillConfinesItsDestination(t *testing.T) {
 	}
 }
 
-// TestImportRefusesARequestNamingNoOutputDirectory drives the required-field
-// refusals on aggrega/import, on THIS surface's spellings.
+// TestImportRefusesARequestNamingNoSource drives the one required-field refusal
+// on aggrega/import, on THIS surface's spelling.
 //
-// outputDir is a required request field rather than one this surface resolves a
-// default for, and the reporting row is the one worth stating: reporting writes
-// nothing, which makes it the case most easily mistaken for one that needs no
-// destination. It still needs it, because each drafted file names the path it is
-// FOR and that path is relative to the directory the request named — so a report
-// without it would answer with drafts belonging to nowhere. The sibling
-// generation method carries the same contract for the same reason.
+// source is the one field a request must carry. outputDir is optional, as the
+// command line's --output-dir is, so a request naming no destination is not
+// among these rows; the positive control below holds that it passes the field
+// gate.
 //
 // The refusals name request fields and never a command-line flag: a caller here
 // cannot act on a flag it has no way to send.
-func TestImportRefusesARequestNamingNoOutputDirectory(t *testing.T) {
+func TestImportRefusesARequestNamingNoSource(t *testing.T) {
 	t.Parallel()
 	srv := importFixture(t)
 
@@ -177,11 +174,6 @@ func TestImportRefusesARequestNamingNoOutputDirectory(t *testing.T) {
 		params map[string]any
 		want   string
 	}{
-		{"no output directory", map[string]any{"source": "flow.json"}, "outputDir is required"},
-		{"reporting still needs an output directory",
-			map[string]any{"source": "flow.json", "dryRun": true}, "outputDir is required"},
-		{"reporting with a format still needs an output directory",
-			map[string]any{"source": "flow.json", "format": "demo", "dryRun": true}, "outputDir is required"},
 		{"no source", map[string]any{"outputDir": "drafts"}, "source is required"},
 		{"neither", map[string]any{}, "source is required"},
 	} {
@@ -204,9 +196,11 @@ func TestImportRefusesARequestNamingNoOutputDirectory(t *testing.T) {
 	}
 }
 
-// TestImportPassesTheRequiredFieldGateWhenBothFieldsAreSent is the positive
+// TestImportPassesTheRequiredFieldGateWithOrWithoutADestination is the positive
 // control for the refusals above, and it is what keeps them from passing on a
-// handler that refuses everything.
+// handler that refuses everything. Its rows naming no outputDir are the session's
+// half of the one destination rule: a destination is optional here, under either
+// delivery, as it is on the command line.
 //
 // It asserts only that execution reached PAST the required-field gate, which is
 // this test's subject: the fixture wires no plugin resolver, so the request
@@ -214,21 +208,38 @@ func TestImportRefusesARequestNamingNoOutputDirectory(t *testing.T) {
 // different code and a message naming something other than a missing field.
 // What the write itself produces is proven where the write lives — against the
 // real importer guest — rather than here.
-func TestImportPassesTheRequiredFieldGateWhenBothFieldsAreSent(t *testing.T) {
+//
+// 🔴 PLANTED DEFECT: restore a refusal of an empty outputDir in dispatchImport
+// (internal/serve/import.go) ahead of the workspace check: the three rows naming
+// no destination redden as invalid params.
+func TestImportPassesTheRequiredFieldGateWithOrWithoutADestination(t *testing.T) {
 	t.Parallel()
 	srv := importFixture(t)
 
-	resp := callDaemonMethod(t, srv, "aggrega/import", map[string]any{
-		"source":    "flow.json",
-		"outputDir": "drafts",
-	})
-	if resp.Error == nil {
-		t.Fatal("the fixture wires no importer, so this request cannot have succeeded")
-	}
-	if resp.Error.Code == jsonRPCInvalidParams {
-		t.Fatalf("a request carrying both required fields was refused as invalid params: %q", resp.Error.Message)
-	}
-	if strings.Contains(resp.Error.Message, "is required") {
-		t.Fatalf("a request carrying both required fields drew a missing-field refusal: %q", resp.Error.Message)
+	for _, tc := range []struct {
+		name   string
+		params map[string]any
+	}{
+		{"a source and a destination", map[string]any{"source": "flow.json", "outputDir": "drafts"}},
+		{"a source naming no destination", map[string]any{"source": "flow.json"}},
+		{"a source reported rather than written, naming no destination",
+			map[string]any{"source": "flow.json", "dryRun": true}},
+		{"a source with a format, reported, naming no destination",
+			map[string]any{"source": "flow.json", "format": "demo", "dryRun": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := callDaemonMethod(t, srv, "aggrega/import", tc.params)
+			if resp.Error == nil {
+				t.Fatal("the fixture wires no importer, so this request cannot have succeeded")
+			}
+			if resp.Error.Code == jsonRPCInvalidParams {
+				t.Fatalf("a request carrying every required field was refused as invalid params: %q",
+					resp.Error.Message)
+			}
+			if strings.Contains(resp.Error.Message, "is required") {
+				t.Fatalf("a request carrying every required field drew a missing-field refusal: %q",
+					resp.Error.Message)
+			}
+		})
 	}
 }

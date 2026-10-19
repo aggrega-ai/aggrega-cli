@@ -297,21 +297,24 @@ var proseOnlyFailureReturns = map[string]int{
 	// code where the condition carries one, and carrying the validator's own
 	// sentence where the refusal is the schema's.
 	"tool_document_edit.go": 7,
-	// The foreign-description import. Six of these are decided before the shared
+	// The foreign-description import. Nine of these are decided before the shared
 	// import layer is entered at all: the refusal of a request naming no source,
-	// the refusal of one naming a blank format, the withdrawal a caller signals
-	// before any resolution, a session carrying no plugin resolution an importer
-	// could be loaded through, a workspace that could not be resolved, and a source
-	// path this session may not name. At each of them nothing has been translated
-	// and nothing has been written, so there is nothing in hand to carry.
+	// the refusal of one naming a blank format, the refusal of one naming an empty
+	// target, the refusal of one naming a blank output directory, the withdrawal a
+	// caller signals before any resolution, a session carrying no plugin
+	// resolution an importer could be loaded through, a workspace that could not
+	// be resolved, a source path this session may not name, and an output
+	// directory this session may not name. At each of them nothing has been
+	// translated and nothing has been written, so there is nothing in hand to
+	// carry.
 	//
-	// The seventh is a source that could not be read: the file named, a directory
+	// The tenth is a source that could not be read: the file named, a directory
 	// that could not be listed, or a file of one that an importer's file patterns
 	// select and that could not be opened. The shared layer raises it before any
 	// importer runs and hands back the zero result with it, so nothing has been
 	// translated or written.
 	//
-	// The eighth is a format the shared layer could not settle: a source no
+	// The eleventh is a format the shared layer could not settle: a source no
 	// importer's recognition signature matches, or one the signatures of more
 	// than one format match. The layer decides it before any importer is loaded,
 	// from the signatures the catalog's importers declare and the source parsed
@@ -319,7 +322,7 @@ var proseOnlyFailureReturns = map[string]int{
 	// nothing has been translated or written. The formats it offers, or the ones
 	// the source was recognised as, are carried in the refusal's own words.
 	//
-	// The ninth answers every other refusal of the shared layer, and that it
+	// The twelfth answers every other refusal of the shared layer, and that it
 	// loses nothing is established rather than assumed: every failing return of
 	// the shared import layer's entry point hands back the zero result, so no
 	// partially-populated result exists for it to carry. The one outcome that DOES
@@ -327,16 +330,28 @@ var proseOnlyFailureReturns = map[string]int{
 	// source — is not in this count at all: it takes the structured route and
 	// carries the files that reached disk, the drafts and every diagnostic.
 	//
-	// The tenth is a directory source holding a link that leads out of the
+	// The thirteenth is a directory source holding a link that leads out of the
 	// directory, answered to a caller reaching a listener; over the process's own
-	// streams the ninth answers it. The shared layer refuses it once the importer
+	// streams the twelfth answers it. The shared layer refuses it once the importer
 	// is resolved and before any file of the directory is read, and hands back the
 	// zero result with it, so nothing has been read through the link, translated
 	// or written, and there is nothing in hand to carry. It is a return of its own
-	// rather than the ninth's because the condition's own words name where the
+	// rather than the twelfth's because the condition's own words name where the
 	// link leads, a place on this host that caller is not told, so the refusal is
 	// worded for it instead and names the link by its place in the workspace.
-	"tool_import.go": 10,
+	//
+	// The last three are refusals of the shared layer that are returns of their
+	// own for the same kind of reason — each condition's own sentence names the
+	// command line's flags, so each is worded for this surface instead, naming the
+	// arguments a caller here sends and the output directory as this caller is
+	// told it: drafts that would be written over an Aggregate already in the output
+	// directory, a sync that would change or remove what an author wrote, and a
+	// sync the record beside the drafts cannot answer for. The layer decides each
+	// before anything is written and hands back the zero result with it, the
+	// conflict and the record from the sync's own entry, so nothing has been
+	// written and there is no draft in hand to carry; the parts in conflict are
+	// carried in the refusal's own words, every one of them.
+	"tool_import.go": 16,
 	// Position lookup, workspace description, the progressive surface, and the
 	// shared argument-decode helper: argument and context refusals. Position
 	// lookup carries two more, refusing a document path this session may not name

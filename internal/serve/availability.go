@@ -496,14 +496,11 @@ var operationAvailability = map[string]serveAvailability{
 	// runs under: a caller that sent it has asked for the drafts, exactly as a
 	// caller sending a build has asked for artifacts.
 	//
-	// It is the one writing method whose destination the CALLER names, and that is
-	// the property worth stating rather than leaving to be inferred. Every other
-	// write here lands somewhere the operation resolves — a configuration file, a
-	// lockfile, the output root a build derives from the session — while an import
-	// has no such place to derive: which directory a set of drafts belongs in is a
-	// decision only whoever asked for them can make, so the request names it, and
-	// a request naming none is refused rather than handed a directory this
-	// session chose.
+	// Its destination is the CALLER's to name, as it is on the command line, and
+	// that is the property worth stating rather than leaving to be inferred. A
+	// request naming none drafts beneath the workspace root, the default the
+	// import operation states for every surface, so this session chooses no
+	// directory of its own; a request naming one drafts there.
 	//
 	// Naming a destination is not a widening of what the daemon may reach.
 	// The directory resolves inside the workspace the session opened, like every

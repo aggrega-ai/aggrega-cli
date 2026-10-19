@@ -1404,6 +1404,9 @@ func TestAListenerRefusesAPathOutsideTheWorkspaceWithoutNamingAPlaceOnTheHost(t 
 			return map[string]any{"edit": "set-value", "file": p, "node": []string{"spec"}, "name": "x", "value": "y"}
 		}},
 		{"import", "source", func(p string) map[string]any { return map[string]any{"source": p} }},
+		{"import", "output_dir", func(p string) map[string]any {
+			return map[string]any{"source": "flow.json", "output_dir": p}
+		}},
 		{"gen-catalog", "output_dir", func(p string) map[string]any {
 			return map[string]any{"from_embedded": true, "output_dir": p, "overlay": "overlays-q7x3"}
 		}},

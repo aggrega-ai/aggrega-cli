@@ -29,18 +29,16 @@ import (
 // held to itself wherever it lies, so no link inside it is followed out of it.
 // outputDir is WRITTEN to and is resolved inside the workspace this session
 // opened, so the drafts land in a tree the session was opened over and no request
-// can name a destination of its own choosing.
+// can name a destination outside it.
 //
-// outputDir is required and is the caller's to name: this surface chooses no
-// destination on the caller's behalf, so an absent value is refused rather than
-// resolved to one. A relative value is resolved against the workspace root rather
-// than against a directory this process happens to be sitting in, so there is no
-// "here" an absent value could mean.
-//
-// It is required under both deliveries, and a dry run does not excuse it. Under
-// a dry run nothing is written, but each drafted file still names the path it is
-// FOR, and that path is relative to this directory — so a dry run without it
-// would answer with drafts belonging to nowhere.
+// outputDir is optional, as the command line's --output-dir is. An absent value
+// hands the import no destination, and the import drafts beneath the root of the
+// workspace this session opened — the default the operation states once for
+// every surface, so this one states none of its own. A relative value is resolved
+// against that root rather than against a directory this process happens to be
+// sitting in. Under a dry run nothing is written, and each drafted path is still
+// relative to the directory the answer names as outputDir, the one named or that
+// root.
 //
 // format names the source format explicitly. An absent value means the format is
 // recognised by the signatures the importers declare, the core importers' included,
@@ -195,9 +193,10 @@ type importResult struct {
 // build has asked for artifacts. What stays out of bounds is a write performed
 // while validating or inspecting, where nobody asked, and this is not that.
 //
-// 🔴 The destination is the caller's to name and is nonetheless confined. The
-// output directory resolves inside the workspace this session opened, and every
-// path the importer itself returns is required to stay under that resolved output
+// 🔴 The destination is the caller's to name, or to leave to the operation's
+// default, and is confined either way. A named output directory resolves inside
+// the workspace this session opened, an absent one is that workspace's root, and
+// every path the importer itself returns is required to stay under the output
 // directory — a scaffold path comes from the plugin, so it is untrusted, and the
 // operations layer refuses an escaping one before writing anything at all.
 //
@@ -230,17 +229,6 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 			"import: source is required and must name the file or the directory to convert, either as an "+
 				"absolute path or relative to the root of the workspace this session opened")
 	}
-	// outputDir is required under BOTH deliveries, and a non-writing one does not
-	// excuse it. Under that delivery nothing is written, but each drafted file
-	// still names the path it is FOR, and that path is relative to this directory
-	// — so a dry run without it would answer with drafts belonging to nowhere.
-	if params.OutputDir == "" {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"import: outputDir is required and must name the directory the drafted files go in, "+
-				"relative to the root of the workspace this session opened — the caller chooses "+
-				"where the drafts land and this surface picks no destination (under dryRun nothing "+
-				"is written, but the drafted paths are still relative to it)")
-	}
 	if s.resolvedWorkspace == nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,
 			"the daemon holds no resolved workspace to resolve an importer against")
@@ -255,9 +243,15 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
 	}
 
-	outputDir, err := s.workspacePath("outputDir", params.OutputDir)
-	if err != nil {
-		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
+	// An absent outputDir is handed on as none, and the import drafts beneath the
+	// workspace root, which is its default rather than this surface's. The
+	// resolver is asked only about a value that was sent: it refuses an empty one,
+	// and an empty one here is a request leaving the destination to that default.
+	outputDir := ""
+	if params.OutputDir != "" {
+		if outputDir, err = s.workspacePath("outputDir", params.OutputDir); err != nil {
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
+		}
 	}
 
 	// The format the request named, or none, is handed on as it is: the import

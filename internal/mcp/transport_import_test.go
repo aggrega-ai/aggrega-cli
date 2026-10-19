@@ -204,6 +204,88 @@ func TestTheImportToolResolvesItsSourceInsideTheServedWorkspace(t *testing.T) {
 	}
 }
 
+// TestTheImportToolHoldsItsDestinationInsideTheServedWorkspace is the destination
+// half of containment over the transport it bounds: output_dir passes through the
+// one path helper, so a caller reaching a listener names a directory inside the
+// served workspace and nothing beyond it.
+//
+// The control drafts into a directory not made yet inside the root and reads the
+// tree and the answer: the drafts land beneath it, and the answer tells the
+// directory by its name relative to the root while keeping the root itself back.
+// Each refused row names output_dir and the bound in words, names no place on the
+// host, and leaves the served root, the directory above it and the directory a
+// link leads to exactly as they were.
+//
+// 🔴 PLANTED DEFECT: read output_dir without the path helper — have importInvoke
+// (internal/mcp/tool_import.go) hand the layer the value joined onto tw.root
+// rather than asking tw.workspacePath — and the climbing row reddens: it is
+// admitted, and the drafts land in the directory above the served root.
+func TestTheImportToolHoldsItsDestinationInsideTheServedWorkspace(t *testing.T) {
+	pointImportSeamAtTheDemoGuest(t)
+	f := newScopeGridFixture(t, false)
+	importOverTheListener(t, f, "flow.json", readImportFixture(t, langflowFixture))
+	credential := f.grantOf(t, scopeWorkspaceWrite)
+	above := filepath.Dir(f.root)
+	linkedTo := t.TempDir()
+	linkLinkedDirs(t, linkedTo, filepath.Join(f.root, "shared"))
+
+	destination := func(dir string) map[string]any { return map[string]any{"source": "flow.json", "output_dir": dir} }
+
+	t.Run("a directory not made yet inside the served workspace is drafted into", func(t *testing.T) {
+		before := treeUnder(t, f.root)
+		p := importPayloadOf(t, toolResultOf(t, importToolName,
+			f.callTool(t, credential, importToolName, destination("drafts"))))
+		if p.OutputDir == nil || *p.OutputDir != "drafts" || p.OutputDirWithheld {
+			t.Errorf("the answer names output_dir %q (withheld=%v); want \"drafts\", told by its name relative to "+
+				"the served root", told(p.OutputDir), p.OutputDirWithheld)
+		}
+		if p.WorkspaceRoot != nil || !p.WorkspaceRootWithheld {
+			t.Errorf("the answer names the workspace root %q (withheld=%v); it is kept back and marked",
+				told(p.WorkspaceRoot), p.WorkspaceRootWithheld)
+		}
+		want := []string{"drafts/" + importops.RecordFileName, "drafts/langflow.yaml"}
+		if added := treeAdditions(before, treeUnder(t, f.root)); !slices.Equal(added, want) {
+			t.Errorf("the import put %v under the served root, want exactly %v", added, want)
+		}
+	})
+
+	for _, tc := range []struct {
+		scenario string
+		dir      string
+		// want is the fragment the refusal carries beyond the argument's name.
+		want string
+	}{
+		{"a value climbing out of the served root", "../elsewhere", "climbs above that root"},
+		{"an absolute location outside the served root", filepath.Join(t.TempDir(), "drafts"),
+			"must name a path inside the workspace this server serves"},
+		{"a value leading out of the served root through a link", "shared", "leads outside that root through a link"},
+		{"a directory not made yet beneath a link leading out", "shared/new", "leads outside that root through a link"},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			rootBefore, aboveBefore, linkedBefore := treeUnder(t, f.root), treeUnder(t, above), treeUnder(t, linkedTo)
+			res := toolResultOf(t, importToolName, f.callTool(t, credential, importToolName, destination(tc.dir)))
+			if !res.IsError {
+				t.Fatalf("output_dir %q was drafted into rather than refused: %s", tc.dir, res.Content[0].Text)
+			}
+			text := res.Content[0].Text
+			for _, fragment := range []string{"'output_dir'", tc.want} {
+				if !strings.Contains(text, fragment) {
+					t.Errorf("the refusal does not carry %q: %q", fragment, text)
+				}
+			}
+			for _, place := range []string{f.root, linkedTo} {
+				if strings.Contains(text, place) {
+					t.Errorf("the refusal names %s, a location on the host: %q", place, text)
+				}
+			}
+			if !slices.Equal(treeUnder(t, f.root), rootBefore) || !slices.Equal(treeUnder(t, above), aboveBefore) ||
+				!slices.Equal(treeUnder(t, linkedTo), linkedBefore) {
+				t.Errorf("a refused call wrote a file")
+			}
+		})
+	}
+}
+
 // importAttachmentEscapingTheRoot is a workspace whose attached importer is
 // configured to name its drafted file one level ABOVE the workspace root.
 //

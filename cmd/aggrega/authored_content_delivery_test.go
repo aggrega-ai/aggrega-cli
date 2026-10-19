@@ -34,6 +34,13 @@ import (
 // is the exact claim these tests exist to make. Directories are recorded too, so
 // a delivery that created an empty output directory is caught as well as one
 // that wrote into it.
+//
+// A symbolic link is recorded as a link, with the target it names, and never
+// followed: reading through a link to a directory would fail, and reading
+// through a link to a file would record the target's content under the link's
+// name. A write through a link therefore shows where it lands — on the target,
+// which a fixture places inside root so it is fingerprinted as the file it is —
+// and a link that was replaced or retargeted shows as the link modified.
 func treeFingerprint(t *testing.T, root string) map[string]string {
 	t.Helper()
 	prints := map[string]string{}
@@ -44,6 +51,14 @@ func treeFingerprint(t *testing.T, root string) map[string]string {
 		rel, rerr := filepath.Rel(root, path)
 		if rerr != nil {
 			return rerr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			target, lerr := os.Readlink(path)
+			if lerr != nil {
+				return lerr
+			}
+			prints[rel] = "link -> " + target
+			return nil
 		}
 		if d.IsDir() {
 			prints[rel] = "dir"

@@ -566,15 +566,25 @@ func TestTheImportToolRefusesWhenTheSessionCarriesNoPluginResolution(t *testing.
 		map[string]any{"source": okRel}))
 }
 
-// TestTheImportToolDeclaresNoArgumentNamingADestination is the decision this
-// item settles, asserted at the surface a caller reads.
+// TestTheImportToolTakesOneOptionalDestination is the destination rule this tool
+// shares with the command's --output-dir and the editor session's outputDir,
+// asserted over the process's own streams at the surface a caller reads.
 //
-// It is asserted two ways, because either alone would pass over the defect. The
-// declared schema is what a caller composes a call from, so a destination
-// argument appearing there would be offered whether or not anything read it; and
-// the tree is what a caller inspects afterwards, so a value sent anyway must
-// change nothing about where the drafts land.
-func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
+// It is asserted at the declared schema and at the tree, because either alone
+// would pass over a defect. The schema is what a caller composes a call from, so
+// it offers the one argument and no second spelling of it; the tree is what a
+// caller inspects afterwards, so each row reads where the drafts landed rather
+// than what the answer claimed. On this transport a directory is taken as named:
+// a relative one against the workspace root, and an absolute one outside the
+// workspace drafted into, as the command drafts into its --output-dir.
+//
+// 🔴 PLANTED DEFECTS:
+//   - drop OutputDir from the importops.Options literal in importInvoke
+//     (internal/mcp/tool_import.go): the two rows naming a directory redden,
+//     their drafts landing at the workspace root.
+//   - resolve a blank output_dir rather than refusing it (remove the blank
+//     check in importInvoke): the blank row reddens, drafting at the root.
+func TestTheImportToolTakesOneOptionalDestination(t *testing.T) {
 	spec, found := lookupTool(importToolName)
 	if !found {
 		t.Fatalf("no tool is registered as %q, so this assertion measures nothing", importToolName)
@@ -585,28 +595,89 @@ func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
 	if err := json.Unmarshal([]byte(spec.inputSchema), &declared); err != nil {
 		t.Fatalf("the declared schema does not parse: %v", err)
 	}
-	for _, name := range []string{"output_dir", "output", "destination", "dir", "directory", "target_dir"} {
+	if _, offered := declared.Properties["output_dir"]; !offered {
+		t.Errorf("the declared schema does not offer output_dir, so a caller cannot compose a call naming where " +
+			"the drafts go")
+	}
+	for _, name := range []string{"output", "outputDir", "destination", "dir", "directory", "target_dir"} {
 		if _, offered := declared.Properties[name]; offered {
-			t.Errorf("the declared schema offers %q, so a caller composes a call naming where the drafts go; "+
-				"this tool writes relative to the workspace the call resolved and names no destination", name)
+			t.Errorf("the declared schema offers %q beside output_dir, a second spelling of one destination", name)
 		}
 	}
 
 	pointImportSeamAtTheDemoGuest(t)
-	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
-	elsewhere := t.TempDir()
-	p := importToolPayload(t, callTool(t, importToolServer(t, root), importToolName,
-		map[string]any{"source": rel, "output_dir": elsewhere}))
+	for _, row := range []struct {
+		name string
+		// outputDir returns the value sent, given the root and a directory outside
+		// the workspace; nil sends none.
+		outputDir func(root, outside string) *string
+		// wantDir returns the directory the drafts must land beneath, or "" where
+		// the call must be refused with nothing written.
+		wantDir func(root, outside string) string
+	}{
+		{
+			name:      "naming no destination drafts beneath the workspace root",
+			outputDir: func(string, string) *string { return nil },
+			wantDir:   func(root, _ string) string { return root },
+		},
+		{
+			name:      "a relative destination resolves against the workspace root",
+			outputDir: func(string, string) *string { s := "drafts"; return &s },
+			wantDir:   func(root, _ string) string { return filepath.Join(root, "drafts") },
+		},
+		{
+			name:      "an absolute destination outside the workspace is drafted into",
+			outputDir: func(_, outside string) *string { return &outside },
+			wantDir:   func(_, outside string) string { return outside },
+		},
+		{
+			name:      "a blank destination is refused rather than read as none",
+			outputDir: func(string, string) *string { s := " "; return &s },
+			wantDir:   func(string, string) string { return "" },
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+			outside := t.TempDir()
+			rootBefore, outsideBefore := treeUnder(t, root), treeUnder(t, outside)
 
-	if told(p.WorkspaceRoot) != root {
-		t.Errorf("a value nothing declares moved the destination to %q; it is the resolved workspace %q",
-			told(p.WorkspaceRoot), root)
-	}
-	if _, err := os.Stat(filepath.Join(root, "langflow.yaml")); err != nil {
-		t.Errorf("the draft did not land under the resolved workspace: %v", err)
-	}
-	if left := treeUnder(t, elsewhere); len(left) != 0 {
-		t.Errorf("a value nothing declares put %v in a directory the call named", left)
+			args := map[string]any{"source": rel}
+			if sent := row.outputDir(root, outside); sent != nil {
+				args["output_dir"] = *sent
+			}
+			res := callTool(t, importToolServer(t, root), importToolName, args)
+
+			want := row.wantDir(root, outside)
+			if want == "" {
+				if !res.IsError {
+					t.Fatalf("a blank output_dir was answered rather than refused: %s", res.Content[0].Text)
+				}
+				if !strings.Contains(res.Content[0].Text, "'output_dir'") {
+					t.Errorf("the refusal does not name the argument to correct: %q", res.Content[0].Text)
+				}
+				if !slices.Equal(treeUnder(t, root), rootBefore) || !slices.Equal(treeUnder(t, outside), outsideBefore) {
+					t.Errorf("a refused call wrote a file")
+				}
+				return
+			}
+			p := importToolPayload(t, res)
+			if told(p.OutputDir) != want {
+				t.Errorf("the answer names output_dir %q; want %q", told(p.OutputDir), want)
+			}
+			if told(p.WorkspaceRoot) != root {
+				t.Errorf("the answer names workspace_root %q; want the resolved workspace %q", told(p.WorkspaceRoot), root)
+			}
+			body, err := os.ReadFile(filepath.Join(want, "langflow.yaml"))
+			if err != nil {
+				t.Fatalf("the draft is not beneath %s: %v", want, err)
+			}
+			if string(body) != importDemoEchoBody("langflow") {
+				t.Errorf("the draft carries %q, want %q", body, importDemoEchoBody("langflow"))
+			}
+			if want != outside && !slices.Equal(treeUnder(t, outside), outsideBefore) {
+				t.Errorf("a call drafting beneath %s wrote outside the workspace", want)
+			}
+		})
 	}
 }
 
@@ -625,7 +696,8 @@ func TestTheImportToolDeclaresNoArgumentNamingADestination(t *testing.T) {
 //
 // Over the process's own streams the value is also required to equal the
 // workspace root the same answer names. That is this tool's destination rule read
-// off its own answer — the drafts go into the workspace the call resolved. Over a
+// off its own answer — a call naming no output_dir drafts into the workspace the
+// call resolved. Over a
 // listener both are that root, a directory on the host such a caller is not told
 // about, so both are required to be absent and marked as kept back; the written
 // paths are then held against the served root, which is the coordinate that
@@ -723,8 +795,9 @@ func TestTheImportToolReportsTheDirectoryItsDraftsAreRelativeTo(t *testing.T) {
 							"workspace %q", outputDir, session.root)
 					}
 					if outputDir != told(answer.WorkspaceRoot) {
-						t.Errorf("output_dir %q differs from the workspace_root %q the same answer names; this tool "+
-							"drafts into the workspace the call resolved", outputDir, told(answer.WorkspaceRoot))
+						t.Errorf("output_dir %q differs from the workspace_root %q the same answer names; a call "+
+							"naming no output_dir drafts into the workspace the call resolved", outputDir,
+							told(answer.WorkspaceRoot))
 					}
 					if answer.OutputDirWithheld || answer.WorkspaceRootWithheld {
 						t.Errorf("over the process's own streams the answer marks a location as kept back: %s",
