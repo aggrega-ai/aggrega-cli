@@ -30,7 +30,6 @@ package importops
 import (
 	"context"
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -78,27 +77,7 @@ func crewaiWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.Res
 // its own, every file at its place in the project, and returns the directory.
 func crewaiProject(t *testing.T, project string) string {
 	t.Helper()
-	src := filepath.Join(crewaiFixtureDir, project)
-	dst := filepath.Join(t.TempDir(), project)
-	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		importopstest.WriteSource(t, filepath.Join(dst, rel), string(body))
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("lay the committed project %s down: %v", project, err)
-	}
-	return dst
+	return layFixtureDirectory(t, crewaiFixtureDir, project)
 }
 
 // writtenDirectoryImport imports the directory dir, named name, through rw,

@@ -9,11 +9,10 @@
 // graph, wired to the datastore its checkpointer keeps state in, and a Release
 // beside it carrying the environment the configuration states. The application's
 // code is never read, and of an environment file the configuration names only
-// the variables' names are.
+// the variables' names are, where the importer's with.sources hands it.
 //
 // The guest holds what the host reads off it: this descriptor, the signatures a
-// configuration and its environment files are recognised by, and the export
-// wiring. What it does with a source is the langgraphimport package
+// configuration is recognised by, and the export wiring. What it does with a source is the langgraphimport package
 // (plugins/internal/langgraphimport), which builds on the plugin kit's importer
 // package, github.com/aggrega-ai/aggrega-pdk-go/pkg/importer, for the settings,
 // the credential decision and the drafts' shared conventions.
@@ -45,8 +44,7 @@ import (
 // descriptor is the static describe() self-report: a v1alpha1 importer plugin
 // serving the langgraph format, whose import export imports the
 // aggrega_parse_source host function it uses to obtain each configuration's
-// tree, and the signatures a configuration and its environment files are
-// recognised by. The host reads this once at load, validates it, and
+// tree, and the signatures a configuration is recognised by. The host reads this once at load, validates it, and
 // cross-checks the declared host functions against the binary's imports and the
 // signatures against the ones the importer's Plugin entity records.
 func descriptor() aggrega.PluginDescriptor {
@@ -72,21 +70,20 @@ func descriptor() aggrega.PluginDescriptor {
 // A configuration is read as JSON with an object at graphs: under its default
 // name, langgraph.json, or, under any name, where its $schema names the
 // configuration's schema. The patterns are also what selects the files of a
-// directory the importer is handed, so the third signature names the environment
-// files a configuration's env may name, *.env — .env among them — and its two
-// predicates can never both hold: it recognises nothing, and exists so a
-// directory hands the importer an environment file to read the variables' names
-// of, which the importer never parses. The application's code is named by no
-// pattern, so it is never handed. The host evaluates the signatures without
-// knowing what LangGraph is.
+// directory the importer is handed, so a directory hands it langgraph.json and no
+// other file: the application's code is never handed, and neither is an
+// environment file. No pattern names an environment file, since recognition
+// reads every file any importer's patterns select, so one naming *.env would
+// have every directory import of every format open each environment file it
+// holds; an environment file reaches the importer only where the attachment's
+// with.sources hands it. The host evaluates the signatures without knowing what
+// LangGraph is.
 var detect = []aggrega.DetectSignature{
 	{Syntax: langgraphimport.Syntax, Files: []string{langgraphimport.ConfigFile},
 		Match: []aggrega.PathMatch{{Path: "graphs", Is: "object"}}},
 	{Syntax: langgraphimport.Syntax,
 		Match: []aggrega.PathMatch{{Path: "$schema", Is: "string", Equals: langgraphimport.SchemaURL},
 			{Path: "graphs", Is: "object"}}},
-	{Syntax: langgraphimport.Syntax, Files: []string{langgraphimport.EnvFiles},
-		Match: []aggrega.PathMatch{{Path: "graphs", Is: "present"}, {Path: "graphs", Is: "absent"}}},
 }
 
 //go:wasmexport describe

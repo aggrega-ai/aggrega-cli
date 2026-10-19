@@ -29,9 +29,9 @@
 // and the like — or the server inside it.
 //
 // The importer reads the configuration and nothing else. The application's code
-// is never among the sources: a directory is handed to the importer as the files
-// its signatures name, langgraph.json and the environment files named like
-// *.env, which a program's files are not. What the code does is the author's to
+// is never among the sources: a directory is handed to the importer as the file
+// its signatures name, langgraph.json, which a program's files are not, and no
+// environment file is handed with it. What the code does is the author's to
 // bring, in the image the Release runs.
 //
 // # What it drafts
@@ -82,9 +82,10 @@
 //
 // An env naming a file names a file the configuration only points at, which
 // commonly holds local secrets. Its variables' names are read, and its values
-// never: the file is read where the import is handed it — in a directory beside
-// the configuration, at the path the configuration names, or under the
-// importer's with.sources — and each line naming a variable gives its name
+// never: the file is read only where the importer's with.sources hands it, under
+// the last segment of the path the configuration names — a directory import
+// hands no environment file, and one the import is not handed is named as not
+// handed, with how to hand it — and each line naming a variable gives its name
 // alone; a line naming no variable is named by its number. No value of the file
 // reaches a draft, a decision or a diagnostic, whatever the setting says, so
 // each variable is left for the Release to supply.
@@ -115,9 +116,10 @@ const ConfigFile = "langgraph.json"
 // recognises a configuration under another name.
 const SchemaURL = "https://langgra.ph/schema.json"
 
-// EnvFiles is the pattern an environment file's name matches: the name the
-// importer's signatures hand a directory's environment files under, and the
-// name a source is told for one by. It matches .env itself.
+// EnvFiles is the pattern an environment file's name matches, which tells a
+// source the attachment's with.sources hands for one, so it is read for its
+// variables' names and never parsed. It matches .env itself. No signature names
+// it: a directory is never handed an environment file.
 const EnvFiles = "*.env"
 
 // Component is the catalog Component each graph is drafted as an instance of.

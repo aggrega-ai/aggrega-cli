@@ -71,9 +71,11 @@ func importSources(t *testing.T, settings string, sources ...aggrega.ImportSourc
 	return Import(in, hostParse(t))
 }
 
-// python and envfile are the committed applications' files as a directory import
-// hands them: the files the signatures name, by their names inside the
-// application, in name order — never the application's code.
+// python and envfile are the committed applications' files as an import hands
+// them: the configuration a directory hands, by its name inside the application —
+// never the application's code — and, for envfile, the local.env its
+// configuration names, as the attachment's with.sources hands it, under its base
+// name; a directory hands no environment file.
 func python(t *testing.T) []aggrega.ImportSource {
 	t.Helper()
 	return []aggrega.ImportSource{{Name: "langgraph.json", Bytes: fixture(t, "python/langgraph.json")}}
@@ -354,8 +356,8 @@ func TestTheInlineEnvironmentIsCarriedAsTheSettingSays(t *testing.T) {
 }
 
 // TestAnEnvironmentFileHasItsNamesReadAndNeverItsValues imports the envfile
-// application — its configuration and the local.env it names, as a directory
-// hands them — under every value of the empty_credentials setting, after a
+// application — its configuration and the local.env it names, handed as the
+// attachment's with.sources hands it — under every value of the empty_credentials setting, after a
 // needle proves each planted value is in local.env: the Release names the
 // variables the file names, in its order, with no value, and names the line
 // naming no variable by its number; the variable inside the value quoted across
@@ -415,13 +417,16 @@ func TestAnEnvironmentFileHasItsNamesReadAndNeverItsValues(t *testing.T) {
 // TestAnEnvironmentFileIsFoundWhereverTheImportHandsIt imports the envfile
 // application's configuration as a file — primary bytes, with no name — with
 // its local.env handed as a named source, as an attachment's with.sources hands
-// it; then with the configuration naming its file under a directory, as a
-// directory import hands both; then with the file not handed at all. The first
-// two read the file's names; the third names the file as not read and leaves its
-// variables for the Release. No value reaches the output in any of them.
+// it; then with the configuration naming its file under a directory and
+// with.sources handing it under its base name; then with the file under that
+// directory beside the configuration, as no import hands one, since a directory
+// hands no environment file; then with the file not handed at all. The first two
+// read the file's names; the last two name the file as not handed, say how to
+// hand it, and leave its variables for the Release. No value reaches the output
+// in any of them.
 //
 // 🔴 PLANTED DEFECT: in envSource (config.go), drop the base-name lookup: the
-// with.sources row names local.env as not handed.
+// with.sources rows name local.env as not handed.
 func TestAnEnvironmentFileIsFoundWhereverTheImportHandsIt(t *testing.T) {
 	t.Parallel()
 	config := fixture(t, "envfile/langgraph.json")
@@ -430,14 +435,18 @@ func TestAnEnvironmentFileIsFoundWhereverTheImportHandsIt(t *testing.T) {
 	for _, row := range []struct {
 		name string
 		in   aggrega.ImportInput
-		read string
+		// read is the source the file's names are read from; notHanded the path
+		// the Aggregate names as not handed, where read is empty.
+		read, notHanded string
 	}{
 		{"handed under with.sources", aggrega.ImportInput{Format: Format, Bytes: config,
-			Sources: []aggrega.ImportSource{{Name: "local.env", Bytes: env}}}, "local.env"},
-		{"handed beside the configuration in a directory", aggrega.ImportInput{Format: Format,
+			Sources: []aggrega.ImportSource{{Name: "local.env", Bytes: env}}}, "local.env", ""},
+		{"named under a directory, handed under with.sources", aggrega.ImportInput{Format: Format, Bytes: nested,
+			Sources: []aggrega.ImportSource{{Name: "local.env", Bytes: env}}}, "local.env", ""},
+		{"beside the configuration under a directory", aggrega.ImportInput{Format: Format,
 			Sources: []aggrega.ImportSource{{Name: "app/langgraph.json", Bytes: nested},
-				{Name: "app/settings/local.env", Bytes: env}}}, "app/settings/local.env"},
-		{"not handed", aggrega.ImportInput{Format: Format, Bytes: config}, ""},
+				{Name: "app/settings/local.env", Bytes: env}}}, "", "./settings/local.env"},
+		{"not handed", aggrega.ImportInput{Format: Format, Bytes: config}, "", "local.env"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -452,9 +461,10 @@ func TestAnEnvironmentFileIsFoundWhereverTheImportHandsIt(t *testing.T) {
 			release := files(out)["release.yaml"]
 			_, text := drafted(t, out)
 			if row.read == "" {
-				if !strings.Contains(text, "# Not read: the environment file local.env, which the import was not "+
-					"handed; its variables are left for the Release.\n") {
-					t.Errorf("the Aggregate does not name local.env as not handed:\n%s", text)
+				if !strings.Contains(text, "# Not read: the environment file "+row.notHanded+", which the import was "+
+					"not handed; its variables are left for the Release. Name the file under the LangGraph importer's "+
+					"with.sources to have its variables' names read.\n") {
+					t.Errorf("the Aggregate does not name %s as not handed, with how to hand it:\n%s", row.notHanded, text)
 				}
 				if strings.Contains(release, "TAVILY_API_KEY") {
 					t.Errorf("the Release names a variable of a file the import was not handed:\n%s", release)
@@ -470,8 +480,8 @@ func TestAnEnvironmentFileIsFoundWhereverTheImportHandsIt(t *testing.T) {
 }
 
 // TestAnEnvironmentFileNoConfigurationNamesIsNotRead imports the python
-// application, whose env is inline, with an environment file beside it, as a
-// directory hands one: the file is named as not read and none of its values or
+// application, whose env is inline, with an environment file the attachment's
+// with.sources hands: the file is named as not read and none of its values or
 // names reaches the output.
 func TestAnEnvironmentFileNoConfigurationNamesIsNotRead(t *testing.T) {
 	t.Parallel()

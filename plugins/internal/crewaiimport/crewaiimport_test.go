@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"text/template"
 
 	"go.yaml.in/yaml/v3"
 
@@ -430,17 +431,37 @@ func TestHowAnAgentsLLMIsWired(t *testing.T) {
 }
 
 // TestATextIsCarriedAsWrittenThroughTheTemplateReading drafts an agent whose role
-// holds two opening braces and a placeholder, and requires the drafted value, once
-// the Aggregate's text is read as a template reads it, to be the role as written.
+// holds two opening braces and a placeholder, and requires the drafted Aggregate to
+// read as YAML as drafted and, once its text is evaluated as a template — as the
+// compiler evaluates an Aggregate before reading it as YAML — to carry the role as
+// written.
+//
+// 🔴 PLANTED DEFECT: make EscapeTemplateText (aggrega-pdk/go/pkg/importer) write
+// {{"{{"}}: the double-quoted scalar escapes its quotes with backslashes, and the
+// template engine refuses the text.
 func TestATextIsCarriedAsWrittenThroughTheTemplateReading(t *testing.T) {
 	t.Parallel()
 	role := "Answer {{question}} about {topic}"
 	out := importSources("", aggrega.ImportSource{Name: "config/agents.yaml",
 		Bytes: []byte("a:\n  role: \"" + role + "\"\n  goal: g\n  backstory: b\n  llm: openai/gpt-4o\n")})
-	d, _ := drafted(t, out)
-	got, _ := d.Spec.Components["a"].Values["role"].(string)
-	if strings.ReplaceAll(got, `{{"{{"}}`, "{{") != role || !strings.Contains(got, `{{"{{"}}`) {
-		t.Errorf("the role is drafted as %q, want %q escaped for the template reading", got, role)
+	d, text := drafted(t, out)
+	if got, _ := d.Spec.Components["a"].Values["role"].(string); got == role {
+		t.Errorf("the role is drafted unescaped, %q, so the template reading would read its braces as an action", got)
+	}
+	tmpl, err := template.New("aggregate").Parse(text)
+	if err != nil {
+		t.Fatalf("the drafted Aggregate does not parse as a template: %v\n%s", err, text)
+	}
+	var evaluated strings.Builder
+	if err := tmpl.Execute(&evaluated, nil); err != nil {
+		t.Fatalf("the drafted Aggregate does not run as a template: %v\n%s", err, text)
+	}
+	var read draft
+	if err := yaml.Unmarshal([]byte(evaluated.String()), &read); err != nil {
+		t.Fatalf("the evaluated Aggregate does not read as YAML: %v\n%s", err, evaluated.String())
+	}
+	if got := read.Spec.Components["a"].Values["role"]; got != role {
+		t.Errorf("the role reads back as %#v once evaluated, want %q", got, role)
 	}
 }
 

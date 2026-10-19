@@ -1,0 +1,5 @@
+# A file of the application no agent configuration names, so the import hands it and reads nothing of it.
+week: 1
+topics:
+  - loops
+  - fractions

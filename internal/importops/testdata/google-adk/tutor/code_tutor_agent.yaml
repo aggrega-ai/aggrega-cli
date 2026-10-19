@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/google/adk-python/refs/heads/main/src/google/adk/agents/config_schemas/AgentConfig.json
+name: code_tutor_agent
+model: gemini-flash-latest
+description: Explains programming concepts and reviews code.
+instruction: |
+  You are a coding tutor. Explain each concept with a short example, and run a snippet
+  through the run_snippet tool before you claim what it prints.
+tools:
+  - name: tutor_tools.make_snippet_runner
+    args:
+      api_key: AIzaPlantedAdkToolArgNeedle4f2c9b71
+      sandbox: python3.12
+      timeout_seconds: 20

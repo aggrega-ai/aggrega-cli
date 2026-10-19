@@ -337,6 +337,8 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 			readImportFixture(t, crewaiCrewFixture), "crewai"},
 		{"a LangGraph application's configuration, told by its name and its graphs", "langgraph.json",
 			readImportFixture(t, langgraphFixture), "langgraph"},
+		{"a Google ADK root agent configuration, told by its name, its agent and its instruction", "root_agent.yaml",
+			readImportFixture(t, googleADKFixture), "google-adk"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)

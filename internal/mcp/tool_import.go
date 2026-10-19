@@ -296,7 +296,7 @@ var importToolSpec = toolSpec{
     "format": {
       "type": "string",
       "minLength": 1,
-      "description": "The source format, named outright — for example langflow, flowise, n8n, mcp, compose, dify, crewai or langgraph. Leave it out and the format is recognised by the signatures the importers declare, the workspace catalog's and the compiler's core importers' alike."
+      "description": "The source format, named outright — for example langflow, flowise, n8n, mcp, compose, dify, crewai, langgraph or google-adk. Leave it out and the format is recognised by the signatures the importers declare, the workspace catalog's and the compiler's core importers' alike."
     },
     "dry_run": {
       "type": "boolean",

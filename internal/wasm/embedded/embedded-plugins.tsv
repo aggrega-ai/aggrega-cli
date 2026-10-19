@@ -47,3 +47,4 @@ importer	compose	./plugins/compose-importer	go		no
 importer	dify	./plugins/dify-importer	go		no
 importer	crewai	./plugins/crewai-importer	go		no
 importer	langgraph	./plugins/langgraph-importer	go		no
+importer	google-adk	./plugins/google-adk-importer	go		no

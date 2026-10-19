@@ -18,4 +18,6 @@ be a secret is a key-shaped needle, never a real one.
   `local.env`, beside it. That file's values are needles the import must never
   carry: one plain, one after `export`, one quoted, one quoted across two lines
   whose second line reads like a variable of its own, and a line naming no
-  variable. `src/` holds the graph's code, which the import never reads.
+  variable. A directory import is never handed the file, and names it as not
+  handed; the tests hand it under the importer's `with.sources`. `src/` holds
+  the graph's code, which the import never reads.

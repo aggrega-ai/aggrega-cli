@@ -17,8 +17,11 @@ package importops
 //   - by default the values of an inline env are carried as written into the
 //     Release and named in a warning, a name reading as a credential's and one
 //     that does not alike, and the empty_credentials setting at all writes each
-//     empty; no value of an environment file reaches anything under any setting,
-//     whether a directory or an attachment's with.sources hands it;
+//     empty; no value of an environment file an attachment's with.sources hands
+//     reaches anything under any setting;
+//   - a directory import hands no environment file, of any format: an unreadable
+//     one beside the sources refuses nothing, and a configuration naming one
+//     names it as not handed, with how to hand it;
 //   - two imports of one application are byte-identical;
 //   - a configuration the parser refuses halts the import with the parser's reason;
 //   - each draft builds, once the author adds a model and wires each graph to it,
@@ -30,7 +33,6 @@ package importops
 
 import (
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -62,13 +64,7 @@ var langgraphHubEntities = []string{
 // dir at the paths the hub keeps them under.
 func copyLangGraphHubEntities(t *testing.T, dir string) {
 	t.Helper()
-	for _, rel := range langgraphHubEntities {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
-		if err != nil {
-			t.Fatalf("read the hub's %s: %v", rel, err)
-		}
-		importopstest.WriteSource(t, filepath.Join(dir, filepath.FromSlash(rel)), string(body))
-	}
+	copyHubEntities(t, dir, langgraphHubEntities)
 }
 
 // langgraphWorkspace is catalogFolderImportWorkspaceAttaching with
@@ -81,21 +77,11 @@ func langgraphWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.
 }
 
 // langgraphWorkspaceHanding is langgraphWorkspace whose attachment of the
-// LangGraph importer names sources under its with.sources and hands no settings.
-func langgraphWorkspaceHanding(t *testing.T, sources ...string) *workspaceconfig.ResolvedWorkspace {
+// LangGraph importer names sources under its with.sources, every attachment
+// handing settings.
+func langgraphWorkspaceHanding(t *testing.T, settings map[string]any, sources ...string) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
-	wsDir := aWorkspaceDir(t)
-	folder := importopstest.LayCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), true)
-	attachments := folder.Attachments(nil)
-	langgraph := folder.ImporterFor(t, "langgraph")
-	for i := range attachments {
-		if attachments[i].URI == langgraph.Identity {
-			attachments[i].Sources = sources
-		}
-	}
-	importopstest.WriteConfiguration(t, wsDir, attachments...)
-	copyLangGraphHubEntities(t, folder.Dir)
-	return resolveWorkspaceAt(t, wsDir)
+	return workspaceHanding(t, "langgraph", settings, langgraphHubEntities, sources...)
 }
 
 // langgraphApplication lays the committed application named app down in a
@@ -103,27 +89,7 @@ func langgraphWorkspaceHanding(t *testing.T, sources ...string) *workspaceconfig
 // the directory.
 func langgraphApplication(t *testing.T, app string) string {
 	t.Helper()
-	src := filepath.Join(langgraphFixtureDir, app)
-	dst := filepath.Join(t.TempDir(), app)
-	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		importopstest.WriteSource(t, filepath.Join(dst, rel), string(body))
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("lay the committed application %s down: %v", app, err)
-	}
-	return dst
+	return layFixtureDirectory(t, langgraphFixtureDir, app)
 }
 
 // readLangGraphFixture reads one file of a committed application.
@@ -280,6 +246,73 @@ func TestTheApplicationsCodeIsNeverRead(t *testing.T) {
 	}
 }
 
+// TestNoDirectoryImportOpensAnEnvironmentFile imports, naming no format, the
+// envfile application's directory with its local.env and a .env beside it both
+// made unreadable, and a CrewAI project's directory with an unreadable .env
+// beside its declarations: neither import is refused, since no importer's
+// patterns select an environment file, so recognition and the directory read
+// open none. The LangGraph draft names local.env as not handed, with how to hand
+// it, and names none of its variables.
+//
+// 🔴 PLANTED DEFECT: in detect (plugins/langgraph-importer/main.go), add back a
+// signature naming `*.env`: recognition opens each environment file, and both
+// rows fail refused.
+func TestNoDirectoryImportOpensAnEnvironmentFile(t *testing.T) {
+	skipWhereNoFileIsUnreadable(t)
+	t.Parallel()
+	for _, row := range []struct {
+		name, format string
+		dir          func(t *testing.T) string
+		workspace    func(t *testing.T) *workspaceconfig.ResolvedWorkspace
+		unreadable   []string
+	}{
+		{"a LangGraph application", "langgraph", func(t *testing.T) string { return langgraphApplication(t, "envfile") },
+			func(t *testing.T) *workspaceconfig.ResolvedWorkspace { return langgraphWorkspace(t, nil) },
+			[]string{"local.env", ".env"}},
+		{"a CrewAI project", "crewai", func(t *testing.T) string { return crewaiProject(t, "classic") },
+			func(t *testing.T) *workspaceconfig.ResolvedWorkspace { return crewaiWorkspace(t, nil) },
+			[]string{".env"}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			dir := row.dir(t)
+			for _, name := range row.unreadable {
+				path := filepath.Join(dir, name)
+				if _, err := os.Stat(path); err != nil {
+					importopstest.WriteSource(t, path, "PLACEHOLDER=1\n")
+				}
+				makeUnreadable(t, path)
+			}
+			res, err := importDirectory(t, row.workspace(t), dir, "application", "")
+			if err != nil {
+				t.Fatalf("the import was refused with an environment file unreadable: %v", err)
+			}
+			if res.Format != row.format || res.Halted() || len(draftPaths(res)) == 0 {
+				t.Fatalf("the directory was read as %q, halted %v, drafting %v: %+v", res.Format, res.Halted(),
+					draftPaths(res), res.Diagnostics)
+			}
+			if row.format != "langgraph" {
+				return
+			}
+			var aggregate, release string
+			for _, f := range res.Files {
+				switch f.Path {
+				case "aggregate.yaml":
+					aggregate = f.Content
+				case "release.yaml":
+					release = f.Content
+				}
+			}
+			if !strings.Contains(aggregate, notHandedLocalEnv) {
+				t.Errorf("the Aggregate does not name local.env as not handed, with how to hand it:\n%s", aggregate)
+			}
+			if strings.Contains(release, "TAVILY_API_KEY") {
+				t.Errorf("the Release names a variable of a file the import was not handed:\n%s", release)
+			}
+		})
+	}
+}
+
 // The key-shaped values the python application's inline env plants, under a name
 // reading as a credential's and one that does not. Neither is a real key.
 const (
@@ -309,9 +342,10 @@ var plantedLangGraphEnvFile = []string{
 //     OPENAI_API_KEY and SUPPORT_QUEUE alike, since no name is read — is named in
 //     a credential-carried warning by its configuration and its variable; where it
 //     is all, neither reaches anything and each is named under credential-emptied;
-//   - no value of local.env reaches any file, decision or diagnostic under any
-//     value of the setting, the Release naming the variables alone, and no
-//     credential warning names a variable of the file.
+//   - with local.env handed under the LangGraph importer's with.sources beside
+//     the envfile application's directory, no value of it reaches any file,
+//     decision or diagnostic under any value of the setting, the Release naming
+//     the variables alone, and no credential warning names a variable of the file.
 //
 // 🔴 PLANTED DEFECT: in located (plugins/internal/langgraphimport/langgraphimport.go),
 // return nothing: the all row carries both values as written.
@@ -346,8 +380,9 @@ func TestTheEmptyCredentialsSettingDecidesWhatALangGraphImportCarries(t *testing
 				}
 			}
 
-			res, dir = writtenDirectoryImport(t, langgraphWorkspace(t, settings), langgraphApplication(t, "envfile"),
-				"envfile")
+			attached := importopstest.WriteSource(t, filepath.Join(t.TempDir(), "elsewhere", "local.env"), string(env))
+			res, dir = writtenDirectoryImport(t, langgraphWorkspaceHanding(t, settings, attached),
+				langgraphApplication(t, "envfile"), "envfile")
 			assertNoneReaches(t, plantedLangGraphEnvFile, env, res, dir)
 			for _, c := range []string{"credential-carried", "credential-emptied"} {
 				if got := diagnosticsCoded(res.Diagnostics, c); len(got) != 0 {
@@ -362,6 +397,13 @@ func TestTheEmptyCredentialsSettingDecidesWhatALangGraphImportCarries(t *testing
 		})
 	}
 }
+
+// notHandedLocalEnv is the comment an envfile draft carries where the import was
+// not handed local.env: the file named, its variables left for the Release, and
+// how to hand it.
+const notHandedLocalEnv = "# Not read: the environment file local.env, which the import was not handed; its " +
+	"variables are left for the Release. Name the file under the LangGraph importer's with.sources to have its " +
+	"variables' names read.\n"
 
 // TestAnEnvironmentFileAnAttachmentHandsIsReadForItsNames imports the envfile
 // application's configuration as a file of its own, with its local.env named
@@ -379,7 +421,7 @@ func TestAnEnvironmentFileAnAttachmentHandsIsReadForItsNames(t *testing.T) {
 	env := readLangGraphFixture(t, "envfile/local.env")
 	attached := importopstest.WriteSource(t, filepath.Join(t.TempDir(), "elsewhere", "local.env"), string(env))
 
-	res, dir := writtenImport(t, langgraphWorkspaceHanding(t, attached), "langgraph.json", config)
+	res, dir := writtenImport(t, langgraphWorkspaceHanding(t, nil, attached), "langgraph.json", config)
 	if res.Format != "langgraph" || res.Halted() {
 		t.Fatalf("the configuration was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
 	}
@@ -391,9 +433,8 @@ func TestAnEnvironmentFileAnAttachmentHandsIsReadForItsNames(t *testing.T) {
 	}
 
 	res, dir = writtenImport(t, langgraphWorkspace(t, nil), "langgraph.json", config)
-	if text := readDraftedAggregate(t, dir); !strings.Contains(text, "# Not read: the environment file local.env, "+
-		"which the import was not handed; its variables are left for the Release.\n") {
-		t.Errorf("the Aggregate does not name local.env as not handed:\n%s", text)
+	if text := readDraftedAggregate(t, dir); !strings.Contains(text, notHandedLocalEnv) {
+		t.Errorf("the Aggregate does not name local.env as not handed, with how to hand it:\n%s", text)
 	}
 	if res.Halted() {
 		t.Errorf("the import halted: %+v", res.Diagnostics)

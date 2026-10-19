@@ -10,18 +10,17 @@ package main
 // serve`, each driven at the real command tree and held to the shared
 // operation's own result over an identically laid workspace, so the three draft
 // one application alike — one LangGraph agent per graph, wired to its datastore,
-// and the environment file's variables named and never valued.
+// and the environment file beside it, which a directory never hands the
+// importer, named as not handed.
 
 import (
 	"context"
 	"encoding/json"
-	"io/fs"
 	"path/filepath"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
-	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -34,20 +33,7 @@ const langgraphApplicationFixture = "../../internal/importops/testdata/langgraph
 // file at its place in the application.
 func layLangGraphApplication(t *testing.T, dir string) {
 	t.Helper()
-	err := filepath.WalkDir(langgraphApplicationFixture, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(langgraphApplicationFixture, path)
-		if err != nil {
-			return err
-		}
-		importopstest.WriteSource(t, filepath.Join(dir, rel), string(readCatalogFolderSource(t, path)))
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("lay the committed application down: %v", err)
-	}
+	layCommittedDirectory(t, langgraphApplicationFixture, dir)
 }
 
 // sharedLangGraphImport is the expectation every surface is held to: the shared

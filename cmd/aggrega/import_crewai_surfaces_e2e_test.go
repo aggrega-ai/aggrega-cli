@@ -14,13 +14,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io/fs"
 	"path/filepath"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
-	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -32,20 +30,7 @@ const crewaiProjectFixture = "../../internal/importops/testdata/crewai/jsonc"
 // place in the project.
 func layCrewAIProject(t *testing.T, dir string) {
 	t.Helper()
-	err := filepath.WalkDir(crewaiProjectFixture, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(crewaiProjectFixture, path)
-		if err != nil {
-			return err
-		}
-		importopstest.WriteSource(t, filepath.Join(dir, rel), string(readCatalogFolderSource(t, path)))
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("lay the committed project down: %v", err)
-	}
+	layCommittedDirectory(t, crewaiProjectFixture, dir)
 }
 
 // sharedCrewAIImport is the expectation every surface is held to: the shared

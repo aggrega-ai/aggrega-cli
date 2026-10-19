@@ -150,9 +150,10 @@ var buildMembers = []string{
 }
 
 // readApplications reads an import's sources: every source named like an
-// environment file is kept aside, and every other is a configuration, parsed
-// once through parse as JSON and read. Each configuration's environment file is
-// then read, where the import was handed it, for its variables' names. A
+// environment file — one the attachment's with.sources hands, since a directory
+// hands none — is kept aside, and every other is a configuration, parsed once
+// through parse as JSON and read. Each configuration's environment file is then
+// read, where the import was handed it, for its variables' names. A
 // configuration the parser refuses is reported under parse-failed and read no
 // further. It returns the applications in the order their configuration was
 // handed, the names of the environment files no configuration names, in the
@@ -365,15 +366,12 @@ func readEnvironment(raw json.RawMessage) environment {
 }
 
 // envSource returns the name of the source the application's environment file
-// was read from: the source at the path its env names, read from the
-// configuration's directory; or, where the import was handed none there, the one
-// named by the path's last segment, as the importer's with.sources hands a file.
-// It reports false where the import was handed neither.
+// was read from: the one named by the last segment of the path its env names, as
+// the importer's with.sources hands a file, under its base name. It reports false
+// where the import was not handed it — always for a directory import, which hands
+// no environment file.
 func (a *application) envSource(envFiles map[string][]byte) (string, bool) {
 	file := strings.ReplaceAll(a.env.file, "\\", "/")
-	if _, ok := envFiles[path.Join(a.dir, file)]; ok {
-		return path.Join(a.dir, file), true
-	}
 	base := file[strings.LastIndex(file, "/")+1:]
 	if _, ok := envFiles[base]; ok {
 		return base, true

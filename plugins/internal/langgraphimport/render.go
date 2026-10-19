@@ -70,7 +70,8 @@ func renderAggregate(name string, read []*application, parts []*datastorePart, u
 // handed that no configuration names, which are not read; that the application's
 // code is not read; and, application by application, the members the draft does
 // not carry, the store, what of the checkpointer it does not carry, the graphs it
-// does not draft and the environment files it was not handed.
+// does not draft and the environment files it was not handed, with how to hand
+// one.
 func writeHeader(b *strings.Builder, read []*application, unread []string) {
 	var files, envFiles []string
 	for _, a := range read {
@@ -134,7 +135,8 @@ func writeHeader(b *strings.Builder, read []*application, unread []string) {
 		}
 		if a.env.file != "" && a.env.read == "" {
 			b.WriteString("# Not read: the environment file " + commentText(a.env.file) + of + ", which the import " +
-				"was not handed; its variables are left for the Release.\n")
+				"was not handed; its variables are left for the Release. Name the file under the LangGraph importer's " +
+				"with.sources to have its variables' names read.\n")
 		}
 	}
 }

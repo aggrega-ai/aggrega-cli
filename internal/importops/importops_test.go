@@ -244,7 +244,13 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // JSON with an object at graphs, by its name, langgraph.json, or under any name by
 // its $schema naming the configuration's schema; a langgraph.json holding no
 // graphs object, a configuration under another name naming no schema, and an
-// environment file — whose signature recognises nothing — are refused.
+// environment file, which no signature names, are refused.
+//
+// A Google ADK application's root configuration is recognised as google-adk,
+// read as YAML, by its name, root_agent.yaml, and an agent's name with its
+// instruction or its agent_class; the same configuration under another name — as
+// a sub-agent's configuration is called, which no signature names — and a
+// root_agent.yaml stating no agent are refused.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
@@ -280,6 +286,11 @@ func TestSelectFormat(t *testing.T) {
 		`"graphs":{"agent":"./agent.py:graph"}}`)
 	langgraphNoGraphs := []byte(`{"dependencies":["."],"graphs":["./agent.py:graph"]}`)
 	environmentFile := []byte("OPENAI_API_KEY=sk-not-a-key\nGRAPHS=agent\n")
+	// An ADK root LlmAgent, a root SequentialAgent, and a configuration stating
+	// no agent.
+	adkRoot := []byte("name: assistant\nmodel: gemini-flash-latest\ninstruction: Answer the user's questions.\n")
+	adkSequence := []byte("agent_class: SequentialAgent\nname: pipeline\nsub_agents:\n  - config_path: step.yaml\n")
+	adkNoAgent := []byte("description: no agent here\n")
 
 	cases := []struct {
 		name     string
@@ -371,6 +382,17 @@ func TestSelectFormat(t *testing.T) {
 			content: langgraphConfig, wantErr: true},
 		{name: "explicit langgraph wins over a Compose file", explicit: "langgraph", source: "compose.yaml",
 			content: composeFile, want: "langgraph"},
+		{name: "an ADK root_agent.yaml", source: "root_agent.yaml", content: adkRoot, want: "google-adk"},
+		{name: "an ADK root_agent.yaml named with its directory", source: "my_agent/root_agent.yaml",
+			content: adkRoot, want: "google-adk"},
+		{name: "an ADK root_agent.yaml naming its agent_class", source: "root_agent.yaml", content: adkSequence,
+			want: "google-adk"},
+		{name: "an ADK configuration under another name is refused", source: "assistant.yaml", content: adkRoot,
+			wantErr: true},
+		{name: "a root_agent.yaml stating no agent is refused", source: "root_agent.yaml", content: adkNoAgent,
+			wantErr: true},
+		{name: "explicit google-adk wins over a Compose file", explicit: "google-adk", source: "compose.yaml",
+			content: composeFile, want: "google-adk"},
 	}
 
 	for _, tc := range cases {
@@ -387,7 +409,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph", "google-adk"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}
