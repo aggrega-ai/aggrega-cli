@@ -283,9 +283,9 @@ func namedValues(named []namedValue) string {
 // located returns every value of draftedValues the credential decision judges,
 // in the order the draft writes them: each header's value, each item of a
 // command line, the address and each environment value, where the value is not a
-// single variable reference and is not left for the user — named by its server
-// and by its place: a header as headers.<name>, and every other value by its
-// place in the Release.
+// single variable reference, as the plugin kit reads one for every format, and
+// is not left for the user — named by its server and by its place: a header as
+// headers.<name>, and every other value by its place in the Release.
 func located(servers []server) []importer.Credential {
 	var out []importer.Credential
 	for _, s := range servers {

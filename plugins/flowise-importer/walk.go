@@ -428,8 +428,8 @@ func wholeKeptEdit(raw json.RawMessage, tokens []string) (importer.Edit, bool) {
 // parameters, in raw hold — u.member says which — as mcpconfig.HeaderValues
 // reads them: held as an object or a list, each value named by its header or
 // its parameter; held as JSON text, the text rewritten with every value written
-// empty, reported once with the names it holds; held as any other text, the
-// whole text.
+// empty but one that is wholly a variable reference, reported once with the
+// names it holds; held as any other text, the whole text.
 func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []string, u unmarked) []importer.Credential {
 	name, pointer := strings.Join(field, "."), importer.Pointer(tokens...)
 	written, ok := mcpconfig.EmptyKept(raw)
@@ -456,7 +456,7 @@ func headerValueCredentials(nodeID string, raw json.RawMessage, field, tokens []
 	var edits []importer.Edit
 	var names []string
 	for _, m := range members {
-		if mcpconfig.Blank(m.Value) {
+		if mcpconfig.Blank(m.Value) || mcpconfig.Reference(m.Value) {
 			continue
 		}
 		edits = append(edits, importer.Edit{Pointer: importer.Pointer(m.Tokens...), Value: json.RawMessage(`""`)})
@@ -498,9 +498,10 @@ func withClass(located []importer.Credential, class importer.CredentialClass) []
 // serverConfigCredentials locates what a Custom MCP tool's server configuration
 // holds of a request's credentials, the server's address and how it is started
 // — every header value, every environment value, the url, the command and each
-// argument — and returns one value of an MCP server's members carrying the
-// configuration with those values written empty and every other part kept, or
-// none where the configuration holds none of them. A configuration written as
+// argument, as serverConfigEdits reads them — and returns one value of an MCP
+// server's members carrying the configuration with those values written empty
+// and every other part kept, or none where the configuration holds none of
+// them. A configuration written as
 // text that does not read as a JSON object, which Flowise also accepts in the
 // looser forms its own reader repairs, is located whole, since what is in it
 // cannot be located.
@@ -555,7 +556,8 @@ func rewrittenCredential(nodeID, name, pointer string, written json.RawMessage, 
 // the edits writing empty each header value, each environment value, the url,
 // the command and each argument, as mcpconfig reads such a configuration, and
 // says which of them it found, always in that order. A command or an argument
-// already empty, or null, is left as written. The command and args members
+// already empty, or null, is left as written, and so is a value that is wholly
+// a variable reference, which holds no value. The command and args members
 // stay, their values written empty, so the configuration still reads as
 // starting a server of its own.
 func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
@@ -563,6 +565,9 @@ func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
 	var edits []importer.Edit
 	present := map[mcpconfig.Kind]bool{}
 	for _, m := range mcpconfig.Members(config) {
+		if mcpconfig.Reference(m.Value) {
+			continue
+		}
 		if (m.Kind == mcpconfig.Command || m.Kind == mcpconfig.Argument) && mcpconfig.Blank(m.Value) {
 			continue
 		}

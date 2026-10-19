@@ -676,24 +676,6 @@ func TestRemoteEndpointWritesTheAddressAndTheNote(t *testing.T) {
 	}
 }
 
-// TestIsReference tells a value that is one variable reference and nothing else
-// from one holding a value.
-func TestIsReference(t *testing.T) {
-	t.Parallel()
-	for _, row := range []struct {
-		in   string
-		want bool
-	}{
-		{"${TOKEN}", true}, {"${env:TOKEN}", true}, {"${input:api-key}", true}, {"${workspaceFolder}", true},
-		{"${TOKEN:-default}", false}, {"Bearer ${TOKEN}", false}, {"${A}${B}", false}, {"${}", false},
-		{"$TOKEN", false}, {"plain", false},
-	} {
-		if got := isReference(row.in); got != row.want {
-			t.Errorf("isReference(%q) = %v, want %v", row.in, got, row.want)
-		}
-	}
-}
-
 // TestYAMLStringReadsBackAsItsText writes text holding quotes, backslashes, a
 // line break, a character a YAML reader could take for one and characters
 // outside the Basic Multilingual Plane, and requires each written scalar to read

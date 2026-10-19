@@ -559,22 +559,11 @@ func endpointOf(url string) (string, []string) {
 }
 
 // valueItem returns the item writing text, of class, marking it a reference
-// where it is one.
+// where it is wholly a variable reference, as the plugin kit reads one for every
+// format — importer.IsVariableReference — since the clients expand references
+// in that grammar.
 func valueItem(text string, class importer.CredentialClass) item {
-	return item{text: text, reference: isReference(text), class: class}
-}
-
-// isReference reports whether text is one variable reference and nothing else —
-// ${NAME}, ${env:NAME}, ${input:id}, ${workspaceFolder} and the other forms the
-// clients expand — and so holds no value of its own. A reference carrying a
-// default, ${NAME:-default}, holds the default, and text holding anything beside
-// the reference holds that; neither is a reference here.
-func isReference(text string) bool {
-	if len(text) < 4 || !strings.HasPrefix(text, "${") || !strings.HasSuffix(text, "}") {
-		return false
-	}
-	inner := text[2 : len(text)-1]
-	return !strings.ContainsAny(inner, "${}\n\r") && !strings.Contains(inner, ":-")
+	return item{text: text, reference: importer.IsVariableReference(text), class: class}
 }
 
 // scalarText is the drafts' shared reading of a scalar of the parsed tree.

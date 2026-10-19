@@ -4,15 +4,15 @@
 // Package mcpconfig reads the server configuration a flow's MCP tool node
 // carries — the address of a server reached over HTTP and the headers sent to
 // it, or the command starting a server and the arguments and environment it is
-// started with — for the importer guests built on the plugin kit, which write
-// those values empty before a flow is carried into a draft, since a key can sit
+// started with — for the importer guests built on the plugin kit, which hand
+// each of those values to the kit's credential decision, since a key can sit
 // in any of them. It reads such a configuration written as one object
 // ([Members]) and written as fields of the node's own ([FieldMembers]), and the
 // headers any node of a flow keeps, in or out of such a configuration, and the
 // query parameters, which a flow writes in the same shapes ([HeaderValues]). It
 // is the one place the importers walk such a configuration and such headers and
-// parameters, so the Langflow and the Flowise importer empty the same members
-// of them, in either layout.
+// parameters, so the Langflow and the Flowise importer hand the kit the same
+// members of them, in either layout.
 package mcpconfig
 
 import (

@@ -283,7 +283,8 @@ func rowValues(node string, raw json.RawMessage, in requestInput, field string, 
 
 // textValues locates what JSON text holding headers or query parameters holds:
 // an object of names to values is written anew with every value that holds
-// something emptied and every name kept; any other text — an expression, or
+// something emptied — not one that is wholly a variable reference — and every
+// name kept; any other text — an expression, or
 // text that does not read as such an object — is written empty whole. It
 // reports false where the text holds nothing to write empty.
 func textValues(node string, raw json.RawMessage, in requestInput, field string, tokens []string) (importer.Credential, bool) {
@@ -301,7 +302,7 @@ func textValues(node string, raw json.RawMessage, in requestInput, field string,
 	var edits []importer.Edit
 	var names []string
 	for _, m := range mcpconfig.HeaderValues(json.RawMessage(text)) {
-		if mcpconfig.Blank(m.Value) {
+		if mcpconfig.Blank(m.Value) || mcpconfig.Reference(m.Value) {
 			continue
 		}
 		edits = append(edits, importer.Edit{Pointer: importer.Pointer(m.Tokens...), Value: json.RawMessage(`""`)})
