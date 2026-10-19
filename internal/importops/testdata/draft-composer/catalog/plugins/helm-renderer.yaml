@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm
+  version: 1.0.0
+  pluginType: provider
+  description: Renders the documents of a component whose Recipe declares the helm capability.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - helm
+  exports:
+    - name: render_node
+  runtime:
+    maxMemoryPages: 4096
+    # A generous per-call cap, so a plugin's own start-up completes even where the
+    # host cannot generate native code and falls back to interpreting the module.
+    timeoutMs: 300000

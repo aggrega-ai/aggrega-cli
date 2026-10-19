@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: x-server
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: example/x
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: x-server:1.0.0
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}

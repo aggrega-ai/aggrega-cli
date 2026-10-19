@@ -1067,29 +1067,91 @@ func (c *Catalog) ComponentAncestry(componentType string) ([]string, error) {
 // recipesImplementing returns the sorted, provider-qualified identity keys of
 // every catalog recipe whose spec.implements satisfies componentType. It is a
 // SUGGESTION provider only — resolution is mapping-only and never consults it.
-// Its readers are the no-mapping diagnostic (pin candidates) and the Manifest
-// recipe-reference completion (implements-aware ranking).
+// Its reader is the no-mapping diagnostic (pin candidates); the import's draft
+// Manifest reads the same enumeration through [Catalog.RecipesImplementing].
 //
 // Deliberately ancestry-agnostic, unlike the mapping-consistency rule: extends
 // ancestry is handled in that rule's outer layer rather than inside the matcher,
 // so it reaches only the caller that resolves it. Widening the suggestion set to
 // recipes implementing a base of the requested type would change which candidates
-// a diagnostic lists and how completion ranks them — user-visible output whose
-// shape is a separate choice from whether an operator-written mapping is judged
-// consistent.
+// a diagnostic lists and which Recipe a drafted Manifest names — user-visible
+// output whose shape is a separate choice from whether an operator-written
+// mapping is judged consistent.
 //
 // The matcher is read from the package that declares the mapping-consistency rule
 // rather than carried here, so this suggestion surface and that rule cannot come
 // to disagree about which recipes satisfy a type.
 func recipesImplementing(recipes map[string]types.Recipe, componentType string) []string {
-	var ids []string
-	for _, r := range recipes {
+	matched := implementingRecipes(recipes, componentType)
+	ids := make([]string, 0, len(matched))
+	for _, r := range matched {
+		ids = append(ids, recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version))
+	}
+	return ids
+}
+
+// implementingRecipes is the one enumeration of the recipes whose spec.implements
+// satisfies componentType, ordered by their identity keys. recipesImplementing
+// projects it onto those keys and [Catalog.RecipesImplementing] hands it on whole,
+// so the pin-candidate list and the import's draft Manifest read one set in one
+// order.
+func implementingRecipes(recipes map[string]types.Recipe, componentType string) []types.Recipe {
+	var keys []string
+	for key, r := range recipes {
 		if resolver.ImplementsSatisfies(r.Spec.Implements, componentType) {
-			ids = append(ids, recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version))
+			keys = append(keys, key)
 		}
 	}
-	sort.Strings(ids)
-	return ids
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := recipes[keys[i]], recipes[keys[j]]
+		return recipeIdentityKey(a.Spec.Capability, a.Metadata.Name, a.Metadata.Version) <
+			recipeIdentityKey(b.Spec.Capability, b.Metadata.Name, b.Metadata.Version)
+	})
+	out := make([]types.Recipe, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, recipes[key])
+	}
+	return out
+}
+
+// RecipesImplementing returns every Recipe this catalog holds whose
+// spec.implements satisfies componentType, ordered by identity
+// (capability/name:version), every version of a Recipe included.
+//
+// It is the enumeration the no-mapping diagnostic lists its pin candidates from,
+// handed on whole rather than as identity keys, so a reader needing a Recipe's
+// capability and name reads them off the entity rather than parsing them back out
+// of a key. It suggests and never resolves: a build resolves a Recipe from the
+// Manifest's mapping alone, so a reader drafting a mapping from this answer drafts
+// a file the operator reviews, and the build reads only what that file says.
+func (c *Catalog) RecipesImplementing(componentType string) []types.Recipe {
+	if c == nil {
+		return nil
+	}
+	return implementingRecipes(c.Recipes, componentType)
+}
+
+// RecipeCapabilities returns the capabilities this catalog's Recipes bind to:
+// the bare spec.capability of each, without the version pin a Recipe may write
+// after it, each once and sorted. A Recipe naming no capability contributes
+// none.
+func (c *Catalog) RecipeCapabilities() []string {
+	if c == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, r := range c.Recipes {
+		if r.Spec.Capability == "" {
+			continue
+		}
+		seen[types.ParseVersionPin(r.Spec.Capability).Base()] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for capability := range seen {
+		out = append(out, capability)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // featureRecipesImplementing is the FeatureRecipe analogue of

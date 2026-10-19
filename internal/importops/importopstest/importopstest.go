@@ -42,6 +42,10 @@
 // lays the planted parser: a parser of the json syntax that answers one fixed
 // tree whatever it is handed, so what an import did with a source says whether
 // that parser or another read it.
+//
+// A case about what an import given a target composes around its drafts lays the
+// draft-composition catalog and the draft-set importer, which drafts exactly the
+// files its source spells out, so the draft set is the case's own choice.
 package importopstest
 
 import (
@@ -539,6 +543,200 @@ func localTestGuest(t *testing.T, source, artifact string) string {
 		if parent == dir {
 			t.Fatalf("no %s above the test's working directory: the guest's source is supposed to ship beside "+
 				"the import operation's tests", source)
+		}
+		dir = parent
+	}
+}
+
+// DraftSetFormat is the format the draft-set importer advertises.
+const DraftSetFormat = "draft-set"
+
+// DraftSetImporterName is the metadata.name the draft-set importer's entity
+// carries.
+const DraftSetImporterName = "import-draft-set"
+
+// draftSetArtifact is the name the built draft-set importer is published under
+// among the built fixtures. No other build layout owns it.
+const draftSetArtifact = "draft-set-importer.wasm"
+
+// draftSetSource is where the draft-set importer's source sits beneath the module
+// root.
+var draftSetSource = filepath.Join("internal", "importops", "testdata", "draft-set-importer")
+
+// draftComposerCatalog is where the catalog a draft-composition case imports
+// against sits beneath the module root.
+var draftComposerCatalog = filepath.Join("internal", "importops", "testdata", "draft-composer", "catalog")
+
+// DraftSetModule builds the draft-set importer and returns the built module's
+// path.
+//
+// The draft-set importer is a guest kept beside the import operation's tests for
+// one claim no reference importer makes visible: what an import composes around
+// a draft set the test chose. It advertises the draft-set format, declares no
+// recognition signature, and drafts exactly the files its source spells out — a
+// line opening with "=== " names a file's path, and the lines after it, up to the
+// next such line, are its content — in the order the source spells them.
+func DraftSetModule(t *testing.T) string {
+	t.Helper()
+	return localTestGuest(t, draftSetSource, draftSetArtifact)
+}
+
+// DraftSetBody is a draft-set source spelling out files, each a path and its
+// content, in order.
+func DraftSetBody(files ...abi.ScaffoldFile) string {
+	var b strings.Builder
+	for _, f := range files {
+		b.WriteString("=== " + f.Path + "\n" + f.Content)
+	}
+	return b.String()
+}
+
+// DraftedAggregate is the Aggregate a draft-composition case drafts: four
+// instances of three component types — example/x twice, then example/y and
+// example/z, declared in the order x, y, z, x.
+const DraftedAggregate = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: drafted
+  version: 0.1.0
+spec:
+  components:
+    x-one:
+      type: example/x:1.0.0
+    y-one:
+      type: example/y:1.0.0
+    z-one:
+      type: example/z:1.0.0
+    x-two:
+      type: example/x:1.0.0
+`
+
+// DraftedRelease is the Release a draft-composition case drafts beside
+// DraftedAggregate: it deploys that Aggregate, names no Manifest, and carries the
+// comment line the importers that draft a Release write where the Manifest goes.
+const DraftedRelease = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: drafted
+  environment: testing
+  version: 0.1.0
+spec:
+  aggregate: drafted
+  # manifest: left for the operator, since the import drafts no Manifest, which names the target the components are built for.
+  components:
+    x-one: {}
+    y-one: {}
+    z-one: {}
+    x-two: {}
+`
+
+// DraftedReleaseComposed is DraftedRelease as an import given the compose target
+// over the draft-composition catalog hands it back: the comment line where the
+// Manifest goes replaced by spec.manifest naming the drafted Manifest, every
+// other byte as drafted.
+const DraftedReleaseComposed = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: drafted
+  environment: testing
+  version: 0.1.0
+spec:
+  aggregate: drafted
+  manifest: drafted
+  components:
+    x-one: {}
+    y-one: {}
+    z-one: {}
+    x-two: {}
+`
+
+// DraftedManifestComposed is the Manifest an import given the compose target over
+// the draft-composition catalog drafts beside DraftedReleaseComposed: named and
+// versioned as the Release is, mapping example/x — the one type exactly one
+// compose Recipe implements — and leaving example/y and example/z unmapped.
+const DraftedManifestComposed = `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: drafted
+  version: 0.1.0
+spec:
+  mappings:
+    components:
+      type:
+        example/x:1.0.0: compose/x-server
+`
+
+// DraftComposerSource is the draft-set source a draft-composition case imports:
+// DraftedAggregate as aggregate.yaml, then DraftedRelease as release.yaml.
+func DraftComposerSource() string {
+	return DraftSetBody(abi.ScaffoldFile{Path: "aggregate.yaml", Content: DraftedAggregate},
+		abi.ScaffoldFile{Path: "release.yaml", Content: DraftedRelease})
+}
+
+// LayDraftComposerCatalog lays down at dir, inside the workspace rooted at
+// workspaceRoot, the catalog a draft-composition case imports against, and the
+// draft-set importer generated from its built module with the module beside it.
+//
+// The catalog holds three Components — example/x, example/y and example/z — and
+// the Recipes implementing them: for example/x exactly one Recipe binding to
+// compose, x-server, held at two versions; for example/y two compose Recipes,
+// y-one and y-two; and for example/z none binding to compose and one binding to
+// helm, z-chart. It holds the provider Plugin entities of compose and helm too,
+// so a build of what an import drafts against it renders through the binary's
+// own providers. The catalog's files are copied from beside the import
+// operation's tests, found by walking up to the module root.
+func LayDraftComposerCatalog(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	src := moduleRelative(t, draftComposerCatalog)
+	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(dst, body, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copy the draft-composition catalog into %s: %v", dir, err)
+	}
+	return layPlugin(t, workspaceRoot, dir, DraftSetModule(t), DraftSetImporterName, true)
+}
+
+// DraftComposerCatalogDir is the committed draft-composition catalog's absolute
+// path, for a build reading it where it is.
+func DraftComposerCatalogDir(t *testing.T) string {
+	t.Helper()
+	return moduleRelative(t, draftComposerCatalog)
+}
+
+// moduleRelative is the absolute path of rel beneath the module root, found by
+// walking up from the directory the test runs in, failing the test where no
+// directory above holds it.
+func moduleRelative(t *testing.T, rel string) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("read the test's working directory: %v", err)
+	}
+	for {
+		candidate := filepath.Join(dir, rel)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no %s above the test's working directory: it is supposed to ship beside the import "+
+				"operation's tests", rel)
 		}
 		dir = parent
 	}

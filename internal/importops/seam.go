@@ -41,6 +41,10 @@ import (
 // ImporterLoad and ParserLoad are where a harness standing in for the seam
 // supplies its loaders. The real seam leaves both nil and loads through its one
 // loader, bound to the context of the import that runs it.
+//
+// Recipes is the same catalog view's Recipes, which an import given a target
+// drafts its Manifest from. A nil Recipes is a catalog holding no Recipe, so a
+// harness standing in for the catalog that supplies none refuses every target.
 type Seam struct {
 	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
@@ -48,6 +52,7 @@ type Seam struct {
 	ParserLoad   parsersocket.ParserLoader
 	Catalog      *abi.CatalogProjection
 	Importers    []types.Plugin
+	Recipes      RecipeIndex
 
 	// loadIn is the one loader of the real seam, serving both sockets, bound to
 	// the context of the import that runs it, so the one step of an import that
@@ -86,6 +91,19 @@ func (s Seam) parserLoader(ctx context.Context) parsersocket.ParserLoader {
 // answer. A harness standing in for the catalog answers both halves itself.
 type ImporterResolver interface {
 	ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error)
+}
+
+// RecipeIndex is what an import given a target reads of the catalog's Recipes:
+// the capabilities they bind to, and the Recipes implementing a component type.
+//
+// The catalog is the implementation an import runs through, and its answers are
+// the catalog's own suggestion enumeration — the one the no-mapping diagnostic
+// lists its pin candidates from — so a draft Manifest names exactly the Recipes a
+// build halting on an unmapped instance would offer. A harness standing in for
+// the catalog answers both itself.
+type RecipeIndex interface {
+	RecipeCapabilities() []string
+	RecipesImplementing(componentType string) []types.Recipe
 }
 
 // BuildSeam is how [Import] obtains its resolvers and loaders.
@@ -167,6 +185,10 @@ var BuildSeam = buildSeam
 // view too — every importer it resolves among, the binary's own core importers
 // included — so a source is recognised only as a format an importer this view
 // holds advertises.
+//
+// So are the Recipes an import given a target drafts its Manifest from: the
+// Recipes of the catalog directories this view loaded, and nothing a registry
+// holds that the workspace has not pulled.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
 	wsCfg := rw.Config()
 	// An import concerns no one Release, so it reads the workspace's own stack.
@@ -200,6 +222,7 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 		ParserRes:   importParsers{workspace: cat, binary: binaryParsers()},
 		Catalog:     importersocket.ProjectCatalog(cat),
 		Importers:   cat.ImporterPlugins(),
+		Recipes:     cat,
 		loadIn:      loadIn,
 	}, nil
 }

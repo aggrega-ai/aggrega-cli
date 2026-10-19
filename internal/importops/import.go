@@ -120,6 +120,16 @@ func (e *ExistingAggregateError) Error() string {
 // fails part way leaves the reader knowing what it set out to do. It is not
 // called for an import that is refused.
 //
+// Target names the provider capability — compose or helm, say, the word a
+// Recipe's spec.capability binds to — the import drafts a Manifest for, beside
+// the importer's drafts, mapping each drafted component type to the one Recipe of
+// that capability the workspace's catalog offers for it, and pointing the drafted
+// Release at it. An empty Target drafts no Manifest, and the import is then
+// exactly the importer's drafts. A Target no Recipe of that catalog binds to is
+// refused before the importer runs ([ErrImportTargetUnbound]). Every surface
+// hands its target here as it received it, so the Manifest is composed in one
+// place for all of them — see [Import].
+//
 // There is no field for the importer's with-config. What an importer is handed
 // is read by [Import] from the workspace's own plugins.importer attachments,
 // once the importer is resolved, because which attachment's inputs apply
@@ -129,6 +139,7 @@ type Options struct {
 	SourcePath    string
 	SourceName    string
 	Format        string
+	Target        string
 	OutputDir     string
 	Sync          bool
 	Delivery      authoredcontent.Delivery
@@ -275,7 +286,8 @@ func (r Result) Halted() bool {
 // import the importer could not complete still drafts what it could. The returned
 // error is reserved for a run that could not be performed: no workspace, no
 // plugin resolver, a source that could not be read ([*SourceReadError]), a
-// catalog that would not load, a source no importer recognises or more than one
+// catalog that would not load, a target no Recipe of that catalog binds to
+// ([ErrImportTargetUnbound]), a source no importer recognises or more than one
 // format's importers recognise, a link in a directory source leading out of it
 // ([*DirectoryLinkError]), a directory refused for the importer's patterns or a
 // name both a directory file and a with.sources file carry, a core importer of the
@@ -287,6 +299,15 @@ func (r Result) Halted() bool {
 // whose record is missing, does not list the Aggregate or cannot be read
 // ([*ImportRecordError]), a sync that would change or remove what an author
 // wrote ([*SyncConflictError]), or a write that failed.
+//
+// Given Options.Target, the import composes the draft set the importer returned
+// into one that builds against that provider: beside the importer's drafts it
+// drafts the Manifest the drafted Release needs and points the Release at it, in
+// one composition every surface reaches only through here (see
+// composeDraftSet). The drafted Manifest and the edited Release are drafts like
+// any other: recorded, judged by the containment above and reported under a
+// reporting delivery. A target no Recipe of the catalog binds to is refused once
+// the catalog is loaded, before the source is recognised or the importer runs.
 //
 // Every import that drafts anything writes, beside its drafts, the record of
 // what it wrote ([RecordFileName]): each drafted file, and for a drafted
@@ -342,6 +363,13 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
+	// A target no Recipe of the catalog binds to is refused as soon as the catalog
+	// is in hand, before the source is recognised or the importer runs, so nothing
+	// is read through a parser, nothing is drafted and nothing is written.
+	if err := checkTarget(opts.Target, seam.Recipes); err != nil {
+		return Result{}, err
+	}
+
 	format, err := SelectFormat(ctx, opts.Format, src, seam)
 	if err != nil {
 		return Result{}, err
@@ -375,6 +403,20 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
+	// The draft set is composed from what the importer drafted, here and nowhere
+	// else, before the record of it is written and before any path is judged — so
+	// a drafted Manifest and an edited Release are recorded, contained and
+	// reported exactly as the importer's own drafts are.
+	draft, composed, err := composeDraftSet(opts.Target, seam.Recipes, imported.Files)
+	if err != nil {
+		return Result{}, err
+	}
+	diagnostics := imported.Diagnostics
+	if len(composed) > 0 {
+		diagnostics = append(append(make([]abi.Diagnostic, 0, len(diagnostics)+len(composed)), diagnostics...),
+			composed...)
+	}
+
 	outputDir, err := outputDirFor(rw, opts.OutputDir)
 	if err != nil {
 		return Result{}, err
@@ -382,14 +424,14 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	res := Result{
 		Format:      format,
 		OutputDir:   outputDir,
-		Files:       imported.Files,
-		Diagnostics: imported.Diagnostics,
+		Files:       draft,
+		Diagnostics: diagnostics,
 		Decisions:   imported.Decisions,
 	}
 	// The record of what the import writes is composed from the draft, and placed
 	// after it, so it is judged with the drafted paths below.
-	drafted := draftedFiles(imported.Files)
-	files := imported.Files
+	drafted := draftedFiles(draft)
+	files := draft
 	if len(drafted) > 0 {
 		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...), recordScaffold(drafted))
 	}
@@ -398,7 +440,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	if err := checkFiles(rw.Root(), outputDir, files); err != nil {
 		return Result{}, err
 	}
-	if err := checkRecordPlace(outputDir, imported.Files); err != nil {
+	if err := checkRecordPlace(outputDir, draft); err != nil {
 		return Result{}, err
 	}
 	if opts.Sync {
@@ -407,7 +449,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// An Aggregate already at a drafted path is judged after the paths are, so it
 	// is read only at a place already held inside the root, and before either
 	// delivery answers, so a dry run refuses what the write refuses.
-	if err := checkExistingAggregate(outputDir, imported.Files); err != nil {
+	if err := checkExistingAggregate(outputDir, draft); err != nil {
 		return Result{}, err
 	}
 	res.Files = files

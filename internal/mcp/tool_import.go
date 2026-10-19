@@ -56,6 +56,13 @@ type importArgs struct {
 	// apart.
 	Format *string `json:"format"`
 
+	// Target is the command line's --target: the provider capability the import
+	// drafts a Manifest for. It is a pointer for the reason Format is one — absent
+	// drafts no Manifest, and a value sent empty is refused rather than read as
+	// absent. A value sent is handed to the layer as sent, so the Manifest is the
+	// one the command line and the editor's session draft for the same source.
+	Target *string `json:"target"`
+
 	DryRun        bool   `json:"dry_run"`
 	WorkspaceRoot string `json:"workspace_root"`
 
@@ -259,7 +266,16 @@ var importToolSpec = toolSpec{
 		"the compiler's own for a syntax it holds none for, reading the file named, or of a directory only the files a " +
 		"signature's file patterns select, and no network: a source no signature matches is refused asking for " +
 		"`format` and naming the formats the importers advertise, and a source " +
-		"signatures of more than one format match is refused naming them, rather than guessed at. Send `dry_run` to be " +
+		"signatures of more than one format match is refused naming them, rather than guessed at. Send `target`, a " +
+		"provider capability such as compose or helm — the word a Recipe's spec.capability binds to — to have a " +
+		"Manifest drafted beside the importer's drafts as manifest.yaml: each component type the drafted Aggregate " +
+		"declares is mapped to the one Recipe of that capability the workspace's catalog offers for it, by its " +
+		"capability-qualified name with no version, and a type with none, or with Recipes of more than one name, is " +
+		"left unmapped with a warning naming it, so a build of the drafts stops naming each instance of it; Feature " +
+		"attachments are not mapped. The Manifest takes the drafted Release's name and version and the Release's " +
+		"spec.manifest is set to it, nothing else in the Release changing; a Release already naming a Manifest is left " +
+		"as it is. A `target` no Recipe in the catalog binds to is refused before the importer runs, naming it and the " +
+		"capabilities the catalog's Recipes bind to, and nothing is written. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
 		"write would refuse is refused under it too. Every import that drafts anything also writes, beside its " +
@@ -298,6 +314,11 @@ var importToolSpec = toolSpec{
       "minLength": 1,
       "description": "The source format, named outright — for example langflow, flowise, n8n, mcp, compose, dify, crewai, langgraph, google-adk or agent-framework. Leave it out and the format is recognised by the signatures the importers declare, the workspace catalog's and the compiler's core importers' alike."
     },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A provider capability, such as compose or helm — the word a Recipe's spec.capability binds to — to draft a Manifest for beside the importer's drafts, mapping each drafted component type to the one Recipe of that capability the workspace's catalog offers for it and pointing the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Leave it out and no Manifest is drafted."
+    },
     "dry_run": {
       "type": "boolean",
       "description": "Do everything except write, and hand back each drafted file's path and content. Every other behaviour is the write's, so a source the write would refuse is refused under it too."
@@ -334,6 +355,17 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 			return errorResult(importToolName + " was sent a blank 'format'. Name the source format outright, " +
 				"or leave 'format' out altogether and it is recognised by the signatures the importers declare; " +
 				"a blank value is neither, so nothing was read and nothing was written.")
+		}
+	}
+	// The target is handed on exactly as sent, untrimmed, so a value the command
+	// line would refuse is refused here in the same words: only an empty one is
+	// this surface's to refuse, since absent is how a caller asks for no Manifest.
+	target := ""
+	if a.Target != nil {
+		if target = *a.Target; target == "" {
+			return errorResult(importToolName + " was sent an empty 'target'. Name the provider capability to " +
+				"draft a Manifest for, such as compose or helm, or leave 'target' out altogether and no Manifest is " +
+				"drafted; an empty value is neither, so nothing was read and nothing was written.")
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -379,6 +411,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		SourcePath:    path,
 		SourceName:    source,
 		Format:        named,
+		Target:        target,
 		Sync:          a.Sync,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,

@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: y-one
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: example/y
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: y-one:1.0.0
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}

@@ -49,6 +49,14 @@ import (
 // no signature recognises, or signatures of more than one format recognise, names
 // the format instead.
 //
+// target is the command line's --target, carried as a field: the provider
+// capability, such as compose or helm, the import drafts a Manifest for beside
+// the importer's drafts and points the drafted Release at. It is handed to the
+// import as sent, so the Manifest is the one every surface drafts for the same
+// source; absent drafts none, and a capability no Recipe in the workspace's
+// catalog binds to is refused before the importer runs, in the condition's own
+// words, which name no flag.
+//
 // dryRun does everything the plain request does except write: it answers with the
 // drafted files as content instead of putting them on disk. Which of the two a
 // caller wants is a property of the caller rather than of this surface — a client
@@ -75,6 +83,7 @@ type importParams struct {
 	Source    string `json:"source"`
 	OutputDir string `json:"outputDir"`
 	Format    string `json:"format"`
+	Target    string `json:"target"`
 	DryRun    bool   `json:"dryRun"`
 	Sync      bool   `json:"sync"`
 }
@@ -260,6 +269,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		SourcePath:    sourcePath,
 		SourceName:    params.Source,
 		Format:        params.Format,
+		Target:        params.Target,
 		OutputDir:     outputDir,
 		Sync:          params.Sync,
 		Delivery:      delivery,

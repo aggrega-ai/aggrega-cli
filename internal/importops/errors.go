@@ -121,6 +121,29 @@ var errImportSourceNameCollision = cerrors.Register("import-source-name-collisio
 		"compilation holds the sources the rule reads."),
 })
 
+// ErrImportTargetUnbound fires when an import is given a target that no Recipe in
+// the workspace's catalog binds to.
+//
+// It is a registered condition because it is a refusal an author acts on and may
+// need to match. A target names the provider capability the drafted Manifest maps
+// each component type for, matched against each Recipe's spec.capability; one
+// that no Recipe binds to would map nothing at all, and every component type
+// would then read as missing from the catalog when what is wrong is the option
+// the author wrote — most often a misspelling. So the import stops before the
+// importer runs and drafts nothing, and its occurrence names the target as given
+// and the capabilities the catalog's Recipes do bind to.
+func ErrImportTargetUnbound() error { return errImportTargetUnbound }
+
+var errImportTargetUnbound = cerrors.Register("import-target-unbound", cerrors.Meta{
+	ShortCode: "E0349",
+	Message:   "no Recipe in the workspace's catalog binds to the capability the import's target names",
+	RulePlace: cerrors.RuleNoStageReaches("An import given a target evaluates the rule, once the catalog it " +
+		"resolves its importer from is loaded and before the importer runs, by matching the target against the " +
+		"capability each of that catalog's Recipes binds to. The import translates a foreign source description " +
+		"into entities before there is anything to compile, so no declared stage of a compilation holds the " +
+		"target or the Recipes the rule reads."),
+})
+
 // Refusal returns the occurrence of [ErrImportHalted] when the import raised a
 // halt-severity diagnostic, and nil when it did not.
 //
