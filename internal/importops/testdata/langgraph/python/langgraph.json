@@ -1,0 +1,41 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "python_version": "3.12",
+  "graphs": {
+    "triage": {
+      "path": "./src/support_desk/triage.py:make_graph",
+      "description": "Routes an incoming ticket to the {team} that owns it."
+    },
+    "support": "./src/support_desk/agent.py:graph"
+  },
+  "checkpointer": {
+    "ttl": {
+      "strategy": "delete",
+      "default_ttl": 43200,
+      "sweep_interval_minutes": 10
+    }
+  },
+  "store": {
+    "index": {
+      "embed": "openai:text-embedding-3-small",
+      "dims": 1536,
+      "fields": ["$"]
+    },
+    "ttl": {
+      "refresh_on_read": true,
+      "default_ttl": 10080,
+      "sweep_interval_minutes": 60
+    }
+  },
+  "env": {
+    "SUPPORT_QUEUE": "planted-langgraph-inline-queue-needle-8d2f",
+    "OPENAI_API_KEY": "sk-planted-langgraph-inline-key-needle-4c1e9a7b",
+    "MAX_TICKETS": 25
+  },
+  "http": {
+    "cors": {
+      "allow_origins": ["https://support.example.com"]
+    }
+  }
+}

@@ -335,6 +335,8 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 			readImportFixture(t, difyFixture), "dify"},
 		{"a CrewAI crew, told by its name and its agents, read as JSON with comments", "crew.jsonc",
 			readImportFixture(t, crewaiCrewFixture), "crewai"},
+		{"a LangGraph application's configuration, told by its name and its graphs", "langgraph.json",
+			readImportFixture(t, langgraphFixture), "langgraph"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)

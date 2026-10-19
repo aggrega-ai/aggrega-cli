@@ -45,7 +45,8 @@ func importDemoEchoBody(format string) string {
 
 // A Langflow export, a Flowise export, an n8n workflow, a Claude Desktop MCP
 // configuration, an MCP registry server description, a Compose application, a
-// Dify application and a CrewAI crew written as JSON with comments, as the committed source fixtures carry them. They are read from the compiler's
+// Dify application, a CrewAI crew written as JSON with comments and a LangGraph
+// application's configuration, as the committed source fixtures carry them. They are read from the compiler's
 // own fixtures rather than written out here: what these cases drive is
 // recognition of an exported shape, and a shape invented in this file would be
 // recognised by construction.
@@ -58,6 +59,7 @@ const (
 	composeFixture    = "../importops/testdata/compose/compose-for-agents/langgraph.compose.yaml"
 	difyFixture       = "../importops/testdata/dify/authored/workflow.yml"
 	crewaiCrewFixture = "../importops/testdata/crewai/jsonc/crew.jsonc"
+	langgraphFixture  = "../importops/testdata/langgraph/python/langgraph.json"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here

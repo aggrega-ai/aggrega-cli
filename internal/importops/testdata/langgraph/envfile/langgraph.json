@@ -1,0 +1,10 @@
+{
+  "node_version": "20",
+  "graphs": {
+    "researcher": "./src/researcher.ts:graph"
+  },
+  "checkpointer": {
+    "backend": "mongo"
+  },
+  "env": "local.env"
+}

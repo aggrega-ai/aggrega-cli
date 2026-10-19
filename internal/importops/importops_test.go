@@ -239,6 +239,12 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // agents/<name>.json alike. An agents.yaml outside config/, a crew.jsonc listing
 // no agents, an agent's file outside agents/ and a .json file under agents/
 // stating no role are refused.
+//
+// A LangGraph application's configuration is recognised as langgraph, read as
+// JSON with an object at graphs, by its name, langgraph.json, or under any name by
+// its $schema naming the configuration's schema; a langgraph.json holding no
+// graphs object, a configuration under another name naming no schema, and an
+// environment file — whose signature recognises nothing — are refused.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
@@ -267,6 +273,13 @@ func TestSelectFormat(t *testing.T) {
 	crewFile := []byte("// the crew\n{\n  \"agents\": [\"researcher\",],\n  \"tasks\": [],\n}\n")
 	crewNoAgents := []byte("{\"tasks\": []}\n")
 	agentFile := []byte("{\n  /* the researcher */\n  \"role\": \"Researcher\",\n  \"goal\": \"Find facts\",\n}\n")
+	// A LangGraph configuration, the same naming its schema, one whose graphs is
+	// not an object, and an environment file.
+	langgraphConfig := []byte(`{"dependencies":["."],"graphs":{"agent":"./agent.py:graph"}}`)
+	langgraphSchema := []byte(`{"$schema":"https://langgra.ph/schema.json","dependencies":["."],` +
+		`"graphs":{"agent":"./agent.py:graph"}}`)
+	langgraphNoGraphs := []byte(`{"dependencies":["."],"graphs":["./agent.py:graph"]}`)
+	environmentFile := []byte("OPENAI_API_KEY=sk-not-a-key\nGRAPHS=agent\n")
 
 	cases := []struct {
 		name     string
@@ -343,6 +356,21 @@ func TestSelectFormat(t *testing.T) {
 			content: []byte(`{"notes":["one"]}`), wantErr: true},
 		{name: "explicit crewai wins over a Compose file", explicit: "crewai", source: "compose.yaml",
 			content: composeFile, want: "crewai"},
+		{name: "a langgraph.json", source: "langgraph.json", content: langgraphConfig, want: "langgraph"},
+		{name: "a langgraph.json named with its directory", source: "apps/support/langgraph.json",
+			content: langgraphConfig, want: "langgraph"},
+		{name: "a LangGraph configuration under another name, told by its $schema", source: "deploy.json",
+			content: langgraphSchema, want: "langgraph"},
+		{name: "a langgraph.json whose graphs is no object is refused", source: "langgraph.json",
+			content: langgraphNoGraphs, wantErr: true},
+		{name: "a LangGraph configuration under another name naming no schema is refused", source: "deploy.json",
+			content: langgraphConfig, wantErr: true},
+		{name: "an environment file is recognised as nothing", source: "local.env", content: environmentFile,
+			wantErr: true},
+		{name: "an environment file in JSON is recognised as nothing", source: "app/local.env",
+			content: langgraphConfig, wantErr: true},
+		{name: "explicit langgraph wins over a Compose file", explicit: "langgraph", source: "compose.yaml",
+			content: composeFile, want: "langgraph"},
 	}
 
 	for _, tc := range cases {
@@ -359,7 +387,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}
