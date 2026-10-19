@@ -36,16 +36,18 @@ const envAccess = "an n8n workflow reads a variable of the platform's environmen
 // wireOf says how the workflow reaches a part wired to a socket of the platform:
 // at the address the node's stored credential or its own parameters give, never
 // through the connection, whose variables the node does not read. An MCP client
-// node's address is written empty with the workflow's credentials, so the node
-// reaches no server until the address is set again, and the Release supplies the
-// server's own.
+// node reaches its server at the address its parameters hold in the workflow the
+// draft carries — the address the export held, or none where the
+// empty_credentials setting writes it empty with the other members of an MCP
+// server's configuration — and the Release supplies the server's own.
 func wireOf(_ json.RawMessage, part importer.Part) importer.Wiring {
 	variables := strings.Join(socketVariables(part.Socket, part.Alias), " and ")
 	if mcpClients[part.Node.Type] {
 		return importer.Wiring{
-			Literal: fmt.Sprintf("the node's server address is written empty in the workflow the draft carries, so it "+
-				"reaches no server until an address is set again; the platform delivers this connection's address as "+
-				"%s, but %s", variables, envAccess),
+			Literal: fmt.Sprintf("the node reaches its server at the address its parameters hold in the workflow the "+
+				"draft carries — the one the export held, or none where the empty_credentials setting writes it empty, "+
+				"until an address is set again; the platform delivers this connection's address as %s, but %s",
+				variables, envAccess),
 			LeftForRelease: []string{fmt.Sprintf("infra.endpoint of %s, the address of the MCP server the node calls",
 				part.Key)},
 		}

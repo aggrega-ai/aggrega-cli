@@ -108,25 +108,28 @@ func flowID(tree json.RawMessage) string {
 	return id
 }
 
-// credentialsOf locates every credential value a Langflow flow holds, by the
-// marks Langflow itself writes: the value of each template field whose object
-// carries password set to true, and each header and environment value of the
-// server configuration an MCP Tools node carries in its mcp_server field, where
-// a request's credentials travel — and, in that configuration, the server's
-// address, the command starting a server and each argument it is started with,
-// which Langflow marks as no credential and which can carry one all the same.
-// An MCP Tools node carrying no mcp_server field writes its server in fields of
-// its own instead, whose values are located as fieldServerCredentials says.
-// Every other input Langflow marks as no credential and that can carry one is
-// named in unmarkedFields, by node type and field, or in unmarkedAnyType, by
-// field, with how its value is located; emptyUnmarked, the
-// empty_unmarked_credentials setting, says whether such an input belonging to
-// no part of the flow is located, as unmarked.applies says, one it does not
-// apply to being carried as written. Each is addressed from the root of the
-// export, and named by its node's id and the field it sits in. A field holding
-// no value member is not located, since there is nothing in it to write empty;
-// nor is a field marked password, which is located as one.
-func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credential {
+// credentialsOf locates every value a Langflow flow holds that can carry a
+// credential, each of its class, every class every time:
+//
+//   - marked: the value of each template field whose object carries password set
+//     to true, the mark Langflow itself writes;
+//   - an MCP server's members: each header and environment value of the server
+//     configuration an MCP Tools node carries in its mcp_server field, the
+//     server's address, the command starting a server and each argument it is
+//     started with; an MCP Tools node carrying no mcp_server field writes its
+//     server in fields of its own instead, whose values are located as
+//     fieldServerCredentials says; and the fields of the inputs unmarkedFields
+//     names as a server's, an MCP Tools node's own headers among them;
+//   - unmarked: every other input Langflow marks as no credential and that can
+//     carry one, named in unmarkedFields, by node type and field, or in
+//     unmarkedAnyType, by field, with how its value is located.
+//
+// Each is addressed from the root of the export, and named by its node's id and
+// the field it sits in. A field holding no value member is not located, since
+// there is nothing in it; nor is a field marked password as anything else.
+// Which of them is written empty is the empty_credentials setting's, which the
+// plugin kit reads; a value the wiring writes (wire.go) is the wiring's.
+func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var out []importer.Credential
 	for _, node := range nodesOf(tree).list {
 		at := func(tokens ...string) string {
@@ -143,7 +146,8 @@ func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credenti
 			}
 			marked := string(field.Password) == "true"
 			if marked {
-				out = append(out, importer.Credential{Node: node.id, Field: e.Key, Pointer: at(e.Key, "value")})
+				out = append(out, importer.Credential{Node: node.id, Field: e.Key, Pointer: at(e.Key, "value"),
+					Class: importer.CredentialMarked})
 			}
 			if e.Key == "mcp_server" {
 				out = append(out, serverCredentials(node.id, field.Value, at)...)
@@ -151,7 +155,7 @@ func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credenti
 			if marked {
 				continue
 			}
-			if u, ok := unmarkedOf(node.typ, e.Key); ok && u.applies(emptyUnmarked) {
+			if u, ok := unmarkedOf(node.typ, e.Key); ok {
 				out = append(out, u.locate(node.id, e.Key, e.Value, at)...)
 			}
 		}
@@ -168,21 +172,21 @@ const mcpToolsType = "MCPTools"
 // serverCredentials locates, in the server configuration an MCP Tools node's
 // mcp_server value carries — an object with a name and a config — each header
 // value, each environment value, the server's address, the command and each
-// argument, as mcpconfig reads such a configuration. The address is located
-// whether or not the node is wired, since it can carry a key in its user part,
-// its path or its query. Where the node is wired to a tools connection, the
-// edit wireServer (wire.go) makes at that address writes it empty, the platform
-// writing the connection's own address there, and an edit wins over a
-// credential at the same value, so a wired node's address is reported once,
-// with how the node reaches its connection, and never as an emptied credential.
-// A command or an argument is written empty and its member kept, so a
-// configuration that starts a server of its own still reads as one; one already
-// empty is left as written. A value naming a server alone carries no
-// configuration and holds none.
+// argument, as mcpconfig reads such a configuration, each a member of an MCP
+// server's configuration. The address is located whether or not the node is
+// wired, since it can carry a key in its user part, its path or its query.
+// Where the node is wired to a tools connection, the edit wireServer (wire.go)
+// makes at that address writes it empty, the platform writing the connection's
+// own address there, and an edit wins over a located value at the same place,
+// so a wired node's address is reported once, with how the node reaches its
+// connection, and never as a credential value. Written empty, a command or an
+// argument keeps its member, so a configuration that starts a server of its own
+// still reads as one. A value naming a server alone carries no configuration and
+// holds none.
 func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...string) string) []importer.Credential {
 	var out []importer.Credential
 	for _, m := range mcpconfig.Members(memberOf(value, "config")) {
-		c := importer.Credential{Node: nodeID,
+		c := importer.Credential{Node: nodeID, Class: importer.CredentialServerMember,
 			Pointer: at(append([]string{"mcp_server", "value", "config"}, m.Tokens...)...)}
 		switch m.Kind {
 		case mcpconfig.Header:
@@ -211,12 +215,13 @@ func serverCredentials(nodeID string, value json.RawMessage, at func(tokens ...s
 // that layout: each header value of headers_input, each entry of env, the
 // address in sse_url, and the whole command line in command, the arguments it
 // starts the server with included. Langflow marks none of them as a credential,
-// and each can carry one, so each is written empty, its member kept. Each is
-// named by the template field it sits in: a header by its name, and an entry of
-// env, which is written empty whole since the variable's name and its value
-// share one text, by its position where env is a list, so a report names no
-// part of a value. Such a node names no MCP server, so no tools connection
-// reaches it and nothing else is written into its server.
+// and each can carry one; each is a member of an MCP server's configuration,
+// and written empty keeps its member. Each is named by the template field it
+// sits in: a header by its name, and an entry of env, written empty whole since
+// the variable's name and its value share one text, by its position where env
+// is a list, so a report names no part of a value. Such a node names no MCP
+// server, so no tools connection reaches it and nothing else is written into
+// its server.
 func fieldServerCredentials(nodeID string, template json.RawMessage,
 	at func(tokens ...string) string) []importer.Credential {
 	var out []importer.Credential
@@ -225,7 +230,8 @@ func fieldServerCredentials(nodeID string, template json.RawMessage,
 		if !ok {
 			continue
 		}
-		c := importer.Credential{Node: nodeID, Field: m.Tokens[0], Pointer: at(m.Tokens...), Detail: detail}
+		c := importer.Credential{Node: nodeID, Field: m.Tokens[0], Pointer: at(m.Tokens...), Detail: detail,
+			Class: importer.CredentialServerMember}
 		if m.Name != "" {
 			c.Field += "." + m.Name
 		}
@@ -264,30 +270,27 @@ const (
 
 // unmarked is one input Langflow marks as no credential that can carry one: how
 // its value is written empty, why, and, for wholeKept, what of an object or a
-// list is; and whether it belongs to a part of the flow — an MCP server, or the
-// model connection whose key and address a node's own default headers and query
-// would override — which is written empty whatever the
-// empty_unmarked_credentials setting says.
+// list is; and whether it is a member of an MCP server's configuration rather
+// than an input of any other part of the flow, which decides its class.
 type unmarked struct {
 	scrub  scrub
 	why    string
 	parts  string
-	always bool
+	server bool
 }
 
-// applies reports whether the input is written empty where the
-// empty_unmarked_credentials setting is emptyUnmarked: always where it belongs
-// to a part of the flow, and otherwise only where the setting is true.
-func (u unmarked) applies(emptyUnmarked bool) bool {
-	return u.always || emptyUnmarked
+// class is the class of a value the input holds: a member of an MCP server's
+// configuration, or an input its format marks as no credential.
+func (u unmarked) class() importer.CredentialClass {
+	if u.server {
+		return importer.CredentialServerMember
+	}
+	return importer.CredentialUnmarked
 }
 
 // unmarkedFields are, by the type Langflow gives a node and then by field, the
-// inputs Langflow marks as no credential that can carry one. Those belonging to
-// a part of the flow — an MCP Tools node's own headers, an OpenAI Embeddings
-// node's default headers and query, and the deprecated MCP components' fields —
-// are written empty always; every other one only where the
-// empty_unmarked_credentials setting is true:
+// inputs Langflow marks as no credential that can carry one, each located on
+// every node of its type, each of its class:
 //
 //   - the request headers of an API Request, a URL, a Docling Remote, a Cloudflare
 //     Workers AI Embeddings and a Confluent Kafka Producer node: each value, its
@@ -295,27 +298,31 @@ func (u unmarked) applies(emptyUnmarked bool) bool {
 //   - the query parameters an API Request node appends to its address and those
 //     a Google Serper, a SerpAPI, a Serp and a SearchApi node send their search
 //     API: each value, its parameter's name kept, as a header's;
-//   - the headers of a node the platform's own connection reaches — an MCP Tools
-//     node, into whose server configuration the platform writes a tools
-//     connection, and an OpenAI Embeddings node, which reads the key the
-//     platform delivers for a model connection (wire.go) — and that OpenAI
-//     Embeddings node's default query parameters: whole, since a header or a
-//     parameter whose name is kept and whose value is emptied would be sent in
-//     place of the one the platform's connection supplies — the client merges
-//     its default query over the query of the address it calls — while an
-//     empty object or list overrides nothing;
+//   - an OpenAI Embeddings node's default headers and default query parameters:
+//     whole, its kind kept, since a header or a parameter whose name is kept and
+//     whose value is emptied would still be sent — the client sends its default
+//     headers over those it builds from its key, and merges its default query
+//     over the query of the address it calls — while an empty object or list
+//     sends nothing. On a node the platform's model connection reaches, the
+//     wiring writes them empty instead (wire.go), since kept they would be sent
+//     in place of what that connection supplies;
 //   - a whole request written as a command line: an API Request node's cURL text,
 //     which only fills the node's fields in the editor, and a Webhook node's,
 //     which only shows an example;
 //   - an Olivya node's API key and a Mem0 node's configuration, the second
 //     whole with its kind kept;
-//   - the one field each of Langflow's deprecated MCP components keeps its
-//     server in: an MCPSse node's address in url, an MCPStdio node's command
-//     line, its arguments included, in command. Neither names an MCP server, so
-//     no tools connection reaches it.
+//   - as members of an MCP server's configuration: an MCP Tools node's own
+//     headers, whole with its kind kept for the reason an OpenAI Embeddings
+//     node's are, which the wiring writes empty instead on a node wired to a
+//     tools connection, into whose server configuration the platform writes the
+//     connection (wire.go); and the one field each of Langflow's deprecated MCP
+//     components keeps its server in, an MCPSse node's address in url and an
+//     MCPStdio node's command line, its arguments included, in command. Neither
+//     deprecated component names an MCP server, so no tools connection reaches
+//     it.
 var unmarkedFields = map[string]map[string]unmarked{
-	mcpToolsType:                    {"headers": {scrub: wholeKept, why: mcpHeadersDetail, parts: headerNamesAndValues, always: true}},
-	"OpenAIEmbeddings":              {"default_headers": {scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues, always: true}, "default_query": {scrub: wholeKept, why: embeddingQueryDetail, parts: queryNamesAndValues, always: true}},
+	mcpToolsType:                    {"headers": mcpToolsHeaders},
+	embeddingsType:                  {"default_headers": embeddingHeaders, "default_query": embeddingQuery},
 	"APIRequest":                    {"headers": {scrub: headerValues, why: headerValueDetail}, "curl_input": {scrub: wholeText, why: requestTextDetail}, "query_params": queryParameters},
 	"GoogleSerperAPI":               {"query_params": queryParameters},
 	"SerpAPI":                       {"search_params": queryParameters},
@@ -329,18 +336,27 @@ var unmarkedFields = map[string]map[string]unmarked{
 	"Webhook":                       {"curl": {scrub: wholeText, why: requestTextDetail}},
 	"OlivyaComponent":               {"api_key": {scrub: wholeText, why: apiKeyDetail}},
 	"mem0_chat_memory":              {"mem0_config": {scrub: wholeKept, why: memoryConfigDetail, parts: "configuration members"}},
-	"MCPSse":                        {"url": {scrub: wholeText, why: addressDetail, always: true}},
-	"MCPStdio":                      {"command": {scrub: wholeText, why: commandLineDetail, always: true}},
+	"MCPSse":                        {"url": {scrub: wholeText, why: addressDetail, server: true}},
+	"MCPStdio":                      {"command": {scrub: wholeText, why: commandLineDetail, server: true}},
 }
 
 // queryParameters is how the query parameters a request is sent with are
 // written empty.
 var queryParameters = unmarked{scrub: headerValues, why: queryParameterDetail}
 
+// mcpToolsHeaders, embeddingHeaders and embeddingQuery are an MCP Tools node's
+// own headers and an OpenAI Embeddings node's default headers and default
+// query, each written empty whole with its kind kept, as the locator and as
+// the wiring (wire.go) write them.
+var (
+	mcpToolsHeaders  = unmarked{scrub: wholeKept, why: mcpHeadersDetail, parts: headerNamesAndValues, server: true}
+	embeddingHeaders = unmarked{scrub: wholeKept, why: embeddingHeadersDetail, parts: headerNamesAndValues}
+	embeddingQuery   = unmarked{scrub: wholeKept, why: embeddingQueryDetail, parts: queryNamesAndValues}
+)
+
 // unmarkedAnyType are, by field, the inputs Langflow marks as no credential that
 // can carry one on whichever node declares them: the verification token every
-// Composio component inherits from the one base that declares it, written empty
-// only where the empty_unmarked_credentials setting is true.
+// Composio component inherits from the one base that declares it.
 var unmarkedAnyType = map[string]unmarked{
 	"verification_token": {scrub: wholeText, why: verificationTokenDetail},
 }
@@ -357,9 +373,9 @@ func unmarkedOf(typ, field string) (unmarked, bool) {
 }
 
 // locate locates, in the template field named name — field is its object —
-// what u writes empty, reading each value member the field writes, so a field
-// writing one twice is located where any of them holds something. A value
-// already empty, an empty text or null is left as written and not located.
+// the values u names, of its class, reading each value member the field writes,
+// so a field writing one twice is located where any of them holds something. A
+// header or a parameter holding nothing, an empty text or null, is not located.
 func (u unmarked) locate(nodeID, name string, field json.RawMessage, at func(tokens ...string) string) []importer.Credential {
 	var out []importer.Credential
 	seen := map[string]bool{}
@@ -372,18 +388,48 @@ func (u unmarked) locate(nodeID, name string, field json.RawMessage, at func(tok
 			for _, c := range headerValueCredentials(nodeID, name, v.Value, u.why, at) {
 				if !seen[c.Pointer] {
 					seen[c.Pointer] = true
+					c.Class = u.class()
 					out = append(out, c)
 				}
 			}
 		case wholeKept:
 			if c, ok := wholeKeptCredential(nodeID, name, v.Value, u, at); ok {
+				c.Class = u.class()
 				return []importer.Credential{c}
 			}
 		case wholeText:
-			return []importer.Credential{{Node: nodeID, Field: name, Pointer: at(name, "value"), Detail: u.why}}
+			return []importer.Credential{{Node: nodeID, Field: name, Pointer: at(name, "value"), Detail: u.why,
+				Class: u.class()}}
 		}
 	}
 	return out
+}
+
+// wholeKeptEdit returns the edit writing the value of the template field named
+// name empty whole with its kind kept, as u locates it — the wiring's way of
+// writing what a node would send in place of what its connection supplies — and
+// false where the field holds nothing to write empty. Of a field writing its
+// value twice, the first holding something decides what is written at both.
+func (u unmarked) wholeKeptEdit(template flowTemplate, name string, at func(tokens ...string) string) (importer.Edit, bool) {
+	for _, v := range importer.ObjectEntries(template.member(name)) {
+		if v.Key != "value" {
+			continue
+		}
+		if c, ok := wholeKeptCredential("", name, v.Value, u, at); ok {
+			return importer.Edit{Pointer: c.Pointer, Value: firstJSON(c.Value, json.RawMessage(`""`))}, true
+		}
+	}
+	return importer.Edit{}, false
+}
+
+// firstJSON returns the first of its arguments that is set.
+func firstJSON(values ...json.RawMessage) json.RawMessage {
+	for _, v := range values {
+		if v != nil {
+			return v
+		}
+	}
+	return nil
 }
 
 // headerValueCredentials locates each value the headers, or the query

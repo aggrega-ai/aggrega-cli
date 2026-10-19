@@ -219,9 +219,63 @@ func mcpSource(t *testing.T) []byte {
 	return encoded(t, flow)
 }
 
-// TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft imports
-// mcpSource under the default layout, with the reuse mode drafting every part and
-// with the one referencing a HIGH match, and writes the drafts:
+// assertCarriedOnlyInTheFlow requires that each of planted is in the drafted
+// aggregate.yaml written under outputDir — carried as written in the flow — and
+// in no comment of it, in no other file the import wrote, and in none of its
+// decisions or diagnostics, after the needle: each is in the source, which is
+// what says the search fires.
+func assertCarriedOnlyInTheFlow(t *testing.T, planted []string, source []byte, res Result, outputDir string) {
+	t.Helper()
+	for _, p := range planted {
+		if !strings.Contains(string(source), p) {
+			t.Fatalf("the needle: %q is not in the source, so the search finds nothing", p)
+		}
+	}
+	for _, rel := range res.Written {
+		content, err := os.ReadFile(filepath.Join(outputDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read the written %s: %v", rel, err)
+		}
+		for _, p := range planted {
+			switch {
+			case rel != "aggregate.yaml" && strings.Contains(string(content), p):
+				t.Errorf("the written %s holds the planted %q", rel, p)
+			case rel == "aggregate.yaml" && !strings.Contains(string(content), p):
+				t.Errorf("the drafted aggregate.yaml does not carry the planted %q as written", p)
+			}
+		}
+		if rel != "aggregate.yaml" {
+			continue
+		}
+		for _, line := range strings.Split(string(content), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				continue
+			}
+			for _, p := range planted {
+				if strings.Contains(line, p) {
+					t.Errorf("a comment of the drafted aggregate.yaml holds the planted %q: %q", p, line)
+				}
+			}
+		}
+	}
+	for _, part := range []struct {
+		what  string
+		value any
+	}{{"decisions", res.Decisions}, {"diagnostics", res.Diagnostics}} {
+		raw, _ := json.Marshal(part.value)
+		for _, p := range planted {
+			if strings.Contains(string(raw), p) {
+				t.Errorf("the import's %s hold the planted %q", part.what, p)
+			}
+		}
+	}
+}
+
+// TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring imports
+// mcpSource under the default layout — with the reuse mode drafting every part
+// and with the one referencing a HIGH match, under the default credential
+// setting, and drafting every part with empty_credentials at marked — and writes
+// the drafts:
 //
 //   - each server an MCP Tools node names is one Component wired to the
 //     platform's tools socket under the connection the flow names it by — the
@@ -229,58 +283,65 @@ func mcpSource(t *testing.T) []byte {
 //     "Docs Server", which an alias cannot be, is wired as docs-server, the name
 //     the carried flow then gives that node's server; under auto-apply each part
 //     is core/ai-tool/mcp;
-//   - the carried flow is the export with exactly these values written: each
-//     wired node's server address empty, docs-server's name, the request header
-//     and the environment value empty, and the address, the command and each
-//     argument of the node starting a server of its own empty, each reported by
-//     its node and field; that node and the one naming no server are otherwise
-//     carried as written, wired to nothing, and reported — the first with the
-//     halt the platform's build makes on it, its command member kept, so the flow
-//     it carries still reads as starting a server of its own;
-//   - a wired node's address is reported once, with how the node reaches its
-//     connection, and never as an emptied credential;
-//   - no address and no credential the export holds is in any file the import
-//     wrote, nor in its decisions or diagnostics — the search finds each in the
-//     source, which says it fires — and the Aggregate leaves each wired server's
+//   - whatever the setting, each wired node's server address is written empty
+//     and docs-server's name written, as how the node reaches its connection —
+//     reported once, with that, and never as a credential value — so no wired
+//     server's address is in any file the import wrote, nor in its decisions or
+//     diagnostics;
+//   - under the default, every other member of a server's configuration — the
+//     request header, the environment value, and the address, the command and
+//     each argument of the node starting a server of its own — is carried as
+//     written, in the flow and nowhere else, each named by its node and field in
+//     a credential-carried warning; under marked each is written empty and named
+//     in a credential-emptied warning, the command member kept, so the flow
+//     still reads as starting a server of its own;
+//   - the node starting a server of its own and the one naming no server are
+//     wired to nothing and reported — the first with the halt the platform's
+//     build makes on it — and the Aggregate leaves each wired server's
 //     infra.endpoint for the Release.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
 //   - in importPlatform (aggrega-pdk/go/pkg/importer/platform.go), replace
 //     `edits = append(edits, wired[i].wiring.Edits...)` with
-//     `_ = wired[i].wiring.Edits`: both rows fail, docs keeping the name
-//     "Docs Server" and each wired node's address reported as an emptied
-//     credential;
+//     `_ = wired[i].wiring.Edits`: every row fails, docs keeping the name
+//     "Docs Server" and each wired node's address carried, or under marked
+//     reported as an emptied credential;
 //   - in wireServer (plugins/langflow-importer/wire.go), replace
-//     `if server.hasURL {` with `if server.hasURL && false {`: both rows fail,
-//     each wired node's address reported as an emptied credential, and its
-//     report of how it reaches its connection not saying the address is written
-//     empty — the credential scrub still writes the address empty, so none
-//     reaches the drafts;
+//     `if server.hasURL {` with `if server.hasURL && false {` — the wiring value
+//     moved back behind the setting: every row fails, each wired node's address
+//     carried under the default and reported as a credential value under every
+//     setting;
 //   - in serverCredentials (plugins/langflow-importer/walk.go), replace
-//     `case mcpconfig.Argument:` with `case mcpconfig.Argument + 1:`: both rows
-//     fail, the planted argument in the drafted aggregate.yaml;
-//   - in serverCredentials, replace `case mcpconfig.Address:` with
-//     `case mcpconfig.Address + 100:`: both rows fail, the fetch node's planted
-//     address in the drafted aggregate.yaml.
-func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *testing.T) {
+//     `case mcpconfig.Argument:` with `case mcpconfig.Argument + 1:`: every row
+//     fails, the arguments named in no warning and, under marked, the planted
+//     argument in the drafted aggregate.yaml.
+func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *testing.T) {
 	t.Parallel()
 	source := mcpSource(t)
 	for _, tc := range []struct {
 		name     string
 		settings map[string]any
 		partType string
+		emptied  bool
 	}{
 		{name: "drafting every part", partType: "imported/ai-tool/mcptools"},
 		{name: "referencing a HIGH match", settings: map[string]any{"reuse_mode": "auto-apply-above-threshold"},
 			partType: "core/ai-tool/mcp"},
+		{name: "drafting every part, marked emptied", settings: map[string]any{"empty_credentials": "marked"},
+			partType: "imported/ai-tool/mcptools", emptied: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			res, outputDir := writtenImport(t, wiringWorkspace(t, tc.settings), "mcp-flow.json", source)
 			assertNoneReaches(t, []string{remixAddress, "remix-mcp.internal.example", docsAddress,
-				"docs-mcp.internal.example", fetchAddress, "fetch-mcp.internal.example", mcpHeader, mcpEnv, mcpArgument},
-				source, res, outputDir)
+				"docs-mcp.internal.example"}, source, res, outputDir)
+			members := []string{fetchAddress, "fetch-mcp.internal.example", mcpHeader, mcpEnv, mcpArgument}
+			if tc.emptied {
+				assertNoneReaches(t, members, source, res, outputDir)
+			} else {
+				assertCarriedOnlyInTheFlow(t, members, source, res, outputDir)
+			}
 
 			flow, text := carriedFlow(t, outputDir, "langflow")
 			want := decoded(t, source)
@@ -290,13 +351,15 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			for _, id := range []string{"MCPTools-remix1", "MCPTools-remix2"} {
 				asObject(server(want, id)["config"])["url"] = ""
 			}
-			asObject(asObject(server(want, "MCPTools-remix1")["config"])["headers"])["Authorization"] = ""
 			server(want, "MCPTools-docs")["name"] = "docs-server"
 			asObject(server(want, "MCPTools-docs")["config"])["url"] = ""
-			asObject(asObject(server(want, "MCPTools-docs")["config"])["env"])["TOKEN"] = ""
-			asObject(server(want, "MCPTools-fetch")["config"])["url"] = ""
-			asObject(server(want, "MCPTools-fetch")["config"])["command"] = ""
-			asObject(server(want, "MCPTools-fetch")["config"])["args"] = []any{"", ""}
+			if tc.emptied {
+				asObject(asObject(server(want, "MCPTools-remix1")["config"])["headers"])["Authorization"] = ""
+				asObject(asObject(server(want, "MCPTools-docs")["config"])["env"])["TOKEN"] = ""
+				asObject(server(want, "MCPTools-fetch")["config"])["url"] = ""
+				asObject(server(want, "MCPTools-fetch")["config"])["command"] = ""
+				asObject(server(want, "MCPTools-fetch")["config"])["args"] = []any{"", ""}
+			}
 			if !reflect.DeepEqual(flow, want) {
 				docs, _ := json.Marshal(langflowNode(t, flow, "MCPTools-docs"))
 				fetch, _ := json.Marshal(langflowNode(t, flow, "MCPTools-fetch"))
@@ -339,18 +402,22 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 			}
 
 			reported := map[string][]string{}
-			var fetchEmptied []string
+			var fetchReported, credentialFields []string
 			wired := map[string]bool{"MCPTools-remix1": true, "MCPTools-remix2": true, "MCPTools-docs": true}
 			for _, d := range res.Diagnostics {
 				reported[d.Code] = append(reported[d.Code], d.SourceRef)
-				if d.SourceRef == "MCPTools-fetch" && d.Code == "credential-emptied" {
-					fetchEmptied = append(fetchEmptied, d.Message)
+				credential := d.Code == "credential-emptied" || d.Code == "credential-carried"
+				if credential {
+					credentialFields = append(credentialFields, d.Code+" "+d.SourceRef)
+				}
+				if d.SourceRef == "MCPTools-fetch" && credential {
+					fetchReported = append(fetchReported, d.Message)
 				}
 				switch {
 				case !wired[d.SourceRef]:
-				case d.Code == "credential-emptied" && strings.Contains(d.Message, "mcp_server.config.url"):
-					t.Errorf("the address of the wired node %s is reported as an emptied credential, beside how the "+
-						"node reaches its connection: %q", d.SourceRef, d.Message)
+				case credential && strings.Contains(d.Message, "mcp_server.config.url"):
+					t.Errorf("the address of the wired node %s is reported as a credential value, beside how the node "+
+						"reaches its connection: %q", d.SourceRef, d.Message)
 				case d.Code == "part-reads-connection" &&
 					!strings.Contains(d.Message, "the address the exported flow held there is written empty"):
 					t.Errorf("the wired node %s's report of how it reaches its connection does not say the address "+
@@ -366,19 +433,34 @@ func TestAnMCPServerAFlowNamesIsWiredByNameAndItsAddressStaysOutOfTheDraft(t *te
 					t.Errorf("the report of the node starting a server does not say the build halts on it: %q", d.Message)
 				}
 			}
-			const since = " of node MCPTools-fetch is written empty in the flow the draft carries, since "
-			const none = ", though Langflow marks it as none"
-			if want := []string{
-				"the whole value of mcp_server.config.url" + since + "the address an MCP server is reached at can carry " +
-					"a credential in its user part, its path or its query" + none,
-				"the whole value of mcp_server.config.command" + since + "the command an MCP server is started with can " +
-					"carry a credential" + none,
-				"the whole value of mcp_server.config.args.0" + since + "an argument an MCP server is started with can " +
-					"carry a credential" + none,
-				"the whole value of mcp_server.config.args.1" + since + "an argument an MCP server is started with can " +
-					"carry a credential" + none,
-			}; !slices.Equal(fetchEmptied, want) {
-				t.Errorf("the fetch node's emptied fields are reported as\n%q\nwant\n%q", fetchEmptied, want)
+			code := "credential-carried"
+			if tc.emptied {
+				code = "credential-emptied"
+			}
+			if want := []string{code + " MCPTools-remix1", code + " MCPTools-docs", code + " MCPTools-fetch",
+				code + " MCPTools-fetch", code + " MCPTools-fetch", code + " MCPTools-fetch"}; !slices.Equal(credentialFields,
+				want) {
+				t.Errorf("the credential values are reported as %q, want %q", credentialFields, want)
+			}
+			wantFetch := []string{}
+			for _, f := range []struct{ field, why string }{
+				{"mcp_server.config.url", "the address an MCP server is reached at can carry a credential in its user " +
+					"part, its path or its query"},
+				{"mcp_server.config.command", "the command an MCP server is started with can carry a credential"},
+				{"mcp_server.config.args.0", "an argument an MCP server is started with can carry a credential"},
+				{"mcp_server.config.args.1", "an argument an MCP server is started with can carry a credential"},
+			} {
+				if tc.emptied {
+					wantFetch = append(wantFetch, "the whole value of "+f.field+" of node MCPTools-fetch is written empty "+
+						"in the flow the draft carries, since "+f.why+", though Langflow marks it as none")
+					continue
+				}
+				wantFetch = append(wantFetch, "the value of "+f.field+" of node MCPTools-fetch is carried as written in "+
+					"the flow the draft carries: the field belongs to an MCP server's configuration, which can carry a "+
+					"key, and setting empty_credentials to marked or all writes it empty")
+			}
+			if !slices.Equal(fetchReported, wantFetch) {
+				t.Errorf("the fetch node's fields are reported as\n%q\nwant\n%q", fetchReported, wantFetch)
 			}
 			if got := reported["part-not-placed"]; !slices.Equal(got, []string{"MCPTools-fetch", "MCPTools-empty"}) {
 				t.Errorf("the nodes reported as wired to no socket are %v, want the one starting a server and the one "+
@@ -626,8 +708,9 @@ func TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket(t *testin
 //     with `importer.Edit{Pointer: at(f.field, "value"), Value: jsonString("")},`:
 //     the Langflow model row fails, its fields carrying no variable's name;
 //   - in wireOf (plugins/flowise-importer/wire.go), replace
-//     `string(basepath) != "null"` with `string(basepath) == "never"`: the
-//     Flowise model row fails, the planted Base Path in the drafted aggregate.yaml.
+//     `basepath != nil && !mcpconfig.Blank(basepath)` with
+//     `basepath != nil && false`: the Flowise model row fails, the planted Base
+//     Path in the drafted aggregate.yaml.
 func TestEachPartWiredToAPlatformReadsItsConnectionOrIsReported(t *testing.T) {
 	t.Parallel()
 	const (
@@ -792,9 +875,10 @@ const (
 //     api_base and api_key: both are written with the variables the platform
 //     delivers;
 //   - a Language Model node running on another provider, its key a literal: no
-//     variable is written into it, the key is written empty and reaches nothing,
-//     and the node is reported as reached other than through its connection —
-//     the connection's key never reaches a provider it is not delivered for;
+//     variable is written into it, the key is carried as written — in the flow
+//     and nowhere else — and named in a credential-carried warning, the default,
+//     and the node is reported as reached other than through its connection — the
+//     connection's key never reaches a provider it is not delivered for;
 //   - the committed Basic Prompting, whose Language Model node selects no model:
 //     no variable is written into it, and it is reported the same way.
 //
@@ -804,8 +888,9 @@ const (
 //     `"LanguageModelComponent": {"model": {` with
 //     `"LanguageModelComponentX": {"model": {`: every Language Model row fails,
 //     the node reported as of a type whose fields the importer does not know —
-//     the Basic Prompting 1.6.0 row with its api_key written empty and reported
-//     as emptied too — and the Embedding Model row passes;
+//     the Basic Prompting 1.6.0 row with its api_key, no longer written as the
+//     wiring writes it, reported as carried too — and the Embedding Model row
+//     passes;
 //   - in offProvider (plugins/langflow-importer/wire.go), replace
 //     `case provider == node.provider:` with
 //     `case provider == node.provider || provider != "":`: the other-provider row
@@ -837,10 +922,11 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 		// carried writes, into the decoded source, what the flow the draft carries
 		// holds written anew; where it is nil, the flow is carried byte for byte.
 		carried func(flow map[string]any)
-		// emptied marks a node whose api_key the import reports written empty, and
-		// planted the values that must reach nothing the import wrote.
-		emptied bool
-		planted []string
+		// keyCarried marks a node whose api_key the import reports carried as
+		// written, and planted the values that must be in the flow the draft
+		// carries and nowhere else the import wrote.
+		keyCarried bool
+		planted    []string
 	}{
 		{name: "Langflow 1.6.0's Basic Prompting, its Language Model on OpenAI naming its key's variable",
 			source: langflowSelectingProject, node: selectingNodeID,
@@ -864,10 +950,7 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 				return encoded(t, flow)
 			},
 			node: selectingNodeID, literal: fmt.Sprintf(offOpenAI, "runs on a model provider other than OpenAI"),
-			carried: func(flow map[string]any) {
-				asObject(langflowNode(t, flow, selectingNodeID)["api_key"])["value"] = ""
-			},
-			emptied: true, planted: []string{plantedKey}},
+			keyCarried: true, planted: []string{plantedKey}},
 		{name: "the committed Basic Prompting, its Language Model selecting no model",
 			source: langflowPromptingProject, node: promptingNodeID,
 			literal: fmt.Sprintf(offOpenAI, "selects no model provider")},
@@ -881,7 +964,7 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 			body := source(t)
 			res, outputDir := writtenImport(t, wiringWorkspace(t, referencingLangflowModels()), "models-flow.json", body)
 			if len(tc.planted) > 0 {
-				assertNoneReaches(t, tc.planted, body, res, outputDir)
+				assertCarriedOnlyInTheFlow(t, tc.planted, body, res, outputDir)
 			}
 			key := strings.ToLower(tc.node)
 
@@ -917,7 +1000,7 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 					"part-reads-connection"
 			}
 			var reported []string
-			emptied := false
+			keyCarried := false
 			for _, d := range res.Diagnostics {
 				if d.SourceRef != tc.node {
 					continue
@@ -927,15 +1010,18 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 					reported = append(reported, d.Message)
 				case other:
 					t.Errorf("the node is reported %s: %q", other, d.Message)
+				case "credential-carried":
+					keyCarried = keyCarried || strings.HasPrefix(d.Message, "the value of api_key of node "+tc.node+
+						" is carried as written")
 				case "credential-emptied":
-					emptied = emptied || strings.Contains(d.Message, "the value of api_key,")
+					t.Errorf("the node's value is reported written empty under the default: %q", d.Message)
 				}
 			}
 			if !slices.Equal(reported, []string{want}) {
 				t.Errorf("the node is reported %s as\n%q\nwant\n%q", code, reported, want)
 			}
-			if emptied != tc.emptied {
-				t.Errorf("the node's api_key is reported as written empty: %v, want %v", emptied, tc.emptied)
+			if keyCarried != tc.keyCarried {
+				t.Errorf("the node's api_key is reported as carried: %v, want %v", keyCarried, tc.keyCarried)
 			}
 		})
 	}
@@ -1200,35 +1286,43 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 	}
 }
 
-// TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty plants a
-// request header, an environment value, a server address and arguments a server
-// is started with in the server configuration of Flowise's Custom MCP tool —
-// written as JSON text on a chatflow's node, its arguments a list or a single
-// text, as text in the looser form Flowise also reads, and inside the
-// configuration of a tool an agentflow's agent keeps beside a stored credential's
-// id — and imports each under the default layout:
+// TestTheServerConfigurationOfAFlowiseCustomMCPToolIsCarriedOrEmptiedAsTheSettingSays
+// plants a request header, an environment value, a server address and arguments
+// a server is started with in the server configuration of Flowise's Custom MCP
+// tool — written as JSON text on a chatflow's node, its arguments a list or a
+// single text, as text in the looser form Flowise also reads, and inside the
+// configuration of a tool an agentflow's agent keeps beside a stored
+// credential's id — and imports each under the default layout, with the
+// empty_credentials setting absent and at marked:
 //
-//   - none of the planted values is in any file the import wrote, nor in its
-//     decisions or diagnostics, and the search finds each in its source;
-//   - the JSON text is carried with exactly the header value, the environment
-//     value, the address, the command and each argument written empty, every
-//     other member kept — the command and args members too, their values empty;
-//     the looser text, which does not read as JSON, is carried empty; the agent's
-//     configuration is carried with the address and the credential's id empty;
-//   - one warning names each field by its node and says what of it was emptied.
+//   - absent, every planted value is carried as written, in the flow and in
+//     nothing else the import wrote, and one credential-carried warning names
+//     each field by its node and says what of it the setting would write empty;
+//   - at marked, none of the planted values is in any file the import wrote, nor
+//     in its decisions or diagnostics; the JSON text is carried with exactly the
+//     header value, the environment value, the address, the command and each
+//     argument written empty, every other member kept — the command and args
+//     members too, their values empty; the looser text, which does not read as
+//     JSON, is carried empty; the agent's configuration is carried with the
+//     address and the credential's id empty; and one credential-emptied warning
+//     names each field by its node and says what of it was emptied.
+//
+// The search finds each planted value in its source.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixture:
 //
-//   - in serverConfigCredentials (plugins/flowise-importer/walk.go), replace
+//   - in serverConfigValues (plugins/flowise-importer/walk.go), replace
 //     `edits, what := serverConfigEdits(written)` with
-//     `edits, what := []importer.Edit(nil), ""`: the chatflow row fails, the
+//     `edits, what := []importer.Edit(nil), ""`: the chatflow rows fail, the
 //     header, the environment value, the address and the arguments in the
-//     drafted aggregate.yaml;
+//     drafted aggregate.yaml under marked and named in no warning under the
+//     default;
 //   - in serverConfigEdits (the same file), replace
 //     `if (m.Kind == mcpconfig.Command || m.Kind == mcpconfig.Argument) && mcpconfig.Blank(m.Value) {`
 //     with `if m.Kind == mcpconfig.Argument || (m.Kind == mcpconfig.Command && mcpconfig.Blank(m.Value)) {`:
-//     the chatflow row fails, the planted arguments in the drafted aggregate.yaml.
-func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.T) {
+//     the chatflow row under marked fails, the planted arguments in the drafted
+//     aggregate.yaml.
+func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsCarriedOrEmptiedAsTheSettingSays(t *testing.T) {
 	t.Parallel()
 	const (
 		address = "https://flowise-mcp.internal.example/mcp?token=sk-plantedFWurl0123456789"
@@ -1251,17 +1345,53 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 	started, _ := json.MarshalIndent(map[string]any{"command": "npx", "args": []any{"-y", "@acme/mcp-server", argList},
 		"env": map[string]any{"API_KEY": env}}, "", "    ")
 	startedText, _ := json.Marshal(map[string]any{"command": "npx", "args": argText})
+	const tail = " in the flow the draft carries"
+	const server = ": the field belongs to an MCP server's configuration, which can carry a key, and setting " +
+		"empty_credentials to marked or all writes "
+	carriedParts := func(field, node, what string) string {
+		return field + " of node " + node + " is carried with its " + what + " as written" + tail + server + "its " + what +
+			" empty"
+	}
+	reports := func(t *testing.T, res Result, code string, msgs []string) {
+		t.Helper()
+		for _, msg := range msgs {
+			if !slices.ContainsFunc(res.Diagnostics, func(d abi.Diagnostic) bool {
+				return d.Code == code && d.Message == msg
+			}) {
+				t.Errorf("the import does not report under %s\n%s\nit raised %+v", code, msg, res.Diagnostics)
+			}
+		}
+	}
 
-	t.Run("a chatflow", func(t *testing.T) {
+	chatflow := decoded(t, readRealExport(t, flowiseChatflow))
+	chatflow["nodes"] = append(chatflow["nodes"].([]any), customMCP("customMCP_0", string(config)),
+		customMCP("customMCP_1", "{\n  url: 'https://loose.example/mcp',\n  headers: {Authorization: '"+loose+"'},\n}"),
+		customMCP("customMCP_2", string(started)), customMCP("customMCP_3", string(startedText)))
+	chatflowSource := encoded(t, chatflow)
+	chatflowPlanted := []string{address, "flowise-mcp.internal.example", header, env, loose, argList, argText}
+
+	t.Run("a chatflow, under the default", func(t *testing.T) {
 		t.Parallel()
-		flow := decoded(t, readRealExport(t, flowiseChatflow))
-		flow["nodes"] = append(flow["nodes"].([]any), customMCP("customMCP_0", string(config)),
-			customMCP("customMCP_1", "{\n  url: 'https://loose.example/mcp',\n  headers: {Authorization: '"+loose+"'},\n}"),
-			customMCP("customMCP_2", string(started)), customMCP("customMCP_3", string(startedText)))
-		source := encoded(t, flow)
-		res, outputDir := writtenImport(t, wiringWorkspace(t, nil), "custom-mcp.json", source)
-		assertNoneReaches(t, []string{address, "flowise-mcp.internal.example", header, env, loose, argList, argText},
-			source, res, outputDir)
+		res, outputDir := writtenImport(t, wiringWorkspace(t, nil), "custom-mcp.json", chatflowSource)
+		assertCarriedOnlyInTheFlow(t, chatflowPlanted, chatflowSource, res, outputDir)
+		reports(t, res, "credential-carried", []string{
+			carriedParts("mcpServerConfig", "customMCP_0", "header values, environment values and server address"),
+			"the value of mcpServerConfig of node customMCP_1 is carried as written" + tail + server + "it empty",
+			carriedParts("mcpServerConfig", "customMCP_2", "environment values, command and arguments"),
+			carriedParts("mcpServerConfig", "customMCP_3", "command and arguments"),
+		})
+		for _, d := range res.Diagnostics {
+			if d.Code == "credential-emptied" {
+				t.Errorf("a value is written empty under the default: %q", d.Message)
+			}
+		}
+	})
+
+	t.Run("a chatflow, marked", func(t *testing.T) {
+		t.Parallel()
+		res, outputDir := writtenImport(t, wiringWorkspace(t, map[string]any{"empty_credentials": "marked"}),
+			"custom-mcp.json", chatflowSource)
+		assertNoneReaches(t, chatflowPlanted, chatflowSource, res, outputDir)
 
 		carried, _ := carriedFlow(t, outputDir, "flowise")
 		for id, want := range map[string]map[string]any{
@@ -1282,38 +1412,46 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 		if got := asObject(flowiseNode(t, carried, "customMCP_1")["inputs"])["mcpServerConfig"]; got != "" {
 			t.Errorf("the configuration that does not read as JSON is carried as %v, want it empty", got)
 		}
-		const tail = " in the flow the draft carries"
-		for _, msg := range []string{
+		reports(t, res, "credential-emptied", []string{
 			"mcpServerConfig of node customMCP_0 is written with its header values, environment values and server " +
 				"address empty" + tail,
 			"the whole value of mcpServerConfig of node customMCP_1 is written empty in the flow the draft carries, since " +
 				"it does not read as a JSON object, so nothing inside it can be located",
 			"mcpServerConfig of node customMCP_2 is written with its environment values, command and arguments empty" + tail,
 			"mcpServerConfig of node customMCP_3 is written with its command and arguments empty" + tail,
-		} {
-			if !slices.ContainsFunc(res.Diagnostics, func(d abi.Diagnostic) bool {
-				return d.Code == "credential-emptied" && d.Message == msg
-			}) {
-				t.Errorf("the import does not report\n%s\nit raised %+v", msg, res.Diagnostics)
-			}
-		}
+		})
 	})
 
-	t.Run("an agentflow agent's tool", func(t *testing.T) {
-		t.Parallel()
-		flow := decoded(t, readRealExport(t, flowiseAgentflow))
-		inner, _ := json.Marshal(map[string]any{"url": agent})
-		for _, n := range flow["nodes"].([]any) {
-			if asObject(n)["id"] == "agentAgentflow_0" {
-				asObject(asObject(asObject(n)["data"])["inputs"])["agentTools"] = []any{map[string]any{
-					"agentSelectedTool": "customMCP", "agentSelectedToolConfig": map[string]any{
-						"agentSelectedTool": "customMCP", "FLOWISE_CREDENTIAL_ID": credID,
-						"mcpServerConfig": string(inner), "mcpActions": `["search"]`}}}
-			}
+	agentflow := decoded(t, readRealExport(t, flowiseAgentflow))
+	inner, _ := json.Marshal(map[string]any{"url": agent})
+	for _, n := range agentflow["nodes"].([]any) {
+		if asObject(n)["id"] == "agentAgentflow_0" {
+			asObject(asObject(asObject(n)["data"])["inputs"])["agentTools"] = []any{map[string]any{
+				"agentSelectedTool": "customMCP", "agentSelectedToolConfig": map[string]any{
+					"agentSelectedTool": "customMCP", "FLOWISE_CREDENTIAL_ID": credID,
+					"mcpServerConfig": string(inner), "mcpActions": `["search"]`}}}
 		}
-		source := encoded(t, flow)
-		res, outputDir := writtenImport(t, wiringWorkspace(t, nil), "agentflow.json", source)
-		assertNoneReaches(t, []string{agent, "agent-mcp.internal.example", credID}, source, res, outputDir)
+	}
+	agentSource := encoded(t, agentflow)
+	agentPlanted := []string{agent, "agent-mcp.internal.example", credID}
+
+	t.Run("an agentflow agent's tool, under the default", func(t *testing.T) {
+		t.Parallel()
+		res, outputDir := writtenImport(t, wiringWorkspace(t, nil), "agentflow.json", agentSource)
+		assertCarriedOnlyInTheFlow(t, agentPlanted, agentSource, res, outputDir)
+		reports(t, res, "credential-carried", []string{
+			"the value of agentTools.0.agentSelectedToolConfig.FLOWISE_CREDENTIAL_ID of node agentAgentflow_0 is " +
+				"carried as written" + tail + ": its format marks the field as a credential, and setting " +
+				"empty_credentials to marked or all writes it empty",
+			carriedParts("agentTools.0.agentSelectedToolConfig.mcpServerConfig", "agentAgentflow_0", "server address"),
+		})
+	})
+
+	t.Run("an agentflow agent's tool, marked", func(t *testing.T) {
+		t.Parallel()
+		res, outputDir := writtenImport(t, wiringWorkspace(t, map[string]any{"empty_credentials": "marked"}),
+			"agentflow.json", agentSource)
+		assertNoneReaches(t, agentPlanted, agentSource, res, outputDir)
 
 		carried, _ := carriedFlow(t, outputDir, "flowise")
 		tools, _ := asObject(flowiseNode(t, carried, "agentAgentflow_0")["inputs"])["agentTools"].([]any)
@@ -1324,18 +1462,253 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsWrittenEmpty(t *testing.
 		if cfg["FLOWISE_CREDENTIAL_ID"] != "" || cfg["mcpServerConfig"] != `{"url":""}` {
 			t.Errorf("the agent's tool configuration is carried as %v, want the credential's id and the address empty", cfg)
 		}
-		const tail = " in the flow the draft carries"
-		for _, msg := range []string{
+		reports(t, res, "credential-emptied", []string{
 			"the value of agentTools.0.agentSelectedToolConfig.FLOWISE_CREDENTIAL_ID, which node agentAgentflow_0 marks " +
 				"as a credential, is written empty" + tail,
 			"agentTools.0.agentSelectedToolConfig.mcpServerConfig of node agentAgentflow_0 is written with its server " +
 				"address empty" + tail,
-		} {
-			if !slices.ContainsFunc(res.Diagnostics, func(d abi.Diagnostic) bool {
-				return d.Code == "credential-emptied" && d.Message == msg
-			}) {
-				t.Errorf("the import does not report\n%s\nit raised %+v", msg, res.Diagnostics)
+		})
+	})
+}
+
+// TestWhatANodeWouldSendOverItsConnectionIsWrittenEmptyAsWiring imports, under
+// the default layout and with the empty_credentials setting absent and at all,
+// flows whose model nodes hold what they would send over what the platform's
+// model connection supplies — default headers, a default query, a selected
+// credential — each a key-shaped value planted on a node of a committed real
+// export or of a node authored into one:
+//
+//   - a Flowise chat model wired to the model socket: its selected credential and
+//     its default headers are written empty whatever the setting, and its report
+//     of how it reaches its connection says so;
+//   - a Flowise embeddings node the single model connection does not wire, its
+//     Base Path empty and selecting no credential, which the connection reaches
+//     through its client's environment: its default headers are written empty
+//     whatever the setting, and a part-reads-connection warning says how the
+//     connection reaches it;
+//   - a Flowise embeddings node the connection does not wire that selects a
+//     credential, which the connection does not reach as it is written: its
+//     credential and its default headers are carried as written by default, each
+//     named in a credential-carried warning, and written empty under all;
+//   - a Langflow OpenAI Embeddings node the single model connection does not
+//     wire whose address field names the variable the platform delivers: its
+//     default headers and query are written empty whatever the setting, and a
+//     part-reads-connection warning says how the connection reaches it; one whose
+//     address field holds an address of its own: its default headers carried by
+//     default and written empty under all;
+//   - a Langflow OpenAI Embeddings node the draft wires, the only model part: its
+//     default headers are written empty whatever the setting, and its report says
+//     so.
+//
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source —
+// each a wiring value moved back behind the setting:
+//
+//   - in wireOf (plugins/flowise-importer/wire.go), replace
+//     `if e, ok := wholeKeptEdit(memberOf(n.inputs, baseOptionsInput), at("inputs", baseOptionsInput)); ok {`
+//     with the same condition `&& false`: the Flowise rows fail, the wired chat
+//     model's default headers carried under the default;
+//   - in importPlatform (aggrega-pdk/go/pkg/importer/platform.go), replace
+//     `if p.Reached != nil && len(wired) > 0 {` with `if false {`: every row
+//     fails, the reached embeddings nodes' default headers carried under the
+//     default and no part-reads-connection naming them;
+//   - in ownHeaderEdits (plugins/langflow-importer/wire.go), replace
+//     `for _, f := range ownHeaders[typ] {` with
+//     `for _, f := range ownHeaders[typ+"-"] {`: the Langflow rows fail.
+func TestWhatANodeWouldSendOverItsConnectionIsWrittenEmptyAsWiring(t *testing.T) {
+	t.Parallel()
+	const (
+		wiredCred      = "planted-wired-credential-id-0123456789"
+		wiredHeader    = "Bearer sk-plantedWIREDbaseOPTIONS0123456"
+		reachedHeader  = "sk-plantedREACHEDbaseOPTIONS01234567"
+		heldCred       = "planted-held-credential-id-0123456789ab"
+		heldHeader     = "sk-plantedHELDbaseOPTIONS0123456789ab"
+		lfReached      = "sk-plantedLFreachedHEADER0123456789ab"
+		lfReachedQuery = "sk-plantedLFreachedQUERY0123456789abc"
+		lfKept         = "sk-plantedLFkeptHEADER0123456789abcde"
+		lfWired        = "sk-plantedLFwiredHEADER0123456789abcd"
+		tail           = " in the flow the draft carries"
+		unmarkedTail   = ": its format marks the field as no credential, though it can carry one, and setting " +
+			"empty_credentials to all writes its header names and values empty"
+	)
+	flowise := decoded(t, readRealExport(t, flowiseChatflow))
+	for _, n := range flowise["nodes"].([]any) {
+		data := asObject(asObject(n)["data"])
+		inputs := asObject(data["inputs"])
+		switch asObject(n)["id"] {
+		case "chatOpenAI_0":
+			data["credential"] = wiredCred
+			inputs["baseOptions"] = map[string]any{"Authorization": wiredHeader}
+		case "openAIEmbeddings_0":
+			inputs["baseOptions"] = map[string]any{"X-Key": reachedHeader}
+		case "openAIEmbeddings_1":
+			data["credential"] = heldCred
+			inputs["baseOptions"] = map[string]any{"X-Key": heldHeader}
+		}
+	}
+	flowiseSource := encoded(t, flowise)
+
+	dict := func(value map[string]any) map[string]any {
+		return map[string]any{"_input_type": "DictInput", "type": "dict", "value": value}
+	}
+	str := func(load bool, value string) map[string]any {
+		return map[string]any{"_input_type": "MessageTextInput", "type": "str", "load_from_db": load, "value": value}
+	}
+	lfModel := func(id, typ string, template map[string]any) map[string]any {
+		template["_type"] = "Component"
+		return map[string]any{"id": id, "type": "genericNode", "data": map[string]any{"id": id, "type": typ,
+			"node": map[string]any{"template": template}}}
+	}
+	held := decoded(t, readRealExport(t, langflowPromptingProject))
+	data := asObject(held["data"])
+	data["nodes"] = append(data["nodes"].([]any),
+		lfModel("OpenAIEmbeddings-e1", "OpenAIEmbeddings", map[string]any{"openai_api_base": str(true, "OPENAI_BASE_URL"),
+			"default_headers": dict(map[string]any{"X-Key": lfReached}),
+			"default_query":   dict(map[string]any{"key": lfReachedQuery})}),
+		lfModel("OpenAIEmbeddings-e2", "OpenAIEmbeddings", map[string]any{
+			"openai_api_base": str(false, "https://planted-embeddings.example/v1"),
+			"default_headers": dict(map[string]any{"X-Key": lfKept})}),
+		lfModel("OpenAIModel-m1", "OpenAIModel", map[string]any{"openai_api_base": str(false, "")}))
+	heldSource := encoded(t, held)
+	sole := decoded(t, readRealExport(t, langflowPromptingProject))
+	data = asObject(sole["data"])
+	data["nodes"] = append(data["nodes"].([]any), lfModel("OpenAIEmbeddings-s1", "OpenAIEmbeddings",
+		map[string]any{"default_headers": dict(map[string]any{"X-Key": lfWired})}))
+	soleSource := encoded(t, sole)
+
+	reportOf := func(res Result, code, ref string) []string {
+		var out []string
+		for _, d := range res.Diagnostics {
+			if d.Code == code && d.SourceRef == ref {
+				out = append(out, d.Message)
 			}
 		}
-	})
+		return out
+	}
+	for _, setting := range []string{"absent", "all"} {
+		var settings map[string]any
+		if setting == "all" {
+			settings = map[string]any{"empty_credentials": "all"}
+		}
+		t.Run("a Flowise chatflow, "+setting, func(t *testing.T) {
+			t.Parallel()
+			res, outputDir := writtenImport(t, wiringWorkspace(t, settings), "chatflow.json", flowiseSource)
+			assertNoneReaches(t, []string{wiredCred, wiredHeader, reachedHeader}, flowiseSource, res, outputDir)
+			if setting == "all" {
+				assertNoneReaches(t, []string{heldCred, heldHeader}, flowiseSource, res, outputDir)
+			} else {
+				assertCarriedOnlyInTheFlow(t, []string{heldCred, heldHeader}, flowiseSource, res, outputDir)
+			}
+			carried, _ := carriedFlow(t, outputDir, "flowise")
+			for id, want := range map[string]any{"chatOpenAI_0": map[string]any{}, "openAIEmbeddings_0": map[string]any{}} {
+				if got := asObject(flowiseNode(t, carried, id)["inputs"])["baseOptions"]; !reflect.DeepEqual(got, want) {
+					t.Errorf("%s's default headers are carried as %#v, want %#v", id, got, want)
+				}
+			}
+			if got := flowiseNode(t, carried, "chatOpenAI_0")["credential"]; got != "" {
+				t.Errorf("the wired chat model's credential is carried as %#v, want it empty", got)
+			}
+			reads := reportOf(res, "part-reads-connection", "chatOpenAI_0")
+			if len(reads) != 1 || !strings.Contains(reads[0], "since the credential it selected is written empty, the key "+
+				"delivered as OPENAI_API_KEY; its default headers (baseOptions) are written empty, since its client sends "+
+				"them over the header it builds from the key the platform delivers") {
+				t.Errorf("the wired chat model's report of how it reaches its connection reads %q", reads)
+			}
+			want := "node openAIEmbeddings_0 is wired to no socket of core/ai-agent/flowise, and a connection the draft " +
+				"wires reaches it as it is written: the model connection chatopenai-0 reaches it, since the node gives no " +
+				"Base Path and selects no credential, so the OpenAI client Flowise runs it on reads OPENAI_BASE_URL and " +
+				"OPENAI_API_KEY, which the platform delivers for that connection; the default headers (baseOptions) of " +
+				"the node are written empty, since that client sends them over the header it builds from the delivered key"
+			if got := reportOf(res, "part-reads-connection", "openAIEmbeddings_0"); !slices.Equal(got, []string{want}) {
+				t.Errorf("the reached embeddings node is reported as\n%q\nwant\n%q", got, want)
+			}
+			for _, ref := range []string{"chatOpenAI_0", "openAIEmbeddings_0"} {
+				for _, code := range []string{"credential-carried", "credential-emptied"} {
+					if got := reportOf(res, code, ref); len(got) != 0 {
+						t.Errorf("a wiring value of %s is reported as a credential value: %q", ref, got)
+					}
+				}
+			}
+			heldWant := []string{
+				"the value of credential of node openAIEmbeddings_1 is carried as written" + tail + ": its format marks the " +
+					"field as a credential, and setting empty_credentials to marked or all writes it empty",
+				"baseOptions of node openAIEmbeddings_1 is carried with its header names and values as written" + tail +
+					unmarkedTail,
+			}
+			heldCode := "credential-carried"
+			if setting == "all" {
+				heldCode = "credential-emptied"
+				heldWant = []string{
+					"the value of credential, which node openAIEmbeddings_1 marks as a credential, is written empty" + tail,
+					"baseOptions of node openAIEmbeddings_1 is written with its header names and values empty" + tail,
+				}
+			}
+			if got := reportOf(res, heldCode, "openAIEmbeddings_1"); !slices.Equal(got, heldWant) {
+				t.Errorf("the embeddings node selecting a credential is reported as\n%q\nwant\n%q", got, heldWant)
+			}
+			placed := reportOf(res, "part-not-placed", "openAIEmbeddings_1")
+			if len(placed) != 1 || !strings.Contains(placed[0], "other than through the connection chatopenai-0: it "+
+				"selects a credential") {
+				t.Errorf("the embeddings node selecting a credential is reported held out as %q", placed)
+			}
+		})
+
+		t.Run("a Langflow flow with held-out embeddings, "+setting, func(t *testing.T) {
+			t.Parallel()
+			res, outputDir := writtenImport(t, wiringWorkspace(t, settings), "models.json", heldSource)
+			assertNoneReaches(t, []string{lfReached, lfReachedQuery}, heldSource, res, outputDir)
+			if setting == "all" {
+				assertNoneReaches(t, []string{lfKept}, heldSource, res, outputDir)
+			} else {
+				assertCarriedOnlyInTheFlow(t, []string{lfKept}, heldSource, res, outputDir)
+			}
+			carried, _ := carriedFlow(t, outputDir, "langflow")
+			e1 := langflowNode(t, carried, "OpenAIEmbeddings-e1")
+			for _, field := range []string{"default_headers", "default_query"} {
+				if got := asObject(e1[field])["value"]; !reflect.DeepEqual(got, map[string]any{}) {
+					t.Errorf("the reached node's %s is carried as %#v, want an empty object", field, got)
+				}
+			}
+			want := "node OpenAIEmbeddings-e1 is wired to no socket of core/ai-agent/langflow, and a connection the draft " +
+				"wires reaches it as it is written: the model connection openaimodel-m1 reaches it, since its field " +
+				"openai_api_base names the variable OPENAI_BASE_URL, which the platform delivers for that connection and " +
+				"Langflow reads as a global variable; its default headers and its default query are written empty, since " +
+				"its client sends them over what it builds from the key and the address the connection supplies"
+			if got := reportOf(res, "part-reads-connection", "OpenAIEmbeddings-e1"); !slices.Equal(got, []string{want}) {
+				t.Errorf("the reached embeddings node is reported as\n%q\nwant\n%q", got, want)
+			}
+			keptWant := []string{"default_headers of node OpenAIEmbeddings-e2 is carried with its header names and " +
+				"values as written" + tail + unmarkedTail}
+			keptCode := "credential-carried"
+			if setting == "all" {
+				keptCode = "credential-emptied"
+				keptWant = []string{"default_headers of node OpenAIEmbeddings-e2 is written with its header names and " +
+					"values empty" + tail}
+			}
+			if got := reportOf(res, keptCode, "OpenAIEmbeddings-e2"); !slices.Equal(got, keptWant) {
+				t.Errorf("the embeddings node holding an address of its own is reported as\n%q\nwant\n%q", got, keptWant)
+			}
+			for _, code := range []string{"credential-carried", "credential-emptied"} {
+				if got := reportOf(res, code, "OpenAIEmbeddings-e1"); len(got) != 0 {
+					t.Errorf("a wiring value of the reached node is reported as a credential value: %q", got)
+				}
+			}
+		})
+
+		t.Run("a Langflow flow whose one model part is an embeddings node, "+setting, func(t *testing.T) {
+			t.Parallel()
+			res, outputDir := writtenImport(t, wiringWorkspace(t, settings), "embeddings.json", soleSource)
+			assertNoneReaches(t, []string{lfWired}, soleSource, res, outputDir)
+			carried, _ := carriedFlow(t, outputDir, "langflow")
+			if got := asObject(langflowNode(t, carried, "OpenAIEmbeddings-s1")["default_headers"])["value"]; !reflect.DeepEqual(
+				got, map[string]any{}) {
+				t.Errorf("the wired node's default headers are carried as %#v, want an empty object", got)
+			}
+			reported := append(reportOf(res, "part-reads-connection", "OpenAIEmbeddings-s1"),
+				reportOf(res, "part-address-in-flow", "OpenAIEmbeddings-s1")...)
+			if len(reported) != 1 || !strings.Contains(reported[0], "its default headers are written empty, since its "+
+				"client sends them over what it builds from the key and the address the connection supplies") {
+				t.Errorf("the wired node's report of how it reaches its connection reads %q", reported)
+			}
+		})
+	}
 }

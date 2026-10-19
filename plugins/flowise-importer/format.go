@@ -37,6 +37,7 @@ var platform = importer.Platform{
 	Credentials:     credentialsOf,
 	Match:           selectormatch.Match,
 	Wire:            wireOf,
+	Reached:         reachedOf,
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,

@@ -14,27 +14,28 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
-// credentialsOf locates every credential value an n8n workflow holds, and every
-// value written empty as one though n8n marks it as none:
+// credentialsOf locates every value an n8n workflow holds that can carry a
+// credential, each of its class, every class every time:
 //
-//   - the identifier of each stored credential a node selects, at
-//     credentials.<type>.id — the name beside it is kept, since n8n importing the
-//     workflow on another instance resolves a credential it does not hold by its
-//     type and name;
-//   - each parameter n8n marks as a password, wherever among the node's
-//     parameters it sits, as passwordParams names them;
-//   - the address of the MCP server an MCP client node calls, which can carry a
-//     key and is a part of the workflow whose address the Release supplies;
-//   - where emptyUnmarked — the empty_unmarked_credentials setting — is true, the
-//     values of the headers and the query parameters a node sends with a request
-//     the workflow composes, as requestInputs names them, a header's or a
-//     parameter's name kept, since a name carries no secret.
+//   - marked: the identifier of each stored credential a node selects, at
+//     credentials.<type>.id — the name beside it is not located, since n8n
+//     importing the workflow on another instance resolves a credential it does
+//     not hold by its type and name — and each parameter n8n marks as a
+//     password, wherever among the node's parameters it sits, as passwordParams
+//     names them;
+//   - an MCP server's members: the address of the MCP server an MCP client node
+//     calls, which can carry a key;
+//   - unmarked: the values of the headers and the query parameters a node sends
+//     with a request the workflow composes, as requestInputs names them, a
+//     header's or a parameter's name not located, since a name carries no
+//     secret.
 //
 // A credential selected by its name alone, the form older exports write, names a
-// credential and holds none, and is carried as written. Each value is addressed
-// from the root of the export and named by its node's name and the field it sits
-// in.
-func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credential {
+// credential and holds none, and is not located. Each value is addressed from
+// the root of the export and named by its node's name and the field it sits in.
+// Which of them is written empty is the empty_credentials setting's, which the
+// plugin kit reads.
+func credentialsOf(tree json.RawMessage) []importer.Credential {
 	var out []importer.Credential
 	for _, n := range workflowOf(tree).nodes {
 		at := func(tokens ...string) []string {
@@ -46,7 +47,7 @@ func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credenti
 			}
 			if json.Unmarshal(c.Value, &ref) == nil && ref.ID != nil {
 				out = append(out, importer.Credential{Node: n.name, Field: "credentials." + c.Key + ".id",
-					Pointer: importer.Pointer(at("credentials", c.Key, "id")...)})
+					Pointer: importer.Pointer(at("credentials", c.Key, "id")...), Class: importer.CredentialMarked})
 			}
 		}
 		password := passwordParams(n.typ)
@@ -58,12 +59,14 @@ func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credenti
 			for _, e := range importer.ObjectEntries(n.parameters) {
 				if e.Key == "endpointUrl" || e.Key == "sseEndpoint" {
 					out = append(out, importer.Credential{Node: n.name, Field: "parameters." + e.Key,
-						Pointer: importer.Pointer(at("parameters", e.Key)...), Detail: serverAddressDetail})
+						Pointer: importer.Pointer(at("parameters", e.Key)...), Detail: serverAddressDetail,
+						Class: importer.CredentialServerMember})
 				}
 			}
 		}
-		if emptyUnmarked {
-			out = append(out, requestValues(n, at)...)
+		for _, c := range requestValues(n, at) {
+			c.Class = importer.CredentialUnmarked
+			out = append(out, c)
 		}
 	}
 	return out
@@ -71,8 +74,7 @@ func credentialsOf(tree json.RawMessage, emptyUnmarked bool) []importer.Credenti
 
 // serverAddressDetail says why the address an MCP client node calls is written
 // empty.
-const serverAddressDetail = "it is the address of an MCP server, which can carry a key, and the Release supplies the " +
-	"address of the server the node calls"
+const serverAddressDetail = "it is the address of an MCP server, which can carry a key"
 
 // mcpClients are the n8n node types that call an MCP server at an address their
 // parameters hold: the MCP client tool an agent calls, the MCP client node, and
@@ -100,7 +102,7 @@ func passwordValues(node string, raw json.RawMessage, password map[string]bool, 
 			if password[e.Key] && json.Unmarshal(e.Value, &text) == nil {
 				if text != "" {
 					out = append(out, importer.Credential{Node: node, Field: strings.Join(f, "."),
-						Pointer: importer.Pointer(t...), Detail: passwordDetail})
+						Pointer: importer.Pointer(t...), Detail: passwordDetail, Class: importer.CredentialMarked})
 				}
 				continue
 			}

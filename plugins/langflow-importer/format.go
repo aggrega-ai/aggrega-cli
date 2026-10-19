@@ -40,6 +40,7 @@ var platform = importer.Platform{
 	Reach:           reachOf,
 	Refuse:          refuseOf,
 	Wire:            wireOf,
+	Reached:         reachedOf,
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,

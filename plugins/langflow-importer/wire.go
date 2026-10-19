@@ -93,20 +93,142 @@ func refuseOf(tree json.RawMessage, node importer.Node, socket string) string {
 // are delivered for, and the field can name a variable in this export, and
 // through the environment where no field of it gives the part's address and its
 // type reads that address from there; otherwise the part is reported as reached
-// other than through its connection.
+// other than through its connection. On every wired node, what the node would
+// send over what its connection supplies is written empty — an MCP Tools node's
+// own headers, an OpenAI Embeddings node's default headers and default query —
+// as part of how it reaches the connection, whatever the empty_credentials
+// setting says.
 func wireOf(tree json.RawMessage, part importer.Part) importer.Wiring {
 	index, template, ok := nodeTemplate(tree, part.Node.ID)
 	if !ok {
 		return importer.Wiring{}
 	}
-	at := func(tokens ...string) string {
+	at := templateAt(index)
+	var w importer.Wiring
+	if server, ok := serverOf(template); ok && part.Name != "" {
+		w = wireServer(server, part, at)
+	} else {
+		w = wireFields(template, part, at)
+	}
+	edits, said := ownHeaderEdits(template, part.Node.Type, at)
+	if len(edits) == 0 {
+		return w
+	}
+	w.Edits = append(w.Edits, edits...)
+	if w.Reads != "" {
+		w.Reads += "; " + said
+	} else {
+		w.Literal = strings.Join(nonEmpty(w.Literal, said), "; ")
+	}
+	return w
+}
+
+// templateAt returns how a value beneath the template of the node at position
+// index of the flow's node list is addressed from the root of the export.
+func templateAt(index int) func(tokens ...string) string {
+	return func(tokens ...string) string {
 		return importer.Pointer(append([]string{"data", "nodes", strconv.Itoa(index), "data", "node", "template"},
 			tokens...)...)
 	}
-	if server, ok := serverOf(template); ok && part.Name != "" {
-		return wireServer(server, part, at)
+}
+
+// nonEmpty returns those of its arguments that are not empty, in order.
+func nonEmpty(values ...string) []string {
+	var out []string
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
 	}
-	return wireFields(template, part, at)
+	return out
+}
+
+// ownHeaderEdits returns the edits writing empty, whole and with its kind kept,
+// what a node of type typ would send over what the connection reaching it
+// supplies — an MCP Tools node's own headers, which Langflow sends its server
+// over those of its server configuration, where the platform writes what a
+// tools connection presents; an OpenAI Embeddings node's default headers and
+// default query, which its client sends over what it builds from the key and the
+// address it reads — each where it holds something, and says which it writes.
+// A header or a parameter written with its name kept and its value emptied
+// would still be sent; an empty object or list sends nothing.
+func ownHeaderEdits(template flowTemplate, typ string, at func(tokens ...string) string) ([]importer.Edit, string) {
+	var edits []importer.Edit
+	var written []string
+	for _, f := range ownHeaders[typ] {
+		if e, ok := f.u.wholeKeptEdit(template, f.name, at); ok {
+			edits = append(edits, e)
+			written = append(written, f.what)
+		}
+	}
+	if len(edits) == 0 {
+		return nil, ""
+	}
+	why := "since Langflow sends them over the headers of its server configuration, where the platform writes what " +
+		"the connection presents"
+	if typ == embeddingsType {
+		why = "since its client sends them over what it builds from the key and the address the connection supplies"
+	}
+	return edits, strings.Join(written, " and ") + " are written empty, " + why
+}
+
+// embeddingsType is the type Langflow gives its OpenAI Embeddings node.
+const embeddingsType = "OpenAIEmbeddings"
+
+// ownHeader is one field in which a node keeps what it sends over what its
+// connection supplies: the field, how a report names it, and how it is written
+// empty.
+type ownHeader struct {
+	name, what string
+	u          unmarked
+}
+
+// ownHeaders are, by node type, the fields ownHeaderEdits writes empty.
+var ownHeaders = map[string][]ownHeader{
+	mcpToolsType: {{name: "headers", what: "its own headers", u: mcpToolsHeaders}},
+	embeddingsType: {
+		{name: "default_headers", what: "its default headers", u: embeddingHeaders},
+		{name: "default_query", what: "its default query", u: embeddingQuery},
+	},
+}
+
+// reachedOf says how a model connection the draft wires reaches a node it wires
+// to no socket as the node is written, for an OpenAI Embeddings node, the one
+// node type whose own default headers and query the client sends over what that
+// connection supplies: where a part is wired to the model socket and the node
+// reaches it through that connection as standingOf reads it — its field
+// carrying the address naming the variable the platform delivers — its default
+// headers and default query are written empty, as on a wired node. Every other
+// node is reached by none: an MCP Tools node the draft does not wire names no
+// tools connection the platform writes into it.
+func reachedOf(tree json.RawMessage, node importer.Node, wired []importer.Part) importer.Wiring {
+	if node.Type != embeddingsType {
+		return importer.Wiring{}
+	}
+	var model *importer.Part
+	for i := range wired {
+		if wired[i].Socket == "model" {
+			model = &wired[i]
+			break
+		}
+	}
+	if model == nil {
+		return importer.Wiring{}
+	}
+	through, how := standingOf(tree, importer.Part{Node: node, Socket: "model", Key: model.Key, Alias: model.Alias})
+	if !through {
+		return importer.Wiring{}
+	}
+	index, template, ok := nodeTemplate(tree, node.ID)
+	if !ok {
+		return importer.Wiring{}
+	}
+	edits, said := ownHeaderEdits(template, node.Type, templateAt(index))
+	if len(edits) == 0 {
+		return importer.Wiring{}
+	}
+	return importer.Wiring{Edits: edits, Reads: fmt.Sprintf("the model connection %s reaches it, since %s; %s",
+		model.Alias, how, said)}
 }
 
 // wireServer is wireOf for an MCP Tools node.
@@ -124,9 +246,12 @@ func wireServer(server mcpServer, part importer.Part, at func(tokens ...string) 
 		w.Edits = append(w.Edits, importer.Edit{Pointer: at(server.nameAt...), Value: jsonString(part.Alias)})
 		reads = append(reads, "the node names its server "+part.Alias+", the connection's alias")
 	}
-	// The credential scrub (walk.go) writes this address empty on every node; the
-	// edit takes its place on a wired one, so the address is reported here, as
-	// part of how the node reaches its connection, and not again as a credential.
+	// The credential locator (walk.go) locates this address on every node, and
+	// the empty_credentials setting decides whether it is written empty; on a
+	// wired node this edit writes it empty whatever the setting says, since the
+	// platform writes the connection's own address there, so the address is
+	// reported here, as part of how the node reaches its connection, and not as a
+	// credential value.
 	if server.hasURL {
 		w.Edits = append(w.Edits, importer.Edit{Pointer: at("mcp_server", "value", "config", "url"), Value: jsonString("")})
 		reads = append(reads, "the address the exported flow held there is written empty")

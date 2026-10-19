@@ -654,12 +654,7 @@ func asSeeded(carried string) string {
 //     `"LanguageModelComponent": {"model"},`: both Langflow rows fail — the
 //     export's Language Model node names its model in model_name alone, so
 //     values.model is left for the author and the build halts on it — and both
-//     Flowise rows pass;
-//   - in connectionFields (plugins/langflow-importer/wire.go), replace
-//     `"LanguageModelComponent": {"model": {` with
-//     `"LanguageModelComponentX": {"model": {`: both Langflow rows fail — the
-//     node's api_key is written empty, so the draft no longer carries the export
-//     and the seeded node names no variable — and both Flowise rows pass.
+//     Flowise rows pass.
 func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -808,29 +803,35 @@ func mcpBuildSource(t *testing.T) []byte {
 // with a Release giving the server's Component its infra.endpoint: on helm as
 // drafted, and on compose with the lines the draft shows for compose uncommented.
 //
-//   - nothing the import wrote, decided or reported holds the source's address,
-//     its host, the key in its query, the request header or the header in the
-//     node's own headers field — each found in the
-//     source, which says the search fires — and the draft wires the server's
+//   - under the default empty_credentials setting, nothing the import wrote,
+//     decided or reported holds the source's address, its host, the key in its
+//     query or the header in the node's own headers field — the wiring writes
+//     them empty, as how the node reaches its connection — while the request
+//     header of the server's configuration, which the setting leaves as written,
+//     is in the flow the draft carries and nowhere else; each is found in the
+//     source, which says the search fires; and the draft wires the server's
 //     Component to the platform's tools socket under the name the flow gives it;
 //   - in the flow the platform is seeded with, the MCP Tools node's server
 //     configuration holds the address the Release gave, its own headers field
 //     holds an empty object, which overrides no header of the server's
 //     configuration, and the flow holds no copy of the source's host.
 //
-// 🔴 PLANTED DEFECT, rebuilt into the importer fixtures from its source. A wired
-// node's address is written empty twice over — by the edit wireServer makes and
-// by the credential scrub — so the defect removes both: in wireServer
-// (plugins/langflow-importer/wire.go), replace `if server.hasURL {` with
-// `if server.hasURL && false {`, and in serverCredentials
-// (plugins/langflow-importer/walk.go), replace `case mcpconfig.Address:` with
-// `case mcpconfig.Address + 100:`: both rows fail, the source's address in the
-// drafted aggregate.yaml. Either replacement alone leaves the address written
-// empty by the other.
+// 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source —
+// each a wiring value moved back behind the setting, which writes nothing
+// empty by default:
+//
+//   - in wireServer (plugins/langflow-importer/wire.go), replace
+//     `if server.hasURL {` with `if server.hasURL && false {`: both rows fail,
+//     the source's address in the drafted aggregate.yaml;
+//   - in ownHeaderEdits (plugins/langflow-importer/wire.go), replace
+//     `for _, f := range ownHeaders[typ] {` with
+//     `for _, f := range ownHeaders[typ+"-"] {`: both rows fail, the header in the
+//     node's own headers field in the drafted aggregate.yaml and the seeded
+//     node's headers field not empty.
 func TestTheBuiltFlowReachesAnMCPServerAtTheAddressTheReleaseGives(t *testing.T) {
 	t.Parallel()
 	source := mcpBuildSource(t)
-	planted := []string{sourceServerAddress, sourceServerHost, sourceServerKey, sourceServerHeader, sourceNodeHeader}
+	planted := []string{sourceServerAddress, sourceServerHost, sourceServerKey, sourceNodeHeader}
 	for _, target := range []string{"helm", "compose"} {
 		t.Run(target, func(t *testing.T) {
 			t.Parallel()
@@ -840,6 +841,7 @@ func TestTheBuiltFlowReachesAnMCPServerAtTheAddressTheReleaseGives(t *testing.T)
 				t.Fatalf("the import halted: %+v", res.Diagnostics)
 			}
 			assertNoneReaches(t, planted, source, res, dir)
+			assertCarriedOnlyInTheFlow(t, []string{sourceServerHeader}, source, res, dir)
 			agg := readAsTheCompilerDoes(t, readDraftedAggregate(t, dir))
 			if c := agg.Spec.Components["docs"]; c.Type != "core/ai-tool/mcp" || len(c.Values) > 0 {
 				t.Errorf("the server is drafted as %s with values %v, want core/ai-tool/mcp referenced bare", c.Type, c.Values)

@@ -12,14 +12,15 @@ package importops
 //   - an exported workflow is drafted as core/ai-agent/n8n carrying it, its model,
 //     MCP client and vector store wired to the platform's sockets, each reported
 //     as reached other than through its connection;
-//   - the values n8n marks as credentials, the parameters it marks as passwords
-//     and an MCP client's address are written empty whatever the
-//     empty_unmarked_credentials setting says, and a request's headers and query
-//     parameters only where it is true;
+//   - by default every credential value the workflow holds is carried as written
+//     and named in a warning; the empty_credentials setting at marked writes
+//     empty the values n8n marks as credentials, the parameters it marks as
+//     passwords and an MCP client's address, and at all a request's headers and
+//     query parameters too;
 //   - two imports of one workflow are byte-identical;
 //   - the draft builds on helm and on compose with a Release supplying the image
 //     and the model's credential, and the platform is seeded with the workflow as
-//     exported, double braces included, the emptied values apart.
+//     exported, double braces included.
 //
 // The workflows are authored here to the shape n8n exports a workflow in (their
 // README says so); none is copied from n8n.
@@ -106,10 +107,11 @@ const (
 	n8nMCPEndpointWritten = `"endpointUrl": "https://mcp.example.test/mcp?key=` + plantedMCPKey + `"`
 )
 
-// agentWorkflowAsCarried is the agent workflow as the draft carries it: its own
-// bytes, with the identifier of every stored credential its nodes select and the
-// address its MCP client node calls written empty — what n8n marks as a
-// credential, and an MCP server's address, written empty whatever the settings.
+// agentWorkflowAsCarried is the agent workflow as the draft carries it under the
+// default empty_credentials setting: its own bytes, the identifier of every
+// stored credential its nodes select and the address its MCP client node calls
+// included, since the default writes no credential value empty and the n8n
+// importer writes nothing into the workflow for a connection.
 func agentWorkflowAsCarried(t *testing.T) string {
 	t.Helper()
 	carried := string(readN8nWorkflow(t, n8nAgentWorkflow))
@@ -117,12 +119,11 @@ func agentWorkflowAsCarried(t *testing.T) string {
 		if !strings.Contains(carried, `"id": "`+from+`"`) {
 			t.Fatalf("the agent workflow does not select the credential %s", from)
 		}
-		carried = strings.ReplaceAll(carried, `"id": "`+from+`"`, `"id": ""`)
 	}
 	if !strings.Contains(carried, n8nMCPEndpointWritten) {
 		t.Fatal("the agent workflow's MCP client node does not call the address it is authored with")
 	}
-	return strings.Replace(carried, n8nMCPEndpointWritten, `"endpointUrl": ""`, 1)
+	return carried
 }
 
 // TestAnN8nWorkflowIsDraftedAsThePlatformCarryingIt imports the agent workflow,
@@ -130,8 +131,8 @@ func agentWorkflowAsCarried(t *testing.T) string {
 // compiler reads an Aggregate:
 //
 //   - one instance of core/ai-agent/n8n under the key n8n, named by the
-//     workflow's own id and carrying the workflow as exported, the values
-//     written empty whatever the settings apart, double braces included;
+//     workflow's own id and carrying the workflow as exported, byte for byte,
+//     its credential values and its double braces included;
 //   - the chat model referenced as core/ai-model/openai, written with the model
 //     its node selects, and wired to the model socket; the MCP client wired to the
 //     tools socket as core/ai-tool/mcp; the Qdrant store wired to the vector_store
@@ -148,9 +149,9 @@ func agentWorkflowAsCarried(t *testing.T) string {
 //   - in modelOf (plugins/n8n-importer/model.go), delete the resource-locator
 //     branch reading its value member: values.model is left for the author, and
 //     the case fails on it;
-//   - in credentialsOf (plugins/n8n-importer/credentials.go), delete the loop over
-//     the node's credentials: the carried workflow holds the credential ids, and
-//     the case fails comparing it.
+//   - in carryCredentials (aggrega-pdk/go/pkg/importer/credentials.go), replace
+//     `case removal.empties(c.Class):` with `case true:`: the carried workflow
+//     holds the credential ids written empty, and the case fails comparing it.
 func TestAnN8nWorkflowIsDraftedAsThePlatformCarryingIt(t *testing.T) {
 	t.Parallel()
 	rw := n8nWorkspace(t, referencing())
@@ -170,8 +171,8 @@ func TestAnN8nWorkflowIsDraftedAsThePlatformCarryingIt(t *testing.T) {
 	}
 	carried, _ := platform.Values["flow_definition"].(string)
 	if want := agentWorkflowAsCarried(t); carried != want {
-		t.Errorf("the draft carries a workflow of %d bytes that is not the export with its credential ids and MCP "+
-			"address written empty (%d bytes)", len(carried), len(want))
+		t.Errorf("the draft carries a workflow of %d bytes that is not the export, byte for byte (%d bytes)",
+			len(carried), len(want))
 	}
 	if !strings.Contains(carried, "{{ $json.chatInput }}") || !strings.Contains(carried, "{{ $json.ticket }}") {
 		t.Error("the carried workflow, read as the compiler reads it, lost the export's double braces")
@@ -231,68 +232,92 @@ func TestAnN8nWorkflowIsDraftedAsThePlatformCarryingIt(t *testing.T) {
 	}
 }
 
-// TestN8nCredentialValuesAreWrittenEmptyAsTheSettingSays imports each committed
-// workflow under empty_unmarked_credentials true, false and absent, and holds the
-// drafts, decisions and diagnostics to the split the setting draws:
+// TestTheEmptyCredentialsSettingDecidesWhatAnN8nWorkflowCarries imports each
+// committed workflow with the empty_credentials setting absent, none, marked and
+// all, and holds the drafts, decisions and diagnostics to the split the setting
+// draws, after a needle proves each planted value is in its source:
 //
 //   - the stored credentials' identifiers, the MCP client's key and the Crypto
 //     node's secret — what n8n marks as a credential or a password, and an MCP
-//     server's address — reach nothing whatever the setting says, after a needle
-//     proves each is in its source;
-//   - the headers and query parameters a request is sent with reach the drafted
-//     Aggregate where the setting is false or absent, and nothing where it is
-//     true, each reported by its node and its name and never by its value.
+//     server's address — are carried as written, in the drafted Aggregate's flow
+//     and nowhere else, where the setting is absent or none, and reach nothing
+//     where it is marked or all;
+//   - the headers and query parameters a request is sent with are carried as
+//     written, in the flow and nowhere else, unless the setting is all, where
+//     they reach nothing;
+//   - each value is named by its node and its field, a header or a parameter by
+//     its name — under credential-carried where it is carried, and
+//     credential-emptied where it is written empty — and never by its value.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixture from its source:
 //
 //   - in credentialsOf (plugins/n8n-importer/credentials.go), replace
-//     `if emptyUnmarked {` with `if true {`: the false and absent rows fail, the
-//     request values written empty;
+//     `c.Class = importer.CredentialUnmarked` with
+//     `c.Class = importer.CredentialMarked`: the marked rows fail, the request
+//     values written empty;
 //   - in passwordParameters (plugins/n8n-importer/credentials.go), delete the
-//     crypto row: every row importing the HTTP workflow fails, the Crypto node's
-//     secret reaching the draft, and the agent workflow's rows pass.
-func TestN8nCredentialValuesAreWrittenEmptyAsTheSettingSays(t *testing.T) {
+//     crypto row: the marked and all rows importing the HTTP workflow fail, the
+//     Crypto node's secret reaching the draft, and the absent and none rows fail,
+//     no warning naming it.
+func TestTheEmptyCredentialsSettingDecidesWhatAnN8nWorkflowCarries(t *testing.T) {
 	t.Parallel()
-	always := map[string][]string{
+	marked := map[string][]string{
 		n8nAgentWorkflow: {plantedOpenAICredential, plantedBearerCredential, plantedQdrantCredential, plantedMCPKey},
 		n8nHTTPWorkflow:  {plantedHMACSecret},
 	}
-	gated := map[string][]string{
+	unmarked := map[string][]string{
 		n8nAgentWorkflow: {plantedToolQueryKey, plantedToolHeaderKey},
 		n8nHTTPWorkflow:  {plantedHTTPQueryKey, plantedHTTPHeaderKey, plantedJSONHeaderKey},
 	}
-	for _, setting := range []struct {
-		name     string
-		settings map[string]any
-		empties  bool
-	}{
-		{name: "true", settings: map[string]any{"empty_unmarked_credentials": true}, empties: true},
-		{name: "false", settings: map[string]any{"empty_unmarked_credentials": false}},
-		{name: "absent", settings: nil},
-	} {
+	// markedFields are, by workflow, a field of the marked classes each import
+	// names, by node; requestNames the header and parameter names a request's
+	// value is named by.
+	markedFields := map[string][]string{
+		n8nAgentWorkflow: {"credentials.", "parameters.endpointUrl of node "},
+		n8nHTTPWorkflow:  {"parameters.secret of node "},
+	}
+	requestNames := []string{"Authorization", "api_key", "apikey"}
+	for _, setting := range []string{"absent", "none", "marked", "all"} {
 		for _, source := range []string{n8nAgentWorkflow, n8nHTTPWorkflow} {
-			t.Run(setting.name+"/"+filepath.Base(source), func(t *testing.T) {
+			t.Run(setting+"/"+filepath.Base(source), func(t *testing.T) {
 				t.Parallel()
+				var settings map[string]any
+				if setting != "absent" {
+					settings = map[string]any{"empty_credentials": setting}
+				}
 				body := readN8nWorkflow(t, source)
-				res, dir := writtenImport(t, n8nWorkspace(t, setting.settings), filepath.Base(source), body)
+				res, dir := writtenImport(t, n8nWorkspace(t, settings), filepath.Base(source), body)
 				if res.Halted() {
 					t.Fatalf("the import halted: %+v", res.Diagnostics)
 				}
-				assertNoneReaches(t, always[source], body, res, dir)
-				if setting.empties {
-					assertNoneReaches(t, gated[source], body, res, dir)
-					emptied := strings.Join(diagnosticsCoded(res.Diagnostics, "credential-emptied"), "\n")
-					for _, name := range []string{"Authorization", "api_key", "apikey"} {
-						if strings.Contains(string(body), `"name": "`+name+`"`) && !strings.Contains(emptied, "."+name+" of node") {
-							t.Errorf("no credential-emptied names the request value %s:\n%s", name, emptied)
-						}
+				markedEmptied := setting == "marked" || setting == "all"
+				unmarkedEmptied := setting == "all"
+				for _, group := range []struct {
+					values  []string
+					emptied bool
+				}{{marked[source], markedEmptied}, {unmarked[source], unmarkedEmptied}} {
+					if group.emptied {
+						assertNoneReaches(t, group.values, body, res, dir)
+					} else {
+						assertCarriedOnlyInTheFlow(t, group.values, body, res, dir)
 					}
-					return
 				}
-				text := readDraftedAggregate(t, dir)
-				for _, p := range gated[source] {
-					if !strings.Contains(text, p) {
-						t.Errorf("the draft does not carry %q as written, which the setting %s leaves alone", p, setting.name)
+				code := func(emptied bool) string {
+					if emptied {
+						return "credential-emptied"
+					}
+					return "credential-carried"
+				}
+				named := strings.Join(diagnosticsCoded(res.Diagnostics, code(markedEmptied)), "\n")
+				for _, field := range markedFields[source] {
+					if !strings.Contains(named, field) {
+						t.Errorf("no %s names %q:\n%s", code(markedEmptied), field, named)
+					}
+				}
+				named = strings.Join(diagnosticsCoded(res.Diagnostics, code(unmarkedEmptied)), "\n")
+				for _, name := range requestNames {
+					if strings.Contains(string(body), `"name": "`+name+`"`) && !strings.Contains(named, "."+name+" of node") {
+						t.Errorf("no %s names the request value %s:\n%s", code(unmarkedEmptied), name, named)
 					}
 				}
 			})
@@ -418,9 +443,9 @@ func n8nSeededWorkflow(t *testing.T, artifacts map[string][]byte, target string)
 // referencing every HIGH match, and builds the draft on helm and on compose with
 // a Release supplying only what the draft leaves for it. The build succeeds on
 // both, the platform's init step is seeded with the workflow the draft carries —
-// the export byte for byte, its double braces included, the values written empty
-// whatever the settings apart, ending in one line feed — and the platform is
-// handed the wired model's address as OPENAI_BASE_URL.
+// the export byte for byte, its double braces and its credential values
+// included, ending in one line feed — and the platform is handed the wired
+// model's address as OPENAI_BASE_URL.
 //
 // 🔴 PLANTED DEFECT, rebuilt into the importer fixture from its source: in
 // draftedText (aggrega-pdk/go/pkg/importer/definition.go), replace
