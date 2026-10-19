@@ -182,7 +182,7 @@ func versionNewer(src aggrega.ImportSource, tree json.RawMessage) (aggrega.Diagn
 		return aggrega.Diagnostic{}, false
 	}
 	return aggrega.Diagnostic{
-		Severity: "warn",
+		Severity: aggrega.SeverityWarn,
 		Code:     "dsl-version-newer",
 		Message: fmt.Sprintf("source %q is written in version %s of the Dify DSL, newer than %s, the version Dify %s "+
 			"writes — the engine %s runs by default: Dify holds the import of such an application for confirmation, "+

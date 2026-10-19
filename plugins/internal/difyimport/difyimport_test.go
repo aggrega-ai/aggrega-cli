@@ -235,9 +235,9 @@ func TestAChatApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) {
 }
 
 // TestADSLNewerThanThePinnedEngineIsReported imports the chat application with
-// its version rewritten: a version newer than DSLVersion is reported first,
-// under dsl-version-newer; the pinned version, an older one and one that does not
-// read as a version are not.
+// its version rewritten: a version newer than DSLVersion is reported first, as a
+// warning under dsl-version-newer; the pinned version, an older one and one that
+// does not read as a version are not.
 func TestADSLNewerThanThePinnedEngineIsReported(t *testing.T) {
 	t.Parallel()
 	source := fixture(t, "authored/chat.yml")
@@ -255,6 +255,10 @@ func TestADSLNewerThanThePinnedEngineIsReported(t *testing.T) {
 			got := len(out.Diagnostics) > 0 && out.Diagnostics[0].Code == "dsl-version-newer"
 			if got != tc.newer {
 				t.Fatalf("version %s reported newer %v, want %v: %+v", tc.version, got, tc.newer, out.Diagnostics)
+			}
+			if got && out.Diagnostics[0].Severity != aggrega.SeverityWarn {
+				t.Errorf("the version is reported at severity %q, want %q", out.Diagnostics[0].Severity,
+					aggrega.SeverityWarn)
 			}
 			if got && !strings.Contains(out.Diagnostics[0].Message, `version "`+tc.version+`" of the Dify DSL, newer than `+
 				DSLVersion+`, the version Dify `+EngineVersion+` writes`) {
