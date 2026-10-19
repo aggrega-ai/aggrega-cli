@@ -46,6 +46,14 @@
 //     reference — the union is what makes the check honest, since one node
 //     may reference a config a different node in the dispatch group
 //     declares.
+//   - Top-level models. Per-node model declarations — Compose's own models:
+//     section, carried from a sourced compose file or an artifacts: fragment —
+//     union the same way and under the same conflict rule: a model is one
+//     model however many services use it. Every service-level models:
+//     reference must name one of them once the union is complete, or
+//     AssembleBoundaryCore returns TRANSLATION_ERROR naming each unresolved
+//     reference, for the reason the configs: check gives. A service's models:
+//     reference travels with its service. Nothing here reads what a model is.
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute services to this dispatch group, record an ungated
 //     dependency on the target service on the source service. It joins
@@ -61,7 +69,7 @@
 //     nodes all carry one wave records nothing, so a dispatch group where no
 //     boundary declared a wave emits byte-identical output.
 //   - Author order. Map-shaped top-level fields (services, volumes,
-//     networks) are alphabetised by yaml.v3 on marshal — the
+//     networks, configs, models) are alphabetised by yaml.v3 on marshal — the
 //     alphabetical-by-derivation-key principle for synthesized
 //     collections where no author order applies upstream. Within a
 //     service, per-service collections (ports, depends_on, volumes,
@@ -153,6 +161,7 @@ func AssembleBoundaryCore(
 		Volumes:  map[string]Volume{},
 		Networks: map[string]Network{},
 		Configs:  map[string]Config{},
+		Models:   map[string]Model{},
 	}
 
 	// Track which (boundary, nodeID) contributed each service for collision
@@ -161,11 +170,12 @@ func AssembleBoundaryCore(
 	contribsByService := map[string][]sectionContrib{}
 	boundaryByService := map[string]string{}
 
-	// Track every contributor of each top-level volume and config name, with
-	// the bytes it declared, so a name two contributors disagree about is
+	// Track every contributor of each top-level volume, config and model name,
+	// with the bytes it declared, so a name two contributors disagree about is
 	// refused rather than resolved by whichever of them the walk reaches last.
 	contribsByVolume := map[string][]bodyContrib{}
 	contribsByConfig := map[string][]bodyContrib{}
+	contribsByModel := map[string][]bodyContrib{}
 
 	// waveByService records the deployment wave of the node that contributed
 	// each service, so wave-derived ordering reads a service's wave without
@@ -231,6 +241,16 @@ func AssembleBoundaryCore(
 			merged.Configs[k] = v
 		}
 
+		// Models: union under the same conflict rule and for the same reason.
+		for k, v := range frag.Models {
+			emitted, err := marshalDeterministic(v, yamlIndent)
+			if err != nil {
+				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nid}, fmt.Sprintf("compose: node %q model %q: marshal for collision comparison", nid, k))
+			}
+			contribsByModel[k] = append(contribsByModel[k], bodyContrib{party: party, emitted: string(emitted)})
+			merged.Models[k] = v
+		}
+
 		// Services: collision-detect, then merge with the network attached.
 		for svcName, svc := range frag.Services {
 			contribsByService[svcName] = append(contribsByService[svcName], party)
@@ -261,10 +281,17 @@ func AssembleBoundaryCore(
 	if err := checkBodyCollisions("config", contribsByConfig); err != nil {
 		return nil, nil, err
 	}
+	if err := checkBodyCollisions("model", contribsByModel); err != nil {
+		return nil, nil, err
+	}
 
 	// Every service-level configs: reference resolves to a declared top-level
-	// configs: entry, or the build halts.
+	// configs: entry, and every service-level models: reference to a declared
+	// top-level models: entry, or the build halts.
 	if err := checkConfigReferences(merged); err != nil {
+		return nil, nil, err
+	}
+	if err := checkModelReferences(merged); err != nil {
 		return nil, nil, err
 	}
 
@@ -413,6 +440,7 @@ func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*
 		Volumes:  map[string]Volume{},
 		Networks: map[string]Network{},
 		Configs:  map[string]Config{},
+		Models:   map[string]Model{},
 	}
 	for _, f := range intermediates {
 		var frag ComposeFile
@@ -430,6 +458,9 @@ func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*
 		}
 		for k, v := range frag.Configs {
 			out.Configs[k] = v
+		}
+		for k, v := range frag.Models {
+			out.Models[k] = v
 		}
 	}
 	return out, nil
@@ -653,6 +684,40 @@ func checkConfigReferences(merged ComposeFile) error {
 	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input: configmap volume requires a file emitted via the Recipe's artifacts: input; none found", strings.Join(unresolved, "; ")))
+}
+
+// checkModelReferences walks every service's models: references and halts when
+// one names a model the assembled output does not declare at the top level. A
+// service's models: entry grants it one of the file's declared models, so an
+// entry naming none grants nothing the assembled file could serve.
+//
+// It runs over the fully assembled boundary for the reason checkConfigReferences
+// does — a model one node declares may be granted to a service another node
+// contributes — and reports in the same order: services alphabetically, each
+// service's references in the order its fragment listed them. The reference is
+// matched by name alone; nothing reads what the model is.
+func checkModelReferences(merged ComposeFile) error {
+	svcNames := make([]string, 0, len(merged.Services))
+	for name := range merged.Services {
+		svcNames = append(svcNames, name)
+	}
+	sort.Strings(svcNames)
+
+	var unresolved []string
+	for _, name := range svcNames {
+		for _, model := range merged.Services[name].Models.Names() {
+			if _, declared := merged.Models[model]; declared {
+				continue
+			}
+			unresolved = append(unresolved, fmt.Sprintf("service %q references model %q", name, model))
+		}
+	}
+	if len(unresolved) == 0 {
+		return nil
+	}
+	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+		cerrors.TranslationError, cerrors.SourceLocation{},
+		fmt.Sprintf("compose AssembleBoundary: %s; no contributor at this assembly path declares it: declare each one as a top-level models: entry in a compose fragment at the same assembly path, or remove the reference", strings.Join(unresolved, "; ")))
 }
 
 // applyDependsOn projects IR edges onto contributing services and records an

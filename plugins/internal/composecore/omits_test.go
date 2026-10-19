@@ -180,10 +180,12 @@ func TestOmits_TheCountsSayWhatEachEntryLeftOut(t *testing.T) {
 // the three, before anything is left out, under the condition naming a construct the
 // provider has no expression for, with a sentence naming the entry and the kinds
 // compose accepts. Kinds are compared exactly, so a capitalized spelling is refused.
+// A model is refused too: the provider carries a file's models: section into the
+// assembled file, and leaving one out is not among the kinds an entry may name.
 func TestOmits_AnEntryNamingAKindComposeDoesNotDeclareIsRefused(t *testing.T) {
 	t.Parallel()
 
-	for _, kind := range []string{"Service", "network", "secret", "Deployment", ""} {
+	for _, kind := range []string{"Service", "network", "secret", "Deployment", "model", ""} {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			_, _, err := renderOmitting(t, omitsSource, nil, omitEntries("service/db", kind+"/web"))

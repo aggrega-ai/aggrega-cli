@@ -16,11 +16,16 @@ import (
 // on both sides of the merge: SynthesizeWorkloadCore fills one with a single
 // node's contributions, and AssembleBoundaryCore folds those into the one this
 // package emits.
+//
+// Models is never filled by the synthesizer — a Workload declares no model — and
+// reaches the merge only from a fragment that writes Compose's own top-level
+// models: section, a sourced compose file or an artifacts: body.
 type ComposeFile struct {
 	Services map[string]Service `yaml:"services,omitempty"`
 	Volumes  map[string]Volume  `yaml:"volumes,omitempty"`
 	Networks map[string]Network `yaml:"networks,omitempty"`
 	Configs  map[string]Config  `yaml:"configs,omitempty"`
+	Models   map[string]Model   `yaml:"models,omitempty"`
 }
 
 // Service is one compose service definition. Fields populated only as needed
@@ -52,6 +57,7 @@ type Service struct {
 	CapAdd          []string                 `yaml:"cap_add,omitempty"`
 	CapDrop         []string                 `yaml:"cap_drop,omitempty"`
 	Configs         []ServiceConfig          `yaml:"configs,omitempty"`
+	Models          ServiceModels            `yaml:"models,omitempty"`
 	Deploy          *Deploy                  `yaml:"deploy,omitempty"`
 	StopGracePeriod string                   `yaml:"stop_grace_period,omitempty"`
 	DNS             []string                 `yaml:"dns,omitempty"`
@@ -252,6 +258,135 @@ type Config struct {
 type ServiceConfig struct {
 	Source string `yaml:"source"`
 	Target string `yaml:"target"`
+}
+
+// Model is one entry of a compose file's top-level models: section — an AI model
+// the application uses, which the platform running the file pulls and serves.
+// The body is carried as the fragment writes it: model (the OCI artifact
+// identifier), context_size and runtime_flags in the specification's own
+// spelling, and every other member — an x- extension among them — in Other.
+//
+// Nothing here reads what a model is. The identifier is not parsed, no member
+// is checked against what any engine accepts, and nothing about the host that
+// will serve the model is known at build time.
+//
+// ContextSize is held as the scalar the fragment wrote rather than as an
+// integer, so a value spelled through compose variable interpolation reaches
+// the assembled file as written instead of failing to decode.
+type Model struct {
+	Model        string   `yaml:"model,omitempty"`
+	ContextSize  any      `yaml:"context_size,omitempty"`
+	RuntimeFlags []string `yaml:"runtime_flags,omitempty"`
+	// Other carries every member the fields above do not name. yaml.v3 emits an
+	// inline map after the named fields with its keys sorted, so the emitted
+	// order is fixed whatever order the fragment wrote them in.
+	Other map[string]any `yaml:",inline"`
+}
+
+// ServiceModels is a compose service's models: field — the models the service
+// is granted. Compose accepts a short sequence of model names and a long mapping
+// of model name to a binding naming the environment variables the platform
+// fills with the model's address and identifier.
+//
+// The field round-trips in the form the fragment wrote: a short list emits as a
+// short list and a long mapping as a long mapping, in the order the fragment
+// listed the models, so the assembled file grants exactly what was written. No
+// map is iterated on the path to the output.
+type ServiceModels struct {
+	entries []serviceModelEntry
+	long    bool
+}
+
+// serviceModelEntry is one granted model: its key under the top-level models:
+// section, and the binding the long form wrote for it (zero for the short form).
+type serviceModelEntry struct {
+	name    string
+	binding ServiceModelBinding
+}
+
+// ServiceModelBinding is the body of one long-form service models: entry:
+// endpoint_var and model_var, the names of the variables the platform sets to
+// the model runner's address and to the model's identifier, and every other
+// member the entry writes, carried in Other. Compose names the variables itself
+// where the entry leaves them out.
+type ServiceModelBinding struct {
+	EndpointVar string         `yaml:"endpoint_var,omitempty"`
+	ModelVar    string         `yaml:"model_var,omitempty"`
+	Other       map[string]any `yaml:",inline"`
+}
+
+// Names returns the models the service references, in the order the fragment
+// listed them.
+func (m ServiceModels) Names() []string {
+	names := make([]string, 0, len(m.entries))
+	for _, e := range m.entries {
+		names = append(names, e.name)
+	}
+	return names
+}
+
+// IsZero reports whether the field grants no model. yaml.v3 reads it through the
+// yaml.IsZeroer interface to honor the `omitempty` tag, for the reason
+// DependsOn.IsZero gives.
+func (m ServiceModels) IsZero() bool { return len(m.entries) == 0 }
+
+// MarshalYAML emits the short sequence when the fragment wrote one and the long
+// mapping when it wrote that, both in the order the models were listed.
+//
+// Value receiver so dispatch works when ServiceModels is a struct field of a
+// non-addressable map value, matching the DependsOn field alongside it.
+func (m ServiceModels) MarshalYAML() (any, error) {
+	if !m.long {
+		return m.Names(), nil
+	}
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	out.Content = make([]*yaml.Node, 0, 2*len(m.entries))
+	for _, e := range m.entries {
+		var body yaml.Node
+		if err := body.Encode(e.binding); err != nil {
+			return nil, fmt.Errorf("models: encoding entry %q: %w", e.name, err)
+		}
+		out.Content = append(out.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: e.name},
+			&body,
+		)
+	}
+	return out, nil
+}
+
+// UnmarshalYAML accepts both compose forms and records which one was written.
+// Mapping entries are read in document order. An entry whose body is empty or
+// null grants the model with Compose's own variable names.
+func (m *ServiceModels) UnmarshalYAML(node *yaml.Node) error {
+	m.entries = nil
+	m.long = false
+	switch node.Kind {
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			var name string
+			if err := item.Decode(&name); err != nil {
+				return fmt.Errorf("models: decoding entry at line %d: %w", item.Line, err)
+			}
+			m.entries = append(m.entries, serviceModelEntry{name: name})
+		}
+		return nil
+	case yaml.MappingNode:
+		m.long = true
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			var name string
+			if err := node.Content[i].Decode(&name); err != nil {
+				return fmt.Errorf("models: decoding key at line %d: %w", node.Content[i].Line, err)
+			}
+			var binding ServiceModelBinding
+			if err := node.Content[i+1].Decode(&binding); err != nil {
+				return fmt.Errorf("models: decoding entry %q at line %d: %w", name, node.Content[i+1].Line, err)
+			}
+			m.entries = append(m.entries, serviceModelEntry{name: name, binding: binding})
+		}
+		return nil
+	default:
+		return fmt.Errorf("models: expected a sequence or a mapping, got kind %d at line %d", node.Kind, node.Line)
+	}
 }
 
 // ServiceVolume is one entry in a service's volumes: list. Compose's "long

@@ -24,7 +24,9 @@ type omitKind struct {
 
 // omitKinds are the kinds a sourced compose render leaves out, in the order a
 // refusal names them. It is this provider's one home of what an entry's kind may
-// say: every other top-level section of a compose file either is not carried into
+// say. A compose file's top-level models: section is carried into the assembled
+// file and is not among them, so an entry naming a model is refused like one
+// naming any other kind; every other top-level section either is not carried into
 // the assembled file or is derived by the assembly itself, so an entry naming one
 // has nothing it could leave out.
 var omitKinds = []omitKind{
