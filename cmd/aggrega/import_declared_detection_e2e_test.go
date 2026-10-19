@@ -313,15 +313,16 @@ func TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats(t *testi
 	seedSource(t, root, "mystery.json", []byte(`{"foo":"bar"}`))
 
 	code, _, _, process := runImportAtTheRoot(t, root, filepath.Join(root, "mystery.json"), "--dry-run")
-	if code == 0 || !strings.Contains(process, "(for example --format flowise, --format langflow or --format n8n)") {
+	if code == 0 || !strings.Contains(process,
+		"(for example --format flowise, --format langflow, --format mcp or --format n8n)") {
 		t.Errorf("the command's refusal (exit %d) does not offer the advertised formats:\n%s", code, process)
 	}
 	if answer := importThroughTheTool(t, root, map[string]any{"source": "mystery.json"}); !answer.refused ||
-		!strings.Contains(answer.text, `one of "flowise", "langflow", "n8n"`) {
+		!strings.Contains(answer.text, `one of "flowise", "langflow", "mcp", "n8n"`) {
 		t.Errorf("the tool's refusal (refused=%v) does not offer the advertised formats: %s", answer.refused, answer.text)
 	}
 	if answer := importThroughTheSession(t, root, map[string]any{"source": "mystery.json", "outputDir": "drafts"}); !strings.Contains(
-		answer.refusal, "(for example flowise or langflow or n8n)") {
+		answer.refusal, "(for example flowise or langflow or mcp or n8n)") {
 		t.Errorf("the session's refusal does not offer the advertised formats: %q", answer.refusal)
 	}
 }

@@ -1,0 +1,28 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "perplexity-key",
+      "description": "Perplexity API key",
+      "password": true
+    }
+  ],
+  "servers": {
+    "perplexity": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-perplexity"],
+      "env": {
+        "PERPLEXITY_API_KEY": "${input:perplexity-key}"
+      },
+      "envFile": "${workspaceFolder}/perplexity.env"
+    },
+    "docs": {
+      "type": "http",
+      "url": "https://docs.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:docs-token}"
+      }
+    }
+  }
+}

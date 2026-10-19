@@ -43,15 +43,17 @@ func importDemoEchoBody(format string) string {
 	return "kind: Component\nmetadata:\n  name: " + format + "\n"
 }
 
-// A Langflow export, a Flowise export and an n8n workflow, as the committed
-// source fixtures carry them. They are read from the compiler's own fixtures
-// rather than written out here: what these cases drive is recognition of an
-// exported shape, and a shape invented in this file would be recognised by
-// construction.
+// A Langflow export, a Flowise export, an n8n workflow, a Claude Desktop MCP
+// configuration and an MCP registry server description, as the committed source
+// fixtures carry them. They are read from the compiler's own fixtures rather than
+// written out here: what these cases drive is recognition of an exported shape,
+// and a shape invented in this file would be recognised by construction.
 const (
-	langflowFixture = "../compiler/importersocket/testdata/langflow-flow.json"
-	flowiseFixture  = "../compiler/importersocket/testdata/flowise-flow.json"
-	n8nFixture      = "../importops/testdata/n8n/agent-workflow.json"
+	langflowFixture   = "../compiler/importersocket/testdata/langflow-flow.json"
+	flowiseFixture    = "../compiler/importersocket/testdata/flowise-flow.json"
+	n8nFixture        = "../importops/testdata/n8n/agent-workflow.json"
+	mcpDesktopFixture = "../importops/testdata/mcp/claude_desktop_config.json"
+	mcpServerFixture  = "../importops/testdata/mcp/registry-npm.server.json"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here

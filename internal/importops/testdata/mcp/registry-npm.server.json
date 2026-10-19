@@ -1,0 +1,50 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.example/weather",
+  "title": "Weather",
+  "description": "Weather forecasts for a place",
+  "version": "1.2.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@example/weather-mcp",
+      "version": "1.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--units",
+          "value": "metric"
+        },
+        {
+          "type": "positional",
+          "valueHint": "cache_dir",
+          "description": "Where forecasts are cached",
+          "isRequired": true
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "WEATHER_API_KEY",
+          "description": "The key the forecast service is called with",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "WEATHER_REGION",
+          "description": "The region forecasts are read for",
+          "default": "eu-west"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/example/weather-mcp:1.2.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

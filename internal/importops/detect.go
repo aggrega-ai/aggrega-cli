@@ -14,8 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
-
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -284,7 +283,7 @@ func parseOnce(ctx context.Context, syntax, name string, content []byte, seam Se
 		return parsedSource{}, err
 	}
 	src := parsedSource{}
-	if !haltedParse(out) {
+	if importersocket.ParseRefusal(out) == nil {
 		dec := json.NewDecoder(bytes.NewReader(out.Tree))
 		dec.UseNumber()
 		var tree any
@@ -295,17 +294,6 @@ func parseOnce(ctx context.Context, syntax, name string, content []byte, seam Se
 	}
 	parsed[key] = src
 	return src, nil
-}
-
-// haltedParse reports whether a parse reported a halting diagnostic — the
-// source is not in the syntax it was read as.
-func haltedParse(out abi.ParseOutput) bool {
-	for _, d := range out.Diagnostics {
-		if d.Severity == abi.SeverityHalt {
-			return true
-		}
-	}
-	return false
 }
 
 // filesMatch reports whether a signature's file patterns admit the source name:

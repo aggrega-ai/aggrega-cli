@@ -41,3 +41,4 @@ governance	cel	plugins/cel-governance	rust	../aggrega-pdk/rust,../aggrega-abi/ru
 importer	langflow	./plugins/langflow-importer	go		no
 importer	flowise	./plugins/flowise-importer	go		no
 importer	n8n	./plugins/n8n-importer	go		no
+importer	mcp	./plugins/mcp-importer	go		no

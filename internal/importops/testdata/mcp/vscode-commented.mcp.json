@@ -1,0 +1,12 @@
+{
+  // The servers this workspace starts, as Visual Studio Code reads them: JSON
+  // with comments, a trailing comma allowed.
+  "servers": {
+    /* A server run from a package, its URL "https://example.com/a//b" kept. */
+    "fetch": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch", "--user-agent=https://example.com//agent",],
+    },
+  },
+}

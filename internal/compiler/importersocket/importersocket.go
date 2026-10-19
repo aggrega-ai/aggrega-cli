@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
@@ -101,8 +102,11 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // threads the invocation context, so the host's producer-consumption depth guard
 // crosses the boundary and a nested producer-consumption call is denied. An
 // unresolvable syntactic format halts loudly through the parser resolver rather
-// than the source passing through unparsed. The tree arrives through this
-// callback, never through the import input payload.
+// than the source passing through unparsed, and a source the parser refuses fails
+// the importer's parse request with the parser's reason ([ParseRefusal]), so the
+// importer reports it as a source that does not parse rather than walking an
+// empty tree. The tree arrives through this callback, never through the import
+// input payload.
 func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sources []abi.ImportSource, settings json.RawMessage, catalogView *abi.CatalogProjection) (abi.ImportOutput, error) {
 	plugin, err := res.ImporterPluginForFormat(format)
 	if err != nil {
@@ -147,6 +151,14 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 			}
 			return nil, err
 		}
+		// A parser answers a source it refuses with a halting diagnostic and a
+		// null tree rather than failing its run, so the refusal is handed back as
+		// the error the importer's parse request fails with: the importer reports
+		// the source as one that does not parse, with the parser's reason, rather
+		// than walking a tree that holds nothing.
+		if refusal := ParseRefusal(parsed); refusal != nil {
+			return nil, refusal
+		}
 		return parsed.Tree, nil
 	})
 
@@ -155,6 +167,27 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 		return abi.ImportOutput{}, fmt.Errorf("call %q on importer %q: %w", wasm.ImportExport, plugin.Coordinate(), err)
 	}
 	return readImportOutput(plugin.Coordinate(), out)
+}
+
+// ParseRefusal returns the refusal a parse reports — the message of each of its
+// halting diagnostics, in the order the parser reported them, joined by "; " —
+// or nil where it reports none. A parser reports a source that is not in the
+// syntax it reads as a halting diagnostic beside a null tree rather than as a
+// failed run, so this is the one reading of whether a parse refused its source:
+// the import socket hands the refusal to the importer that asked for the parse,
+// and recognition reads a refused source as matching no signature of that
+// syntax.
+func ParseRefusal(out abi.ParseOutput) error {
+	var messages []string
+	for _, d := range out.Diagnostics {
+		if d.Severity == abi.SeverityHalt {
+			messages = append(messages, d.Message)
+		}
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(messages, "; "))
 }
 
 // readImportOutput reads an importer's answer through the socket's three

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.example/notes",
+  "description": "Read and write notes",
+  "version": "0.4.1",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/example/notes-mcp:0.4.1",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8080/mcp"
+      }
+    }
+  ]
+}

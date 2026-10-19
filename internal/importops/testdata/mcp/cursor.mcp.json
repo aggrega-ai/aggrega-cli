@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "remote-search": {
+      "url": "https://search.example.com/mcp?api_key=planted-query-needle-5d81",
+      "headers": {
+        "x-api-key": "planted-header-needle-b902"
+      }
+    },
+    "local-files": {
+      "command": "node",
+      "args": ["${workspaceFolder}/tools/files-server.js"],
+      "env": {
+        "FILES_ROOT": "${env:HOME}"
+      }
+    },
+    "oauth-server": {
+      "url": "https://oauth.example.com/mcp",
+      "auth": {
+        "CLIENT_ID": "planted-client-id-needle-0a17",
+        "CLIENT_SECRET": "planted-client-secret-needle-4e1c",
+        "scopes": ["read"]
+      }
+    }
+  }
+}

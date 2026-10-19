@@ -211,12 +211,28 @@ func referenceDetectionSeam(t *testing.T) Seam {
 // are a list, content that is not JSON, a top-level array and a null data.nodes
 // are refused rather than guessed at, and an explicit format wins over whatever
 // the content would be recognised as.
+//
+// An MCP client's configuration is recognised as mcp by its file's name and its
+// top-level object — .mcp.json, claude_desktop_config.json and .cursor/mcp.json
+// by an object at mcpServers, .vscode/mcp.json by one at servers — and a registry
+// server description by its $schema alone, whatever the file is called; and since
+// exactly one format is recognised in each case, no other importer's signature
+// matches any of them. A client file whose name names no client, one in the other
+// client's shape, and one holding a comment, which does not parse as JSON, are
+// refused, the last imported by naming its format.
 func TestSelectFormat(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 
 	langflow := []byte(`{"data":{"nodes":[],"edges":[]}}`)
 	flowise := []byte(`{"nodes":[],"edges":[]}`)
 	n8n := []byte(`{"id":"a1","nodes":[],"connections":{}}`)
+	// An MCP client's configuration in each of its two shapes, the same file with
+	// a comment, and a registry server description.
+	mcpServers := []byte(`{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"]}}}`)
+	vscodeServers := []byte(`{"servers":{"docs":{"type":"http","url":"https://docs.example.com/mcp"}}}`)
+	commentedServers := []byte("{\n  // the workspace's servers\n  \"servers\": {\"docs\": {\"type\": \"http\", \"url\": \"https://docs.example.com/mcp\"}}\n}\n")
+	serverDescription := []byte(`{"$schema":"https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",` +
+		`"name":"io.github.example/weather","description":"Weather","version":"1.2.0"}`)
 
 	cases := []struct {
 		name     string
@@ -242,6 +258,23 @@ func TestSelectFormat(t *testing.T) {
 		{name: "a null data.nodes is not an array", source: "x.json", content: []byte(`{"data":{"nodes":null}}`), wantErr: true},
 		{name: "explicit format wins over langflow content", explicit: "flowise", source: "flow.json", content: langflow, want: "flowise"},
 		{name: "explicit format wins over garbage content", explicit: "langflow", source: "x.json", content: []byte("not json"), want: "langflow"},
+		{name: "Claude Code's .mcp.json", source: ".mcp.json", content: mcpServers, want: "mcp"},
+		{name: "a .mcp.json named with its directory", source: "project/.mcp.json", content: mcpServers, want: "mcp"},
+		{name: "Claude Desktop's configuration", source: "claude_desktop_config.json", content: mcpServers, want: "mcp"},
+		{name: "Cursor's .cursor/mcp.json", source: ".cursor/mcp.json", content: mcpServers, want: "mcp"},
+		{name: "Visual Studio Code's .vscode/mcp.json", source: ".vscode/mcp.json", content: vscodeServers, want: "mcp"},
+		{name: "a registry server.json", source: "server.json", content: serverDescription, want: "mcp"},
+		{name: "a registry server description named otherwise, told by its content", source: "weather.json",
+			content: serverDescription, want: "mcp"},
+		{name: "a client file named only mcp.json names no client, so is refused", source: "mcp.json",
+			content: mcpServers, wantErr: true},
+		{name: "a client file renamed is refused", source: "servers.json", content: mcpServers, wantErr: true},
+		{name: "a .mcp.json in Visual Studio Code's shape is refused", source: ".mcp.json", content: vscodeServers,
+			wantErr: true},
+		{name: "a commented .vscode/mcp.json does not parse as JSON, so is refused", source: ".vscode/mcp.json",
+			content: commentedServers, wantErr: true},
+		{name: "explicit mcp wins over the commented file", explicit: "mcp", source: ".vscode/mcp.json",
+			content: commentedServers, want: "mcp"},
 	}
 
 	for _, tc := range cases {
@@ -258,7 +291,7 @@ func TestSelectFormat(t *testing.T) {
 				if undetected.Path() != tc.source {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
-				if want := []string{"langflow", "flowise", "n8n"}; !slices.Equal(undetected.Formats(), want) {
+				if want := []string{"langflow", "flowise", "n8n", "mcp"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}
