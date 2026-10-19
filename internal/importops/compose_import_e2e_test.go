@@ -53,19 +53,7 @@ var composeHubEntities = []string{
 func composeWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	rw, folder := catalogFolderImportWorkspaceAttaching(t, settings)
-	for _, rel := range composeHubEntities {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
-		if err != nil {
-			t.Fatalf("read the hub's %s: %v", rel, err)
-		}
-		dst := filepath.Join(folder.Dir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			t.Fatalf("create the directory for %s: %v", rel, err)
-		}
-		if err := os.WriteFile(dst, body, 0o644); err != nil {
-			t.Fatalf("write %s: %v", rel, err)
-		}
-	}
+	layHubEntities(t, folder.Dir, composeHubEntities)
 	return rw
 }
 

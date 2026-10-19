@@ -1055,17 +1055,12 @@ func componentAncestryOver(componentType string, lookup validator.ComponentLooku
 // then refuses every mapping that relies on it, which is why the resolver is an
 // argument of the gate rather than a field read off the receiver.
 func (c *Catalog) ComponentAncestry(componentType string) ([]string, error) {
-	return componentAncestryOver(componentType, func(uri string) (types.Component, bool) {
-		key, ok, _ := c.resolveComponentKey(uri)
-		if !ok {
-			return types.Component{}, false
-		}
-		return c.Components[key], true
-	})
+	return componentAncestryOver(componentType, c.componentOfType)
 }
 
 // recipesImplementing returns the sorted, provider-qualified identity keys of
-// every catalog recipe whose spec.implements satisfies componentType. It is a
+// every catalog recipe whose spec.implements satisfies componentType, the type
+// resolved first as [implementsRequest] resolves it through component. It is a
 // SUGGESTION provider only — resolution is mapping-only and never consults it.
 // Its reader is the no-mapping diagnostic (pin candidates); the import's draft
 // Manifest reads the same enumeration through [Catalog.RecipesImplementing].
@@ -1081,8 +1076,8 @@ func (c *Catalog) ComponentAncestry(componentType string) ([]string, error) {
 // The matcher is read from the package that declares the mapping-consistency rule
 // rather than carried here, so this suggestion surface and that rule cannot come
 // to disagree about which recipes satisfy a type.
-func recipesImplementing(recipes map[string]types.Recipe, componentType string) []string {
-	matched := implementingRecipes(recipes, componentType)
+func recipesImplementing(recipes map[string]types.Recipe, componentType string, component componentResolver) []string {
+	matched := implementingRecipes(recipes, componentType, component)
 	ids := make([]string, 0, len(matched))
 	for _, r := range matched {
 		ids = append(ids, recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version))
@@ -1090,15 +1085,58 @@ func recipesImplementing(recipes map[string]types.Recipe, componentType string) 
 	return ids
 }
 
+// componentResolver resolves a component type reference to the Component a
+// catalog view resolves it to, and reports whether it holds one. Each view
+// passes its own: an eagerly-loaded catalog its Component index
+// ([Catalog.componentOfType]), the lazy lookup its tiered resolution, whose
+// recipe shell carries no Component index of its own.
+type componentResolver func(typeURI string) (types.Component, bool)
+
+// implementsRequest is the component type the implements enumeration is asked
+// with for componentType: the type as written where it pins a version, and,
+// where it pins none, the type at the version a build resolves it to — the
+// Component component resolves the bare type to, which is the highest version
+// the catalog holds, chosen by the catalog's own version selection.
+//
+// It is the reason an unversioned type finds the Recipes declaring the version
+// they implement. The matcher answers a request naming no version only with a
+// Recipe whose implements is that same unversioned string, while a Component
+// reference naming no version builds as the highest version the catalog holds;
+// asking with the version the build resolves to makes the suggestions name the
+// Recipes that implement what the build would compile, through the one matcher
+// and with no matching rule of the enumeration's own.
+//
+// A type component resolves to nothing — one the catalog holds no Component of,
+// such as a Component an import drafted new — or a nil component is asked as
+// written, as is a Component carrying no version.
+func implementsRequest(componentType string, component componentResolver) string {
+	if _, pinned := types.ParseVersionPin(componentType).Pin(); pinned || component == nil {
+		return componentType
+	}
+	comp, ok := component(componentType)
+	if !ok {
+		return componentType
+	}
+	return versionedSlotURI(comp.Metadata.Name, comp.Metadata.Version)
+}
+
 // implementingRecipes is the one enumeration of the recipes whose spec.implements
 // satisfies componentType, ordered by their identity keys. recipesImplementing
 // projects it onto those keys and [Catalog.RecipesImplementing] hands it on whole,
 // so the pin-candidate list and the import's draft Manifest read one set in one
 // order.
-func implementingRecipes(recipes map[string]types.Recipe, componentType string) []types.Recipe {
+//
+// The type is resolved here, through implementsRequest, and it must be resolved
+// nowhere else, so the two readers ask with the same version for the same bare
+// type: a reader
+// resolving it on its own would be a second resolution free to disagree, and the
+// disagreement would be a drafted Manifest naming a Recipe the halt does not
+// offer, or the reverse.
+func implementingRecipes(recipes map[string]types.Recipe, componentType string, component componentResolver) []types.Recipe {
+	requested := implementsRequest(componentType, component)
 	var keys []string
 	for key, r := range recipes {
-		if resolver.ImplementsSatisfies(r.Spec.Implements, componentType) {
+		if resolver.ImplementsSatisfies(r.Spec.Implements, requested) {
 			keys = append(keys, key)
 		}
 	}
@@ -1116,7 +1154,10 @@ func implementingRecipes(recipes map[string]types.Recipe, componentType string) 
 
 // RecipesImplementing returns every Recipe this catalog holds whose
 // spec.implements satisfies componentType, ordered by identity
-// (capability/name:version), every version of a Recipe included.
+// (capability/name:version), every version of a Recipe included. A componentType
+// naming no version is asked at the version this catalog resolves it to — the
+// highest version of the Component it holds — so it finds the Recipes declaring
+// that version; one this catalog holds no Component of is asked as written.
 //
 // It is the enumeration the no-mapping diagnostic lists its pin candidates from,
 // handed on whole rather than as identity keys, so a reader needing a Recipe's
@@ -1128,7 +1169,7 @@ func (c *Catalog) RecipesImplementing(componentType string) []types.Recipe {
 	if c == nil {
 		return nil
 	}
-	return implementingRecipes(c.Recipes, componentType)
+	return implementingRecipes(c.Recipes, componentType, c.componentOfType)
 }
 
 // RecipeCapabilities returns the capabilities this catalog's Recipes bind to:

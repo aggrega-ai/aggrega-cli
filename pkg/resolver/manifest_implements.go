@@ -108,8 +108,12 @@ func ImplementsSatisfies(impl, componentType string) bool {
 //     alone is consistent — including a bare key against a version-pinned
 //     implements. ImplementsSatisfies rejects that direction because it treats a
 //     versionless request as unmatchable, so the bare-key case is handled here
-//     rather than by loosening ImplementsSatisfies (whose other caller passes a
-//     concrete component version, where a bare request never arises).
+//     rather than by loosening ImplementsSatisfies, whose other callers are the
+//     implements enumerations: the Recipe enumeration resolves a bare component
+//     type to the version the catalog holds before asking, so from it a bare
+//     request reaches the matcher only where the catalog holds no versioned
+//     Component of the type, and the FeatureRecipe enumeration asks with the
+//     feature type as written.
 func manifestMappingConsistent(impl, key string) bool {
 	if ImplementsSatisfies(impl, key) {
 		return true

@@ -33,10 +33,18 @@ import (
 // are a field: a reader seeing an unmapped instance and a reader seeing a
 // refused lookup have to act differently, and an answer carrying only "not
 // mapped" cannot tell them which they have.
+//
+// The candidates of an instance whose type names no version are the Recipes
+// implementing the version the build resolves that type to, resolved through
+// component — the view's own Component resolution, which a recipe shell over
+// another backing does not hold and is therefore handed. It is the enumeration
+// the import's draft Manifest reads, resolved the same way, so a drafted
+// Manifest and this halt name the same Recipes.
 func (c *Catalog) nodeRecipeResolution(
 	manifest *types.Manifest,
 	instanceName string,
 	componentType string,
+	component componentResolver,
 ) resolver.NodeRecipeResolution {
 	uri, mapped, err := ComponentRecipeURI(manifest, instanceName, componentType)
 	if keys, refused := ambiguousMappingKeys(err); refused {
@@ -55,6 +63,6 @@ func (c *Catalog) nodeRecipeResolution(
 		return resolver.NodeRecipeResolution{Reference: uri, Mapped: true, Present: present}
 	}
 	return resolver.NodeRecipeResolution{
-		PinCandidates: recipesImplementing(c.Recipes, componentType),
+		PinCandidates: recipesImplementing(c.Recipes, componentType, component),
 	}
 }

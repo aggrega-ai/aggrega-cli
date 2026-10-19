@@ -233,6 +233,13 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 // lazily-enumerated recipe set into the answer about one component instance, so
 // a rule asked over the composition reads the same complete enumeration the
 // build's own resolution reads rather than a partially-walked one.
+//
+// A type naming no version has its pin candidates enumerated at the version this
+// lookup's own Component resolution selects for it, which is the resolution the
+// build compiled the instance through: the recipe shell holds no Component index,
+// so the resolution is handed to it rather than read off it. That resolution
+// remembers each reference it has answered, a miss included, so a type it has
+// already resolved is answered from what it remembered.
 func (l *LazyLookup) NodeRecipeResolution(
 	manifest *types.Manifest,
 	instanceName string,
@@ -240,7 +247,7 @@ func (l *LazyLookup) NodeRecipeResolution(
 ) resolver.NodeRecipeResolution {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.recipeCatalog().nodeRecipeResolution(manifest, instanceName, componentType)
+	return l.recipeCatalog().nodeRecipeResolution(manifest, instanceName, componentType, l.component)
 }
 
 // PluginColocatedDirs is the co-located directory map AsCatalogLookup hands the

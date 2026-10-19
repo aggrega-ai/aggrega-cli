@@ -42,10 +42,10 @@ spec:
 		t.Fatalf("expected the broken recipe to be skipped-with-reason, got %d skips", len(ll.recipeSkips))
 	}
 	// The valid recipes are still enumerated as candidates by implements.
-	if len(recipesImplementing(ll.recipes, "core/a")) == 0 {
+	if len(recipesImplementing(ll.recipes, "core/a", nil)) == 0 {
 		t.Errorf("core/a should enumerate its recipe despite the unrelated broken recipe")
 	}
-	if len(recipesImplementing(ll.recipes, "core/b")) == 0 {
+	if len(recipesImplementing(ll.recipes, "core/b", nil)) == 0 {
 		t.Errorf("core/b should enumerate its recipe despite the unrelated broken recipe")
 	}
 }
@@ -70,8 +70,8 @@ func TestLazyRecipe_EagerLazyParity(t *testing.T) {
 	ll.buildRecipeIndex()
 
 	for _, typ := range []string{"core/a", "core/b"} {
-		eids := recipesImplementing(eager.Recipes, typ)
-		lids := recipesImplementing(ll.recipes, typ)
+		eids := recipesImplementing(eager.Recipes, typ, nil)
+		lids := recipesImplementing(ll.recipes, typ, nil)
 		if len(eids) == 0 || len(lids) == 0 {
 			t.Fatalf("type %q: eager ids=%v lazy ids=%v (expected both non-empty)", typ, eids, lids)
 		}
@@ -100,7 +100,7 @@ func TestLazyRecipe_EnumeratesAllImplementers(t *testing.T) {
 	ll := NewLazyLookup(dir, "", []string{dir}, nil)
 	ll.buildRecipeIndex()
 
-	ids := recipesImplementing(ll.recipes, "core/dup")
+	ids := recipesImplementing(ll.recipes, "core/dup", nil)
 	if len(ids) != 2 {
 		t.Errorf("expected 2 colliding recipe identities, got %d (%v)", len(ids), ids)
 	}

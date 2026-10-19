@@ -71,7 +71,7 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 	if len(c.Recipes) != 1 {
 		t.Errorf("expected 1 recipe, got %d", len(c.Recipes))
 	}
-	if len(recipesImplementing(c.Recipes, "core/compute/api-server")) == 0 {
+	if len(recipesImplementing(c.Recipes, "core/compute/api-server", nil)) == 0 {
 		t.Error("missing recipe implementing core/api-server")
 	}
 
@@ -514,10 +514,10 @@ spec:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(recipesImplementing(c.Recipes, "core/x")) == 0 {
+	if len(recipesImplementing(c.Recipes, "core/x", nil)) == 0 {
 		t.Error("missing core/x from dirA")
 	}
-	if len(recipesImplementing(c.Recipes, "core/y")) == 0 {
+	if len(recipesImplementing(c.Recipes, "core/y", nil)) == 0 {
 		t.Error("missing core/y from dirB")
 	}
 }
@@ -627,7 +627,7 @@ spec:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(recipesImplementing(c.Recipes, "core/rel")) == 0 {
+	if len(recipesImplementing(c.Recipes, "core/rel", nil)) == 0 {
 		t.Fatal("recipe not loaded")
 	}
 	var r types.Recipe

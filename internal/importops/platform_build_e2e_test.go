@@ -107,12 +107,20 @@ func platformBuildPaths() []string {
 func hubPlatformWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	rw, folder := catalogFolderImportWorkspaceAttaching(t, settings)
-	for _, rel := range platformImportEntities {
+	layHubEntities(t, folder.Dir, platformImportEntities)
+	return rw
+}
+
+// layHubEntities copies each of the hub's entities named by its path beneath
+// platformHub into dir, at the same path.
+func layHubEntities(t *testing.T, dir string, rels []string) {
+	t.Helper()
+	for _, rel := range rels {
 		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read the hub's %s: %v", rel, err)
 		}
-		dst := filepath.Join(folder.Dir, filepath.FromSlash(rel))
+		dst := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			t.Fatalf("create the directory for %s: %v", rel, err)
 		}
@@ -120,7 +128,6 @@ func hubPlatformWorkspace(t *testing.T, settings map[string]any) *workspaceconfi
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
-	return rw
 }
 
 // referencing are the settings referencing every part whose best candidate is

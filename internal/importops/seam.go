@@ -98,9 +98,10 @@ type ImporterResolver interface {
 //
 // The catalog is the implementation an import runs through, and its answers are
 // the catalog's own suggestion enumeration — the one the no-mapping diagnostic
-// lists its pin candidates from — so a draft Manifest names exactly the Recipes a
-// build halting on an unmapped instance would offer. A harness standing in for
-// the catalog answers both itself.
+// lists its pin candidates from, which resolves a type naming no version to the
+// version a build resolves it to before matching — so a draft Manifest names
+// exactly the Recipes a build halting on an unmapped instance would offer. A
+// harness standing in for the catalog answers both itself.
 type RecipeIndex interface {
 	RecipeCapabilities() []string
 	RecipesImplementing(componentType string) []types.Recipe

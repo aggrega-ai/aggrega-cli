@@ -529,7 +529,7 @@ func TestNameTierOverride_FiresAtBothJoins(t *testing.T) {
 	}
 	// Fiction-killer: BOTH same-type recipes (and feature recipes) survive the
 	// real loader — the catalog state the override depends on is reachable.
-	if ids := recipesImplementing(c.Recipes, compType); len(ids) != 2 {
+	if ids := recipesImplementing(c.Recipes, compType, nil); len(ids) != 2 {
 		t.Fatalf("expected 2 recipes implementing %q to coexist after load; got %v", compType, ids)
 	}
 	if ids := featureRecipesImplementing(c.FeatureRecipes, featType); len(ids) != 2 {
@@ -633,7 +633,7 @@ func TestNodeRecipeResolution_SeparatesTheOutcomesARuleActsOn(t *testing.T) {
 	}
 	empty := &types.Manifest{}
 
-	unmapped := c.nodeRecipeResolution(empty, "db-x", "app/db")
+	unmapped := c.nodeRecipeResolution(empty, "db-x", "app/db", c.componentOfType)
 	if unmapped.Mapped {
 		t.Errorf("a type no mapping reaches must come back unmapped; got %+v", unmapped)
 	}
@@ -645,7 +645,7 @@ func TestNodeRecipeResolution_SeparatesTheOutcomesARuleActsOn(t *testing.T) {
 		t.Errorf("the candidates must name both implementing recipes; got %v", unmapped.PinCandidates)
 	}
 
-	unimplemented := c.nodeRecipeResolution(empty, "x", "app/none")
+	unimplemented := c.nodeRecipeResolution(empty, "x", "app/none", c.componentOfType)
 	if unimplemented.Mapped || len(unimplemented.PinCandidates) != 0 {
 		t.Errorf("a type nothing implements must come back unmapped with no candidate; got %+v", unimplemented)
 	}
@@ -653,7 +653,7 @@ func TestNodeRecipeResolution_SeparatesTheOutcomesARuleActsOn(t *testing.T) {
 	comp := &types.MappingTier{}
 	comp.Type.Set("app/db", "db-a:1.0.0")
 	mapped := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
-	resolved := c.nodeRecipeResolution(mapped, "db-x", "app/db")
+	resolved := c.nodeRecipeResolution(mapped, "db-x", "app/db", c.componentOfType)
 	if !resolved.Mapped || !resolved.Present {
 		t.Errorf("a mapped type whose recipe the catalog holds must come back mapped and present; got %+v", resolved)
 	}
@@ -696,7 +696,7 @@ func TestNodeRecipeResolution_RefusesAnUnpinnedInstanceAndResolvesAPinnedOne(t *
 	comp.Type.Set("app/db:2.0.0", "db-a:1.0.0")
 	doubled := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: comp}}}
 
-	refused := c.nodeRecipeResolution(doubled, "db-x", "app/db")
+	refused := c.nodeRecipeResolution(doubled, "db-x", "app/db", c.componentOfType)
 	if refused.Mapped {
 		t.Errorf("a refused lookup names no reference; got %+v", refused)
 	}
@@ -710,7 +710,7 @@ func TestNodeRecipeResolution_RefusesAnUnpinnedInstanceAndResolvesAPinnedOne(t *
 		t.Errorf("a refused lookup must offer no pin candidates; got %v", refused.PinCandidates)
 	}
 
-	pinned := c.nodeRecipeResolution(doubled, "db-x", "app/db:2.0.0")
+	pinned := c.nodeRecipeResolution(doubled, "db-x", "app/db:2.0.0", c.componentOfType)
 	if !pinned.Mapped || !pinned.Present {
 		t.Errorf("an exactly-pinned instance must resolve against the key it names; got %+v", pinned)
 	}
@@ -815,7 +815,7 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 	// and a producer that reported them the same way would be invisible from the
 	// feature arm alone.
 	componentAbsent := c.nodeRecipeResolution(
-		manifestFor("no-such-recipe:1.0.0", "no-such-feature-recipe:1.0.0"), "db", compType)
+		manifestFor("no-such-recipe:1.0.0", "no-such-feature-recipe:1.0.0"), "db", compType, c.componentOfType)
 	if !componentAbsent.Mapped || componentAbsent.Present {
 		t.Errorf("a component mapped to an absent recipe must come back mapped and not present; got %+v", componentAbsent)
 	}
@@ -823,7 +823,7 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 		t.Errorf("reference = %q, want the mapping value verbatim", componentAbsent.Reference)
 	}
 	componentShape := c.nodeRecipeResolution(
-		manifestFor("core/eval/present:1.0.0", "core/eval/cred:1.0.0"), "db", compType)
+		manifestFor("core/eval/present:1.0.0", "core/eval/cred:1.0.0"), "db", compType, c.componentOfType)
 	if !componentShape.Mapped || componentShape.Present {
 		t.Errorf("a component mapped past the segment ceiling must come back mapped and not present; got %+v", componentShape)
 	}
@@ -849,7 +849,7 @@ func TestCatalogImmunity_UnmappedSingleImplementerStaysUnresolved(t *testing.T) 
 		t.Fatalf("load: %v", err)
 	}
 
-	resolution := c.nodeRecipeResolution(&types.Manifest{}, "db", "app/db")
+	resolution := c.nodeRecipeResolution(&types.Manifest{}, "db", "app/db", c.componentOfType)
 	if resolution.Mapped || resolution.Present {
 		t.Fatalf("an unmapped instance with exactly ONE implementer must stay unresolved; got %+v", resolution)
 	}

@@ -2277,6 +2277,19 @@ func (c *Catalog) resolveComponentKey(typeURI string) (string, bool, error) {
 	})
 }
 
+// componentOfType returns the Component this catalog's own index resolves
+// typeURI to — the version resolveComponentKey selects — and whether it holds
+// one. A catalog shell assembled over another backing, whose Component index is
+// empty by construction, holds none, so such a shell is handed its backing's
+// resolution instead wherever a Component must be resolved.
+func (c *Catalog) componentOfType(typeURI string) (types.Component, bool) {
+	key, ok, _ := c.resolveComponentKey(typeURI)
+	if !ok {
+		return types.Component{}, false
+	}
+	return c.Components[key], true
+}
+
 func (c *Catalog) resolveFeatureKey(typeURI string) (string, bool, error) {
 	return selectEntityVersion(c.Features, typeURI, func(v types.Feature) (string, string) {
 		return v.Metadata.Name, v.Metadata.Version
@@ -2297,13 +2310,7 @@ func (c *Catalog) resolvePluginKey(uri string) (string, bool, error) {
 
 func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
-		Component: func(typeURI string) (types.Component, bool) {
-			key, ok, _ := c.resolveComponentKey(typeURI)
-			if !ok {
-				return types.Component{}, false
-			}
-			return c.Components[key], true
-		},
+		Component: c.componentOfType,
 		Feature: func(typeURI string) (types.Feature, bool) {
 			key, ok, _ := c.resolveFeatureKey(typeURI)
 			if !ok {
@@ -2338,9 +2345,13 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		// the render resolves through. They were absent while nothing but the
 		// mapping-consistency gate read them, and that gate builds its own lookup
 		// because it also needs an ancestry resolver this adapter cannot supply.
-		Recipe:               c.RecipeByURI,
-		FeatureRecipe:        c.FeatureRecipeByURI,
-		NodeRecipeResolution: c.nodeRecipeResolution,
+		Recipe:        c.RecipeByURI,
+		FeatureRecipe: c.FeatureRecipeByURI,
+		// The instance resolution resolves a bare type's pin candidates through this
+		// catalog's own Component index, the one Component above reads.
+		NodeRecipeResolution: func(manifest *types.Manifest, instanceName, componentType string) resolver.NodeRecipeResolution {
+			return c.nodeRecipeResolution(manifest, instanceName, componentType, c.componentOfType)
+		},
 		// The local source a build compares with its recorded pins, read through the
 		// declared set a publication packs and the pin step pins.
 		LocalSourcePins: LocalSourcePinsAt,

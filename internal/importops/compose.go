@@ -100,8 +100,12 @@ func recipeCapabilities(recipes RecipeIndex) []string {
 // its top-level components or on any subsystem's, in the order the Aggregate
 // first declares each, a type the import itself drafted as a new Component
 // included — it asks the catalog for the Recipes implementing the type (the
-// enumeration the no-mapping diagnostic lists its pin candidates from) and keeps
-// those whose bare spec.capability is the target. Several versions of one Recipe
+// enumeration the no-mapping diagnostic lists its pin candidates from, which asks
+// for a type naming no version at the version a build resolves it to, the
+// highest of that Component the catalog holds) and keeps those whose bare
+// spec.capability is the target. The mapping is keyed by the type as the
+// Aggregate writes it, so a key naming no version matches the type at any
+// version, as a build matches it. Several versions of one Recipe
 // are one Recipe. Exactly one Recipe maps the type, by its capability-qualified
 // reference with no version, which the dependency resolution pins at the
 // version it resolves; none, or Recipes of more than one name, leave the type
@@ -229,6 +233,12 @@ type manifestMapping struct {
 // the capability-qualified, unversioned reference of the one Recipe of that
 // capability implementing it, or, where there is none or more than one, the
 // warning saying so and nothing to map.
+//
+// componentType is handed to the Recipe index exactly as the drafted Aggregate
+// writes it: the index resolves a type naming no version to the version a build
+// resolves it to, so no version is chosen here. A type the catalog holds no
+// Component of — one the import drafted new — finds a Recipe only where one
+// implements that unversioned type itself.
 func mappingFor(target, componentType string, recipes RecipeIndex) (reference, unmapped string) {
 	var references []string
 	if recipes != nil {
