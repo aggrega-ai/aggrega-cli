@@ -389,8 +389,8 @@ var operationAvailability = map[string]serveAvailability{
 	// response states its own rather than leaving a caller to infer it. Their reach
 	// is beyond this machine entirely — the registry methods above reach the
 	// machine's own configuration, and these reach everybody resolving from that
-	// registry — so every response names the host it addressed and whether the call
-	// landed anything. And nothing is prompted for: identity resolves from what the
+	// registry — so every response names every host it addressed and whether the
+	// call attached anything. And nothing is prompted for: identity resolves from what the
 	// request supplied or what the environment already carries, and a credential
 	// none of them yields is refused with what to supply named, which is what makes
 	// them safe on a stream with nobody watching.

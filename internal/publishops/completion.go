@@ -40,9 +40,16 @@ type completion struct {
 	now func() time.Time
 }
 
+// completed is what a completion attached: a signature, a publication date, both,
+// or neither where the publication was already complete.
+type completed struct {
+	signed bool
+	dated  bool
+}
+
 // completePublication attaches, to a version whose content is already published,
-// what that publication still lacks and nothing else, and reports whether it
-// attached a signature. A publication that failed after its content landed — its
+// what that publication still lacks and nothing else, and reports what it
+// attached. A publication that failed after its content landed — its
 // signature or its date could not be attached — is therefore completed by running
 // it again, and a publication that is already complete gets nothing attached.
 //
@@ -76,7 +83,7 @@ type completion struct {
 // layer's retries fails the call naming what was not attached, as it fails a first
 // publication, and each attachment is announced in the line a first publication
 // writes for it.
-func completePublication(ctx context.Context, out io.Writer, c completion) (bool, error) {
+func completePublication(ctx context.Context, out io.Writer, c completion) (completed, error) {
 	var (
 		signNow      bool
 		bundle       []byte
@@ -86,12 +93,12 @@ func completePublication(ctx context.Context, out io.Writer, c completion) (bool
 	if c.sign != nil {
 		counted, owed, err := countedSignature(ctx, c)
 		if err != nil {
-			return false, err
+			return completed{}, err
 		}
 		if owed {
 			bundle, artifactType, err = c.sign(ctx, c.digest)
 			if err != nil {
-				return false, fmt.Errorf("%s:%s is already published, but the signature it lacks could not be made: %w",
+				return completed{}, fmt.Errorf("%s:%s is already published, but the signature it lacks could not be made: %w",
 					c.reference, c.tag, err)
 			}
 			signNow, datedBy = true, bundle
@@ -104,24 +111,28 @@ func completePublication(ctx context.Context, out io.Writer, c completion) (bool
 	if dateOwed {
 		dates, err := oci.ListReferrers(ctx, c.target, c.tag, oci.MediaTypePublishedAt)
 		if err != nil {
-			return false, fmt.Errorf("%s:%s is already published, but whether it states a publication date could not be read: %w",
+			return completed{}, fmt.Errorf("%s:%s is already published, but whether it states a publication date could not be read: %w",
 				c.reference, c.tag, err)
 		}
 		dateOwed = len(dates) == 0
 	}
 
+	var done completed
 	if signNow {
 		if err := attachBundle(ctx, c.target, c.tag, artifactType, bundle); err != nil {
-			return false, fmt.Errorf("attach signature to %s:%s: %w", c.reference, c.tag, err)
+			return completed{}, fmt.Errorf("attach signature to %s:%s: %w", c.reference, c.tag, err)
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", c.reference, c.tag)
+		done.signed = true
 	}
 	if dateOwed {
-		if err := recordPublicationDate(ctx, out, c.target, c.reference, c.tag, datedBy, c.now); err != nil {
-			return signNow, err
+		dated, err := recordPublicationDate(ctx, out, c.target, c.reference, c.tag, datedBy, c.now)
+		if err != nil {
+			return done, err
 		}
+		done.dated = dated
 	}
-	return signNow, nil
+	return done, nil
 }
 
 // countedSignature returns the signature the version already carries that counts

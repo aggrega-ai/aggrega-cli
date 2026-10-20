@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
@@ -45,10 +44,12 @@ import (
 //
 // # What every answer states
 //
-// A reach: the registry host the call addressed, and whether the call reached
-// beyond this machine — which a dry run did not, and everything else did. It is
-// derived from what the operation DID rather than from what the arguments asked
-// for, so an answer cannot describe a dry run as a publication or the reverse.
+// A reach: every registry host the call addressed, and whether the call reached
+// beyond this machine — which it did exactly when it attached something a
+// registry now serves, so neither a dry run nor a call that found everything
+// already there did. It is derived from what the operation reports it ATTACHED
+// rather than from what the arguments asked for, so an answer cannot describe a
+// dry run or a complete re-run as a publication, or the reverse.
 //
 // # It never prompts, and it never hangs
 //
@@ -89,16 +90,21 @@ import (
 // overrides stay on both transports:
 // they name services rather than anything this machine holds.
 
-// publicationReach states how far one publication reached: the registry host it
-// addressed, and whether anything landed somewhere other people resolve from.
+// publicationReach states how far one publication reached: every registry host it
+// addressed, each once in the order it first addressed them, and whether it
+// attached uploaded content, a signature, a publication date or a deprecation
+// marker — false on a dry run and on a call that found all of it already there.
+//
+// Both are the shared publication layer's [publishops.Reach], carried in this
+// surface's spelling; nothing here computes either.
 type publicationReach struct {
-	Registry          string `json:"registry"`
-	BeyondThisMachine bool   `json:"beyond_this_machine"`
+	Registries        []string `json:"registries"`
+	BeyondThisMachine bool     `json:"beyond_this_machine"`
 }
 
-// reachOf builds the reach statement for a reference the operation addressed.
-func reachOf(reference string, landed bool) publicationReach {
-	return publicationReach{Registry: registryhost.Of(reference), BeyondThisMachine: landed}
+// reachOf carries the operation's reach in this surface's spelling.
+func reachOf(r publishops.Reach) publicationReach {
+	return publicationReach{Registries: r.Registries, BeyondThisMachine: r.BeyondThisMachine}
 }
 
 // The four tools' advertised names, spelled once each so the handlers, the
@@ -501,7 +507,7 @@ func runPublishEntity(ctx context.Context, tw *toolWorkspace, cfg publishops.Pus
 		Signed:                 res.Signed,
 		AlreadyPublished:       res.AlreadyPublished,
 		DryRun:                 res.DryRun,
-		Reach:                  reachOf(res.Reference, !res.DryRun),
+		Reach:                  reachOf(res.Reach()),
 		WholeDirectorySource:   res.WholeDirectory,
 		WindowsUnusableEntries: res.WindowsUnusableEntries,
 	}
@@ -692,7 +698,7 @@ func runPublishArtifact(ctx context.Context, cfg publishops.PushArtifactConfig) 
 		Digest:           res.Digest,
 		AlreadyPublished: res.AlreadyPublished,
 		DryRun:           res.DryRun,
-		Reach:            reachOf(res.Reference, !res.DryRun),
+		Reach:            reachOf(res.Reach()),
 	}, nil
 }
 
@@ -874,18 +880,23 @@ func runSignArtifacts(ctx context.Context, cfg publishops.SignConfig) (signArtif
 	for _, a := range res.Signed {
 		signed = append(signed, signedArtifact{Reference: a.Reference, Digest: a.Digest})
 	}
-	host := ""
-	if len(cfg.References) > 0 {
-		host = cfg.References[0]
-	}
-	return signArtifactsPayload{Signed: signed, Reach: reachOf(host, len(signed) > 0)}, nil
+	return signArtifactsPayload{Signed: signed, Reach: reachOf(res.Reach())}, nil
 }
 
 // renderSignArtifactsText renders the human-readable summary of a signing batch.
+//
+// It says what the reach says: a batch whose every reference already carried a
+// signature that verifies attached nothing, and its text says so rather than
+// announcing signatures it did not attach.
 func renderSignArtifactsText(p signArtifactsPayload) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Signed %d artifact(s); each signature is attached and cannot be recalled from anyone who fetches it:\n",
-		len(p.Signed))
+	if p.Reach.BeyondThisMachine {
+		fmt.Fprintf(&b, "Signed %d artifact(s); a signature this call attached cannot be recalled from anyone who fetches it:\n",
+			len(p.Signed))
+	} else {
+		fmt.Fprintf(&b, "Signed %d artifact(s); each already carried a signature that verifies, so nothing was attached:\n",
+			len(p.Signed))
+	}
 	for _, a := range p.Signed {
 		fmt.Fprintf(&b, "  %s -> %s\n", a.Reference, a.Digest)
 	}
@@ -1140,11 +1151,7 @@ func runDeprecateArtifact(ctx context.Context, cfg publishops.DeprecateConfig) (
 			Digest:    m.Digest,
 		})
 	}
-	host := cfg.Reference
-	if host == "" && len(marked) > 0 {
-		host = marked[0].Reference
-	}
-	return deprecateArtifactPayload{Marked: marked, Reach: reachOf(host, len(marked) > 0)}, nil
+	return deprecateArtifactPayload{Marked: marked, Reach: reachOf(res.Reach())}, nil
 }
 
 // renderDeprecateArtifactText renders the human-readable summary of a deprecation

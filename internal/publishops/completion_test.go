@@ -197,7 +197,9 @@ type rerunOutcome struct {
 	tag       string
 	digest    string
 	signed    bool
+	dated     bool
 	already   bool
+	reach     Reach
 }
 
 // completionRow is one state a version can be left in, and what running its
@@ -263,7 +265,15 @@ func landCompletely(t *testing.T, store *memory.Store, p publishAs) {
 func rerunComponent(t *testing.T, target oras.Target, p publishAs, out *bytes.Buffer) (rerunOutcome, error) {
 	t.Helper()
 	res, err := pushComponent(t, target, p, completingRunAt, out)
-	return rerunOutcome{reference: res.Reference, tag: res.Tag, digest: res.Digest, signed: res.Signed, already: res.AlreadyPublished}, err
+	return pushOutcome(res), err
+}
+
+// pushOutcome reads a catalog-entity publication's outcome, the Plugin's included.
+func pushOutcome(res PushResult) rerunOutcome {
+	return rerunOutcome{
+		reference: res.Reference, tag: res.Tag, digest: res.Digest,
+		signed: res.Signed, dated: res.Dated, already: res.AlreadyPublished, reach: res.Reach(),
+	}
 }
 
 // TestRunningAPublicationAgainCompletesWhatItLacksAndNothingElse proves that a
@@ -283,10 +293,14 @@ func TestRunningAPublicationAgainCompletesWhatItLacksAndNothingElse(t *testing.T
 	unusedKeylessAnchored := &signingtest.FakeSigner{}
 	unusedKeylessUnanchored := &signingtest.FakeSigner{}
 
-	var (
-		pluginEntity, pluginWasm string
-		artifactFile             string
-	)
+	var pluginEntity, pluginWasm string
+	// The artifact file is written once, under THIS test's directory rather than a
+	// row's: more than one row publishes it, and a directory a row created is
+	// removed when that row ends, so a later row would find the file gone.
+	artifactFile := filepath.Join(t.TempDir(), "bundle.bin")
+	if err := os.WriteFile(artifactFile, []byte("artifact bytes"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
 	pushPluginOnce := func(t *testing.T, target oras.Target, at time.Time, out io.Writer) (PushResult, error) {
 		t.Helper()
 		if pluginEntity == "" {
@@ -300,12 +314,6 @@ func TestRunningAPublicationAgainCompletesWhatItLacksAndNothingElse(t *testing.T
 	}
 	pushArtifactOnce := func(t *testing.T, target oras.Target, at time.Time, out io.Writer) (PushArtifactResult, error) {
 		t.Helper()
-		if artifactFile == "" {
-			artifactFile = filepath.Join(t.TempDir(), "bundle.bin")
-			if err := os.WriteFile(artifactFile, []byte("artifact bytes"), 0o644); err != nil {
-				t.Fatalf("write artifact: %v", err)
-			}
-		}
 		return PushArtifact(context.Background(), PushArtifactConfig{
 			FilePath: artifactFile, Name: "demo", Tag: "2.0.0", Registry: datedRegistry,
 			Workspace: resolveIn(t, k.unanchoredWS, nil), PushTarget: target, Now: func() time.Time { return at }, Out: out,
@@ -342,7 +350,7 @@ func TestRunningAPublicationAgainCompletesWhatItLacksAndNothingElse(t *testing.T
 			},
 			rerun: func(t *testing.T, _ completionKeys, target oras.Target, out *bytes.Buffer) (rerunOutcome, error) {
 				res, err := pushPluginOnce(t, target, completingRunAt, out)
-				return rerunOutcome{reference: res.Reference, tag: res.Tag, digest: res.Digest, signed: res.Signed, already: res.AlreadyPublished}, err
+				return pushOutcome(res), err
 			},
 		},
 		{
@@ -358,7 +366,26 @@ func TestRunningAPublicationAgainCompletesWhatItLacksAndNothingElse(t *testing.T
 			},
 			rerun: func(t *testing.T, _ completionKeys, target oras.Target, out *bytes.Buffer) (rerunOutcome, error) {
 				res, err := pushArtifactOnce(t, target, completingRunAt, out)
-				return rerunOutcome{reference: res.Reference, tag: res.Tag, digest: res.Digest, already: res.AlreadyPublished}, err
+				return rerunOutcome{
+					reference: res.Reference, tag: res.Tag, digest: res.Digest,
+					dated: res.Dated, already: res.AlreadyPublished, reach: res.Reach(),
+				}, err
+			},
+		},
+		{
+			name: "(b) a complete data artifact run again", defect: "a complete data artifact is given a second date, or its re-run claims to have reached beyond this machine",
+			tag: "2.0.0",
+			land: func(t *testing.T, _ completionKeys, store *memory.Store) {
+				if _, err := pushArtifactOnce(t, store, firstRunAt, io.Discard); err != nil {
+					t.Fatalf("the first artifact publication failed: %v", err)
+				}
+			},
+			rerun: func(t *testing.T, _ completionKeys, target oras.Target, out *bytes.Buffer) (rerunOutcome, error) {
+				res, err := pushArtifactOnce(t, target, completingRunAt, out)
+				return rerunOutcome{
+					reference: res.Reference, tag: res.Tag, digest: res.Digest,
+					dated: res.Dated, already: res.AlreadyPublished, reach: res.Reach(),
+				}, err
 			},
 		},
 		{
@@ -562,6 +589,17 @@ func TestRunningAPublicationAgainCompletesWhatItLacksAndNothingElse(t *testing.T
 			}
 			if got.signed != row.wantSigned {
 				t.Errorf("Signed = %v; want %v: it reports a signature this call attached", got.signed, row.wantSigned)
+			}
+			if got.dated != (row.wantDates > 0) {
+				t.Errorf("Dated = %v; want %v: it reports a date this call attached", got.dated, row.wantDates > 0)
+			}
+			// A re-publication uploads nothing, so it reached beyond this machine
+			// exactly when it attached a signature or a date — and the control, a
+			// complete publication run again, did not.
+			if wantBeyond := row.wantSigs+row.wantDates > 0; got.reach.BeyondThisMachine != wantBeyond ||
+				len(got.reach.Registries) != 1 || got.reach.Registries[0] != datedRegistry {
+				t.Errorf("Reach() = %+v; want registries [%s] and beyond this machine %v (defect: %s)",
+					got.reach, datedRegistry, wantBeyond, row.defect)
 			}
 
 			// The already-published line keeps the form a reader of its third field

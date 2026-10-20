@@ -256,11 +256,11 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 					return signPublishDigest(ctx, req, dest.Host, reference, version, digest)
 				}
 			}
-			signed, cerr := completePublication(ctx, out, c)
+			done, cerr := completePublication(ctx, out, c)
 			if cerr != nil {
 				return PushResult{}, cerr
 			}
-			result.Signed = signed
+			result.Signed, result.Dated = done.signed, done.dated
 			return result, nil
 		}
 		return PushResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
@@ -309,9 +309,11 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, version)
 	}
-	if err := recordPublicationDate(ctx, out, target, reference, version, signatureBundle, cfg.Now); err != nil {
+	dated, err := recordPublicationDate(ctx, out, target, reference, version, signatureBundle, cfg.Now)
+	if err != nil {
 		return PushResult{}, err
 	}
+	result.Dated = dated
 	return result, nil
 }
 

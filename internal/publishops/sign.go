@@ -105,7 +105,7 @@ func (cfg SignConfig) signerRequest() SignerRequest {
 // given, as the facts themselves rather than as the status lines Sign also writes
 // to cfg.Out. A reference found already carrying a signature its registry's trust
 // policy verifies is reported here too, with the digest that signature commits to:
-// it is signed, though this batch attached nothing to it.
+// it is signed, though this batch attached nothing to it, which its Attached says.
 //
 // It reports the SUCCESSES only. A batch with any failure returns an error naming
 // every one of them, so a caller never reads a partial batch as a whole one — and
@@ -120,9 +120,14 @@ type SignResult struct {
 // signature commits to. The digest is what makes the answer checkable: a signature
 // commits to a digest string, so naming the reference alone would not say what was
 // signed.
+//
+// Attached reports that this batch attached the signature. It is false for a
+// reference found already carrying a signature its registry's trust policy
+// verifies, which is signed though nothing was attached to it.
 type SignedArtifact struct {
 	Reference string
 	Digest    string
+	Attached  bool
 }
 
 // Sign signs every reference in cfg.References, attaching each signature
@@ -177,12 +182,12 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 		if serr := stopped(ctx); serr != nil {
 			return SignResult{Signed: signed}, serr
 		}
-		digest, err := b.signRef(ctx, ref)
+		digest, attached, err := b.signRef(ctx, ref)
 		if err != nil {
 			failures = append(failures, refFailure{ref: ref, err: err})
 			continue
 		}
-		signed = append(signed, SignedArtifact{Reference: ref, Digest: digest})
+		signed = append(signed, SignedArtifact{Reference: ref, Digest: digest, Attached: attached})
 	}
 
 	if len(failures) > 0 {
@@ -217,7 +222,8 @@ type batchSigner struct {
 }
 
 // signRef signs one reference and attaches its signature, returning the published
-// digest the signature commits to. It asks the batch's credential for the
+// digest the signature commits to and whether this call attached it. It asks the
+// batch's credential for the
 // reference's signer — never resolving a credential or an identity itself; the one
 // resolution happened in Sign, over every reference. A keyless failure whose cause
 // is a token without a usable signing subject is mapped to a precise diagnostic;
@@ -228,7 +234,8 @@ type batchSigner struct {
 // it asks the one signature walk, and where a signature verifies it writes who
 // signed it and, where the transparency log timed it, when (the earliest such
 // signature, the one a reader dates the version by), attaches nothing, and returns
-// the digest, so the batch reports the reference signed. A second signature would
+// the digest with attached false, so the batch reports the reference signed and
+// says it attached nothing to it. A second signature would
 // add a transparency-log entry and a referrer and change nothing a reader takes
 // from the version.
 //
@@ -239,20 +246,20 @@ type batchSigner struct {
 // not be read or judged — the reference is reported as failed and nothing is
 // signed: an unanswered question is not read as "unsigned", so a run never adds a
 // signature on the strength of a registry that failed to answer.
-func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
+func (b *batchSigner) signRef(ctx context.Context, ref string) (string, bool, error) {
 	target := b.cfg.Target
 	if target == nil {
 		rw, werr := requireWorkspace(b.cfg.Workspace)
 		if werr != nil {
-			return "", fmt.Errorf("%s: %w", ref, werr)
+			return "", false, fmt.Errorf("%s: %w", ref, werr)
 		}
 		httpClient, err := egressClient(rw.Config())
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", ref, err)
+			return "", false, fmt.Errorf("%s: %w", ref, err)
 		}
 		repo, err := oci.NewRemoteRepository(ref, httpClient)
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", ref, err)
+			return "", false, fmt.Errorf("%s: %w", ref, err)
 		}
 		target = repo
 	}
@@ -266,24 +273,24 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 	// whatever digest the registry already holds for the reference.
 	digest, exists, err := oci.Resolve(ctx, target, subjectRef)
 	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", ref, err)
+		return "", false, fmt.Errorf("resolve %s: %w", ref, err)
 	}
 	if !exists {
-		return "", fmt.Errorf("%s is not published; nothing to sign", ref)
+		return "", false, fmt.Errorf("%s is not published; nothing to sign", ref)
 	}
 
 	existing, err := b.existingSignature(ctx, target, ref, subjectRef, digest)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if existing != nil {
 		fmt.Fprintf(b.out, "Already signed: %s (%s) by %s%s; nothing attached\n", ref, digest, existing.Identity, loggedClause(existing))
-		return digest, nil
+		return digest, false, nil
 	}
 
 	signer, err := b.cred.signerFor(ref)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", ref, err)
+		return "", false, fmt.Errorf("%s: %w", ref, err)
 	}
 
 	bundleBytes, artifactType, err := signDigest(ctx, signer, digest)
@@ -294,17 +301,17 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, error) {
 		// precisely so the operator is pointed at the identity provider/client/
 		// scope rather than told to re-export a token that cannot help.
 		if b.cred.keyless() && keylessSubjectFailure(err) {
-			return "", fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
+			return "", false, fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
 		}
-		return "", fmt.Errorf("%s: %w", ref, err)
+		return "", false, fmt.Errorf("%s: %w", ref, err)
 	}
 
 	if err := attachBundle(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
-		return "", fmt.Errorf("attach signature to %s: %w", ref, err)
+		return "", false, fmt.Errorf("attach signature to %s: %w", ref, err)
 	}
 
 	fmt.Fprintf(b.out, "Signature attached: %s (%s)\n", ref, digest)
-	return digest, nil
+	return digest, true, nil
 }
 
 // existingSignature returns the earliest signature ref already carries that its

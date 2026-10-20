@@ -85,8 +85,13 @@ type PushArtifactResult struct {
 	Digest string
 	// AlreadyPublished reports that the tag already pointed at byte-identical
 	// content, so no content was uploaded. A publication date the version still
-	// lacked was attached beside it, and the status output says so where one was.
+	// lacked was attached beside it, which Dated reports, and the status output
+	// says so where one was.
 	AlreadyPublished bool
+	// Dated reports that this call attached a publication date: always on a first
+	// publication, and on a version already published only where it stated none.
+	// It is false on a dry run.
+	Dated bool
 	// DryRun reports that nothing was published.
 	DryRun bool
 }
@@ -228,11 +233,13 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 			result.AlreadyPublished = true
 			// This operation signs nothing, so what a publication of it can lack is
 			// its date alone.
-			if _, cerr := completePublication(ctx, out, completion{
+			done, cerr := completePublication(ctx, out, completion{
 				target: target, reference: reference, tag: cfg.Tag, digest: existingDigest, now: cfg.Now,
-			}); cerr != nil {
+			})
+			if cerr != nil {
 				return PushArtifactResult{}, cerr
 			}
+			result.Dated = done.dated
 			return result, nil
 		}
 		return PushArtifactResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version: %w",
@@ -246,8 +253,10 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, cfg.Tag, digest)
 	writePublicationFacts(out, "", mediaType, len(content), 0)
 	result.Digest = digest
-	if err := recordPublicationDate(ctx, out, target, reference, cfg.Tag, nil, cfg.Now); err != nil {
+	dated, err := recordPublicationDate(ctx, out, target, reference, cfg.Tag, nil, cfg.Now)
+	if err != nil {
 		return PushArtifactResult{}, err
 	}
+	result.Dated = dated
 	return result, nil
 }

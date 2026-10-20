@@ -195,8 +195,16 @@ func TestASigningBatchLeavesAReferenceItFindsAlreadySigned(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Sign: %v (defect: %s)\n%s", err, row.defect, out.String())
 			}
-			if len(res.Signed) != 1 || res.Signed[0] != (SignedArtifact{Reference: ref, Digest: digest}) {
-				t.Errorf("the batch reported %+v; want the reference signed at %s (defect: %s)", res.Signed, digest, row.defect)
+			wantSigned := SignedArtifact{Reference: ref, Digest: digest, Attached: row.wantAttached > 0}
+			if len(res.Signed) != 1 || res.Signed[0] != wantSigned {
+				t.Errorf("the batch reported %+v; want %+v (defect: %s)", res.Signed, wantSigned, row.defect)
+			}
+			// The reach is read off what the batch attached: a reference found already
+			// signed attached nothing, so the batch reached no further than this machine.
+			if reach := res.Reach(); reach.BeyondThisMachine != (row.wantAttached > 0) ||
+				len(reach.Registries) != 1 || reach.Registries[0] != datedRegistry {
+				t.Errorf("Reach() = %+v; want registries [%s] and beyond this machine %v (defect: %s)",
+					reach, datedRegistry, row.wantAttached > 0, row.defect)
 			}
 
 			lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")

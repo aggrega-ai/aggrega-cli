@@ -154,8 +154,8 @@ func TestThePublicationToolsAnswerWithFactsRatherThanText(t *testing.T) {
 		if got.Reach.BeyondThisMachine {
 			t.Errorf("a dry run reached nothing; the answer says otherwise: %+v", got.Reach)
 		}
-		if got.Reach.Registry != publishTestRegistry {
-			t.Errorf("reach.registry: got %q, want %q", got.Reach.Registry, publishTestRegistry)
+		if len(got.Reach.Registries) != 1 || got.Reach.Registries[0] != publishTestRegistry {
+			t.Errorf("reach.registries: got %q, want [%q]", got.Reach.Registries, publishTestRegistry)
 		}
 
 		// The digest is the one a publication of the same content lands. The

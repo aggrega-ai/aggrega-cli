@@ -159,8 +159,8 @@ func TestPublishEntityOnTheDaemonAnswersWithTheFactsOfADryRun(t *testing.T) {
 	if res.Reach.BeyondThisMachine {
 		t.Errorf("a dry run reached nothing; the answer says otherwise: %+v", res.Reach)
 	}
-	if res.Reach.Registry != publishTestRegistry {
-		t.Errorf("reach.registry: got %q, want %q", res.Reach.Registry, publishTestRegistry)
+	if len(res.Reach.Registries) != 1 || res.Reach.Registries[0] != publishTestRegistry {
+		t.Errorf("reach.registries: got %q, want [%q]", res.Reach.Registries, publishTestRegistry)
 	}
 
 	// The digest is the one a publication of the same content lands. The expected

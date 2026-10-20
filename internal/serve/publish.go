@@ -9,7 +9,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
@@ -39,9 +38,11 @@ import (
 //
 // A reach. A request names one workspace, so an answer that said nothing would be
 // read as being about that workspace, and for a publication that reading
-// is wrong by the widest margin of anything here. So each response names the
-// registry host it addressed and whether the call reached beyond this machine —
-// which a dry run did not, and everything else did.
+// is wrong by the widest margin of anything here. So each response names every
+// registry host the call addressed and whether the call reached beyond this
+// machine — which it did exactly when it attached something a registry now
+// serves, so neither a dry run nor a call that found everything already there
+// did.
 //
 // # It never prompts, and it never hangs
 //
@@ -71,19 +72,23 @@ import (
 
 // publicationReach states how far one publication reached.
 //
-// Registry is the host addressed. BeyondThisMachine is derived from what the
-// operation actually did rather than from what the request asked for, so a
-// response cannot describe a dry run as a publication or the reverse: it is true
-// exactly when bytes, a signature or a marker landed somewhere other people
-// resolve from.
+// Registries names every registry host the call addressed, each once, in the
+// order it first addressed them. BeyondThisMachine is derived from what the
+// operation reports it attached rather than from what the request asked for: it
+// is true exactly when the call attached uploaded content, a signature, a
+// publication date or a deprecation marker, and false on a dry run and on a call
+// that found everything it would have attached already there.
+//
+// Both are the shared publication layer's [publishops.Reach], carried in this
+// wire's spelling; nothing here computes either.
 type publicationReach struct {
-	Registry          string `json:"registry"`
-	BeyondThisMachine bool   `json:"beyondThisMachine"`
+	Registries        []string `json:"registries"`
+	BeyondThisMachine bool     `json:"beyondThisMachine"`
 }
 
-// reachOf builds the reach statement for a reference the operation addressed.
-func reachOf(reference string, landed bool) publicationReach {
-	return publicationReach{Registry: registryhost.Of(reference), BeyondThisMachine: landed}
+// reachOf carries the operation's reach in this wire's spelling.
+func reachOf(r publishops.Reach) publicationReach {
+	return publicationReach{Registries: r.Registries, BeyondThisMachine: r.BeyondThisMachine}
 }
 
 // publishEntityParams is what aggrega/publishEntity takes.
@@ -389,7 +394,7 @@ func runPublishEntity(ctx context.Context, cfg publishops.PushConfig) (publishEn
 		Signed:                 res.Signed,
 		AlreadyPublished:       res.AlreadyPublished,
 		DryRun:                 res.DryRun,
-		Reach:                  reachOf(res.Reference, !res.DryRun),
+		Reach:                  reachOf(res.Reach()),
 		WholeDirectorySource:   res.WholeDirectory,
 		WindowsUnusableEntries: res.WindowsUnusableEntries,
 	}
@@ -499,7 +504,7 @@ func runPublishArtifact(ctx context.Context, cfg publishops.PushArtifactConfig) 
 		Digest:           res.Digest,
 		AlreadyPublished: res.AlreadyPublished,
 		DryRun:           res.DryRun,
-		Reach:            reachOf(res.Reference, !res.DryRun),
+		Reach:            reachOf(res.Reach()),
 	}, nil
 }
 
@@ -597,11 +602,7 @@ func runSignArtifacts(ctx context.Context, cfg publishops.SignConfig) (signArtif
 	for _, a := range res.Signed {
 		signed = append(signed, signedArtifact{Reference: a.Reference, Digest: a.Digest})
 	}
-	host := ""
-	if len(cfg.References) > 0 {
-		host = cfg.References[0]
-	}
-	return signArtifactsResult{Signed: signed, Reach: reachOf(host, len(signed) > 0)}, nil
+	return signArtifactsResult{Signed: signed, Reach: reachOf(res.Reach())}, nil
 }
 
 // dispatchDeprecateArtifact attaches a signed deprecation marker to an
@@ -719,11 +720,7 @@ func runDeprecateArtifact(ctx context.Context, cfg publishops.DeprecateConfig) (
 			Digest:    m.Digest,
 		})
 	}
-	host := cfg.Reference
-	if host == "" && len(marked) > 0 {
-		host = marked[0].Reference
-	}
-	return deprecateArtifactResult{Marked: marked, Reach: reachOf(host, len(marked) > 0)}, nil
+	return deprecateArtifactResult{Marked: marked, Reach: reachOf(res.Reach())}, nil
 }
 
 // The vocabulary this surface's refusals are written in. A caller here sends

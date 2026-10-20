@@ -327,9 +327,14 @@ type PushResult struct {
 	// AlreadyPublished reports that the tag already pointed at byte-identical
 	// content, so no content was uploaded. What that publication still lacked —
 	// its publication date, and its signature where this one signs — was attached
-	// beside it, and nothing was where it lacked neither; Signed says whether a
-	// signature was, and the status output names each attachment.
+	// beside it, and nothing was where it lacked neither; Signed and Dated say
+	// which was, and the status output names each attachment.
 	AlreadyPublished bool
+	// Dated reports that this call attached a publication date: on a first
+	// publication, wherever its signature carries no time a transparency log
+	// attests; on a version already published, where the version stated none. It
+	// is false on a dry run and wherever no date was owed.
+	Dated bool
 	// DryRun reports that nothing was published: the bundle was computed and the
 	// destination was never contacted.
 	DryRun bool
@@ -792,11 +797,11 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 					return signPublishDigest(ctx, req, dest.Host, reference, tag, digest)
 				}
 			}
-			signed, cerr := completePublication(ctx, out, c)
+			done, cerr := completePublication(ctx, out, c)
 			if cerr != nil {
 				return PushResult{}, cerr
 			}
-			result.Signed = signed
+			result.Signed, result.Dated = done.signed, done.dated
 			return result, nil
 		}
 		return PushResult{}, fmt.Errorf("%s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
@@ -836,9 +841,11 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, tag)
 	}
-	if err := recordPublicationDate(ctx, out, target, reference, tag, signatureBundle, cfg.Now); err != nil {
+	dated, err := recordPublicationDate(ctx, out, target, reference, tag, signatureBundle, cfg.Now)
+	if err != nil {
 		return PushResult{}, err
 	}
+	result.Dated = dated
 	return result, nil
 }
 

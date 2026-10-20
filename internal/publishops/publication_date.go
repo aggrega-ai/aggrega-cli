@@ -40,9 +40,12 @@ import (
 // referrer. An attachment still failing after those attempts fails the
 // publication's command, as a failed signature attachment does: the entity is
 // published, and the error names what was not.
-func recordPublicationDate(ctx context.Context, out io.Writer, target oras.Target, reference, tag string, signatureBundle []byte, now func() time.Time) error {
+//
+// It reports whether it attached a date, which is false where the signature
+// carries the log's time and so no date of its own was owed.
+func recordPublicationDate(ctx context.Context, out io.Writer, target oras.Target, reference, tag string, signatureBundle []byte, now func() time.Time) (bool, error) {
 	if signing.CarriesLogTime(signatureBundle) {
-		return nil
+		return false, nil
 	}
 	clock := now
 	if clock == nil {
@@ -50,8 +53,8 @@ func recordPublicationDate(ctx context.Context, out io.Writer, target oras.Targe
 	}
 	at := clock()
 	if _, err := oci.AttachPublishedAt(ctx, target, tag, at); err != nil {
-		return fmt.Errorf("%s:%s is published, but its publication date could not be attached: %w", reference, tag, err)
+		return false, fmt.Errorf("%s:%s is published, but its publication date could not be attached: %w", reference, tag, err)
 	}
 	fmt.Fprintf(out, "Publication date attached: %s:%s (%s)\n", reference, tag, oci.FormatPublishedAt(at))
-	return nil
+	return true, nil
 }
