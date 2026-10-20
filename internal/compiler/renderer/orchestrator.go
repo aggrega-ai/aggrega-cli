@@ -2166,7 +2166,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// It is handed the node context's own declaration set rather than a second
 		// reading, so the advisory and the marking on the wire cannot describe
 		// different declarations.
-		warnSensitivityNotConveyed(nodeID, providerName, nodeCtx.RecipeName,
+		warnSensitivityNotConveyed(nodeID, providerName, nodeCtx.RecipeName, SensitivityNotConveyedDiagnostic,
 			nodeCtx.DeclaredSensitivity, hasSource, nodeCtx.UnsupportedFieldSink)
 
 		// Advertised-only refusal of an authored identity the node's target will

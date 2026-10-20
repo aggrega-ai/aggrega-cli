@@ -45,6 +45,11 @@ const SensitivityNotConveyedCode = rendercore.SensitivityNotConveyedCode
 // it from the single definition in rendercore.
 var SensitivityNotConveyedDiagnostic = rendercore.SensitivityNotConveyedDiagnostic
 
+// FeatureRecipeSensitivityNotConveyedDiagnostic re-exports the constructor for
+// the same advisory raised on an attachment, so both cases are built from the
+// single definition in rendercore.
+var FeatureRecipeSensitivityNotConveyedDiagnostic = rendercore.FeatureRecipeSensitivityNotConveyedDiagnostic
+
 // UnconveyedValueLeafDeclarations re-exports the one reading of which authored
 // sensitivity declarations a node's render cannot convey, so the advisory and
 // the marking it is the complement of are decided from one definition.

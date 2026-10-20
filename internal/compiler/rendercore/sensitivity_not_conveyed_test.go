@@ -226,3 +226,36 @@ func TestUnconveyedValueLeafDeclarations_IsTheComplementOfTheValuesJoin(t *testi
 		}
 	}
 }
+
+// TestFeatureRecipeSensitivityNotConveyedDiagnostic_IsTheRecipeAdvisoryNamingItsGate
+// pins the two cases against each other. The Recipe case's sentence is held
+// verbatim, so the attachment case's arrival moves none of its bytes; the
+// attachment case is the same class, severity and element, and its sentence
+// leads with the attachment's name and is otherwise the Recipe sentence with the
+// entity kind holding the lever named in each of the two places the sentence
+// names it, and in no other.
+func TestFeatureRecipeSensitivityNotConveyedDiagnostic_IsTheRecipeAdvisoryNamingItsGate(t *testing.T) {
+	t.Parallel()
+
+	const recipeSentence = `"values.dbPassword" is declared sensitive, but recipe "gate" maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping reads it, the mapping's whole output is marked as carrying a value declared sensitive instead; a recipe declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them`
+
+	recipe := SensitivityNotConveyedDiagnostic("gate", "values.dbPassword")
+	if recipe.Message != recipeSentence {
+		t.Errorf("the Recipe case's sentence moved:\n got %q\nwant %q", recipe.Message, recipeSentence)
+	}
+
+	attachment := FeatureRecipeSensitivityNotConveyedDiagnostic("password", "gate", "values.dbPassword")
+	if attachment.Code != recipe.Code || attachment.Severity != recipe.Severity || attachment.SourceRef != recipe.SourceRef {
+		t.Errorf("the attachment case must be the same class, severity and element as the Recipe case; got %+v, want %+v",
+			attachment, recipe)
+	}
+	want := `attachment "password": ` + strings.Replace(
+		strings.Replace(recipeSentence, `but recipe "gate"`, `but FeatureRecipe "gate"`, 1),
+		"; a recipe declaring", "; a FeatureRecipe declaring", 1)
+	if want == recipeSentence {
+		t.Fatal("the expected attachment sentence equals the Recipe sentence, so this assertion cannot tell the two cases apart")
+	}
+	if attachment.Message != want {
+		t.Errorf("the attachment case's sentence:\n got %q\nwant %q", attachment.Message, want)
+	}
+}

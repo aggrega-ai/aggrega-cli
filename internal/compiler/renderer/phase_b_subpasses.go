@@ -1615,6 +1615,35 @@ func renderFeatureRecipeFiles(
 		declaredNodeInputKinds(hasSource, hasWorkload, hasArtifacts),
 		annotations, providerPlugin, frNodeCtx.UnsupportedFieldSink)
 
+	// The unconveyed-sensitivity advisory, on the seat the component render path
+	// raises it on and through the same reading. A mapped attachment's output
+	// reaches its target exactly as a mapped Recipe's does, so a `values` leaf its
+	// Feature declares sensitive is spent on nothing in the same way, and the
+	// author holds the same lever over it: the FeatureRecipe's mapping.
+	//
+	// It is judged on the declarations the caller placed on this context before
+	// handing it here — the Feature the attachment names, gated by whether this
+	// attachment's own values evaluation produced the declared leaf paths as its
+	// keys — never on the host component's, and on the same sourced predicate the
+	// gate above consults. A FeatureRecipe that maps nothing, or that renders no
+	// source, is therefore silent here for the reason the Recipe case is.
+	//
+	// Only an attachment on a component is asked. One attached to a boundary
+	// renders against a values pillar that is empty by construction, so no leaf
+	// its Feature declares can carry a datum there, and removing its mapping would
+	// restore no join: the lever this advisory names does not exist at that scope,
+	// which is the ground the artifacts and workload-only shapes stay silent on.
+	// The identity is what tells the two apart, because only the component scope
+	// names the attachment it renders — and that name leads the sentence, since
+	// one node may carry several attachments of one Feature.
+	if identity.named() {
+		warnSensitivityNotConveyed(frNodeCtx.NodeID, ProviderEngineKind(fr.Spec.Capability), fr.Metadata.Name,
+			func(gate, coordinate string) Diagnostic {
+				return FeatureRecipeSensitivityNotConveyedDiagnostic(identity.instance, gate, coordinate)
+			},
+			frNodeCtx.DeclaredSensitivity, hasSource, frNodeCtx.UnsupportedFieldSink)
+	}
+
 	// Advertised-only per-node input validation for the FeatureRecipe render —
 	// the same gate the component render path applies, on the same seat (after the
 	// capability gate, before any Phase B pass). frNodeCtx carries the node's

@@ -37,13 +37,41 @@ const SensitivityNotConveyedCode = "sensitivity-not-conveyed"
 // carries the marking — so there is nothing for it to halt over, and a Recipe
 // that maps its values is an ordinary, supported shape rather than a fault.
 func SensitivityNotConveyedDiagnostic(recipe, coordinate string) renderctx.Diagnostic {
+	return sensitivityNotConveyed("recipe", recipe, coordinate)
+}
+
+// FeatureRecipeSensitivityNotConveyedDiagnostic builds the same advisory for
+// one `values` leaf a Feature declares sensitive on an attachment whose
+// FeatureRecipe declares a values mapping. attachment is the name the Feature
+// is attached under; coordinate is the Feature's own authored coordinate,
+// spelled from the pillar root as the Recipe case spells a Component's;
+// featureRecipe is the bound FeatureRecipe's own name, because it is the entity
+// whose mapping gates the join.
+//
+// It is the Recipe case's advisory under the same code, with the same
+// severity and the same sentence, naming the entity kind that holds the lever:
+// the attachment's mapped output reaches its target exactly as a Recipe's does,
+// and removing the mapping restores the join exactly as it does there. The
+// sentence leads with the attachment, as the by-value advisory does, because one
+// node can carry several attachments of one Feature through one FeatureRecipe,
+// and without the name their lines would be identical.
+func FeatureRecipeSensitivityNotConveyedDiagnostic(attachment, featureRecipe, coordinate string) renderctx.Diagnostic {
+	d := sensitivityNotConveyed("FeatureRecipe", featureRecipe, coordinate)
+	d.Message = fmt.Sprintf("attachment %q: %s", attachment, d.Message)
+	return d
+}
+
+// sensitivityNotConveyed is the one statement of the advisory's shape and
+// wording. gateKind names the kind of entity whose values mapping gates the
+// join, as the sentence spells it, and gate is that entity's name.
+func sensitivityNotConveyed(gateKind, gate, coordinate string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
 		Severity:  abi.SeverityWarn,
 		Code:      SensitivityNotConveyedCode,
 		SourceRef: coordinate,
 		Message: fmt.Sprintf(
-			"%q is declared sensitive, but recipe %q maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping reads it, the mapping's whole output is marked as carrying a value declared sensitive instead; a recipe declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them",
-			coordinate, recipe),
+			"%q is declared sensitive, but %s %q maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping reads it, the mapping's whole output is marked as carrying a value declared sensitive instead; a %s declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them",
+			coordinate, gateKind, gate, gateKind),
 	}
 }
 
@@ -74,7 +102,13 @@ func SensitivityNotConveyedDiagnostic(recipe, coordinate string) renderctx.Diagn
 //     the mapping's own invention and the join is gated off — but the mapping is
 //     authored, so removing it restores the join. That is the one shape where
 //     the author is told, because it is the one shape where being told names
-//     something to do.
+//     something to do. A component-scope attachment's sourced render whose
+//     FeatureRecipe declares a values mapping is the same shape, asked of the
+//     attachment's own declarations, and is answered by this same reading. A
+//     boundary-scope attachment's is not asked at all: its values pillar is
+//     empty by construction, so no declared leaf can carry a datum there and
+//     removing the mapping restores nothing — the lever this case names is
+//     absent, as it is on the two shapes above.
 //
 // The coordinates come back sorted. Their source is a declaration set keyed by
 // leaf path with no author order to preserve, so sorted is the only
