@@ -227,7 +227,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 		}
 		return nil, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("cloudformation-provider: the Recipe's valuesMapping writes %s, and no template of the source declares a parameter of that name: %s; a sourced template takes values only through the parameters it declares, so rename the key to the parameter it is meant for, or remove it from the valuesMapping",
+			fmt.Sprintf("cloudformation-provider: the Recipe's or FeatureRecipe's valuesMapping writes %s, and no template of the source declares a parameter of that name: %s; a sourced template takes values only through the parameters it declares, so rename the key to the parameter it is meant for, or remove it from the valuesMapping",
 				pluralKeys(unknown), strings.Join(declared, "; ")))
 	}
 
@@ -339,7 +339,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 		sort.Strings(sensitiveLiterals)
 		return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("cloudformation-provider: the Recipe's valuesMapping reads a value declared sensitive, so a literal it produces is refused, and %s would write a literal into the template as it stands; bind each to a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function, or leave it unbound for a deploy-time value",
+			fmt.Sprintf("cloudformation-provider: the Recipe's or FeatureRecipe's valuesMapping reads a value declared sensitive, so a literal it produces is refused, and %s would write a literal into the template as it stands; bind each to a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function, or leave it unbound for a deploy-time value",
 				pluralParameters(sensitiveLiterals)))
 	}
 	return out, nil

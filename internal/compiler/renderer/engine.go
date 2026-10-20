@@ -560,8 +560,9 @@ func boundaryAssemblyCombines(mode string) bool {
 // assemblers that need per-node component identity for output metadata.
 //
 // NodeValues is the resolved values dictionary of each contributing node whose
-// files were rendered from a source, and of no other — a node that rendered its
-// own files resolved its values into them and has no entry. An assembler whose
+// files were rendered from a source — for an attached Feature, only where its
+// FeatureRecipe's values mapping produced them — and of no other: a node that
+// rendered its own files resolved its values into them and has no entry. An assembler whose
 // output is the only position its target evaluates carries these into the
 // assembled artifact itself; one whose contributors already carry their own
 // inputs ignores it.
@@ -609,13 +610,15 @@ type BoundaryInfo struct {
 	// them and an outer position has to supply them. A node whose render produced
 	// its own files resolved the values into those files, so it has no entry here
 	// and an assembler supplies it nothing — offering inputs a node's files never
-	// declare is an assembled artifact its target may reject.
+	// declare is an assembled artifact its target may reject. A contributor that is
+	// an attached Feature holds an entry only where, besides rendering from a
+	// source, its FeatureRecipe's values mapping produced the values.
 	NodeValues map[string]map[string]any
 	// NodeValuesMapped reports, per node id, that the NodeValues entry for that
-	// node is the output of its Recipe's values mapping — the same mark the node's
-	// own render projection carried. An entry is present only beside a NodeValues
-	// entry and only where it is true, so an absent entry reads as "not mapped",
-	// which is also what a node carrying no values reads as.
+	// node is the output of its Recipe's or its FeatureRecipe's values mapping — the
+	// same mark the node's own render projection carried. An entry is present only
+	// beside a NodeValues entry and only where it is true, so an absent entry reads
+	// as "not mapped", which is also what a node carrying no values reads as.
 	NodeValuesMapped map[string]bool
 	// NodeNameBasis is the identity each contributor derives its own names from
 	// inside the assembled artifact, keyed by node id exactly as the maps above are.

@@ -433,19 +433,21 @@ type dispatchKey struct {
 // absent entry and a declared zero are the same state by definition rather
 // than by convention.
 //
-// nodeValues is keyed the same way and populated at the same site, from the
-// values that node's own render resolved — but only for a node rendered from a
-// source, because that is the only case where the compiler supplies inputs the
-// node's own files do not already carry. A node whose render produced its files
-// itself resolved the values into them, so it holds no entry here and an
-// assembler reads no inputs for it. An assembler whose output is the only
-// position its target evaluates carries each contributor's values into the
-// assembled artifact; one whose contributors already carry their own inputs
-// reads none of it.
+// nodeValues is keyed the same way, from the values that contributor's own render
+// resolved — but only for a contributor rendered from a source, because that is
+// the only case where the compiler supplies inputs the contributor's own files do
+// not already carry. A component's own render records its values there whether or
+// not a mapping produced them; an attached Feature records them only where its
+// FeatureRecipe's valuesMapping produced them ([FeatureValues.reachAssembly]). A
+// contributor whose render produced its files itself resolved the values into
+// them, so it holds no entry here and an assembler reads no inputs for it. An
+// assembler whose output is the only position its target evaluates carries each
+// contributor's values into the assembled artifact; one whose contributors
+// already carry their own inputs reads none of it.
 //
 // nodeValuesMapped records, beside each nodeValues entry and at the same site,
-// whether a values mapping produced those values — the mark the node's own render
-// carried on its projection — so an assembler reads the same fact about a
+// whether a values mapping produced those values — the mark the contributor's own
+// render carried on its projection — so an assembler reads the same fact about a
 // contributor's values that the contributor's render read.
 //
 // nodeProducer records, per the same key, the authoring-level coordinates of
@@ -1492,6 +1494,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			dispatch[key].nodeNameBasis[contrib.nodeID] = contrib.nameBasis
 			dispatch[key].nodeAnnotations[contrib.nodeID] = nodeCtx.Annotations
 			dispatch[key].nodeSyncWave[contrib.nodeID] = nodeCtx.SyncWave
+			// This attachment's own values travel to the group's assembler as its
+			// values, marked as its mapping's output, on the terms the attachment's
+			// render settled: from a source, and produced by its valuesMapping. The
+			// mark is set unconditionally beside them because those terms include
+			// the mapping, so the assembler reads of this contributor exactly what
+			// its own render read.
+			if contrib.valuesReachAssembly {
+				dispatch[key].nodeValues[contrib.nodeID] = contrib.values
+				dispatch[key].nodeValuesMapped[contrib.nodeID] = true
+			}
 			if len(contrib.fragments) > 0 {
 				dispatch[key].intermediates[contrib.nodeID] = append(dispatch[key].intermediates[contrib.nodeID], contrib.fragments...)
 			}
@@ -1530,9 +1542,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				//
 				// It carries the values this attachment's own valuesMapping resolved
 				// to, which is what the address the entry establishes exists to
-				// deliver. They are needed here and nowhere else: an attachment on a
-				// group that places its contributors is one whose files were vendored
-				// in verbatim from what its author shipped, so nothing wrote the
+				// deliver. An umbrella reads them from this entry and from nothing
+				// else: an attachment on a group that places its contributors is one
+				// whose files were vendored in verbatim from what its author shipped,
+				// so nothing wrote the
 				// resolved values into them and the assembled artifact is the only
 				// surface left that can supply them. Without them the placed content
 				// renders whatever defaults its author shipped and reports success,
@@ -2792,6 +2805,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		dispatch[dKey].nodeProducer[syntheticNodeID] = frProducer
 		dispatch[dKey].nodeNameBasis[syntheticNodeID] = boundaryFRState.ComponentIDs[key]
+		// This feature's own values travel to the group's assembler on the terms its
+		// render settled and recorded against this tuple, read from that record
+		// rather than settled again here: from a source, and produced by its
+		// valuesMapping — which is why the mark is set beside them unconditionally.
+		if boundaryFRState.ValuesReachAssembly[key] {
+			dispatch[dKey].nodeValues[syntheticNodeID] = boundaryFRState.Values[key]
+			dispatch[dKey].nodeValuesMapped[syntheticNodeID] = true
+		}
 		// Whether the provider whose group holds this attachment's files gives each
 		// of its contributors a position of its own. Where it does, this attachment
 		// IS one of those contributors and its files sit at its own position with

@@ -1228,6 +1228,9 @@ func (p *attachmentPass) render(
 			fragments: fragments,
 			files:     ownFiles,
 			values:    frValues.Resolved,
+			// Read against the source this render was handed, by the same
+			// predicate the render itself asked whether to call the source arm.
+			valuesReachAssembly: frValues.reachAssembly(resolvedSrc),
 		})
 	}
 	return nil
@@ -1272,13 +1275,21 @@ func (p *attachmentPass) render(
 // verbatim: nothing wrote the resolved values into them, so a group that does not
 // carry them here has no other way to reach them and the placed content renders
 // its own defaults instead.
+//
+// valuesReachAssembly says those same values also travel as this contributor's
+// own values to the group's assembler, marked as a mapping's output — set where
+// the attachment rendered from a source and its valuesMapping produced them
+// ([FeatureValues.reachAssembly]). An assembler binding a sourced artifact's
+// inputs reads them there: as the arguments of a module block, or as the
+// parameters a sourced template's binding filled.
 type attachmentContribution struct {
-	nodeID    string
-	producer  derivedKeyProducer
-	nameBasis string
-	fragments []EmittedFile
-	files     []EmittedFile
-	values    map[string]any
+	nodeID              string
+	producer            derivedKeyProducer
+	nameBasis           string
+	fragments           []EmittedFile
+	files               []EmittedFile
+	values              map[string]any
+	valuesReachAssembly bool
 }
 
 // attachmentRenderItem is one attachment queued for the Phase B.6 render loop —

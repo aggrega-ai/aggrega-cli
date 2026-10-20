@@ -258,7 +258,7 @@ func TestRenderAll_CloudFormationReferenceToABoundParameterFromAnotherComponentH
 		t.Fatalf("another component referencing a bound parameter: got %v, want the assembly's halt", err)
 	}
 	chain := cerrors.CauseChain(err)
-	for _, want := range []string{`component "other"`, `template "template.yaml"`, `parameter "Stage"`, `valuesMapping of component "api"`} {
+	for _, want := range []string{`component "other"`, `template "template.yaml"`, `parameter "Stage"`, `valuesMapping of a Recipe or FeatureRecipe rendering for component "api"`} {
 		if !strings.Contains(chain, want) {
 			t.Errorf("the halt does not name %s:\n%s", want, chain)
 		}

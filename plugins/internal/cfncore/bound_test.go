@@ -38,11 +38,22 @@ func TestAssembleStackRefusesReferencesToBoundParameters(t *testing.T) {
 		nodes []NodeFragment
 		// wantText are words the halt names; nil for a row that assembles.
 		wantText []string
+		// absentText are words the halt must not carry.
+		absentText []string
 	}{
 		{
 			name:     "another contributor's Ref to the bound parameter halts naming the contributor, the template, the parameter and the binder",
 			nodes:    []NodeFragment{boundNode(), otherNode("Resources:\n  OtherTopic:\n    Type: AWS::SNS::Topic\n    Properties:\n      TopicName: {Ref: Stage}\n")},
-			wantText: []string{`component "other"`, `template "template.yaml"`, `parameter "Stage"`, `valuesMapping of component "streams"`},
+			wantText: []string{`component "other"`, `template "template.yaml"`, `parameter "Stage"`, `valuesMapping of a Recipe or FeatureRecipe rendering for component "streams"`},
+		},
+		{
+			name: "an attached Feature's binding is named by the identity its content is addressed by, and its host's own reference halts",
+			nodes: []NodeFragment{
+				{NodeID: "<attachment>:frhost@aux", NameBasis: "frhost", Files: [][]byte{[]byte(boundSource)}, Paths: []string{"a.yaml"}, Bound: []string{"Stage"}},
+				{NodeID: "frhost", Files: [][]byte{[]byte("Resources:\n  HostTopic:\n    Type: AWS::SNS::Topic\n    Properties:\n      DisplayName: {Ref: Stage}\n")}, Paths: []string{"host.yaml"}},
+			},
+			wantText:   []string{`component "frhost"'s template "host.yaml" references parameter "Stage"`, `rendering for component "frhost"`},
+			absentText: []string{"<attachment>"},
 		},
 		{
 			name:     "another contributor naming the bound parameter as an Fn::Sub variable halts",
@@ -94,6 +105,11 @@ func TestAssembleStackRefusesReferencesToBoundParameters(t *testing.T) {
 			for _, want := range tc.wantText {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("the halt does not name %s: %v", want, err)
+				}
+			}
+			for _, absent := range tc.absentText {
+				if strings.Contains(err.Error(), absent) {
+					t.Errorf("the halt carries %s: %v", absent, err)
 				}
 			}
 		})

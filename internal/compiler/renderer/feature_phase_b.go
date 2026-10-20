@@ -271,6 +271,26 @@ type FeatureValues struct {
 	Omits []ResolvedOmit
 }
 
+// reachAssembly reports whether these values travel, beside the attachment's
+// output, to the assembler of the dispatch group the attachment contributes to,
+// carrying the mark that a values mapping produced them.
+//
+// Both conditions are needed. The attachment must have rendered from a source,
+// for the reason a component's own values travel only then: the files came in
+// verbatim from what their author shipped, so the values could not be written
+// into them and the assembled artifact is the one position left to supply them.
+// And its own valuesMapping must have produced them. A component's Recipe sends
+// its values from a source whether or not a mapping ran; an attachment's
+// unmapped values — the Feature's values handed on as written — do not travel,
+// so a build whose attached Features declare no mapping hands every assembler
+// exactly what it handed it before attachments' values travelled at all.
+//
+// resolvedSource is the source the attachment's render was handed, and the
+// predicate asking whether it declares one is the same one that render asks.
+func (v FeatureValues) reachAssembly(resolvedSource any) bool {
+	return v.Mapped && sourceValueDeclared(resolvedSource)
+}
+
 // ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and its omit
 // entries and returns the values dictionary for the provider engine, with the one
 // fact about those keys that the evaluation settles. Mirrors

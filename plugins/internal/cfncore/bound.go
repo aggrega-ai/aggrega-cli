@@ -88,7 +88,7 @@ func refuseReferencesToBoundParameters(nodes []NodeFragment, decoded [][]map[str
 
 	phrases := make([]string, 0, len(found))
 	for _, f := range found {
-		phrases = append(phrases, fmt.Sprintf("component %s's template %s references parameter %s, which the valuesMapping of %s binds",
+		phrases = append(phrases, fmt.Sprintf("component %s's template %s references parameter %s, which the valuesMapping of a Recipe or FeatureRecipe rendering for %s binds",
 			strconv.Quote(f.node), strconv.Quote(f.file), strconv.Quote(f.parameter), componentPhrase(boundBy[f.parameter])))
 	}
 	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),

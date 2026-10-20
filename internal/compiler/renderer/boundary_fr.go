@@ -194,6 +194,15 @@ type BoundaryFRState struct {
 	// same state as absent.
 	Values map[boundaryFRKey]map[string]any
 
+	// ValuesReachAssembly records, per the same key, that the tuple's Values also
+	// travel to the assembler of the dispatch group its output joins, as that
+	// contributor's own values marked as a mapping's output: the tuple rendered
+	// from a source and its valuesMapping produced them
+	// ([FeatureValues.reachAssembly]). Recorded beside Values, at the render that
+	// settled both conditions, for the reason Values is recorded rather than
+	// re-derived. An absent entry reads as false.
+	ValuesReachAssembly map[boundaryFRKey]bool
+
 	// ConsumerEnvOverrides carries per-consumer environment overrides a
 	// boundary-scope FeatureRecipe's resource-gen emits, keyed
 	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
@@ -267,6 +276,7 @@ func NewBoundaryFRState() *BoundaryFRState {
 		Files:                map[boundaryFRKey][]EmittedFile{},
 		ComponentIDs:         map[boundaryFRKey]string{},
 		Values:               map[boundaryFRKey]map[string]any{},
+		ValuesReachAssembly:  map[boundaryFRKey]bool{},
 		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
 		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
@@ -658,6 +668,9 @@ func dispatchBoundaryScopeFR(
 	// produced them is what keeps the assembled artifact supplying exactly what
 	// the render was given.
 	boundaryFRState.Values[key] = frValues.Resolved
+	if frValues.reachAssembly(resolvedSrc) {
+		boundaryFRState.ValuesReachAssembly[key] = true
+	}
 
 	// The context copied above carries the sensitivity declarations of whichever
 	// component node's render reached this dispatch, and a boundary-scope feature
