@@ -107,7 +107,8 @@ import (
 // the render_node, validate_node_input and assemble_boundary exports,
 // compatibility with the terraform provider, and its render-behavior contract
 // (sourced and artifacts-standalone input, nest-per-component boundary
-// assembly). The host reads it once at load and validates it before invoking the
+// assembly, and the files a Recipe contributes to the boundary's shared output
+// accepted at the root). The host reads it once at load and validates it before invoking the
 // exports. terraform resolves its module source from the host's name-only listing
 // and asks the host to pack the selection, so the render and validation exports
 // declare the aggrega_pack_source host function they import; the host cross-checks
@@ -153,6 +154,13 @@ func descriptor() aggrega.PluginDescriptor {
 			// Each contributor is a module of its own, and the directory Terraform
 			// calls those is this target's word rather than the host's.
 			NestSegment: terraformcore.ModulesDirName,
+			// Terraform reads every configuration file in the root module's own
+			// directory, so a file a Recipe contributes to the boundary's shared
+			// output, written there beside the module blocks this guest assembles, is
+			// part of the root configuration. That is the one place Terraform accepts
+			// a provider configuration. The guest is handed none of those files and
+			// writes none of them: the host evaluates, merges and writes them.
+			BoundaryArtifacts: true,
 			// What the module ecosystem never ships beside a module. The host
 			// records these rules when an entity is pinned and applies them; the
 			// guest declares them and filters nothing itself.

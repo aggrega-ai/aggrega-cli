@@ -1392,6 +1392,46 @@ func runOmitsProviderRule(
 	return objectionsAsHalt(raised, "documents declaring omits whose provider does not honour them")
 }
 
+// boundaryArtifactsProviderAxes is the axis pair the rule over a Recipe declaring
+// files for its boundary's shared output is invoked once per: the node set, and the
+// position each node's Recipe writes its boundary block at. Naming both together is
+// what makes the inner one un-skippable, for the reason [recipeSourceFieldAxes]
+// gives.
+type boundaryArtifactsProviderAxes interface {
+	constraint.NodeEnumerator
+	constraint.RecipeBoundaryBlockEnumerator
+}
+
+// runBoundaryArtifactsProviderRule invokes the rule declared over a Recipe that
+// declares files for its boundary's shared output rendered by a provider that does
+// not declare it accepts them, and returns what it raised as the render's halt.
+//
+// It runs before anything renders, for the reason the omits rules beside it do:
+// every fact it reads is complete once the documents are bound and each provider
+// has described itself, and asked later the refusal would arrive after earlier
+// nodes had rendered. A FeatureRecipe carries no such block, so there is one owner
+// and one rule.
+//
+// It carries no plugin-resolution guard: a binding that resolves to nothing leaves
+// the rule silent rather than refusing, so a render with nothing to resolve owes
+// nothing here. Every offending node is reported rather than the first.
+func runBoundaryArtifactsProviderRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates boundaryArtifactsProviderAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodeRecipeBoundaryBlocks(
+		ctx.Err, coordinates, coordinates, view, BoundaryArtifactsProviderAcceptsTheFiles,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(raised, "Recipes declaring boundary artifacts whose provider does not accept them")
+}
+
 // crossBoundaryLinkAxis is the axis the rule over a connection's two rendering
 // providers is invoked once per: the connection set the finalised graph carries.
 //

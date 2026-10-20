@@ -95,6 +95,12 @@ type traversalFixture struct {
 	// would make the position's presence depend on what was written there.
 	recipeSourceFields map[string][]AuthoredCoordinate
 
+	// recipeBoundaryBlocks is the axis over the position each node's own Recipe
+	// writes its boundary block at. It is stored apart from the source position
+	// above for the reason that one is stored apart from the rest: two positions in
+	// one store would present each under a key that cannot say which it is.
+	recipeBoundaryBlocks map[string][]AuthoredCoordinate
+
 	attachPipeline         map[string][]AuthoredCoordinate
 	boundaryAttachPipeline map[string][]AuthoredCoordinate
 
@@ -250,6 +256,10 @@ func (f traversalFixture) RecipeImportFields(node string) []AuthoredCoordinate {
 
 func (f traversalFixture) RecipeSourceFields(node string) []AuthoredCoordinate {
 	return f.recipeSourceFields[fixtureKey(node)]
+}
+
+func (f traversalFixture) RecipeBoundaryBlocks(node string) []AuthoredCoordinate {
+	return f.recipeBoundaryBlocks[fixtureKey(node)]
 }
 
 func (f traversalFixture) AttachmentPipelineSteps(node, attachment string) []AuthoredCoordinate {
@@ -856,6 +866,18 @@ func newTraversalFixture() traversalFixture {
 			},
 			fixtureKey("billing.api"): {
 				{Value: "source", SourceFile: "recipes/api.yaml"},
+			},
+		},
+
+		// The position each node's own Recipe writes its boundary block at, one per
+		// node with a bound Recipe, each carrying its own node's Recipe for the
+		// reason the source position above does.
+		recipeBoundaryBlocks: map[string][]AuthoredCoordinate{
+			fixtureKey("web"): {
+				{Value: "boundary", SourceFile: "recipes/web.yaml"},
+			},
+			fixtureKey("billing.api"): {
+				{Value: "boundary", SourceFile: "recipes/api.yaml"},
 			},
 		},
 
@@ -1530,6 +1552,20 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"recipes/web.yaml|.spec.source",
 				"recipes/api.yaml|.spec.source",
+			},
+		},
+		{
+			// The position each node's own Recipe writes its boundary block at,
+			// walked over both nodes, each locator naming its own Recipe and the key
+			// in full, for the reasons the source position above gives.
+			kind: SubjectNodeRecipeBoundaryBlock,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeRecipeBoundaryBlocks(cancelled, f, f, v,
+					raisingCheck[NodeRecipeBoundaryBlockSubject]())
+			},
+			want: []string{
+				"recipes/web.yaml|.spec.boundary",
+				"recipes/api.yaml|.spec.boundary",
 			},
 		},
 		{
@@ -2593,6 +2629,25 @@ func coordinateFlowCases() []coordinateFlowCase {
 			want: []string{
 				"web|source",
 				"billing.api|source",
+			},
+		},
+
+		// The position each Recipe writes its boundary block at. Both invocations
+		// carry the same coordinate value, so the readback is what shows the
+		// coordinate arriving, for the reason the source position's readback states.
+		{
+			kind: SubjectNodeRecipeBoundaryBlock,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeRecipeBoundaryBlockSubject]) ([]Objection, error) {
+					return RunOnNodeRecipeBoundaryBlocks(nil, f, f, traversalView{}, c)
+				}, func(s NodeRecipeBoundaryBlockSubject) string {
+					return s.NodeID() + "|" + s.RecipeBoundaryBlock()
+				})
+			},
+			want: []string{
+				"web|boundary",
+				"billing.api|boundary",
 			},
 		},
 

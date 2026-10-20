@@ -22,6 +22,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
@@ -72,22 +73,10 @@ type ArtifactsEmitter interface {
 //
 // The author-declared map key names the output, in every form. A mapping key is
 // unique within one document, so the key set is the output-name set and an author
-// reads the name they wrote rather than a name derived from something else.
-// Each entry resolves by content-shape (per the file-import vocabulary):
-//   - Mode 1 (inline): output name is the key.
-//   - Mode 2 (local file $import): output name is the key; the imported file's own
-//     name selects the content and does not name the output, so two entries
-//     importing different files that share a base name are two distinct outputs.
-//     The artifactDigests file-pin is verified.
-//   - Mode 3 (library $import, `<Library>#/artifacts/<entry>`): the referenced
-//     ArtifactLibrary bundle expands into one output per file, each nested under
-//     the consumption key as `<key>/<filename>` — one key names many files, so
-//     the key alone cannot name them and the pair identifies both the consumption
-//     and the file within the bundle. The library version is lockfile-pinned, so
-//     no artifactDigests file-pin applies. A host-bearing `oci://…` reference is
-//     rejected (ErrHostInLibraryImport), and a bundle file whose name would not
-//     stay under the consumption key is rejected
-//     (ErrArtifactLibraryFileEscapesKey) before the name is composed.
+// reads the name they wrote rather than a name derived from something else. Each
+// entry resolves by content-shape in [walkArtifactBlock], the one reading of the
+// three forms; a mode-2 entry's artifactDigests file-pin is verified, and a
+// library-supplied entry's version is lockfile-pinned instead.
 //
 // origin records which form the entry took so a guest that rejects one form can
 // halt on it. Two outputs resolving to the same filename halt loudly with
@@ -195,19 +184,13 @@ func buildArtifactsProjection(
 		// entry. It runs after both pillar readings so a template naming an
 		// undeclared pillar is answered by the rule that has something to say about
 		// it, and before evaluation so the failure carries a parse attribution.
-		if err := preCheckArtifactTemplateParses(outputName, tmplText, leftDelim, rightDelim); err != nil {
-			return err
-		}
-		rendered, err := EvalTemplateWithDelims(
-			fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, outputName),
-			tmplText, tmplCtx, leftDelim, rightDelim, state.Withheld,
-		)
+		rendered, keep, err := evaluateArtifactText(ownArtifactsBlock, state, outputName, tmplText, tmplCtx, leftDelim, rightDelim)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: outputName}, fmt.Sprintf("artifact %q template eval", outputName))
+			return err
 		}
 		// A presence-guarded body that renders to nothing must not emit a
 		// zero-length file; skip the entry so it never reaches the guest.
-		if strings.TrimSpace(rendered) == "" {
+		if !keep {
 			return nil
 		}
 		if _, dup := seen[outputName]; dup {
@@ -242,17 +225,122 @@ func buildArtifactsProjection(
 		return nil
 	}
 
-	for _, key := range state.Recipe.Spec.Artifacts.Keys() {
-		entry, _ := state.Recipe.Spec.Artifacts.Get(key)
+	err := walkArtifactBlock(state.Recipe.Spec.Artifacts, ownArtifactsBlock, state, func(e resolvedArtifactEntry) error {
+		if e.importPath != "" {
+			// The file this entry was supplied from is retained in the same
+			// branch as the pin below, because this is the one branch that knows
+			// the entry's resolved form names a file at all. It is the resolved
+			// path, which is absolute: a finding about drifted content is about a
+			// file on disk, and the entry's output name is chosen independently of
+			// that file, so nothing else the finding carries can name it.
+			//
+			// It is retained for EVERY imported entry rather than only for one
+			// carrying a recorded pin, because the two are different questions:
+			// which file supplied this entry, and whether a pull recorded a digest
+			// for it beside the document. Gating the path on the pin would make the
+			// fact answer emptily for a Recipe with nothing recorded, whose entries
+			// name a file exactly as a pinned one's do.
+			state.recordArtifactImportedPath(e.outputName, e.importPath)
+			// The recorded pin is retained here rather than at the emit seam,
+			// because this is the one branch that knows the entry's resolved form
+			// is content supplied by an imported file — the only form a pin is
+			// recorded for. An inline entry is pinned by whatever pins the entity
+			// it is part of, and a bundle-supplied one by the version the bundle
+			// resolved at, so neither carries a file digest to compare against.
+			// Retaining a pin for every entry and leaving each reader to decide
+			// whether the comparison applied would put the form gate in as many
+			// places as there are readers.
+			//
+			// A Recipe no pull has pinned has nothing recorded beside it, which
+			// leaves the rules over this entry with nothing to compare and is the
+			// ordinary answer rather than an approval. The pins are the ones the load
+			// recorded for the document this entity was read from, resolved onto
+			// the state when it was built — so an entity declared in no document
+			// records nothing here for the same reason.
+			if pin, ok := recipepin.MatchArtifactPin(state.RecordedPins.ArtifactDigests, e.key); ok {
+				state.recordArtifactContentPin(e.outputName, pin.Digest)
+			}
+		}
+		return emit(e.outputName, e.origin, e.text)
+	})
+	if err != nil {
+		return ArtifactsProjection{}, err
+	}
+	return proj, nil
+}
+
+// artifactsBlock names one artifacts-shaped block of a Recipe in the two ways a
+// reader meets it: the noun an error message calls one of its entries by, and the
+// prefix the template an entry is evaluated as is named under. A Recipe's own
+// artifacts and its boundary block are walked and evaluated by the same code, and
+// these are what keep the two apart in what that code reports.
+type artifactsBlock struct {
+	noun         string
+	templateName string
+}
+
+// ownArtifactsBlock is a Recipe's own artifacts, written to its component's output.
+var ownArtifactsBlock = artifactsBlock{noun: "artifact", templateName: recipeFieldArtifacts}
+
+// boundaryArtifactsBlock is a Recipe's boundary block: the files it contributes to
+// the shared output of the boundary it renders in.
+var boundaryArtifactsBlock = artifactsBlock{
+	noun:         "boundary artifact",
+	templateName: recipeFieldBoundary + "." + recipeFieldArtifacts,
+}
+
+// resolvedArtifactEntry is one entry of an artifacts-shaped block resolved to the
+// text that stands at one of its outputs, before anything evaluates it.
+type resolvedArtifactEntry struct {
+	// outputName is the name the entry resolved to: the authored key for an
+	// inline or an imported entry, and the key with the bundle's own filename
+	// nested under it for each file a library bundle supplies.
+	outputName string
+	// origin is "inline" or "import", the form the entry took.
+	origin string
+	// text is the template text standing at the output.
+	text string
+	// key is the authored key the entry is written under.
+	key string
+	// importPath is the resolved path of the file a file import names, and empty
+	// for every other form.
+	importPath string
+}
+
+// walkArtifactBlock resolves every entry of one artifacts-shaped block in author
+// order, in the three forms the block takes, and hands each resolved output to
+// visit. It is the one reading of those forms: a Recipe's own artifacts and its
+// boundary block are both walked here, so an entry is resolved the same way
+// whichever block it is written in.
+//
+// Each entry resolves by content-shape (per the file-import vocabulary):
+//   - Mode 1 (inline): output name is the key.
+//   - Mode 2 (local file $import): output name is the key; the imported file's own
+//     name selects the content and does not name the output, so two entries
+//     importing different files that share a base name are two distinct outputs.
+//   - Mode 3 (library $import, `<Library>#/artifacts/<entry>`): the referenced
+//     ArtifactLibrary bundle expands into one output per file, each nested under
+//     the consumption key as `<key>/<filename>`. A host-bearing `oci://…`
+//     reference is rejected (ErrHostInLibraryImport), and a bundle file whose
+//     name would not stay under the consumption key is rejected
+//     (ErrArtifactLibraryFileEscapesKey) before the name is composed.
+func walkArtifactBlock(
+	entries types.OrderedMap[types.ArtifactEntry],
+	block artifactsBlock,
+	state *PhaseBState,
+	visit func(resolvedArtifactEntry) error,
+) error {
+	for _, key := range entries.Keys() {
+		entry, _ := entries.Get(key)
 		switch {
 		case entry.HasOCIPrefix():
 			// A library is addressed by bare-name identity, never by registry
 			// location; reject a host-bearing reference (mirrors workload:).
-			return ArtifactsProjection{}, cerrors.Wrap(ErrHostInLibraryImport(),
+			return cerrors.Wrap(ErrHostInLibraryImport(),
 				cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
 				cerrors.ComposeMessage(ErrHostInLibraryImport(), []string{
 					fmt.Sprintf("Recipe %q", state.RecipeName),
-					fmt.Sprintf("artifact %q", key),
+					fmt.Sprintf("%s %q", block.noun, key),
 					fmt.Sprintf("$import %q", entry.Import),
 				}, ""))
 		case entry.IsLibraryImport():
@@ -265,8 +353,8 @@ func buildArtifactsProjection(
 			// check guards only mode-2 local-file imports).
 			bundle, err := resolveArtifactLibraryImport(entry.Import, state.ArtifactLibraries)
 			if err != nil {
-				return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
-					fmt.Sprintf("Recipe %q artifact library import %q", state.RecipeName, entry.Import))
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
+					fmt.Sprintf("Recipe %q %s library import %q", state.RecipeName, block.noun, entry.Import))
 			}
 			for _, fname := range bundle.Files.Keys() {
 				// The nesting above is only true of the composed name while the
@@ -280,69 +368,154 @@ func buildArtifactsProjection(
 				// own spelling, and that predicate gives it the same verdict on every
 				// platform.
 				if !pathscope.IsLocalSlash(fname) {
-					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactLibraryFileEscapesKey(),
+					return cerrors.Wrap(ErrArtifactLibraryFileEscapesKey(),
 						cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
 						cerrors.ComposeMessage(ErrArtifactLibraryFileEscapesKey(), []string{
 							fmt.Sprintf("Recipe %q", state.RecipeName),
-							fmt.Sprintf("artifact %q", key),
+							fmt.Sprintf("%s %q", block.noun, key),
 							fmt.Sprintf("bundle file %q", fname),
 						}, "rename the file inside the ArtifactLibrary bundle so its name stays under the artifacts key it is consumed at"))
 				}
 				body, _ := bundle.Files.Get(fname)
-				if err := emit(key+"/"+fname, "import", body); err != nil {
-					return ArtifactsProjection{}, err
+				if err := visit(resolvedArtifactEntry{outputName: key + "/" + fname, origin: "import", text: body, key: key}); err != nil {
+					return err
 				}
 			}
 		default:
 			// Mode 1 (inline) / mode 2 (local file).
 			tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, key)
 			if err != nil {
-				return ArtifactsProjection{}, err
+				return err
 			}
-			name := key
-			origin := "inline"
+			resolved := resolvedArtifactEntry{outputName: key, origin: "inline", text: tmplText, key: key}
 			if entry.Import != "" {
-				origin = "import"
-				// The file this entry was supplied from is retained in the same
-				// branch as the pin below, because this is the one branch that knows
-				// the entry's resolved form names a file at all. It is the resolved
-				// path, which is absolute: a finding about drifted content is about a
-				// file on disk, and the entry's output name is chosen independently of
-				// that file, so nothing else the finding carries can name it.
-				//
-				// It is retained for EVERY imported entry rather than only for one
-				// carrying a recorded pin, because the two are different questions:
-				// which file supplied this entry, and whether a pull recorded a digest
-				// for it beside the document. Gating the path on the pin would make the
-				// fact answer emptily for a Recipe with nothing recorded, whose entries
-				// name a file exactly as a pinned one's do.
-				state.recordArtifactImportedPath(name, entry.Import)
-				// The recorded pin is retained here rather than at the emit seam,
-				// because this is the one branch that knows the entry's resolved form
-				// is content supplied by an imported file — the only form a pin is
-				// recorded for. An inline entry is pinned by whatever pins the entity
-				// it is part of, and a bundle-supplied one by the version the bundle
-				// resolved at, so neither carries a file digest to compare against.
-				// Retaining a pin for every entry and leaving each reader to decide
-				// whether the comparison applied would put the form gate in as many
-				// places as there are readers.
-				//
-				// A Recipe no pull has pinned has nothing recorded beside it, which
-				// leaves the rules over this entry with nothing to compare and is the
-				// ordinary answer rather than an approval. The pins are the ones the load
-				// recorded for the document this entity was read from, resolved onto
-				// the state when it was built — so an entity declared in no document
-				// records nothing here for the same reason.
-				if pin, ok := recipepin.MatchArtifactPin(state.RecordedPins.ArtifactDigests, key); ok {
-					state.recordArtifactContentPin(name, pin.Digest)
-				}
+				resolved.origin = "import"
+				resolved.importPath = entry.Import
 			}
-			if err := emit(name, origin, tmplText); err != nil {
-				return ArtifactsProjection{}, err
+			if err := visit(resolved); err != nil {
+				return err
 			}
 		}
 	}
-	return proj, nil
+	return nil
+}
+
+// evaluateArtifactText checks that one resolved entry's template parses and
+// evaluates it against the render context with the delimiter pair given, and
+// reports whether it rendered anything at all. It is the one evaluation of an
+// artifacts-shaped entry: the withheld set the state carries is what a failure is
+// reported without, so a template reading a value an author declared sensitive
+// fails without quoting it whichever block the entry is written in.
+//
+// keep is false for a body that renders to nothing but whitespace — a
+// presence-guarded entry the build should emit no file for.
+func evaluateArtifactText(
+	block artifactsBlock,
+	state *PhaseBState,
+	outputName, tmplText string,
+	tmplCtx *types.TemplateContext,
+	leftDelim, rightDelim string,
+) (rendered string, keep bool, err error) {
+	if err := preCheckArtifactTemplateParses(outputName, tmplText, leftDelim, rightDelim); err != nil {
+		return "", false, err
+	}
+	rendered, err = EvalTemplateWithDelims(
+		fmt.Sprintf("%s[%s/%s]", block.templateName, state.RecipeName, outputName),
+		tmplText, tmplCtx, leftDelim, rightDelim, state.Withheld,
+	)
+	if err != nil {
+		return "", false, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: outputName}, fmt.Sprintf("%s %q template eval", block.noun, outputName))
+	}
+	return rendered, strings.TrimSpace(rendered) != "", nil
+}
+
+// checkBoundaryArtifactPin refuses a boundary-block entry whose imported file no
+// longer digests to the pin the lock beside its Recipe records for it.
+//
+// The entry is pinned in the lock's one artifactDigests list under the name
+// recipepin.BoundaryArtifactPinName composes, by the pin computation an artifacts
+// entry is pinned by, and it is checked here exactly as an artifacts entry is: the
+// recorded pin is looked up with the same match, the file's resolved text — not
+// what evaluating it produced, since that differs per node — is digested by the
+// same function, and a disagreement is refused under the same condition, composed
+// by the one composer a verifying pull reports the same drift through. It is asked
+// before the entry is evaluated, so content nothing verified is never read for any
+// other purpose. An inline entry and a library-supplied one carry no file pin, and
+// an entry no pull has pinned has nothing recorded to compare; both pass.
+func checkBoundaryArtifactPin(state *PhaseBState, e resolvedArtifactEntry) error {
+	if e.importPath == "" {
+		return nil
+	}
+	name := recipepin.BoundaryArtifactPinName(e.key)
+	pin, pinned := recipepin.MatchArtifactPin(state.RecordedPins.ArtifactDigests, name)
+	if !pinned {
+		return nil
+	}
+	if got := digest.ContentDigest([]byte(e.text)); got != pin.Digest {
+		return ArtifactContentPinMismatch(state.RecipePath, name, e.importPath, got, pin.Digest)
+	}
+	return nil
+}
+
+// boundaryArtifact is one file a node's Recipe contributes to the shared output of
+// the boundary it renders in, evaluated: the name it is written under in the
+// dispatch group's own directory, and its bytes.
+type boundaryArtifact struct {
+	name    string
+	content []byte
+}
+
+// buildBoundaryArtifacts evaluates the files a node's Recipe contributes to its
+// boundary's shared output, in author order.
+//
+// They are walked and evaluated by the code a Recipe's own artifacts are — the
+// same three forms, the same key-to-name rule, the same template context and the
+// same withheld set — and differ in what happens to the result: nothing is handed
+// to the provider and nothing is stamped with this node's provenance, because the
+// file belongs to every contributor that declares it. The host writes it once, in
+// the dispatch group's own directory, after merging it with what every other
+// contributor to the group declared under the same name.
+//
+// The declared rules the walk over a node's own artifacts asks about each entry
+// are keyed by the node's own artifact names, so they are not asked here: an entry
+// of this block named like one of the node's own artifacts would be answered with
+// that artifact's facts. An imported file's pin is checked instead by
+// [checkBoundaryArtifactPin], under the name the lock pins it by, and an inline
+// entry is enumerated with the Recipe's other template fields, so the rules over
+// those fields read it.
+//
+// A name emitted twice inside the block halts as an own block's would. The
+// delimiter pair is the one the node's own artifacts are evaluated with.
+func buildBoundaryArtifacts(
+	tmplCtx *types.TemplateContext,
+	state *PhaseBState,
+	leftDelim, rightDelim string,
+) ([]boundaryArtifact, error) {
+	var out []boundaryArtifact
+	seen := map[string]struct{}{}
+	err := walkArtifactBlock(state.Recipe.Spec.Boundary.Artifacts, boundaryArtifactsBlock, state, func(e resolvedArtifactEntry) error {
+		if err := checkBoundaryArtifactPin(state, e); err != nil {
+			return err
+		}
+		rendered, keep, err := evaluateArtifactText(boundaryArtifactsBlock, state, e.outputName, e.text, tmplCtx, leftDelim, rightDelim)
+		if err != nil || !keep {
+			return err
+		}
+		if _, dup := seen[e.outputName]; dup {
+			return cerrors.Wrap(ErrArtifactOutputCollision(), cerrors.CatalogError, cerrors.SourceLocation{File: e.outputName},
+				cerrors.ComposeMessage(ErrArtifactOutputCollision(), []string{
+					fmt.Sprintf("Recipe %q", state.RecipeName),
+					fmt.Sprintf("boundary artifact output %q emitted more than once", e.outputName),
+				}, ""))
+		}
+		seen[e.outputName] = struct{}{}
+		out = append(out, boundaryArtifact{name: e.outputName, content: []byte(rendered)})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ArtifactOriginIndex answers, for one file a provider guest placed, which

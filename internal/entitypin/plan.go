@@ -183,7 +183,7 @@ func Compute(in PlanInputs) (Plan, error) {
 			ok                                     bool
 		)
 		if r, err := loader.LoadRecipe(uri); err == nil {
-			kind, kindHint, name, artifacts, capability = "Recipe", "recipe", r.Metadata.Name, r.Spec.Artifacts, r.Spec.Capability
+			kind, kindHint, name, artifacts, capability = "Recipe", "recipe", r.Metadata.Name, recipepin.PinnedArtifactEntries(r), r.Spec.Capability
 			path, ok = WritableHome(in.View, kind, r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
 		} else if fr, err := loader.LoadFeatureRecipe(uri); err == nil {
 			kind, kindHint, name, artifacts, capability = "FeatureRecipe", "feature_recipe", fr.Metadata.Name, fr.Spec.Artifacts, fr.Spec.Capability

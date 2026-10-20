@@ -280,6 +280,10 @@ type ProviderContractClaim struct {
 	// its output every rendered unit an omit entry matches and reports one count
 	// per entry. False when the plugin makes no such claim.
 	Omits bool
+	// BoundaryArtifacts is the authored shared-files claim: whether the plugin's
+	// target accepts the files a Recipe contributes to the shared output of the
+	// boundary it renders in. False when the plugin makes no such claim.
+	BoundaryArtifacts bool
 	// NestSegment is the authored directory each contributor's own sub-directory
 	// sits under, for a plugin whose boundary assembly nests. Empty when the
 	// plugin names none.

@@ -306,6 +306,26 @@ func (c *describedStageCoordinates) RecipeSourceFields(node string) []constraint
 	}
 }
 
+// RecipeBoundaryBlocks returns the position a node's own Recipe writes its
+// boundary block at — one coordinate for a node with a bound Recipe, and none for
+// a node with no Recipe to write one.
+//
+// The coordinate is presented whether or not the Recipe declares the block, on the
+// reading [describedStageCoordinates.RecipeSourceFields] gives for its own
+// position: whether the block was declared is a declared fact over this coordinate,
+// where a reader of the rule can see it. The Recipe is the one the render bound to
+// the node, and its name stands in for its path, for the reason the provides axis
+// states.
+func (c *describedStageCoordinates) RecipeBoundaryBlocks(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	return []constraint.AuthoredCoordinate{
+		{Value: recipeFieldBoundary, SourceFile: recipe.Metadata.Name},
+	}
+}
+
 // LocalsKeys returns the locals a node's Recipe declares, in the order that
 // Recipe declares them.
 //

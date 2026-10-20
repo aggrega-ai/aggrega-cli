@@ -5275,6 +5275,64 @@ var facts = []factDecl{
 			"node-scoped form does.",
 	},
 
+	// The two facts below are the two halves of one question asked of a node's
+	// Recipe: does it declare files for its boundary's shared output, and does the
+	// provider rendering it claim to accept them. They are separate facts for the
+	// reason the omits pair above is — one is read from the authored document and
+	// one from the provider's self-description — and a FeatureRecipe carries no
+	// such block, so the question has one owner.
+	//
+	// The authored half is keyed by the POSITION a Recipe writes the block at
+	// rather than by the node, because a refusal of the block belongs at that key in
+	// the Recipe: the edit is there, in the entry every node binding the Recipe
+	// shares, and not at any one component the Aggregate declares.
+	{
+		Name:        "provider-accepts-boundary-artifacts",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.BoundaryArtifacts",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "(bool, bool)",
+		Doc: "ProviderAcceptsBoundaryArtifacts reports whether the rendering provider " +
+			"a node resolves to declares that it accepts the files a Recipe " +
+			"contributes to the shared output of the boundary it renders in — that " +
+			"its target treats a file written in the dispatch group's own directory, " +
+			"beside what its assembly writes there, as part of that output — and, " +
+			"second, whether a provider resolved behind the node's binding at all.\n\n" +
+			"The claim is the provider's own statement about itself, read here rather " +
+			"than decided from a list of providers. A provider stating no claim " +
+			"answers false in the first result, which is the same answer one denying " +
+			"it gives.\n\nThe second result separates an absence the first cannot: a " +
+			"node with no bound Recipe, and a binding the build could not resolve to a " +
+			"provider, answer false in both results, so a rule refusing on the claim " +
+			"stays silent where no provider stands behind the binding, and the " +
+			"render reports that binding where it reaches for the provider.",
+	},
+	{
+		Name:        "recipe-boundary-artifacts-declared",
+		Stage:       "described",
+		SourceField: "types.RecipeSpec.Boundary",
+		Subject:     []string{"node", "recipe-boundary-block"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "block", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "RecipeBoundaryArtifactsDeclared reports whether a node's own Recipe " +
+			"declares files for the shared output of the boundary it renders in, " +
+			"taking the block the Recipe wrote rather than anything an entry " +
+			"evaluates to.\n\nThe authored reading is the one that decides whether " +
+			"the Recipe needs a provider accepting the files: an entry that renders " +
+			"to nothing on one build writes a file on another, so whether the " +
+			"provider can accept the block does not depend on what one build " +
+			"evaluates it to. It is also the reading available before anything is " +
+			"evaluated, which is where a rule over it runs.\n\nFalse is a real answer " +
+			"and covers a node with no bound Recipe as well as one whose Recipe " +
+			"declares no such block. A coordinate naming a position other than the " +
+			"block answers false, so a rule over this axis is handed the one " +
+			"position it governs.",
+	},
+
 	// The five facts below are keyed by an AUTHORED artifacts entry rather than
 	// by an artifact, and the distinction is the whole reason the coordinate
 	// exists. An artifact is named by the output an entry resolved to, which for

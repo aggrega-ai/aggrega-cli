@@ -253,6 +253,14 @@ func ArtifactEntryLocator(entry string) string {
 	return authoredLocator(documentSpecSegments(authoredKeyArtifacts, entry)...)
 }
 
+// BoundaryArtifactEntryLocator returns the locator an entry of a Recipe's boundary
+// block is positioned at, assembled as [ArtifactEntryLocator] assembles an
+// artifacts entry's, one block further in. An entry name carrying the locator
+// separator positions the finding at the block, for the same reason.
+func BoundaryArtifactEntryLocator(entry string) string {
+	return authoredLocator(documentSpecSegments("boundary", authoredKeyArtifacts, entry)...)
+}
+
 // ObjectionMessage renders what one check raised as the text a diagnostic
 // carries: the sentinel's registered wording, then the values the check
 // supplied.

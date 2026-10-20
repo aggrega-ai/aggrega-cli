@@ -152,7 +152,9 @@ func verifyEntityLocks(lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, enti
 }
 
 // lockedEntity is one entity a lock can sit beside: the document it was read
-// from, and what the pin comparison needs to know about it.
+// from, and what the pin comparison needs to know about it. For a Recipe the
+// artifacts are the entries its lock pins, its boundary block's included under
+// their pin names (recipepin.PinnedArtifactEntries).
 type lockedEntity struct {
 	path      string
 	kind      string
@@ -172,7 +174,7 @@ func lockedEntityFor(loader closure.RecipeLoader, lazyView *catalog.LazyLookup, 
 		if !ok {
 			return lockedEntity{}, false
 		}
-		return lockedEntity{path: path, kind: "Recipe", name: r.Metadata.Name, artifacts: r.Spec.Artifacts}, true
+		return lockedEntity{path: path, kind: "Recipe", name: r.Metadata.Name, artifacts: recipepin.PinnedArtifactEntries(r)}, true
 	}
 	if fr, err := loader.LoadFeatureRecipe(uri); err == nil {
 		path, ok := entitypin.WritableHome(lazyView, "FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)

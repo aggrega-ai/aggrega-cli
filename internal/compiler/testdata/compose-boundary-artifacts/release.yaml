@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-files
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: boundary-files-app
+  manifest: boundary-files-manifest
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        app: {}

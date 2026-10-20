@@ -109,32 +109,42 @@ func RecipeTemplateReads(recipe *types.Recipe, libs RecipeTemplateLibraries, art
 	}
 
 	// An inline artifacts entry is one of the fields above; only an imported one
-	// is read here, in the two forms the artifacts walk resolves it from.
-	for _, key := range recipe.Spec.Artifacts.Keys() {
-		entry, _ := recipe.Spec.Artifacts.Get(key)
-		if entry.Import == "" {
-			continue
-		}
-		label := artifactsLabelPrefix + key + "]"
-		if entry.IsLibraryImport() {
-			bundle, err := resolveArtifactLibraryImport(entry.Import, libs.Artifacts)
+	// is read here, in the two forms the artifacts walk resolves it from. The
+	// boundary block takes the same forms and is walked by the same evaluation, so
+	// its imported entries are read the same way, after the Recipe's own.
+	for _, block := range []struct {
+		labelPrefix string
+		entries     types.OrderedMap[types.ArtifactEntry]
+	}{
+		{artifactsLabelPrefix, recipe.Spec.Artifacts},
+		{boundaryArtifactsLabelPrefix, recipe.Spec.Boundary.Artifacts},
+	} {
+		for _, key := range block.entries.Keys() {
+			entry, _ := block.entries.Get(key)
+			if entry.Import == "" {
+				continue
+			}
+			label := block.labelPrefix + key + "]"
+			if entry.IsLibraryImport() {
+				bundle, err := resolveArtifactLibraryImport(entry.Import, libs.Artifacts)
+				if err != nil {
+					return nil, err
+				}
+				for _, fname := range bundle.Files.Keys() {
+					body, _ := bundle.Files.Get(fname)
+					if err := collect(label+"/"+fname, body, artifactLeft, artifactRight); err != nil {
+						return nil, err
+					}
+				}
+				continue
+			}
+			text, err := resolveArtifactEntryText(entry, name, key)
 			if err != nil {
 				return nil, err
 			}
-			for _, fname := range bundle.Files.Keys() {
-				body, _ := bundle.Files.Get(fname)
-				if err := collect(label+"/"+fname, body, artifactLeft, artifactRight); err != nil {
-					return nil, err
-				}
+			if err := collect(label, text, artifactLeft, artifactRight); err != nil {
+				return nil, err
 			}
-			continue
-		}
-		text, err := resolveArtifactEntryText(entry, name, key)
-		if err != nil {
-			return nil, err
-		}
-		if err := collect(label, text, artifactLeft, artifactRight); err != nil {
-			return nil, err
 		}
 	}
 

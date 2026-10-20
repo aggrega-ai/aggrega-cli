@@ -418,6 +418,37 @@ func (v *describedView) BoundaryAttachmentDeclaresOmits(boundary string, attachm
 	return declaresOmits(fr.Spec.Omits)
 }
 
+// ProviderAcceptsBoundaryArtifacts reports whether the provider rendering a node's
+// own documents declares that it accepts the files a Recipe contributes to its
+// boundary's shared output, and whether a provider resolved behind the node's
+// binding at all.
+//
+// It reads the claim through the one seam that claim has,
+// [acceptsBoundaryArtifacts], and an unresolved engine answers false in both
+// results on the reading [omitsClaimOf] states for its own claim.
+func (v *describedView) ProviderAcceptsBoundaryArtifacts(node string) (bool, bool) {
+	engine, resolved := v.nodeEngine(node)
+	if !resolved {
+		return false, false
+	}
+	return acceptsBoundaryArtifacts(engine), true
+}
+
+// RecipeBoundaryArtifactsDeclared reports whether a node's own Recipe declares
+// files for its boundary's shared output, as written. A node with no bound Recipe
+// declares none, and a coordinate naming any position but the boundary block's
+// answers false.
+func (v *describedView) RecipeBoundaryArtifactsDeclared(node string, block string) bool {
+	if block != recipeFieldBoundary {
+		return false
+	}
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return false
+	}
+	return recipe.Spec.Boundary.Artifacts.Len() > 0
+}
+
 // NodeRenderingProvider returns the provider that renders a node's own
 // documents, as the engine kind its Recipe's declared capability projects to.
 //

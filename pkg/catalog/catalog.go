@@ -1491,6 +1491,12 @@ func resolveRecipeDocument(data []byte, path string) (types.Recipe, error) {
 	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Artifacts); err != nil {
 		return types.Recipe{}, err
 	}
+	// The files a Recipe contributes to its boundary's shared output take the same
+	// three forms as its own artifacts, so a file import among them is anchored to
+	// the Recipe's own directory by the same reading.
+	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Boundary.Artifacts); err != nil {
+		return types.Recipe{}, err
+	}
 	return e, nil
 }
 

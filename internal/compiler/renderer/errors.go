@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 )
 
@@ -990,10 +991,19 @@ var errArtifactContentMismatch = cerrors.Register("artifact-content-mismatch", c
 // A build reaching the same entry through a FeatureRecipe attachment adds the
 // attachment to its detail, because a node may carry several; a caller here holds
 // the document itself, so it has no attachment to name.
+//
+// artifact is the name the entity lock pins the entry under. A Recipe's boundary
+// block pins its imports under a prefixed name (recipepin.BoundaryArtifactPinName),
+// so such a name positions the finding at that block's entry rather than at an
+// artifacts entry, while the detail names it as the lock records it.
 func ArtifactContentPinMismatch(documentPath, artifact, importedPath, current, recorded string) error {
 	condition := ErrArtifactContentMismatch()
+	locator := constraint.ArtifactEntryLocator(artifact)
+	if key, inBoundary := recipepin.BoundaryArtifactKeyOf(artifact); inBoundary {
+		locator = constraint.BoundaryArtifactEntryLocator(key)
+	}
 	return cerrors.Wrap(condition, cerrors.CatalogError,
-		cerrors.SourceLocation{File: documentPath, Locator: constraint.ArtifactEntryLocator(artifact)},
+		cerrors.SourceLocation{File: documentPath, Locator: locator},
 		cerrors.ComposeMessage(condition,
 			constraint.RenderDetail(artifactContentPinDetail(artifact, importedPath, current, recorded)...),
 			artifactContentPinAdvice))
@@ -1301,6 +1311,37 @@ func ErrUnsupportedOmits() error { return errUnsupportedOmits }
 var errUnsupportedOmits = cerrors.Register("unsupported-omits", cerrors.Meta{
 	ShortCode: "E0335",
 	Message:   "provider does not support omits",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrUnsupportedBoundaryArtifacts is the Loud Guardrail halt raised when a Recipe
+// declares spec.boundary.artifacts and the provider rendering it does not declare
+// that it accepts the files a Recipe contributes to its boundary's shared output.
+//
+// The host writes those files itself, once, in the directory holding the dispatch
+// group's assembled output, and the provider is handed none of them. So whether
+// such a file means anything is a property of the provider's target, which only
+// the provider can state: a target that does not read a file placed beside its
+// assembled output would ship the file and ignore it, and the author would
+// discover only once the Release was applied that the configuration they wrote
+// never took effect.
+// The host reads the provider's own declared claim and refuses before anything is
+// dispatched, so the author is told at once. The refusal is the declared rule
+// [BoundaryArtifactsProviderAcceptsTheFiles], asked before the first node renders
+// and positioned where the component was written.
+//
+// The claim is the provider's own self-description, never a table of provider
+// names held here: a provider that starts accepting the files declares it, and
+// this refusal stops applying to it with no change to the compiler. A FeatureRecipe
+// carries no such block, so the one rule is over a node's Recipe.
+//
+// Category: CATALOG_ERROR — the pairing at fault is between an authored Recipe and
+// the provider it binds. Match with errors.Is(err, ErrUnsupportedBoundaryArtifacts()).
+func ErrUnsupportedBoundaryArtifacts() error { return errUnsupportedBoundaryArtifacts }
+
+var errUnsupportedBoundaryArtifacts = cerrors.Register("unsupported-boundary-artifacts", cerrors.Meta{
+	ShortCode: "E0351",
+	Message:   "provider does not support boundary artifacts",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

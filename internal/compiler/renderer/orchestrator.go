@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -485,6 +486,68 @@ type pendingDispatch struct {
 	assemblerCandidates    []assemblerCandidate
 	engineByNode           map[string]Provider
 	contributingBoundaries []string
+	// boundaryFiles are the files this group's contributors declared for the
+	// boundary's shared output, in node-processing order, each with the label of
+	// the contributor that declared it. They are written in the group's own
+	// directory once the group has assembled; see [mergeBoundaryFiles].
+	boundaryFiles []boundaryFileContribution
+}
+
+// boundaryFileContribution is one contributor's declaration of one file for its
+// dispatch group's shared output: the file and the authoring-level label of the
+// contributor that declared it.
+type boundaryFileContribution struct {
+	file     boundaryArtifact
+	producer string
+}
+
+// mergeBoundaryFiles reduces a dispatch group's shared-file declarations to the
+// placements the group makes, in the order each name was first declared.
+//
+// A name every contributor declared with the same bytes is one file: it belongs to
+// all of them, so it is placed once under a label naming every one of them, and
+// the rule over the group's assembled output sees one producer at its path. A name
+// declared with different bytes by any two contributors is placed once per
+// contributor instead, so that rule sees every contributor at the path and halts
+// naming each of them — which one's bytes would win is not something the author
+// wrote, so no choice is made. A name the provider's own assembly writes meets
+// that assembly's file at the same path, and halts the same way.
+//
+// The order the placements come out in is the order names were first declared,
+// and within a name the order its contributors declared it, both of which follow
+// the node walk; nothing here iterates a map.
+func mergeBoundaryFiles(declared []boundaryFileContribution) []boundaryFileContribution {
+	var names []string
+	byName := map[string][]boundaryFileContribution{}
+	for _, d := range declared {
+		if _, seen := byName[d.file.name]; !seen {
+			names = append(names, d.file.name)
+		}
+		byName[d.file.name] = append(byName[d.file.name], d)
+	}
+	var out []boundaryFileContribution
+	for _, name := range names {
+		group := byName[name]
+		identical := true
+		for _, d := range group[1:] {
+			if !bytes.Equal(d.file.content, group[0].file.content) {
+				identical = false
+				break
+			}
+		}
+		if !identical {
+			out = append(out, group...)
+			continue
+		}
+		var producers []string
+		for _, d := range group {
+			if !slices.Contains(producers, d.producer) {
+				producers = append(producers, d.producer)
+			}
+		}
+		out = append(out, boundaryFileContribution{file: group[0].file, producer: joinWithAnd(producers)})
+	}
+	return out
 }
 
 // assemblerCandidate is one node's contribution to its dispatch group's
@@ -1057,6 +1120,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// very documents the author asked to leave out. They come after the other
 		// refusals above, so a build carrying one of those faults reports it first.
 		if err := runOmitsProviderRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
+		// The rule over a Recipe declaring files for its boundary's shared output
+		// whose provider does not declare it accepts them, asked here for the reason
+		// the omits rules above are: what it reads is settled once the documents are
+		// bound and each provider has described itself, and the files would otherwise
+		// be written beside an output whose target ignores them.
+		if err := runBoundaryArtifactsProviderRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
 
@@ -2190,6 +2262,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
+		// The files this node's Recipe contributes to its boundary's shared output,
+		// evaluated against the same context as its artifacts and held until the
+		// node joins its dispatch group below.
+		if err := phaseB3Boundary(tmplCtx, state, engine); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+		}
+
 		// Phase B.4 — workload synthesizer dispatch. No-op for a node with no
 		// parsed workload (state.ParsedWorkload is nil); dispatches to the
 		// engine's WorkloadSynthesizer otherwise. Whether this provider may be
@@ -2409,6 +2488,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// its key is the name it deploys under, so a target derives names from the key
 		// directly and an entry stating that again would be a second copy of it.
 		dispatch[key].nodeProducer[nodeID] = nodeProducer
+		// The files this node's Recipe contributes to the boundary's shared output
+		// join the group under the same label its own files are attributed by, so a
+		// finding about a shared file names the contributor as every other finding
+		// about the group does.
+		for _, f := range state.BoundaryArtifacts {
+			dispatch[key].boundaryFiles = append(dispatch[key].boundaryFiles,
+				boundaryFileContribution{file: f, producer: nodeProducerLabel(nodeProducer)})
+		}
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].nodeSyncWave[nodeID] = nodeCtx.SyncWave
@@ -3125,6 +3212,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 					groupFiles.put(path, AssembledFile{Content: c, Format: nodeFormats[p]}, producer)
 				}
 			}
+		}
+
+		// The files the group's contributors declared for the boundary's shared
+		// output are written in the group's own directory, beside whatever the
+		// provider's assembly wrote there, under the name each was declared with.
+		// They are placed through the same seam as every other file, so a name the
+		// assembly writes, or one two contributors declared with different bytes,
+		// meets the rule over the group's assembled output as any two contributors
+		// meeting on one path do. The assembler was handed none of them, and no
+		// provenance is stamped into one: it belongs to every contributor that
+		// declared it. Only a provider claiming to accept such files reaches here
+		// with any, because a Recipe declaring them for any other provider was
+		// refused before the first node rendered.
+		for _, f := range mergeBoundaryFiles(pd.boundaryFiles) {
+			groupFiles.put(f.file.name, AssembledFile{Content: f.file.content}, f.producer)
 		}
 
 		files, producers := groupFiles.resolve()

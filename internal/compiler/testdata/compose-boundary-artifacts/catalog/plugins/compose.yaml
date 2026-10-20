@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: compose
+  version: 1.0.0
+  pluginType: provider
+  description: Provider plugin serving the compose capability.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - compose
+  exports:
+    - name: render_node
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap so guest runtime initialization completes even where
+    # the host runs the Wasm engine without native code generation.
+    timeoutMs: 300000

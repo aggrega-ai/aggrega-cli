@@ -84,6 +84,7 @@ func TestWasmContractClaimCarriesEveryCapabilityField(t *testing.T) {
 			ReusableInstance:       true,
 			CrossBoundaryLinking:   true,
 			Omits:                  true,
+			BoundaryArtifacts:      true,
 		},
 	}
 
@@ -99,6 +100,7 @@ func TestWasmContractClaimCarriesEveryCapabilityField(t *testing.T) {
 		ReusableInstance:       true,
 		CrossBoundaryLinking:   true,
 		Omits:                  true,
+		BoundaryArtifacts:      true,
 	}
 	if !reflect.DeepEqual(got.Contract, want) {
 		t.Errorf("mapped contract = %+v; want %+v", got.Contract, want)

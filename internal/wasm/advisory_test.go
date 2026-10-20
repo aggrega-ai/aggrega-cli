@@ -60,6 +60,20 @@ func TestUnderDeclaredNotices(t *testing.T) {
 		t.Errorf("a contract claiming only omits support should yield the contract notice; got %v", omitsOnly)
 	}
 
+	// Likewise a contract whose only claim is that it accepts the files a Recipe
+	// contributes to its boundary's shared output.
+	sharedOnly := UnderDeclaredNotices(EntityCuratedSurface{
+		ExportNames:  []string{"render_node"},
+		Capabilities: []string{"terraform"},
+	}, PluginDescriptor{
+		Exports:      []PluginExport{{Name: "render_node"}},
+		Capabilities: []string{"terraform"},
+		Contract:     &ProviderContract{BoundaryArtifacts: true},
+	})
+	if len(sharedOnly) != 1 || !strings.Contains(sharedOnly[0], "render-behavior contract") {
+		t.Errorf("a contract claiming only shared-files support should yield the contract notice; got %v", sharedOnly)
+	}
+
 	// A surface covering everything yields no notices.
 	full := UnderDeclaredNotices(EntityCuratedSurface{
 		ExportNames:  []string{"render_node", "link_publish", "link_resolve"},

@@ -21,6 +21,7 @@ package recipepin
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -29,7 +30,9 @@ import (
 )
 
 // ArtifactPinsForRecipe computes the artifact content pins for a recipe's
-// artifacts map: one pin per entry whose value is a LOCAL file import ($import),
+// artifacts map — for a Recipe, the map [PinnedArtifactEntries] presents, which
+// carries its boundary block's entries beside its own under their pin names: one
+// pin per entry whose value is a LOCAL file import ($import),
 // digesting the imported file's bytes. Inline (literal) entries are part of the
 // entity and carry no pin. A library import (`<Library>#/artifacts/<entry>`)
 // carries no file pin either — its content is lockfile-pinned by the per-Release
@@ -60,6 +63,50 @@ func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry], enti
 	}
 	sortArtifactPins(pins)
 	return pins, nil
+}
+
+// BoundaryArtifactPinPrefix opens the name the entity lock pins a file under when
+// a Recipe imports it inside its boundary block, `spec.boundary.artifacts`. Such a
+// file is pinned in the same artifactDigests list as the Recipe's own artifacts, so
+// the two blocks share one pin computation and one comparison; the prefix is what
+// keeps an entry of each block apart when both are written under one key. It cannot
+// collide with an own-artifacts name: an artifacts key is a single filename, which
+// carries no `/`.
+const BoundaryArtifactPinPrefix = "boundary/"
+
+// BoundaryArtifactPinName is the name the entity lock pins the file a boundary-block
+// entry imports under.
+func BoundaryArtifactPinName(key string) string { return BoundaryArtifactPinPrefix + key }
+
+// BoundaryArtifactKeyOf reports the boundary-block key a pin name was composed
+// from, and whether the name is one at all.
+func BoundaryArtifactKeyOf(pinName string) (string, bool) {
+	return strings.CutPrefix(pinName, BoundaryArtifactPinPrefix)
+}
+
+// PinnedArtifactEntries is a Recipe's file-importing entries as the entity lock
+// pins them: its own artifacts under their keys, then its boundary block's under
+// [BoundaryArtifactPinName], each block in author order. It is the one answer to
+// which entries a Recipe's lock pins and under what names, read by the pin step
+// and by the verifying pull alike, so the two cannot come to disagree about a
+// boundary-block import; [ArtifactPinsForRecipe] computes the pins over it.
+func PinnedArtifactEntries(r *types.Recipe) types.OrderedMap[types.ArtifactEntry] {
+	if r == nil {
+		return types.OrderedMap[types.ArtifactEntry]{}
+	}
+	if r.Spec.Boundary.Artifacts.Len() == 0 {
+		return r.Spec.Artifacts
+	}
+	out := types.NewOrderedMap[types.ArtifactEntry]()
+	for _, key := range r.Spec.Artifacts.Keys() {
+		entry, _ := r.Spec.Artifacts.Get(key)
+		out.Set(key, entry)
+	}
+	for _, key := range r.Spec.Boundary.Artifacts.Keys() {
+		entry, _ := r.Spec.Boundary.Artifacts.Get(key)
+		out.Set(BoundaryArtifactPinName(key), entry)
+	}
+	return *out
 }
 
 // artifactImportLoadError reports an artifacts entry whose $import: names a file

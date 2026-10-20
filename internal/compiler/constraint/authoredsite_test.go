@@ -329,6 +329,12 @@ spec:
 		// the entry is here for the walk to resolve rather than to model the axis:
 		// a document with no such key would fail the walk while the axis stayed
 		// correct, which is the one thing this corpus must not do.
+		//
+		// It writes a boundary block for the same reason. The boundary-block axis
+		// presents the block's position for every node's Recipe, and the rule over it
+		// objects only where the Recipe declares the block — so a locator over that
+		// axis reaches a reader only from a document that writes the key, which is the
+		// document this walk has to resolve it in.
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -352,6 +358,9 @@ spec:
     values-yaml: "replicas: 2"
     settings.yaml: "level: info"
     config.yaml: "debug: false"
+  boundary:
+    artifacts:
+      providers.tf: "# shared"
 `,
 		// The second node's own Recipe. Its artifacts block is what the authored-entry
 		// axis walks on this node, and the pair it forms with the block above is the
@@ -368,7 +377,8 @@ spec:
 		// entry admits — a workspace path, where the Recipe above writes a registry
 		// address. The source-position axis does not read either, so the contrast is
 		// for the walk rather than for the axis: the position is one key whatever
-		// the author wrote at it.
+		// the author wrote at it. It writes a boundary block for the reason the
+		// Recipe above does.
 		"recipes/api.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -384,6 +394,9 @@ spec:
     prefix: "{{ .context.instance_id }}"
   artifacts:
     metrics.json: "{}"
+  boundary:
+    artifacts:
+      providers.tf: "# shared"
 `,
 		// Its artifacts block carries an entry whose authored key holds the locator
 		// dialect's separator, which is the ordinary shape on this axis: an inline

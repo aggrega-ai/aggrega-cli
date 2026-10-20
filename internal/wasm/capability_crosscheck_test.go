@@ -374,6 +374,81 @@ func TestCrossCheckContract_Omits(t *testing.T) {
 	}
 }
 
+// TestCrossCheckContract_BoundaryArtifacts exercises the shared-files arm of the
+// plugin-level comparison over all four cells of its two axes — whether the
+// entity claims the plugin accepts the files a Recipe contributes to its
+// boundary's shared output, and whether the descriptor reports it. The two
+// agreeing cells load; each disagreeing cell halts naming the field. The guest's
+// omit-entries claim is set opposite to the shared-files claim in every cell and
+// the entity always agrees with it, so an arm comparing the omit-entries field in
+// place of this one would load both disagreeing cells.
+func TestCrossCheckContract_BoundaryArtifacts(t *testing.T) {
+	t.Parallel()
+
+	descriptor := func(shared bool) PluginDescriptor {
+		return PluginDescriptor{
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeProvider),
+			Exports:    []PluginExport{{Name: "render_node"}},
+			Contract: &ProviderContract{
+				InputKinds:        InputKinds{ArtifactsStandalone: true},
+				BoundaryAssembly:  BoundaryAssemblyNest,
+				Omits:             !shared,
+				BoundaryArtifacts: shared,
+			},
+		}
+	}
+	claim := func(shared, omits bool) *ProviderContract {
+		return &ProviderContract{
+			InputKinds:        InputKinds{ArtifactsStandalone: true},
+			BoundaryAssembly:  BoundaryAssemblyNest,
+			Omits:             omits,
+			BoundaryArtifacts: shared,
+		}
+	}
+
+	cases := []struct {
+		name    string
+		entity  bool
+		guest   bool
+		wantErr bool
+	}{
+		{name: "both claim the files: match", entity: true, guest: true},
+		{name: "neither claims the files: match", entity: false, guest: false},
+		{name: "entity claims the files the descriptor does not report: halt", entity: true, guest: false, wantErr: true},
+		{name: "descriptor reports the files the entity does not claim: halt", entity: false, guest: true, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// The omits claim always agrees with the guest's, so the only field that
+			// can disagree is the one under test.
+			err := CrossCheckContract("provider/shared-files-renderer:1.0.0",
+				EntityContractClaim{Contract: claim(tc.entity, !tc.guest)}, descriptor(tc.guest))
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !errors.Is(err, ErrWasmContractMismatch()) {
+				t.Fatalf("error does not wrap ErrWasmContractMismatch: %v", err)
+			}
+			if !strings.Contains(err.Error(), "provider/shared-files-renderer:1.0.0") {
+				t.Errorf("error should name the entity identity; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "declares boundary_artifacts") {
+				t.Errorf("error should name the boundary_artifacts field; got: %v", err)
+			}
+		})
+	}
+}
+
 // TestCrossCheckContract_EmptyClaim proves an entity with no authored
 // exports declares no claim and never halts, regardless of what the plugin
 // reports.

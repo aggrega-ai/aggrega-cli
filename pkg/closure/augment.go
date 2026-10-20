@@ -293,7 +293,10 @@ func discoverClosureWorkloadLibraries(ctx context.Context, cl *Closure, src Libr
 func discoverClosureArtifactLibraries(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
 	consumers := collectTemplateConsumers(cl, src,
 		func(uri string, r types.Recipe) []TemplateConsumer {
-			return artifactsImportConsumers(uri, r.Spec.Artifacts)
+			// A Recipe's boundary block imports a bundle the way its own artifacts
+			// do, so its entries are consumers too, after the Recipe's own.
+			return append(artifactsImportConsumers(uri, r.Spec.Artifacts),
+				artifactsImportConsumers(uri, r.Spec.Boundary.Artifacts)...)
 		},
 		func(uri string, fr types.FeatureRecipe) []TemplateConsumer {
 			return artifactsImportConsumers(uri, fr.Spec.Artifacts)

@@ -323,10 +323,14 @@ func DeclaredFilesUnder(data []byte, path string, ignore *types.IgnoreRules) (De
 		if err != nil {
 			return DeclaredFiles{}, err
 		}
+		// The files the Recipe contributes to its boundary's shared output import
+		// files the way its own artifacts do, so each one it imports is declared
+		// beside them, after them, in author order.
 		decls, err = sourcedDeclarations(dir, path, ignore, e.Spec.Source,
 			importedFile{"spec.valuesMapping", e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping},
 			importedFile{"spec.workload", e.Spec.Workload.Import, e.Spec.Workload},
-			artifactImports(&e.Spec.Artifacts))
+			append(artifactImports("spec.artifacts.", &e.Spec.Artifacts),
+				artifactImports("spec.boundary.artifacts.", &e.Spec.Boundary.Artifacts)...))
 		if err != nil {
 			return DeclaredFiles{}, err
 		}
@@ -338,7 +342,7 @@ func DeclaredFilesUnder(data []byte, path string, ignore *types.IgnoreRules) (De
 		decls, err = sourcedDeclarations(dir, path, ignore, e.Spec.Source,
 			importedFile{"spec.valuesMapping", e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping},
 			importedFile{"spec.workload", e.Spec.Workload.Import, e.Spec.Workload},
-			artifactImports(&e.Spec.Artifacts))
+			artifactImports("spec.artifacts.", &e.Spec.Artifacts))
 		if err != nil {
 			return DeclaredFiles{}, err
 		}
@@ -372,15 +376,17 @@ type importedFile struct {
 	ref     importRef
 }
 
-// artifactImports lists a Recipe's or FeatureRecipe's artifacts entries as
-// imported files, in author order. The two kinds author the block identically,
-// which is why one function serves both.
-func artifactImports(artifacts *types.OrderedMap[types.ArtifactEntry]) []importedFile {
+// artifactImports lists the entries of one artifacts-shaped block as imported
+// files, in author order, each at the surface the block's prefix and its key
+// spell. A Recipe and a FeatureRecipe author their artifacts block identically,
+// and a Recipe's boundary block takes the same shape, which is why one function
+// serves all three.
+func artifactImports(surfacePrefix string, artifacts *types.OrderedMap[types.ArtifactEntry]) []importedFile {
 	keys := artifacts.Keys()
 	out := make([]importedFile, 0, len(keys))
 	for _, name := range keys {
 		entry, _ := artifacts.Get(name)
-		out = append(out, importedFile{"spec.artifacts." + name, entry.Import, entry})
+		out = append(out, importedFile{surfacePrefix + name, entry.Import, entry})
 	}
 	return out
 }

@@ -124,6 +124,9 @@ func maximalRecipe() types.Recipe {
 			Workload:   types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: x:1"},
 			Pipeline:   []types.PipelineStep{{ID: "s1", Plugin: "p.wasm", Function: "render", With: "{}", Optional: true}},
 			Omits:      []types.OmitEntry{{Kind: "Secret", Name: "{{ .context.rendered_name }}-token", Namespace: "apps", When: "{{ true }}"}},
+			Boundary: types.RecipeSpecBoundary{
+				Artifacts: om[types.ArtifactEntry]("providers.tf", types.ArtifactEntry{Inline: "provider \"azurerm\" {\n  features {}\n}\n"}),
+			},
 			Assertions: om[string]("rule", "{{ true }}"),
 		},
 	}

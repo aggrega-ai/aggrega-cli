@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: boundary-files-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/boundary-files/app

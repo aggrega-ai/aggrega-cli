@@ -393,6 +393,32 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	return nil
 }
 
+// phaseB3Boundary evaluates the files a node's Recipe contributes to the shared
+// output of the boundary it renders in, and holds them on the state for the
+// node's dispatch group to merge and write.
+//
+// It runs beside the artifacts pass and against the same context, because the
+// block is evaluated as an artifacts block is — with the delimiter pair the
+// provider declares for its artifact files, or the default pair where the engine
+// declares none. Whether the provider accepts the files at all was settled before
+// any node rendered, by the rule over the provider's declared claim, so nothing
+// here asks it again. Nothing is handed to the provider.
+func phaseB3Boundary(tmplCtx *types.TemplateContext, state *PhaseBState, engine Provider) error {
+	if state.Recipe == nil || state.Recipe.Spec.Boundary.Artifacts.Len() == 0 {
+		return nil
+	}
+	leftDelim, rightDelim := "{{", "}}"
+	if emitter, ok := engine.(ArtifactsEmitter); ok {
+		leftDelim, rightDelim = emitter.ArtifactTemplateDelimiters()
+	}
+	files, err := buildBoundaryArtifacts(tmplCtx, state, leftDelim, rightDelim)
+	if err != nil {
+		return err
+	}
+	state.BoundaryArtifacts = files
+	return nil
+}
+
 // phaseB4 dispatches to the provider's WorkloadSynthesizer when
 // state.ParsedWorkload != nil. Engines that don't implement the interface
 // produce a CATALOG_ERROR via dispatchWorkloadSynthesis. Sourced-mode

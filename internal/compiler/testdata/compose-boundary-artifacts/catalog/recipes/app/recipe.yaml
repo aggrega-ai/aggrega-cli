@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: boundary-files-app
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/boundary-files/app
+  artifacts:
+    services.yaml: |
+      services:
+        app:
+          image: nginx:1.27
+  # A file for the boundary's shared output, which the compose provider does not
+  # declare that it accepts: every build of this Recipe is refused before anything
+  # renders.
+  boundary:
+    artifacts:
+      shared.env: |
+        LOG_LEVEL=info

@@ -1456,6 +1456,27 @@ type RecipeSourceFieldEnumerator interface {
 	RecipeSourceFields(node string) []AuthoredCoordinate
 }
 
+// RecipeBoundaryBlockEnumerator supplies the position one node's own Recipe
+// writes its boundary block at — the files it contributes to the shared output of
+// the boundary it renders in — named by the spec-root key that position is.
+//
+// It presents one coordinate per node with a bound Recipe, whether or not the
+// Recipe declares the block, on the reading [RecipeSourceFieldEnumerator] gives
+// for its own position: whether the block was declared is a declared fact over
+// this coordinate and never a property of the enumeration, where a reader of the
+// rule can see it.
+//
+// It is a separate axis from the template-field one because that enumerates the
+// block's inline entries one by one, and a rule about the block as a whole — about
+// whether the provider rendering the Recipe accepts such files at all — is asked
+// once per Recipe a node binds, whatever forms its entries take.
+type RecipeBoundaryBlockEnumerator interface {
+	// RecipeBoundaryBlocks returns the position a node's own Recipe writes its
+	// boundary block at — one coordinate for a node with a bound Recipe, and none
+	// for a node with no Recipe to write one.
+	RecipeBoundaryBlocks(node string) []AuthoredCoordinate
+}
+
 // ArtifactEnumerator supplies the artifacts one node's own Recipe projects, and
 // only those.
 //

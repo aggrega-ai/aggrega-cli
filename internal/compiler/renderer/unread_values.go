@@ -166,7 +166,8 @@ func unreadValueWarnings(
 // can still find by reading the Recipe, where a wrongly reported one tells them
 // their working configuration was ignored.
 //
-// An imported workload or artifacts entry carries no text at this point, so its
+// An imported workload or artifacts entry — of the Recipe's own artifacts or of
+// its boundary block — carries no text at this point, so its
 // references cannot be collected and no claim is made — the same bound an
 // imported values mapping already carries. An artifacts body is parsed with the
 // default delimiter pair, which is not the pair every provider declares for that
@@ -181,6 +182,11 @@ func recipeReadReferences(recipe *types.Recipe) ([]string, bool) {
 		return nil, false
 	}
 	for _, entry := range recipe.Spec.Artifacts.All() {
+		if entry.Import != "" {
+			return nil, false
+		}
+	}
+	for _, entry := range recipe.Spec.Boundary.Artifacts.All() {
 		if entry.Import != "" {
 			return nil, false
 		}

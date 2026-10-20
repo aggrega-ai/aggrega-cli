@@ -4591,6 +4591,59 @@ var BoundaryAttachmentOmitsProviderHonoursTheEntries = constraint.Check[
 	},
 }
 
+// BoundaryArtifactsProviderAcceptsTheFiles reports a node whose Recipe declares
+// files for its boundary's shared output while the provider rendering it does not
+// declare that it accepts them.
+//
+// The host writes such a file itself, once, in the directory holding the dispatch
+// group's assembled output, and hands the provider none of them — so whether the
+// file means anything is a property of the provider's target, which only the
+// provider can state. A provider whose target does not read a file placed there
+// would ship it and ignore it, and the author would learn only once the Release was
+// applied that the configuration never took effect, so the pairing is refused here,
+// before anything renders. Which providers accept the files is each provider's own
+// declared claim, read as a fact; nothing here holds a list of providers.
+//
+// # What it reads, and in which order
+//
+// Whether the Recipe declares the block comes first, and the claim is read only
+// for a Recipe that does. Any entry counts, whatever it would evaluate to: whether
+// the provider accepts the block does not depend on what one build evaluates it to.
+// The claim's second result is read before its first, for the reason the omits
+// rules beside it give: a binding that resolves to no provider is reported where
+// the render reaches for the provider, naming the binding.
+//
+// It is positioned at the block in the Recipe, where the edit is, and its detail
+// leads with the provider, which the registered wording is about, and names the
+// node, captioned, so a Recipe bound by several components says which one met a
+// provider declining the files.
+var BoundaryArtifactsProviderAcceptsTheFiles = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeRecipeBoundaryBlockSubject,
+]{
+	Sentinel: ErrUnsupportedBoundaryArtifacts(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeRecipeBoundaryBlockSubject,
+	) []constraint.Objection {
+		if !v.RecipeBoundaryArtifactsDeclared(s.NodeID(), s.RecipeBoundaryBlock()) {
+			return nil
+		}
+		accepts, resolved := v.ProviderAcceptsBoundaryArtifacts(s.NodeID())
+		if !resolved || accepts {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrUnsupportedBoundaryArtifacts(),
+			"this provider's contract does not declare that it accepts files written to a boundary's shared "+
+				"output; remove the boundary block, or render the Recipe through a provider whose contract declares it",
+			constraint.Uncaptioned(v.NodeRenderingProvider(s.NodeID())),
+			constraint.Captioned("node", s.NodeID()),
+		)}
+	},
+}
+
 // The rule that one container of a Workload names each environment variable once,
 // declared once per document that authors a Workload.
 //

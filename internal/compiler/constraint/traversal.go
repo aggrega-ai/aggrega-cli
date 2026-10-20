@@ -1664,6 +1664,34 @@ func RunOnNodeRecipeSourceFields[V View](
 	})
 }
 
+// RunOnNodeRecipeBoundaryBlocks invokes check once per boundary block each node's
+// own Recipe has a position for, in node order.
+//
+// The locator is .spec.boundary in the Recipe's own file, where the key is the
+// coordinate the subject carries. It is the authoring surface's own spec-root key
+// and free of the locator dialect's separator, so the locator is exact, and the
+// node contributes no segment, for the reasons [RunOnNodeRecipeSourceFields]
+// states for its own position.
+func RunOnNodeRecipeBoundaryBlocks[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	blocks RecipeBoundaryBlockEnumerator,
+	view V,
+	check Check[V, NodeRecipeBoundaryBlockSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeRecipeBoundaryBlockSubject {
+		declared := blocks.RecipeBoundaryBlocks(node.ID)
+		out := make([]NodeRecipeBoundaryBlockSubject, 0, len(declared))
+		for _, block := range declared {
+			out = append(out, newNodeRecipeBoundaryBlockSubject(
+				block.SourceFile, node.ID, block.Value,
+				documentSpecSegments(block.Value)...,
+			))
+		}
+		return out
+	})
+}
+
 // RunOnNodeArtifacts invokes check once per artifact each node projects, in node
 // order and then artifact order.
 //

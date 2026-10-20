@@ -53,6 +53,10 @@ type provider struct {
 	// Omits is the guest's claim that it honours omit entries, false where its
 	// declaration leaves the claim out.
 	Omits bool
+	// BoundaryArtifacts is the guest's claim that it accepts the files a Recipe
+	// contributes to its boundary's shared output, false where its declaration
+	// leaves the claim out.
+	BoundaryArtifacts bool
 }
 
 // AcceptsAlongsideArtifacts reports whether a Recipe targeting this provider may
@@ -224,6 +228,7 @@ func readContract(lit *ast.CompositeLit) provider {
 		p.DelimRight = stringValue(field(delims, "Right"))
 	}
 	p.Omits = boolValue(field(lit, "Omits"))
+	p.BoundaryArtifacts = boolValue(field(lit, "BoundaryArtifacts"))
 	return p
 }
 

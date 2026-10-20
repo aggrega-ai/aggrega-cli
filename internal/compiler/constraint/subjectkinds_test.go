@@ -541,6 +541,10 @@ var coordinateAccessors = map[string][]string{
 	// anything at it or not, and an accessor named for the source would tell a
 	// check reading it that a source is there.
 	"recipe-source-field": {"RecipeSourceField"},
+	// The value is the Recipe's own spec-root key its boundary block is written
+	// under — a position, present whether the author wrote the block or not — so
+	// the accessor names the position rather than the files the block declares.
+	"recipe-boundary-block": {"RecipeBoundaryBlock"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1280,6 +1284,14 @@ var subjectKindBindings = map[SubjectKind]struct {
 		// reaches the constructor's deepest argument.
 		make: func(f string) Subject {
 			return newNodeRecipeSourceFieldSubject(f, "web", "source", "spec", "source")
+		},
+	},
+	SubjectNodeRecipeBoundaryBlock: {
+		iface: reflect.TypeOf((*NodeRecipeBoundaryBlockSubject)(nil)).Elem(),
+		// A position the authoring surface fixes, as the source field's is, so the
+		// locator assembles in full and reaches the constructor's deepest argument.
+		make: func(f string) Subject {
+			return newNodeRecipeBoundaryBlockSubject(f, "web", "boundary", "spec", "boundary")
 		},
 	},
 	SubjectNodeAttachmentArtifact: {

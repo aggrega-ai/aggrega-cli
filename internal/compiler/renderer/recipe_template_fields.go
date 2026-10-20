@@ -27,6 +27,7 @@ const (
 	recipeFieldPipelineWith  = "with"
 	recipeFieldPipelineWhen  = "when"
 	recipeFieldOmits         = "omits"
+	recipeFieldBoundary      = "boundary"
 
 	// The four fields of one omits entry, in the order the entry is evaluated in:
 	// its gate first, then the three it resolves to.
@@ -51,6 +52,12 @@ const (
 // author names an entry — a key carrying a bracket or a dot changes what follows
 // the prefix and never the prefix itself.
 const artifactsLabelPrefix = recipeFieldArtifacts + "["
+
+// boundaryArtifactsLabelPrefix opens the label of every field written inside a
+// Recipe's boundary block, the files it contributes to its boundary's shared
+// output, on the reading [artifactsLabelPrefix] states. It opens with the block's
+// own key, so neither family's prefix is a prefix of the other's.
+const boundaryArtifactsLabelPrefix = recipeFieldBoundary + "." + recipeFieldArtifacts + "["
 
 // pipelineLabelPrefix opens the label of every field written on a pipeline step —
 // its input and its gate — and nothing else opens with it, on the reading
@@ -141,8 +148,10 @@ type RecipeTemplateField struct {
 //
 // The set is the fields evaluated against the whole render context: the values
 // mapping, the workload body, each artifacts entry, each field of each omits entry,
-// and each pipeline step's input and its gate. A Recipe's provides and locals
-// entries are NOT here, and
+// each pipeline step's input and its gate, and each entry of the boundary block —
+// the files the Recipe contributes to its boundary's shared output, which are
+// evaluated against the context its own artifacts are. A Recipe's provides and
+// locals entries are NOT here, and
 // their absence is a decision rather than an omission: each already has its own
 // axis and its own rules at this stage, so enumerating them again would report
 // one authoring fault against two subjects and give a reader two positions for
@@ -163,9 +172,22 @@ func RecipeTemplateFields(recipe *types.Recipe) []RecipeTemplateField {
 	if recipe == nil {
 		return nil
 	}
-	return inlineTemplateFieldsOf(
+	fields := inlineTemplateFieldsOf(
 		recipe.Spec.ValuesMapping, recipe.Spec.Workload, recipe.Spec.Artifacts, recipe.Spec.Omits, recipe.Spec.Pipeline,
 	)
+	// The boundary block is a Recipe's alone — a FeatureRecipe carries none — so it
+	// is enumerated here rather than in the body both kinds share.
+	for k, v := range recipe.Spec.Boundary.Artifacts.All() {
+		if v.Inline == "" {
+			continue
+		}
+		fields = append(fields, RecipeTemplateField{
+			Label:        boundaryArtifactsLabelPrefix + k + "]",
+			Text:         v.Inline,
+			AuthoredKeys: []string{recipeFieldBoundary, recipeFieldArtifacts, k},
+		})
+	}
+	return fields
 }
 
 // AttachmentTemplateFields presents every inline template field the FeatureRecipe
@@ -316,8 +338,11 @@ func RecipeImportFields(recipe *types.Recipe) []string {
 // usual pair would surface the target's own syntax as references the author never
 // made — and read with the alternate pair, a body written for any other field
 // would surface none of the references it does make.
+//
+// A boundary block's entry is read with the artifact pair too, because it is
+// evaluated by the walk an artifacts entry is, with the pair that walk uses.
 func RecipeTemplateFieldReadsWithArtifactDelimiters(label string) bool {
-	return strings.HasPrefix(label, artifactsLabelPrefix)
+	return strings.HasPrefix(label, artifactsLabelPrefix) || strings.HasPrefix(label, boundaryArtifactsLabelPrefix)
 }
 
 // RecipeTemplateFieldIsPipelineStep reports whether one enumerated field is a

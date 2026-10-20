@@ -2439,6 +2439,56 @@ func newNodeRecipeSourceFieldSubject(
 	}
 }
 
+// NodeRecipeBoundaryBlockSubject is the subject of a check invoked once per
+// boundary block a node's own Recipe has a position for, named by the spec-root
+// key that position is.
+//
+// It is keyed by a position the authoring surface fixes, for the reason
+// [NodeRecipeSourceFieldSubject] is: one such position exists per Recipe, whether
+// or not anything was written at it, so the instance count is the bound-Recipe
+// count and whether the block was declared is a fact over the coordinate.
+//
+// It is a separate kind from the node because the block is written in the Recipe:
+// a finding keyed by the node would send an author to the Aggregate the component
+// was written in, which holds no such block. A finding is positioned at
+// .spec.boundary in the Recipe's own file, and the node contributes no segment, on
+// the reading every node-rooted kind whose locator names a Recipe carries.
+type NodeRecipeBoundaryBlockSubject interface {
+	Subject
+
+	// NodeID identifies the node whose Recipe has the position, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// RecipeBoundaryBlock is the Recipe spec-root key the check was invoked for:
+	// the key the boundary block is written under.
+	RecipeBoundaryBlock() string
+
+	nodeRecipeBoundaryBlock()
+}
+
+type nodeRecipeBoundaryBlockSubject struct {
+	provenance
+	node  string
+	block string
+}
+
+func (nodeRecipeBoundaryBlockSubject) nodeRecipeBoundaryBlock() {}
+
+func (s nodeRecipeBoundaryBlockSubject) NodeID() string { return s.node }
+
+func (s nodeRecipeBoundaryBlockSubject) RecipeBoundaryBlock() string { return s.block }
+
+func newNodeRecipeBoundaryBlockSubject(
+	sourceFile, node, block string, segments ...string,
+) NodeRecipeBoundaryBlockSubject {
+	return nodeRecipeBoundaryBlockSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		block:      block,
+	}
+}
+
 // NodeAttachmentArtifactSubject is the subject of a check invoked once per
 // artifact the FeatureRecipe one attachment binds on a node projects.
 //

@@ -4994,6 +4994,48 @@ type DescribedView interface {
 	// types.FeatureRecipeSpec.Omits.
 	BoundaryAttachmentDeclaresOmits(boundary string, attachment string) bool
 
+	// ProviderAcceptsBoundaryArtifacts reports whether the rendering provider
+	// a node resolves to declares that it accepts the files a Recipe
+	// contributes to the shared output of the boundary it renders in — that
+	// its target treats a file written in the dispatch group's own directory,
+	// beside what its assembly writes there, as part of that output — and,
+	// second, whether a provider resolved behind the node's binding at all.
+	//
+	// The claim is the provider's own statement about itself, read here rather
+	// than decided from a list of providers. A provider stating no claim
+	// answers false in the first result, which is the same answer one denying
+	// it gives.
+	//
+	// The second result separates an absence the first cannot: a node with no
+	// bound Recipe, and a binding the build could not resolve to a provider,
+	// answer false in both results, so a rule refusing on the claim stays
+	// silent where no provider stands behind the binding, and the render
+	// reports that binding where it reaches for the provider.
+	//
+	// Keyed by node; read from wasm.ProviderContract.BoundaryArtifacts.
+	ProviderAcceptsBoundaryArtifacts(node string) (bool, bool)
+
+	// RecipeBoundaryArtifactsDeclared reports whether a node's own Recipe
+	// declares files for the shared output of the boundary it renders in,
+	// taking the block the Recipe wrote rather than anything an entry
+	// evaluates to.
+	//
+	// The authored reading is the one that decides whether the Recipe needs a
+	// provider accepting the files: an entry that renders to nothing on one
+	// build writes a file on another, so whether the provider can accept the
+	// block does not depend on what one build evaluates it to. It is also the
+	// reading available before anything is evaluated, which is where a rule
+	// over it runs.
+	//
+	// False is a real answer and covers a node with no bound Recipe as well as
+	// one whose Recipe declares no such block. A coordinate naming a position
+	// other than the block answers false, so a rule over this axis is handed
+	// the one position it governs.
+	//
+	// Keyed by (node, recipe-boundary-block); read from
+	// types.RecipeSpec.Boundary.
+	RecipeBoundaryArtifactsDeclared(node string, block string) bool
+
 	// ArtifactsEntryImportReference is the library reference one entry of a
 	// node's own artifacts block was authored with, as written and before
 	// anything resolves it.

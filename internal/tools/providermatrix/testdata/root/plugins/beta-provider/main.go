@@ -10,6 +10,7 @@ func descriptor() sdk.Descriptor {
 			InputKinds:         sdk.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: false},
 			BoundaryAssembly:   "nest",
 			ArtifactDelimiters: &sdk.ArtifactDelimiters{Left: "[[", Right: "]]"},
+			BoundaryArtifacts:  true,
 		},
 	}
 }

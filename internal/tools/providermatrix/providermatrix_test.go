@@ -39,7 +39,7 @@ func TestScanReadsDeclaredContractsInManifestOrder(t *testing.T) {
 
 	want := []provider{
 		{Name: "alpha", PluginInputKinds: kinds(true, true, true), Omits: true},
-		{Name: "beta", PluginInputKinds: kinds(true, false, false), DelimLeft: "[[", DelimRight: "]]"},
+		{Name: "beta", PluginInputKinds: kinds(true, false, false), DelimLeft: "[[", DelimRight: "]]", BoundaryArtifacts: true},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("extracted %d providers, want %d: %+v", len(got), len(want), got)
@@ -149,8 +149,8 @@ func TestRenderRegionProjectsEveryClaim(t *testing.T) {
 		if !ok {
 			t.Fatalf("no row for provider %q in:\n%s", p.Name, region)
 		}
-		if len(cells) != 5 {
-			t.Fatalf("provider %q has %d capability cells, want 5", p.Name, len(cells))
+		if len(cells) != 6 {
+			t.Fatalf("provider %q has %d capability cells, want 6", p.Name, len(cells))
 		}
 		if want := mark(p.Sourced); cells[0] != want {
 			t.Errorf("%s sourced cell = %q, want %q", p.Name, cells[0], want)
@@ -166,6 +166,9 @@ func TestRenderRegionProjectsEveryClaim(t *testing.T) {
 		}
 		if want := mark(p.Omits); cells[4] != want {
 			t.Errorf("%s omits cell = %q, want %q", p.Name, cells[4], want)
+		}
+		if want := mark(p.BoundaryArtifacts); cells[5] != want {
+			t.Errorf("%s boundary artifacts cell = %q, want %q", p.Name, cells[5], want)
 		}
 	}
 }
@@ -198,7 +201,9 @@ func TestTheOmitsColumnIsMarkedOnlyForAGuestDeclaringTheClaim(t *testing.T) {
 			continue
 		}
 		seen[name] = true
-		if got := cells[len(cells)-1]; got != wantMark {
+		// The omits column is the second to last: the name, the four input-kind
+		// cells, then the omits cell.
+		if got := cells[5]; got != wantMark {
 			t.Errorf("%s omits cell = %q, want %q: %s", name, got, wantMark, l)
 		}
 	}
@@ -206,6 +211,69 @@ func TestTheOmitsColumnIsMarkedOnlyForAGuestDeclaringTheClaim(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("no row for %s in:\n%s", name, region)
 		}
+	}
+}
+
+// TestTheBoundaryArtifactsColumnIsMarkedOnlyForAGuestDeclaringTheClaim reads the
+// shared-files claim from guest source end to end, crossed with the omits claim:
+// beta's declaration sets it and alpha's leaves it out, the opposite of the omits
+// claim, so a grid that wrote one claim into the other's column would mark both
+// cells wrongly. The expected marks are fixed here rather than taken from the scan,
+// for the reason the omits column's test gives.
+func TestTheBoundaryArtifactsColumnIsMarkedOnlyForAGuestDeclaringTheClaim(t *testing.T) {
+	providers, err := scan(fixtureRoot)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	region, err := renderRegion(providers)
+	if err != nil {
+		t.Fatalf("renderRegion: %v", err)
+	}
+	if !strings.Contains(region, "| `boundary.artifacts:` |") {
+		t.Fatalf("the grid carries no boundary artifacts column:\n%s", region)
+	}
+	want := map[string]string{"alpha": no, "beta": yes}
+	seen := map[string]bool{}
+	for _, l := range strings.Split(region, "\n") {
+		cells := strings.Split(strings.Trim(l, "| "), " | ")
+		name := cells[0]
+		wantMark, ok := want[name]
+		if !ok {
+			continue
+		}
+		seen[name] = true
+		if got := cells[len(cells)-1]; got != wantMark {
+			t.Errorf("%s boundary artifacts cell = %q, want %q: %s", name, got, wantMark, l)
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("no row for %s in:\n%s", name, region)
+		}
+	}
+}
+
+// TestOnlyTheTerraformGuestClaimsBoundaryArtifacts reads the shipped guests'
+// own declarations and holds the shared-files claim to the one provider whose
+// target reads a file placed beside its assembled output as part of it. A second
+// guest making the claim is a decision about that provider's target, so it fails
+// here rather than reaching the published grid unreviewed.
+func TestOnlyTheTerraformGuestClaimsBoundaryArtifacts(t *testing.T) {
+	providers, err := scan(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("scan the shipped guests: %v", err)
+	}
+	if len(providers) == 0 {
+		t.Fatal("the scan read no shipped guest, so this check certifies nothing")
+	}
+	var claiming []string
+	for _, p := range providers {
+		if p.BoundaryArtifacts {
+			claiming = append(claiming, p.Name)
+		}
+	}
+	if len(claiming) != 1 || claiming[0] != "terraform" {
+		t.Errorf("guests claiming boundary artifacts = %v; want exactly [terraform]", claiming)
 	}
 }
 

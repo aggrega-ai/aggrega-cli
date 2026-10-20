@@ -2718,6 +2718,20 @@ func (HydratedViewBase) BoundaryAttachmentDeclaresOmits(boundary string, attachm
 	panic("this view does not carry boundary-attachment-declares-omits, which is read from types.FeatureRecipeSpec.Omits")
 }
 
+// ProviderAcceptsBoundaryArtifacts panics. This view does not carry
+// provider-accepts-boundary-artifacts, which is read from
+// wasm.ProviderContract.BoundaryArtifacts.
+func (HydratedViewBase) ProviderAcceptsBoundaryArtifacts(node string) (bool, bool) {
+	panic("this view does not carry provider-accepts-boundary-artifacts, which is read from wasm.ProviderContract.BoundaryArtifacts")
+}
+
+// RecipeBoundaryArtifactsDeclared panics. This view does not carry
+// recipe-boundary-artifacts-declared, which is read from
+// types.RecipeSpec.Boundary.
+func (HydratedViewBase) RecipeBoundaryArtifactsDeclared(node string, block string) bool {
+	panic("this view does not carry recipe-boundary-artifacts-declared, which is read from types.RecipeSpec.Boundary")
+}
+
 // ArtifactsEntryImportReference panics. This view does not carry
 // artifacts-entry-import-reference, which is read from
 // types.RecipeSpec.Artifacts.
@@ -3446,6 +3460,8 @@ type DescribedStageFacts interface {
 	NodeDeclaresOmits(node string) bool
 	AttachmentDeclaresOmits(node string, attachment string) bool
 	BoundaryAttachmentDeclaresOmits(boundary string, attachment string) bool
+	ProviderAcceptsBoundaryArtifacts(node string) (bool, bool)
+	RecipeBoundaryArtifactsDeclared(node string, block string) bool
 	ArtifactsEntryImportReference(node string, entry string) string
 	ArtifactsEntryLibraryDeclared(node string, entry string) bool
 	ArtifactsEntryBundleDeclared(node string, entry string) bool

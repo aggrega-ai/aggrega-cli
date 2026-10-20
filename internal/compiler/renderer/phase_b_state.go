@@ -85,6 +85,13 @@ type PhaseBState struct {
 	// when dropped. Populated at B.1; nil before then.
 	Omits []ResolvedOmit
 
+	// BoundaryArtifacts are the files the Recipe contributes to the shared output
+	// of the boundary it renders in, evaluated by the walk its own artifacts are
+	// (see buildBoundaryArtifacts). They are held here until the node joins its
+	// dispatch group, which merges them with every other contributor's and writes
+	// them once in the group's own directory. Empty for a Recipe declaring none.
+	BoundaryArtifacts []boundaryArtifact
+
 	// SensitiveWorkload reports that the workload template that produced
 	// ParsedWorkload reads a value Withheld names. It is the same answer that
 	// decides how the checks of that workload word their findings, recorded once

@@ -392,6 +392,31 @@ func honoursOmits(engine Provider) bool {
 	return false
 }
 
+// BoundaryArtifactsReporter is the optional interface an engine implements to
+// report whether its provider accepts the files a Recipe contributes to the shared
+// output of the boundary it renders in: whether its target treats a file the host
+// writes in the dispatch group's own directory, beside what its assembly writes
+// there, as part of that output. A provider routed to a Wasm guest reports the
+// claim from the guest's live describe() self-report, so whether such a file means
+// anything to a target is the provider's own statement.
+type BoundaryArtifactsReporter interface {
+	AcceptsBoundaryArtifacts() bool
+}
+
+// acceptsBoundaryArtifacts reports whether engine declares that it accepts the
+// files a Recipe contributes to its boundary's shared output. It is the single
+// seam the claim is read through — the described presentation's fact reads it,
+// and the rule refusing a Recipe whose provider does not accept the files reads
+// that fact. An engine that does not implement the interface makes no such claim,
+// which is the safe answer: a Recipe declaring the files is then refused rather
+// than rendered into an output its target would ignore them in.
+func acceptsBoundaryArtifacts(engine Provider) bool {
+	if r, ok := engine.(BoundaryArtifactsReporter); ok {
+		return r.AcceptsBoundaryArtifacts()
+	}
+	return false
+}
+
 // AssemblyNameAnnotationReporter is the optional interface an engine implements
 // to report a boundary annotation whose resolved value names the assembled
 // artifact of a dispatch group. A provider that folds a dispatch group's

@@ -104,6 +104,7 @@ var (
 	_ renderer.RenderedNameReporter           = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter       = (*Engine)(nil)
 	_ renderer.OmitsReporter                  = (*Engine)(nil)
+	_ renderer.BoundaryArtifactsReporter      = (*Engine)(nil)
 	_ renderer.AssemblyNameAnnotationReporter = (*Engine)(nil)
 	_ renderer.CodecProvider                  = (*Engine)(nil)
 )
@@ -194,6 +195,22 @@ func (e *Engine) HonoursOmits() bool {
 		return false
 	}
 	return desc.Contract.Omits
+}
+
+// AcceptsBoundaryArtifacts reports whether the provider guest declares that its
+// target accepts the files a Recipe contributes to its boundary's shared output,
+// read from its live describe() self-report (contract.boundary_artifacts). The
+// descriptor is loaded and cached on first use; false is returned when the guest
+// declares nothing or cannot be loaded or described, so a Recipe declaring such
+// files is refused rather than rendered into an output its target ignores them in.
+// It satisfies renderer.BoundaryArtifactsReporter, so the rule refusing a Recipe
+// whose provider does not accept the files reads the guest's own claim.
+func (e *Engine) AcceptsBoundaryArtifacts() bool {
+	desc, err := e.describe()
+	if err != nil || desc.Contract == nil {
+		return false
+	}
+	return desc.Contract.BoundaryArtifacts
 }
 
 // NestSegment reports the directory the provider guest's target places each

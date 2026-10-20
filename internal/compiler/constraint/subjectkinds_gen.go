@@ -64,7 +64,7 @@ const (
 	// SubjectBoundaryPlacement is the subject kind boundary-placement, keyed by 1 declared fact.
 	SubjectBoundaryPlacement SubjectKind = "boundary-placement"
 
-	// SubjectNode is the subject kind node, keyed by 35 declared facts.
+	// SubjectNode is the subject kind node, keyed by 36 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 14 declared facts.
@@ -151,6 +151,9 @@ const (
 	// SubjectBoundaryPathTemplateField is the subject kind (boundary, path-template-field), keyed by 1 declared fact.
 	SubjectBoundaryPathTemplateField SubjectKind = "(boundary, path-template-field)"
 
+	// SubjectNodeRecipeBoundaryBlock is the subject kind (node, recipe-boundary-block), keyed by 1 declared fact.
+	SubjectNodeRecipeBoundaryBlock SubjectKind = "(node, recipe-boundary-block)"
+
 	// SubjectNodeArtifactsEntry is the subject kind (node, artifacts-entry), keyed by 5 declared facts.
 	SubjectNodeArtifactsEntry SubjectKind = "(node, artifacts-entry)"
 
@@ -224,6 +227,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeAttachmentTemplateField, Coordinates: []string{"node", "attachment", "template-field"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentTemplateField, Coordinates: []string{"boundary", "attachment", "template-field"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryPathTemplateField, Coordinates: []string{"boundary", "path-template-field"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeRecipeBoundaryBlock, Coordinates: []string{"node", "recipe-boundary-block"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifactsEntry, Coordinates: []string{"node", "artifacts-entry"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeRecipeImportField, Coordinates: []string{"node", "recipe-import-field"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeRecipeSourceField, Coordinates: []string{"node", "recipe-source-field"}, Traversal: TraversalPull},
