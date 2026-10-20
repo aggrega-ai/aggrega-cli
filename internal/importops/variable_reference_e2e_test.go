@@ -9,9 +9,12 @@ package importops
 // @example/srv ${TOKEN} --key=<a key> — written into a Langflow MCP Tools node's
 // server configuration, into a Flowise Custom MCP tool's server configuration,
 // and into an MCP client's configuration file, each imported with the
-// empty_credentials setting absent and at marked. The flows are committed real
-// exports with the authored nodes added, since no export Langflow or Flowise
-// publish carries such a node; the MCP file is authored here.
+// empty_credentials setting absent and at marked; and that a reference carrying
+// text after an operator, ${TOKEN-sk-planted} beside ${TOKEN} among them, holds
+// that text in every format, under each value of the setting. The flows are
+// committed real exports with the authored nodes added, since no export
+// Langflow or Flowise publish carries such a node; the MCP files are authored
+// here.
 
 import (
 	"encoding/json"
@@ -292,6 +295,227 @@ func TestAValueThatIsWhollyAVariableReferenceIsLeftAsWrittenInEveryFormat(t *tes
 			}
 			if got, want := credentialFields(res, "valued"), []string{code + " infra.stdio_command.0",
 				code + " infra.stdio_command.1", code + " infra.stdio_command.2"}; !slices.Equal(got, want) {
+				t.Errorf("the second server is reported as %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// The text a reference carrying a value after an operator plants, and the
+// arguments the operator sources write: the first server beside the bare
+// reference, the second every other operator with no colon before it.
+const operatorDefault = "sk-planted"
+
+var (
+	operatorArgs      = []any{"-y", "@example/srv", variableReference, "${TOKEN-" + operatorDefault + "}"}
+	otherOperatorArgs = []any{"${TOKEN?" + operatorDefault + "}", "${TOKEN:+" + operatorDefault + "}",
+		"${TOKEN=" + operatorDefault + "}"}
+)
+
+// assertTextNotReported requires that no diagnostic or decision res raised, and
+// no comment line of any file it wrote under outputDir, holds text; source
+// holds it, which is what says the search fires.
+func assertTextNotReported(t *testing.T, source []byte, res Result, outputDir, text string) {
+	t.Helper()
+	if !strings.Contains(string(source), text) {
+		t.Fatalf("the needle: %q is not in the source, so the search finds nothing", text)
+	}
+	for _, part := range []struct {
+		what  string
+		value any
+	}{{"decisions", res.Decisions}, {"diagnostics", res.Diagnostics}} {
+		raw, _ := json.Marshal(part.value)
+		if strings.Contains(string(raw), text) {
+			t.Errorf("the import's %s name %q:\n%s", part.what, text, raw)
+		}
+	}
+	for rel, content := range writtenFiles(t, res, outputDir) {
+		for _, line := range strings.Split(content, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") && strings.Contains(line, text) {
+				t.Errorf("a comment of the written %s names %q: %q", rel, text, line)
+			}
+		}
+	}
+}
+
+// TestAReferenceCarryingAValueAfterAnOperatorIsLocatedInEveryFormat imports an
+// MCP server started with ${TOKEN-sk-planted} beside ${TOKEN}, and a second
+// started with ${TOKEN?…}, ${TOKEN:+…} and ${TOKEN=…}, written into a Langflow
+// MCP Tools node's server configuration, a Flowise Custom MCP tool's and an MCP
+// client's configuration file, with empty_credentials absent, at marked and at
+// all, each twice:
+//
+//   - absent, each reference carrying text after its operator is carried, or
+//     drafted, as written and named in a credential-carried warning, as every
+//     other member of the server's configuration is, while ${TOKEN} is named in
+//     none;
+//   - at marked and at all, each is written empty and named in a
+//     credential-emptied warning, while ${TOKEN} is left as written and named in
+//     none;
+//   - neither the reference nor the planted text is named in a diagnostic, a
+//     decision or a drafted comment;
+//   - the two imports of each write the same bytes and raise the same
+//     diagnostics.
+//
+// 🔴 PLANTED DEFECT: in IsVariableReference (aggrega-pdk/go/pkg/importer/credentials.go),
+// replace `return variableName(inner)` with
+// `return !strings.ContainsAny(inner, "${}\n\r") && !strings.Contains(inner, ":-")`,
+// rebuilt into the importer fixtures — the grammar refusing only a colon and a
+// hyphen: every row fails, each operator's argument carried as written under
+// every setting and named in no warning.
+func TestAReferenceCarryingAValueAfterAnOperatorIsLocatedInEveryFormat(t *testing.T) {
+	t.Parallel()
+	flow := decoded(t, readRealExport(t, langflowPromptingProject))
+	data := asObject(flow["data"])
+	data["nodes"] = append(data["nodes"].([]any),
+		mcpToolsNode("MCPTools-operator", map[string]any{"name": "operator", "config": map[string]any{
+			"command": "npx", "args": operatorArgs}}),
+		mcpToolsNode("MCPTools-others", map[string]any{"name": "others", "config": map[string]any{
+			"command": "npx", "args": otherOperatorArgs}}))
+	langflowSource := encoded(t, flow)
+
+	customMCP := func(id string, config map[string]any) map[string]any {
+		text, _ := json.MarshalIndent(config, "", "    ")
+		return map[string]any{"id": id, "type": "customNode", "position": map[string]any{"x": 0, "y": 0},
+			"data": map[string]any{"id": id, "name": "customMCP", "label": "Custom MCP", "type": "Custom MCP Tool",
+				"inputParams":  []any{map[string]any{"label": "MCP Server Config", "name": "mcpServerConfig", "type": "code"}},
+				"inputAnchors": []any{}, "inputs": map[string]any{"mcpServerConfig": string(text), "mcpActions": `["search"]`}}}
+	}
+	chatflow := decoded(t, readRealExport(t, flowiseChatflow))
+	chatflow["nodes"] = append(chatflow["nodes"].([]any),
+		customMCP("customMCP_operator", map[string]any{"command": "npx", "args": operatorArgs}),
+		customMCP("customMCP_others", map[string]any{"command": "npx", "args": otherOperatorArgs}))
+	flowiseSource := encoded(t, chatflow)
+
+	mcpSourceFile, _ := json.MarshalIndent(map[string]any{"mcpServers": map[string]any{
+		"operator": map[string]any{"command": "npx", "args": operatorArgs},
+		"others":   map[string]any{"command": "npx", "args": otherOperatorArgs},
+	}}, "", "  ")
+
+	for _, setting := range []string{"absent", "marked", "all"} {
+		var settings map[string]any
+		code, emptied := "credential-carried", false
+		if setting != "absent" {
+			settings, code, emptied = map[string]any{"empty_credentials": setting}, "credential-emptied", true
+		}
+		assertNothingReported := func(t *testing.T, source []byte, res Result, dir string) {
+			t.Helper()
+			assertTextNotReported(t, source, res, dir, "${TOKEN")
+			assertTextNotReported(t, source, res, dir, operatorDefault)
+		}
+
+		t.Run("a Langflow MCP server configuration, "+setting, func(t *testing.T) {
+			t.Parallel()
+			res, dir := importedTwice(t, "operator-flow.json", langflowSource, settings, wiringWorkspace)
+			assertNothingReported(t, langflowSource, res, dir)
+			carried, _ := carriedFlow(t, dir, "langflow")
+			config := func(id string) map[string]any {
+				return asObject(asObject(asObject(langflowNode(t, carried, id)["mcp_server"])["value"])["config"])
+			}
+			wantOperator := map[string]any{"command": "npx", "args": operatorArgs}
+			wantOthers := map[string]any{"command": "npx", "args": otherOperatorArgs}
+			if emptied {
+				wantOperator = map[string]any{"command": "", "args": []any{"", "", variableReference, ""}}
+				wantOthers = map[string]any{"command": "", "args": []any{"", "", ""}}
+			}
+			if got := config("MCPTools-operator"); !reflect.DeepEqual(got, wantOperator) {
+				t.Errorf("the first server is carried as %v, want %v", got, wantOperator)
+			}
+			if got := config("MCPTools-others"); !reflect.DeepEqual(got, wantOthers) {
+				t.Errorf("the second server is carried as %v, want %v", got, wantOthers)
+			}
+			if got, want := credentialFields(res, "MCPTools-operator"), []string{code + " mcp_server.config.command",
+				code + " mcp_server.config.args.0", code + " mcp_server.config.args.1",
+				code + " mcp_server.config.args.3"}; !slices.Equal(got, want) {
+				t.Errorf("the first server is reported as %q, want %q", got, want)
+			}
+			if got, want := credentialFields(res, "MCPTools-others"), []string{code + " mcp_server.config.command",
+				code + " mcp_server.config.args.0", code + " mcp_server.config.args.1",
+				code + " mcp_server.config.args.2"}; !slices.Equal(got, want) {
+				t.Errorf("the second server is reported as %q, want %q", got, want)
+			}
+		})
+
+		t.Run("a Flowise Custom MCP tool's configuration, "+setting, func(t *testing.T) {
+			t.Parallel()
+			res, dir := importedTwice(t, "operator-chatflow.json", flowiseSource, settings, wiringWorkspace)
+			assertNothingReported(t, flowiseSource, res, dir)
+			carried, _ := carriedFlow(t, dir, "flowise")
+			config := func(id string) map[string]any {
+				var got map[string]any
+				text, _ := asObject(flowiseNode(t, carried, id)["inputs"])["mcpServerConfig"].(string)
+				if err := json.Unmarshal([]byte(text), &got); err != nil {
+					t.Fatalf("the carried configuration of %s does not read as JSON: %v\n%s", id, err, text)
+				}
+				return got
+			}
+			wantOperator := map[string]any{"command": "npx", "args": operatorArgs}
+			wantOthers := map[string]any{"command": "npx", "args": otherOperatorArgs}
+			if emptied {
+				wantOperator = map[string]any{"command": "", "args": []any{"", "", variableReference, ""}}
+				wantOthers = map[string]any{"command": "", "args": []any{"", "", ""}}
+			}
+			for id, want := range map[string]map[string]any{"customMCP_operator": wantOperator,
+				"customMCP_others": wantOthers} {
+				if got := config(id); !reflect.DeepEqual(got, want) {
+					t.Errorf("the configuration of %s is carried as %v, want %v", id, got, want)
+				}
+				if got := credentialFields(res, id); !slices.Equal(got, []string{code + " mcpServerConfig"}) {
+					t.Errorf("the configuration of %s is reported as %q, want one %s", id, got, code)
+				}
+			}
+			for _, d := range res.Diagnostics {
+				if (d.SourceRef == "customMCP_operator" || d.SourceRef == "customMCP_others") &&
+					!strings.Contains(d.Message, "its command and arguments") {
+					t.Errorf("the report of %s does not name its arguments: %q", d.SourceRef, d.Message)
+				}
+			}
+		})
+
+		t.Run("an MCP client file, "+setting, func(t *testing.T) {
+			t.Parallel()
+			res, dir := importedTwice(t, ".mcp.json", mcpSourceFile, settings, mcpWorkspace)
+			assertNothingReported(t, mcpSourceFile, res, dir)
+			content, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
+			if err != nil {
+				t.Fatalf("read the drafted Release: %v", err)
+			}
+			var doc yaml.Node
+			if err := yaml.Unmarshal(content, &doc); err != nil {
+				t.Fatalf("the drafted Release does not read as YAML: %v", err)
+			}
+			command := func(key string) []string {
+				node := yamlMember(yamlMember(yamlMember(yamlMember(yamlMember(doc.Content[0], "spec"), "components"),
+					key), "infra"), "stdio_command")
+				if node == nil {
+					t.Fatalf("the drafted Release writes no infra.stdio_command for %s:\n%s", key, content)
+				}
+				var out []string
+				for _, item := range node.Content {
+					out = append(out, item.Value)
+				}
+				return out
+			}
+			wantOperator := []string{"npx", "-y", "@example/srv", variableReference, operatorArgs[3].(string)}
+			wantOthers := []string{"npx", otherOperatorArgs[0].(string), otherOperatorArgs[1].(string),
+				otherOperatorArgs[2].(string)}
+			if emptied {
+				wantOperator, wantOthers = []string{"", "", "", variableReference, ""}, []string{"", "", "", ""}
+			}
+			if got := command("operator"); !slices.Equal(got, wantOperator) {
+				t.Errorf("the first server is drafted with %q, want %q", got, wantOperator)
+			}
+			if got := command("others"); !slices.Equal(got, wantOthers) {
+				t.Errorf("the second server is drafted with %q, want %q", got, wantOthers)
+			}
+			if got, want := credentialFields(res, "operator"), []string{code + " infra.stdio_command.0",
+				code + " infra.stdio_command.1", code + " infra.stdio_command.2",
+				code + " infra.stdio_command.4"}; !slices.Equal(got, want) {
+				t.Errorf("the first server is reported as %q, want %q", got, want)
+			}
+			if got, want := credentialFields(res, "others"), []string{code + " infra.stdio_command.0",
+				code + " infra.stdio_command.1", code + " infra.stdio_command.2",
+				code + " infra.stdio_command.3"}; !slices.Equal(got, want) {
 				t.Errorf("the second server is reported as %q, want %q", got, want)
 			}
 		})

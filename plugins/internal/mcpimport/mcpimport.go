@@ -63,10 +63,13 @@
 // written empty and reported under credential-emptied — an argument as an empty
 // item of the command line, an address or an environment value left unset, a
 // header's value or a part of the address left out of the comment, which names
-// the header or the part alone. A variable reference — ${NAME}, ${env:NAME},
-// ${input:id}, ${workspaceFolder} — holds no value, so it is written as the text
-// it is whatever the setting says, and a variable, a header or a part of the
-// address whose value is one is written with the reference it reads from. No
+// the header or the part alone. A variable reference — the bare name ${NAME},
+// ${workspaceFolder} among them, ${env:NAME} or ${input:id}, as
+// importer.IsVariableReference reads one — holds no value, so it is written as
+// the text it is whatever the setting says, and a variable, a header or a part
+// of the address whose value is one is written with the reference it reads
+// from; a reference carrying text after an operator, such as ${NAME-value} or
+// ${NAME:-value}, holds that text and is located like any other value. No
 // key of the Release takes a header's value — a remote server's credential is
 // held by each consumer on its connection to the tool, and the draft drafts no
 // consumer — so the headers a server is sent are written in the comment above
