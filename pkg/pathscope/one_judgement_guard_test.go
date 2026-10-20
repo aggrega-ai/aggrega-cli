@@ -71,6 +71,8 @@ var decidersOfInside = map[string]string{
 		"named, held to that directory",
 	"internal/importops:Source.judgeLinks": "every link a directory import would read through, a file a " +
 		"pattern selects or a directory",
+	"internal/wasmtest:listGuestModuleInputs": "each package directory a test guest's build reads, kept among " +
+		"the inputs its freshness watches only where it lies inside the module",
 
 	// Every read of the workspace's artifact cache reaches the one judgement through
 	// readscope.CheckCacheRead, against the root the cache's writes are held to. A

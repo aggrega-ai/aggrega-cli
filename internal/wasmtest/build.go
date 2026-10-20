@@ -50,6 +50,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/tools/projectionparity"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // fixtureResults caches the per-fixture build outcome for the
@@ -583,9 +584,9 @@ const guestPackagesTemplate = `{{if not .Standard}}{{.Dir}}{{range .GoFiles}}{{"
 // when a file is added to it or removed from it — and each file the package
 // compiles and embeds. The packages are those `go list -deps` reports for the
 // guest under the environment its build runs in (GOWORK=off, GOOS=wasip1,
-// GOARCH=wasm), kept to the ones inside moduleRoot; a package the guest does
-// not import, a test file and a file another platform's build compiles are not
-// among them.
+// GOARCH=wasm), kept to the ones whose directory pathscope.ResolvesInside
+// judges inside moduleRoot; a package the guest does not import, a test file and
+// a file another platform's build compiles are not among them.
 func listGuestModuleInputs(moduleRoot, name string) ([]string, error) {
 	cmd := exec.Command("go", "list", "-deps", "-f", guestPackagesTemplate, "./plugins/"+name)
 	cmd.Dir = moduleRoot
@@ -595,10 +596,6 @@ func listGuestModuleInputs(moduleRoot, name string) ([]string, error) {
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("list the packages the guest %s imports: %v\n%s", name, err, stderr.String())
-	}
-	root, err := filepath.EvalSymlinks(moduleRoot)
-	if err != nil {
-		return nil, err
 	}
 	var inputs []string
 	for _, file := range []string{"go.mod", "go.sum"} {
@@ -612,11 +609,7 @@ func listGuestModuleInputs(moduleRoot, name string) ([]string, error) {
 		if dir == "" {
 			continue
 		}
-		real, err := filepath.EvalSymlinks(dir)
-		if err != nil {
-			return nil, err
-		}
-		if rel, err := filepath.Rel(root, real); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if _, inside := pathscope.ResolvesInside(moduleRoot, dir); !inside {
 			continue
 		}
 		inputs = append(inputs, dir)
