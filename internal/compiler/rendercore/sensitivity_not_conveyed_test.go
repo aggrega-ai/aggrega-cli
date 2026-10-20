@@ -176,7 +176,10 @@ func TestSensitivityNotConveyedDiagnostic_ShapeAndClass(t *testing.T) {
 	if d.SourceRef != "values.dbPassword" {
 		t.Errorf("SourceRef %q, want the authored coordinate", d.SourceRef)
 	}
-	for _, want := range []string{"values.dbPassword", "some-recipe", "valuesMapping"} {
+	// The sentence says what the target does receive as well as what it does not:
+	// no per-key marking, and the mapping's whole output marked where the mapping
+	// reads the declared value.
+	for _, want := range []string{"values.dbPassword", "some-recipe", "valuesMapping", "no per-key sensitivity marking", "whole output is marked"} {
 		if !strings.Contains(d.Message, want) {
 			t.Errorf("message %q does not name %s", d.Message, want)
 		}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -75,7 +76,12 @@ var shortFormIntrinsicTags = map[string]bool{
 }
 
 // BindInput is what a sourced render hands the binding: the node's values, whether
-// a values mapping produced them, and the payload's sensitivity markings over them.
+// a values mapping produced them, and whether that mapping read a value an author
+// declared sensitive.
+//
+// A mapping's output keys are the mapping's own invention, so no declaration names
+// one of them: the payload marks a mapped node's values only as a whole, never key
+// by key, and the whole-map mark is the one sensitivity marking a binding can see.
 type BindInput struct {
 	// Values are the node's values, keyed by the names a values mapping gave them.
 	Values types.OrderedMap[any]
@@ -83,11 +89,9 @@ type BindInput struct {
 	// values the author wrote for something else — the Recipe's artifacts, say —
 	// name no parameter and are left alone.
 	Mapped bool
-	// SensitiveKeys names the keys whose value inherits a declared sensitivity, each
-	// mapped to the declaration it inherits from.
-	SensitiveKeys map[string]string
 	// SensitiveValues reports that the mapping producing Values read a value an
-	// author declared sensitive, so every value is treated as one.
+	// author declared sensitive, so no literal it produced is written into a
+	// template.
 	SensitiveValues bool
 }
 
@@ -130,18 +134,24 @@ func (b boundValue) literal() bool { return b.kind == boundLiteral }
 // handed in, so a sourced render that binds nothing is byte-identical to one made
 // before binding existed.
 //
-// Each key names a parameter some template of the source declares, and binds it in
-// every template declaring it. A key naming no declared parameter halts, naming the
-// key and what each template declares — the same failure a deploy would report for
-// an unknown parameter, reported at build time.
+// Each key names a parameter some template of the source declares. A key naming no
+// declared parameter halts, naming the key and what each template declares — the
+// same failure a deploy would report for an unknown parameter, reported at build
+// time.
 //
-// In each template declaring the parameter, every Ref to it in Resources, Outputs,
-// Conditions, Rules and SAM's Globals is replaced by the value, and every Fn::Sub
-// naming it as a variable receives it through the list form's variable map; a map
-// that already names the variable keeps its own value, because CloudFormation reads
-// that map's value for it. The parameter then leaves the template's Parameters. A
-// parameter no key names is left exactly as it was, for a deploy-time value or its
-// Default to fill.
+// The source is the unit that declares a parameter, because its templates assemble
+// into one stack, so a bound parameter is bound in every template of the source:
+// one that declares it and one that only references it alike. In each, every Ref to
+// it in Resources, Outputs, Conditions, Rules and SAM's Globals is replaced by the
+// value, and every Fn::Sub naming it as a variable receives it through the list
+// form's variable map; a map that already names the variable keeps its own value,
+// because CloudFormation reads that map's value for it. The parameter then leaves
+// the Parameters of every template declaring it. Each declaring template converts
+// and checks the value against its own declaration, and a template that only
+// references the parameter takes the value as the first template of the source
+// declaring it converted it. A template that neither declares nor references a
+// bound parameter comes back exactly as it was. A parameter no key names is left
+// exactly as it was, for a deploy-time value or its Default to fill.
 //
 // What a value is decides what the binding does with it. A string that is wholly
 // one short-form intrinsic — the forms the template's own normalization reads — is
@@ -153,13 +163,16 @@ func (b boundValue) literal() bool { return b.kind == boundLiteral }
 // and checked against the parameter's declared constraints; a value with no
 // faithful conversion, or one the constraints refuse, halts naming the parameter.
 //
-// A secret is never written into a template. A NoEcho parameter takes a dynamic
-// reference or an intrinsic and refuses a literal; a value the payload marks
-// sensitive is admitted only as a dynamic reference; where the mapping read a
-// sensitive value, every literal binding of the node is refused; and a dynamic
-// reference is refused where its parameter is referenced in EC2 user data,
-// AWS::CloudFormation::Init metadata or the template's Outputs. No refusal quotes a
-// value: each names the parameters, the templates and what to bind instead.
+// A literal that may carry secret material is refused, while a dynamic reference
+// and an intrinsic are written as given. A NoEcho parameter takes a dynamic
+// reference or an intrinsic and refuses a literal. Where the mapping read a value an
+// author declared sensitive, every literal binding of the node is refused, and a
+// dynamic reference or an intrinsic is admitted as written — the text inside an
+// intrinsic included, so a sensitive value the mapping splices into an Fn::Sub
+// string reaches the template as that text. A dynamic reference is refused where
+// its parameter is referenced in EC2 user data, AWS::CloudFormation::Init metadata
+// or the template's Outputs. No refusal quotes a value: each names the parameters,
+// the templates and what to bind instead.
 func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID string) ([]SourcedFile, error) {
 	if !in.Mapped || in.Values.Len() == 0 {
 		return files, nil
@@ -228,10 +241,14 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 		bound[k] = classifyBound(v)
 	}
 
+	// Each declaring template converts and checks the value against its own
+	// declaration. The first conversion in the source's order is the one a template
+	// that only references the parameter takes, so which template that is never
+	// depends on anything but the order the source lists them in.
 	var sensitiveLiterals []string
-	out := make([]SourcedFile, len(files))
-	copy(out, files)
-	for _, t := range templates {
+	declaredValues := make([]map[string]any, len(templates))
+	sourceValue := map[string]any{}
+	for ti, t := range templates {
 		params, _ := t.doc[sectionParameters].(map[string]any)
 		values := map[string]any{}
 		for _, name := range sortedKeys(params) {
@@ -248,21 +265,39 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 				return nil, err
 			}
 			values[name] = v
-			if b.kind == boundDynamicReference {
-				if site := unresolvedDynamicReferenceSite(t.doc, name); site != "" {
-					return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
-						cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-						fmt.Sprintf("cloudformation-provider: the value bound to parameter %q of template %q is a dynamic reference, and the template references the parameter in %s, where CloudFormation does not resolve a dynamic reference or shows it to whoever reads the stack; bind an intrinsic function instead, or leave the parameter unbound for a deploy-time value",
-							name, t.path, site))
-				}
+			if _, seen := sourceValue[name]; !seen {
+				sourceValue[name] = v
 			}
 		}
-		if len(values) == 0 {
-			continue
+		declaredValues[ti] = values
+	}
+
+	out := make([]SourcedFile, len(files))
+	copy(out, files)
+	for ti, t := range templates {
+		params, _ := t.doc[sectionParameters].(map[string]any)
+		values := make(map[string]any, len(sourceValue))
+		for name, v := range sourceValue {
+			values[name] = v
+		}
+		for name, v := range declaredValues[ti] {
+			values[name] = v
+		}
+		for _, name := range keys {
+			if bound[name].kind != boundDynamicReference {
+				continue
+			}
+			if site := unresolvedDynamicReferenceSite(t.doc, name); site != "" {
+				return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+					cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+					fmt.Sprintf("cloudformation-provider: the value bound to parameter %q is a dynamic reference, and template %q references the parameter in %s, where CloudFormation does not resolve a dynamic reference or shows it to whoever reads the stack; bind an intrinsic function instead, or leave the parameter unbound for a deploy-time value",
+						name, t.path, site))
+			}
 		}
 		if err := refuseRuleNamingBound(t.doc, t.path, values, nodeID); err != nil {
 			return nil, err
 		}
+		changed := len(declaredValues[ti]) > 0
 		for _, section := range boundSections {
 			body, present := t.doc[section]
 			if !present {
@@ -272,7 +307,15 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 			if err != nil {
 				return nil, err
 			}
+			if !reflect.DeepEqual(replaced, body) {
+				changed = true
+			}
 			t.doc[section] = replaced
+		}
+		// A template that neither declares nor references a bound parameter keeps
+		// the bytes it was handed, as a source binding nothing does.
+		if !changed {
+			continue
 		}
 		kept := make(map[string]any, len(params))
 		for name, decl := range params {
@@ -296,7 +339,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 		sort.Strings(sensitiveLiterals)
 		return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("cloudformation-provider: the Recipe's valuesMapping reads a value declared sensitive, so every value it produces is treated as one, and %s would write a value into the template as it stands; bind each to a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function, or leave it unbound for a deploy-time value",
+			fmt.Sprintf("cloudformation-provider: the Recipe's valuesMapping reads a value declared sensitive, so a literal it produces is refused, and %s would write a literal into the template as it stands; bind each to a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function, or leave it unbound for a deploy-time value",
 				pluralParameters(sensitiveLiterals)))
 	}
 	return out, nil
@@ -309,23 +352,17 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 // evaluated, and Parameters is where the declaration itself sits.
 var boundSections = []string{sectionResources, sectionOutputs, sectionConditions, sectionRules, sectionGlobals}
 
-// refuseSensitiveBinding refuses a binding that would write secret material into
-// the template: a literal bound to a NoEcho parameter, and a value the payload
-// marks sensitive bound as anything but a dynamic reference. A literal binding of a
-// node whose whole values are marked is recorded rather than refused here, so one
-// refusal names every such parameter.
+// refuseSensitiveBinding refuses a literal binding that may carry secret material
+// into the template: a literal bound to a NoEcho parameter is refused here, and a
+// literal binding of a node whose whole values are marked is recorded rather than
+// refused, so one refusal names every such parameter. A dynamic reference and an
+// intrinsic pass either way.
 func refuseSensitiveBinding(name, path string, b boundValue, decl map[string]any, in BindInput, sensitiveLiterals *[]string) error {
 	if truthy(decl[parameterNoEcho]) && b.literal() {
 		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("cloudformation-provider: parameter %q of template %q is declared NoEcho, and the value bound to it would be written into the template as it stands; bind a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function instead, or leave the parameter unbound for a deploy-time value",
 				name, path))
-	}
-	if declaration, marked := in.SensitiveKeys[name]; marked && b.kind != boundDynamicReference {
-		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{},
-			fmt.Sprintf("cloudformation-provider: the value bound to parameter %q of template %q is declared sensitive (by %s), and only a dynamic reference may carry such a value into a template; bind a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) instead, or leave the parameter unbound for a deploy-time value",
-				name, path, declaration))
 	}
 	if in.SensitiveValues && b.literal() {
 		for _, seen := range *sensitiveLiterals {
@@ -454,7 +491,8 @@ func checkConstraints(name, path, typ string, members []string, decl map[string]
 
 // refuseRuleNamingBound halts where a rule of the template reads a bound parameter
 // through Fn::ValueOf, which names a declared parameter by its logical ID: the
-// parameter leaves the template when it is bound, so the rule would name nothing.
+// parameter leaves every template of the source when it is bound, so the rule
+// would name nothing.
 // Rules are read in the order of their names and each rule's content in the order
 // walkValues keeps, so a rule reading several bound parameters halts on the same
 // one every time.
@@ -482,7 +520,7 @@ func refuseRuleNamingBound(doc map[string]any, path string, values map[string]an
 		if found != "" {
 			return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
 				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("cloudformation-provider: rule %q of template %q reads parameter %q through Fn::ValueOf, which names a parameter the template declares, and binding the parameter removes its declaration; leave the parameter unbound so the rule can read it at deploy",
+				fmt.Sprintf("cloudformation-provider: rule %q of template %q reads parameter %q through Fn::ValueOf, which names a declared parameter by its logical ID, and binding the parameter removes its declaration from the source; leave the parameter unbound so the rule can read it at deploy",
 					rule, path, found))
 		}
 	}

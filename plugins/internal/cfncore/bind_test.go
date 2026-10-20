@@ -275,13 +275,18 @@ func TestBindSourced(t *testing.T) {
 			},
 		},
 		{
-			name: "a value the payload marks sensitive is admitted only as a dynamic reference",
-			body: bindTemplate,
-			input: BindInput{Mapped: true, Values: mappedValues("BucketName", "zq-sensitive-literal"),
-				SensitiveKeys: map[string]string{"BucketName": "values.bucket"}},
-			wantErr:    wasm.ErrPluginValueNotRepresentable(),
-			wantText:   []string{`"BucketName"`, "values.bucket", "dynamic reference"},
-			wantAbsent: []string{"zq-sensitive-literal"},
+			// The whole-map mark refuses a literal and admits an intrinsic as written,
+			// the text inside it included: the mark says the mapping read a declared
+			// value, never which part of an intrinsic's text came from it.
+			name:  "with the whole values marked, an intrinsic is written as given, the text inside it included",
+			body:  bindTemplate,
+			input: BindInput{Mapped: true, SensitiveValues: true, Values: mappedValues("BucketName", "!Sub zq-${AWS::Region}-text")},
+			check: func(t *testing.T, doc map[string]any) {
+				got := at(t, doc, "Resources", "Bucket", "Properties", "BucketName")
+				if want := map[string]any{"Fn::Sub": "zq-${AWS::Region}-text"}; !reflect.DeepEqual(got, want) {
+					t.Errorf("BucketName = %#v, want the intrinsic as written: %#v", got, want)
+				}
+			},
 		},
 		{
 			// Kept rather than Stage is the second parameter: Stage admits only values
@@ -356,6 +361,151 @@ func TestBindSourced(t *testing.T) {
 				t.Fatalf("BindSourced: %v", err)
 			}
 			tc.check(t, boundDoc(t, out))
+		})
+	}
+}
+
+// bindDirectory normalizes a directory source's files, in the order given, into the
+// source a sourced render hands the binding.
+func bindDirectory(t *testing.T, files ...SourcedFile) []SourcedFile {
+	t.Helper()
+	out, err := NormalizeSourced(files, true)
+	if err != nil {
+		t.Fatalf("NormalizeSourced: %v", err)
+	}
+	return out
+}
+
+// TestBindSourcedBindsEveryTemplateOfTheSource is the source as the unit that
+// declares a parameter: a template that references a bound parameter another
+// template of the same source declares takes the value too, so nothing in the
+// source is left naming a parameter the binding removed, and a template that
+// neither declares nor references one keeps its bytes.
+func TestBindSourcedBindsEveryTemplateOfTheSource(t *testing.T) {
+	t.Parallel()
+	declaring := SourcedFile{Path: "a.yaml", Content: []byte("Parameters:\n  Stage:\n    Type: String\nResources:\n  TopicA:\n    Type: AWS::SNS::Topic\n    Properties:\n      TopicName: !Ref Stage\n")}
+	referencing := SourcedFile{Path: "b.yaml", Content: []byte("Resources:\n  TopicB:\n    Type: AWS::SNS::Topic\n    Properties:\n      TopicName: !Ref Stage\n      DisplayName: !Sub \"${Stage}-topic\"\n")}
+	unrelated := SourcedFile{Path: "c.yaml", Content: []byte("Resources:\n  TopicC:\n    Type: AWS::SNS::Topic\n    Properties:\n      TopicName: fixed\n")}
+	readme := SourcedFile{Path: "README.md", Content: []byte("Stage is a parameter.\n")}
+
+	for _, tc := range []struct {
+		name  string
+		files []SourcedFile
+		// value is what the mapping binds to Stage; "dev" where the row sets none.
+		value any
+		// check reads each bound template by its path; nil for a row that halts.
+		check    func(t *testing.T, in, out []SourcedFile)
+		wantErr  error
+		wantText []string
+	}{
+		{
+			name:  "a sibling template's reference takes the value and no template keeps a Ref to the parameter",
+			files: []SourcedFile{declaring, referencing, unrelated, readme},
+			check: func(t *testing.T, in, out []SourcedFile) {
+				docs := map[string]map[string]any{}
+				for _, f := range out {
+					if !isTemplateFile(f.Path) {
+						continue
+					}
+					var doc map[string]any
+					if err := json.Unmarshal(f.Content, &doc); err != nil {
+						t.Fatalf("%s is not JSON: %v", f.Path, err)
+					}
+					docs[f.Path] = doc
+					if referencesParameter(doc, "Stage") {
+						t.Errorf("%s still references the bound parameter: %s", f.Path, f.Content)
+					}
+				}
+				if got := at(t, docs["a.yaml"], "Resources", "TopicA", "Properties", "TopicName"); got != "dev" {
+					t.Errorf("a.yaml TopicName = %#v, want the bound literal", got)
+				}
+				if _, present := docs["a.yaml"]["Parameters"]; present {
+					t.Errorf("a.yaml still declares Parameters: %v", docs["a.yaml"]["Parameters"])
+				}
+				if got := at(t, docs["b.yaml"], "Resources", "TopicB", "Properties", "TopicName"); got != "dev" {
+					t.Errorf("b.yaml TopicName = %#v, want the bound literal", got)
+				}
+				got := at(t, docs["b.yaml"], "Resources", "TopicB", "Properties", "DisplayName", "Fn::Sub")
+				if want := []any{"${Stage}-topic", map[string]any{"Stage": "dev"}}; !reflect.DeepEqual(got, want) {
+					t.Errorf("b.yaml DisplayName Fn::Sub = %#v, want %#v", got, want)
+				}
+				for i := range in {
+					if in[i].Path == "c.yaml" || in[i].Path == "README.md" {
+						if !bytes.Equal(out[i].Content, in[i].Content) {
+							t.Errorf("%s changed though it neither declares nor references the parameter:\n%s", in[i].Path, out[i].Content)
+						}
+					}
+				}
+			},
+		},
+		{
+			// The template that only references the parameter takes the first
+			// declaring template's conversion: b.yaml declares Stage as a list and
+			// a.yaml as a String, so a.yaml, listed first, decides what c.yaml takes.
+			name: "a referencing template takes the conversion of the first declaring template in the source's order",
+			files: []SourcedFile{
+				{Path: "a.yaml", Content: []byte("Parameters:\n  Stage:\n    Type: String\nResources:\n  TopicA:\n    Type: AWS::SNS::Topic\n    Properties:\n      TopicName: !Ref Stage\n")},
+				{Path: "b.yaml", Content: []byte("Parameters:\n  Stage:\n    Type: CommaDelimitedList\nResources:\n  TopicB:\n    Type: AWS::SNS::Topic\n    Properties:\n      Tags: !Ref Stage\n")},
+				{Path: "c.yaml", Content: []byte("Resources:\n  TopicC:\n    Type: AWS::SNS::Topic\n    Properties:\n      TopicName: !Ref Stage\n")},
+			},
+			check: func(t *testing.T, in, out []SourcedFile) {
+				read := func(i int) map[string]any {
+					var doc map[string]any
+					if err := json.Unmarshal(out[i].Content, &doc); err != nil {
+						t.Fatalf("%s is not JSON: %v", out[i].Path, err)
+					}
+					return doc
+				}
+				if got := at(t, read(1), "Resources", "TopicB", "Properties", "Tags"); !reflect.DeepEqual(got, []any{"dev"}) {
+					t.Errorf("b.yaml Tags = %#v, want its own list conversion", got)
+				}
+				if got := at(t, read(2), "Resources", "TopicC", "Properties", "TopicName"); got != "dev" {
+					t.Errorf("c.yaml TopicName = %#v, want a.yaml's string conversion", got)
+				}
+			},
+		},
+		{
+			name: "a sibling template's rule reading the bound parameter through Fn::ValueOf halts",
+			files: []SourcedFile{declaring, {Path: "b.yaml", Content: []byte(
+				"Rules:\n  Tagged:\n    Assertions:\n      - Assert:\n          Fn::Equals: [{Fn::ValueOf: [Stage, Tags.Env]}, prod]\nResources:\n  TopicB:\n    Type: AWS::SNS::Topic\n")}},
+			wantErr:  wasm.ErrPluginCannotExpressInput(),
+			wantText: []string{`"Tagged"`, `template "b.yaml"`, `parameter "Stage"`},
+		},
+		{
+			name: "a dynamic reference is refused where a sibling template references the parameter in its Outputs",
+			files: []SourcedFile{declaring, {Path: "b.yaml", Content: []byte(
+				"Resources:\n  TopicB:\n    Type: AWS::SNS::Topic\nOutputs:\n  Shown:\n    Value: !Ref Stage\n")}},
+			value:    "{{resolve:ssm:/zq-dynref/stage}}",
+			wantErr:  wasm.ErrPluginValueNotRepresentable(),
+			wantText: []string{`parameter "Stage"`, `template "b.yaml"`, "Outputs"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := bindDirectory(t, tc.files...)
+			value := tc.value
+			if value == nil {
+				value = "dev"
+			}
+			out, err := BindSourced(in, true, BindInput{Mapped: true, Values: mappedValues("Stage", value)}, bindNodeID)
+			if tc.wantErr != nil {
+				if err == nil {
+					t.Fatalf("binding succeeded; want a halt under %v", tc.wantErr)
+				}
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("binding halted under %v; want %v", err, tc.wantErr)
+				}
+				for _, want := range tc.wantText {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("the halt does not name %s: %v", want, err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BindSourced: %v", err)
+			}
+			tc.check(t, in, out)
 		})
 	}
 }

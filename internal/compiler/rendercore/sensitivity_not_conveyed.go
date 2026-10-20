@@ -42,7 +42,7 @@ func SensitivityNotConveyedDiagnostic(recipe, coordinate string) renderctx.Diagn
 		Code:      SensitivityNotConveyedCode,
 		SourceRef: coordinate,
 		Message: fmt.Sprintf(
-			"%q is declared sensitive, but recipe %q maps its values through a valuesMapping whose output keys no declaration names, so the target receives no sensitivity marking for it; a recipe declaring no valuesMapping renders the declared leaf paths as its own keys, and the marking travels with them",
+			"%q is declared sensitive, but recipe %q maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping reads it, the mapping's whole output is marked as carrying a value declared sensitive instead; a recipe declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them",
 			coordinate, recipe),
 	}
 }

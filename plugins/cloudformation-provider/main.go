@@ -27,15 +27,17 @@
 //
 // A sourced template takes values through the parameters it declares. Where the
 // node's values are the output of the Recipe's values mapping, each key binds the
-// parameter it names in every template declaring it: a Ref to the parameter
-// becomes the value, an Fn::Sub naming it receives it through its variable map, and
-// the parameter leaves the template. A value that is wholly one short-form
-// intrinsic is read as that intrinsic, a dynamic reference and a cross-stack
-// placeholder stay whole for CloudFormation and the link pass to resolve, and a
-// literal is converted as CloudFormation converts it at deploy and checked against
-// the parameter's constraints. A key naming no parameter halts, and so does a
-// literal that would write secret material into a template. Values the node carries
-// for any other reason are left unread.
+// parameter it names in every template of the source, since the source's templates
+// assemble into one stack: a Ref to the parameter becomes the value, an Fn::Sub
+// naming it receives it through its variable map, and the parameter leaves every
+// template declaring it. A value that is wholly one short-form intrinsic is read as
+// that intrinsic, a dynamic reference and a cross-stack placeholder stay whole for
+// CloudFormation and the link pass to resolve, and a literal is converted as
+// CloudFormation converts it at deploy and checked against the parameter's
+// constraints. A key naming no parameter halts, and so does a literal bound to a
+// NoEcho parameter or produced by a mapping that read a value declared sensitive; an
+// intrinsic is written as given, the text inside it included. Values the node
+// carries for any other reason are left unread.
 //
 // A sourced render then leaves out every resource the node's omit entries name by
 // its Type and its logical ID, across every template the source carries, reports
@@ -348,7 +350,6 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 		normalized, err = cfncore.BindSourced(normalized, in.SourceListing.RootIsDir, cfncore.BindInput{
 			Values:          in.Node.Values,
 			Mapped:          in.Node.ValuesMapped,
-			SensitiveKeys:   in.Node.SensitiveRenderedKeys,
 			SensitiveValues: in.Node.SensitiveValues,
 		}, in.Node.ID)
 		if err != nil {
