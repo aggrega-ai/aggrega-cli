@@ -83,6 +83,15 @@
 // that does not parse yields an halt-severity diagnostic, which halts the build;
 // what the configuration means once it does parse is the runtime's concern.
 //
+// The same read reports, as a warning that refuses nothing, each `module` block
+// whose source the engine fetches when it initialises the configuration — an
+// address rather than a local path, or a local path climbing out of the vendored
+// tree — because the build's pin does not reach such a module. It reads the
+// files the engine loads when the module is called, following local sources from
+// the module's own directory, and an authored body's module calls are read the
+// same way when render_node places it. Only what a source says is read, never
+// what the module it names contains, and the emitted bytes are unchanged.
+//
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o terraform-provider.wasm ./plugins/terraform-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
 // the first export, so the Go runtime is initialized before render_node.)
@@ -99,8 +108,6 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
-	hcljson "github.com/hashicorp/hcl/v2/json"
 )
 
 // descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
@@ -138,7 +145,7 @@ func descriptor() aggrega.PluginDescriptor {
 				InputPattern:  "b",
 				HostFunctions: []string{"aggrega_pack_source"},
 				Stability:     "experimental",
-				Description:   "structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render",
+				Description:   "structurally parses the sourced Terraform module's HCL and .tf.json files, reports parse errors before render, and warns on each module call the engine fetches at initialisation",
 			},
 			{
 				Name:         "assemble_boundary",
@@ -277,6 +284,14 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 		// not Kubernetes YAML, so provenance rides via the shared HCL-comment
 		// formatter over nodeCtx rather than metadata splicing.
 		out.Files = terraformcore.PlaceArtifacts(*in.ArtifactsProjection, nodeCtxFromInput(in))
+		// An authored body's module calls are read the way a vendored module's
+		// are, from the bodies as the Recipe authored them. The warnings travel
+		// beside the files and change none of their bytes.
+		bodies := make([]terraformcore.ConfigFile, 0, len(in.ArtifactsProjection.Entries))
+		for _, ent := range in.ArtifactsProjection.Entries {
+			bodies = append(bodies, terraformcore.ConfigFile{Path: ent.Name, Content: ent.Content})
+		}
+		out.Diagnostics = terraformcore.ModuleFetchedAtInitDiagnostics(bodies)
 	}
 	// A payload with no projection yields an empty output.
 
@@ -385,10 +400,10 @@ func validateNodeOutput() (rendercore.ValidateNodeOutput, error) {
 
 	var out rendercore.ValidateNodeOutput
 	// Only the sourced module is a structural input to validate. A workload or
-	// artifacts projection carries no Terraform module to parse here — artifacts
-	// are host-template-evaluated HCL whose parse is checked inline in render_node
-	// against the emitted bytes — so a payload with no source listing yields no
-	// diagnostics (a valid, empty check).
+	// artifacts projection carries no Terraform module to parse here — this
+	// check's payload carries no artifacts body, so an authored body's module
+	// calls are read in render_node, where the body is in hand — and a payload
+	// with no source listing yields no diagnostics (a valid, empty check).
 	if in.SourceListing != nil {
 		proj, err := packTerraformSource(in.SourceListing)
 		if err != nil {
@@ -418,24 +433,29 @@ func terraformFileFormat(path string) string {
 // validateTerraformModule structurally parses every Terraform configuration file
 // in the packed module — .tf as native HCL syntax, .tf.json as the JSON HCL
 // variant — and returns one diagnostic per parse finding, in the host's
-// deterministic file order. It interprets nothing beyond the file's syntactic
-// shape: it does not resolve variables, evaluate expressions, contact a provider,
-// or run any Terraform toolchain — it confirms the module's HCL parses. A file
-// that is neither .tf nor .tf.json is left untouched (e.g. a README, a vendored
-// binary). An empty result means every configuration file parsed cleanly.
+// deterministic file order, followed by one warning per module call the engine
+// fetches when it initialises the configuration. It interprets nothing beyond
+// the file's syntactic shape and what a `module` block's source says: it does not
+// resolve variables, evaluate expressions, contact a provider, read the module a
+// call names, or run any Terraform toolchain. A file that is neither .tf nor
+// .tf.json is left untouched (e.g. a README, a vendored binary). An empty result
+// means every configuration file parsed cleanly and every module call the engine
+// loads reads files the build vendored.
+//
+// Every packed configuration file is parsed, examples and tests included, while
+// the module calls are read only from the files the engine loads when the module
+// is called — see [terraformcore.FetchedModuleCalls] — so a call written in an
+// example the module ships is not reported as a fetch that never happens.
 func validateTerraformModule(proj *aggrega.SourceProjection) []renderctx.Diagnostic {
 	var diags []renderctx.Diagnostic
+	files := make([]terraformcore.ConfigFile, 0, len(proj.Files))
 	for _, f := range proj.Files {
-		switch {
-		case strings.HasSuffix(f.Path, ".tf.json"):
-			_, hd := hcljson.Parse(f.Content, f.Path)
-			diags = append(diags, convertHCLDiagnostics(hd)...)
-		case strings.HasSuffix(f.Path, ".tf"):
-			_, hd := hclsyntax.ParseConfig(f.Content, f.Path, hcl.Pos{Line: 1, Column: 1})
+		files = append(files, terraformcore.ConfigFile{Path: f.Path, Content: f.Content})
+		if _, hd, ok := terraformcore.ParseConfigFile(f.Path, f.Content); ok {
 			diags = append(diags, convertHCLDiagnostics(hd)...)
 		}
 	}
-	return diags
+	return append(diags, terraformcore.ModuleFetchedAtInitDiagnostics(files)...)
 }
 
 // convertHCLDiagnostics maps HCL parse diagnostics to the shared Wasm-plugin
