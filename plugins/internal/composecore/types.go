@@ -228,15 +228,16 @@ func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 // synthesized today: it is honored by `docker compose` in non-swarm mode
 // (unlike deploy.replicas, which is swarm-only). Workload container resource
 // limits map to deploy.resources.limits and requests map to
-// deploy.resources.reservations.
+// deploy.resources.reservations; a container's nvidia.com/gpu request maps to a
+// device entry under deploy.resources.reservations.
 type Deploy struct {
 	Resources *DeployResources `yaml:"resources,omitempty"`
 }
 
 // DeployResources holds the compose deploy.resources limits/reservations pair.
 type DeployResources struct {
-	Limits       *ResourceQuantities `yaml:"limits,omitempty"`
-	Reservations *ResourceQuantities `yaml:"reservations,omitempty"`
+	Limits       *ResourceQuantities   `yaml:"limits,omitempty"`
+	Reservations *ResourceReservations `yaml:"reservations,omitempty"`
 }
 
 // ResourceQuantities is a compose deploy.resources cpus/memory pair. cpus is a
@@ -244,6 +245,35 @@ type DeployResources struct {
 type ResourceQuantities struct {
 	CPUs   string `yaml:"cpus,omitempty"`
 	Memory string `yaml:"memory,omitempty"`
+}
+
+// ResourceReservations is a compose deploy.resources.reservations block: the
+// cpus/memory pair a limits block also carries, followed by the devices the
+// service reserves. Devices sit here and not on limits because the Compose
+// Specification declares them only under reservations — a device is reserved
+// for a service, never capped.
+type ResourceReservations struct {
+	ResourceQuantities `yaml:",inline"`
+	Devices            []DeviceRequest `yaml:"devices,omitempty"`
+}
+
+// DeviceRequest is one entry of a compose reservations devices list, with the
+// members the Compose Specification declares for it, in the order they are
+// emitted. A fragment's entry — a sourced compose file's included — is carried
+// through the merge as written: Count holds the scalar the fragment wrote, a
+// number or the word all, and Options carries the driver-specific options as
+// written.
+//
+// The synthesizer writes one shape: driver nvidia, a whole Count, and the gpu
+// capability. It never writes an entry without a Count, because Compose reads
+// an absent count as every GPU on the host, and never writes one without
+// capabilities, which Compose requires on every entry.
+type DeviceRequest struct {
+	Driver       string         `yaml:"driver,omitempty"`
+	Count        any            `yaml:"count,omitempty"`
+	DeviceIDs    []string       `yaml:"device_ids,omitempty"`
+	Capabilities []string       `yaml:"capabilities,omitempty"`
+	Options      map[string]any `yaml:"options,omitempty"`
 }
 
 // Config is a top-level compose config declaration with inline content. The

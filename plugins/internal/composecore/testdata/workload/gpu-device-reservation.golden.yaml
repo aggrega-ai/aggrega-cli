@@ -12,3 +12,9 @@ services:
         limits:
           cpus: "4"
           memory: "17179869184"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities:
+                - gpu

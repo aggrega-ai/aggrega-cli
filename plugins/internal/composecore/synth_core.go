@@ -455,16 +455,17 @@ func translateContainer(
 	}
 
 	// Container resource requests/limits → compose deploy.resources
-	// (reservations/limits). Honored by docker compose in non-swarm mode.
+	// (reservations/limits), and a nvidia.com/gpu count → a device entry on the
+	// reservations. Honored by docker compose in non-swarm mode.
 	deploy, err := translateComposeResources(c.Resources, containerPath+".resources", nodeCtx.NodeID, nodeCtx.SensitiveWorkload)
 	if err != nil {
 		return Service{}, nil, err
 	}
 	svc.Deploy = deploy
 
-	// Extended (vendor/domain-scoped) resource quantities such as nvidia.com/gpu
-	// have no single-host compose analog — only cpu and memory map to
-	// deploy.resources — so each authored extended key is dropped with a warning.
+	// Every other extended (vendor/domain-scoped) resource quantity — amd.com/gpu
+	// among them — has no single-host compose analog, so each such authored key
+	// is dropped with a warning.
 	diags = append(diags, extendedResourceDiagnostics(c.Resources)...)
 
 	// envFrom (bulk env from a ConfigMap or Secret object) has no compose
@@ -639,16 +640,17 @@ func translateContainer(
 
 // extendedResourceDiagnostics returns one unsupported-field warning per distinct
 // extended (vendor/domain-scoped) resource key authored on the container's
-// requests or limits — keys such as nvidia.com/gpu that have no single-host
-// compose analog (only cpu and memory map to deploy.resources). Keys are
-// reported in a deterministic order: limits in author order, then any
-// requests-only keys in author order, each key deduplicated across the two.
+// requests or limits that has no single-host compose analog — every such key
+// but nvidia.com/gpu, which translateComposeResources writes as a device
+// reservation and which is therefore not reported. Keys are reported in a
+// deterministic order: limits in author order, then any requests-only keys in
+// author order, each key deduplicated across the two.
 func extendedResourceDiagnostics(r *types.ResourceSpec) []renderctx.Diagnostic {
 	if r == nil {
 		return nil
 	}
 	var diags []renderctx.Diagnostic
-	seen := map[string]bool{}
+	seen := map[string]bool{nvidiaGPUResource: true}
 	emit := func(rl *types.ResourceList) {
 		if rl == nil {
 			return

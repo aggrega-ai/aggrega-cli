@@ -52,6 +52,25 @@ func TestTranslateComposeResources_AMarkedWorkloadQuotesNoValue(t *testing.T) {
 				"represent exactly; " + quantity.ValueWithheld},
 			kept: []string{"whole number of bytes"},
 		},
+		{
+			name:   "a GPU count compose cannot represent is refused without the value",
+			set:    func(r *types.ResourceSpec) { r.Limits.Extended.Set(nvidiaGPUResource, "1.25") },
+			quoted: []string{"1.25"},
+			want: []string{"nvidia.com/gpu limit at containers.main.resources.limits.nvidia.com/gpu is a quantity " +
+				"compose cannot represent exactly; " + quantity.ValueWithheld},
+			kept: []string{"whole number of devices"},
+		},
+		{
+			name: "a GPU request and limit that disagree are refused without either count",
+			set: func(r *types.ResourceSpec) {
+				r.Limits.Extended.Set(nvidiaGPUResource, "7")
+				r.Requests.Extended.Set(nvidiaGPUResource, "3")
+			},
+			quoted: []string{"(3 and 7)"},
+			want:   []string{"ask for different counts; " + quantity.ValueWithheld},
+			kept: []string{"containers.main.resources.requests.nvidia.com/gpu",
+				"containers.main.resources.limits.nvidia.com/gpu"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

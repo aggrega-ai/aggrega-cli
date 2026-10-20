@@ -68,13 +68,14 @@ func minimalWorkload() *types.Workload {
 	return w
 }
 
-// TestSynthesizeWorkload_GPUFieldsDegrade proves the compose unsupported-field
-// contract for the two GPU-only Workload surfaces: cpu/memory still translate to
-// deploy.resources, while extended-resource keys (nvidia.com/gpu) and
-// runtimeClassName have no compose analog and are omitted from the rendered
-// bytes. The omission is out-of-band-warned (asserted in the unsupported-field tests),
-// not silent, and never halts. This test locks the rendered bytes.
-func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
+// TestSynthesizeWorkload_NVIDIAGPUReservesADevice proves the compose rendering of
+// the two GPU Workload surfaces: a container's nvidia.com/gpu count becomes one
+// NVIDIA device entry under deploy.resources.reservations, beside the cpu/memory
+// translation, while runtimeClassName has no compose analog and is omitted from
+// the rendered bytes (its warning is asserted in the unsupported-field tests).
+// The fixture authors the count under both requests and limits, equal, which is
+// the one way the two may both be written; the golden locks the rendered bytes.
+func TestSynthesizeWorkload_NVIDIAGPUReservesADevice(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	w.RuntimeClassName = "nvidia"
@@ -93,15 +94,122 @@ func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
 	}
 	body := string(files[0].Body)
 	if strings.Contains(body, "nvidia.com/gpu") {
-		t.Errorf("extended-resource key must be omitted on compose; got:\n%s", body)
+		t.Errorf("the extended-resource key itself must not reach the compose file; got:\n%s", body)
 	}
-	if strings.Contains(body, "runtimeClassName") || strings.Contains(body, "nvidia") {
+	if strings.Contains(body, "runtimeClassName") {
 		t.Errorf("runtimeClassName must be omitted on compose; got:\n%s", body)
+	}
+	for _, want := range []string{"reservations:", "devices:", "driver: nvidia", "count: 1", "- gpu"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the device reservation is missing %q; got:\n%s", want, body)
+		}
 	}
 	if !strings.Contains(body, "cpus:") || !strings.Contains(body, "memory:") {
 		t.Errorf("cpu/memory must still translate to deploy.resources; got:\n%s", body)
 	}
-	goldenCheck(t, "gpu-fields-degrade", files[0].Body)
+	goldenCheck(t, "gpu-device-reservation", files[0].Body)
+}
+
+// TestSynthesizeWorkload_GPUDeviceCountFollowsTheRequest proves the device entry
+// carries the count the container asked for — one and two — rather than a
+// constant, and that the entry always states its count: Compose reads an entry
+// with no count as every GPU on the host. Each row reads the parsed fragment, so
+// the assertion is on the emitted structure rather than on its spelling.
+func TestSynthesizeWorkload_GPUDeviceCountFollowsTheRequest(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		limit string
+		want  int
+	}{
+		{"one GPU", "1", 1},
+		{"two GPUs", "2", 2},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			w := minimalWorkload()
+			c, _ := w.Containers.Get("main")
+			limits := &types.ResourceList{}
+			limits.Extended.Set("nvidia.com/gpu", tc.limit)
+			c.Resources = &types.ResourceSpec{Limits: limits}
+			w.Containers.Set("main", c)
+
+			files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+			if err != nil {
+				t.Fatalf("SynthesizeWorkload: %v", err)
+			}
+			var frag ComposeFile
+			if err := yaml.Unmarshal(files[0].Body, &frag); err != nil {
+				t.Fatalf("parse fragment: %v\n%s", err, files[0].Body)
+			}
+			svc := frag.Services["api"]
+			if svc.Deploy == nil || svc.Deploy.Resources == nil || svc.Deploy.Resources.Reservations == nil {
+				t.Fatalf("no reservations block; got:\n%s", files[0].Body)
+			}
+			devices := svc.Deploy.Resources.Reservations.Devices
+			if len(devices) != 1 {
+				t.Fatalf("got %d device entries, want 1:\n%s", len(devices), files[0].Body)
+			}
+			d := devices[0]
+			if d.Driver != "nvidia" {
+				t.Errorf("driver = %q, want nvidia", d.Driver)
+			}
+			if d.Count != tc.want {
+				t.Errorf("count = %#v, want %d", d.Count, tc.want)
+			}
+			if !reflect.DeepEqual(d.Capabilities, []string{"gpu"}) {
+				t.Errorf("capabilities = %v, want [gpu]", d.Capabilities)
+			}
+			if len(d.DeviceIDs) != 0 {
+				t.Errorf("device_ids = %v, want none: count and device_ids are mutually exclusive", d.DeviceIDs)
+			}
+			if svc.Deploy.Resources.Limits != nil {
+				t.Errorf("a GPU-only resources block wrote limits %+v; a device is reserved, never capped",
+					svc.Deploy.Resources.Limits)
+			}
+		})
+	}
+}
+
+// TestSynthesizeWorkload_NoGPURendersAsBefore proves the change is invisible to a
+// container that asks for no NVIDIA GPU: a count of zero, and another vendor's
+// GPU key, each render byte-identically to the same container without the key.
+// Zero is the row that matters most — written as an entry with its count left
+// out, it would reserve every GPU on the host.
+func TestSynthesizeWorkload_NoGPURendersAsBefore(t *testing.T) {
+	t.Parallel()
+	render := func(key, value string) []byte {
+		t.Helper()
+		w := minimalWorkload()
+		c, _ := w.Containers.Get("main")
+		limits := &types.ResourceList{CPU: "1", Memory: "256Mi"}
+		if key != "" {
+			limits.Extended.Set(key, value)
+		}
+		c.Resources = &types.ResourceSpec{Limits: limits}
+		w.Containers.Set("main", c)
+		files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+		if err != nil {
+			t.Fatalf("SynthesizeWorkload (%s=%s): %v", key, value, err)
+		}
+		return files[0].Body
+	}
+
+	base := render("", "")
+	if strings.Contains(string(base), "devices:") {
+		t.Fatalf("the baseline carries a device entry, so this test proves nothing:\n%s", base)
+	}
+	for _, tc := range []struct{ key, value string }{
+		{"nvidia.com/gpu", "0"},
+		{"amd.com/gpu", "1"},
+	} {
+		if got := render(tc.key, tc.value); string(got) != string(base) {
+			t.Errorf("%s=%s changed the rendered bytes\n--- without ---\n%s\n--- with ---\n%s",
+				tc.key, tc.value, base, got)
+		}
+	}
 }
 
 // TestSynthesizeWorkload_ImageRegistryAnnotation proves the compose engine honors

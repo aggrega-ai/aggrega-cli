@@ -5,6 +5,7 @@ package composecore
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -103,6 +104,162 @@ func TestComposeMemory(t *testing.T) {
 			got, ok := composeMemory(mustParse(t, c.in))
 			if ok != c.ok || got != c.want {
 				t.Errorf("composeMemory(%q) = (%q, %v), want (%q, %v)", c.in, got, ok, c.want, c.ok)
+			}
+		})
+	}
+}
+
+// TestComposeDeviceCount converts parsed GPU quantities to whole device counts.
+func TestComposeDeviceCount(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+		ok   bool
+	}{
+		{"one", "1", "1", true},
+		{"two", "2", "2", true},
+		{"zero", "0", "0", true},
+		{"a signed count", "+2", "2", true},
+		{"a milli count that is whole", "2000m", "2", true},
+		{"an exponent", "1e1", "10", true},
+
+		{"half a device", "0.5", "", false},
+		{"a fraction in milli", "500m", "", false},
+		{"one and a half", "1.5", "", false},
+		{"a negative count", "-1", "", false},
+		{"past the int64 range", "8Ei", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := composeDeviceCount(mustParse(t, c.in))
+			if ok != c.ok || got != c.want {
+				t.Errorf("composeDeviceCount(%q) = (%q, %v), want (%q, %v)", c.in, got, ok, c.want, c.ok)
+			}
+		})
+	}
+}
+
+// gpuSpec builds a resources block whose only content is the given nvidia.com/gpu
+// limit and request; an empty string leaves that side unauthored.
+func gpuSpec(limit, request string) *types.ResourceSpec {
+	r := &types.ResourceSpec{}
+	if limit != "" {
+		r.Limits = &types.ResourceList{}
+		r.Limits.Extended.Set(nvidiaGPUResource, limit)
+	}
+	if request != "" {
+		r.Requests = &types.ResourceList{}
+		r.Requests.Extended.Set(nvidiaGPUResource, request)
+	}
+	return r
+}
+
+// TestTranslateComposeResources_NVIDIAGPU proves which count the device entry is
+// written from, and that a container asking for no GPU gets no entry. Each row
+// names the authored limit and request (empty for unauthored) and the count the
+// one entry must carry, or zero for no entry and no deploy block at all.
+func TestTranslateComposeResources_NVIDIAGPU(t *testing.T) {
+	cases := []struct {
+		name           string
+		limit, request string
+		want           int64
+	}{
+		{"a limit of one", "1", "", 1},
+		{"a limit of two", "2", "", 2},
+		{"a request alone", "", "2", 2},
+		{"a request equal to the limit", "3", "3", 3},
+		{"equal counts spelled differently", "2", "2000m", 2},
+		{"a limit of zero asks for no GPU", "0", "", 0},
+		{"both zero", "0", "0", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			deploy, err := translateComposeResources(gpuSpec(c.limit, c.request), "containers.main.resources", "node", false)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if c.want == 0 {
+				if deploy != nil {
+					t.Fatalf("no GPU asked, yet a deploy block was written: %+v", deploy.Resources)
+				}
+				return
+			}
+			if deploy == nil || deploy.Resources == nil || deploy.Resources.Reservations == nil {
+				t.Fatal("expected a reservations block")
+			}
+			if deploy.Resources.Limits != nil {
+				t.Errorf("a GPU-only block wrote limits %+v", deploy.Resources.Limits)
+			}
+			res := deploy.Resources.Reservations
+			if res.CPUs != "" || res.Memory != "" {
+				t.Errorf("a GPU-only block wrote cpus/memory %+v", res.ResourceQuantities)
+			}
+			want := []DeviceRequest{{Driver: "nvidia", Count: c.want, Capabilities: []string{"gpu"}}}
+			if !reflect.DeepEqual(res.Devices, want) {
+				t.Errorf("devices = %#v, want %#v", res.Devices, want)
+			}
+		})
+	}
+
+	// The device entry joins the cpus/memory a request also carries, rather than
+	// replacing them.
+	r := gpuSpec("1", "")
+	r.Requests = &types.ResourceList{CPU: "250m", Memory: "128Mi"}
+	deploy, err := translateComposeResources(r, "containers.main.resources", "node", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	res := deploy.Resources.Reservations
+	if res.CPUs != "0.25" || res.Memory != "134217728" || len(res.Devices) != 1 {
+		t.Errorf("reservations = %+v, want cpus 0.25, memory 134217728 and one device", res)
+	}
+}
+
+// TestTranslateComposeResources_NVIDIAGPURefusals proves a GPU count the
+// translation cannot state as a whole number of devices halts, naming the
+// container's path and the key, rather than writing a guess. One fault per row;
+// the positive control is a whole count.
+func TestTranslateComposeResources_NVIDIAGPURefusals(t *testing.T) {
+	if _, err := translateComposeResources(gpuSpec("1", "1"), "containers.main.resources", "node", false); err != nil {
+		t.Fatalf("positive control: a whole count halted: %v", err)
+	}
+
+	const limitPath = "containers.main.resources.limits.nvidia.com/gpu"
+	const requestPath = "containers.main.resources.requests.nvidia.com/gpu"
+	cases := []struct {
+		name           string
+		limit, request string
+		want           []string
+	}{
+		{"a fractional limit", "0.5", "",
+			[]string{"nvidia.com/gpu limit", limitPath, `"0.5"`, "a quantity compose cannot represent exactly", "whole number of devices"}},
+		{"a milli limit", "500m", "",
+			[]string{"nvidia.com/gpu limit", limitPath, `"500m"`, "a quantity compose cannot represent exactly"}},
+		{"a negative request", "", "-1",
+			[]string{"nvidia.com/gpu request", requestPath, `"-1"`, "a quantity compose cannot represent exactly"}},
+		{"a non-numeric limit", "two", "",
+			[]string{"nvidia.com/gpu limit", limitPath, `"two"`, "is not a quantity"}},
+		{"a request and a limit that disagree", "2", "1",
+			[]string{requestPath, limitPath, "different counts (1 and 2)"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := translateComposeResources(gpuSpec(c.limit, c.request), "containers.main.resources", "node", false)
+			if err == nil {
+				t.Fatal("the faulty GPU count was written")
+			}
+			if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+				t.Errorf("expected the value-not-representable condition, got %v", err)
+			}
+			msg := err.Error()
+			for _, w := range c.want {
+				if !strings.Contains(msg, w) {
+					t.Errorf("the refusal does not say %q:\n  %s", w, msg)
+				}
+			}
+			if !strings.Contains(msg, quantityUnconvertible) {
+				t.Errorf("the refusal no longer ends with %q:\n  %s", quantityUnconvertible, msg)
 			}
 		})
 	}

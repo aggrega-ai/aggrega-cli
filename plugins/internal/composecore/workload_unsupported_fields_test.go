@@ -66,10 +66,12 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 				c.SecurityContext = &types.ContainerSecurityContext{RunAsNonRoot: ptrBool(true)}
 			})
 		}},
-		{"nvidia.com/gpu", func(w *types.Workload) {
+		// Another vendor's GPU key keeps its warning: only nvidia.com/gpu has a
+		// compose translation (TestUnsupportedField_NVIDIAGPUIsTranslatedNotReported).
+		{"amd.com/gpu", func(w *types.Workload) {
 			withMainContainer(w, func(c *types.ContainerSpec) {
 				limits := &types.ResourceList{}
-				limits.Extended.Set("nvidia.com/gpu", "1")
+				limits.Extended.Set("amd.com/gpu", "1")
 				c.Resources = &types.ResourceSpec{Limits: limits}
 			})
 		}},
@@ -225,7 +227,7 @@ func TestUnsupportedField_MultiFieldDeterministic(t *testing.T) {
 		withMainContainer(w, func(c *types.ContainerSpec) {
 			c.SecurityContext = &types.ContainerSecurityContext{RunAsNonRoot: ptrBool(true)}
 			limits := &types.ResourceList{}
-			limits.Extended.Set("nvidia.com/gpu", "1")
+			limits.Extended.Set("amd.com/gpu", "1")
 			c.Resources = &types.ResourceSpec{Limits: limits}
 		})
 		return w
@@ -246,9 +248,47 @@ func TestUnsupportedField_MultiFieldDeterministic(t *testing.T) {
 			t.Errorf("diagnostic %d differs across runs: %+v vs %+v", i, first[i], second[i])
 		}
 	}
-	// The GPU key is container-scoped and emitted before pod-level fields.
-	if first[0].SourceRef != "nvidia.com/gpu" {
-		t.Errorf("expected container-scoped nvidia.com/gpu first, got %q", first[0].SourceRef)
+	// The extended key is container-scoped and emitted before pod-level fields.
+	if first[0].SourceRef != "amd.com/gpu" {
+		t.Errorf("expected container-scoped amd.com/gpu first, got %q", first[0].SourceRef)
+	}
+}
+
+// TestUnsupportedField_NVIDIAGPUIsTranslatedNotReported proves the warning walk
+// leaves out exactly the key the translation writes. A container authoring
+// nvidia.com/gpu under both requests and limits raises nothing for it, while
+// another vendor's key authored beside it still raises its one warning — so the
+// walk is narrowed by one key, not switched off for the container.
+func TestUnsupportedField_NVIDIAGPUIsTranslatedNotReported(t *testing.T) {
+	t.Parallel()
+	w := baseDegradeWorkload()
+	withMainContainer(w, func(c *types.ContainerSpec) {
+		limits := &types.ResourceList{}
+		limits.Extended.Set("nvidia.com/gpu", "2")
+		limits.Extended.Set("amd.com/gpu", "1")
+		requests := &types.ResourceList{}
+		requests.Extended.Set("nvidia.com/gpu", "2")
+		c.Resources = &types.ResourceSpec{Requests: requests, Limits: limits}
+	})
+
+	files, diags, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth: %v", err)
+	}
+	var amd int
+	for _, d := range diags {
+		switch d.SourceRef {
+		case "nvidia.com/gpu":
+			t.Errorf("nvidia.com/gpu is translated, yet raised a diagnostic: %+v", d)
+		case "amd.com/gpu":
+			amd++
+		}
+	}
+	if amd != 1 {
+		t.Errorf("got %d amd.com/gpu diagnostics, want 1 (all: %+v)", amd, diags)
+	}
+	if !bytes.Contains(files[0].Body, []byte("driver: nvidia")) {
+		t.Errorf("the translated key wrote no device entry:\n%s", files[0].Body)
 	}
 }
 
