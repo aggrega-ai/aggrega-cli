@@ -41,9 +41,10 @@ var judgementsThatWriteNothing = map[string]string{
 	"internal/compiler/renderer:ArtifactsEntryBundleFilesStayUnderTheirKey": "judges an ArtifactLibrary bundle's " +
 		"file name at compile time; the name it composes reaches disk only through the rendered-artifact write, " +
 		"which places it with PlaceBeneath",
-	"internal/compiler/renderer:buildArtifactsProjection": "judges an ArtifactLibrary bundle's file name while " +
-		"composing the rendered set; the composed name reaches disk only through the rendered-artifact write, " +
-		"which places it with PlaceBeneath",
+	"internal/compiler/renderer:walkArtifactBlock": "judges an ArtifactLibrary bundle's file name before " +
+		"composing it under its key, for a Recipe's own artifacts and its boundary block alike; the walk hands " +
+		"the composed name to its caller and writes nothing, and the name reaches disk only as a path of the " +
+		"render's file set, which the rendered-artifact write places with PlaceBeneath",
 	"pkg/docscache:readTarEntry": "looks a page up inside a documentation bundle held in memory; the cache " +
 		"writes the bundle whole and lays no entry out",
 	"internal/mcp:bundlePageForURI": "looks a page up inside a documentation bundle held in memory",
