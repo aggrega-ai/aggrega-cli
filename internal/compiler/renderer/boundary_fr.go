@@ -685,6 +685,8 @@ func dispatchBoundaryScopeFR(
 	// it described whichever component dispatched this FR, and this render carries
 	// the values this FR's own mapping produced.
 	frNodeCtx.SensitiveValues = frValues.Sensitive
+	// So is whether those values are a mapping's output, on the same reading.
+	frNodeCtx.ValuesMapped = frValues.Mapped
 	// The copied omit entries are replaced on that reading too: they belonged to the
 	// component that dispatched this FR, and this render's source is handed the
 	// entries this FR declares, or none.

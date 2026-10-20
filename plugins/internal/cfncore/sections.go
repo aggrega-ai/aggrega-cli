@@ -5,6 +5,7 @@ package cfncore
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -30,18 +31,25 @@ const (
 	sectionTransform                = "Transform"
 	sectionResources                = "Resources"
 	sectionOutputs                  = "Outputs"
+	// The two top-level sections a CloudFormation-hosted transform adds to the
+	// template language: SAM's Globals, which the AWS::Serverless transform reads,
+	// and the Hooks section the AWS::CodeDeployBlueGreen transform reads.
+	sectionGlobals = "Globals"
+	sectionHooks   = "Hooks"
 )
 
 // topLevelSections enumerates every top-level section a CloudFormation template
-// admits, in the order the template language documents them.
+// admits, in the order the template language documents them, followed by the two
+// sections a hosted transform adds.
 //
 // It exists so the assembled stack's treatment of the sections is stated as one
 // exhaustive accounting rather than discovered section by section: every entry
-// here belongs to exactly one of the four dispositions below, and a section that
+// here belongs to exactly one of the dispositions below, and a section that
 // belonged to none would be dropped in silence — which is the failure the
-// accounting removes. The four groups are held to this list by a test, so adding a
+// accounting removes. The groups are held to this list by a test, so adding a
 // section to the list without deciding what becomes of it fails rather than
-// passing quietly.
+// passing quietly. A top-level key a fragment writes that is on no list at all is
+// reported out of band ([SectionNotices]), so it too is never dropped unsaid.
 //
 // What the list cannot check is itself: the template language is not ours, so a
 // section the language gains and nobody adds here is invisible to the test. That
@@ -59,6 +67,8 @@ var topLevelSections = []string{
 	sectionTransform,
 	sectionResources,
 	sectionOutputs,
+	sectionGlobals,
+	sectionHooks,
 }
 
 // stampedSections are the sections the assembler writes itself rather than
@@ -184,17 +194,18 @@ var alphabetUncheckedSections = []string{
 	sectionMetadata,
 }
 
-// namedSections are the sections a merge cannot fold, so the assembled stack
-// carries neither and the contributor that authored one is told out of band
-// instead.
+// namedSections are the sections the assembled stack carries from no contributor,
+// so the contributor that authored one is told out of band instead.
 //
 // A description is one string for the whole template. Two contributors give two
 // answers, neither of which is the stack's, so adopting one would publish one
 // component's description as the description of all of them — a claim no
-// contributor is in a position to make. A transform reinterprets the WHOLE
-// template, so adopting one contributor's would change how every other
-// contributor's content is read, which is a larger claim still. Neither has a
-// defensible merge, and picking one silently is worse than carrying neither.
+// contributor is in a position to make. It has no defensible merge, and picking one
+// silently is worse than carrying none.
+//
+// Hooks is read only by the AWS::CodeDeployBlueGreen transform, which the assembly
+// refuses ([transformDisposition]), so a Hooks section has nothing in the stack
+// that would read it.
 //
 // Both are reported through the shared out-of-band class for authored input a
 // render target cannot honor, which is warn-severity and never touches the
@@ -202,18 +213,42 @@ var alphabetUncheckedSections = []string{
 // listening. Warn rather than halt because a template carrying a description is
 // legitimate input — it renders correctly, minus the description — and refusing it
 // would reject a deployment that works.
-var namedSections = []string{sectionDescription, sectionTransform}
+var namedSections = []string{sectionDescription, sectionHooks}
+
+// unionedSections are the sections the assembly builds from every contributor's
+// together rather than carrying one contributor's or folding names: the Transform,
+// written as the union of every contributor's transforms in the order
+// CloudFormation documents, or refused by name where that union would change how
+// another contributor's content deploys ([AssembleStack], [transformDisposition]).
+var unionedSections = []string{sectionTransform}
+
+// transformCarriedSections are the sections the assembly carries only where the
+// transform that reads them is in the assembled stack's Transform: SAM's Globals,
+// carried when AWS::Serverless-2016-10-31 is, and refused where it would apply to
+// another contributor's serverless resources. A Globals section a node writes
+// without declaring the transform is reported out of band instead.
+var transformCarriedSections = []string{sectionGlobals}
+
+// fragmentOnlyKeys are the top-level keys a cloudformation fragment may write that
+// are not template sections: provides, which the assembly projects into the stack's
+// Outputs. They are neither carried nor reported.
+var fragmentOnlyKeys = []string{sectionProvides}
 
 // SectionNotices reports one warning per top-level section a node's fragments
-// authored that the assembled stack cannot carry — the sections whose content is
-// one statement about the whole template rather than a map of authored names
-// ([namedSections]). An empty result means the node authored none of them.
+// authored that the assembled stack does not carry for them: the named sections
+// ([namedSections]); a Globals section written by a node that declares no
+// AWS::Serverless transform, which nothing in the stack would read; and any
+// top-level key that is no section this core accounts for and no fragment-only key,
+// so nothing a node writes is dropped without being said. An empty result means
+// the node authored none of them.
+//
+// A Transform is not reported: the assembly carries it, or refuses it by name.
 //
 // One warning per section per node, however many of the node's fragments authored
 // it: the fact being reported is that this node's content did not reach the stack,
-// which is one fact per section whether it was written once or twice. Sections are
-// reported in a fixed order and fragments are read in the order supplied, so the
-// result is a function of the node's fragments alone.
+// which is one fact per section whether it was written once or twice. Named sections
+// are reported in a fixed order, then the rest in key order, and fragments are read
+// in the order supplied, so the result is a function of the node's fragments alone.
 //
 // It is raised at render rather than at assembly, where the drop actually happens,
 // because the author edits one node's Recipe and the assembly speaks for a whole
@@ -222,8 +257,8 @@ var namedSections = []string{sectionDescription, sectionTransform}
 // the merge will not carry has already reached nothing by the time the node's
 // render is complete.
 func SectionNotices(fragments [][]byte) ([]renderctx.Diagnostic, error) {
-	var diags []renderctx.Diagnostic
-	reported := make(map[string]bool, len(namedSections))
+	var docs []map[string]any
+	declaresServerless := false
 	for _, raw := range fragments {
 		frag, err := decodeToValue(raw)
 		if err != nil {
@@ -236,12 +271,40 @@ func SectionNotices(fragments [][]byte) ([]renderctx.Diagnostic, error) {
 		if !ok {
 			return nil, fmt.Errorf("cloudformation-provider: fragment is not a mapping")
 		}
-		for _, section := range namedSections {
-			if _, present := m[section]; !present || reported[section] {
-				continue
+		docs = append(docs, m)
+		names, err := fragmentTransforms(m)
+		if err == nil && slices.Contains(names, transformServerless) {
+			declaresServerless = true
+		}
+	}
+
+	var diags []renderctx.Diagnostic
+	reported := map[string]bool{}
+	report := func(section string) {
+		if reported[section] {
+			return
+		}
+		reported[section] = true
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(cloudformationTargetName, section))
+	}
+	for _, section := range namedSections {
+		for _, m := range docs {
+			if _, present := m[section]; present {
+				report(section)
 			}
-			reported[section] = true
-			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(cloudformationTargetName, section))
+		}
+	}
+	for _, m := range docs {
+		for _, key := range sortedKeys(m) {
+			switch {
+			case key == sectionGlobals:
+				if !declaresServerless {
+					report(key)
+				}
+			case slices.Contains(topLevelSections, key), slices.Contains(fragmentOnlyKeys, key):
+			default:
+				report(key)
+			}
 		}
 	}
 	return diags, nil

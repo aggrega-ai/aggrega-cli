@@ -2,9 +2,9 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package compiler_test — end-to-end proof that a CloudFormation dispatch group
-// assembles a stack template declaring every name it references, and that the two
-// top-level sections no merge can fold are reported to their author rather than
-// dropped in silence.
+// assembles a stack template declaring every name it references, that a
+// contributor's Transform is carried into the stack, and that the description no
+// merge can fold is reported to its author rather than dropped in silence.
 
 package compiler_test
 
@@ -175,25 +175,31 @@ func TestCloudFormationTemplateSections_StackDeclaresEveryNameItReferences(t *te
 }
 
 // TestCloudFormationTemplateSections_UnfoldableSectionsAreNamedNotDropped proves
-// the other half of the accounting: a template-wide description and transform stay
-// out of the emitted bytes, and the author is told about each one through the
-// out-of-band class rather than left to find out at deploy time.
+// the other half of the accounting: a template-wide description stays out of the
+// emitted bytes and its author is told through the out-of-band class rather than
+// left to find out at deploy time, while the one contributor's transform — beside
+// contributors declaring no serverless content — is carried into the stack and
+// reported to nobody.
 func TestCloudFormationTemplateSections_UnfoldableSectionsAreNamedNotDropped(t *testing.T) {
 	t.Parallel()
 	result := pipelinetest.Build(t, cfnSectionsInput("testdata/cloudformation-template-sections/release.yaml"))
 	stack, raw := findCfnStack(t, result.Artifacts, "stack")
 
-	for _, section := range []string{"Description", "Transform"} {
-		if _, present := stack[section]; present {
-			t.Errorf("the assembled stack carries a top-level %s, which no merge across contributors can decide\n--- stack ---\n%s", section, raw)
-		}
+	if _, present := stack["Description"]; present {
+		t.Errorf("the assembled stack carries a top-level Description, which no merge across contributors can decide\n--- stack ---\n%s", raw)
+	}
+	if got := stack["Transform"]; got != "AWS::LanguageExtensions" {
+		t.Errorf("the assembled stack's Transform is %#v, want the one contributor's \"AWS::LanguageExtensions\"\n--- stack ---\n%s", got, raw)
 	}
 
 	byRef := map[string]renderer.Diagnostic{}
 	for _, d := range result.Advisories {
 		byRef[d.SourceRef] = d
 	}
-	for _, section := range []string{"Description", "Transform"} {
+	if d, reported := byRef["Transform"]; reported {
+		t.Errorf("a diagnostic reports the Transform, which the stack carries; got %+v", d)
+	}
+	for _, section := range []string{"Description"} {
 		d, ok := byRef[section]
 		if !ok {
 			t.Errorf("no diagnostic names the dropped %s section; got %+v", section, result.Advisories)
@@ -265,21 +271,22 @@ func TestCloudFormationTemplateSections_Deterministic(t *testing.T) {
 }
 
 // cfnSectionsCarriedByThisFixture is the number of top-level sections the
-// template-sections fixture authors across its two components. It exists so the
-// assertion below states what it counted rather than a bare number.
-const cfnSectionsCarriedByThisFixture = 5
+// template-sections fixture authors across its two components and the stack
+// carries. It exists so the assertion below states what it counted rather than a
+// bare number.
+const cfnSectionsCarriedByThisFixture = 6
 
 // TestCloudFormationTemplateSections_EverySectionTheFixtureAuthorsIsAccountedFor
 // closes the loop between the fixture and the accounting: the fixture authors
-// seven top-level sections beyond the resources and outputs, five of which must
-// appear in the emitted stack and two of which must appear as diagnostics. Nothing
+// seven top-level sections beyond the resources and outputs, six of which must
+// appear in the emitted stack and one of which must appear as a diagnostic. Nothing
 // it authors may go unreported and unemitted.
 func TestCloudFormationTemplateSections_EverySectionTheFixtureAuthorsIsAccountedFor(t *testing.T) {
 	t.Parallel()
 	result := pipelinetest.Build(t, cfnSectionsInput("testdata/cloudformation-template-sections/release.yaml"))
 	stack, raw := findCfnStack(t, result.Artifacts, "stack")
 
-	authoredAndCarried := []string{"Conditions", "Mappings", "Metadata", "Parameters", "Rules"}
+	authoredAndCarried := []string{"Conditions", "Mappings", "Metadata", "Parameters", "Rules", "Transform"}
 	if len(authoredAndCarried) != cfnSectionsCarriedByThisFixture {
 		t.Fatalf("the fixture's carried-section list has %d entries, want %d", len(authoredAndCarried), cfnSectionsCarriedByThisFixture)
 	}
@@ -293,7 +300,7 @@ func TestCloudFormationTemplateSections_EverySectionTheFixtureAuthorsIsAccounted
 		t.Errorf("the fixture authors %v and the assembled stack carries none of them\n--- stack ---\n%s", missing, raw)
 	}
 
-	authoredAndNamed := []string{"Description", "Transform"}
+	authoredAndNamed := []string{"Description"}
 	reported := map[string]bool{}
 	for _, d := range result.Advisories {
 		reported[d.SourceRef] = true

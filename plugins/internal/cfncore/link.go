@@ -144,13 +144,13 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	ops := make([]frp.JSONPatchOp, 0)
 	for _, outputKey := range injectedOutputKeys(edge) {
 		sentinel := rendercore.CrossBoundaryLinkSentinel(edge.Source.Node, edge.Target.Node, edge.Socket, outputKey)
-		path, whole, interpolated := findSentinelPath(doc, sentinel)
-		if !whole {
-			if interpolated {
-				return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
-					cerrors.TranslationError, cerrors.SourceLocation{},
-					fmt.Sprintf("cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key %q on socket %q", outputKey, edge.Socket))
-			}
+		paths, interpolated := findSentinelPaths(doc, sentinel)
+		if interpolated {
+			return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+				cerrors.TranslationError, cerrors.SourceLocation{},
+				fmt.Sprintf("cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key %q on socket %q", outputKey, edge.Socket))
+		}
+		if len(paths) == 0 {
 			// The consumer did not render this injected value; nothing to wire.
 			continue
 		}
@@ -165,13 +165,15 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 		} else {
 			value = map[string]any{"Fn::ImportValue": handle[handleExportNamePrefix+outputKey]}
 		}
-		ops = append(ops, frp.JSONPatchOp{
-			Scope: frp.DocumentScopeOwn,
-			Key:   StackTemplateName,
-			Op:    "replace",
-			Path:  path,
-			Value: value,
-		})
+		for _, path := range paths {
+			ops = append(ops, frp.JSONPatchOp{
+				Scope: frp.DocumentScopeOwn,
+				Key:   StackTemplateName,
+				Op:    "replace",
+				Path:  path,
+				Value: value,
+			})
+		}
 	}
 	out := rendercore.LinkResolveOutput{}
 	if len(ops) > 0 {
@@ -272,30 +274,25 @@ func authoredExportNames(stack []byte) []authoredExport {
 	return found
 }
 
-// findSentinelPath walks a decoded JSON document for the placeholder token and
-// returns the RFC 6901 pointer to the first whole-scalar occurrence (map keys
-// walked in sorted order so the choice is deterministic), whether such a
-// whole-scalar occurrence exists, and whether the token appears only inside a
-// larger string. A whole-scalar occurrence is the replaceable target; an
-// interpolated-only occurrence cannot carry an intrinsic and the caller halts.
-func findSentinelPath(doc any, sentinel string) (path string, whole bool, interpolated bool) {
+// findSentinelPaths walks a decoded JSON document for the placeholder token and
+// returns the RFC 6901 pointer to every whole-scalar occurrence, in walk order (map
+// keys walked in sorted order, list items in their own, so the result is
+// deterministic), and whether the token appears inside a larger string anywhere. A
+// whole-scalar occurrence is a replaceable target, and every one is replaced: a
+// value a sourced template's parameter was bound to lands wherever the template
+// referenced the parameter, which can be several places. An interpolated
+// occurrence cannot carry an intrinsic, and the caller halts on it.
+func findSentinelPaths(doc any, sentinel string) (paths []string, interpolated bool) {
 	var walk func(node any, ptr string)
-	found := false
-	sawInterpolated := false
-	foundPath := ""
 	walk = func(node any, ptr string) {
-		if found {
-			return
-		}
 		switch v := node.(type) {
 		case string:
 			if v == sentinel {
-				found = true
-				foundPath = ptr
+				paths = append(paths, ptr)
 				return
 			}
 			if strings.Contains(v, sentinel) {
-				sawInterpolated = true
+				interpolated = true
 			}
 		case map[string]any:
 			keys := make([]string, 0, len(v))
@@ -305,21 +302,15 @@ func findSentinelPath(doc any, sentinel string) (path string, whole bool, interp
 			sort.Strings(keys)
 			for _, k := range keys {
 				walk(v[k], ptr+"/"+rfc6901Escape(k))
-				if found {
-					return
-				}
 			}
 		case []any:
 			for i, item := range v {
 				walk(item, ptr+"/"+strconv.Itoa(i))
-				if found {
-					return
-				}
 			}
 		}
 	}
 	walk(doc, "")
-	return foundPath, found, sawInterpolated
+	return paths, interpolated
 }
 
 // rfc6901Escape escapes a JSON Pointer reference token per RFC 6901: '~' becomes

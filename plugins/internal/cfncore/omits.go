@@ -263,8 +263,9 @@ type resourceReference struct {
 // read like any other value. The Conditions, Mappings, Parameters and Rules sections
 // cannot name a resource, and the template-level Metadata section is data
 // CloudFormation does not process, so none of them is read. A Ref or a Fn::GetAtt
-// whose logical ID is itself written as an intrinsic function names no resource
-// this check can read, and is not reported.
+// whose logical ID is itself written as an intrinsic function — valid only under
+// the AWS::LanguageExtensions transform — names no resource this check can read
+// before that transform runs, and is not reported.
 //
 // A resource another template of the same source still declares under the
 // left-out logical ID is still declared, so a reference to it is not reported; nor
@@ -402,46 +403,13 @@ func getAttLogicalID(arg any) (string, bool) {
 // whose whole text the list form's variable map does not name, as the text before
 // its first dot. A variable written ${!…} is literal text and names nothing.
 func subLogicalIDs(arg any) []string {
-	var text string
-	mapped := map[string]any{}
-	switch a := arg.(type) {
-	case string:
-		text = a
-	case []any:
-		if len(a) == 0 {
-			return nil
-		}
-		s, ok := a[0].(string)
-		if !ok {
-			return nil
-		}
-		text = s
-		if len(a) > 1 {
-			if vars, ok := a[1].(map[string]any); ok {
-				mapped = vars
-			}
-		}
-	default:
-		return nil
-	}
-
+	// The string and the variable map are read by the one reading the parameter
+	// binding uses, so a variable the binding writes into the map and a variable
+	// this check reads out of it are the same variable.
+	text, mapped := subParts(arg)
 	var ids []string
 	seen := map[string]bool{}
-	for rest := text; ; {
-		open := strings.Index(rest, "${")
-		if open < 0 {
-			return ids
-		}
-		rest = rest[open+2:]
-		end := strings.IndexByte(rest, '}')
-		if end < 0 {
-			return ids
-		}
-		variable := rest[:end]
-		rest = rest[end+1:]
-		if strings.HasPrefix(variable, "!") {
-			continue
-		}
+	for _, variable := range subVariables(text) {
 		if _, named := mapped[variable]; named {
 			continue
 		}
@@ -452,6 +420,7 @@ func subLogicalIDs(arg any) []string {
 		seen[id] = true
 		ids = append(ids, id)
 	}
+	return ids
 }
 
 // appendPath returns a path one segment deeper, never sharing the caller's backing

@@ -121,6 +121,39 @@ func TestLinkResolveSameAccountImportValue(t *testing.T) {
 	}
 }
 
+// TestLinkResolveReplacesEveryOccurrence proves the resolver wires every place a
+// consumer renders the placeholder: a value bound to a sourced template's parameter
+// lands wherever the template referenced the parameter, so one injected key can
+// reach the stack more than once, and each occurrence gets its own replace.
+func TestLinkResolveReplacesEveryOccurrence(t *testing.T) {
+	edge := testLinkEdge(nil, nil)
+	pub, err := LinkPublish(edge, nil)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	sentinel := rendercore.CrossBoundaryLinkSentinel("api", "orders-db", "database", "host")
+	stack := []byte(`{"Resources":{"Api":{"Properties":{"Environment":{"DB_HOST":"` + sentinel + `"},"Tags":[{"Key":"db","Value":"` + sentinel + `"}]}}}}`)
+
+	out, err := LinkResolve(edge, pub.Handle, []rendercore.RenderedFile{{Path: StackTemplateName, Content: stack}})
+	if err != nil {
+		t.Fatalf("LinkResolve: %v", err)
+	}
+	if len(out.Patches) != 1 {
+		t.Fatalf("want one patch, got %+v", out.Patches)
+	}
+	var paths []string
+	for _, op := range out.Patches[0].Ops {
+		if op.Op != "replace" {
+			t.Errorf("op %q at %q, want replace", op.Op, op.Path)
+		}
+		paths = append(paths, op.Path)
+	}
+	want := []string{"/Resources/Api/Properties/Environment/DB_HOST", "/Resources/Api/Properties/Tags/0/Value"}
+	if strings.Join(paths, " ") != strings.Join(want, " ") {
+		t.Errorf("replaced %v, want every occurrence %v", paths, want)
+	}
+}
+
 func TestLinkResolveCrossAccountGetStackOutput(t *testing.T) {
 	ann := map[string]string{
 		annotationAWSAccount:       "222222222222",

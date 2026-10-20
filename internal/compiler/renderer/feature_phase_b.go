@@ -259,6 +259,11 @@ type FeatureValues struct {
 	// own values pass records for the same fact. False where no mapping ran.
 	Sensitive bool
 
+	// Mapped reports that Resolved is the output of the FeatureRecipe's values
+	// mapping — the fact the base Recipe's own values pass records as its
+	// ValuesMapped. False where no mapping ran.
+	Mapped bool
+
 	// Omits are the FeatureRecipe's omit entries as the same evaluation resolved
 	// them, against the same context: the entries this attachment's source render
 	// hands its provider, in place of whatever the context it renders with carried
@@ -325,7 +330,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{}, cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
-	return FeatureValues{Resolved: values, Sensitive: templateReadsWithheld(tmplText, withheld), Omits: omits}, nil
+	return FeatureValues{Resolved: values, Sensitive: templateReadsWithheld(tmplText, withheld), Mapped: true, Omits: omits}, nil
 }
 
 // featureRecipeDeclaredSensitivity assembles the sensitivity declarations one

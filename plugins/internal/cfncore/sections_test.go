@@ -38,6 +38,8 @@ func TestTopLevelSectionsAreAccountedFor(t *testing.T) {
 		{"merged", mergedSections},
 		{"carried", carriedSections},
 		{"named", namedSections},
+		{"unioned", unionedSections},
+		{"carried with its transform", transformCarriedSections},
 	} {
 		for _, section := range group.sections {
 			disposition[section] = append(disposition[section], group.name)
@@ -145,13 +147,15 @@ Outputs:
 }
 
 // TestAssembleStackDropsTheSectionsNoMergeCanFold pins the other half: a fragment
-// declaring a template-wide description and transform assembles without either,
-// because neither has an answer a merge could give.
+// declaring a template-wide description, and a Hooks section no carried transform
+// reads, assembles without either.
 func TestAssembleStackDropsTheSectionsNoMergeCanFold(t *testing.T) {
 	t.Parallel()
 	fragment := []byte(`
 Description: The application data store.
-Transform: AWS::LanguageExtensions
+Hooks:
+  BlueGreen:
+    Type: AWS::CodeDeploy::BlueGreen
 Resources:
   StoreBucket:
     Type: AWS::S3::Bucket
@@ -293,14 +297,18 @@ Resources:
 }
 
 // TestSectionNoticesNamesTheSectionsNoMergeCanFold proves the out-of-band report:
-// a node authoring a description and a transform gets one warn-severity diagnostic
-// per section, under the shared unsupported-input code, naming the section as the
-// author wrote it.
+// a node authoring a description and a Hooks section gets one warn-severity
+// diagnostic per section, under the shared unsupported-input code, naming the
+// section as the author wrote it. Its Transform raises nothing: the assembly carries
+// it or refuses it by name.
 func TestSectionNoticesNamesTheSectionsNoMergeCanFold(t *testing.T) {
 	t.Parallel()
 	fragment := []byte(`
 Description: The application data store.
 Transform: AWS::LanguageExtensions
+Hooks:
+  BlueGreen:
+    Type: AWS::CodeDeploy::BlueGreen
 Resources:
   StoreBucket:
     Type: AWS::S3::Bucket

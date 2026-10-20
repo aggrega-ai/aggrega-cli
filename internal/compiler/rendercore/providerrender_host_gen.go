@@ -37,7 +37,7 @@ type RenderNodeInput struct {
 	Omits []OmitEntry `json:"omits,omitempty" yaml:"omits,omitempty" cbor:"omits,omitempty"`
 }
 
-// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, the sensitivity marking over its rendered keys and over the values as a whole, outbound uses edges, boundary path, sync wave, Recipe identity, component-id override, derived-name basis, and build provenance. The identity and the derived-name basis are two carries because they answer two questions — what a resource belongs to, and what an author's own source renders against — and a Feature attachment delivering source its author wrote is where the two answers differ. Source-file content is not carried here; it travels separately in the source projection. Every key set here has a fixed order — features and uses in author order, values and the sensitivity marking in sorted key order — so the wire payload is byte-identical across runs of identical input.
+// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, whether a values mapping produced those values, feature attachments, the sensitivity marking over its rendered keys and over the values as a whole, outbound uses edges, boundary path, sync wave, Recipe identity, component-id override, derived-name basis, and build provenance. The identity and the derived-name basis are two carries because they answer two questions — what a resource belongs to, and what an author's own source renders against — and a Feature attachment delivering source its author wrote is where the two answers differ. Source-file content is not carried here; it travels separately in the source projection. Every key set here has a fixed order — features and uses in author order, values and the sensitivity marking in sorted key order — so the wire payload is byte-identical across runs of identical input.
 type IRNodeProjection struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -53,6 +53,8 @@ type IRNodeProjection struct {
 	SensitiveRenderedKeys map[string]string `json:"sensitive_rendered_keys,omitempty" yaml:"sensitive_rendered_keys,omitempty" cbor:"sensitive_rendered_keys,omitempty"`
 	// SensitiveValues True when the values this payload carries were produced by a template that reads a value an author declared sensitive, or a value traced to one: a Recipe's or a FeatureRecipe's valuesMapping, a single template whose output keys and values are its own invention, so no key of that output can be traced back to the datum it came from and the whole map is marked instead. It is read from the template's own references against the declarations — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from a value's content or a key's name. A guest composing text a person reads, a refusal or a warning, keeps every value of the node's values out of that text when this is true, and keeps out the value under any key sensitive_rendered_keys names whether or not it is: the two compose, one naming the keys whose identity is recovered exactly and this one covering the map where none can be. Absent when no such template read such a value, which includes values that are the declared leaves themselves, marked per key in sensitive_rendered_keys instead, and absent on a payload carrying no values. Absence never states that no value is sensitive.
 	SensitiveValues bool `json:"sensitive_values,omitempty" yaml:"sensitive_values,omitempty" cbor:"sensitive_values,omitempty"`
+	// ValuesMapped True when the values this payload carries are the output of the bound Recipe's or FeatureRecipe's valuesMapping, rather than the node's values handed on as the author wrote them. A guest that binds values to inputs its source declares — a template's parameters, a module's arguments — reads this to bind only values a mapping produced for that source, and to leave values written for something else, such as the Recipe's artifacts, unread. It records how the values were produced and is never derived from a key's name or a value's content. Absent where no valuesMapping ran, and on a payload carrying no values.
+	ValuesMapped bool `json:"values_mapped,omitempty" yaml:"values_mapped,omitempty" cbor:"values_mapped,omitempty"`
 	// Uses Declared and deliberately withheld: the host never populates this, so the map is absent from every render payload. An outbound edge is consumed before dispatch — the edge's published values are rehydrated into the node's own inject pipe, which the Recipe has already evaluated into the values and workload the guest receives — and a guest assembling a boundary receives the edge list on its own input instead. Were it populated it would key the node's outbound uses edges by socket alias, each carrying that socket's ordered target node ids in author order.
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty" cbor:"uses,omitempty"`
 	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
@@ -794,6 +796,18 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.ValuesMapped != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"values_mapped\":")
+		if t.ValuesMapped {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	if !t.Uses.IsZero() {
 		if !first {
 			buf.WriteByte(',')
@@ -968,6 +982,12 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 			} else {
 				t.SensitiveValues = v
 			}
+		case "values_mapped":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.ValuesMapped = v
+			}
 		case "uses":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
@@ -1060,7 +1080,7 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *IRNodeProjection) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "sensitive_values", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "sensitive_values", "values_mapped", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -6141,6 +6161,9 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 	if len(t.OutputLabels) != 0 {
 		n++
 	}
+	if t.ValuesMapped != false {
+		n++
+	}
 	if t.RecipeVersion != "" {
 		n++
 	}
@@ -6232,6 +6255,10 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 				dst = appendCBORTextString(dst, mv)
 			}
 		}
+	}
+	if t.ValuesMapped != false {
+		dst = appendCBORTextString(dst, "values_mapped")
+		dst = appendCBORBool(dst, t.ValuesMapped)
 	}
 	if t.RecipeVersion != "" {
 		dst = appendCBORTextString(dst, "recipe_version")
@@ -6390,6 +6417,12 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.SensitiveValues = v
 			}
+		case "values_mapped":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.ValuesMapped = v
+			}
 		case "uses":
 			{
 				mn, err := dec.readArrayHeader()
@@ -6505,7 +6538,7 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRNodeProjection) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "sensitive_values", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "sensitive_values", "values_mapped", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "derived_name_basis", "output_labels", "provenance"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

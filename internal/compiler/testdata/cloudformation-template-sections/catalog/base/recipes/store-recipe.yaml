@@ -6,10 +6,12 @@ metadata:
 spec:
   capability: cloudformation
   implements: core/store
-  # A template declaring the two sections a merge cannot fold — a template-wide
-  # Description and a template-wide Transform — alongside a Metadata block, which
-  # is name-keyed and folds like any other. The build must carry the Metadata and
-  # name the other two out of band rather than adopt one contributor's answer.
+  # A template declaring a template-wide Description, which no merge can fold, and
+  # a template-wide Transform, which the stack builds from every contributor's,
+  # alongside a Metadata block, which is name-keyed and folds like any other. The
+  # build must carry the Metadata and the Transform — no other contributor declares
+  # serverless content for AWS::LanguageExtensions to change — and name the
+  # Description out of band rather than adopt one contributor's answer.
   artifacts:
     template.yaml: |
       Description: The application data store and the policy that fronts it.

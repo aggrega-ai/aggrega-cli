@@ -206,9 +206,10 @@ func SensitiveRenderedKeys(declared DeclaredSensitivity, values types.OrderedMap
 // carrying neither — an artifacts placement — therefore recovers no rendered key
 // without a branch of its own having to say so.
 //
-// The marking over the values as a whole travels only where values do: it is a
-// statement about the map this projection carries, so a shape that carries none
-// carries no such statement either, whatever the context holds.
+// The marking over the values as a whole, and whether a values mapping produced
+// them, travel only where values do: each is a statement about the map this
+// projection carries, so a shape that carries none carries no such statement
+// either, whatever the context holds.
 //
 // Type, resolved recipe, and uses edges stay unset, each for its own reason. The
 // component type is opaque metadata rather than a behavior switch, so carrying it
@@ -226,6 +227,7 @@ func NodeProjection(nodeCtx NodeRenderContext, values types.OrderedMap[any], w *
 		Features:              nodeCtx.Attachments,
 		SensitiveRenderedKeys: SensitiveRenderedKeys(nodeCtx.DeclaredSensitivity, values, w),
 		SensitiveValues:       nodeCtx.SensitiveValues && values.Len() > 0,
+		ValuesMapped:          nodeCtx.ValuesMapped && values.Len() > 0,
 		BoundaryPath:          nodeCtx.BoundaryPath,
 		SyncWave:              nodeCtx.SyncWave,
 		RecipeName:            nodeCtx.RecipeName,

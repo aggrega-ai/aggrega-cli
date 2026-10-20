@@ -25,6 +25,18 @@
 // synthesizes no workloads, so a workload projection is an orchestrator dispatch
 // error that halts loudly.
 //
+// A sourced template takes values through the parameters it declares. Where the
+// node's values are the output of the Recipe's values mapping, each key binds the
+// parameter it names in every template declaring it: a Ref to the parameter
+// becomes the value, an Fn::Sub naming it receives it through its variable map, and
+// the parameter leaves the template. A value that is wholly one short-form
+// intrinsic is read as that intrinsic, a dynamic reference and a cross-stack
+// placeholder stay whole for CloudFormation and the link pass to resolve, and a
+// literal is converted as CloudFormation converts it at deploy and checked against
+// the parameter's constraints. A key naming no parameter halts, and so does a
+// literal that would write secret material into a template. Values the node carries
+// for any other reason are left unread.
+//
 // A sourced render then leaves out every resource the node's omit entries name by
 // its Type and its logical ID, across every template the source carries, reports
 // how many resources each entry left out, and halts where a remaining template
@@ -55,14 +67,15 @@
 // lives in the cfncore package the guest calls, so the Wasm host stays agnostic to
 // CloudFormation semantics.
 //
-// Two top-level sections state something about a whole template rather than
-// keying content by names an author chose — a template-wide description and a
-// template-wide transform — so a merge across contributors has no defensible
-// answer for either: two descriptions are two answers to one question, and
-// adopting one contributor's transform would change how every other
-// contributor's content is read. render_node reports each one a node authored as
-// a warn-severity diagnostic naming the node and the section, and the assembled
-// bytes are the same whether or not anything is listening.
+// The assembled stack's Transform is the union of every contributor's, in
+// CloudFormation's documented order, and is refused by name where carrying it would
+// change how another contributor's content deploys; SAM's Globals travel with the
+// transform that reads them. A template-wide description states something about
+// a whole template rather than keying content by names an author chose, so a merge
+// across contributors has no defensible answer for it: render_node reports one a
+// node authored as a warn-severity diagnostic naming the node and the section, as
+// it does any top-level section the stack does not carry, and the assembled bytes
+// are the same whether or not anything is listening.
 //
 // A logical id is unique within one template while several nodes assemble into
 // one stack, so render_node returns the names each node's fragments will be
@@ -328,6 +341,19 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}
+		// The template's declared parameters take the values the Recipe's values
+		// mapping produced, before anything below reads the templates, so the omit
+		// entries' reference check, the provenance stamp and the declared names all
+		// read the bound templates. Values a mapping did not produce are left unread.
+		normalized, err = cfncore.BindSourced(normalized, in.SourceListing.RootIsDir, cfncore.BindInput{
+			Values:          in.Node.Values,
+			Mapped:          in.Node.ValuesMapped,
+			SensitiveKeys:   in.Node.SensitiveRenderedKeys,
+			SensitiveValues: in.Node.SensitiveValues,
+		}, in.Node.ID)
+		if err != nil {
+			return rendercore.RenderNodeOutput{}, err
+		}
 		nodeCtx := nodeCtxFromInput(in)
 		// The resources the node's omit entries name leave every template here,
 		// before anything below reads them, so a left-out resource is neither
@@ -436,7 +462,8 @@ func validateNodeOutput() (rendercore.ValidateNodeOutput, error) {
 //
 // It exists for the sourced path, where the payload carries the node's provenance
 // rather than the per-entry halves an artifacts projection computes per entry.
-// CloudFormation reads no values, annotations or source through this context: it
+// CloudFormation reads no values, annotations or source through this context — a
+// sourced template's parameters read the node's values from the input itself: it
 // carries what the shared provenance builders read, so the set a sourced template
 // is stamped with is the set the host computes for the same node, and the omit
 // entries the input carries, so a sourced render leaves out what they name; only a

@@ -1913,28 +1913,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// after FR injectMapping rewrites.
 		state.capture(trace.PassPhaseA, "", tmplCtx)
 
-		// Phase B.1 — valuesMapping → state.ResolvedValues.
-		if err := phaseB1(tmplCtx, state); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
-		}
-		values := state.ResolvedValues
-
-		// Ghost Infrastructure: authored values, infra and per-connection uses
-		// keys no template the Recipe declares ever reads, so an author notices a
-		// knob nothing consumes. See unreadValueWarnings for what the reading
-		// covers.
-		//
-		// The AUTHORED document is what this reads, which is why it goes back to
-		// the lookup rather than using the local copy above. The reading asks
-		// which keys the Recipe's templates reference, and a source template has
-		// by this point been replaced by the value it produced — so the local copy
-		// no longer carries the reference, and a reading given it would report a
-		// key the source coordinate consumes as read by nothing.
-		result.Warnings = append(result.Warnings,
-			unreadValueWarnings(nodeID, nodeRecipes[nodeID], tmplCtx.Values, tmplCtx.Infra, tmplCtx.Context.Uses)...)
-
-		hasWorkload := recipeWorkloadDeclared(recipe)
-
 		// Resolve engine for this node's provider via factory. The factory
 		// receives the full binding (version pin included) so it can resolve the
 		// pinned provider-rendering plugin; every other consumer below keys on the
@@ -1970,11 +1948,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Cross-boundary link placeholder stamp. For a consumer whose provider
 		// links across boundaries, overwrite each cross-boundary edge's injected
-		// value with a deterministic placeholder now — before the artifacts render
-		// consumes the inject pipe below — so the placeholder is what renders into
-		// the consuming output. The post-assembly link pass replaces it there with
-		// the provider-native cross-reference. Inert (no mutation) for every
-		// non-linking provider and every edge that does not cross a boundary.
+		// value with a deterministic placeholder now — before the values mapping
+		// below reads the inject pipe, and before the artifacts render consumes it
+		// — so the placeholder is what reaches the consuming output by either
+		// route: a values mapping that hands the value to a sourced template's
+		// parameter, or an artifact that renders it in place. The post-assembly
+		// link pass replaces it there with the provider-native cross-reference.
+		// Inert (no mutation) for every non-linking provider and every edge that
+		// does not cross a boundary, so a build holding no such edge evaluates its
+		// values mappings against exactly the pipe it did before.
 		stampRecipeName := ""
 		if recipe != nil {
 			stampRecipeName = recipe.Metadata.Name
@@ -1982,6 +1964,28 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := stampCrossBoundaryLinkSentinels(tmplCtx, nodeID, providerName, stampRecipeName, engine, node, graph, nodeRecipes, input, boundaryDirEvals, perBoundaryAnnotations); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("cross-boundary link stamp node %q", nodeID))
 		}
+
+		// Phase B.1 — valuesMapping → state.ResolvedValues.
+		if err := phaseB1(tmplCtx, state); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+		}
+		values := state.ResolvedValues
+
+		// Ghost Infrastructure: authored values, infra and per-connection uses
+		// keys no template the Recipe declares ever reads, so an author notices a
+		// knob nothing consumes. See unreadValueWarnings for what the reading
+		// covers.
+		//
+		// The AUTHORED document is what this reads, which is why it goes back to
+		// the lookup rather than using the local copy above. The reading asks
+		// which keys the Recipe's templates reference, and a source template has
+		// by this point been replaced by the value it produced — so the local copy
+		// no longer carries the reference, and a reading given it would report a
+		// key the source coordinate consumes as read by nothing.
+		result.Warnings = append(result.Warnings,
+			unreadValueWarnings(nodeID, nodeRecipes[nodeID], tmplCtx.Values, tmplCtx.Infra, tmplCtx.Context.Uses)...)
+
+		hasWorkload := recipeWorkloadDeclared(recipe)
 
 		// Per-node engine render — the source-based render. Output files
 		// are tagged EmitOriginSource and accumulated on the state for
@@ -2022,6 +2026,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// recorded it. It travels beside the declarations rather than inside them
 		// because it is read from a template, which a declaration set never is.
 		nodeCtx.SensitiveValues = state.SensitiveValues
+		// Whether those values are the output of the Recipe's values mapping, as the
+		// same pass recorded it, so a guest binding values to its source's own inputs
+		// binds only values the Recipe mapped for that source.
+		nodeCtx.ValuesMapped = state.ValuesMapped
 		// The omit entries the values pass resolved, which only this node's source
 		// render reads.
 		nodeCtx.Omits = state.Omits

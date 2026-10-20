@@ -66,10 +66,17 @@
 // is written out as one list ([topLevelSections]) so a section cannot be left
 // undecided. The format version is stamped; the resources and outputs are folded
 // under names the merge derives or reads verbatim; five name-keyed sections are
-// carried under exactly the names their authors wrote ([carriedSections]); and the
-// two whose content is one statement about the whole template are carried by
-// neither contributor and reported out of band instead ([namedSections],
-// [SectionNotices]).
+// carried under exactly the names their authors wrote ([carriedSections]); the
+// Transform is the union of every contributor's, in CloudFormation's documented
+// order, or refused by name where it would change how another contributor's content
+// deploys ([unionedSections], [assembleTransform]); SAM's Globals travel with the
+// transform that reads them ([transformCarriedSections]); and the description, and
+// a Hooks section no carried transform reads, are carried by no contributor and
+// reported out of band instead ([namedSections], [SectionNotices]).
+//
+// A sourced template takes values through the parameters it declares: where a
+// values mapping produced the node's values, each binds the parameter it names
+// before anything else reads the template ([BindSourced]).
 //
 // The core carries no build constraint so it compiles for both the wasip1 guest
 // and the host test binary: the guest's exports call into it, and its behavior
@@ -87,6 +94,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
@@ -262,6 +270,13 @@ func ValidateSourced(files []SourcedFile, rootIsDir bool) []renderctx.Diagnostic
 	return diags
 }
 
+// intrinsicsMu serializes every call into the intrinsics package. Its YAML
+// processing registers its tag handlers into a package-level map on every call and
+// reads that map while decoding, so two concurrent calls race on it and the runtime
+// aborts the process. This is the package's only call into it, so holding the lock
+// here makes every caller safe, whatever goroutine it runs on.
+var intrinsicsMu sync.Mutex
+
 // normalizeTemplateBytes converts one CloudFormation template's YAML or JSON bytes to
 // pure-JSON long-form intrinsics without evaluating any intrinsic: short-form tags
 // expand to their long-form object spellings and the document re-emits as sorted-key
@@ -269,6 +284,8 @@ func ValidateSourced(files []SourcedFile, rootIsDir bool) []renderctx.Diagnostic
 // their long-form pointer objects, never resolved, so the conversion is
 // ahead-of-time-pure and deterministic across runs.
 func normalizeTemplateBytes(content []byte) ([]byte, error) {
+	intrinsicsMu.Lock()
+	defer intrinsicsMu.Unlock()
 	out, err := intrinsics.ProcessYAML(content, &intrinsics.ProcessorOptions{NoProcess: true})
 	if err != nil {
 		return nil, err
@@ -313,9 +330,11 @@ func isTemplateFile(path string) bool {
 // across contributors by the same rule the resource and output spaces use — see
 // [carriedSections]. A section no contributor declared adds no key, so a dispatch
 // group declaring none of them assembles the bytes it assembled before any of them
-// were carried. A fragment's Description and Transform are carried by neither
-// contributor and reported out of band at render instead ([namedSections]), and the
-// format version is stamped rather than read from any contributor.
+// were carried. The Transform is built from every contributor's ([assembleTransform]),
+// and SAM's Globals travel with it; a group whose contributors declare no
+// Transform carries neither. A fragment's Description is carried by no contributor
+// and reported out of band at render instead ([namedSections]), and the format
+// version is stamped rather than read from any contributor.
 //
 // Where the contributing nodes carry more than one deployment wave, the merge also
 // records that ordering as DependsOn between the assembled stack's resources — see
@@ -345,6 +364,9 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	}
 	var mint outputNameLedger
 	sets := make([]fragmentClaimSet, 0, len(nodes))
+	// What each contributor brings to the stack's Transform, read from the same
+	// decoded fragments the claims are, one contributor per node.
+	transforms := make([]*transformContributor, 0, len(nodes))
 
 	for _, node := range nodes {
 		// The identity this contributor's names are built from, which is the identity
@@ -352,6 +374,8 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 		// use, so the names built here and the identity a refusal reports cannot come
 		// from two readings.
 		identity := ContributorNameIdentity(node)
+		contributor := &transformContributor{node: identity}
+		transforms = append(transforms, contributor)
 		for _, raw := range node.Files {
 			frag, err := decodeToValue(raw)
 			if err != nil {
@@ -366,11 +390,35 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 				return nil, err
 			}
 			sets = append(sets, fragmentClaimSet{nodeID: identity, wave: node.SyncWave, claim: claim})
+			if err := contributor.addFragment(m); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	if err := mint.err(); err != nil {
 		return nil, err
+	}
+
+	transform, carryGlobals, err := assembleTransform(transforms)
+	if err != nil {
+		return nil, err
+	}
+	// SAM's Globals travel only with the transform that reads them, and only from a
+	// contributor that declares it; the disposition above has already refused them
+	// where they would reach another contributor's serverless resources.
+	globals := newAssembledSpace(sectionGlobals)
+	if carryGlobals {
+		for _, c := range transforms {
+			if !slices.Contains(c.names, transformServerless) {
+				continue
+			}
+			for _, e := range c.globals {
+				if err := globals.insert(c.node, e); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	resources := newAssembledSpace(KeySpaceResourceLogicalIDs)
@@ -430,6 +478,14 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	}
 	if len(outputs.entries) > 0 {
 		stack[sectionOutputs] = outputs.entries
+	}
+	// A stack whose contributors declare no Transform carries none, and so assembles
+	// the bytes it assembled before any transform was carried.
+	if transform != nil {
+		stack[sectionTransform] = transform
+	}
+	if len(globals.entries) > 0 {
+		stack[sectionGlobals] = globals.entries
 	}
 
 	out, err := json.MarshalIndent(stack, "", "  ")

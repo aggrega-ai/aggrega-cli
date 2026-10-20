@@ -55,6 +55,14 @@ type NodeRenderContext struct {
 	// claims nothing either, and it never reaches an emitted byte — only the text a
 	// guest composes when something fails.
 	SensitiveValues bool
+	// ValuesMapped reports that the values this node's render carries are the output
+	// of the bound Recipe's (or FeatureRecipe's) values mapping, rather than the values
+	// pillar handed on as it stands. The node projection carries it to the guest
+	// wherever it carries the values, so a guest that binds values to its source's
+	// own declared inputs binds only values a mapping produced for that source. Like
+	// SensitiveValues it is a statement about how the values were produced, recorded
+	// by the pass that produced them, and never read from a value or a key.
+	ValuesMapped bool
 	// SensitiveWorkload reports the same fact about the template that produced the
 	// workload this node's render synthesizes from, the same reading the host's own
 	// checks of that workload are worded by. It is set on the context a workload

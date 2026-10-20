@@ -79,6 +79,15 @@ type PhaseBState struct {
 	// leaves, which are marked per key instead.
 	SensitiveValues bool
 
+	// ValuesMapped reports that ResolvedValues is the output of the Recipe's values
+	// mapping, rather than the values pillar handed on as it stands. Recorded by the
+	// sub-pass that evaluates the mapping, beside SensitiveValues, and carried to the
+	// provider guest on the node projection, where a guest binding the values to its
+	// target's own inputs reads it to tell values the Recipe meant for its source
+	// from values the Recipe wrote for something else. False where no mapping ran,
+	// and before B.1.
+	ValuesMapped bool
+
 	// Omits are the omit entries the Recipe's source render hands its provider, as
 	// B.1 resolved them against the context the values mapping is evaluated against
 	// (see EvaluateOmits). Empty for a Recipe declaring none, or whose every entry its

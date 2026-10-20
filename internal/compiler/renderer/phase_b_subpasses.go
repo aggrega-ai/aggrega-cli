@@ -169,6 +169,9 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		return cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 	state.ResolvedValues = values
+	// This branch is the only one whose values a mapping produced, so it is the
+	// one that records the fact, as the branch above records its own.
+	state.ValuesMapped = true
 	// Whether the mapping read a value an author declared sensitive, asked of its
 	// references over the same set its failure is withheld by. The output's keys are
 	// the mapping's own invention, so this is the only marking its values can carry
@@ -940,6 +943,9 @@ func (p *attachmentPass) render(
 	// it describes the host Recipe's mapping, and this render carries the values
 	// this attachment's own mapping produced.
 	frNodeCtx.SensitiveValues = frValues.Sensitive
+	// So is whether those values are a mapping's output: this render carries the
+	// values this attachment's own evaluation produced.
+	frNodeCtx.ValuesMapped = frValues.Mapped
 	// The host's omit entries are overwritten for the same reason again: they name
 	// documents the host's source renders, and this attachment's source render is
 	// handed the entries its own FeatureRecipe declares, or none.

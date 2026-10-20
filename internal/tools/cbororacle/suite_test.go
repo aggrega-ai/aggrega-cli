@@ -252,6 +252,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// simple value and leaves out when false, so it stays anchored.
 	vec[abi.RenderNodeInput](t, "RenderNodeInputOmitsSensitive", false)
 	vec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
+	// A node projection whose values a values mapping produced. The member it adds
+	// is a boolean, which the reference encoder writes as the same simple value and
+	// leaves out when false, so it stays anchored.
+	vec[abi.IRNodeProjection](t, "IRNodeProjectionValuesMapped", false)
 	vec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitivePayloadLeaves", false)
 	vec[abi.IRSpec](t, "IRSpecConnectionAttachment", false)
 	vec[abi.IRSpec](t, "IRSpecAttachmentRealization", false)
