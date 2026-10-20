@@ -30,7 +30,7 @@ package main
 // comparison mean, and what every figure here was measured over, is on
 // testInputExpectation.
 var expectation = testInputExpectation{
-	Measured: "2026-10-15",
+	Measured: "2026-10-20",
 	Modules: []expectedModule{
 		{
 			Rel:           "aggrega-abi/go",
@@ -51,7 +51,7 @@ var expectation = testInputExpectation{
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer", Reach: []string{".", ".gitmodules", "aggrega-abi", "aggrega-docs", "aggrega-hub", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine", Reach: []string{".gitmodules", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/compilerops", Reach: []string{"."}},
-				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/importops", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/importops", Reach: []string{".", ".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/lintops", Reach: []string{".", ".gitmodules"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/mcp", Reach: []string{".", ".aggrega", ".aggrega-config.yaml", ".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/publishops", Reach: []string{".gitmodules", "aggrega-pdk"}},
@@ -61,11 +61,12 @@ var expectation = testInputExpectation{
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/tools/typegen", Reach: []string{"aggrega-abi"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/validateops", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/wasm", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
-				{ImportPath: "github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth", Reach: []string{".gitmodules"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/pkg/catalog", Reach: []string{"."}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/pkg/plugintest", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/pkg/validator", Reach: []string{".gitmodules", "aggrega-abi", "aggrega-pdk"}},
 				{ImportPath: "github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig", Reach: []string{"."}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport/imagetable", Reach: []string{"aggrega-hub"}},
+				{ImportPath: "github.com/aggrega-ai/aggrega-cli/plugins/internal/difyimport", Reach: []string{"aggrega-hub"}},
 			},
 		},
 		{
