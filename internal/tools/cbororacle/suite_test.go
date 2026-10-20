@@ -256,6 +256,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// is a boolean, which the reference encoder writes as the same simple value and
 	// leaves out when false, so it stays anchored.
 	vec[abi.IRNodeProjection](t, "IRNodeProjectionValuesMapped", false)
+	// A rendered node of the assembly input carrying the same mark, a boolean the
+	// reference encoder writes as the same simple value and leaves out when false, so
+	// it stays anchored.
+	vec[abi.RenderedNode](t, "RenderedNodeValuesMapped", false)
 	vec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitivePayloadLeaves", false)
 	vec[abi.IRSpec](t, "IRSpecConnectionAttachment", false)
 	vec[abi.IRSpec](t, "IRSpecAttachmentRealization", false)

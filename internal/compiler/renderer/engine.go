@@ -611,6 +611,12 @@ type BoundaryInfo struct {
 	// and an assembler supplies it nothing — offering inputs a node's files never
 	// declare is an assembled artifact its target may reject.
 	NodeValues map[string]map[string]any
+	// NodeValuesMapped reports, per node id, that the NodeValues entry for that
+	// node is the output of its Recipe's values mapping — the same mark the node's
+	// own render projection carried. An entry is present only beside a NodeValues
+	// entry and only where it is true, so an absent entry reads as "not mapped",
+	// which is also what a node carrying no values reads as.
+	NodeValuesMapped map[string]bool
 	// NodeNameBasis is the identity each contributor derives its own names from
 	// inside the assembled artifact, keyed by node id exactly as the maps above are.
 	// An entry is present only where that identity is not the node id itself, which

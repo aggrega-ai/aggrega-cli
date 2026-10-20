@@ -157,6 +157,9 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 			Annotations:     orderedAnnotations(info.NodeAnnotations[id]),
 			SyncWave:        info.NodeSyncWave[id],
 			Values:          valuesToOrdered(info.NodeValues[id]),
+			// The mark says something about the values beside it, so it travels only
+			// where they do, as it does on the node's own render projection.
+			ValuesMapped: info.NodeValuesMapped[id] && len(info.NodeValues[id]) > 0,
 		})
 	}
 

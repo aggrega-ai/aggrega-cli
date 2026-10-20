@@ -4,6 +4,7 @@
 package renderer_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -155,6 +156,138 @@ func TestRenderAll_CloudFormationBindsASourcedTemplatesParametersAndKeepsItsTran
 	}
 	if !reflect.DeepEqual(stack, twice) {
 		t.Errorf("two builds binding the same values assembled different stacks")
+	}
+}
+
+// cfnCrossRefTemplate is a sourced template declaring Stage and referencing it, the
+// declaration a binding of Stage removes.
+const cfnCrossRefTemplate = `AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Stage:
+    Type: String
+Resources:
+  TopicA:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref Stage
+`
+
+// cfnCrossRefFragment is a second component's fragment referencing Stage, which its
+// own template does not declare.
+const cfnCrossRefFragment = `Resources:
+  OtherTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref Stage
+`
+
+// renderCfnCrossRef renders two components into one stack: "api", whose Recipe
+// sources cfnCrossRefTemplate with the valuesMapping given (none when empty), and
+// "other", whose Recipe writes cfnCrossRefFragment as an artifact. It returns the
+// assembled stack's bytes.
+func renderCfnCrossRef(t *testing.T, mapping string) ([]byte, error) {
+	t.Helper()
+	root := t.TempDir()
+	blob := buildIntegrationTGZ(t, map[string]string{"a.yaml": cfnCrossRefTemplate})
+	digest := integrationDigest(blob)
+	seedIntegrationCacheSlot(t, root, "git-repository", cfnBindURL, cfnBindCommit, blob, digest)
+
+	input := integrationInput(t, root, "core/compute/api-server", "api", "cloudformation", digest, cfnBindURL, cfnBindCommit)
+	row := &input.Lockfile.SourceArtifacts[0]
+	row.Kind = "git-repository"
+	row.Mediatype = "application/gzip"
+	row.ReferencedBy[0].RequestedRef = cfnBindRef
+	input.GraphView = derivedKeyGraphFacts{}
+	labels := types.OrderedMap[string]{}
+	labels.Set("component.aggrega.ai/type", "server")
+	input.Graph.Spec.Nodes.Set("other", types.IRNode{
+		Component:       "core/compute/other",
+		Labels:          labels,
+		ResolvedVersion: "1.0.0",
+		BoundaryPath:    "local/default",
+	})
+	input.Graph.Spec.ValuesMapping.Set("other", json.RawMessage(`{}`))
+
+	sourced := cfnBindRecipeLookup(mapping)
+	lookup := renderer.RecipeLookup{
+		Recipe: func(scope, componentType string) (*types.Recipe, bool) {
+			if componentType != "core/compute/other" {
+				return sourced.Recipe(scope, componentType)
+			}
+			artifacts := types.OrderedMap[types.ArtifactEntry]{}
+			artifacts.Set("template.yaml", types.ArtifactEntry{Inline: cfnCrossRefFragment})
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "other-recipe", Version: "1.0.0"},
+				Spec: types.RecipeSpec{
+					Capability: "cloudformation",
+					Implements: "core/compute/other",
+					Artifacts:  artifacts,
+				},
+			}, true
+		},
+		FeatureRecipe: sourced.FeatureRecipe,
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range slices.Sorted(maps.Keys(result.Files)) {
+		if strings.HasSuffix(path, "cloudformation-stack.json") {
+			return result.Files[path].Content, nil
+		}
+	}
+	t.Fatalf("the build assembled no stack template; files: %v", slices.Sorted(maps.Keys(result.Files)))
+	return nil, nil
+}
+
+// TestRenderAll_CloudFormationReferenceToABoundParameterFromAnotherComponentHalts is
+// the assembly's half of binding, read through the build: the host carries the
+// values-mapped mark onto the rendered node the assembler receives, so the assembler
+// knows the sourced component's mapping bound Stage, and the other component's
+// reference to it — which the stack no longer declares — halts under the plugin
+// condition for an input the guest could not resolve, naming the component, its
+// template, the parameter and the component whose mapping bound it. The control maps
+// nothing: Stage stays declared, the other component's reference resolves to it, and
+// two builds assemble the same bytes.
+func TestRenderAll_CloudFormationReferenceToABoundParameterFromAnotherComponentHalts(t *testing.T) {
+	t.Parallel()
+
+	_, err := renderCfnCrossRef(t, "Stage: dev\n")
+	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		t.Fatalf("another component referencing a bound parameter: got %v, want the assembly's halt", err)
+	}
+	chain := cerrors.CauseChain(err)
+	for _, want := range []string{`component "other"`, `template "template.yaml"`, `parameter "Stage"`, `valuesMapping of component "api"`} {
+		if !strings.Contains(chain, want) {
+			t.Errorf("the halt does not name %s:\n%s", want, chain)
+		}
+	}
+
+	control, err := renderCfnCrossRef(t, "")
+	if err != nil {
+		t.Fatalf("the control mapping nothing: %s", cerrors.CauseChain(err))
+	}
+	var stack map[string]any
+	if err := json.Unmarshal(control, &stack); err != nil {
+		t.Fatalf("parse the control's stack: %v", err)
+	}
+	params, _ := stack["Parameters"].(map[string]any)
+	if _, declared := params["Stage"]; !declared {
+		t.Errorf("the control's stack does not declare Stage; Parameters: %v", params)
+	}
+	resources, _ := stack["Resources"].(map[string]any)
+	other, _ := resources["OtherTopic"].(map[string]any)
+	props, _ := other["Properties"].(map[string]any)
+	if got, want := props["TopicName"], any(map[string]any{"Ref": "Stage"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("the control's OtherTopic TopicName is %#v, want the reference as written %#v", got, want)
+	}
+	again, err := renderCfnCrossRef(t, "")
+	if err != nil {
+		t.Fatalf("the control's second build: %s", cerrors.CauseChain(err))
+	}
+	if !bytes.Equal(control, again) {
+		t.Errorf("two builds of the control assembled different bytes")
 	}
 }
 

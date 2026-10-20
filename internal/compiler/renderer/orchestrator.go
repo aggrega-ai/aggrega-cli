@@ -443,6 +443,11 @@ type dispatchKey struct {
 // assembled artifact; one whose contributors already carry their own inputs
 // reads none of it.
 //
+// nodeValuesMapped records, beside each nodeValues entry and at the same site,
+// whether a values mapping produced those values — the mark the node's own render
+// carried on its projection — so an assembler reads the same fact about a
+// contributor's values that the contributor's render read.
+//
 // nodeProducer records, per the same key, the authoring-level coordinates of
 // whatever placed that key's files: the kind of contributor it is and the name or
 // names an author wrote for it. It is STATED at the site that routes a
@@ -479,6 +484,7 @@ type pendingDispatch struct {
 	nodeComponent          map[string]string
 	nodeSyncWave           map[string]int
 	nodeValues             map[string]map[string]any
+	nodeValuesMapped       map[string]bool
 	nodeProducer           map[string]derivedKeyProducer
 	nodeNameBasis          map[string]string
 	subCharts              []SubChartInfo
@@ -2435,17 +2441,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		if _, ok := dispatch[key]; !ok {
 			dispatch[key] = &pendingDispatch{
-				files:           map[string]map[string][]byte{},
-				formats:         map[string]map[string]string{},
-				intermediates:   map[string][]EmittedFile{},
-				placed:          map[string][]EmittedFile{},
-				nodeAnnotations: map[string]map[string]string{},
-				nodeComponent:   map[string]string{},
-				nodeSyncWave:    map[string]int{},
-				nodeValues:      map[string]map[string]any{},
-				nodeProducer:    map[string]derivedKeyProducer{},
-				nodeNameBasis:   map[string]string{},
-				engineByNode:    map[string]Provider{},
+				files:            map[string]map[string][]byte{},
+				formats:          map[string]map[string]string{},
+				intermediates:    map[string][]EmittedFile{},
+				placed:           map[string][]EmittedFile{},
+				nodeAnnotations:  map[string]map[string]string{},
+				nodeComponent:    map[string]string{},
+				nodeSyncWave:     map[string]int{},
+				nodeValues:       map[string]map[string]any{},
+				nodeValuesMapped: map[string]bool{},
+				nodeProducer:     map[string]derivedKeyProducer{},
+				nodeNameBasis:    map[string]string{},
+				engineByNode:     map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, key)
 		}
@@ -2517,6 +2524,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// render runs on above, because it is the same distinction.
 		if hasSource {
 			dispatch[key].nodeValues[nodeID] = values
+			// The mark travels with the values it describes, read from the same node
+			// context the node's own render projection was built from, so the render
+			// and the assembler cannot read two different answers about one node.
+			if nodeCtx.ValuesMapped {
+				dispatch[key].nodeValuesMapped[nodeID] = true
+			}
 		}
 		dispatch[key].engineByNode[nodeID] = engine
 		dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
@@ -2739,17 +2752,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		frProducer := derivedKeyProducerFor(producerKindFeature, key.FRInstance, key.BoundaryPath)
 		if _, ok := dispatch[dKey]; !ok {
 			dispatch[dKey] = &pendingDispatch{
-				files:           map[string]map[string][]byte{},
-				formats:         map[string]map[string]string{},
-				intermediates:   map[string][]EmittedFile{},
-				placed:          map[string][]EmittedFile{},
-				nodeAnnotations: map[string]map[string]string{},
-				nodeComponent:   map[string]string{},
-				nodeSyncWave:    map[string]int{},
-				nodeValues:      map[string]map[string]any{},
-				nodeProducer:    map[string]derivedKeyProducer{},
-				nodeNameBasis:   map[string]string{},
-				engineByNode:    map[string]Provider{},
+				files:            map[string]map[string][]byte{},
+				formats:          map[string]map[string]string{},
+				intermediates:    map[string][]EmittedFile{},
+				placed:           map[string][]EmittedFile{},
+				nodeAnnotations:  map[string]map[string]string{},
+				nodeComponent:    map[string]string{},
+				nodeSyncWave:     map[string]int{},
+				nodeValues:       map[string]map[string]any{},
+				nodeValuesMapped: map[string]bool{},
+				nodeProducer:     map[string]derivedKeyProducer{},
+				nodeNameBasis:    map[string]string{},
+				engineByNode:     map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, dKey)
 		}
@@ -3109,6 +3123,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				NodeComponent:          pd.nodeComponent,
 				NodeSyncWave:           pd.nodeSyncWave,
 				NodeValues:             pd.nodeValues,
+				NodeValuesMapped:       pd.nodeValuesMapped,
 				NodeNameBasis:          pd.nodeNameBasis,
 				NodeOutputDirectory:    nodeOutputDirectory,
 				ContributingBoundaries: pd.contributingBoundaries,

@@ -138,11 +138,24 @@ const templateFormatVersion = "2010-09-09"
 // wave — which is precisely the case where one assembled stack holds more than
 // one. A node whose boundary declares no wave carries 0, the field's documented
 // default, so a missing wave and a declared zero are the same state.
+//
+// Paths names each of Files, position for position, as the node's render named
+// it; it is read only to name a file in a refusal, so a node carrying none is
+// named by position instead.
+//
+// Bound names the parameters the node's sourced render filled from a values
+// mapping: the keys of a node whose values a mapping produced, every one of which
+// the render bound or refused. The binding removed each one's declaration from
+// that node's source, so the assembly refuses content elsewhere in the stack that
+// still names one ([refuseReferencesToBoundParameters]). It is empty for a node
+// whose values no mapping produced, and for every node whose render bound nothing.
 type NodeFragment struct {
 	NodeID    string
 	NameBasis string
 	Files     [][]byte
+	Paths     []string
 	SyncWave  int
+	Bound     []string
 }
 
 // ContributorNameIdentity is the identity one contributor's stack Output names are
@@ -367,8 +380,11 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	// What each contributor brings to the stack's Transform, read from the same
 	// decoded fragments the claims are, one contributor per node.
 	transforms := make([]*transformContributor, 0, len(nodes))
+	// Every node's decoded fragments, position for position, for the check on
+	// references to a parameter a contributor's binding filled.
+	decoded := make([][]map[string]any, len(nodes))
 
-	for _, node := range nodes {
+	for i, node := range nodes {
 		// The identity this contributor's names are built from, which is the identity
 		// its render declared them from. Read once per contributor rather than at each
 		// use, so the names built here and the identity a refusal reports cannot come
@@ -390,6 +406,7 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 				return nil, err
 			}
 			sets = append(sets, fragmentClaimSet{nodeID: identity, wave: node.SyncWave, claim: claim})
+			decoded[i] = append(decoded[i], m)
 			if err := contributor.addFragment(m); err != nil {
 				return nil, err
 			}
@@ -460,6 +477,18 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 
 	if len(resources.entries) == 0 {
 		return nil, fmt.Errorf("cloudformation-provider: assembled stack carries no Resources")
+	}
+
+	// A parameter a contributor's binding filled is declared nowhere in its source
+	// any more; content elsewhere still naming it, where no contributor declares the
+	// name, is a reference the build made dangle. Read after every name is in, since
+	// whether a name is still declared is a property of the whole stack.
+	if err := refuseReferencesToBoundParameters(nodes, decoded, func(name string) bool {
+		_, isParameter := carried[sectionParameters].entries[name]
+		_, isResource := resources.entries[name]
+		return isParameter || isResource
+	}); err != nil {
+		return nil, err
 	}
 
 	applyWaveOrdering(resources.entries, waveByResource)

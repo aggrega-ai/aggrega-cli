@@ -69,6 +69,13 @@
 // lives in the cfncore package the guest calls, so the Wasm host stays agnostic to
 // CloudFormation semantics.
 //
+// A parameter a contributor's binding filled is declared nowhere in that
+// contributor's source any more, so the assembly halts where content from elsewhere
+// in the stack still names one and no contributor declares the name, naming each
+// such contributor, its template and the parameter. It learns which names a binding
+// filled from the mark the host carries on each rendered node whose values a
+// mapping produced.
+//
 // The assembled stack's Transform is the union of every contributor's, in
 // CloudFormation's documented order, and is refused by name where carrying it would
 // change how another contributor's content deploys; SAM's Globals travel with the
@@ -531,11 +538,20 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 	for i := range in.RenderedNodes {
 		rn := in.RenderedNodes[i]
 		files := make([][]byte, 0, len(rn.Rendered.Files))
+		paths := make([]string, 0, len(rn.Rendered.Files))
 		for _, f := range rn.Rendered.Files {
 			files = append(files, f.Content)
+			paths = append(paths, f.Path)
+		}
+		// A node whose values a mapping produced had every key bound to a parameter
+		// of its source by its own render, or that render halted; so its keys are the
+		// parameters the binding removed from the source.
+		var bound []string
+		if rn.ValuesMapped {
+			bound = rn.Values.Keys()
 		}
 		nodes = append(nodes, cfncore.NodeFragment{
-			NodeID: rn.ID, NameBasis: rn.DerivedNameBasis, Files: files, SyncWave: rn.SyncWave,
+			NodeID: rn.ID, NameBasis: rn.DerivedNameBasis, Files: files, Paths: paths, SyncWave: rn.SyncWave, Bound: bound,
 		})
 	}
 

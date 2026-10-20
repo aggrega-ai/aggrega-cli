@@ -279,7 +279,7 @@ type AssembleBoundaryInput struct {
 	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 }
 
-// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its sync wave, the values the compiler resolved for it where those are the compiler's to supply, and the files the render_node export produced for it — carried in the render output's shape, with every member of that shape other than its files left absent.
+// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its sync wave, the values the compiler resolved for it where those are the compiler's to supply and whether a values mapping produced them, and the files the render_node export produced for it — carried in the render output's shape, with every member of that shape other than its files left absent.
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph. A contributor that is not one of the graph's nodes — a Feature attached at a boundary rather than at a component — carries the compiler's own dispatch identity for it here instead, which is the same identity the render_node call for that contributor carried; it distinguishes one contributor from another and is not a name any target accepts. What such a contributor derives names from inside the assembled artifact is a separate carry, derived_name_basis.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -296,6 +296,8 @@ type RenderedNode struct {
 	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty" cbor:"sync_wave,omitempty"`
 	// Values The values the compiler resolved for this node, present only for a node rendered from a source — the render_node call that produced its files carried a source_listing. That is the one case where the files came from elsewhere and the values could not be written into them, so a position outside them has to supply them: a boundary assembler places a present dictionary as that contributor's inputs in the assembled artifact itself, rather than beside the contributor's own files, and where the assembled artifact is the only position the target evaluates, that is the difference between an input the target reads and one it never reaches. A node rendered from a workload_projection or an artifacts_projection resolved these values into the files it produced, so it carries none here and the field is absent: supplying them a second time would offer the assembled artifact inputs that node's own files never declare, which the target is free to reject. Keys arrive in sorted order, not author order, and that sorting is what makes the payload byte-identical across runs of identical input; a guest needing any other ordering imposes it itself. An assembler whose output shape carries no per-contributor inputs ignores the field.
 	Values types.OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty" cbor:"values,omitempty"`
+	// ValuesMapped True when the values this node carries are the output of its bound Recipe's valuesMapping, rather than the node's values handed on as the author wrote them — the same mark the render_node call for this node carried on its node projection, carried here beside the values it describes. Absent where no valuesMapping ran, and wherever values is absent. Whether an assembler reads it is that assembler's own contract: one whose render_node binds a mapped node's values to the inputs its source declares can learn from it which names that binding filled, while one that places a node's values as its inputs however they were produced does not read it. It records how the values were produced and is never derived from a key's name or a value's content.
+	ValuesMapped bool `json:"values_mapped,omitempty" yaml:"values_mapped,omitempty" cbor:"values_mapped,omitempty"`
 }
 
 type RenderEdge struct {
@@ -3366,6 +3368,18 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 			buf.Write(enc)
 		}
 	}
+	if t.ValuesMapped != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"values_mapped\":")
+		if t.ValuesMapped {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -3438,6 +3452,12 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "values_mapped":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.ValuesMapped = v
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -3457,7 +3477,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderedNode) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "derived_name_basis", "output_directory", "rendered", "annotations", "sync_wave", "values"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "derived_name_basis", "output_directory", "rendered", "annotations", "sync_wave", "values", "values_mapped"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -8687,6 +8707,9 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.Annotations.IsZero() {
 		n++
 	}
+	if t.ValuesMapped != false {
+		n++
+	}
 	if t.OutputDirectory != "" {
 		n++
 	}
@@ -8728,6 +8751,10 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 			dst = appendCBORTextString(dst, k)
 			dst = appendCBORTextString(dst, mv)
 		}
+	}
+	if t.ValuesMapped != false {
+		dst = appendCBORTextString(dst, "values_mapped")
+		dst = appendCBORBool(dst, t.ValuesMapped)
 	}
 	if t.OutputDirectory != "" {
 		dst = appendCBORTextString(dst, "output_directory")
@@ -8844,6 +8871,12 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 				}
 				t.Values = om
 			}
+		case "values_mapped":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.ValuesMapped = v
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -8860,7 +8893,7 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderedNode) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "id", "type", "derived_name_basis", "output_directory", "rendered", "annotations", "sync_wave", "values"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "derived_name_basis", "output_directory", "rendered", "annotations", "sync_wave", "values", "values_mapped"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
