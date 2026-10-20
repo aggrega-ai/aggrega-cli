@@ -99,6 +99,11 @@ type model struct {
 	runtimeFlags []string
 	// others names the members the draft does not carry, sorted.
 	others []string
+	// component is the Component the model's instance is of, and referenced is
+	// set where it is ModelRuntime, which the catalog holds, rather than a
+	// Component drafted for the model; both are set by its decision.
+	component  string
+	referenced bool
 }
 
 // projectsOf groups the sources an import reads into Compose projects, as

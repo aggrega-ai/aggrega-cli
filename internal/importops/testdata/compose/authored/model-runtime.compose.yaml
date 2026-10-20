@@ -1,0 +1,21 @@
+services:
+  app:
+    image: ghcr.io/example/app:1.0.0
+    models:
+      - llm
+  worker:
+    image: ghcr.io/example/worker:1.0.0
+    models:
+      embed:
+        endpoint_var: EMBED_URL
+        model_var: EMBED_MODEL
+
+models:
+  llm:
+    model: ai/smollm2
+    context_size: 4096
+    runtime_flags:
+      - "--threads"
+      - "4"
+  embed:
+    model: ai/mxbai-embed-large

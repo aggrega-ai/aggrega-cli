@@ -9,9 +9,12 @@ package importops
 // Components — the YAML a Compose file is read as is parsed by the parser the
 // binary carries, since the folder serves none:
 //
-//   - the two authored applications and three applications of the compose-for-agents
-//     repository, each laid down as compose.yaml, are recognised as the compose
-//     format with no format named and drafted as an Aggregate and a Release;
+//   - the three authored applications and three applications of the
+//     compose-for-agents repository, each laid down as compose.yaml, are recognised
+//     as the compose format with no format named and drafted as an Aggregate and a
+//     Release;
+//   - where the catalog folder holds the hub's Docker Model Runner runtime, each
+//     model is an instance of it, and no model Component is drafted;
 //   - by default every environment value is carried as written into the Release
 //     and named in a warning, and the empty_credentials setting at all writes each
 //     empty, alike whatever its variable is called;
@@ -75,6 +78,7 @@ var composeFixtures = []struct {
 }{
 	{"authored/compose.yaml", []string{"db", "cache", "api"}},
 	{"authored/models.compose.yaml", []string{"chat", "search", "llm", "embedder"}},
+	{"authored/model-runtime.compose.yaml", []string{"app", "worker", "llm", "embed"}},
 	{"compose-for-agents/langgraph.compose.yaml", []string{"database", "importer", "agent", "mcp-gateway", "qwen3"}},
 	{"compose-for-agents/adk.compose.yaml", []string{"adk", "mcp-gateway", "gemma3"}},
 	{"compose-for-agents/crew-ai.compose.yaml", []string{"agents", "mcp-gateway", "qwen3"}},
@@ -107,7 +111,7 @@ func TestEveryComposeApplicationIsRecognisedAndDraftedAsAnAggregateAndARelease(t
 				t.Errorf("the Aggregate holds %v, want %v", aggregateKeys, f.keys)
 			}
 			services := slices.DeleteFunc(slices.Clone(f.keys), func(k string) bool {
-				return slices.Contains([]string{"qwen3", "gemma3", "llm", "embedder"}, k)
+				return slices.Contains([]string{"qwen3", "gemma3", "llm", "embedder", "embed"}, k)
 			})
 			if !slices.Equal(releaseKeys, services) {
 				t.Errorf("the Release holds %v, want the services %v", releaseKeys, services)
@@ -139,6 +143,64 @@ func TestEveryComposeApplicationIsRecognisedAndDraftedAsAnAggregateAndARelease(t
 			}
 			if !hinted {
 				t.Errorf("no decision records the API's environment naming the cache: %+v", res.Decisions)
+			}
+		})
+	}
+}
+
+// modelRuntimeEntity is the hub's Docker Model Runner runtime, by its path
+// beneath platformHub.
+const modelRuntimeEntity = "component/core/ai-model/docker-model-runner/1.0.0/component.yaml"
+
+// TestAComposeModelIsAnInstanceOfTheHubsModelRuntimeWhereTheCatalogHoldsIt
+// imports the authored model-runtime application and the compose-for-agents
+// CrewAI application, naming no format, over the catalog folder with the hub's
+// core/ai-model/docker-model-runner laid beside the other Components: the catalog
+// the import hands the importer carries the runtime, so each model is an
+// instance of it, writing the source's context_size as context_window, the
+// Release places it with an empty entry, no model Component file is drafted, and
+// each model's decision references it.
+//
+// 🔴 PLANTED DEFECT: in Import (plugins/internal/composeimport/composeimport.go),
+// write `held := false`: every row drafts a model Component and fails.
+func TestAComposeModelIsAnInstanceOfTheHubsModelRuntimeWhereTheCatalogHoldsIt(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		fixture, model, values string
+	}{
+		{"authored/model-runtime.compose.yaml", "llm",
+			"        model: \"ai/smollm2\"\n        context_window: 4096\n        runtime_flags:\n" +
+				"          - \"--threads\"\n          - \"4\"\n"},
+		{"compose-for-agents/crew-ai.compose.yaml", "qwen3",
+			"        model: \"ai/qwen3\"\n        context_window: 8192\n        runtime_flags:\n" +
+				"          - \"--no-prefill-assistant\"\n"},
+	} {
+		t.Run(row.fixture, func(t *testing.T) {
+			t.Parallel()
+			rw, folder := catalogFolderImportWorkspaceAttaching(t, nil)
+			layHubEntities(t, folder.Dir, append(slices.Clone(composeHubEntities), modelRuntimeEntity))
+			res, dir := writtenImport(t, rw, "compose.yaml", readComposeFixture(t, row.fixture))
+			if res.Format != "compose" || res.Halted() {
+				t.Fatalf("the source was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
+			}
+			if got := draftPaths(res); !slices.Equal(got, []string{"aggregate.yaml", "release.yaml"}) {
+				t.Errorf("the import drafted %v, want the Aggregate and the Release alone", got)
+			}
+			_, releaseKeys, aggregate, release := mcpDrafts(t, dir)
+			want := "\n    " + row.model + ":\n      type: core/ai-model/docker-model-runner\n      values:\n" + row.values
+			if !strings.Contains(aggregate, want) {
+				t.Errorf("the Aggregate does not hold\n%s\nin\n%s", want, aggregate)
+			}
+			if !slices.Contains(releaseKeys, row.model) || !strings.Contains(release, "\n    "+row.model+": {}\n") {
+				t.Errorf("the Release does not place %s with an empty entry:\n%s", row.model, release)
+			}
+			referenced := false
+			for _, d := range res.Decisions {
+				referenced = referenced || (d.SourceNode.ID == row.model && d.SourceNode.Type == "model" && d.Chosen != nil &&
+					d.Chosen.Target == "core/ai-model/docker-model-runner" && d.Chosen.Mode == "reference")
+			}
+			if !referenced {
+				t.Errorf("no decision references the runtime for %s: %+v", row.model, res.Decisions)
 			}
 		})
 	}

@@ -8,8 +8,9 @@
 // docker-compose.yml, with its override file — and drafts an Aggregate holding
 // one instance per service, of the catalog Component its image matches or of
 // core/compute/server running its image, connected as depends_on says, one
-// drafted model Component per model, and a Release beside it carrying what each
-// service states for its operation.
+// instance per model, of core/ai-model/docker-model-runner where the workspace's
+// catalog holds it and of a model Component drafted for it otherwise, and a
+// Release beside it carrying what each service states for its operation.
 //
 // The guest holds what the host reads off it: this descriptor, the signature a
 // Compose file is recognised by, and the export wiring. What it does with a
@@ -59,8 +60,9 @@ func descriptor() aggrega.PluginDescriptor {
 		PluginType: "importer",
 		Description: "Import a Compose application (compose.yaml, docker-compose.yml and their override files) into a " +
 			"draft Aggregate holding one instance per service — of the catalog Component its image matches, or of " +
-			"core/compute/server running its image — connected as depends_on says, a drafted model Component per " +
-			"model, and a draft Release carrying each service's image, ports, volumes and environment. Images are " +
+			"core/compute/server running its image — connected as depends_on says, an instance per model of " +
+			composeimport.ModelRuntime + " where the workspace's catalog holds it, or of a model Component drafted " +
+			"for it otherwise, and a draft Release carrying each service's image, ports, volumes and environment. Images are " +
 			"matched through a table generated from the Compose Recipes and Components of aggrega-hub at " +
 			composeimport.TableRevision + ".",
 		Capabilities: []string{"import:" + composeimport.Format},

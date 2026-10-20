@@ -60,14 +60,42 @@ var catalog = &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
 		"datastore.aggrega.ai/engine": "kv", "component.aggrega.ai/upstream-licensing": "osi-approved"}},
 }}
 
+// catalogHoldingTheRuntime is catalog with the standard library's Docker Model
+// Runner runtime beside its Components, with the labels the hub gives it.
+var catalogHoldingTheRuntime = &aggrega.CatalogProjection{Components: append(slices.Clone(catalog.Components),
+	aggrega.CatalogComponent{Name: ModelRuntime, Version: "1.0.0", Labels: map[string]string{
+		"component.aggrega.ai/type": "server", "component.aggrega.ai/category": "ai-model",
+		"model.aggrega.ai/capability": "generative", "model.aggrega.ai/api": "openai",
+		"component.aggrega.ai/hosting": "self-hosted", "component.aggrega.ai/upstream-licensing": "osi-approved"}})}
+
 // importOne imports body as the one file of a request, against catalog, with
 // settings.
 func importOne(body []byte, settings string) aggrega.ImportOutput {
-	in := aggrega.ImportInput{Format: Format, Bytes: body, Catalog: catalog}
+	return importOver(body, settings, catalog)
+}
+
+// importOver imports body as the one file of a request, against the catalog view
+// given — none where it is nil — with settings.
+func importOver(body []byte, settings string, view *aggrega.CatalogProjection) aggrega.ImportOutput {
+	in := aggrega.ImportInput{Format: Format, Bytes: body, Catalog: view}
 	if settings != "" {
 		in.Settings = json.RawMessage(settings)
 	}
 	return Import(in, hostParse)
+}
+
+// modelDecisions returns the decisions out records for models, and
+// serviceDecisions those it records for services, each in order.
+func modelDecisions(out aggrega.ImportOutput) []aggrega.ImportDecision {
+	return slices.DeleteFunc(slices.Clone(out.Decisions), func(d aggrega.ImportDecision) bool {
+		return d.SourceNode.Type != "model"
+	})
+}
+
+func serviceDecisions(out aggrega.ImportOutput) []aggrega.ImportDecision {
+	return slices.DeleteFunc(slices.Clone(out.Decisions), func(d aggrega.ImportDecision) bool {
+		return d.SourceNode.Type == "model"
+	})
 }
 
 // fileContent returns the content of the file out holds at path, failing the
@@ -404,10 +432,12 @@ func TestALongFormModelsEntryIsReportedAndAShortFormOneDraftsAsBefore(t *testing
 		t.Errorf("the long-form service's connection is not\n%s\nin\n%s", long, aggregate)
 	}
 
-	if len(out.Decisions) != 2 {
-		t.Fatalf("the import made %d decisions, want one per service", len(out.Decisions))
+	services := serviceDecisions(out)
+	if len(services) != 2 || len(modelDecisions(out)) != 2 {
+		t.Fatalf("the import made %d decisions, want one per service and one per model: %+v", len(out.Decisions),
+			out.Decisions)
 	}
-	chat, search := out.Decisions[0], out.Decisions[1]
+	chat, search := services[0], services[1]
 	want := "no row of the image table or of the mapping_overrides setting maps the repository ghcr.io/example/chat, " +
 		"so the service is drafted as an instance of " + Server + " running its image"
 	if chat.SourceNode.ID != "chat" || chat.Rationale != want {
@@ -515,9 +545,9 @@ func TestALongFormModelsEntryIsReadAsComposeMergesIt(t *testing.T) {
 				if want := fileContent(t, shortForm, "aggregate.yaml"); aggregate != want {
 					t.Errorf("an entry stating neither variable drafts\n%s\nnot as the short form does\n%s", aggregate, want)
 				}
-				if out.Decisions[0].Rationale != shortForm.Decisions[0].Rationale {
-					t.Errorf("an entry stating neither variable records %q, not %q", out.Decisions[0].Rationale,
-						shortForm.Decisions[0].Rationale)
+				got, want := serviceDecisions(out)[0].Rationale, serviceDecisions(shortForm)[0].Rationale
+				if got != want {
+					t.Errorf("an entry stating neither variable records %q, not %q", got, want)
 				}
 				return
 			}
@@ -525,8 +555,8 @@ func TestALongFormModelsEntryIsReadAsComposeMergesIt(t *testing.T) {
 				t.Errorf("the connection is not reported as\n%s\nin\n%s", row.wantComment, aggregate)
 			}
 			report := strings.TrimSuffix(strings.TrimPrefix(row.wantComment, "        # T"), ".\n        llm:\n")
-			if !strings.HasSuffix(out.Decisions[0].Rationale, "; t"+report) {
-				t.Errorf("the decision records %q, want it to end %q", out.Decisions[0].Rationale, "; t"+report)
+			if got := serviceDecisions(out)[0].Rationale; !strings.HasSuffix(got, "; t"+report) {
+				t.Errorf("the decision records %q, want it to end %q", got, "; t"+report)
 			}
 		})
 	}
@@ -682,16 +712,21 @@ func TestASourceTheParserRefusesHaltsAndAFileHoldingNoServiceWarns(t *testing.T)
 }
 
 // TestTwoImportsAreByteIdentical imports the authored fixtures and the LangGraph
-// application twice each and requires the same output, byte for byte.
+// and CrewAI applications twice each, over a catalog lacking the model runtime
+// and over one holding it, and requires the same output, byte for byte —
+// entities, decisions and files alike.
 func TestTwoImportsAreByteIdentical(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"authored/compose.yaml", "authored/models.compose.yaml",
-		"compose-for-agents/langgraph.compose.yaml"} {
+		"authored/model-runtime.compose.yaml", "compose-for-agents/langgraph.compose.yaml",
+		"compose-for-agents/crew-ai.compose.yaml"} {
 		body := fixture(t, name)
-		first, _ := json.Marshal(importOne(body, ""))
-		second, _ := json.Marshal(importOne(body, ""))
-		if string(first) != string(second) {
-			t.Errorf("two imports of %s differ", name)
+		for _, view := range []*aggrega.CatalogProjection{catalog, catalogHoldingTheRuntime} {
+			first, _ := json.Marshal(importOver(body, "", view))
+			second, _ := json.Marshal(importOver(body, "", view))
+			if string(first) != string(second) {
+				t.Errorf("two imports of %s over the catalog holding %d Components differ", name, len(view.Components))
+			}
 		}
 	}
 }
@@ -730,6 +765,255 @@ func TestANameHoldingDoubleBracesReadsBackInTheAggregate(t *testing.T) {
 	if model := doc.Spec.Components["llm-y"].Values["model"]; model != "ai/{{ z }}" {
 		t.Errorf("the model's identifier reads back as %#v, want %q:\n%s", model, "ai/{{ z }}", got)
 	}
+}
+
+// golden reads one draft of the authored model-runtime fixture over a catalog
+// lacking the model runtime, each model drafted as a Component of its own: the
+// bytes the fallback is held to.
+func golden(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("testdata", "model-runtime-lacking", filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatalf("read the golden %s: %v", path, err)
+	}
+	return string(body)
+}
+
+// runtimeReason is how the decision for a model of the catalog's model runtime
+// opens.
+const runtimeReason = "the workspace's catalog holds " + ModelRuntime + ", which serves a model named by its OCI " +
+	"reference through Docker Model Runner, so "
+
+// wantDecision is the decision a case expects for one node: its identifier,
+// its summary, the choice and the rationale, every one compared whole.
+type wantDecision struct {
+	id, summary, target, mode, rationale string
+}
+
+// assertDecisions holds got to want, one decision apiece, in order.
+func assertDecisions(t *testing.T, got []aggrega.ImportDecision, want []wantDecision) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("the import made %d decisions, want %d: %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		d := got[i]
+		if d.SourceNode.ID != w.id || d.SourceNode.ParamsSummary != w.summary || d.Chosen == nil ||
+			d.Chosen.Target != w.target || d.Chosen.Mode != w.mode || d.Chosen.Tier != "NONE" || d.Rationale != w.rationale {
+			t.Errorf("decision %d is %+v (chose %+v), want %+v", i, d, d.Chosen, w)
+		}
+	}
+}
+
+// TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt imports the
+// authored model-runtime fixture and the compose-for-agents CrewAI application
+// over a catalog holding core/ai-model/docker-model-runner, under both reuse
+// modes: every model is an instance of it, referenced, and no model Component is
+// drafted; its values are the source's model, its context_size under
+// context_window, the key the runtime declares for a model's context length, and
+// its runtime_flags as written; the Release places each model's instance with an
+// empty entry after the services', so a build places it; every model's decision
+// says it is referenced and why; and every service drafts exactly as it does over
+// a catalog lacking the runtime — its connection to each model, and the report of
+// a long-form entry's variables above it and in its decision, included.
+//
+// 🔴 PLANTED DEFECT: in Import (composeimport.go), write `held := false` in place
+// of `held := holdsModelRuntime(in.Catalog)`: every model is drafted again, and
+// both rows fail on the files, the Aggregate and the decisions.
+func TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt(t *testing.T) {
+	t.Parallel()
+	// A model's instance opens at the indent of every instance, after a line
+	// break; its key alone also opens a connection to it, deeper.
+	servicesBefore, _, _ := strings.Cut(golden(t, "aggregate.yaml"), "\n    llm:\n")
+	worker := serviceDecisions(importOver(fixture(t, "authored/model-runtime.compose.yaml"), "", catalog))[1].Rationale
+	for _, row := range []struct {
+		name, fixture string
+		// first opens the instance of the first model, which every service's
+		// instance precedes.
+		first string
+		// aggregate is the whole drafted Aggregate, or, where release is empty, a
+		// part of it; release is the whole drafted Release, and releaseTail how it
+		// ends: the last service's entry, then an empty entry for each model.
+		aggregate, release, releaseTail string
+		decisions                       []wantDecision
+	}{
+		{
+			name:    "the authored application",
+			fixture: "authored/model-runtime.compose.yaml",
+			first:   "\n    llm:\n",
+			aggregate: servicesBefore +
+				"\n    llm:\n      type: " + ModelRuntime + "\n      values:\n        model: \"ai/smollm2\"\n" +
+				"        context_window: 4096\n        runtime_flags:\n          - \"--threads\"\n          - \"4\"\n" +
+				"    embed:\n      type: " + ModelRuntime + "\n      values:\n        model: \"ai/mxbai-embed-large\"\n",
+			release:     golden(t, "release.yaml") + "    llm: {}\n    embed: {}\n",
+			releaseTail: "    worker:\n      infra:\n        image: \"ghcr.io/example/worker:1.0.0\"\n    llm: {}\n    embed: {}\n",
+			decisions: []wantDecision{
+				{"llm", "model ai/smollm2, context_size 4096, 2 runtime flags", ModelRuntime, "reference",
+					runtimeReason + "llm is an instance of it, serving ai/smollm2, used by app"},
+				{"embed", "model ai/mxbai-embed-large", ModelRuntime, "reference",
+					runtimeReason + "embed is an instance of it, serving ai/mxbai-embed-large, used by worker"},
+				{"app", "no parameters", Server, "reference", "no row of the image table or of the mapping_overrides " +
+					"setting maps the repository ghcr.io/example/app, so the service is drafted as an instance of " +
+					Server + " running its image"},
+				{"worker", "no parameters", Server, "reference", worker},
+			},
+		},
+		{
+			name:    "the compose-for-agents CrewAI application",
+			fixture: "compose-for-agents/crew-ai.compose.yaml",
+			first:   "\n    qwen3:\n",
+			aggregate: "\n    qwen3:\n      type: " + ModelRuntime + "\n      values:\n        model: \"ai/qwen3\"\n" +
+				"        context_window: 8192\n        runtime_flags:\n          - \"--no-prefill-assistant\"\n",
+			releaseTail: "        image: \"docker/mcp-gateway:latest\"\n    qwen3: {}\n",
+			decisions: []wantDecision{
+				{"qwen3", "model ai/qwen3, context_size 8192, 1 runtime flag", ModelRuntime, "reference",
+					runtimeReason + "qwen3 is an instance of it, serving ai/qwen3, used by agents"},
+			},
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			body := fixture(t, row.fixture)
+			out := importOver(body, "", catalogHoldingTheRuntime)
+			if out.Error != "" || len(codes(out, "parse-failed")) > 0 {
+				t.Fatalf("the import failed: %s %+v", out.Error, out.Diagnostics)
+			}
+			if want := []string{"aggregate.yaml", "release.yaml"}; !slices.Equal(paths(out), want) {
+				t.Errorf("the import wrote %v, want %v and no drafted model Component", paths(out), want)
+			}
+			aggregate := fileContent(t, out, "aggregate.yaml")
+			if row.release != "" {
+				if aggregate != row.aggregate {
+					t.Errorf("the Aggregate is\n%s\nwant\n%s", aggregate, row.aggregate)
+				}
+				if release := fileContent(t, out, "release.yaml"); release != row.release {
+					t.Errorf("the Release is\n%s\nwant, as over a catalog lacking the runtime with an empty entry per "+
+						"model,\n%s", release, row.release)
+				}
+			} else if !strings.Contains(aggregate, row.aggregate) {
+				t.Errorf("the Aggregate does not hold\n%s\nin\n%s", row.aggregate, aggregate)
+			}
+			if release := fileContent(t, out, "release.yaml"); !strings.HasSuffix(release, row.releaseTail) {
+				t.Errorf("the Release does not end\n%s\nbut is\n%s", row.releaseTail, release)
+			}
+			services, models, found := strings.Cut(aggregate, row.first)
+			lacking, _, _ := strings.Cut(fileContent(t, importOver(body, "", catalog), "aggregate.yaml"), row.first)
+			if !found || services != lacking {
+				t.Errorf("the services are drafted\n%s\nnot as over a catalog lacking the runtime\n%s", services, lacking)
+			}
+			for _, absent := range []string{"context_size", "/ai-model/qwen3", "imported/ai-model"} {
+				if strings.Contains(aggregate, absent) {
+					t.Errorf("the Aggregate writes %q:\n%s", absent, aggregate)
+				}
+			}
+			got := modelDecisions(out)
+			if row.release != "" {
+				got = out.Decisions
+			}
+			assertDecisions(t, got, row.decisions)
+			var referenced int
+			for _, e := range out.Entities {
+				if e.Kind == "Component" && e.Name == ModelRuntime && e.Mode == "reference" && e.DecisionRef == "decision:"+e.SourceRef {
+					referenced++
+				}
+			}
+			if referenced != len(modelDecisions(out)) {
+				t.Errorf("the import emitted %d references to %s for %d models: %+v", referenced, ModelRuntime,
+					len(modelDecisions(out)), out.Entities)
+			}
+
+			// The reference is made whatever the reuse mode says.
+			auto := importOver(body, `{"reuse_mode":"auto-apply-above-threshold"}`, catalogHoldingTheRuntime)
+			if _, got, _ := strings.Cut(fileContent(t, auto, "aggregate.yaml"), row.first); got != models {
+				t.Errorf("under auto-apply the models are drafted\n%s\nnot as under hints-only\n%s", got, models)
+			}
+		})
+	}
+}
+
+// TestAModelDraftsAsBeforeWhereTheCatalogLacksTheRuntime imports the authored
+// model-runtime fixture over a catalog lacking core/ai-model/docker-model-runner,
+// and over no catalog at all: every draft is byte for byte its golden in
+// testdata/model-runtime-lacking, which holds what an import referencing no model
+// drafts — each model a Component of its own — and each model's decision says it
+// is drafted and why: the workspace's catalog holds no
+// core/ai-model/docker-model-runner.
+//
+// 🔴 PLANTED DEFECT: in holdsModelRuntime (composeimport.go), return true for a
+// nil catalog: the row naming no catalog references the runtime and fails.
+func TestAModelDraftsAsBeforeWhereTheCatalogLacksTheRuntime(t *testing.T) {
+	t.Parallel()
+	const reason = "the workspace's catalog holds no " + ModelRuntime + ", so the model is drafted as "
+	for _, row := range []struct {
+		name string
+		view *aggrega.CatalogProjection
+	}{
+		{"a catalog lacking the runtime", catalog},
+		{"no catalog", nil},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			out := importOver(fixture(t, "authored/model-runtime.compose.yaml"), "", row.view)
+			want := []string{"components/imported-ai-model-llm.yaml", "components/imported-ai-model-embed.yaml",
+				"aggregate.yaml", "release.yaml"}
+			if !slices.Equal(paths(out), want) {
+				t.Fatalf("the import wrote %v, want %v", paths(out), want)
+			}
+			for _, path := range want {
+				if got, before := fileContent(t, out, path), golden(t, path); got != before {
+					t.Errorf("%s is\n%s\nnot its golden\n%s", path, got, before)
+				}
+			}
+			models := modelDecisions(out)
+			assertDecisions(t, models, []wantDecision{
+				{"llm", "model ai/smollm2, context_size 4096, 2 runtime flags", "imported/ai-model/llm", "draft",
+					reason + "imported/ai-model/llm, a Component of its own, serving ai/smollm2, used by app"},
+				{"embed", "model ai/mxbai-embed-large", "imported/ai-model/embed", "draft",
+					reason + "imported/ai-model/embed, a Component of its own, serving ai/mxbai-embed-large, used by worker"},
+			})
+			if services := serviceDecisions(out); len(services) != 2 || services[0].SourceNode.ID != "app" ||
+				services[1].SourceNode.ID != "worker" || out.Decisions[0].SourceNode.ID != "llm" {
+				t.Errorf("the import decided %+v, want each model and then each service", out.Decisions)
+			}
+		})
+	}
+}
+
+// TestAModelMemberTheRuntimeDeclaresNoValueForIsNamedAboveItsInstance imports
+// models over a catalog holding the model runtime: a member the runtime declares
+// no value for is written nowhere and named in a comment above the instance, as
+// for a drafted model, and a model naming no OCI reference leaves values.model
+// for the author, saying so above the instance, its decision naming none; the
+// Release places each instance with an empty entry and writes nothing else of it.
+func TestAModelMemberTheRuntimeDeclaresNoValueForIsNamedAboveItsInstance(t *testing.T) {
+	t.Parallel()
+	out := importOver([]byte("services:\n  app:\n    image: ghcr.io/example/app:1.0.0\n    models:\n      - llm\n"+
+		"      - bare\nmodels:\n  llm:\n    model: ai/smollm2\n    x-gpu: required\n  bare:\n    context_size: 2048\n"),
+		"", catalogHoldingTheRuntime)
+	aggregate := fileContent(t, out, "aggregate.yaml")
+	for _, want := range []string{
+		"    # Not carried, since " + ModelRuntime + " declares no value for it: x-gpu.\n    llm:\n      type: " +
+			ModelRuntime + "\n      values:\n        model: \"ai/smollm2\"\n",
+		"    # values.model is left for the author, since the source names no model.\n    bare:\n      type: " +
+			ModelRuntime + "\n      values:\n        context_window: 2048\n",
+	} {
+		if !strings.Contains(aggregate, want) {
+			t.Errorf("the Aggregate does not hold\n%s\nin\n%s", want, aggregate)
+		}
+	}
+	if strings.Contains(aggregate, "required") {
+		t.Errorf("a member the runtime declares no value for is written as a value:\n%s", aggregate)
+	}
+	if release := fileContent(t, out, "release.yaml"); !strings.HasSuffix(release, "    llm: {}\n    bare: {}\n") ||
+		strings.Contains(release, "required") {
+		t.Errorf("the Release does not end with an empty entry for each model, and nothing else of them:\n%s", release)
+	}
+	assertDecisions(t, modelDecisions(out), []wantDecision{
+		{"llm", "model ai/smollm2", ModelRuntime, "reference", runtimeReason + "llm is an instance of it, serving " +
+			"ai/smollm2, used by app"},
+		{"bare", "no model, context_size 2048", ModelRuntime, "reference", runtimeReason + "bare is an instance of it, " +
+			"used by app"},
+	})
 }
 
 // evaluatedAggregate evaluates a drafted Aggregate's text as a template, as the

@@ -39,11 +39,12 @@ func aggregateText(text string) string {
 // service, of the Component its decision chose, in the order the projects write
 // them, connected to each service it depends on and each model it uses, a
 // comment above a connection to a model the service names in the long form
-// stating the variables it names; then one instance per model, of its drafted
-// Component, writing the model's identifier, context size and runtime flags as
-// values. Comments above it state the files read and what of them the draft does
-// not read.
-func renderAggregate(name string, settings json.RawMessage, read []*project, types map[*service]string) string {
+// stating the variables it names; then one instance per model, of the Component
+// its decision chose, writing the model's identifier, context size and runtime
+// flags as values — the context size under the key ModelRuntime declares for it
+// where the instance is of ModelRuntime. Comments above it state the files read
+// and what of them the draft does not read.
+func renderAggregate(name string, read []*project, types map[*service]string) string {
 	var b strings.Builder
 	writeFilesRead(&b, read)
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -99,24 +100,32 @@ func renderAggregate(name string, settings json.RawMessage, read []*project, typ
 				b.WriteString(commentLine("    ", "The model "+commentText(m.ref)+"."))
 			}
 			if len(m.others) > 0 {
-				b.WriteString(commentLine("    ", "Not carried, since the drafted model declares no value for it: "+commentList(m.others)+
-					"."))
+				declarer := "the drafted model"
+				if m.referenced {
+					declarer = ModelRuntime
+				}
+				b.WriteString(commentLine("    ", "Not carried, since "+declarer+" declares no value for it: "+
+					commentList(m.others)+"."))
 			}
 			if m.identifier == nil {
 				b.WriteString(commentLine("    ", "values.model is left for the author, since the source names no model."))
 			}
 			b.WriteString("    " + m.key + ":\n")
-			b.WriteString("      type: " + modelName(settings, m) + "\n")
+			b.WriteString("      type: " + m.component + "\n")
 			var values []string
 			if m.identifier != nil {
 				values = append(values, "        model: "+aggregateText(*m.identifier)+"\n")
 			}
 			if m.contextSize != nil {
-				var n json.Number
-				if json.Unmarshal(m.contextSize, &n) == nil {
-					values = append(values, "        context_size: "+n.String()+"\n")
-				} else if text, ok := scalarText(m.contextSize); ok {
-					values = append(values, "        context_size: "+aggregateText(text)+"\n")
+				key := "context_size"
+				if m.referenced {
+					key = runtimeContextKey
+				}
+				if text, number, ok := contextSizeText(m.contextSize); ok {
+					if !number {
+						text = aggregateText(text)
+					}
+					values = append(values, "        "+key+": "+text+"\n")
 				}
 			}
 			if len(m.runtimeFlags) > 0 {
@@ -181,8 +190,9 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 // the draft writes — the image and the port of an instance of Server — with a
 // comment above it naming what the draft leaves for the Release, what else the
 // source states for the service's operation, and the members it does not
-// carry. The Release's environment and its Manifest are left unset, each named
-// in a comment where it belongs.
+// carry; then, for each model whose instance is of ModelRuntime, an empty entry
+// under its key. The Release's environment and its Manifest are left unset, each
+// named in a comment where it belongs.
 func renderRelease(name string, read []*project, types map[*service]string) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -200,6 +210,17 @@ func renderRelease(name string, read []*project, types map[*service]string) stri
 	for _, p := range read {
 		for _, s := range p.services {
 			writeService(&b, s, types[s])
+		}
+	}
+	// A build places only the instances a Release names, so each instance of
+	// ModelRuntime, which takes no input on compose without a default, has an
+	// empty entry; a drafted model's instance has none, as its Component carries
+	// no Recipe a build could place it with.
+	for _, p := range read {
+		for _, m := range p.models {
+			if m.referenced {
+				b.WriteString("    " + m.key + ": {}\n")
+			}
 		}
 	}
 	return b.String()
@@ -318,6 +339,19 @@ func volumeTexts(volumes []volume) []string {
 		out = append(out, v.text)
 	}
 	return out
+}
+
+// contextSizeText reads a model's context_size as the tree writes it: a number,
+// as its text, with number set, or another scalar, as the source writes it, which
+// the draft writes as a string; ok is false for any other value, which no draft
+// writes.
+func contextSizeText(raw json.RawMessage) (text string, number, ok bool) {
+	var n json.Number
+	if json.Unmarshal(raw, &n) == nil {
+		return n.String(), true, true
+	}
+	text, ok = scalarText(raw)
+	return text, false, ok
 }
 
 // renderModel writes the drafted Component of one model, named name: a

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment: left for the operator, since no source names the environment this Release deploys to.
+  version: 0.1.0
+  description: Draft Release imported from a source in the compose format.
+spec:
+  aggregate: imported/flow
+  # manifest: left for the operator, since the import drafts no Manifest, which names the target the services are built for.
+  components:
+    app:
+      infra:
+        image: "ghcr.io/example/app:1.0.0"
+    worker:
+      infra:
+        image: "ghcr.io/example/worker:1.0.0"

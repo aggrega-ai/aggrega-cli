@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the compose format.
+spec:
+  components:
+    app:
+      type: core/compute/server
+      uses:
+        llm:
+          link:
+            target: llm
+    worker:
+      type: core/compute/server
+      uses:
+        # The service worker reads the address of the model embed as EMBED_URL and its identifier as EMBED_MODEL, the names its models entry gives them; no key of the draft holds either name.
+        embed:
+          link:
+            target: embed
+    llm:
+      type: imported/ai-model/llm
+      values:
+        model: "ai/smollm2"
+        context_size: 4096
+        runtime_flags:
+          - "--threads"
+          - "4"
+    embed:
+      type: imported/ai-model/embed
+      values:
+        model: "ai/mxbai-embed-large"

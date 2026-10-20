@@ -77,6 +77,34 @@ func readCatalogFolderSource(t *testing.T, path string) []byte {
 	return b
 }
 
+// catalogFolderWorkspaceHolding is catalogFolderWorkspace with the modules beside
+// their entities, whose catalog folder also holds each of the standard catalog's
+// entities named by its path beneath the sibling aggrega-hub catalog, copied to
+// the same path in the folder; it returns the workspace's root. Naming none reads
+// no sibling checkout, so the workspace is exactly catalogFolderWorkspace's.
+func catalogFolderWorkspaceHolding(t *testing.T, hubEntities []string) string {
+	t.Helper()
+	root, folder := catalogFolderWorkspace(t, true)
+	if len(hubEntities) == 0 {
+		return root
+	}
+	hub := siblingCatalogRootForExamples(t)
+	for _, rel := range hubEntities {
+		body, err := os.ReadFile(filepath.Join(hub, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read the standard catalog's %s: %v", rel, err)
+		}
+		dst := filepath.Join(folder.Dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			t.Fatalf("create the directory for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(dst, body, 0o644); err != nil {
+			t.Fatalf("lay %s in the catalog folder: %v", rel, err)
+		}
+	}
+	return root
+}
+
 // sharedCatalogFolderImport is the expectation every surface is held to: the
 // shared operation over a workspace laid out like the one under test, through the
 // real seam and this package's own plugin resolution, handed no destination and
@@ -84,7 +112,15 @@ func readCatalogFolderSource(t *testing.T, path string) []byte {
 // nothing — a halted import, or one that drafted nothing.
 func sharedCatalogFolderImport(t *testing.T, source []byte, name string) importops.Result {
 	t.Helper()
-	root, _ := catalogFolderWorkspace(t, true)
+	return sharedCatalogFolderImportHolding(t, source, name, nil)
+}
+
+// sharedCatalogFolderImportHolding is sharedCatalogFolderImport over a workspace
+// whose catalog folder also holds the standard catalog's entities named, laid as
+// catalogFolderWorkspaceHolding lays them.
+func sharedCatalogFolderImportHolding(t *testing.T, source []byte, name string, hubEntities []string) importops.Result {
+	t.Helper()
+	root := catalogFolderWorkspaceHolding(t, hubEntities)
 	rw, err := workspaceconfig.Resolve(root, root)
 	if err != nil {
 		t.Fatalf("resolve the workspace the shared operation runs in: %v", err)

@@ -5,8 +5,11 @@
 // models a Compose application declares and drafts an Aggregate holding one
 // instance per service — of the catalog Component its image matches, or of the
 // standard library's generic server, core/compute/server, running its image —
-// connected as its depends_on says, one drafted model Component per model, and a
-// Release beside it carrying what each service states for its operation.
+// connected as its depends_on says, one instance per model — of the standard
+// library's Docker Model Runner runtime, core/ai-model/docker-model-runner, where
+// the workspace's catalog holds it, and of a model Component drafted for it
+// otherwise — and a Release beside it carrying what each service states for its
+// operation.
 //
 // The importer guest (plugins/compose-importer) holds the descriptor, the
 // signature a Compose file is recognised by and the export wiring; everything it
@@ -45,9 +48,16 @@
 // an instance of core/compute/server, its image written into the Release.
 // depends_on draws a connection from each service to each service it depends on;
 // an environment value naming another service the service does not depend on is
-// recorded as a hint in its decision and draws nothing. Each model is drafted as
-// a model Component of its own, its identifier, context size and runtime flags
-// written as values, and a service naming it is connected to it. A service naming
+// recorded as a hint in its decision and draws nothing. Each model is an instance
+// of ModelRuntime where the catalog the import is handed holds a Component of that
+// name, whatever the reuse mode says, and no Component is drafted for it: its
+// identifier is written as values.model, its context size as
+// values.context_window, the key the runtime declares for a model's context
+// length, and its runtime flags as values.runtime_flags. Where the catalog holds
+// no ModelRuntime, the model is drafted as a model Component of its own, its
+// identifier, context size and runtime flags written as values of the names
+// Compose gives them. Every model's decision says which, and why. A service
+// naming a model is connected to it, either way. A service naming
 // a model in the long form, with an endpoint_var or a model_var, names the
 // variables the model's address and identifier reach it under; no key of the
 // draft holds a variable's name, so each is named, as the entry writes it, in a
@@ -58,8 +68,11 @@
 // of core/compute/server, its image and the port its container listens on as
 // infra.image and infra.port; and for every service, in a comment above its
 // entry, the image, ports, volumes and environment the source writes and no key
-// of the draft carries, for the author to place where the Component takes them.
-// The Release's environment and its Manifest are left unset, each named in a
+// of the draft carries, for the author to place where the Component takes them;
+// and an empty entry for each model's instance of ModelRuntime, since a build
+// places only the instances a Release names and the runtime takes no input on
+// compose without a default. A drafted model's instance has no entry. The
+// Release's environment and its Manifest are left unset, each named in a
 // comment, since no source names either and the import drafts no Manifest.
 //
 // # Credential values
@@ -96,6 +109,17 @@ const Syntax = "yaml"
 // instance of.
 const Server = "core/compute/server"
 
+// ModelRuntime is the catalog Component a model of the top-level models is an
+// instance of where the workspace's catalog holds it: the standard library's
+// runtime serving a model, named by the OCI reference a Compose model writes,
+// through Docker Model Runner.
+const ModelRuntime = "core/ai-model/docker-model-runner"
+
+// runtimeContextKey is the value ModelRuntime declares for a model's context
+// length, which Compose writes as context_size: the context_window it takes from
+// the standard library's shared model parameter.
+const runtimeContextKey = "context_window"
+
 // BaseFileNames are the names Compose reads a directory's Compose file under,
 // in the order Compose prefers them; OverrideFileNames are the names of the
 // override file it merges over it, in the same order of preference.
@@ -122,8 +146,11 @@ var arm = importer.Format{Name: Format, Syntax: Syntax, Mappings: mappings()}
 //
 // Where any project holds a service or a model, it returns the drafted Aggregate
 // and Release and the drafted Components, as files and entities, and a decision
-// per service; where the empty_credentials setting holds a value it does not
-// take, it returns that halt and drafts nothing. Given one request and one
+// per model and per service, a project's models before its services: the kit's
+// renderer reads a drafted Component's hint from the last decision naming its
+// node, and a service and a model may share a name, so a service's decision is
+// the one read for it. Where the empty_credentials setting holds a value it does
+// not take, it returns that halt and drafts nothing. Given one request and one
 // parser, it returns byte-identical output.
 func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (json.RawMessage, error)) aggrega.ImportOutput {
 	var out aggrega.ImportOutput
@@ -191,10 +218,17 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		return out
 	}
 
+	held := holdsModelRuntime(in.Catalog)
 	types := map[*service]string{}
 	drafted := map[string]bool{}
 	var components []aggrega.EmittedEntity
 	for _, p := range read {
+		var models []aggrega.EmittedEntity
+		for _, m := range p.models {
+			decision, entity := decideModel(in.Settings, p, m, held)
+			out.Decisions = append(out.Decisions, decision)
+			models = append(models, entity)
+		}
 		for _, s := range p.services {
 			decision, entity := decide(in, s, hints[s])
 			out.Decisions = append(out.Decisions, decision)
@@ -207,15 +241,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			}
 			components = append(components, entity)
 		}
-		for _, m := range p.models {
-			name := modelName(in.Settings, m)
-			components = append(components, aggrega.EmittedEntity{Kind: "Component", Name: name, Mode: "draft",
-				Body: renderModel(name), SourceRef: m.ref})
-		}
+		components = append(components, models...)
 	}
 
 	name := importer.TargetNamespace(in.Settings) + "/flow"
-	aggregate := renderAggregate(name, in.Settings, read, types)
+	aggregate := renderAggregate(name, read, types)
 	release := renderRelease(name, read, types)
 	out.Entities = append(components,
 		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
@@ -346,6 +376,74 @@ func modelVarsReport(serviceRef string, v modelVars, name func(string) string) s
 // key.
 func modelName(settings json.RawMessage, m *model) string {
 	return importer.TargetNamespace(settings) + "/ai-model/" + m.key
+}
+
+// holdsModelRuntime reports whether the catalog view an import is handed holds
+// a Component named ModelRuntime, at any version.
+func holdsModelRuntime(catalog *aggrega.CatalogProjection) bool {
+	if catalog == nil {
+		return false
+	}
+	return slices.ContainsFunc(catalog.Components, func(c aggrega.CatalogComponent) bool { return c.Name == ModelRuntime })
+}
+
+// decideModel makes the decision for one model of p and the entity it emits, and
+// records on the model the Component its instance is of: ModelRuntime, referenced,
+// where held says the workspace's catalog holds it, and otherwise a model
+// Component drafted for it, named by modelName. The rationale says which and why,
+// the model it serves and the services of p naming it.
+func decideModel(settings json.RawMessage, p *project, m *model, held bool) (aggrega.ImportDecision, aggrega.EmittedEntity) {
+	d := aggrega.ImportDecision{SourceNode: aggrega.DecisionSourceNode{ID: m.ref, Type: "model",
+		ParamsSummary: modelSummary(m)}}
+	var serving string
+	if m.identifier != nil {
+		serving = ", serving " + *m.identifier
+	}
+	var users []string
+	for _, s := range p.services {
+		if slices.Contains(s.models, m.name) {
+			users = append(users, s.ref)
+		}
+	}
+	if len(users) > 0 {
+		serving += ", used by " + strings.Join(users, ", ")
+	}
+	entity := aggrega.EmittedEntity{Kind: "Component", SourceRef: m.ref, DecisionRef: "decision:" + m.ref}
+	if held {
+		m.component, m.referenced = ModelRuntime, true
+		d.Chosen = &aggrega.DecisionChoice{Target: ModelRuntime, Mode: "reference", Tier: "NONE"}
+		d.Rationale = "the workspace's catalog holds " + ModelRuntime + ", which serves a model named by its OCI " +
+			"reference through Docker Model Runner, so " + m.key + " is an instance of it" + serving
+		entity.Name, entity.Mode = ModelRuntime, "reference"
+		return d, entity
+	}
+	m.component = modelName(settings, m)
+	d.Chosen = &aggrega.DecisionChoice{Target: m.component, Mode: "draft", Tier: "NONE"}
+	d.Rationale = "the workspace's catalog holds no " + ModelRuntime + ", so the model is drafted as " + m.component +
+		", a Component of its own" + serving
+	entity.Name, entity.Mode, entity.Body = m.component, "draft", renderModel(m.component)
+	return d, entity
+}
+
+// modelSummary summarises a model for its decision: the model it names, its
+// context size where it states one, and how many runtime flags it passes.
+func modelSummary(m *model) string {
+	parts := []string{"no model"}
+	if m.identifier != nil {
+		parts[0] = "model " + *m.identifier
+	}
+	if m.contextSize != nil {
+		if text, _, ok := contextSizeText(m.contextSize); ok {
+			parts = append(parts, "context_size "+text)
+		}
+	}
+	switch n := len(m.runtimeFlags); {
+	case n == 1:
+		parts = append(parts, "1 runtime flag")
+	case n > 1:
+		parts = append(parts, strconv.Itoa(n)+" runtime flags")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // draftedValues writes, as one JSON document, the values of every service the
