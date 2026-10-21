@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"sort"
@@ -19,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -734,11 +736,37 @@ func nodeProducerLabel(producer derivedKeyProducer) string {
 // two producers meeting at one path would have nothing to compare. For a name the
 // alphabet already admits the composition returns that name unchanged, so an
 // ordinary contributor reaches the directory it always reached.
-func nodeOutputSegment(producer derivedKeyProducer) string {
+//
+// # A segment that is not a directory name is refused here
+//
+// That pass-through is why "." and ".." can arrive: a contributor identified by
+// one coordinate that is itself "." or ".." — a Feature attached at a boundary
+// under such an instance name, which the Release admits — composes to exactly
+// that string, and as a directory it names the position holding every
+// contributor, or the one above it, rather than a position of its own. A segment
+// composed from two coordinates always carries the separator and can never be
+// either. This is the one composition of a contributor's directory, so the refusal
+// sits here and every position a group names is guarded by it: the nesting
+// placement, the position the assembler is told, and a flat group's directory for
+// author-named artifact files. release is the Release the refusal names.
+func nodeOutputSegment(release string, producer derivedKeyProducer) (string, error) {
+	segment := contributorDirSegment(producer.name)
 	if producer.kind == producerKindComponent && producer.scope != "" {
-		return contributorDirSegment(producer.name, producer.scope)
+		segment = contributorDirSegment(producer.name, producer.scope)
 	}
-	return contributorDirSegment(producer.name)
+	if segment != "." && segment != ".." {
+		return segment, nil
+	}
+	details := []string{fmt.Sprintf("Release %q", release)}
+	if producer.kind == producerKindFeature {
+		details = append(details, fmt.Sprintf("boundary %q", producer.scope), fmt.Sprintf("feature %q", producer.name))
+	} else {
+		details = append(details, nodeProducerLabel(producer))
+	}
+	return "", cerrors.Wrap(ErrBoundaryFeatureNameNotADirectory(),
+		cerrors.OpsError, cerrors.SourceLocation{File: release},
+		cerrors.ComposeMessage(ErrBoundaryFeatureNameNotADirectory(), details,
+			"rename the Feature instance under the boundary's features to an ordinary name, such as \"audit\""))
 }
 
 // nodeRelFor is the position a nesting dispatch group writes the files keyed
@@ -752,8 +780,12 @@ func nodeOutputSegment(producer derivedKeyProducer) string {
 // to the group's assembler read it, so a contributor's files are written where
 // the assembler was told they are rather than at a position one side composed and
 // the other re-derived.
-func (pd *pendingDispatch) nodeRelFor(nestPrefix, nodeID string) string {
-	return nestPrefix + nodeOutputSegment(pd.producerOf(nodeID)) + "/"
+func (pd *pendingDispatch) nodeRelFor(release, nestPrefix, nodeID string) (string, error) {
+	segment, err := nodeOutputSegment(release, pd.producerOf(nodeID))
+	if err != nil {
+		return "", err
+	}
+	return nestPrefix + segment + "/", nil
 }
 
 // contributorKeys is every per-node key this dispatch group holds output for.
@@ -2341,8 +2373,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 			parameters = input.ResolveResult.Parameters
 		}
-		finalPath, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+		finalPath, err := computeFinalPath(releaseNameOf(input), nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
+			// A refused dispatch path already names the Release, the boundary and
+			// the field, which is what its reader edits; a node frame above it would
+			// lead the diagnostic with a component nobody has to change.
+			if errors.Is(err, ErrBoundaryDirectoryNotBeneathOutputRoot()) {
+				return nil, err
+			}
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("path eval node %q", nodeID))
 		}
 
@@ -2742,8 +2780,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// evaluate alike are MEANT to feed one group; sending them to two by
 		// disambiguating this value would not separate two contributors, it would
 		// separate two groups and take the whole question off the table.
-		finalPath, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+		finalPath, err := computeFinalPath(releaseNameOf(input), boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
+			if errors.Is(err, ErrBoundaryDirectoryNotBeneathOutputRoot()) {
+				return nil, err
+			}
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope FR %q path eval", key.FRInstance))
 		}
 		dKey := dispatchKey{Path: finalPath, Provider: frProvider}
@@ -3129,8 +3170,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			var nodeOutputDirectory map[string]string
 			if nesting.PerNode {
 				nodeOutputDirectory = make(map[string]string, len(pd.files))
-				for nodeID := range pd.contributorKeys() {
-					nodeOutputDirectory[nodeID] = strings.TrimSuffix(pd.nodeRelFor(nestPrefix, nodeID), "/")
+				// In sorted order rather than the set's own, so where two contributors
+				// are refused the one reported is a function of the input.
+				for _, nodeID := range slices.Sorted(maps.Keys(pd.contributorKeys())) {
+					rel, rerr := pd.nodeRelFor(releaseNameOf(input), nestPrefix, nodeID)
+					if rerr != nil {
+						return nil, rerr
+					}
+					nodeOutputDirectory[nodeID] = strings.TrimSuffix(rel, "/")
 				}
 			}
 			info := BoundaryInfo{
@@ -3201,7 +3248,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
 				if nesting.PerNode {
-					nodeRel = pd.nodeRelFor(nestPrefix, nodeID)
+					rel, rerr := pd.nodeRelFor(releaseNameOf(input), nestPrefix, nodeID)
+					if rerr != nil {
+						return nil, rerr
+					}
+					nodeRel = rel
 				}
 				producer := nodeProducerLabel(pd.producerOf(nodeID))
 				for p, c := range nodeFiles {
@@ -3238,15 +3289,28 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// that record was taken — an attachment's contribution, or a
 			// host-supplied patch — appears in none of it and stays flat, which is
 			// what leaves a boundary-scope attachment's own layout untouched.
-			for nodeID, nodeFiles := range pd.files {
+			//
+			// The contributor's directory is composed only for a contributor that
+			// placed such a file, because only then is it a directory at all, and in
+			// sorted order so that where two contributors are refused the one reported
+			// is a function of the input.
+			for _, nodeID := range slices.Sorted(maps.Keys(pd.files)) {
+				nodeFiles := pd.files[nodeID]
 				nodeFormats := pd.formats[nodeID]
 				producer := nodeProducerLabel(pd.producerOf(nodeID))
-				artifactsDir := nodeOutputSegment(pd.producerOf(nodeID)) + "/"
 				fromArtifacts := make(map[string]struct{}, len(pd.placed[nodeID]))
 				for _, f := range pd.placed[nodeID] {
 					if f.Origin == EmitOriginArtifactsInline || f.Origin == EmitOriginArtifactsImport {
 						fromArtifacts[f.Name] = struct{}{}
 					}
+				}
+				artifactsDir := ""
+				if len(fromArtifacts) > 0 {
+					segment, serr := nodeOutputSegment(releaseNameOf(input), pd.producerOf(nodeID))
+					if serr != nil {
+						return nil, serr
+					}
+					artifactsDir = segment + "/"
 				}
 				for p, c := range nodeFiles {
 					path := p
@@ -3287,10 +3351,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// in different dispatch groups — through the providers' link exports, editing
 	// the retained assembled artifacts in place. Inert on inputs whose providers
 	// advertise no linking (no file change, no warning).
-	releaseID := ""
-	if input.ResolveResult != nil && input.ResolveResult.Release != nil {
-		releaseID = input.ResolveResult.Release.Metadata.Name
-	}
+	releaseID := releaseNameOf(input)
 	linkWarnings, err := wireCrossBoundaryLinks(ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations, assembledByDispatch, engineFactory, input.YAMLIndent, releaseID)
 	if err != nil {
 		return nil, err
@@ -3689,8 +3750,12 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
 // when the parent path is empty (root-level boundary) or absent from the
 // maps. .parent_boundary.parameters mirrors .parameters since parameters
 // are Release-global.
+//
+// release is the name of the Release the boundary is declared in, which a refusal
+// of the evaluated path names; the composition and the refusal are
+// [cleanDispatchPath]'s.
 func computeFinalPath(
-	nodeID, bp, providerName, recipeName string,
+	release, nodeID, bp, providerName, recipeName string,
 	bi *resolver.BoundaryInfra,
 	parameters map[string]any,
 	boundaryDirEvals map[string]string,
@@ -3736,15 +3801,65 @@ func computeFinalPath(
 	if err != nil {
 		return "", err
 	}
+	return cleanDispatchPath(release, bp, evalDir, evalSub)
+}
 
-	if evalSub == "" || evalSub == "." {
-		return evalDir, nil
+// cleanDispatchPath composes a boundary's evaluated `directory:` and
+// `subDirectory:` into the dispatch path, cleaned once, and refuses one that does
+// not name a directory beneath the output root.
+//
+// The dispatch path is a slash-separated output name, not a host path: it
+// prefixes every emitted file's name and reaches an assembling provider as its
+// boundary path, so it is composed in slash arithmetic on every platform and
+// converted to a host path only where a file is written.
+//
+// It is cleaned on every branch, because it is also the key contributors are
+// grouped by, compared as a string. Two spellings of one directory — `a/b`,
+// `a//b`, `./a/b`, `a/b/` — are therefore one dispatch path, and so one group, one
+// assembled output and one set of collision checks, rather than two groups that
+// write one directory without either seeing the other. An empty or `.`
+// `subDirectory:` keeps meaning "no sub-directory": the path is the directory
+// alone.
+//
+// The containment question is the shared logical-name predicate's, so the path
+// refused here is the path the write would refuse: one climbing out of the output
+// root, or naming an absolute location. A path cleaning to the root itself is
+// refused too, because it names no directory of the boundary's own. The refusal
+// names the field the fault comes from — `directory:` where the directory alone
+// already leaves the root or where no sub-directory is composed, `subDirectory:`
+// otherwise — with the value that field evaluated to.
+func cleanDispatchPath(release, bp, evalDir, evalSub string) (string, error) {
+	noSubDirectory := evalSub == "" || evalSub == "."
+	joined := evalDir
+	if !noSubDirectory {
+		joined = path.Join(evalDir, evalSub)
 	}
-	// The dispatch path is a slash-separated output name, not a host path: it
-	// prefixes every emitted file's name and reaches an assembling provider as its
-	// boundary path, so it is joined in slash arithmetic on every platform and
-	// converted to a host path only where a file is written.
-	return path.Join(evalDir, evalSub), nil
+	cleaned := path.Clean(joined)
+	if cleaned != "." && pathscope.IsLocalSlash(cleaned) {
+		return cleaned, nil
+	}
+	field, value := "subDirectory:", evalSub
+	if noSubDirectory || (evalDir != "" && !pathscope.IsLocalSlash(path.Clean(evalDir))) {
+		field, value = "directory:", evalDir
+	}
+	return "", cerrors.Wrap(ErrBoundaryDirectoryNotBeneathOutputRoot(),
+		cerrors.OpsError, cerrors.SourceLocation{File: release},
+		cerrors.ComposeMessage(ErrBoundaryDirectoryNotBeneathOutputRoot(), []string{
+			fmt.Sprintf("Release %q", release),
+			fmt.Sprintf("boundary %q", bp),
+			fmt.Sprintf("%s %q", field, value),
+			fmt.Sprintf("output path %q", cleaned),
+		}, "write a directory beneath the output root, such as \"deploy/prod\" — no leading \"/\", no \"..\" "+
+			"climbing above it, and not the output root itself"))
+}
+
+// releaseNameOf is the name of the Release a render was resolved from, or "" for
+// an input carrying no resolved Release.
+func releaseNameOf(input RendererInput) string {
+	if input.ResolveResult == nil || input.ResolveResult.Release == nil {
+		return ""
+	}
+	return input.ResolveResult.Release.Metadata.Name
 }
 
 // parentBoundaryData returns the .parent_boundary.* data map for path-template

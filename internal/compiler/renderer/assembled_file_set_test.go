@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"errors"
 	"os"
 	"reflect"
 	"strings"
@@ -132,6 +133,15 @@ func TestNodeProducerLabel(t *testing.T) {
 func TestNodeOutputSegment(t *testing.T) {
 	t.Parallel()
 
+	nodeOutputSegment := func(p derivedKeyProducer) string {
+		t.Helper()
+		segment, err := nodeOutputSegment("release", p)
+		if err != nil {
+			t.Fatalf("nodeOutputSegment(%+v) refused an ordinary contributor: %v", p, err)
+		}
+		return segment
+	}
+
 	if got, want := nodeOutputSegment(derivedKeyProducerFor(producerKindComponent, "api", "")), "api"; got != want {
 		t.Errorf("nodeOutputSegment(component) = %q, want %q", got, want)
 	}
@@ -162,6 +172,70 @@ func TestNodeOutputSegment(t *testing.T) {
 		if strings.Contains(nodeOutputSegment(feature), bad) {
 			t.Errorf("the segment for a boundary feature carries %q, which a path refuses on some platforms", bad)
 		}
+	}
+}
+
+// TestABoundaryFeatureNamedDotOrDotDotIsNotAContributorDirectory drives the one
+// composition of a contributor's directory with a boundary-level Feature named
+// "." and "..", each refused with the condition's own identity and with the
+// Release, the boundary and the instance named, and with a dotted ordinary name
+// admitted as itself.
+//
+// The single-coordinate case is the one that can reach these strings: the
+// composition carries an admitted name through unchanged, and a full stop is
+// admitted, so "." composes to "." — which as a directory is the position holding
+// every contributor rather than a position of the Feature's own. The two-
+// coordinate rows are the control that the guard is about the string and not the
+// kind: a component-scope attachment named "." always carries the separator, so
+// it composes to a directory name of its own and is admitted.
+func TestABoundaryFeatureNamedDotOrDotDotIsNotAContributorDirectory(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{".", ".."} {
+		name := name
+		t.Run("refused "+name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("nodeOutputSegment panicked on the instance name %q: %v", name, r)
+				}
+			}()
+			segment, err := nodeOutputSegment("shop", derivedKeyProducerFor(producerKindFeature, name, "prod"))
+			if !errors.Is(err, ErrBoundaryFeatureNameNotADirectory()) {
+				t.Fatalf("a boundary Feature named %q composed the directory %q (err %v); want "+
+					"ErrBoundaryFeatureNameNotADirectory", name, segment, err)
+			}
+			for _, want := range []string{`Release "shop"`, `boundary "prod"`, `feature "` + name + `"`, "rename"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not carry %q:\n%s", want, err)
+				}
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name     string
+		producer derivedKeyProducer
+		want     string
+	}{
+		{"a dotted boundary Feature name", derivedKeyProducerFor(producerKindFeature, "a.b", "prod"), "a.b"},
+		{"a name opening with two dots", derivedKeyProducerFor(producerKindFeature, "..a", "prod"), "..a"},
+		{"a component-scope attachment named dot", derivedKeyProducerFor(producerKindComponent, "api", "."), ""},
+	} {
+		tc := tc
+		t.Run("admitted "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			segment, err := nodeOutputSegment("shop", tc.producer)
+			if err != nil {
+				t.Fatalf("%s was refused: %v", tc.name, err)
+			}
+			if tc.want != "" && segment != tc.want {
+				t.Errorf("%s composed %q; want %q", tc.name, segment, tc.want)
+			}
+			if segment == "." || segment == ".." {
+				t.Errorf("%s composed %q, which is not a directory name", tc.name, segment)
+			}
+		})
 	}
 }
 

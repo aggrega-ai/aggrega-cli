@@ -189,16 +189,19 @@ var contributorDirEncoding = namesegment.NewEncoding('-', isContributorDirRune)
 // A full stop is ADMITTED mid-name, so a dotted identity reaches a directory
 // carrying that dot as written rather than a name interrupted by an escape. The
 // names "." and ".." are not names at all, and for a segment composed from more
-// than one coordinate they are unreachable rather than guarded: such a segment
-// always carries the separator, and neither of those two strings does. For a
-// segment composed from a single coordinate they ARE reachable — from a
-// coordinate that is itself "." or ".." — and so is a segment opening with the
-// escape opener, from a coordinate opening with a hyphen. Neither is introduced
-// by this encoding: the same coordinate reaches the same directory name where no
-// encoding is applied at all, because an admitted character is carried through as
-// authored. Refusing them belongs to whatever guards a contributor's directory
-// for every provider rather than to the alphabet, which cannot refuse a character
-// it is required to carry.
+// than one coordinate they are unreachable: such a segment always carries the
+// separator, and neither of those two strings does. For a segment composed from a
+// single coordinate they are reachable — from a coordinate that is itself "." or
+// "..", a Feature attached at a boundary under such an instance name — and so is a
+// segment opening with the escape opener, from a coordinate opening with a hyphen.
+// Neither is introduced by this encoding: the same coordinate reaches the same
+// directory name where no encoding is applied at all, because an admitted
+// character is carried through as authored. The alphabet cannot refuse a
+// character it is required to carry, so the refusal sits with the one composition
+// of a contributor's directory, [nodeOutputSegment], which halts on a segment
+// that is "." or ".." for every provider and every position it names. A segment
+// opening with the escape opener is a directory name like any other and is left
+// as it is.
 func isContributorDirRune(r rune) bool {
 	return r >= 'a' && r <= 'z' ||
 		r >= 'A' && r <= 'Z' ||

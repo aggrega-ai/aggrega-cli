@@ -1112,6 +1112,61 @@ var errNestSegmentNotOneDirectory = cerrors.Register("nest-segment-not-one-direc
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrBoundaryDirectoryNotBeneathOutputRoot is the Loud Guardrail halt raised when
+// a Release boundary's `directory:` or `subDirectory:`, once evaluated and
+// cleaned, does not name a directory beneath the output root: it climbs out of
+// it (`..`, `../x`, `a/../..`), names an absolute location, or names no
+// directory at all — empty, or cleaning to the output root itself.
+//
+// The evaluated path is the directory every file the boundary's components
+// render is written under, and it is what groups contributors into one dispatch
+// group, so it is cleaned once before either: `a//b`, `./a/b` and `a/b/` are one
+// directory and form one group. A path that climbs out would otherwise be refused
+// only when the files are written, through no condition a reader could look up;
+// a path naming the root itself would put the boundary's output at the top of the
+// output directory, beside every other boundary's. `subDirectory: "."`, and a
+// `subDirectory:` template that evaluates to an empty string, are untouched: they
+// write a boundary's output directly in its `directory:`.
+//
+// The diagnostic names the Release, the boundary, the field at fault and the
+// value it evaluated to, together with the path that value produced, because the
+// value is often a template whose evaluation the author has not seen. Category:
+// OPS_ERROR, because the value comes from a Release the operator wrote. Match
+// with errors.Is(err, ErrBoundaryDirectoryNotBeneathOutputRoot()).
+func ErrBoundaryDirectoryNotBeneathOutputRoot() error {
+	return errBoundaryDirectoryNotBeneathOutputRoot
+}
+
+var errBoundaryDirectoryNotBeneathOutputRoot = cerrors.Register("boundary-directory-not-beneath-output-root", cerrors.Meta{
+	ShortCode: "E0352",
+	Message:   "boundary output directory does not name a directory beneath the output root",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrBoundaryFeatureNameNotADirectory is the Loud Guardrail halt raised when a
+// Feature attached at a Release boundary is named `.` or `..` and the provider
+// rendering it gives each contributor a directory of its own.
+//
+// Such a provider places a boundary-level Feature's files in a directory named
+// for the instance alone, beside the boundary's components. `.` and `..` are not
+// directory names: the first would put the Feature's files in the directory that
+// holds every contributor, the second in the one above it, so the files would
+// land outside the position the provider gave the Feature. The build halts rather
+// than composing that directory. Any other name the Release admits is untouched,
+// a dotted one such as `audit.v2` included.
+//
+// The diagnostic names the Release, the boundary and the instance; the remedy is
+// to rename the instance. Category: OPS_ERROR, because the instance name comes
+// from a Release the operator wrote. Match with
+// errors.Is(err, ErrBoundaryFeatureNameNotADirectory()).
+func ErrBoundaryFeatureNameNotADirectory() error { return errBoundaryFeatureNameNotADirectory }
+
+var errBoundaryFeatureNameNotADirectory = cerrors.Register("boundary-feature-name-not-a-directory", cerrors.Meta{
+	ShortCode: "E0353",
+	Message:   "boundary-level Feature instance name is not a directory name",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrEmptySource is the Loud Guardrail halt raised when a Recipe declares
 // `source:` and gives it an empty string. The two authoring modes a Recipe's
 // source field selects between are sourceless — no external artifact, output
