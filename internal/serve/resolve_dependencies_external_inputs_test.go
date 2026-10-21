@@ -107,7 +107,7 @@ spec:
 `)
 
 	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"),
-		[]byte("workspace:\n  catalog_dirs: [catalog]\n"), 0o644); err != nil {
+		[]byte("workspace:\n  catalog_dirs: [catalog]\n"+testOwnedRegistryConfig(t)), 0o644); err != nil {
 		t.Fatalf("write the workspace configuration: %v", err)
 	}
 

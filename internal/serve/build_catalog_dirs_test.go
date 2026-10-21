@@ -66,7 +66,8 @@ func decodeBuildAnswer(t *testing.T, resp jsonRPCResponse, v any) {
 // later request leaves there is its own.
 func builtOverTheFixturesOwnList(t *testing.T, ws, release string) ([]string, map[string]string) {
 	t.Helper()
-	writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace:\n  catalog_dirs:\n    - ./catalog\n")
+	writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename),
+		"workspace:\n  catalog_dirs:\n    - ./catalog\n"+testOwnedRegistryConfig(t))
 	var result buildResult
 	decodeBuildAnswer(t, buildCatalogDirsAnswer(t, ws, "aggrega/build", buildParams{Release: release, AutoPull: true}), &result)
 	dist := filepath.Join(ws, artifactout.DefaultOutputDir)
@@ -204,7 +205,7 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 			wantFiles, wantWritten := builtOverTheFixturesOwnList(t, ws, release)
 
 			makeListedDirectory(t, listed, tc.state)
-			writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), config)
+			writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), config+testOwnedRegistryConfig(t))
 			probe := catalogDirsServer(t, ws, &bytes.Buffer{})
 			dirs := probe.catalogDirsFor(filepath.Join(ws, release))
 			if reads := containsPath(dirs, listed); reads != (tc.state != listedAbsent) {

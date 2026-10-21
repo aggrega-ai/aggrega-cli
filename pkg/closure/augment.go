@@ -21,8 +21,14 @@ import (
 // pinned entity, via the verified lazy library walk); the producers stay
 // decoupled from that resolution machinery.
 type LibrarySource interface {
-	Component(uri string) (types.Component, bool)
-	Feature(uri string) (types.Feature, bool)
+	// ClosureComponent and ClosureFeature read the Component or Feature a closure
+	// entity reference resolves to. They take the reference whole rather than its
+	// URI, because where the walk collected it says which kind it can be, and an
+	// implementation that would ask a registry asks only for that kind. They take
+	// the caller's context because such a read can leave the process, and a
+	// discovery whose caller has withdrawn must not wait on it.
+	ClosureComponent(ctx context.Context, ref ResolvedRef) (types.Component, bool)
+	ClosureFeature(ctx context.Context, ref ResolvedRef) (types.Feature, bool)
 	SchemaLibrary(uri string) (types.SchemaLibrary, bool)
 	RecipeByURI(uri string) (types.Recipe, bool)
 	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
@@ -157,7 +163,7 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 	var compConsumers, featConsumers []SchemaConsumer
 	compSeen, featSeen := map[string]struct{}{}, map[string]struct{}{}
 	for _, e := range cl.Entities {
-		if comp, ok := src.Component(e.URI); ok {
+		if comp, ok := src.ClosureComponent(ctx, e); ok {
 			if _, dup := compSeen[comp.Metadata.Name]; dup {
 				continue
 			}
@@ -166,7 +172,7 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			compConsumers = append(compConsumers, SchemaConsumer{URI: c.Metadata.Name, Schema: &c.Spec.Schema})
 			continue
 		}
-		if feat, ok := src.Feature(e.URI); ok {
+		if feat, ok := src.ClosureFeature(ctx, e); ok {
 			if _, dup := featSeen[feat.Metadata.Name]; dup {
 				continue
 			}

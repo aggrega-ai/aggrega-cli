@@ -75,7 +75,7 @@ type BuildInputs struct {
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (pipeline.Outcome, error) {
 	view := in.View
 	r := in.Resolved
-	catLookup := view.AsCatalogLookup()
+	catLookup := view.AsCatalogLookupContext(ctx)
 
 	// Reconstruct provider resolution from the LOCKFILE, never the workspace
 	// config, so rendered output is invariant to a plugins.providers change made

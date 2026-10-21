@@ -21,6 +21,10 @@ import (
 // A non-empty config replaces the fixture's own workspace configuration. That is
 // how a case builds the same files under a configuration that lists one
 // directory for every Release.
+//
+// Either way the configuration the copy ends with names a registry the test
+// owns, appended to the copy and never to the tracked fixture, so a resolution
+// over it asks that registry for whatever no local tier holds.
 func releaseCatalogWorkspace(t *testing.T, config string) string {
 	t.Helper()
 	src, err := filepath.Abs(filepath.Join("..", "compiler", "testdata", "release-catalog-dirs"))
@@ -31,10 +35,19 @@ func releaseCatalogWorkspace(t *testing.T, config string) string {
 	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
 		t.Fatalf("copy the fixture workspace: %v", err)
 	}
-	if config != "" {
-		if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(config), 0o644); err != nil {
-			t.Fatalf("write the workspace configuration: %v", err)
+	configPath := filepath.Join(root, workspaceconfig.ConfigFilename)
+	if config == "" {
+		own, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatalf("read the fixture's own workspace configuration: %v", err)
 		}
+		config = string(own)
+	}
+	if n := len(config); n > 0 && config[n-1] != '\n' {
+		config += "\n"
+	}
+	if err := os.WriteFile(configPath, []byte(config+testOwnedRegistryConfig(t)), 0o644); err != nil {
+		t.Fatalf("write the workspace configuration: %v", err)
 	}
 	return root
 }

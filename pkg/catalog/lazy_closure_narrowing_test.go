@@ -97,7 +97,7 @@ func TestLazyLookup_ClosureNarrowingWarnings_Deterministic(t *testing.T) {
 			{URI: "test/zzz-narrow:1.0.0"},
 			{URI: "test/aaa-narrow:1.0.0"},
 		}}
-		if errs := lazy.ResolveClosureExtends(cl); len(errs) > 0 {
+		if errs := lazy.ResolveClosureExtends(t.Context(), cl); len(errs) > 0 {
 			t.Fatalf("ResolveClosureExtends: %v", errs)
 		}
 		return lazy.ClosureNarrowingWarnings()
@@ -134,7 +134,7 @@ func TestLazyLookup_ClosureNarrowingWarnings_Deterministic(t *testing.T) {
 	writeCatalogFile(t, cleanCd, "clean.yaml", narrowChildCleanYAML)
 	cleanLazy := NewLazyLookup(cleanWs, ".aggrega/cache", []string{cleanCd}, nil)
 	cleanCl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/clean-narrow:1.0.0"}}}
-	if errs := cleanLazy.ResolveClosureExtends(cleanCl); len(errs) > 0 {
+	if errs := cleanLazy.ResolveClosureExtends(t.Context(), cleanCl); len(errs) > 0 {
 		t.Fatalf("ResolveClosureExtends (clean): %v", errs)
 	}
 	if w := cleanLazy.ClosureNarrowingWarnings(); len(w) != 0 {

@@ -161,7 +161,21 @@ func (l *LazyLookup) ForRequest(pins map[string]Pin) *LazyLookup {
 // lookup. Both Component and Feature fields close over the underlying
 // *LazyLookup, so the same hot caches + negative caches + indexes
 // serve every consumer.
+//
+// Its Component and Feature fields read under a background context, which is
+// what a caller holding no context of its own can hand on. A caller that holds
+// one takes AsCatalogLookupContext instead, so a lookup reaching the registry
+// tier ends when that caller withdraws.
 func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
+	return l.AsCatalogLookupContext(context.Background())
+}
+
+// AsCatalogLookupContext is AsCatalogLookup with its Component and Feature fields
+// bound to ctx. The lookup's function fields carry no context of their own, so
+// the context is fixed here, when the view is taken: every Component or Feature
+// it answers through the registry tier is fetched under ctx, and a caller that
+// withdraws ends that fetch rather than waiting for an answer nobody will read.
+func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.CatalogLookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Resolve the SchemaLibrary set (once, cached) so cross-document $ref expansion
@@ -171,8 +185,12 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 	// resolvable set.
 	_ = l.buildSchemaLibraries()
 	return resolver.CatalogLookup{
-		Component:       l.Component,
-		Feature:         l.Feature,
+		Component: func(uri string) (types.Component, bool) {
+			return l.ComponentContext(ctx, uri)
+		},
+		Feature: func(uri string) (types.Feature, bool) {
+			return l.FeatureContext(ctx, uri)
+		},
 		SchemaLibraries: l.schemaLibraries,
 		// EffectiveSchema serves the composed (parent+child) schema for an
 		// extends-ing FEATURE, keyed by metadata.name — populated by
@@ -437,7 +455,7 @@ func (l *LazyLookup) Prime(cat *Catalog) {
 type LazyLookup struct {
 	// mu guards every operation on the lazy lookup. Each exported
 	// method takes it on entry; the many unexported helpers
-	// (resolveComponent, the Tier-1/2/3 readers, the build* index
+	// (resolveComponentContext, the Tier-1/2/3 readers, the build* index
 	// builders, foldRecipeShellEntity, recipeCatalog, the component /
 	// feature cores) run lock-free because they are only ever reached
 	// from an already-locked exported method. The mutex is not
@@ -636,7 +654,7 @@ type LazyLookup struct {
 	// build/pull computed (digest fidelity: the bytes hashed are the bytes of the
 	// version resolved, no second source of truth, no re-read TOCTOU). Populated
 	// by buildRecipeIndex / buildSchemaLibraries (enumerated kinds) and by
-	// resolveComponent / resolveFeature (on-demand kinds). Cleared by Reset so an
+	// the Component and Feature cascades (on-demand kinds). Cleared by Reset so an
 	// invalidated workspace retains no stale bytes — they must not survive an
 	// mtime-eviction / invalidation.
 	entityBytes map[string][]byte
@@ -1025,46 +1043,143 @@ type fileHeader struct {
 // downstream consumers can proceed; the operator sees the warning
 // in the daemon's stderr stream. This mirrors how dispatchBuild
 // surfaces catalog deprecation + binding-lint warnings.
+//
+// It reads under a background context, because its signature is the plain
+// function a resolver.CatalogLookup field and an extends lookup take, and those
+// carry none. A caller holding a context uses ComponentContext, which runs the
+// same cascade under it.
 func (l *LazyLookup) Component(uri string) (types.Component, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.component(uri)
+	return l.ComponentContext(context.Background(), uri)
 }
 
-// component is the lock-free core of Component. The extends-merge
-// recursion is wired to component itself (not the exported Component),
-// so a multi-level chain resolves without re-acquiring the lock — the
-// caller already holds it. Every internal helper it reaches
-// (resolveComponent, the Tier-1/2/3 readers) is likewise lock-free.
+// ComponentContext is Component under the caller's context. The registry tier
+// is a network fetch, so a caller that withdraws ends the fetch it is waiting on
+// rather than leaving it to finish for an answer nobody will read; the parents
+// of the Component's extends chain are read under the same context.
+func (l *LazyLookup) ComponentContext(ctx context.Context, uri string) (types.Component, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.componentContext(ctx, uri, true)
+}
+
+// ClosureComponent returns the Component a closure entity reference resolves to,
+// merged along its extends chain, satisfying closure.LibrarySource.
+//
+// The local tiers are always read. The registry tier is asked only where the
+// walk collected ref at a position naming a Component. A reference collected as
+// anything else — a Recipe, the Release's own Manifest or Aggregate, a plugin —
+// was resolved by the walk as that kind, and whatever the walk took from a
+// registry for it is pinned and held in the cache the local tiers read. So a
+// Component a registry served for such a reference here would be one the
+// resolved closure does not hold, and asking for it is a round trip that can
+// only cost the wait. Where the registry is asked, it is asked under ctx.
+func (l *LazyLookup) ClosureComponent(ctx context.Context, ref closure.ResolvedRef) (types.Component, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.closureComponent(ctx, ref)
+}
+
+// closureComponent is the lock-free core of ClosureComponent.
+func (l *LazyLookup) closureComponent(ctx context.Context, ref closure.ResolvedRef) (types.Component, bool) {
+	return l.componentContext(ctx, ref.URI, collectedAs(ref, "Component"))
+}
+
+// collectedAs reports whether the walk collected ref at a position naming the
+// catalog kind, read through the one mapping from a collection-site hint to a
+// catalog kind (ociKindForHint) that the registry tier's own fetch binds by.
+func collectedAs(ref closure.ResolvedRef, kind string) bool {
+	return ociKindForHint(ref.KindHint) == kind
+}
+
+// registryTier returns the puller a cascade's registry tier reads through: this
+// view's own where the tier is open, and none — the closed tier — where it is
+// not.
+func (l *LazyLookup) registryTier(open bool) OCIPuller {
+	if !open {
+		return nil
+	}
+	return l.puller
+}
+
+// component is the lock-free core of Component, read under a background context
+// for a caller whose own signature carries none. Every other reader goes through
+// componentContext with the context it holds.
 func (l *LazyLookup) component(uri string) (types.Component, bool) {
+	return l.componentContext(context.Background(), uri, true)
+}
+
+// componentContext is the cascade every Component read of this view runs, under ctx,
+// with its registry tier open or closed. The extends-merge recursion is wired
+// to it rather than to the exported accessor, so a multi-level chain resolves
+// without re-acquiring the lock — the caller already holds it. Every internal
+// helper it reaches (the Tier-1/2/3 readers) is likewise lock-free.
+//
+// A chain's parents are read with the registry tier open whatever the child was
+// read with: a parent is named by the child's own extends field, which says what
+// kind it is.
+//
+// Two things are not remembered. A miss with the registry tier closed is not
+// recorded as a miss, because it says nothing about what a registry holds, and a
+// later read with the tier open still asks one — unless this view has no
+// registry tier at all, in which case the two reads are the same read. And
+// nothing read under a context that has ended is kept, because a fetch the
+// caller withdrew from has not learned that the entity is absent, and a chain
+// merged without the parent it was withdrawn from is not the entity's chain.
+func (l *LazyLookup) componentContext(ctx context.Context, uri string, registry bool) (types.Component, bool) {
 	if c, ok := l.components[uri]; ok {
 		return c, true
 	}
 	if _, ok := l.componentMisses[uri]; ok {
 		return types.Component{}, false
 	}
-	comp, ok := l.resolveComponent(uri)
+	comp, ok := l.resolveComponentContext(ctx, uri, l.registryTier(registry))
 	if !ok {
-		l.componentMisses[uri] = struct{}{}
+		if (registry || l.puller == nil) && ctx.Err() == nil {
+			l.componentMisses[uri] = struct{}{}
+		}
 		return types.Component{}, false
 	}
-	merged, vErrs := validator.ResolveComponentExtends(comp, l.component)
+	merged, vErrs := validator.ResolveComponentExtends(comp, func(parent string) (types.Component, bool) {
+		return l.componentContext(ctx, parent, true)
+	})
 	if len(vErrs) > 0 {
 		// The failure names its own entity, kind included, so the line adds no
 		// prefix of its own — one identity per diagnostic, and the same line
 		// shape the whole-catalog resolution pass prints.
 		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
 	}
-	l.components[uri] = merged
+	if ctx.Err() == nil {
+		l.components[uri] = merged
+	}
 	return merged, true
 }
 
 // Feature mirrors Component for the Feature surface. Extends-resolution
-// errors surface to os.Stderr per the same convention.
+// errors surface to os.Stderr per the same convention, and it reads under a
+// background context for the reason Component does.
 func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
+	return l.FeatureContext(context.Background(), uri)
+}
+
+// FeatureContext mirrors ComponentContext for the Feature surface.
+func (l *LazyLookup) FeatureContext(ctx context.Context, uri string) (types.Feature, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.feature(uri)
+	return l.featureContext(ctx, uri, true)
+}
+
+// ClosureFeature mirrors ClosureComponent for the Feature surface: the registry
+// tier is asked only where the walk collected ref at a position naming a
+// Feature, and then under ctx.
+func (l *LazyLookup) ClosureFeature(ctx context.Context, ref closure.ResolvedRef) (types.Feature, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.closureFeature(ctx, ref)
+}
+
+// closureFeature is the lock-free core of ClosureFeature.
+func (l *LazyLookup) closureFeature(ctx context.Context, ref closure.ResolvedRef) (types.Feature, bool) {
+	return l.featureContext(ctx, ref.URI, collectedAs(ref, "Feature"))
 }
 
 // EntityNames reports the metadata.name of every entity of kind the configured
@@ -1124,52 +1239,35 @@ func (l *LazyLookup) EntityNames(kind string) []string {
 	return names
 }
 
-// feature is the lock-free core of Feature, mirroring component.
-func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
+// featureContext mirrors componentContext for the Feature surface, remembering and
+// declining to remember on the same terms.
+func (l *LazyLookup) featureContext(ctx context.Context, uri string, registry bool) (types.Feature, bool) {
 	if f, ok := l.features[uri]; ok {
 		return f, true
 	}
 	if _, ok := l.featureMisses[uri]; ok {
 		return types.Feature{}, false
 	}
-	feat, ok := l.resolveFeature(uri)
+	feat, ok := l.resolveFeatureContext(ctx, uri, l.registryTier(registry))
 	if !ok {
-		l.featureMisses[uri] = struct{}{}
+		if (registry || l.puller == nil) && ctx.Err() == nil {
+			l.featureMisses[uri] = struct{}{}
+		}
 		return types.Feature{}, false
 	}
-	merged, vErrs := validator.ResolveFeatureExtends(feat, l.feature)
+	merged, vErrs := validator.ResolveFeatureExtends(feat, func(parent string) (types.Feature, bool) {
+		return l.featureContext(ctx, parent, true)
+	})
 	if len(vErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
 	}
-	l.features[uri] = merged
+	if ctx.Err() == nil {
+		l.features[uri] = merged
+	}
 	return merged, true
 }
 
-// resolveComponent walks the Tier-1/2/3 cascade and unmarshals the
-// resolved bytes into a Component. Returns the unmerged entity;
-// extends resolution is the caller's responsibility.
-//
-// Tier-1's walker already filters on kind=="Component" at index
-// build time (only Component YAMLs land in componentIndex). Tier-2
-// and Tier-3 do NOT pre-filter — the cache slot or registry artifact
-// could in principle carry bytes of a different kind. Both unmarshal
-// paths therefore include a kind check: a parsed entity whose
-// Kind != "Component" is rejected, the cascade falls through to the
-// next tier, and the lookup ultimately reports miss if no tier
-// produces a Component-kind result. This matches catalog.Load's
-// kind-routing semantic (indexFile dispatches by hdr.Kind).
-// The contextless form is what the plain-function accessor calls, since that
-// accessor's own signature carries none. **A Tier-3 fetch reached that way still
-// runs to completion**: there is no caller context to hand on, and that bound is
-// unchanged. resolveComponentContext below is where the cascade lives, so a
-// caller that does hold a context runs the same walk under it and can end the
-// fetch; the closure walk reaches the same primitive through the resolution
-// surface, which does carry one.
-func (l *LazyLookup) resolveComponent(uri string) (types.Component, bool) {
-	return l.resolveComponentContext(context.Background(), uri, l.puller)
-}
-
-// localComponent is resolveComponent with the registry tier closed: the
+// localComponent is resolveComponentContext with the registry tier closed: the
 // catalog-directory index and a cache slot a pin vouches for, and nothing a
 // registry would have to be asked for. It is the cascade's local tiers, which
 // resolveComponentContext runs before its registry tier, so the two can never
@@ -1212,10 +1310,22 @@ func (l *LazyLookup) localComponentTiers(uri string) (types.Component, bool, boo
 	return types.Component{}, false, false
 }
 
-// resolveComponentContext is resolveComponent's cascade, under a caller's
-// context, with its registry tier read through puller — nil closes that tier.
-// Tier 3 is a registry pull, so ending the caller's run ends the fetch rather
-// than leaving it to finish for an answer nobody is waiting for.
+// resolveComponentContext walks the Tier-1/2/3 cascade under a caller's
+// context, with its registry tier read through puller — nil closes that tier —
+// and unmarshals the resolved bytes into a Component. Returns the unmerged
+// entity; extends resolution is the caller's responsibility. Tier 3 is a
+// registry pull, so ending the caller's run ends the fetch rather than leaving
+// it to finish for an answer nobody is waiting for.
+//
+// Tier-1's walker already filters on kind=="Component" at index
+// build time (only Component YAMLs land in componentIndex). Tier-2
+// and Tier-3 do NOT pre-filter — the cache slot or registry artifact
+// could in principle carry bytes of a different kind. Both unmarshal
+// paths therefore include a kind check: a parsed entity whose
+// Kind != "Component" is rejected, the cascade falls through to the
+// next tier, and the lookup ultimately reports miss if no tier
+// produces a Component-kind result. This matches catalog.Load's
+// kind-routing semantic (indexFile dispatches by hdr.Kind).
 func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, puller OCIPuller) (types.Component, bool) {
 	if comp, ok, settled := l.localComponentTiers(uri); settled {
 		return comp, ok
@@ -1274,34 +1384,38 @@ func registryDocumentAt(workspaceRoot, cacheDir, uri string, res closure.Resolut
 	return registryDocument(workspaceRoot, cacheDir, slot, published, uri)
 }
 
-// resolveFeature mirrors resolveComponent for the Feature surface.
-// The same kind-check guards Tier-2 + Tier-3 unmarshal paths against
-// non-Feature bytes arriving from the cache or registry.
-// It carries the same bound resolveComponent states: a Tier-3 fetch reached
-// through the plain-function accessor runs to completion, because that accessor
-// carries no caller context to hand on.
-func (l *LazyLookup) resolveFeature(uri string) (types.Feature, bool) {
-	return l.resolveFeatureContext(context.Background(), uri)
-}
-
-// resolveFeatureContext mirrors resolveComponentContext for the Feature surface.
-func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string) (types.Feature, bool) {
+// localFeatureTiers mirrors localComponentTiers for the Feature surface: the
+// cascade's two local tiers, what they found, and whether the cascade is
+// settled. The same kind check guards the cache tier against non-Feature bytes.
+func (l *LazyLookup) localFeatureTiers(uri string) (types.Feature, bool, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
-		return feat, true
+		return feat, true, true
 	}
-	if bytes, _, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	bytes, _, slot, outcome := l.tier2Verified(uri)
+	switch outcome {
+	case tier2Use:
 		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
-				return feat, true
+				return feat, true, true
 			}
 		}
-	} else if outcome == tier2Skip {
+	case tier2Skip:
 		// Cache drifted from the pin; diagnostic already emitted. Do not use the
 		// drifted bytes and do not self-heal.
-		return types.Feature{}, false
+		return types.Feature{}, false, true
 	}
-	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, l.puller, uri, "Feature")
+	return types.Feature{}, false, false
+}
+
+// resolveFeatureContext mirrors resolveComponentContext for the Feature surface,
+// with the same kind check on the cache and registry tiers and the same puller
+// argument: nil closes the registry tier.
+func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string, puller OCIPuller) (types.Feature, bool) {
+	if feat, ok, settled := l.localFeatureTiers(uri); settled {
+		return feat, ok
+	}
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature")
 	if err == nil && bytes != nil {
 		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, uri, res, bytes); ok {
 			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
@@ -1776,7 +1890,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 		})
 	}
 	// Tier-2: fold every lockfile-pinned cache slot of the recipe-shell kinds,
-	// under the SAME verify-on-read / pin discipline resolveComponent uses. A
+	// under the SAME verify-on-read / pin discipline the Component cascade uses. A
 	// registry build's recipes / FeatureRecipes / aggregates / mapping
 	// libraries live in the pinned cache, not the catalog dirs — this is what makes
 	// the lazy backing see them. Runs AFTER the Tier-1 walk so a locally-authored
@@ -2076,7 +2190,7 @@ func refusalOr(refusal, fallback error) error {
 
 // foldPinnedCacheEntities folds every lockfile-pinned Tier-2 cache slot whose kind
 // is in allowed into the enumerated maps, under the SAME verify-on-read / pin
-// discipline resolveComponent uses (tier2ReadVerifiedWithManifest). The pin set (SetPins) is
+// discipline the Component cascade uses (tier2ReadVerifiedWithManifest). The pin set (SetPins) is
 // the lockfile's URI→digest map; the cache is keyed by URI, not walkable like the
 // Tier-1 dirs, so enumeration is pin-driven. Bundled slots are tar.gz archives:
 // the bundle is unwrapped to parse the entity YAML, but the WHOLE bundle blob is
@@ -2833,7 +2947,10 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 // has no document in the index and is reported without one. The resolved
 // entities are extends-merged (what the daemon renders); build remains the
 // authoritative pre-extends validator.
-func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
+//
+// Each entity is read as ClosureComponent and ClosureFeature read it: a registry
+// is asked only for a kind the walk collected the reference as, and under ctx.
+func (l *LazyLookup) ValidateClosureScopedPillars(ctx context.Context, cl closure.Closure) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_ = l.buildSchemaLibraries()
@@ -2844,13 +2961,13 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 	feats := map[string]types.Feature{}
 	featSrc := map[string]string{}
 	for _, e := range cl.Entities {
-		if comp, ok := l.component(e.URI); ok {
+		if comp, ok := l.closureComponent(ctx, e); ok {
 			key := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
 			comps[key] = comp
 			compSrc[key] = l.componentIndex[key].path
 			continue
 		}
-		if feat, ok := l.feature(e.URI); ok {
+		if feat, ok := l.closureFeature(ctx, e); ok {
 			key := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
 			feats[key] = feat
 			featSrc[key] = l.featureIndex[key].path
@@ -2967,7 +3084,10 @@ func cachedLibraryRemedy(names []string) string {
 // version, which is also the locator a registry-pinned entity is reported by,
 // since it has no local file path. Narrowing-on-extend advisories are a separate
 // composition surface and are not included here.
-func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
+//
+// Each entity is read as ClosureComponent and ClosureFeature read it: a registry
+// is asked only for a kind the walk collected the reference as, and under ctx.
+func (l *LazyLookup) ClosureLintWarnings(ctx context.Context, cl closure.Closure) []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Self-sufficient: build the Tier-1 indexes the cascade reads, so the
@@ -2976,12 +3096,12 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 	l.buildFeatureIndex()
 
 	uris := make([]string, 0, len(cl.Entities))
-	seen := map[string]bool{}
+	refs := map[string]closure.ResolvedRef{}
 	for _, e := range cl.Entities {
-		if seen[e.URI] {
+		if _, seen := refs[e.URI]; seen {
 			continue
 		}
-		seen[e.URI] = true
+		refs[e.URI] = e
 		uris = append(uris, e.URI)
 	}
 	sort.Strings(uris)
@@ -2989,7 +3109,7 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 	var out []string
 	linted := map[string]bool{}
 	for _, uri := range uris {
-		if comp, ok := l.component(uri); ok {
+		if comp, ok := l.closureComponent(ctx, refs[uri]); ok {
 			identity := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
 			if linted[entityBytesKey("Component", identity)] {
 				continue
@@ -2999,7 +3119,7 @@ func (l *LazyLookup) ClosureLintWarnings(cl closure.Closure) []string {
 				"Component", comp.Metadata.Name, identity, comp.Spec.Schema)...)
 			continue
 		}
-		if feat, ok := l.feature(uri); ok {
+		if feat, ok := l.closureFeature(ctx, refs[uri]); ok {
 			identity := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
 			if linted[entityBytesKey("Feature", identity)] {
 				continue
@@ -3030,7 +3150,12 @@ func (l *LazyLookup) ClosureNarrowingWarnings() []string {
 // counterpart to the CLI build's closure-scoped extends. An out-of-closure
 // entity's extends is never resolved, so a broken out-of-closure parent never
 // produces a diagnostic. Deterministic: closure entity names are deduped + sorted.
-func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
+//
+// Every read runs under ctx. A closure entity is asked of a registry only as a
+// kind the walk collected one of its references as, for the reason
+// ClosureComponent gives; a parent in a chain is asked as the kind its child
+// names it as.
+func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closure) []error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Clear what this pass contributed on the last run. The daemon is long-lived
@@ -3044,8 +3169,12 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 	// CompileSchemaForMerge.
 	_ = l.buildSchemaLibraries()
 
-	compLookup := func(uri string) (types.Component, bool) { return l.resolveComponent(uri) }
-	featLookup := func(uri string) (types.Feature, bool) { return l.resolveFeature(uri) }
+	compLookup := func(uri string) (types.Component, bool) {
+		return l.resolveComponentContext(ctx, uri, l.puller)
+	}
+	featLookup := func(uri string) (types.Feature, bool) {
+		return l.resolveFeatureContext(ctx, uri, l.puller)
+	}
 
 	// CatalogEntry chain lookup that compiles each chain entry's authored schema
 	// into the JSON-Schema-merge input — identical to the eager ResolveAllExtends,
@@ -3082,12 +3211,23 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 		l.closureNarrowings = append(l.closureNarrowings, composition.Narrowings...)
 	}
 
-	byName := map[string]string{}
+	// One reference per name — the first the closure lists — with the registry
+	// tier open for a kind wherever any reference to the name was collected as it,
+	// since a closure can reach one entity through more than one reference.
+	type nameRef struct {
+		uri                string
+		component, feature bool
+	}
+	byName := map[string]*nameRef{}
 	for _, e := range cl.Entities {
 		n := lookupNameFromURI(e.URI)
-		if _, ok := byName[n]; !ok {
-			byName[n] = e.URI
+		r, ok := byName[n]
+		if !ok {
+			r = &nameRef{uri: e.URI}
+			byName[n] = r
 		}
+		r.component = r.component || collectedAs(e, "Component")
+		r.feature = r.feature || collectedAs(e, "Feature")
 	}
 	names := make([]string, 0, len(byName))
 	for n := range byName {
@@ -3097,8 +3237,8 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 
 	var errs []error
 	for _, n := range names {
-		uri := byName[n]
-		if comp, ok := l.resolveComponent(uri); ok {
+		r := byName[n]
+		if comp, ok := l.resolveComponentContext(ctx, r.uri, l.registryTier(r.component)); ok {
 			if comp.Spec.Extends == "" {
 				continue
 			}
@@ -3115,7 +3255,7 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 			}
 			continue
 		}
-		if feat, ok := l.resolveFeature(uri); ok {
+		if feat, ok := l.resolveFeatureContext(ctx, r.uri, l.registryTier(r.feature)); ok {
 			if feat.Spec.Extends == "" {
 				continue
 			}

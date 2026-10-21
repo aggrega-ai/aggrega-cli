@@ -304,11 +304,11 @@ type ValidateResult struct {
 func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	r := &ValidateResult{}
 
-	if extErrs := in.View.ResolveClosureExtends(in.Closure); len(extErrs) > 0 {
+	if extErrs := in.View.ResolveClosureExtends(ctx, in.Closure); len(extErrs) > 0 {
 		r.ClosureExtendsErrors = extErrs
 		return r
 	}
-	if err := in.View.ValidateClosureScopedPillars(in.Closure); err != nil {
+	if err := in.View.ValidateClosureScopedPillars(ctx, in.Closure); err != nil {
 		r.PillarError = err
 		return r
 	}
@@ -359,7 +359,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
 		inputs,
-		in.View.AsCatalogLookup(),
+		in.View.AsCatalogLookupContext(ctx),
 		in.View.RecipeLookupWithManifest(in.Manifest),
 		in.View.SubAggregateLoader(),
 	)
@@ -374,7 +374,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		recipes, featureRecipes := closureRecipes(in.View, in.Closure)
 		r.InputKindErrors = validateops.InputKindCapabilityErrors(
 			in.View.AsCatalogLookup().ProviderPlugin, recipes, featureRecipes)
-		r.LintWarnings = in.View.ClosureLintWarnings(in.Closure)
+		r.LintWarnings = in.View.ClosureLintWarnings(ctx, in.Closure)
 		r.NarrowingWarnings = in.View.ClosureNarrowingWarnings()
 	}
 	return r

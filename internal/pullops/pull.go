@@ -491,12 +491,15 @@ func stopped(ctx context.Context) error {
 // caching — is issued on this context, and a withdrawal lands on the transport
 // rather than waiting for the fetch to finish and be discarded.
 //
-// One read is outside that, and it is named here rather than left to be
-// discovered: library discovery reads each consumer's body through the lazy
-// catalog view, whose Component and Feature accessors are plain function values
-// with no context to carry. Those reads are served from the cache slots the walk
-// above has just written, so the un-cancellable case is a cache miss on an
-// entity the walk did not pin.
+// The reads the run makes through the lazy catalog view after the walk are
+// issued on it too: library discovery, closure-scoped validation, the pin step's
+// question of which references a Component or Feature shadows, the graph build's
+// catalog lookups and the discovery render's extends and lint passes. Most of
+// them are served from the cache slots the walk has just written, and a read
+// that leaves the process — a parent an extends chain names that no local tier
+// holds, say — leaves it under this context. Those reads ask a registry for a
+// Component or Feature only under a reference the walk collected as that kind,
+// so a Recipe, a plugin or the Release's own documents cost no round trip.
 //
 // Past the lockfile write it is deliberately NOT observed again. The trust
 // record written beside the file is part of the same landing, so a stop between
@@ -1029,7 +1032,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// is valid. An in-closure schema-invalid entity, or a $ref to a skipped/missing
 	// library, fails loudly here; an out-of-closure break is never validated.
 	report.phase(PhaseValidate)
-	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
+	if err := lazyView.ValidateClosureScopedPillars(ctx, cl); err != nil {
 		return Result{}, cfg.annotate(rw, err, lazyView.SkippedEntities())
 	}
 
@@ -1048,7 +1051,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// are the ones already run above, against the closure this pass is pinning.
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
-	pullLookup := lazyView.AsCatalogLookup()
+	pullLookup := lazyView.AsCatalogLookupContext(ctx)
 	// The lockfile this run assembles is carried out of the source-descent scope
 	// and written further down, once the external-input discovery below has had its
 	// chance to add to it. Assembling and writing are separate steps for two
@@ -1280,7 +1283,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			if err := stopped(ctx); err != nil {
 				return err
 			}
-			pinnedEntityDigests, pinnedFiles, err := entityPins(lazyView, cl.Entities, perEntityInfra,
+			pinnedEntityDigests, pinnedFiles, err := entityPins(ctx, lazyView, cl.Entities, perEntityInfra,
 				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun,
 				wsCfg.Plugins.ProviderTargetURIs(), namedDirs)
 			if err != nil {

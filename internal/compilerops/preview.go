@@ -791,7 +791,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Closure-scoped validation: ONLY the entities the Release reaches, against
 	// the closure's libraries.
 	if pol.validateClosurePillars {
-		if err := in.view.ValidateClosureScopedPillars(resolved.Closure); err != nil {
+		if err := in.view.ValidateClosureScopedPillars(ctx, resolved.Closure); err != nil {
 			out.FailedGate = GateClosurePillars
 			return out, &resolutionFailure{err: err}
 		}
@@ -830,7 +830,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Extends inheritance for the closure's Components and Features, so the
 	// pipeline sees fully-merged entities.
 	if pol.resolveExtends {
-		if extErrs := in.view.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
+		if extErrs := in.view.ResolveClosureExtends(ctx, resolved.Closure); len(extErrs) > 0 {
 			for _, e := range extErrs {
 				warn(WarningExtends, e.Error())
 			}
@@ -877,7 +877,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Schema-pillar-overlap advisories: the warning-level sibling of the
 	// closure-scoped validation above, over the same entity set.
 	if pol.reportCatalogLint {
-		for _, w := range in.view.ClosureLintWarnings(resolved.Closure) {
+		for _, w := range in.view.ClosureLintWarnings(ctx, resolved.Closure) {
 			warn(WarningCatalogLint, w)
 		}
 	}

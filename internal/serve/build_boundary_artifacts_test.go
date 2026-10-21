@@ -32,7 +32,7 @@ func TestTheDaemonBuildRefusesBoundaryArtifactsOnAProviderThatDoesNotAcceptThem(
 	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
 		t.Fatalf("copy the fixture workspace: %v", err)
 	}
-	config := "workspace:\n  catalog_dirs:\n    - catalog\n"
+	config := "workspace:\n  catalog_dirs:\n    - catalog\n" + testOwnedRegistryConfig(t)
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(config), 0o644); err != nil {
 		t.Fatalf("write the workspace configuration: %v", err)
 	}

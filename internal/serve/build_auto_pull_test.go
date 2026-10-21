@@ -39,12 +39,13 @@ import (
 // Server is handed its search stack directly by the test harness, while the
 // resolution reads the workspace's own resolved configuration, so a fixture that
 // only set the former would refuse to resolve anything and the refusal would
-// look like a fault in the field under test.
+// look like a fault in the field under test. The configuration names a registry
+// the test owns, so whatever the resolution asks a registry for is asked here.
 func autoPullWorkspace(t *testing.T) (ws, releaseRel string) {
 	t.Helper()
 	ws, releaseRel = renderDialWorkspace(t)
 	if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"),
-		[]byte("workspace:\n  catalog_dirs: [catalog]\n"), 0o644); err != nil {
+		[]byte("workspace:\n  catalog_dirs: [catalog]\n"+testOwnedRegistryConfig(t)), 0o644); err != nil {
 		t.Fatalf("write the workspace configuration: %v", err)
 	}
 	return ws, releaseRel

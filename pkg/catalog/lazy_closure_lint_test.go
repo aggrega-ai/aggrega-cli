@@ -91,7 +91,7 @@ func TestLazyLookup_ClosureLintWarnings_CoversAllClosureEntities(t *testing.T) {
 		{URI: "test/clean-comp:1.0.0"},
 		{URI: "test/overlap-comp:1.0.0"},
 	}}
-	warnings := lazy.ClosureLintWarnings(cl)
+	warnings := lazy.ClosureLintWarnings(t.Context(), cl)
 	if len(warnings) != 1 {
 		t.Fatalf("expected exactly 1 overlap warning (overlap component only; clean emits none); got %d: %v",
 			len(warnings), warnings)
@@ -106,7 +106,7 @@ func TestLazyLookup_ClosureLintWarnings_CoversAllClosureEntities(t *testing.T) {
 
 	// A clean-only closure emits nothing (no spurious warning).
 	clean := closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/clean-comp:1.0.0"}}}
-	if w := lazy.ClosureLintWarnings(clean); len(w) != 0 {
+	if w := lazy.ClosureLintWarnings(t.Context(), clean); len(w) != 0 {
 		t.Errorf("clean-only closure must emit no warning; got %v", w)
 	}
 }
@@ -130,7 +130,7 @@ func TestLazyLookup_ClosureLintWarnings_DeterministicOrder(t *testing.T) {
 		{URI: "test/overlap-comp:1.0.0"},
 		{URI: "test/aaa-overlap:1.0.0"},
 	}}
-	warnings := lazy.ClosureLintWarnings(cl)
+	warnings := lazy.ClosureLintWarnings(t.Context(), cl)
 	if len(warnings) != 2 {
 		t.Fatalf("expected 2 warnings; got %d: %v", len(warnings), warnings)
 	}
@@ -180,7 +180,7 @@ func TestLazyLookup_ClosureLintWarnings_OneEntityReachedTwiceIsLintedOnce(t *tes
 			for _, u := range tc.uris {
 				cl.Entities = append(cl.Entities, closure.ResolvedRef{URI: u})
 			}
-			warnings := lazy.ClosureLintWarnings(cl)
+			warnings := lazy.ClosureLintWarnings(t.Context(), cl)
 			if len(warnings) != len(tc.want) {
 				t.Fatalf("got %d notice(s), want %d: %v", len(warnings), len(tc.want), warnings)
 			}

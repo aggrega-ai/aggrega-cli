@@ -4,6 +4,7 @@
 package pullops
 
 import (
+	"context"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
@@ -85,15 +86,17 @@ import (
 // workspaceconfig.ResolvedWorkspace.NamedCatalogDirs). A lock beside an entity
 // found beneath one of them is held to the root that directory picks — itself,
 // where it lies outside the workspace — and every other lock to the workspace root.
-func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
+func entityPins(ctx context.Context, lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
 	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool,
 	providerBindings map[string]string, namedDirs []string) (map[string]string, []dryrunreport.File, error) {
 	var uris []string
+	refs := map[string]closure.ResolvedRef{}
 	for _, ent := range entities {
 		if len(used[ent.URI]) == 0 {
 			continue
 		}
 		uris = append(uris, ent.URI)
+		refs[ent.URI] = ent
 	}
 	plan, err := entitypin.Compute(entitypin.PlanInputs{
 		View:          lazyView,
@@ -143,7 +146,11 @@ func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, us
 
 	digests := map[string]string{}
 	for uri, d := range entityDigests {
-		if !uriShadowedByComponentOrFeature(lazyView, uri) {
+		ref, ok := refs[uri]
+		if !ok {
+			ref = closure.ResolvedRef{URI: uri}
+		}
+		if !uriShadowedByComponentOrFeature(ctx, lazyView, ref) {
 			digests[uri] = d
 		}
 	}
@@ -169,11 +176,18 @@ var pullRemedy = recipepin.Remedy{Operation: "pull", Setting: workspaceconfig.Pi
 //
 // It is the caller's rule rather than the pin step's, because it is a fact about
 // what the LOCKFILE records rather than about what the step does to a file.
-func uriShadowedByComponentOrFeature(lazyView *catalog.LazyLookup, uri string) bool {
-	if _, ok := lazyView.Component(uri); ok {
+//
+// The question is asked as the closure's own entity reference, so it is answered
+// as the walk answered it: from the view's local copies, and from a registry only
+// for a kind the walk collected the reference as. A recipe reference was never
+// looked for on a registry as a Component or a Feature, so a registry is not asked
+// here either — asking would cost a round trip, and a Component it served would
+// shadow nothing the lockfile records.
+func uriShadowedByComponentOrFeature(ctx context.Context, lazyView *catalog.LazyLookup, ref closure.ResolvedRef) bool {
+	if _, ok := lazyView.ClosureComponent(ctx, ref); ok {
 		return true
 	}
-	if _, ok := lazyView.Feature(uri); ok {
+	if _, ok := lazyView.ClosureFeature(ctx, ref); ok {
 		return true
 	}
 	return false

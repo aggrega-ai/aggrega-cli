@@ -516,11 +516,11 @@ spec:
 `)
 
 	clean := NewLazyLookup(ws, "", []string{catalogDir}, nil)
-	if err := clean.ValidateClosureScopedPillars(closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/svc:1.0.0"}}}); err != nil {
+	if err := clean.ValidateClosureScopedPillars(t.Context(), closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/svc:1.0.0"}}}); err != nil {
 		t.Fatalf("a closure reaching only the clean 1.0.0 document was refused: %v", err)
 	}
 	faulty := NewLazyLookup(ws, "", []string{catalogDir}, nil)
-	if err := faulty.ValidateClosureScopedPillars(closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/svc:2.0.0"}}}); err == nil {
+	if err := faulty.ValidateClosureScopedPillars(t.Context(), closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/svc:2.0.0"}}}); err == nil {
 		t.Error("a closure reaching the 2.0.0 document, whose schema names a library nothing declares, passed; " +
 			"the gate validated another version's document")
 	}
