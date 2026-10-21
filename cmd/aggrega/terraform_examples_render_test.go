@@ -374,17 +374,23 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	// back to the value the recipe declares, which is why it appears without the
 	// Release stating one. port is the listen port the recipe maps from infra.port,
 	// the same value it publishes to consumers; the Release states none, so it is
-	// the default the Component declares.
+	// the default the Component declares. backup_retention_period and
+	// skip_final_snapshot follow the Release's backup settings — backups on, kept
+	// fourteen days, so the final snapshot is taken — and storage_type is the
+	// volume type the Release names.
 	wantBlock := `module "db" {
   source = "./modules/db"
 
-  allocated_storage = 100
-  db_name           = "appdb"
-  engine_version    = "11.4"
-  instance_class    = "db.t3.small"
-  multi_az          = true
-  port              = 3306
-  subnet_id         = "production-private-db-subnets"
+  allocated_storage       = 100
+  backup_retention_period = 14
+  db_name                 = "appdb"
+  engine_version          = "11.4"
+  instance_class          = "db.t3.small"
+  multi_az                = true
+  port                    = 3306
+  skip_final_snapshot     = false
+  storage_type            = "gp3"
+  subnet_id               = "production-private-db-subnets"
 }
 `
 	gotRoot := distFile(t, run1, "aggrega.modules.tf")

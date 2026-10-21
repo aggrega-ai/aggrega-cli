@@ -14,7 +14,6 @@ spec:
       type: core/datastore/mariadb
       values:
         database: payments
-        user: paymentsuser
       features:
         root_password:
           type: core/generated-secret
@@ -22,7 +21,6 @@ spec:
       type: core/datastore/mariadb
       values:
         database: paymentsalt
-        user: paymentsaltuser
       features:
         root_password:
           type: core/generated-secret

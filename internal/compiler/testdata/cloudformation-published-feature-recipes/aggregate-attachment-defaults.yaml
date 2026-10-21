@@ -33,7 +33,6 @@ spec:
       type: core/datastore/mariadb
       values:
         database: appdb
-        user: appuser
       features:
         # The engine owns the master password on a managed instance, so the slot
         # the Component declares is delegated rather than filled.
