@@ -372,7 +372,9 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	// naming a Terraform data source, so what lands here is a plain string with
 	// nothing left to resolve. instance_class comes from the same pillar and falls
 	// back to the value the recipe declares, which is why it appears without the
-	// Release stating one.
+	// Release stating one. port is the listen port the recipe maps from infra.port,
+	// the same value it publishes to consumers; the Release states none, so it is
+	// the default the Component declares.
 	wantBlock := `module "db" {
   source = "./modules/db"
 
@@ -381,6 +383,7 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
   engine_version    = "11.4"
   instance_class    = "db.t3.small"
   multi_az          = true
+  port              = 3306
   subnet_id         = "production-private-db-subnets"
 }
 `
