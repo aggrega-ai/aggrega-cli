@@ -1144,14 +1144,22 @@ var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
 })
 
 // ErrArtifactLibraryFileEscapesKey is the Loud Guardrail halt raised when a
-// file inside an ArtifactLibrary bundle carries a name that leaves the
-// artifacts key the bundle was consumed at. One artifacts entry importing a
-// bundle expands into one output per bundle file, each nested under that key —
-// so the key names a directory and every file the bundle contributes belongs
-// beneath it. A file name climbing out of that directory, naming an absolute
-// location, or naming nothing at all does not belong beneath it, and the build
-// halts here rather than placing the file somewhere the consuming Recipe never
-// named.
+// file inside an ArtifactLibrary bundle carries a name that does not name a file
+// of its own beneath the artifacts key the bundle was consumed at. One artifacts
+// entry importing a bundle expands into one output per bundle file, each nested
+// under that key — so the key names a directory and every file the bundle
+// contributes belongs beneath it. A file name climbing out of that directory,
+// naming an absolute location, or naming nothing at all does not belong beneath
+// it, and the build halts here rather than placing the file somewhere the
+// consuming Recipe never named.
+//
+// Naming nothing covers every name that is not one file's one spelling beneath
+// the key. "." and "./", and a name that collapses back onto the key such as
+// "x/..", name the key itself, so the file would be written where the
+// directory belongs. A name with a trailing or doubled separator, or a "." or
+// ".." part, such as "x/", "a//b" or "a/./b", is a second spelling of a file
+// another name can carry too: "a//b" beside "a/b" is two names for one file, and
+// the later one overwrites the earlier without any collision being reported.
 //
 // What it prevents is a silent re-layout rather than a write outside the output
 // directory: the output directory is guarded again where the files are written,
@@ -1164,15 +1172,15 @@ var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
 // survives is then decided by nothing the author wrote. Refusing the name is
 // what keeps the composed name and the written position the same thing.
 //
-// A file name that stays inside the key's directory is untouched, including one
-// naming a subdirectory of its own: a bundle is free to carry a nested layout,
-// and nesting that layout under the consumption key is exactly what the key is
-// for.
+// A file name written plainly beneath the key's directory is untouched,
+// including one naming a subdirectory of its own, such as "rbac/role.yaml": a
+// bundle is free to carry a nested layout, and nesting that layout under the
+// consumption key is exactly what the key is for.
 //
 // The consuming Recipe and the published bundle are usually written by different
 // authors, so the diagnostic names both halves — the artifacts key the bundle
 // was consumed at and the file name the bundle carries — together with the
-// remedy, which is to give the file a name that stays under that key.
+// remedy, which is to give the file an ordinary name beneath that key.
 // Category: CATALOG_ERROR, because the offending value came from an authored
 // catalog document, unlike the provider-supplied sub-directory name one layer up
 // that ErrNestSegmentNotOneDirectory refuses as a translation fault. Match with
@@ -1181,9 +1189,16 @@ func ErrArtifactLibraryFileEscapesKey() error { return errArtifactLibraryFileEsc
 
 var errArtifactLibraryFileEscapesKey = cerrors.Register("artifact-library-file-escapes-key", cerrors.Meta{
 	ShortCode: "E0252",
-	Message:   "artifact-library bundle file name leaves the artifacts key its output is nested under",
+	Message:   "artifact-library bundle file name does not name a file of its own beneath the artifacts key its output is nested under",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
+
+// artifactLibraryFileNameAdvice is the remedy every refusal of a bundle file name
+// states — the render walk's and the rule's declared over the same names — so an
+// author is told one thing whichever of the two caught the name.
+const artifactLibraryFileNameAdvice = "rename the file inside the ArtifactLibrary bundle to an ordinary file name " +
+	"beneath the artifacts key it is consumed at, such as \"config.yaml\" or \"rbac/role.yaml\" — no \".\" or \"..\" " +
+	"part, and no leading, trailing or doubled \"/\""
 
 // ErrComponentIdentityTargetRefuses is the Loud Guardrail halt raised when a
 // component identity an AUTHOR wrote yields a name the target it renders for

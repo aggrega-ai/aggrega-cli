@@ -47,8 +47,8 @@ import (
 // A writer judging a name with [IsLocalSlash] and joining it onto a root itself
 // would skip the Windows refusal and the directory path, which is why this is the
 // one function a writer reaches a path through; a test of this package fails
-// where code outside it judges a name with IsLocalSlash and is not one of the
-// judgements it names as writing nothing.
+// where code outside it judges a name with IsLocalSlash or [NamesFileBeneath] and
+// is not one of the judgements it names as writing nothing.
 func PlaceBeneath(root, name string) (string, bool, error) {
 	if !IsLocalSlash(name) {
 		return "", false, nil

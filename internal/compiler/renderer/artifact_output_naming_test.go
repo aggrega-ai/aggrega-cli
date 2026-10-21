@@ -363,10 +363,11 @@ func TestArtifactBundleFileMayNestInsideItsKey(t *testing.T) {
 	state.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
 	state.ArtifactLibraries = map[string]types.ArtifactLibrary{
 		"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
-			// The third name is the interior-climb form that resolves back inside:
-			// legal, and the case a refusal written against the literal characters
-			// rather than against the resolved name would wrongly reject.
-			[]string{"crds/widget-crd.yaml", "rbac/cluster/widget-rbac.yaml", "extras/../widget-extra.yaml"},
+			// The third name carries dots inside its segments, which is an ordinary
+			// name rather than a "." or ".." part. A name written with such a part —
+			// "extras/../widget-extra.yaml" — is a second spelling of a file another
+			// name can carry, and is refused; this test is about what stays admitted.
+			[]string{"crds/widget-crd.yaml", "rbac/cluster/widget-rbac.yaml", "extras/widget..extra.v1.yaml"},
 			[]string{albCRDBody, albRBACBody, albCRDBody}),
 	}
 
@@ -377,7 +378,7 @@ func TestArtifactBundleFileMayNestInsideItsKey(t *testing.T) {
 	want := []string{
 		"widgets/crds/widget-crd.yaml",
 		"widgets/rbac/cluster/widget-rbac.yaml",
-		"widgets/extras/../widget-extra.yaml",
+		"widgets/extras/widget..extra.v1.yaml",
 	}
 	if len(proj.Entries) != len(want) {
 		t.Fatalf("projected %d entr(ies); want %d", len(proj.Entries), len(want))

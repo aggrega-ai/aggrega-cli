@@ -45,6 +45,11 @@
 // filesystem path yet — an archive entry, a rendered output name — and may never
 // become one on the machine that is judging it.
 //
+// [NamesFileBeneath] asks one question further of such a name, for a caller about
+// to make it one file beneath a directory of its own: whether it names a file of
+// its own there, rather than the directory itself, and in the one spelling that
+// file has, so that two names a caller holds side by side are two files.
+//
 // [Relative] answers containment in the other direction, for a caller that holds
 // a path and needs the name to report for it rather than the path to open. Resolve
 // composes a root and a relative name into the location to open; Relative decomposes
@@ -366,6 +371,38 @@ func ResolveSelected(root, selected string) (string, bool) {
 // every root before joining a name onto it.
 func IsLocalSlash(name string) bool {
 	return staysInside(name) && !climbsAcrossBackslash(name) && !climbsAcrossBackslash(path.Clean(name))
+}
+
+// NamesFileBeneath reports whether name — a slash-separated logical name a
+// caller is about to nest under a directory of its own — names a file of its own
+// beneath that directory, written as the one spelling that file has.
+//
+// It asks more than [IsLocalSlash], whose verdict it includes. Staying at or
+// under a directory is not the same as naming something beneath it: "." stays at
+// the directory and names the directory itself, and so does every name that
+// cleans to it — "./", "x/..", "a/b/../.." — so a file given such a name lands
+// where the directory was meant to be. A name that stays beneath the directory
+// but is not written the way it cleans names a file a second spelling names too:
+// "a//b", "./a/b", "a/./b", "a/x/../b" and "a/b/" are each "a/b" once cleaned, so
+// a caller holding two of them beside each other holds two names for one file,
+// and whatever compares the names as written sees no collision between them.
+// Those are refused here as well as the empty name, an absolute name and a name
+// that climbs above the directory, which IsLocalSlash already refuses.
+//
+// Accepted is a name that is its own cleaned form and is not "." — a plain name,
+// "config.yaml", and a nested layout written plainly, "rbac/role.yaml". A name
+// that merely begins with two dots, "..config", is an ordinary name and is
+// accepted, as IsLocalSlash accepts it.
+//
+// It is a separate entry point rather than a stricter IsLocalSlash because the
+// callers are separate. An archive entry or a cached name is judged for the climb
+// alone, and "./" is an ordinary entry in an archive; a name about to become one
+// file beneath a directory somebody else chose has to name that file, once. The
+// form is judged in slash arithmetic only, so the verdict is the same on every
+// platform; a backslash is an ordinary character here, as it is to IsLocalSlash
+// for everything but the climb.
+func NamesFileBeneath(name string) bool {
+	return IsLocalSlash(name) && name != "." && path.Clean(name) == name
 }
 
 // climbsAcrossBackslash reports whether p climbs above its directory once each

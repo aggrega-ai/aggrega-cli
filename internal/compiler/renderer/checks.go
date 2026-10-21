@@ -3645,20 +3645,24 @@ var ArtifactsEntryNamesADeclaredBundle = constraint.Check[
 }
 
 // ArtifactsEntryBundleFilesStayUnderTheirKey reports a file of an imported bundle
-// whose own name leaves the artifacts key its output is nested under.
+// whose own name does not name a file of its own beneath the artifacts key its
+// output is nested under.
 //
 // Each file of a bundle becomes an output named by the consuming key with the
 // bundle's own filename beneath it, and the filename comes from a document the
 // consuming Recipe did not write. So the name is judged before it is composed
 // rather than after: once the two halves are joined, a climbing segment reads as
 // an ordinary interior one and the composed name resolves somewhere the consuming
-// Recipe never named. The question is asked of the shared containment predicate,
-// because an output name is a logical name rather than a path in the host's own
-// spelling, and that predicate gives it the same verdict on every platform.
+// Recipe never named. A name that stays under the key and still names no file of
+// its own is reported too — "." or "x/.." names the key itself, and "a//b" or
+// "a/b/" is a second spelling of "a/b" that no collision guard comparing names as
+// written can see. The question is asked of the shared predicate the render walk
+// asks, because an output name is a logical name rather than a path in the host's
+// own spelling, and that predicate gives it the same verdict on every platform.
 //
-// A file staying inside the key's directory is untouched, including one naming a
-// subdirectory of its own: a bundle is free to carry a nested layout, and nesting
-// that layout under the consumption key is exactly what the key is for.
+// A file written plainly beneath the key's directory is untouched, including one
+// naming a subdirectory of its own: a bundle is free to carry a nested layout, and
+// nesting that layout under the consumption key is exactly what the key is for.
 //
 // Every offending file is reported rather than the first, for the reason the
 // shape rule reports every offending body: the remedy is an edit to the library's
@@ -3686,13 +3690,12 @@ var ArtifactsEntryBundleFilesStayUnderTheirKey = constraint.Check[
 		}
 		var out []constraint.Objection
 		for _, file := range v.ArtifactsEntryBundleFileNames(s.NodeID(), s.ArtifactsEntryKey()) {
-			if pathscope.IsLocalSlash(file) {
+			if pathscope.NamesFileBeneath(file) {
 				continue
 			}
 			out = append(out, s.RaiseWithAdvice(
 				ErrArtifactLibraryFileEscapesKey(),
-				"rename the file inside the ArtifactLibrary bundle so its name stays under "+
-					"the artifacts key it is consumed at",
+				artifactLibraryFileNameAdvice,
 				constraint.Uncaptioned(file),
 				constraint.Captioned("ArtifactLibrary", library),
 				constraint.Captioned("artifacts entry", s.ArtifactsEntryKey()),

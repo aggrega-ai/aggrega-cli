@@ -25,11 +25,19 @@ const (
 	windowshostImportPath = "github.com/aggrega-ai/aggrega-cli/internal/windowshost"
 )
 
+// nameJudgements are the entry points of this package that judge a name a writer
+// did not choose without placing it: IsLocalSlash, and NamesFileBeneath, which
+// asks IsLocalSlash's question and one further. A site judging a name with either
+// and joining it onto a root itself skips what PlaceBeneath adds, so both are
+// read here and neither is a way around the guard.
+var nameJudgements = map[string]bool{"IsLocalSlash": true, "NamesFileBeneath": true}
+
 // judgementsThatWriteNothing are the places outside this package that judge a
-// name with IsLocalSlash and write nothing beneath a root from it, keyed by the
-// package directory and the top-level declaration the judgement sits in — a
-// function, a method with its receiver type first, or a package-level variable
-// whose value holds it — each valued by why no name reaches disk from it.
+// name with IsLocalSlash or NamesFileBeneath and write nothing beneath a root
+// from it, keyed by the package directory and the top-level declaration the
+// judgement sits in — a function, a method with its receiver type first, or a
+// package-level variable whose value holds it — each valued by why no name
+// reaches disk from it.
 //
 // 🔴 Hand-written because it IS the decision rather than a fact about the source:
 // an entry states that a site judges a name and places nothing on disk with it.
@@ -63,10 +71,10 @@ var judgementsThatWriteNothing = map[string]string{
 // did not choose gets them by calling the one function there is — and a site that
 // calls IsLocalSlash instead is caught here, before it ships.
 //
-// So every call of IsLocalSlash in production source outside this package must sit
-// in a judgement judgementsThatWriteNothing names, with the reason it writes
-// nothing; a site this file does not name fails, naming where it is and what to
-// call instead. An entry the walk no longer finds fails too, because a permission
+// So every call of IsLocalSlash or NamesFileBeneath in production source outside
+// this package must sit in a judgement judgementsThatWriteNothing names, with the
+// reason it writes nothing; a site this file does not name fails, naming where it
+// is and what to call instead. An entry the walk no longer finds fails too, because a permission
 // nothing exercises reads as one something does — and the entries found are the
 // evidence the walk reached the source at all, since a walk that reads nothing
 // leaves every entry unfound.
@@ -122,9 +130,10 @@ func TestEveryWriterOfAJudgedNamePlacesItThroughPlaceBeneath(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
-		// Only a file spelling one of the two names can call either, so the rest are
-		// not parsed; the file is still read, so a call added to it is seen.
-		if !bytes.Contains(src, []byte("IsLocalSlash")) && !bytes.Contains(src, []byte("SetForTest")) {
+		// Only a file spelling one of the names can call one, so the rest are not
+		// parsed; the file is still read, so a call added to it is seen.
+		if !bytes.Contains(src, []byte("IsLocalSlash")) && !bytes.Contains(src, []byte("NamesFileBeneath")) &&
+			!bytes.Contains(src, []byte("SetForTest")) {
 			return nil
 		}
 		node, perr := parser.ParseFile(fset, p, src, 0)
@@ -146,16 +155,16 @@ func TestEveryWriterOfAJudgedNamePlacesItThroughPlaceBeneath(t *testing.T) {
 						return true
 					}
 					switch {
-					case pkgDir != "pkg/pathscope" && pathscopeName != "" && x.Name == pathscopeName && sel.Sel.Name == "IsLocalSlash":
+					case pkgDir != "pkg/pathscope" && pathscopeName != "" && x.Name == pathscopeName && nameJudgements[sel.Sel.Name]:
 						found[key] = true
 						if _, named := judgementsThatWriteNothing[key]; !named {
-							t.Errorf("%s: pathscope.IsLocalSlash judges a name in %s, which this file does not name as "+
+							t.Errorf("%s: pathscope.%s judges a name in %s, which this file does not name as "+
 								"a judgement that writes nothing — a writer placing a name it did not choose asks "+
 								"pathscope.PlaceBeneath, which judges the climb by IsLocalSlash and also makes the root a "+
 								"directory path and refuses, on Windows, a name Windows cannot hold. If this site writes "+
 								"nothing beneath a root from the name, add it to judgementsThatWriteNothing with the "+
 								"reason, in the same change.",
-								fset.Position(sel.Pos()), key)
+								fset.Position(sel.Pos()), sel.Sel.Name, key)
 						}
 					case pkgDir != "internal/windowshost" && windowshostName != "" && x.Name == windowshostName && sel.Sel.Name == "SetForTest":
 						t.Errorf("%s: windowshost.SetForTest called from production source in %s — it moves the "+
@@ -179,7 +188,8 @@ func TestEveryWriterOfAJudgedNamePlacesItThroughPlaceBeneath(t *testing.T) {
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("judgements named as writing nothing that the walk did not find asking pathscope.IsLocalSlash: %v — "+
+		t.Errorf("judgements named as writing nothing that the walk did not find asking pathscope.IsLocalSlash or "+
+			"pathscope.NamesFileBeneath: %v — "+
 			"a site renamed, or one that stopped asking; rename or drop its entry in the same change, because a "+
 			"permission nothing exercises reads as one something does, and a walk that found none of them read "+
 			"nothing at all", missing)

@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -421,6 +422,117 @@ func TestIsLocalSlash(t *testing.T) {
 	}
 }
 
+// TestNamesFileBeneath pins the stricter question a name nested under a
+// directory of its own is asked: one row per spelling refused and per spelling
+// admitted.
+//
+// The refused rows split into the two ways a name can fail that IsLocalSlash
+// admits — naming the directory itself, and naming a file a second spelling
+// names too — and the IsLocalSlash column states, per row, that IsLocalSlash
+// still admits it. That column is what makes each refusal attributable to the
+// stricter question rather than to the containment one, and what shows
+// IsLocalSlash's own verdicts did not move. The empty name and ".." stay as
+// controls: both predicates refuse them, so a NamesFileBeneath that stopped
+// asking IsLocalSlash at all would be caught here.
+func TestNamesFileBeneath(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         string
+		want       bool
+		localSlash bool
+	}{
+		// Admitted, as IsLocalSlash admits them.
+		{"plain name", "config.yaml", true, true},
+		{"nested layout written plainly", "rbac/role.yaml", true, true},
+		{"deeper nested layout", "a/b/c.yaml", true, true},
+		{"leading two dots then a letter", "..config", true, true},
+		{"two dots inside a segment", "a/b..c/d", true, true},
+		{"a dotted name", "a.b", true, true},
+		{"backslash is an ordinary character", `a\b`, true, true},
+
+		// Refused: the name is the directory itself.
+		{"dot", ".", false, true},
+		{"dot slash", "./", false, true},
+		{"a climb back onto the directory", "x/..", false, true},
+		{"a climb back onto the directory, with a trailing separator", "x/../", false, true},
+		{"a deeper climb back onto the directory", "a/b/../..", false, true},
+
+		// Refused: the name is a second spelling of a file beneath the directory.
+		{"trailing separator", "x/", false, true},
+		{"double separator", "a//b", false, true},
+		{"leading dot segment", "./a", false, true},
+		{"interior dot segment", "a/./b", false, true},
+		{"interior climb", "a/../b", false, true},
+		{"trailing separator after a nested name", "a/b/", false, true},
+
+		// Refused by both: the containment controls.
+		{"empty", "", false, false},
+		{"bare climb", "..", false, false},
+		{"climb out", "../x", false, false},
+		{"climb out after descending", "a/../../x", false, false},
+		{"absolute", "/etc/passwd", false, false},
+		{"climb through backslashes", `..\x`, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pathscope.NamesFileBeneath(tc.in); got != tc.want {
+				t.Errorf("NamesFileBeneath(%q) = %v; want %v", tc.in, got, tc.want)
+			}
+			if got := pathscope.IsLocalSlash(tc.in); got != tc.localSlash {
+				t.Errorf("IsLocalSlash(%q) = %v; want %v — its verdicts are not this question's to move", tc.in, got, tc.localSlash)
+			}
+		})
+	}
+}
+
+// TestNamesFileBeneathAdmitsNoTwoSpellingsOfOneFile is the property the stricter
+// question exists for, asked over every name of up to four characters drawn from
+// the alphabet the refusals are about: no two admitted names clean to one name,
+// and no admitted name cleans to the directory itself. A refusal list that missed
+// a spelling would pass the table above and fail here.
+func TestNamesFileBeneathAdmitsNoTwoSpellingsOfOneFile(t *testing.T) {
+	alphabet := []string{"a", "b", ".", "/"}
+	names := []string{""}
+	for length := 1; length <= 4; length++ {
+		var next []string
+		for _, n := range names {
+			if len(n) != length-1 {
+				continue
+			}
+			for _, c := range alphabet {
+				next = append(next, n+c)
+			}
+		}
+		names = append(names, next...)
+	}
+	byCleaned := map[string]string{}
+	admitted := 0
+	for _, n := range names {
+		if !pathscope.NamesFileBeneath(n) {
+			continue
+		}
+		admitted++
+		cleaned := path.Clean(n)
+		if cleaned == "." {
+			t.Errorf("NamesFileBeneath(%q) admitted a name that cleans to the directory itself", n)
+		}
+		if other, seen := byCleaned[cleaned]; seen {
+			t.Errorf("NamesFileBeneath admitted %q and %q, two spellings of %q", other, n, cleaned)
+		}
+		byCleaned[cleaned] = n
+	}
+	// The walk is the evidence the property was asked of something: a predicate
+	// refusing everything would satisfy both assertions above over nothing.
+	if admitted == 0 {
+		t.Fatal("NamesFileBeneath admitted none of the generated names; the property above was asked of nothing")
+	}
+	for _, n := range []string{"a", "a/b", "..a", "a..", "a.b"} {
+		if !pathscope.NamesFileBeneath(n) {
+			t.Errorf("NamesFileBeneath(%q) refused an ordinary name the walk relies on being admitted", n)
+		}
+	}
+}
+
 // TestIsLocalSlashIsPlatformInvariant pins the property that makes the logical
 // algebra a separate entry point rather than a flag on the operating-system one.
 //
@@ -478,7 +590,11 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // The count is pinned because it is the assertion a mode in disguise trips. Each
 // entry point answers a question the others do not, and the names say which:
 // Resolve confines a workspace-scoped path in operating-system arithmetic,
-// IsLocalSlash confines a logical name in slash arithmetic, ResolveSelected
+// IsLocalSlash confines a logical name in slash arithmetic, NamesFileBeneath asks
+// of such a name whether it names a file of its own beneath the directory, in the
+// one spelling that file has — the question a caller nesting the name under a
+// directory of its own asks, where an archive reader asks only the climb —
+// ResolveSelected
 // resolves a path a person chose and confines nothing, Relative answers with the
 // name a path has relative to a root rather than the location to open it at — the
 // question a caller about to report a path asks, where the first three serve a
@@ -499,7 +615,7 @@ func TestIsLocalSlashImpliesContainedJoin(t *testing.T) {
 // path a name can be joined onto, so where it reports writing is where it writes;
 // and ErrNameWindowsCannotHold is the accessor of the one
 // condition PlaceBeneath raises, which matches a refusal and judges no path. A
-// further export is either one of those eleven wearing a second name or a class
+// further export is either one of those twelve wearing a second name or a class
 // nobody named — and if a genuinely new class is being added, this count moves in
 // the same change that names it, which is exactly the deliberation the pin exists
 // to force.
@@ -537,8 +653,8 @@ func TestNoExportedSymbolTakesAMode(t *testing.T) {
 			}
 		}
 	}
-	if exported != 11 {
-		t.Errorf("package exports %d functions; the classes are meant to be exactly ten entry points (Resolve, IsLocalSlash, ResolveSelected, Relative, ReportedName, ResolvesInside, SamePlace, WalkDir, PlaceBeneath, DirectoryPath) and the accessor of the one condition PlaceBeneath raises (ErrNameWindowsCannotHold), so a twelfth is either a mode in disguise or a class nobody named", exported)
+	if exported != 12 {
+		t.Errorf("package exports %d functions; the classes are meant to be exactly eleven entry points (Resolve, IsLocalSlash, NamesFileBeneath, ResolveSelected, Relative, ReportedName, ResolvesInside, SamePlace, WalkDir, PlaceBeneath, DirectoryPath) and the accessor of the one condition PlaceBeneath raises (ErrNameWindowsCannotHold), so a thirteenth is either a mode in disguise or a class nobody named", exported)
 	}
 }
 

@@ -322,8 +322,8 @@ type resolvedArtifactEntry struct {
 //     ArtifactLibrary bundle expands into one output per file, each nested under
 //     the consumption key as `<key>/<filename>`. A host-bearing `oci://…`
 //     reference is rejected (ErrHostInLibraryImport), and a bundle file whose
-//     name would not stay under the consumption key is rejected
-//     (ErrArtifactLibraryFileEscapesKey) before the name is composed.
+//     name does not name a file of its own beneath the consumption key is
+//     rejected (ErrArtifactLibraryFileEscapesKey) before the name is composed.
 func walkArtifactBlock(
 	entries types.OrderedMap[types.ArtifactEntry],
 	block artifactsBlock,
@@ -358,23 +358,27 @@ func walkArtifactBlock(
 			}
 			for _, fname := range bundle.Files.Keys() {
 				// The nesting above is only true of the composed name while the
-				// bundle's own filename stays under the key, and the filename comes
-				// from a document the consuming Recipe did not write. So it is judged
-				// before it is composed rather than after: once the two halves are
-				// joined, a climbing segment reads as an ordinary interior one and the
-				// composed name resolves somewhere the consuming Recipe never named.
-				// The question is asked of the shared containment predicate, because
-				// an output name is a logical name rather than a path in the host's
-				// own spelling, and that predicate gives it the same verdict on every
+				// bundle's own filename names a file of its own under the key, and the
+				// filename comes from a document the consuming Recipe did not write.
+				// So it is judged before it is composed rather than after: once the
+				// two halves are joined, a climbing segment reads as an ordinary
+				// interior one and the composed name resolves somewhere the consuming
+				// Recipe never named. A name that stays under the key and still names
+				// no file of its own is refused too — "." or "x/.." lands at the key
+				// itself, and "a//b" or "a/b/" is a second spelling of "a/b", which
+				// every collision guard on this path compares as written and so never
+				// sees. The question is asked of the shared predicate, because an
+				// output name is a logical name rather than a path in the host's own
+				// spelling, and that predicate gives it the same verdict on every
 				// platform.
-				if !pathscope.IsLocalSlash(fname) {
+				if !pathscope.NamesFileBeneath(fname) {
 					return cerrors.Wrap(ErrArtifactLibraryFileEscapesKey(),
 						cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
 						cerrors.ComposeMessage(ErrArtifactLibraryFileEscapesKey(), []string{
 							fmt.Sprintf("Recipe %q", state.RecipeName),
 							fmt.Sprintf("%s %q", block.noun, key),
 							fmt.Sprintf("bundle file %q", fname),
-						}, "rename the file inside the ArtifactLibrary bundle so its name stays under the artifacts key it is consumed at"))
+						}, artifactLibraryFileNameAdvice))
 				}
 				body, _ := bundle.Files.Get(fname)
 				if err := visit(resolvedArtifactEntry{outputName: key + "/" + fname, origin: "import", text: body, key: key}); err != nil {

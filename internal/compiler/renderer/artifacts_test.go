@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -940,6 +941,103 @@ func TestBuildArtifactsProjection_ShippedMariadbRdsBodyResolves(t *testing.T) {
 			t.Errorf("resolved body missing %q; full body:\n%s", want, body)
 		}
 	}
+}
+
+// ----- library bundle file names that name no file of their own beneath the key -----
+
+// TestABundleFileNamingNoFileBeneathItsKeyHalts drives every spelling of a bundle
+// file name that stays under its consumption key yet names no file of its own
+// there through the real artifact walk, and asserts each halts with the
+// condition's own identity, naming the bundle file and the key.
+//
+// These are the names a containment check alone admits: each stays at or under
+// the key, so nothing about leaving the directory refuses it. Two groups, by what
+// goes wrong once the name is composed under the key. "." and every name that
+// cleans to it put the file at the key itself, so the key's directory becomes a
+// file. A name with a trailing or doubled separator or a "." or ".." part is a
+// second spelling of a file another bundle name can carry: the walk's collision
+// guard compares the composed names as written, so "a//b" beside "a/b" reaches
+// the writer as two outputs, and one silently overwrites the other.
+//
+// Each row is driven in a subtest that recovers a panic and fails on it, because
+// testing.T does not fail a subtest whose panic was recovered, and a walk that
+// panicked on one of these names would otherwise read as having refused it.
+func TestABundleFileNamingNoFileBeneathItsKeyHalts(t *testing.T) {
+	t.Parallel()
+
+	const key = "widgets"
+	cases := []struct {
+		name  string
+		fname string
+	}{
+		{"the key itself", "."},
+		{"the key itself, with a trailing separator", "./"},
+		{"a climb back onto the key", "x/.."},
+		{"a climb back onto the key, with a trailing separator", "x/../"},
+		{"a deeper climb back onto the key", "a/b/../.."},
+		{"a trailing separator", "x/"},
+		{"a doubled separator", "a//b"},
+		{"a leading dot segment", "./a"},
+		{"an interior dot segment", "a/./b"},
+		{"an interior climb", "a/../b"},
+		{"the empty name", ""},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("bundle file %q under key %q panicked instead of halting: %v", tc.fname, key, r)
+				}
+			}()
+
+			tmplCtx, state, nodeCtx := newArtifactsCtx()
+			resetArtifacts(state)
+			state.Recipe.Spec.Artifacts.Set(key, types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
+			state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+				"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+					[]string{tc.fname}, []string{"kind: ConfigMap\n"}),
+			}
+
+			proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
+			if !errors.Is(err, ErrArtifactLibraryFileEscapesKey()) {
+				t.Fatalf("bundle file %q under key %q: got %v (projected %d entr(ies)); want ErrArtifactLibraryFileEscapesKey",
+					tc.fname, key, err, len(proj.Entries))
+			}
+			msg := err.Error()
+			for _, want := range []string{`artifact "` + key + `"`, `bundle file "` + tc.fname + `"`, "rename the file"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("the diagnostic does not carry %q:\n%s", want, msg)
+				}
+			}
+		})
+	}
+
+	// The positive row, through the same walk: a nested layout written plainly is
+	// admitted and composed under the key unchanged, so the refusals above are a
+	// statement about the names rather than about the fixture.
+	t.Run("a nested layout written plainly is admitted", func(t *testing.T) {
+		t.Parallel()
+		tmplCtx, state, nodeCtx := newArtifactsCtx()
+		resetArtifacts(state)
+		state.Recipe.Spec.Artifacts.Set(key, types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
+		state.ArtifactLibraries = map[string]types.ArtifactLibrary{
+			"SharedCRDs": artifactLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+				[]string{"rbac/role.yaml", "a/b"}, []string{"kind: Role\n", "kind: ConfigMap\n"}),
+		}
+		proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
+		if err != nil {
+			t.Fatalf("a bundle written plainly halted: %v", err)
+		}
+		var got []string
+		for _, e := range proj.Entries {
+			got = append(got, e.Name)
+		}
+		if strings.Join(got, ",") != key+"/rbac/role.yaml,"+key+"/a/b" {
+			t.Errorf("projected %v; want [%s/rbac/role.yaml %s/a/b]", got, key, key)
+		}
+	})
 }
 
 // ----- phase B.3 dispatch: an engine that is not an ArtifactsEmitter halts -----

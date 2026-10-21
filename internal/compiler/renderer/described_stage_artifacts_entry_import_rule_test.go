@@ -6,6 +6,7 @@ package renderer
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -49,18 +50,43 @@ metadata:
 	artifactsEntryNestedBody = "$import: Shared#/artifacts/Settings"
 )
 
+// artifactsEntryNoFileNames are bundle file names that stay under the key they
+// would be nested under and still name no file of their own there — the key
+// itself, or a second spelling of a file another name can carry — each keyed by
+// the library that carries it, so a row can name the library and the name stays
+// readable from the row.
+var artifactsEntryNoFileNames = []struct{ library, fname string }{
+	{"NamesTheKey", "."},
+	{"NamesTheKeyWithASeparator", "./"},
+	{"ClimbsBackOntoTheKey", "x/.."},
+	{"TrailingSeparator", "x/"},
+	{"DoubledSeparator", "a//b"},
+	{"LeadingDotSegment", "./a"},
+	{"InteriorDotSegment", "a/./b"},
+	{"InteriorClimb", "a/../b"},
+}
+
 // artifactsEntryLibraries is the resolved ArtifactLibrary set every row below is
 // driven against: one well-formed bundle, one whose file body imports another
-// bundle, and one whose file name climbs out of the key it would be nested under.
+// bundle, one whose file name climbs out of the key it would be nested under, one
+// per name that stays under the key and names no file of its own there, and one
+// carrying a nested layout written plainly.
 func artifactsEntryLibraries() map[string]types.ArtifactLibrary {
-	return map[string]types.ArtifactLibrary{
+	libs := map[string]types.ArtifactLibrary{
 		"Shared": artifactLibraryFixtureOrdered("Shared", "Settings",
 			[]string{"settings.yaml"}, []string{artifactsEntryBundleBody}),
 		"Nested": artifactLibraryFixtureOrdered("Nested", "Bad",
 			[]string{"one.yaml"}, []string{artifactsEntryNestedBody}),
 		"Climbing": artifactLibraryFixtureOrdered("Climbing", "Escapes",
 			[]string{"../outside.yaml"}, []string{artifactsEntryBundleBody}),
+		"Layered": artifactLibraryFixtureOrdered("Layered", "Settings",
+			[]string{"rbac/role.yaml"}, []string{artifactsEntryBundleBody}),
 	}
+	for _, n := range artifactsEntryNoFileNames {
+		libs[n.library] = artifactLibraryFixtureOrdered(n.library, "Settings",
+			[]string{n.fname}, []string{artifactsEntryBundleBody})
+	}
+	return libs
 }
 
 // artifactsEntryRecipe is the authored document both paths are driven with, so the
@@ -154,7 +180,7 @@ type artifactsEntryCase struct {
 }
 
 func artifactsEntryCases() []artifactsEntryCase {
-	return []artifactsEntryCase{
+	cases := []artifactsEntryCase{
 		{
 			name: "a bundle that resolves is admitted",
 			key:  "settings",
@@ -195,7 +221,21 @@ func artifactsEntryCases() []artifactsEntryCase {
 			ref:  "Climbing#/artifacts/Escapes",
 			want: ErrArtifactLibraryFileEscapesKey(),
 		},
+		{
+			name: "a bundle file name carrying a nested layout written plainly is admitted",
+			key:  "settings",
+			ref:  "Layered#/artifacts/Settings",
+		},
 	}
+	for _, n := range artifactsEntryNoFileNames {
+		cases = append(cases, artifactsEntryCase{
+			name: "a bundle file name " + strconv.Quote(n.fname) + " names no file of its own under its key",
+			key:  "settings",
+			ref:  n.library + "#/artifacts/Settings",
+			want: ErrArtifactLibraryFileEscapesKey(),
+		})
+	}
+	return cases
 }
 
 // TestArtifactsEntryImportRules_AgreeWithTheWalkTheyStandAheadOf is the
