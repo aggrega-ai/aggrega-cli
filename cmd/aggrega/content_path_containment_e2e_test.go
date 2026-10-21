@@ -46,9 +46,15 @@ var containmentRecipeDir = filepath.Join("catalog", "recipe", "helm", "server", 
 // workload from a file beside it and imports one artifact through artifactImport,
 // with that artifact's file present both inside the Recipe's directory and at
 // <root>/outside. It returns the Recipe's path.
+//
+// The configuration names a registry the test owns, one that answers every request
+// as not found. A pull over a Recipe the catalog refuses for its content path finds
+// no local copy of it and asks the default registry, so without one of the test's
+// own that question would go to the built-in default instead.
 func containmentWorkspace(t *testing.T, root, artifactImport string) string {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"),
+		"workspace: {}\nauto_pull: false\ndefault_registry: \""+newRegistryReach(t).host()+"\"\n")
 	writeFixture(t, filepath.Join(root, "catalog", "component", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
