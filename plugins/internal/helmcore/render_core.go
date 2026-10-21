@@ -103,6 +103,12 @@ func RenderLoadedChart(
 // SDK's own release renders for where they name none; a version the SDK's parser
 // refuses halts the render — see [renderCapabilities].
 //
+// values are coalesced over the chart's defaults once, as a Helm install
+// coalesces the values it is given: a key values sets to null removes the chart's
+// default for it, at the top level, inside a table and inside a dependency's
+// values alike, and a null at a key the chart gives no default reaches the
+// templates as null.
+//
 // validate is the values-schema validation strategy the caller supplies; it
 // gates on the coalesced values table without altering it, so rendered output
 // is byte-identical for any accepted input. The provider Wasm guest passes the
@@ -131,12 +137,6 @@ func RenderChart(
 		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
 	}
 
-	// Coalesce the Phase B dict with the chart's default values
-	cvals, err := commonutil.CoalesceValues(ch, values)
-	if err != nil {
-		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: coalesce values", nodeCtx.NodeID))
-	}
-
 	// Build release options. We are not installing — just rendering templates.
 	// Namespace comes from the `aggrega.ai/namespace` annotation when present
 	// (merged from boundary + boundary_component); otherwise the cluster default.
@@ -159,10 +159,20 @@ func RenderChart(
 		return ChartRender{}, err
 	}
 
+	// The supplied values are coalesced over the chart's defaults here, once, as
+	// Helm's install action coalesces them: a key the values set to null removes
+	// the chart's default for it, and a null where the chart has no default stays
+	// null. 🔴 Hand this call the values as supplied, never a table already
+	// coalesced: it coalesces whatever it is handed, and a second pass finds the
+	// removed key absent and restores the chart's default for it. A values table
+	// the chart cannot take — a non-table where a dependency's values go — was
+	// already refused by the dependency processing above, which coalesces the same
+	// values over the same chart.
+	//
 	// Skip the SDK's live-fetching validator and gate on the supplied one
 	// instead. The table handed to the validator is the same coalesced values
 	// table the render consumes.
-	renderVals, err := commonutil.ToRenderValuesWithSchemaValidation(ch, cvals, relOpts, caps, true)
+	renderVals, err := commonutil.ToRenderValuesWithSchemaValidation(ch, values, relOpts, caps, true)
 	if err == nil {
 		if vals, ok := renderVals["Values"].(common.Values); ok {
 			err = validate(ch, vals)
