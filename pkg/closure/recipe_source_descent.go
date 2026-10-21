@@ -410,7 +410,7 @@ func EvaluateSourceSpecFields(values, infra map[string]any, source any, locals t
 // typed `any` — string URI or structured map) into a SourceSpec
 // ready to feed into the SourceResolver. Templated fields
 // (`version`, `ref`, `chart`, `module_subdir`) are evaluated against
-// {.values, .infra, .locals} per amendment §3.7. Returns
+// {.values, .infra, .locals}, over the locals entries those fields read. Returns
 // ErrSourceTemplateAtLockTime on .provides references, ambiguous
 // kind classification, or missing keys, and
 // ErrLocalsForwardReference / ErrLocalsUnknownReference on a refused
@@ -468,11 +468,13 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 		Infra:  infra,
 		Locals: map[string]any{},
 	}
-	if err := resolveLocals(locals, ctx, recipeURI); err != nil {
+	authored := mapStringValues(s)
+	reads := sourceLocalsReads(authored, locals, recipeURI)
+	unevaluated, err := resolveLocals(locals, ctx, recipeURI, reads)
+	if err != nil {
 		return nil, err
 	}
 
-	authored := mapStringValues(s)
 	for _, field := range sourceSpecFields {
 		v, present := authored[field.key]
 		if !present {
@@ -482,9 +484,10 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 			field.assign(spec, v)
 			continue
 		}
-		resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.source."+field.key)
+		fieldPath := recipeURI + ".spec.source." + field.key
+		resolved, err := evalSourceTemplate(v, ctx, fieldPath, "")
 		if err != nil {
-			return nil, err
+			return nil, withUnevaluatedLocals(err, reads.fieldKeys[fieldPath], unevaluated, recipeURI)
 		}
 		field.assign(spec, resolved)
 	}
@@ -507,8 +510,7 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 // mapStringValues returns a flat view of the structured source map
 // where every value is a string. Non-string values are stringified
 // via fmt.Sprint; complex shapes (nested maps, lists) are not
-// expected at spec.source's leaf fields per the source-resolution
-// amendment.
+// expected at spec.source's leaf fields.
 func mapStringValues(s map[string]any) map[string]string {
 	out := make(map[string]string, len(s))
 	for k, v := range s {
@@ -538,10 +540,17 @@ type templateContext struct {
 //
 // fieldPath names the source-side location (e.g.,
 // "<recipe-uri>.spec.source.version") and is included in error
-// messages so operators can locate the failing template.
-func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (string, error) {
+// messages so operators can locate the failing template. readBy is empty
+// for a source field; for a locals entry it is the phrase naming the source
+// field the entry is evaluated for, so a failure in the entry says which
+// coordinate needed it.
+func evalSourceTemplate(input string, ctx templateContext, fieldPath, readBy string) (string, error) {
 	if !strings.Contains(input, "{{") {
 		return input, nil
+	}
+	where := fieldPath
+	if readBy != "" {
+		where += ", " + readBy
 	}
 	// Aggrega's helpers come from the one place they are defined, so `optional`
 	// resolves a key here exactly as it does when the same recipe renders — same
@@ -552,10 +561,20 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 	// non-string value, and they disagree silently.
 	tmpl, err := template.New(fieldPath).Option("missingkey=error").Funcs(gotmpl.Helpers()).Parse(input)
 	if err != nil {
-		return "", fmt.Errorf("resolve: parse template at %s: %w (also %w) (cause: %s)",
-			fieldPath, ErrSourceTemplateAtLockTime(), ErrSourceTemplateParse(), err)
+		msg := fmt.Sprintf("resolve: parse template at %s: %s (cause: %s)",
+			where, errorSentence(ErrSourceTemplateParse()), err)
+		// A text the rendering function set parses failed here for a function only a
+		// render registers, and the cause names that function without saying why it
+		// is missing; the advice says why, and what to do instead.
+		if _, renderErr := gotmpl.ParseTree(input, "{{", "}}"); renderErr == nil {
+			msg += "; " + renderOnlyFunctionAdvice
+			if readBy != "" {
+				msg += ", or move the value into a locals entry no source field reads"
+			}
+		}
+		return "", sourceTemplateFault{msg: msg, condition: ErrSourceTemplateParse()}
 	}
-	if err := rejectProvidesReference(tmpl, fieldPath); err != nil {
+	if err := rejectProvidesReference(tmpl, where); err != nil {
 		return "", err
 	}
 	var buf bytes.Buffer
@@ -565,10 +584,100 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 		"locals": ctx.Locals,
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("resolve: evaluate template at %s: %w (cause: %s)",
-			fieldPath, ErrSourceTemplateAtLockTime(), err)
+		return "", sourceTemplateExecution{where: where, cause: err}
 	}
 	return buf.String(), nil
+}
+
+// sourceTemplateExecution is a source template that parsed and could not be
+// executed against the data this surface holds. It keeps the execution's own
+// cause apart from the message, so a field failing for want of a locals entry can
+// quote why that entry holds no value.
+type sourceTemplateExecution struct {
+	where string
+	cause error
+}
+
+func (e sourceTemplateExecution) Error() string {
+	return fmt.Sprintf("resolve: evaluate template at %s: %s (cause: %s)",
+		e.where, errorSentence(ErrSourceTemplateAtLockTime()), e.cause)
+}
+
+// Unwrap returns the condition every source-template failure carries.
+func (e sourceTemplateExecution) Unwrap() error { return ErrSourceTemplateAtLockTime() }
+
+// renderOnlyFunctionAdvice is what a source template calling a function only a
+// render registers is told. It names the helpers the surface does register, so
+// the reader can see what is available rather than only what is not.
+const renderOnlyFunctionAdvice = "a source field, and every locals entry it reads, is evaluated when the " +
+	"source is resolved with Aggrega's own helpers only (optional, capitalizedWords and index), not the " +
+	"Sprig functions a render adds; write the value without that function"
+
+// sourceTemplateFault is a source-template failure carrying a condition that is
+// one case of ErrSourceTemplateAtLockTime.
+//
+// It is ONE chain, and that is the point of it. The failure has two identities —
+// the specific condition and the umbrella every source-template failure carries —
+// and the two have to stay matchable with errors.Is. Wrapping both with two %w
+// verbs makes an error whose Unwrap returns a slice, which every reader of a
+// refusal takes for a join of independent failures: each identity is then printed
+// as a finding of its own, by its bare sentence, and the frame carrying the field,
+// the entry and the cause is never printed at all. Here the specific condition is
+// the one link beneath the message, so the message is what is printed and the
+// specific condition's short code heads it, and the umbrella is answered by Is.
+type sourceTemplateFault struct {
+	msg       string
+	condition error
+}
+
+func (f sourceTemplateFault) Error() string { return f.msg }
+
+// Unwrap returns the specific condition, the one link beneath the message.
+func (f sourceTemplateFault) Unwrap() error { return f.condition }
+
+// Is reports the umbrella condition every source-template failure carries.
+func (f sourceTemplateFault) Is(target error) bool {
+	return target == ErrSourceTemplateAtLockTime()
+}
+
+// errorSentence is the sentence a condition was registered with.
+func errorSentence(condition error) string {
+	if sentence, ok := cerrors.MessageOf(condition); ok {
+		return sentence
+	}
+	return condition.Error()
+}
+
+// withUnevaluatedLocals adds to a source field's failure the reason each locals
+// entry it reads holds no value here.
+//
+// A field reading an entry that could not be evaluated on this surface fails with
+// the template's own missing-key text, which names the key and not why it is
+// missing. The entry's own failure is the why, so it is quoted beside it. Only an
+// execution failure is extended: a field that does not parse, or that reads
+// `.provides`, failed for a reason of its own.
+func withUnevaluatedLocals(err error, keys []string, unevaluated map[string]error, recipeURI string) error {
+	if errors.Is(err, ErrSourceTemplateParse()) || errors.Is(err, ErrSourceTemplateProvidesRef()) {
+		return err
+	}
+	var notes []string
+	for _, k := range keys {
+		failure, ok := unevaluated[k]
+		if !ok {
+			continue
+		}
+		cause := failure.Error()
+		var exec sourceTemplateExecution
+		if errors.As(failure, &exec) {
+			cause = exec.cause.Error()
+		}
+		notes = append(notes, fmt.Sprintf("it reads %s.spec.locals.%s, which could not be evaluated here (cause: %s)",
+			recipeURI, k, cause))
+	}
+	if len(notes) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, strings.Join(notes, "; "))
 }
 
 // rejectProvidesReference walks the parsed template's AST and
@@ -680,23 +789,39 @@ func walkBranchNode(b *parse.BranchNode, fieldPath string) error {
 }
 
 func providesError(fieldPath string) error {
-	return fmt.Errorf(
-		"source-version template at %s references `.provides`, which is an invalid reverse "+
-			"reference (locals feed provides, never the reverse) — refactor to read only "+
-			"`.values` and `.infra` (and `.locals` over the same): %w (also %w)",
-		fieldPath, ErrSourceTemplateAtLockTime(), ErrSourceTemplateProvidesRef())
+	return sourceTemplateFault{
+		msg: fmt.Sprintf(
+			"source-version template at %s references `.provides`, which is an invalid reverse "+
+				"reference (locals feed provides, never the reverse) — refactor to read only "+
+				"`.values` and `.infra` (and `.locals` over the same): %s",
+			fieldPath, errorSentence(ErrSourceTemplateProvidesRef())),
+		condition: ErrSourceTemplateProvidesRef(),
+	}
 }
 
-// resolveLocals evaluates each .locals entry against the current
-// {Values, Infra} substrate and writes the resolved value back into
-// ctx.Locals, in author order, so a later entry may read an earlier one
-// through `.locals.<earlier_key>`.
+// resolveLocals evaluates the .locals entries the source fields read against the
+// current {Values, Infra} substrate and writes each resolved value back into
+// ctx.Locals, in author order, so a later entry may read an earlier one through
+// `.locals.<earlier_key>`. It returns, for each such entry that could not be
+// executed here, why — see withUnevaluatedLocals for what that is for.
 //
 // It resolves a block for ONE purpose: so a `source:` coordinate can read
 // it. Both entry points into this file's source evaluation reach it — the
 // one a lockfile acquisition uses and the one a build uses — so this pass
 // answers the same way at both, which is what makes a pinned coordinate
 // re-derivable.
+//
+// # It evaluates what a coordinate reads, and nothing else
+//
+// Which entries that is comes from reads, which sourceLocalsReads derives from
+// the authored text of the source fields and of the entries they reach. An entry
+// no source field reads is not looked at: not evaluated, not classified, not
+// parsed. Its value cannot reach a coordinate, so evaluating it here could only
+// ever halt the resolution over something the coordinate does not depend on — and
+// the rendered-output pass, which every such entry exists for, refuses its faults
+// at build. Where a field reads the block in a way no static reading resolves to
+// named entries, every entry is evaluated, so a value the field may reach is never
+// left out.
 //
 // # It is a second evaluator of an authored locals block, and the split is deliberate
 //
@@ -740,28 +865,36 @@ func providesError(fieldPath string) error {
 //
 // This surface registers Aggrega's template helpers alone, without the broad
 // general-purpose set a rendering surface layers them over, so an authored name
-// means one thing wherever a coordinate is evaluated. An entry calling a
-// function only the rendering surface registers therefore fails to PARSE here —
-// and a parse failure is outside the tolerance, so it halts while the
-// renderer's pass admits it. That difference is a property of the surface being
-// resolved, not of the phase: acquiring a lockfile and building against one run
-// this same body.
-func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeURI string) error {
+// means one thing wherever a coordinate is evaluated and no function reading the
+// clock, the environment, a random source or the network takes part in deciding
+// what is pinned. An entry a coordinate reads that calls a function only the
+// rendering surface registers therefore fails to PARSE here — and a parse failure
+// is outside the tolerance, so it halts, naming the entry and the source field it
+// was evaluated for, while the renderer's pass admits it. That difference is a
+// property of the surface being resolved, not of the phase: acquiring a lockfile
+// and building against one run this same body.
+func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeURI string, reads localsReads) (map[string]error, error) {
 	declared := locals.Keys()
+	unevaluated := map[string]error{}
 	// The author-order prefix is carried explicitly rather than read back off
 	// ctx.Locals, and the difference is the whole of the paragraph above: entries
 	// drop out of ctx.Locals legitimately here, and a prefix taken from it would
 	// shrink as they did. Keys() and All() walk the one ordered mapping in the one
 	// order, so at the entry for the key at index i this holds exactly the keys
-	// above it.
+	// above it — whether or not the entries above it were evaluated.
 	above := 0
 	for k, v := range locals.All() {
-		fieldPath := recipeURI + ".spec.locals." + k
-		if err := refuseLocalsReference(v, fieldPath, k, declared[:above], declared); err != nil {
-			return err
-		}
+		readable := declared[:above]
 		above++
-		resolved, err := evalSourceTemplate(v, ctx, fieldPath)
+		readBy, evaluated := reads.readBy(k)
+		if !evaluated {
+			continue
+		}
+		fieldPath := recipeURI + ".spec.locals." + k
+		if err := refuseLocalsReference(v, fieldPath, k, readable, declared, readBy); err != nil {
+			return nil, err
+		}
+		resolved, err := evalSourceTemplate(v, ctx, fieldPath, readBy)
 		if err != nil {
 			// What remains of the tolerance is bounded by error CLASS, and the two
 			// classes kept loud are the ones no surface can resolve: a template that
@@ -770,13 +903,102 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 			// contract above for what that covers, and why a parse failure landing
 			// outside it makes this surface the stricter one on that axis.
 			if errors.Is(err, ErrSourceTemplateParse()) || errors.Is(err, ErrSourceTemplateProvidesRef()) {
-				return err
+				return nil, err
 			}
+			unevaluated[k] = err
 			continue
 		}
 		ctx.Locals[k] = resolved
 	}
-	return nil
+	return unevaluated, nil
+}
+
+// localsReads is which locals entries a source's fields read, found from their
+// authored text before anything is evaluated.
+type localsReads struct {
+	// reader names, per entry a field reads directly or through another entry,
+	// the first field in sourceSpecFields order that reaches it.
+	reader map[string]string
+	// fieldKeys names, per source field path, the entries that field reads
+	// directly.
+	fieldKeys map[string][]string
+	// whole is the first field whose text, or the text of an entry it reaches,
+	// reads the block in a way no static reading resolves to named entries. While
+	// it is set, every entry is evaluated.
+	whole string
+}
+
+// readBy reports whether an entry is evaluated for a source coordinate, and the
+// phrase naming the field it is evaluated for.
+func (r localsReads) readBy(entry string) (string, bool) {
+	if field, ok := r.reader[entry]; ok {
+		return "read by " + field, true
+	}
+	if r.whole != "" {
+		return "evaluated for " + r.whole + ", which reads the locals block as a whole rather than " +
+			"by entry, so every entry is evaluated", true
+	}
+	return "", false
+}
+
+// sourceLocalsReads finds which locals entries the templated source fields read:
+// each entry a field names, and each entry such an entry names in turn.
+//
+// The reading is the one every reference check of a template is built on
+// (gotmpl.RootKeysRead), so the entries found here are the entries the same text
+// is checked against everywhere else. Where that reading cannot name every entry
+// a text may reach, the answer is every entry: leaving one out would hand a field
+// a block missing a value it reads.
+//
+// A text that does not parse contributes nothing here. A field that does not
+// parse fails on its own evaluation, and an entry that does not parse is
+// evaluated, because something read it, and fails there — in both cases with the
+// diagnostic that names it.
+func sourceLocalsReads(authored map[string]string, locals types.OrderedMap[string], recipeURI string) localsReads {
+	reads := localsReads{reader: map[string]string{}, fieldKeys: map[string][]string{}}
+	for _, field := range sourceSpecFields {
+		text, present := authored[field.key]
+		if !field.evaluated || !present || !strings.Contains(text, "{{") {
+			continue
+		}
+		fieldPath := recipeURI + ".spec.source." + field.key
+		keys, complete, err := gotmpl.RootKeysRead(text, "{{", "}}", gotmpl.LocalsContextRoot)
+		if err != nil {
+			continue
+		}
+		if !complete {
+			if reads.whole == "" {
+				reads.whole = fieldPath
+			}
+			continue
+		}
+		reads.fieldKeys[fieldPath] = keys
+		pending := append([]string(nil), keys...)
+		for len(pending) > 0 {
+			k := pending[0]
+			pending = pending[1:]
+			if _, seen := reads.reader[k]; seen {
+				continue
+			}
+			entryText, declared := locals.Get(k)
+			if !declared {
+				continue
+			}
+			reads.reader[k] = fieldPath
+			next, complete, err := gotmpl.RootKeysRead(entryText, "{{", "}}", gotmpl.LocalsContextRoot)
+			if err != nil {
+				continue
+			}
+			if !complete {
+				if reads.whole == "" {
+					reads.whole = fieldPath
+				}
+				continue
+			}
+			pending = append(pending, next...)
+		}
+	}
+	return reads
 }
 
 // refuseLocalsReference halts on a locals reference the entry cannot legitimately
@@ -806,7 +1028,11 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 // A malformed template yields no refusal here. A parse failure is the evaluator's
 // diagnostic to report, and naming a reference fault for one would describe the
 // author's mistake wrongly.
-func refuseLocalsReference(tmplText, fieldPath, entry string, readable, declared []string) error {
+//
+// readBy names the source field the entry is evaluated for. It is part of the
+// occurrence rather than of the fault: the fault is the block's own, and the field
+// is why this surface looked at the entry at all.
+func refuseLocalsReference(tmplText, fieldPath, entry string, readable, declared []string, readBy string) error {
 	ref := gotmpl.ClassifyRootKeyReference(
 		tmplText, "{{", "}}", gotmpl.LocalsContextRoot, readable, declared,
 	)
@@ -814,23 +1040,32 @@ func refuseLocalsReference(tmplText, fieldPath, entry string, readable, declared
 	case gotmpl.RootKeyUnresolved:
 		return cerrors.Wrap(gotmpl.ErrLocalsForwardReference(), cerrors.CatalogError,
 			cerrors.SourceLocation{File: fieldPath},
-			cerrors.ComposeMessage(gotmpl.ErrLocalsForwardReference(), []string{
+			cerrors.ComposeMessage(gotmpl.ErrLocalsForwardReference(), withReader([]string{
 				fmt.Sprintf("%s references %q", fieldPath, ref.Path),
 				gotmpl.LocalsForwardPosition(ref.Key, entry),
 				"entries resolve in author order and an entry reads only a sibling defined above it",
 				fmt.Sprintf("resolved at this point: %s", gotmpl.LocalsReadablePhrase(readable)),
-			}, gotmpl.LocalsForwardRemedy(ref.Key, entry)))
+			}, readBy), gotmpl.LocalsForwardRemedy(ref.Key, entry)))
 	case gotmpl.RootKeyUndeclared:
 		return cerrors.Wrap(gotmpl.ErrLocalsUnknownReference(), cerrors.CatalogError,
 			cerrors.SourceLocation{File: fieldPath},
-			cerrors.ComposeMessage(gotmpl.ErrLocalsUnknownReference(), []string{
+			cerrors.ComposeMessage(gotmpl.ErrLocalsUnknownReference(), withReader([]string{
 				fmt.Sprintf("%s references %q", fieldPath, ref.Path),
 				fmt.Sprintf("the locals block declares no %q", ref.Key),
 				gotmpl.LocalsDeclaredPhrase(declared),
-			}, gotmpl.LocalsUnknownRemedy))
+			}, readBy), gotmpl.LocalsUnknownRemedy))
 	default:
 		return nil
 	}
+}
+
+// withReader adds the phrase naming the source field an entry was evaluated for
+// to an occurrence's values, after the values describing the fault itself.
+func withReader(values []string, readBy string) []string {
+	if readBy == "" {
+		return values
+	}
+	return append(values, readBy)
 }
 
 // classifyEntityKind reads a catalog URI and returns "recipe" or

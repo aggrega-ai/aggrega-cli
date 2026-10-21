@@ -17,8 +17,9 @@ import (
 // OPPOSITE way to the first.
 //
 // The file beside this one pins the ordering axis: where an entry sits relative
-// to the sibling it reads. There, the render refuses and source descent admits.
-// This file pins the template-function axis, where the two swap places.
+// to the sibling it reads. There, the two passes agree on every entry the source
+// reads, and the render refuses what source descent never looks at. This file
+// pins the template-function axis, where source descent is the stricter of the two.
 //
 // # The mechanism
 //
@@ -26,12 +27,23 @@ import (
 // registers the broad set — the general-purpose template library with Aggrega's
 // own helpers layered over it. Resolving a `source:` coordinate registers
 // Aggrega's helpers ALONE, deliberately, so an authored name means one thing on
-// a surface that evaluates a coordinate rather than rendering output.
+// a surface that evaluates a coordinate rather than rendering output, and no
+// function reading the clock, the environment, a random source or the network
+// takes part in deciding what is pinned.
 //
 // An unknown function is a PARSE failure in a Go template, not an execution
 // failure, and source descent's tolerance covers execution failures only: a
-// parse failure is kept loud. So an entry calling a function only the render
-// registers is admitted by the render and HALTS source descent.
+// parse failure is kept loud. So an entry the source reads, calling a function
+// only the render registers, is admitted by the render and HALTS source descent.
+//
+// # The reach is what the source reads
+//
+// Source descent evaluates only the entries a source field reads, directly or
+// through another entry. So the divergence is a property of the entries a
+// coordinate depends on, and an entry no field reads diverges from nothing: it is
+// not evaluated here at all. Each row is therefore driven twice — with the source
+// reading the entry and with a literal source — and the second drive must be
+// admitted whatever the entry calls.
 //
 // # Why the direction matters more than the rows
 //
@@ -40,18 +52,16 @@ import (
 // acquired for a document the compiler is happy with. 🔴 It is NOT that, and the
 // assertions below are what keep the record straight. Source descent's body is
 // reached from the build-time entry point and the lock-time one alike — ONE body
-// serving both — so on this axis a build halts exactly where a lockfile
-// acquisition halts. What differs is which SURFACE is being resolved, never
-// which phase is running.
+// serving both — so on this axis that body halts at either entry for the same
+// input. What differs is which SURFACE is being resolved, never which phase is
+// running.
 //
-// That is why the third column exists. Two rows would have pinned the
+// That is why the build-time column exists. Two columns would have pinned the
 // divergence; the third is what pins the absence of a phase asymmetry, and it is
 // the claim a reader is most likely to get wrong.
 
 // localsHelperAxisRow is one authored locals entry and what each surface does
-// with it. Every row is paired with a structured source carrying a LITERAL
-// version, so the source coordinate itself reads no local and the only thing
-// under comparison is the locals pass.
+// with it, when the source reads it.
 type localsHelperAxisRow struct {
 	name string
 	// expr is the single locals entry's authored template text.
@@ -59,8 +69,8 @@ type localsHelperAxisRow struct {
 
 	// wantRender is the rendered-output pass's verdict.
 	wantRender localsDivergenceVerdict
-	// wantSourceCoord is the source-coordinate pass's verdict, which both entry
-	// points into it must produce.
+	// wantSourceCoord is the source-coordinate pass's verdict with the source
+	// reading the entry, which both entry points into it must produce.
 	wantSourceCoord localsDivergenceVerdict
 }
 
@@ -76,8 +86,8 @@ func localsHelperAxisRows() []localsHelperAxisRow {
 			wantSourceCoord: localsLockTime,
 		},
 		{
-			name:            "a broad-library function transforming a value",
-			expr:            `{{ upper .values.tag }}`,
+			name:            "a broad-library function doing arithmetic",
+			expr:            `{{ add1 3 }}`,
 			wantRender:      localsAdmitted,
 			wantSourceCoord: localsLockTime,
 		},
@@ -92,24 +102,28 @@ func localsHelperAxisRows() []localsHelperAxisRow {
 			wantSourceCoord: localsAdmitted,
 		},
 		{
-			name:            "a plain path reading an absent key",
-			expr:            `{{ .values.absent }}`,
+			name:            "a template built-in both surfaces have",
+			expr:            `{{ printf "%s.%s" "1" "0" }}`,
 			wantRender:      localsAdmitted,
 			wantSourceCoord: localsAdmitted,
 		},
 	}
 }
 
+// sourceReadingTheEntry is the version expression that makes the source read the
+// one entry every row's block carries.
+const sourceReadingTheEntry = "{{ .locals.derived }}"
+
 // sourceCoordinateVerdictAtBuild drives the source-coordinate locals pass
 // through the BUILD-time entry point the render orchestrator reaches it by.
 //
 // It exists so the two entry points can be compared. Driving only the lock-time
-// one would leave "a build halts here too" as prose, which is exactly the claim
-// this file is here to make executable.
-func sourceCoordinateVerdictAtBuild(t *testing.T, expr string) localsDivergenceVerdict {
+// one would leave "the build-time entry halts here too" as prose, which is exactly
+// the claim this file is here to make executable.
+func sourceCoordinateVerdictAtBuild(t *testing.T, expr, sourceVersion string) localsDivergenceVerdict {
 	t.Helper()
 	const uri = "helper-axis-recipe"
-	r := makeRecipe(uri, helmSource("1.0.0"))
+	r := makeRecipe(uri, helmSource(sourceVersion))
 	r.Spec.Locals = orderedLocals("derived", expr)
 
 	_, err := closure.EvaluateSourceSpec(map[string]any{}, map[string]any{}, r)
@@ -150,19 +164,20 @@ func renderVerdictForOneEntry(t *testing.T, expr string) localsDivergenceVerdict
 
 // TestTheTemplateFunctionAxisDivergesInTheOppositeDirection is the pin.
 //
-// It fails in five separate ways, and each is a change worth stopping on: a row
+// It fails in six separate ways, and each is a change worth stopping on: a row
 // whose recorded verdict moves on either surface; the two entry points into the
 // source-coordinate pass disagreeing, which would make the divergence a phase
-// asymmetry it currently is not; the reversed direction ceasing to occur; and a
-// corpus that stopped carrying agreements.
+// asymmetry it currently is not; an entry no source field reads being evaluated
+// after all; the reversed direction ceasing to occur; and a corpus that stopped
+// carrying agreements.
 func TestTheTemplateFunctionAxisDivergesInTheOppositeDirection(t *testing.T) {
 	t.Parallel()
 
 	var agreements, reversed int
 	for _, row := range localsHelperAxisRows() {
 		gotRender := renderVerdictForOneEntry(t, row.expr)
-		gotLockEntry := closureVerdict(t, []string{"derived", row.expr}, "1.0.0")
-		gotBuildEntry := sourceCoordinateVerdictAtBuild(t, row.expr)
+		gotLockEntry := closureVerdict(t, []string{"derived", row.expr}, sourceReadingTheEntry)
+		gotBuildEntry := sourceCoordinateVerdictAtBuild(t, row.expr, sourceReadingTheEntry)
 
 		if gotRender != row.wantRender {
 			t.Errorf("%s: the render reported %q, the pin records %q", row.name, gotRender, row.wantRender)
@@ -186,6 +201,18 @@ func TestTheTemplateFunctionAxisDivergesInTheOppositeDirection(t *testing.T) {
 				"build-time entry. One body serves both, so a difference here means they have been split: "+
 				"this axis would now be a phase asymmetry, and every surface that says it is not needs "+
 				"correcting with it", row.name, gotLockEntry, gotBuildEntry)
+		}
+
+		// THE REACH ASSERTION. With a literal source no field reads the entry, so
+		// the pass does not evaluate it, and no function it calls can halt the
+		// coordinate — at either entry point.
+		if got := closureVerdict(t, []string{"derived", row.expr}, "1.0.0"); got != localsAdmitted {
+			t.Errorf("%s: with no source field reading the entry, the lock-time entry reported %q; an entry "+
+				"no coordinate depends on is not evaluated there, so it must be admitted", row.name, got)
+		}
+		if got := sourceCoordinateVerdictAtBuild(t, row.expr, "1.0.0"); got != localsAdmitted {
+			t.Errorf("%s: with no source field reading the entry, the build-time entry reported %q; an entry "+
+				"no coordinate depends on is not evaluated there, so it must be admitted", row.name, got)
 		}
 
 		if gotRender == gotLockEntry {

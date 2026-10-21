@@ -73,10 +73,11 @@ type RootRef struct {
 // A template invoked by name receives whatever the invocation passes as its
 // dot, so the invocation's pipeline contributes and the invoked body does not.
 //
-// This is the only walk behind every reference check and behind SeedAbsentLeafKeys.
-// A surface differs only in what it does with the result — which references it
-// admits, or which absent leaves it supplies for — never in how the references are
-// derived, so no two surfaces can disagree about which references a template makes.
+// This is the only walk behind every reference check, behind SeedAbsentLeafKeys and
+// behind RootKeysRead. A surface differs only in what it does with the result — which
+// references it admits, which absent leaves it supplies for, or which keys it
+// evaluates ahead of the template — never in how the references are derived, so no
+// two surfaces can disagree about which references a template makes.
 // CollectTemplateFieldAccesses in this package is a separate walk with separate
 // purposes and the opposite polarity, and it deliberately over-collects; see the
 // polarity note below for which questions each direction answers, and why a caller
@@ -219,9 +220,16 @@ func SeedAbsentLeafKeys(data any, refs []RootRef) {
 // rootRefs accumulates the walk's result: the references in first-appearance
 // order, and the index each recorded path sits at so a path met twice merges into
 // its existing entry rather than appearing twice.
+//
+// wholeRoot records that the template handed on the context root itself — a bare
+// dot while the dot is the root, a bare $, or a variable bound to the root. Such a
+// read names no path, so it is not a reference and CollectRootRefs does not report
+// it; it is kept beside the references for [RootKeysRead], whose answer is only
+// complete when nothing could have reached a root's keys that way.
 type rootRefs struct {
-	refs []RootRef
-	seen map[string]int
+	refs      []RootRef
+	seen      map[string]int
+	wholeRoot bool
 }
 
 // dotPath is what the dot names at one point in the walk. A known dot carries the
@@ -407,6 +415,10 @@ func walkRootsPipe(p *parse.PipeNode, dot dotPath, vars varPaths, iterated bool,
 
 func walkRootsArg(arg parse.Node, dot dotPath, vars varPaths, iterated bool, out *rootRefs) {
 	switch a := arg.(type) {
+	case *parse.DotNode:
+		if dot.known && len(dot.segs) == 0 {
+			out.wholeRoot = true
+		}
 	case *parse.FieldNode:
 		if segs, ok := dot.resolve(a.Ident); ok {
 			recordRootRef(out, segs, "."+strings.Join(segs, "."), iterated)
@@ -418,10 +430,16 @@ func walkRootsArg(arg parse.Node, dot dotPath, vars varPaths, iterated bool, out
 		if a.Ident[0] == "$" {
 			if len(a.Ident) > 1 {
 				recordRootRef(out, a.Ident[1:], "$."+strings.Join(a.Ident[1:], "."), iterated)
+			} else {
+				out.wholeRoot = true
 			}
 			return
 		}
 		if segs, ok := resolveVariablePath(a, vars); ok {
+			if len(segs) == 0 {
+				out.wholeRoot = true
+				return
+			}
 			recordRootRef(out, segs, "."+strings.Join(segs, "."), iterated)
 		}
 	case *parse.ChainNode:

@@ -77,7 +77,9 @@ func localsIterationCensus() map[string]localsIterationSite {
 		"pkg/closure/recipe_source_descent.go": {
 			role: localsRoleEvaluates,
 			why: "the source-coordinate evaluator, reached at lock time and at build time from one body; " +
-				"skips an entry that cannot execute, and registers the Aggrega helpers without Sprig's",
+				"evaluates only the entries a source field reads, directly or through another entry, or " +
+				"every entry where a field reads the block whole; skips an entry that cannot execute, and " +
+				"registers the Aggrega helpers without Sprig's",
 		},
 		"internal/compiler/renderer/boundary_fr.go": {
 			role: localsRoleReadsText,

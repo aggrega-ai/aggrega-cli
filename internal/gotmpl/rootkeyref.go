@@ -115,3 +115,61 @@ func ClassifyRootKeyReference(
 	}
 	return RootKeyReference{}
 }
+
+// RootKeysRead returns the keys of one context root a template reads, in
+// first-appearance order, and whether that list is every key the template can
+// reach on that root.
+//
+// It answers the question a surface asks before it evaluates a template whose root
+// is filled in key by key: which of the root's keys must already hold a value. A
+// surface that evaluates only the keys returned here, and every key when the list is
+// not complete, gives the template every value it can read.
+//
+// # Why complete is the answer that matters
+//
+// The keys come from [CollectRootRefs], which attributes a read only where the text
+// decides its path. That is the safe direction for a check that admits or refuses
+// authoring, and the unsafe one for this question: a read the walk cannot name is a
+// key the caller would leave unevaluated. So the list is reported complete only when
+// no such read can exist, and every way a template can reach the root's keys without
+// naming one is reported as incomplete instead:
+//
+//   - the root read whole — `.locals` handed to `index`, `optional` or `range`, bound
+//     to a variable, or used as a with pipeline — because what is read out of it is
+//     decided at evaluation;
+//   - the context root itself handed on — a bare `.` while the dot is the context,
+//     a bare `$`, or a variable bound to either — for the same reason one level up.
+//
+// Every other read beneath an unnameable dot is a read of something a function
+// returned or of a range element, and reaching the root's keys through one of those
+// requires one of the two shapes above to appear in the pipeline that produced it,
+// which is what makes the reduction sound.
+//
+// A template that does not parse yields its parse error, and nothing about its keys:
+// it cannot be evaluated, so its own evaluation is what reports it.
+func RootKeysRead(text, leftDelim, rightDelim, root string) (keys []string, complete bool, err error) {
+	if text == "" {
+		return nil, true, nil
+	}
+	tree, err := ParseTree(text, leftDelim, rightDelim)
+	if err != nil {
+		return nil, false, err
+	}
+	out := &rootRefs{seen: map[string]int{}}
+	walkRoots(tree, dotPath{known: true}, varPaths{}, out)
+	if out.wholeRoot {
+		return nil, false, nil
+	}
+	for _, ref := range out.refs {
+		if ref.Segs[0] != root {
+			continue
+		}
+		if len(ref.Segs) < 2 {
+			return nil, false, nil
+		}
+		if !slices.Contains(keys, ref.Segs[1]) {
+			keys = append(keys, ref.Segs[1])
+		}
+	}
+	return keys, true, nil
+}

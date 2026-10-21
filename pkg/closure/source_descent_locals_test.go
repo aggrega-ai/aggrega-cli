@@ -57,44 +57,91 @@ func TestDescendFailsWhenSourceNeedsAnUnresolvableLocal(t *testing.T) {
 	if !contains(err.Error(), "spec.source.version") {
 		t.Errorf("error should name the source field; got %v", err)
 	}
+	// The field's own failure names only the key it found missing; the entry's
+	// own cause is what says why, so it is quoted beside it.
+	if !contains(err.Error(), "it reads x:1.0.0.spec.locals.v, which could not be evaluated here") ||
+		!contains(err.Error(), `"context"`) {
+		t.Errorf("error should quote why the entry the field reads holds no value; got %v", err)
+	}
 }
 
-// TestDescendKeepsParseErrorLoud: a malformed local template is invalid at any
-// phase and stays loud at lock time (not skipped).
+// descendOne runs source descent over one Recipe used by one instance carrying
+// infra, through the exported entry a pull reaches it by.
+func descendOne(t *testing.T, r *types.Recipe, infra map[string]any) ([]closure.SourceArtifact, error) {
+	t.Helper()
+	uri := r.Metadata.Name
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
+	used := map[string][]closure.ComponentSourceInfra{uri: {{Component: "web", Infra: infra}}}
+	return closure.DescendRecipeSources(used, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+}
+
+// TestDescendKeepsParseErrorLoud: a malformed local template the source reads is
+// invalid at any phase and stays loud at lock time (not skipped), naming the entry
+// and the source field it was evaluated for.
 func TestDescendKeepsParseErrorLoud(t *testing.T) {
 	t.Parallel()
 	uri := "x:1.0.0"
-	r := makeRecipe(uri, helmSource("1.0.0"))
+	r := makeRecipe(uri, helmSource(`{{ .locals.bad }}`))
 	r.Spec.Locals.Set("bad", `{{ .infra.x `) // unclosed action -> parse error
-	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
-	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
-
-	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := descendOne(t, r, map[string]any{})
 	if !errors.Is(err, closure.ErrSourceTemplateParse()) {
-		t.Errorf("malformed local should be ErrSourceTemplateParse (loud); got %v", err)
+		t.Fatalf("malformed local should be ErrSourceTemplateParse (loud); got %v", err)
 	}
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("parse error should still wrap ErrSourceTemplateAtLockTime; got %v", err)
 	}
+	for _, want := range []string{"x:1.0.0.spec.locals.bad", "read by x:1.0.0.spec.source.version"} {
+		if !contains(err.Error(), want) {
+			t.Errorf("the diagnostic omits %q; got %v", want, err)
+		}
+	}
 }
 
-// TestDescendKeepsProvidesLocalLoud: a local referencing `.provides` is an
-// invalid reverse reference (locals feed provides, not the reverse) and stays
-// loud — even when `source:` does not reference that local.
+// TestDescendLeavesAnUnreadMalformedLocalToTheRender: an entry no source field
+// reads is not parsed here, so a malformed one does not stop the coordinate from
+// resolving. The render's own pass is where it is refused.
+func TestDescendLeavesAnUnreadMalformedLocalToTheRender(t *testing.T) {
+	t.Parallel()
+	r := makeRecipe("x:1.0.0", helmSource("1.0.0"))
+	r.Spec.Locals.Set("bad", `{{ .infra.x `)
+	got, err := descendOne(t, r, map[string]any{})
+	if err != nil {
+		t.Fatalf("an unread malformed local must not halt source descent; got %v", err)
+	}
+	if len(got) != 1 || got[0].PinnedVersion != "1.0.0" {
+		t.Fatalf("artifacts = %+v; want the literal version pinned", got)
+	}
+}
+
+// TestDescendKeepsProvidesLocalLoud: a local the source reads referencing
+// `.provides` is an invalid reverse reference (locals feed provides, not the
+// reverse) and stays loud.
 func TestDescendKeepsProvidesLocalLoud(t *testing.T) {
 	t.Parallel()
-	uri := "x:1.0.0"
-	r := makeRecipe(uri, helmSource("1.0.0")) // source does NOT use the provides local
+	r := makeRecipe("x:1.0.0", helmSource(`{{ .locals.p }}`))
 	r.Spec.Locals.Set("p", `{{ .provides.X }}`)
-	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
-	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
-
-	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	_, err := descendOne(t, r, map[string]any{})
 	if !errors.Is(err, closure.ErrSourceTemplateProvidesRef()) {
-		t.Errorf(".provides local should be ErrSourceTemplateProvidesRef (loud) regardless of source usage; got %v", err)
+		t.Fatalf(".provides local should be ErrSourceTemplateProvidesRef (loud); got %v", err)
 	}
 	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf(".provides reverse-ref should still wrap ErrSourceTemplateAtLockTime; got %v", err)
+	}
+	if !contains(err.Error(), "x:1.0.0.spec.locals.p, read by x:1.0.0.spec.source.version") {
+		t.Errorf("the diagnostic should name the entry and the field reading it; got %v", err)
+	}
+}
+
+// TestDescendLeavesAnUnreadProvidesLocalToTheRender: the same reverse reference in
+// an entry no source field reads cannot reach a coordinate, so it is not looked
+// at here; the render refuses it.
+func TestDescendLeavesAnUnreadProvidesLocalToTheRender(t *testing.T) {
+	t.Parallel()
+	r := makeRecipe("x:1.0.0", helmSource("1.0.0"))
+	r.Spec.Locals.Set("p", `{{ .provides.X }}`)
+	if _, err := descendOne(t, r, map[string]any{}); err != nil {
+		t.Fatalf("an unread .provides local must not halt source descent; got %v", err)
 	}
 }
 
@@ -121,11 +168,9 @@ func TestDescendSkipSetIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestDescendRefusesAForwardSiblingReference: an entry reading a sibling the block
-// declares BELOW it is an author-order fault, decidable from the block alone, and
-// is refused rather than skipped — even though the source coordinate here is a
-// literal and reads no local at all. The refusal is what the tolerance stopped
-// covering.
+// TestDescendRefusesAForwardSiblingReference: an entry the source reads, reading a
+// sibling the block declares BELOW it, is an author-order fault decidable from the
+// block alone, and is refused rather than skipped.
 //
 // The condition is matched through the render package's own accessor. That is the
 // assertion that one authoring fault carries one condition wherever it is
@@ -134,7 +179,7 @@ func TestDescendSkipSetIsDeterministic(t *testing.T) {
 func TestDescendRefusesAForwardSiblingReference(t *testing.T) {
 	t.Parallel()
 	uri := "x:1.0.0"
-	r := makeRecipe(uri, helmSource("1.0.0"))
+	r := makeRecipe(uri, helmSource(`{{ .locals.derived }}`))
 	r.Spec.Locals.Set("derived", `{{ .locals.base }}.internal`)
 	r.Spec.Locals.Set("base", "svc")
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
@@ -157,6 +202,7 @@ func TestDescendRefusesAForwardSiblingReference(t *testing.T) {
 		`defines "base" later`,
 		"entries resolve in author order",
 		`define "base" above "derived" in the locals block`,
+		"read by x:1.0.0.spec.source.version",
 	} {
 		if !contains(msg, want) {
 			t.Errorf("the diagnostic omits %q; got %v", want, msg)
@@ -170,7 +216,7 @@ func TestDescendRefusesAForwardSiblingReference(t *testing.T) {
 func TestDescendRefusesAnUnknownLocalsReference(t *testing.T) {
 	t.Parallel()
 	uri := "x:1.0.0"
-	r := makeRecipe(uri, helmSource("1.0.0"))
+	r := makeRecipe(uri, helmSource(`{{ .locals.derived }}`))
 	r.Spec.Locals.Set("base", "svc")
 	r.Spec.Locals.Set("derived", `{{ .locals.bass }}.internal`)
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
@@ -198,7 +244,7 @@ func TestDescendRefusesAnUnknownLocalsReference(t *testing.T) {
 func TestDescendSelfReferenceRemedyDoesNotSayReorder(t *testing.T) {
 	t.Parallel()
 	uri := "x:1.0.0"
-	r := makeRecipe(uri, helmSource("1.0.0"))
+	r := makeRecipe(uri, helmSource(`{{ .locals.loop }}`))
 	r.Spec.Locals.Set("loop", `{{ .locals.loop }}-x`)
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
@@ -228,10 +274,13 @@ func TestDescendSelfReferenceRemedyDoesNotSayReorder(t *testing.T) {
 // classifying against the keys that actually RESOLVED — rather than against the
 // declared order's prefix — would report an ordering fault and refuse a document
 // the render accepts.
+//
+// The source reads the second entry, so both are classified here, and reads it on
+// a branch it does not take, so the coordinate itself resolves.
 func TestDescendAdmitsAReadOfASkippedEarlierSibling(t *testing.T) {
 	t.Parallel()
 	uri := "mariadb-bitnami:1.0.0"
-	r := makeRecipe(uri, helmSource("1.0.0"))
+	r := makeRecipe(uri, helmSource(`{{ if optional .values "never" false }}{{ .locals.derived_secret_name }}{{ else }}1.0.0{{ end }}`))
 	r.Spec.Locals.Set("secret_target_root_password", `{{ .context.instance_id }}-root-password`)
 	r.Spec.Locals.Set("derived_secret_name", `{{ .locals.secret_target_root_password }}-v2`)
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}

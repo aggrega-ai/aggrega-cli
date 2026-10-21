@@ -14,14 +14,17 @@ import (
 )
 
 // Two passes resolve a Recipe's locals block, and on the REFERENCE-ORDER axis
-// they now answer identically.
+// they answer identically over every entry a `source:` coordinate depends on.
 //
 // The build's render refuses a reference a locals entry cannot legitimately read
 // — a sibling declared below it, or a key the block never declares — before it
-// evaluates anything. Source descent, which resolves the same block so a
-// `source:` coordinate can read it, refuses the same references, under the same
-// classification, over the same author-order prefix, and reports the same two
-// conditions. Its tolerance is still there and is still real, but it is now
+// evaluates anything, for every entry of the block. Source descent, which
+// resolves the block so a `source:` coordinate can read it, evaluates only the
+// entries a source field reads, directly or through another entry, and refuses
+// the same references in those entries, under the same classification, over the
+// same author-order prefix, reporting the same two conditions. An entry no source
+// field reads is not looked at by source descent at all: its faults are the
+// render's to refuse, at build. And its tolerance is still there and still real,
 // bounded to what it exists for: an entry reading data no source coordinate can
 // see — a render-time-only `.context.instance_id` consumed by a values mapping —
 // is skipped there and the walk continues.
@@ -34,41 +37,41 @@ import (
 // is wrong in a way that matters: it invites the conclusion that a build accepts
 // whatever a lockfile acquisition refuses, which is not so.
 //
-// # What this file pins, now that the axis has been closed
+// # What this file pins
 //
-// It pins the AGREEMENT, and it is worth as much as the divergence it used to
-// pin — arguably more, because an agreement between two implementations is
-// exactly the property that decays silently. Nothing structural forces source
-// descent to keep classifying references: its tolerance would swallow the fault
-// again the moment the classification stopped being consulted, and no compile
-// error and no other test would say so. The per-row pairs below are what would
-// say so.
+// It pins the AGREEMENT over the entries a coordinate reads, and it is worth as
+// much as a divergence — arguably more, because an agreement between two
+// implementations is exactly the property that decays silently. Nothing
+// structural forces source descent to keep classifying references: its tolerance
+// would swallow the fault the moment the classification stopped being consulted,
+// and no compile error and no other test would say so. The per-row pairs below
+// are what would say so.
 //
 // The agreement is stronger than "both refuse". Both refuse under ONE registered
 // condition value: the assertions below match source descent's halt against the
 // render package's own accessor, so a second condition minted for one of the two
 // surfaces fails here rather than passing as a matching pair of look-alikes.
 //
-// # One divergence remains on this axis, and it is the tolerance itself
+// It also pins the REACH: a row whose source reads no entry must be admitted by
+// source descent whatever the block holds, so a pass that went back to
+// evaluating every entry fails here rather than quietly halting pulls over
+// entries no coordinate depends on.
 //
-// A locals entry that only a rendered artifact can resolve is admitted by the
-// render's pass and skipped by source descent — and where `source:` needed that
-// entry, source descent halts naming the SOURCE field. That row is the one the
-// two paths still answer differently, and it is the reason the tolerance exists.
-// Keeping it in the corpus is what stops the agreement below from being satisfied
-// by a table in which nothing could have differed.
+// # Two divergences remain on this axis
+//
+// The first is the tolerance itself. A locals entry that only a rendered artifact
+// can resolve is admitted by the render's pass and skipped by source descent — and
+// where `source:` needed that entry, source descent halts naming the SOURCE field.
+// The second is the reach: a fault in an entry no source field reads is refused by
+// the render and not looked at by source descent. Keeping both in the corpus is
+// what stops the agreement below from being satisfied by a table in which nothing
+// could have differed.
 //
 // A second axis diverges the other way and the file beside this one pins it:
-// source descent registers a smaller template-function set, so an entry calling a
-// function only the render registers fails to PARSE there, and a parse failure is
-// outside the tolerance. On that axis source descent halts where the render
-// admits.
-//
-// The table is therefore not a wish. It records what the two paths do, and the
-// assertions after it are what a change has to contend with: one condition per
-// fault across both surfaces, and a corpus that carries agreements, a surviving
-// disagreement, and a live tolerance — so no row can be satisfied by a path that
-// stopped being asked.
+// source descent registers a smaller template-function set, so an entry the source
+// reads calling a function only the render registers fails to PARSE there, and a
+// parse failure is outside the tolerance. On that axis source descent halts where
+// the render admits.
 
 // localsDivergenceVerdict is what one path did with an authored locals block,
 // reduced to the comparison the two paths can both answer.
@@ -94,10 +97,14 @@ type localsDivergenceRow struct {
 	name string
 	// locals is flattened key/value pairs in author order.
 	locals []string
-	// sourceVersion is the `spec.source.version` expression. A literal keeps the
-	// source out of the comparison; an expression reading a local brings source
-	// descent's own gate into it.
+	// sourceVersion is the `spec.source.version` expression. A literal reads no
+	// entry, so source descent evaluates none; an expression reading a local
+	// brings that entry, the entries it reads, and source descent's own gate into
+	// the comparison.
 	sourceVersion string
+	// sourceReadsTheBlock says whether sourceVersion reads any entry, which decides
+	// which of the two assertions below a row is held to.
+	sourceReadsTheBlock bool
 
 	wantRender  localsDivergenceVerdict
 	wantClosure localsDivergenceVerdict
@@ -106,26 +113,28 @@ type localsDivergenceRow struct {
 func localsDivergenceRows() []localsDivergenceRow {
 	return []localsDivergenceRow{
 		{
-			// The plain forward reference. Both refuse it, and under one condition.
+			// The reach. Each of these blocks carries a reference fault, and the
+			// literal source reads none of its entries, so source descent does not
+			// look and the render is where the fault is refused.
 			name:          "forward reference, literal source",
 			locals:        []string{"derived", "{{ .locals.base }}.internal", "base", "svc"},
 			sourceVersion: "1.0.0",
 			wantRender:    localsRefusedOrdering,
-			wantClosure:   localsRefusedOrdering,
+			wantClosure:   localsAdmitted,
 		},
 		{
 			name:          "unknown reference, literal source",
 			locals:        []string{"base", "svc", "derived", "{{ .locals.bass }}.internal"},
 			sourceVersion: "1.0.0",
 			wantRender:    localsRefusedNaming,
-			wantClosure:   localsRefusedNaming,
+			wantClosure:   localsAdmitted,
 		},
 		{
 			name:          "self reference, literal source",
 			locals:        []string{"loop", "{{ .locals.loop }}-x"},
 			sourceVersion: "1.0.0",
 			wantRender:    localsRefusedOrdering,
-			wantClosure:   localsRefusedOrdering,
+			wantClosure:   localsAdmitted,
 		},
 		{
 			name: "chain of three reversed, literal source",
@@ -136,7 +145,7 @@ func localsDivergenceRows() []localsDivergenceRow {
 			},
 			sourceVersion: "1.0.0",
 			wantRender:    localsRefusedOrdering,
-			wantClosure:   localsRefusedOrdering,
+			wantClosure:   localsAdmitted,
 		},
 		{
 			// The agreements on legal input. Without them the assertions below would
@@ -159,28 +168,80 @@ func localsDivergenceRows() []localsDivergenceRow {
 			wantClosure:   localsAdmitted,
 		},
 		{
-			// The reference fault is refused whether or not `source:` reads the
-			// offending entry, on both paths. That is what makes the refusal a
-			// property of the block rather than of what the coordinate happened to
-			// need — and it is why the two rows below record the reference fault
-			// rather than source descent's own gate.
-			name:          "forward reference the source itself reads",
-			locals:        []string{"derived", "{{ .locals.base }}.internal", "base", "svc"},
-			sourceVersion: "{{ .locals.derived }}",
-			wantRender:    localsRefusedOrdering,
-			wantClosure:   localsRefusedOrdering,
+			// The agreements on a fault: wherever the source reads the offending
+			// entry, both paths refuse it, under one condition, and the refusal is
+			// the reference fault rather than source descent's own gate.
+			name:                "forward reference the source itself reads",
+			locals:              []string{"derived", "{{ .locals.base }}.internal", "base", "svc"},
+			sourceVersion:       "{{ .locals.derived }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsRefusedOrdering,
+			wantClosure:         localsRefusedOrdering,
 		},
 		{
-			name:          "unknown reference the source itself reads",
-			locals:        []string{"base", "svc", "derived", "{{ .locals.bass }}.internal"},
-			sourceVersion: "{{ .locals.derived }}",
-			wantRender:    localsRefusedNaming,
-			wantClosure:   localsRefusedNaming,
+			name:                "unknown reference the source itself reads",
+			locals:              []string{"base", "svc", "derived", "{{ .locals.bass }}.internal"},
+			sourceVersion:       "{{ .locals.derived }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsRefusedNaming,
+			wantClosure:         localsRefusedNaming,
+		},
+		{
+			name:                "self reference the source itself reads",
+			locals:              []string{"loop", "{{ .locals.loop }}-x"},
+			sourceVersion:       "{{ .locals.loop }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsRefusedOrdering,
+			wantClosure:         localsRefusedOrdering,
+		},
+		{
+			name: "chain of three reversed, the source reading its head",
+			locals: []string{
+				"fqdn", "{{ .locals.svc }}.{{ .locals.stack }}.internal",
+				"svc", "{{ .locals.stack }}-gateway",
+				"stack", "edge",
+			},
+			sourceVersion:       "{{ .locals.fqdn }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsRefusedOrdering,
+			wantClosure:         localsRefusedOrdering,
+		},
+		{
+			// The fault sits in an entry the source reaches only through another,
+			// so finding it depends on following what each read entry reads.
+			name: "a forward reference reached through another entry",
+			locals: []string{
+				"b", "{{ .locals.c }}-x",
+				"c", "v",
+				"a", "{{ .locals.b }}",
+			},
+			sourceVersion:       "{{ .locals.a }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsRefusedOrdering,
+			wantClosure:         localsRefusedOrdering,
+		},
+		{
+			// A read no static reading resolves to named entries evaluates every
+			// entry, so a fault in one the field does not name is still refused.
+			name:                "a forward reference beside a dynamic read of the block",
+			locals:              []string{"derived", "{{ .locals.base }}.internal", "base", "svc"},
+			sourceVersion:       `{{ index .locals "base" }}`,
+			sourceReadsTheBlock: true,
+			wantRender:          localsRefusedOrdering,
+			wantClosure:         localsRefusedOrdering,
+		},
+		{
+			name:                "backward reference the source itself reads",
+			locals:              []string{"base", "svc", "derived", "{{ .locals.base }}.internal"},
+			sourceVersion:       "{{ .locals.derived }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsAdmitted,
+			wantClosure:         localsAdmitted,
 		},
 		{
 			// The tolerance's own case: an entry only a rendered artifact can
-			// resolve. Source descent skips it and resolves its literal source, so
-			// a block carrying one still pins.
+			// resolve. Source descent does not read it here, and resolves its
+			// literal source, so a block carrying one still pins.
 			name:          "a render-time-only entry, literal source",
 			locals:        []string{"only_at_render", "{{ .context.instance_id }}-secret"},
 			sourceVersion: "1.0.0",
@@ -188,12 +249,7 @@ func localsDivergenceRows() []localsDivergenceRow {
 			wantClosure:   localsAdmitted,
 		},
 		{
-			// And the transitive case, which is the one a narrowing gets wrong. The
-			// second entry reads the first, which source descent legitimately
-			// skipped. It is a BACKWARD reference and must stay admitted: a readable
-			// set taken from what actually resolved would call this correctly-ordered
-			// block an ordering fault and refuse a document the render accepts.
-			name: "a later entry reads a skipped render-time-only sibling",
+			name: "a later entry reads a render-time-only sibling, literal source",
 			locals: []string{
 				"only_at_render", "{{ .context.instance_id }}-secret",
 				"derived", "{{ .locals.only_at_render }}-v2",
@@ -203,15 +259,16 @@ func localsDivergenceRows() []localsDivergenceRow {
 			wantClosure:   localsAdmitted,
 		},
 		{
-			// THE SURVIVING DISAGREEMENT on this axis, and the reason the tolerance
-			// is a tolerance rather than a hole: the coordinate needed the entry
-			// source descent could not resolve, so its own gate fires and names the
-			// source field. The render's locals pass admits the same block.
-			name:          "a render-time-only entry the source itself reads",
-			locals:        []string{"only_at_render", "{{ .context.instance_id }}-secret"},
-			sourceVersion: "{{ .locals.only_at_render }}",
-			wantRender:    localsAdmitted,
-			wantClosure:   localsLockTime,
+			// THE SURVIVING DISAGREEMENT of the tolerance, and the reason it is a
+			// tolerance rather than a hole: the coordinate needed the entry source
+			// descent could not resolve, so its own gate fires and names the source
+			// field. The render's locals pass admits the same block.
+			name:                "a render-time-only entry the source itself reads",
+			locals:              []string{"only_at_render", "{{ .context.instance_id }}-secret"},
+			sourceVersion:       "{{ .locals.only_at_render }}",
+			sourceReadsTheBlock: true,
+			wantRender:          localsAdmitted,
+			wantClosure:         localsLockTime,
 		},
 	}
 }
@@ -284,17 +341,18 @@ func orderedLocals(pairs ...string) types.OrderedMap[string] {
 
 // TestTheLockTimeLocalsToleranceDivergesFromTheBuildInOneDirectionOnly is the pin.
 //
-// It fails in five separate ways, and each is a change worth stopping on: a row
-// whose recorded pair moves; a reference fault reported by one surface and not by
-// the other; a reference fault reported under a condition the other surface's
-// accessor does not match; a corpus that stopped carrying both agreements and the
-// surviving disagreement; and a corpus in which the tolerance is no longer
-// exercised at all.
+// It fails in six separate ways, and each is a change worth stopping on: a row
+// whose recorded pair moves; a reference fault in an entry the source reads,
+// reported by one surface and not by the other; such a fault reported under a
+// condition the other surface's accessor does not match; source descent reporting
+// anything for a block its source reads no entry of; a corpus that stopped
+// carrying both agreements and the surviving disagreements; and a corpus in which
+// the tolerance is no longer exercised at all.
 func TestTheLockTimeLocalsToleranceDivergesFromTheBuildInOneDirectionOnly(t *testing.T) {
 	t.Parallel()
 
 	var agreements, disagreements int
-	var closureAdmissions, closureOwnGate int
+	var closureAdmissions, closureOwnGate, sharedRefusals int
 	for _, row := range localsDivergenceRows() {
 		gotRender := renderVerdict(t, row.locals)
 		gotClosure := closureVerdict(t, row.locals, row.sourceVersion)
@@ -306,22 +364,33 @@ func TestTheLockTimeLocalsToleranceDivergesFromTheBuildInOneDirectionOnly(t *tes
 			t.Errorf("%s: source descent reported %q, the pin records %q", row.name, gotClosure, row.wantClosure)
 		}
 
-		// THE INVARIANT, over this corpus's one axis. A reference fault is decidable
-		// from the declared key order and the authored text alone, so neither
-		// surface has anything the other lacks to decide it — which is why the two
-		// must answer it identically, and why a row where only one of them reports
-		// one is a divergence rather than a difference of emphasis. Both directions
-		// are named because both have been real: the tolerance used to swallow the
-		// fault, and a narrowing can equally overshoot and refuse a block the render
-		// accepts.
-		if isReferenceFault(gotRender) || isReferenceFault(gotClosure) {
-			if gotRender != gotClosure {
-				t.Errorf("%s: the render reported %q and source descent reported %q for a REFERENCE fault. "+
-					"That fault is decided from the declared key order and the authored text, so the two "+
-					"passes have the same facts and must reach the same verdict: either the tolerance has "+
-					"swallowed it again, or the narrowing has overshot and refuses input the render admits",
-					row.name, gotRender, gotClosure)
+		if row.sourceReadsTheBlock {
+			// THE INVARIANT, over the entries a coordinate reads. A reference fault
+			// is decidable from the declared key order and the authored text alone,
+			// so neither surface has anything the other lacks to decide it — which
+			// is why the two must answer it identically wherever source descent
+			// looks, and why a row where only one of them reports one is a
+			// divergence rather than a difference of emphasis. Both directions are
+			// named because both are possible: a tolerance can swallow the fault,
+			// and a narrowing can overshoot and refuse a block the render accepts.
+			if isReferenceFault(gotRender) || isReferenceFault(gotClosure) {
+				if gotRender != gotClosure {
+					t.Errorf("%s: the render reported %q and source descent reported %q for a REFERENCE fault "+
+						"in an entry the source reads. That fault is decided from the declared key order and "+
+						"the authored text, so the two passes have the same facts and must reach the same "+
+						"verdict: either the tolerance has swallowed it, or the narrowing has overshot and "+
+						"refuses input the render admits", row.name, gotRender, gotClosure)
+				}
+				if gotRender == gotClosure {
+					sharedRefusals++
+				}
 			}
+		} else if gotClosure != localsAdmitted {
+			// THE REACH. A source reading no entry gives source descent nothing to
+			// evaluate, so nothing in the block can halt it there.
+			t.Errorf("%s: source descent reported %q for a block its source reads no entry of; an entry no "+
+				"coordinate depends on is not evaluated there, and its faults are the render's to refuse",
+				row.name, gotClosure)
 		}
 
 		if gotRender == gotClosure {
@@ -335,19 +404,24 @@ func TestTheLockTimeLocalsToleranceDivergesFromTheBuildInOneDirectionOnly(t *tes
 		if gotClosure == localsLockTime {
 			closureOwnGate++
 		}
-		t.Logf("ROW %-52s | render=%-18s closure=%s", row.name, gotRender, gotClosure)
+		t.Logf("ROW %-56s | render=%-18s closure=%s", row.name, gotRender, gotClosure)
 	}
 
-	// The corpus has to carry all three, or the invariant above is satisfied by a
-	// table nothing exercises: a corpus with no agreement cannot show that
-	// agreement is possible, one with no disagreement cannot show the comparison
-	// can report a difference, and one where source descent never admits has lost
-	// the tolerance this file is about.
+	// The corpus has to carry all of these, or the assertions above are satisfied by
+	// a table nothing exercises: a corpus with no agreement cannot show that
+	// agreement is possible, one with no disagreement cannot show the comparison can
+	// report a difference, one with no shared refusal has stopped asking source
+	// descent to classify anything, and one where source descent never admits has
+	// lost the tolerance this file is about.
 	if agreements == 0 {
 		t.Error("no row has the two paths agreeing; the comparison cannot show that agreement is possible")
 	}
 	if disagreements == 0 {
 		t.Error("no row has the two paths differing; the comparison cannot show it is able to report one")
+	}
+	if sharedRefusals == 0 {
+		t.Error("no row has both paths refusing a reference fault in an entry the source reads; the " +
+			"classification source descent runs over the entries it evaluates is not exercised")
 	}
 	if closureAdmissions == 0 {
 		t.Error("source descent refused every row; the tolerance this pins is not exercised")
@@ -356,8 +430,8 @@ func TestTheLockTimeLocalsToleranceDivergesFromTheBuildInOneDirectionOnly(t *tes
 		t.Error("no row reaches source descent's own gate; the halt that covers a coordinate " +
 			"needing a skipped entry is not exercised")
 	}
-	t.Logf("%d row(s) agree, %d differ; source descent admitted %d and reached its own gate %d",
-		agreements, disagreements, closureAdmissions, closureOwnGate)
+	t.Logf("%d row(s) agree, %d differ; %d shared refusal(s); source descent admitted %d and reached its own gate %d",
+		agreements, disagreements, sharedRefusals, closureAdmissions, closureOwnGate)
 }
 
 // isReferenceFault reports whether a verdict is one of the two faults BOTH passes

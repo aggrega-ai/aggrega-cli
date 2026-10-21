@@ -29,7 +29,7 @@ func TestStrictIndex_SourceTemplateHaltsOnAnAbsentMapKey(t *testing.T) {
 		`{{ index .values "nothing" | printf "%v" }}`,
 		`{{ if index .values "nothing" }}y{{ end }}`,
 	} {
-		out, err := evalSourceTemplate(tmpl, ctx, field)
+		out, err := evalSourceTemplate(tmpl, ctx, field, "")
 		if err == nil {
 			t.Errorf("%s rendered %q; want a halt naming the key", tmpl, out)
 			continue
@@ -47,7 +47,7 @@ func TestStrictIndex_SourceTemplateHaltsOnAnAbsentMapKey(t *testing.T) {
 		{`{{ index .values "channels" 1 }}`, "edge"},
 		{`{{ optional .values "nothing" "0.0.0" }}`, "0.0.0"},
 	} {
-		out, err := evalSourceTemplate(row.tmpl, ctx, field)
+		out, err := evalSourceTemplate(row.tmpl, ctx, field, "")
 		if err != nil {
 			t.Errorf("%s halted: %v", row.tmpl, err)
 			continue
