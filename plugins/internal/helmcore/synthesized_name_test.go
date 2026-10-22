@@ -45,13 +45,14 @@ func isSubdomainName(s string) bool {
 // namingWorkload builds a workload of the given form that emits every kind of
 // name the synthesized path composes from its naming basis: the controller, a
 // Service per key, a standalone claim and the pod volume referencing it, a
-// secret-file volume, and — for a stateful form — a headless governing Service and
-// a claim template. A reference form emits its single aliasing Service.
+// secret-file volume per slot it is given, and — for a stateful form — a headless
+// governing Service and a claim template. A reference form emits its single
+// aliasing Service.
 //
 // The keys are short on purpose. How long a Service key, a volume or a slot may be
 // is the author's own budget against the length a name allows; what this fixture
 // exercises is the part of every name the identity contributes.
-func namingWorkload(form string) *types.Workload {
+func namingWorkload(form string, fileSlots ...string) *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
 	if form == rendercore.WorkloadFormReference {
 		w.Endpoint = "https://db.example.com:5432"
@@ -60,7 +61,9 @@ func namingWorkload(form string) *types.Workload {
 	}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
-	c.Attachments.Set("CA", types.AttachmentRef{From: "ca", As: "file", Path: "/etc/ca"})
+	for _, slot := range fileSlots {
+		c.Attachments.Set(strings.ToUpper(slot), types.AttachmentRef{From: slot, As: "file", Path: "/etc/" + slot})
+	}
 	c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/data"}}
 	w.Containers.Set("main", c)
 	w.Volumes.Set("data", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "1Gi"}})
@@ -74,6 +77,15 @@ func namingWorkload(form string) *types.Workload {
 		w.Services.Set("headless", headless)
 	}
 	return w
+}
+
+// namingProvides is the resolved provides of every slot the naming tests hand
+// [namingWorkload] to deliver as a file.
+func namingProvides() map[string]types.OrderedMap[string] {
+	return map[string]types.OrderedMap[string]{
+		"ca":                 providesBag("ca-bundle", "ca.crt"),
+		"server_certificate": providesBag("server-tls", "tls.crt"),
+	}
 }
 
 // synthesizedObjects is what one synthesis emitted, decoded by kind.
@@ -152,24 +164,36 @@ func TestSynthesizedWorkload_NamesEveryResourceAfterTheReleaseName(t *testing.T)
 	longest := strings.Repeat("abcdefghij", 5) + "abc"       // 53, the longest a release name may be
 	longTail := strings.Repeat("cdefghijkl", 4) + "cdefghij" // 48
 
+	// Every row delivers the slot `ca` as a file. A row whose basis leaves room
+	// delivers `server_certificate` beside it, a slot holding an underscore, which
+	// a pod volume name may not carry as written. The two longest identities leave
+	// none: their basis and "-secret-ca" already fill the 63 characters a pod
+	// volume name may hold.
+	shortSlots := []string{"ca"}
+	slots := []string{"ca", "server_certificate"}
+	// slotSpelling is how each slot is written into a volume name, spelled out
+	// literally for the same reason the basis is.
+	slotSpelling := map[string]string{"ca": "ca", "server_certificate": "server-zucertificate"}
+
 	cases := []struct {
 		identity string
 		basis    string
 		// asLabel reports that the identity needs no escaping, so its names must be
 		// spelled exactly as its label value is.
-		asLabel bool
+		asLabel   bool
+		fileSlots []string
 	}{
-		{identity: "kv", basis: "kv", asLabel: true},
-		{identity: "synth_kv", basis: "synth-zukv"},
-		{identity: "synthKv", basis: "synth-zx00004bv"},
-		{identity: "synth_llm", basis: "synth-zullm"},
-		{identity: "kvmod.inner_kv", basis: "kvmod-zdinner-zukv"},
-		{identity: "kvmod.cache", basis: "kvmod-zdcache", asLabel: true},
-		{identity: longest, basis: longest, asLabel: true},
-		{identity: "ab_" + longTail, basis: "ab-zu" + longTail},
+		{identity: "kv", basis: "kv", asLabel: true, fileSlots: slots},
+		{identity: "synth_kv", basis: "synth-zukv", fileSlots: slots},
+		{identity: "synthKv", basis: "synth-zx00004bv", fileSlots: slots},
+		{identity: "synth_llm", basis: "synth-zullm", fileSlots: slots},
+		{identity: "kvmod.inner_kv", basis: "kvmod-zdinner-zukv", fileSlots: slots},
+		{identity: "kvmod.cache", basis: "kvmod-zdcache", asLabel: true, fileSlots: slots},
+		{identity: longest, basis: longest, asLabel: true, fileSlots: shortSlots},
+		{identity: "ab_" + longTail, basis: "ab-zu" + longTail, fileSlots: shortSlots},
 	}
 	forms := []string{rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful, rendercore.WorkloadFormReference}
-	provides := map[string]types.OrderedMap[string]{"ca": providesBag("ca-bundle", "ca.crt")}
+	provides := namingProvides()
 
 	for _, tc := range cases {
 		for _, form := range forms {
@@ -189,7 +213,7 @@ func TestSynthesizedWorkload_NamesEveryResourceAfterTheReleaseName(t *testing.T)
 					t.Fatalf("the identity label %q is not a valid label value", identityLabel)
 				}
 
-				files, err := SynthesizeWorkloadCore(namingWorkload(form), provides, nodeCtx)
+				files, err := SynthesizeWorkloadCore(namingWorkload(form, tc.fileSlots...), provides, nodeCtx)
 				if err != nil {
 					t.Fatalf("SynthesizeWorkloadCore: %v", err)
 				}
@@ -291,7 +315,8 @@ func TestSynthesizedWorkload_NamesEveryResourceAfterTheReleaseName(t *testing.T)
 				if want := reported + "-data"; claim != want || !isSubdomainName(claim) {
 					t.Errorf("claim %q, want %q as a valid name", claim, want)
 				}
-				var claimRef, secretVolume string
+				var claimRef string
+				var secretVolumes []string
 				for _, v := range pod.Spec.Volumes {
 					if !isLabelName(v.Name, rfc1123Label) {
 						t.Errorf("pod volume %q is not a name a pod volume may carry", v.Name)
@@ -300,17 +325,29 @@ func TestSynthesizedWorkload_NamesEveryResourceAfterTheReleaseName(t *testing.T)
 						claimRef = v.PersistentVolumeClaim.ClaimName
 					}
 					if v.Secret != nil {
-						secretVolume = v.Name
+						secretVolumes = append(secretVolumes, v.Name)
 					}
 				}
 				if claimRef != claim {
 					t.Errorf("the pod volume claims %q, the emitted claim is %q", claimRef, claim)
 				}
-				if want := reported + "-secret-ca"; secretVolume != want {
-					t.Errorf("secret-file volume %q, want %q", secretVolume, want)
+				var wantSecretVolumes []string
+				for _, slot := range tc.fileSlots {
+					wantSecretVolumes = append(wantSecretVolumes, reported+"-secret-"+slotSpelling[slot])
 				}
-				if mounts := mountNames(pod.Spec.Containers[0]); !containsName(mounts, secretVolume) {
-					t.Errorf("the container mounts %v, not the secret-file volume %q", mounts, secretVolume)
+				if !equalStrings(secretVolumes, wantSecretVolumes) {
+					t.Errorf("secret-file volumes %v, want %v", secretVolumes, wantSecretVolumes)
+				}
+				mounts := mountNames(pod.Spec.Containers[0])
+				for _, name := range mounts {
+					if !isLabelName(name, rfc1123Label) {
+						t.Errorf("the container mounts %q, which is not a name a pod volume may carry", name)
+					}
+				}
+				for _, volName := range secretVolumes {
+					if !containsName(mounts, volName) {
+						t.Errorf("the container mounts %v, not the secret-file volume %q", mounts, volName)
+					}
 				}
 			})
 		}
@@ -328,8 +365,7 @@ func TestSynthesizedWorkload_AnAttachmentKeepsItsComposedIdentity(t *testing.T) 
 	nodeCtx := nodeCtxFor("kv")
 	nodeCtx.LabelComponentID = composed
 
-	files, err := SynthesizeWorkloadCore(namingWorkload(rendercore.WorkloadFormStateless),
-		map[string]types.OrderedMap[string]{"ca": providesBag("ca-bundle", "ca.crt")}, nodeCtx)
+	files, err := SynthesizeWorkloadCore(namingWorkload(rendercore.WorkloadFormStateless, "ca"), namingProvides(), nodeCtx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkloadCore: %v", err)
 	}

@@ -11,6 +11,11 @@ import (
 )
 
 // releaseNameEncoding is the segment encoding a Helm release name is built with.
+// It is also the encoding [secretVolumeName] writes a slot with, because a pod
+// volume name is held to lowercase letters, digits and hyphens, and an encoded
+// segment never leaves that set and never ends with a hyphen — so the one
+// encoding serves both in-cluster names, and neither carries an alphabet of its
+// own.
 //
 // A release name is an in-cluster identity. It reaches every template as
 // .Release.Name and charts routinely name resources after it, so two component

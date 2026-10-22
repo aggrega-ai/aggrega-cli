@@ -29,23 +29,27 @@ type secretVolume struct {
 // back: the pod volume each slot is mounted from, the Secret it mounts, and the
 // name every container and init container mounts it by.
 //
-// A connection's slot reaches the volume name with its dot written out, because
-// a pod volume name admits no dot. A slot the component declares for its own
-// attachments keeps the name it was always given, "<basis>-secret-<slot>" — the
-// first two rows are the controls for that, and the second carries an
-// underscore, which the encoding leaves as written. The last row is the reason
-// the encoding is applied to every slot rather than only to a dotted one: an own
+// A pod volume name is an RFC 1123 label, so every name the Deployment carries
+// for a volume or a mount is also held to that grammar, whatever the slot was
+// called. A slot made of lowercase letters, digits and hyphens keeps the name
+// "<basis>-secret-<slot>" as written — the first row is the control for that.
+// Every other character is written out: an underscore, a capital, and the dot a
+// connection's slot arrives with. The last row is the reason the encoding is
+// applied to every slot rather than only to one holding such a character: an own
 // slot spelled the way a connection's slot is written out must still reach a
 // volume of its own.
 func TestSynthesizeWorkload_SecretFileVolumeNameWritesTheSlotOut(t *testing.T) {
 	t.Parallel()
 
 	provides := map[string]types.OrderedMap[string]{
-		"tls-cert":       providesBag("tls-bundle", "tls.crt"),
-		"admin_key":      providesBag("router-admin-key", "token"),
-		"gpt.credential": providesBag("router-gpt.credential", "api-key"),
-		"a-zdb":          providesBag("own-a-zdb", "key"),
-		"a.b":            providesBag("conn-a-b", "key"),
+		"tls-cert":           providesBag("tls-bundle", "tls.crt"),
+		"admin_key":          providesBag("router-admin-key", "token"),
+		"server_certificate": providesBag("router-server-certificate", "tls.crt"),
+		"cache.server_ca":    providesBag("router-cache.server_ca", "ca.crt"),
+		"tlsCert":            providesBag("router-tls-cert", "tls.crt"),
+		"gpt.credential":     providesBag("router-gpt.credential", "api-key"),
+		"a-zdb":              providesBag("own-a-zdb", "key"),
+		"a.b":                providesBag("conn-a-b", "key"),
 	}
 
 	cases := []struct {
@@ -63,10 +67,28 @@ func TestSynthesizeWorkload_SecretFileVolumeNameWritesTheSlotOut(t *testing.T) {
 			wantMainMounts: []string{"router-secret-tls-cert"},
 		},
 		{
-			name:           "an own slot carrying an underscore is named as written",
+			name:           "an own slot carrying an underscore has the underscore written out",
 			main:           []fileEntry{{"ADMIN", "admin_key", "/run/admin"}},
-			wantVolumes:    []secretVolume{{"router-secret-admin_key", "router-admin-key"}},
-			wantMainMounts: []string{"router-secret-admin_key"},
+			wantVolumes:    []secretVolume{{"router-secret-admin-zukey", "router-admin-key"}},
+			wantMainMounts: []string{"router-secret-admin-zukey"},
+		},
+		{
+			name:           "a server certificate slot has its underscore written out",
+			main:           []fileEntry{{"TLS", "server_certificate", "/etc/tls"}},
+			wantVolumes:    []secretVolume{{"router-secret-server-zucertificate", "router-server-certificate"}},
+			wantMainMounts: []string{"router-secret-server-zucertificate"},
+		},
+		{
+			name:           "a connection's server CA slot has its dot and its underscore written out",
+			main:           []fileEntry{{"CACHE_CA", "cache.server_ca", "/etc/cache-ca"}},
+			wantVolumes:    []secretVolume{{"router-secret-cache-zdserver-zuca", "router-cache.server_ca"}},
+			wantMainMounts: []string{"router-secret-cache-zdserver-zuca"},
+		},
+		{
+			name:           "an own slot holding a capital has the capital written out",
+			main:           []fileEntry{{"CERT", "tlsCert", "/etc/tls"}},
+			wantVolumes:    []secretVolume{{"router-secret-tls-zx000043ert", "router-tls-cert"}},
+			wantMainMounts: []string{"router-secret-tls-zx000043ert"},
 		},
 		{
 			name:           "a connection's slot reaches the volume name with its dot written out",
@@ -103,6 +125,14 @@ func TestSynthesizeWorkload_SecretFileVolumeNameWritesTheSlotOut(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			// The expected names are held to the grammar too, so a row cannot
+			// pin a name the API server would refuse.
+			for _, v := range tc.wantVolumes {
+				if !isLabelName(v.name, rfc1123Label) {
+					t.Fatalf("the expected volume %q is not a name a pod volume may carry", v.name)
+				}
+			}
+
 			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 			app := types.ContainerSpec{Image: "router:1.0"}
 			for _, e := range tc.main {
@@ -138,6 +168,9 @@ func TestSynthesizeWorkload_SecretFileVolumeNameWritesTheSlotOut(t *testing.T) {
 
 			var gotVolumes []secretVolume
 			for _, v := range pod.Volumes {
+				if !isLabelName(v.Name, rfc1123Label) {
+					t.Errorf("pod volume %q is not a name a pod volume may carry", v.Name)
+				}
 				if v.Secret != nil {
 					gotVolumes = append(gotVolumes, secretVolume{v.Name, v.Secret.SecretName})
 				}
@@ -158,6 +191,11 @@ func TestSynthesizeWorkload_SecretFileVolumeNameWritesTheSlotOut(t *testing.T) {
 			}
 			if !equalStrings(gotInit, tc.wantInitMounts) {
 				t.Errorf("init container mounts = %v, want %v", gotInit, tc.wantInitMounts)
+			}
+			for _, name := range append(mountNames(pod.Containers[0]), gotInit...) {
+				if !isLabelName(name, rfc1123Label) {
+					t.Errorf("a container mounts %q, which is not a name a pod volume may carry", name)
+				}
 			}
 		})
 	}
