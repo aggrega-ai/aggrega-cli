@@ -7,7 +7,7 @@ package composeimport
 
 // TableRevision is the aggrega-hub revision whose Compose Recipes and
 // Components the image table was generated from.
-const TableRevision = "1d8d7c108e4d706c9bc73aa06783dbbcae09d5f3"
+const TableRevision = "2d7d7d9197dbd2674f20b76b49905a51fe6ff6d9"
 
 // imageTable maps each image repository the main container of a Compose
 // Recipe of the hub names literally to the Component the Recipe implements,
@@ -129,6 +129,7 @@ var imageTable = []imageRow{
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 	}},
 	{Repository: "memcached", Component: "core/datastore/memcached", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "kv",
@@ -162,7 +163,7 @@ var imageTable = []imageRow{
 		"model.aggrega.ai/capability":             "generative",
 	}},
 	{Repository: "opensearchproject/opensearch", Component: "core/datastore/opensearch", Traits: map[string]string{
-		"component.aggrega.ai/hosting":            "self-hosted",
+		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "search",
@@ -216,6 +217,7 @@ var imageTable = []imageRow{
 		"component.aggrega.ai/upstream-licensing": "open-core",
 	}},
 	{Repository: "valkey/valkey", Component: "core/datastore/valkey", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "kv",
