@@ -427,14 +427,16 @@ func TestLinkPublishUnaffectedByAbsentProducerFiles(t *testing.T) {
 }
 
 // TestLinkPublishIgnoresItsOwnPriorWriteForASiblingEdge locks the exclusion that
-// keeps this guard independent of the order edges are published in. The host
-// applies each publish's wiring to the consumed endpoint's assembled files
-// before it publishes the next edge, so a second edge injecting the same key
-// from the same endpoint is handed a stack already carrying the Export this same
-// publish wrote for the first edge. That Export sits at the entry the publish
-// addresses and is the publish's own output rather than a name declared
-// independently of the derivation — comparing against it would halt on edge
-// order alone.
+// keeps this guard independent of the order edges are published in, and the
+// one-export rule that rides on it. The host applies each publish's wiring to
+// the consumed endpoint's assembled files before it publishes the next edge, so
+// a second edge injecting the same key from the same endpoint is handed a stack
+// already carrying the Export this same publish wrote for the first edge. That
+// Export sits at the entry the publish addresses and is the publish's own output
+// rather than a name declared independently of the derivation — comparing
+// against it would halt on edge order alone. Writing it a second time is what
+// the stock codec refuses, as a replace over a mapping, so the second publish
+// must emit nothing for the key and hand its consumer the same name.
 func TestLinkPublishIgnoresItsOwnPriorWriteForASiblingEdge(t *testing.T) {
 	firstOut, err := LinkPublish(testLinkEdge(nil, nil), nil)
 	if err != nil {
@@ -454,7 +456,145 @@ func TestLinkPublishIgnoresItsOwnPriorWriteForASiblingEdge(t *testing.T) {
 	// publish derives that identical export name.
 	second := testLinkEdge(nil, nil)
 	second.Source.Node = "reports"
-	if _, err := LinkPublish(second, files); err != nil {
+	secondOut, err := LinkPublish(second, files)
+	if err != nil {
 		t.Fatalf("the second publish halted on the first publish's own Export: %v", err)
+	}
+	if len(secondOut.Patches) != 0 {
+		t.Errorf("the second publish wrote the already-published Export again; want no operation, got %+v", secondOut.Patches)
+	}
+	if got := secondOut.Handle[handleExportNamePrefix+"host"]; got != derived {
+		t.Errorf("the second publish hands its consumer the export name %q, want the one already published, %q", got, derived)
+	}
+	if got, want := secondOut.Handle[handleExportNamePrefix+"host"], firstOut.Handle[handleExportNamePrefix+"host"]; got != want {
+		t.Errorf("the two consumers would import different names: %q and %q", want, got)
+	}
+}
+
+// TestLinkPublishExportsOnlyTheKeyNoEarlierEdgeInjected covers a later edge that
+// reads one key an earlier edge already exported and one it did not: the
+// already-exported key is reused, and the new one gets its own Export.
+func TestLinkPublishExportsOnlyTheKeyNoEarlierEdgeInjected(t *testing.T) {
+	hostExport := ExportName(testRelease, "prod/data", "orders-db", "host")
+	files := producerStack(t, map[string]string{
+		OutputLogicalID("orders-db", "host"): hostExport,
+		OutputLogicalID("orders-db", "port"): "",
+	})
+	edge := testLinkEdge(nil, nil)
+	edge.Source.Node = "reports"
+	var env types.OrderedMap[string]
+	env.Set("DB_HOST", "host")
+	env.Set("DB_PORT", "port")
+	var inject types.OrderedMap[types.OrderedMap[string]]
+	inject.Set("env", env)
+	edge.Inject = inject
+
+	out, err := LinkPublish(edge, files)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
+		t.Fatalf("want one patch with one op, for the key no earlier edge exported; got %+v", out.Patches)
+	}
+	op := out.Patches[0].Ops[0]
+	portExport := ExportName(testRelease, "prod/data", "orders-db", "port")
+	if want := "/Outputs/" + OutputLogicalID("orders-db", "port") + "/Export"; op.Op != "add" || op.Path != want {
+		t.Errorf("op = %q at %q, want add at %q", op.Op, op.Path, want)
+	}
+	if val, ok := op.Value.(map[string]any); !ok || val["Name"] != portExport {
+		t.Errorf("op value = %+v, want {Name:%q}", op.Value, portExport)
+	}
+	for key, want := range map[string]string{"host": hostExport, "port": portExport} {
+		if got := out.Handle[handleExportNamePrefix+key]; got != want {
+			t.Errorf("handle export name for %q = %q, want %q", key, got, want)
+		}
+	}
+}
+
+// producerStackWithBody returns the consumed endpoint's assembled files whose
+// one Outputs entry, under the given stack Output name, carries the given Export
+// block as written — so a case can give its Name a shape no string-valued
+// fixture can express.
+func producerStackWithBody(t *testing.T, outputName string, export any) []rendercore.RenderedFile {
+	t.Helper()
+	doc, err := json.Marshal(map[string]any{"Outputs": map[string]any{
+		outputName: map[string]any{"Value": "a-value", "Export": export},
+	}})
+	if err != nil {
+		t.Fatalf("marshal the producer stack: %v", err)
+	}
+	return []rendercore.RenderedFile{{Path: StackTemplateName, Content: doc}}
+}
+
+// TestLinkPublishRefusesAnotherExportAtItsOwnOutput covers the stack output the
+// publish writes to already carrying an Export the link did not write. Writing
+// the link's Export there would overwrite the author's, and keeping the author's
+// would leave every consumer importing a name the link never published, so the
+// publish halts naming what it found and how to clear it. Each row carries one
+// Export shape, and the positive control beside them is the sibling-edge case
+// above: the same entry carrying exactly the derived name publishes.
+func TestLinkPublishRefusesAnotherExportAtItsOwnOutput(t *testing.T) {
+	derived := ExportName(testRelease, "prod/data", "orders-db", "host")
+	ownEntry := OutputLogicalID("orders-db", "host")
+	cases := []struct {
+		name   string
+		export any
+		found  string
+	}{
+		{
+			name:   "a different string",
+			export: map[string]any{"Name": "orders-db-host-chosen-by-hand"},
+			found:  `already declares the export name "orders-db-host-chosen-by-hand"`,
+		},
+		{
+			name:   "a name given as an intrinsic",
+			export: map[string]any{"Name": map[string]any{"Fn::Sub": "${AWS::StackName}-orders-db-host"}},
+			found:  "already declares an export name that is not a string — one given as an intrinsic",
+		},
+		{
+			name:   "an Export block naming nothing",
+			export: map[string]any{},
+			found:  "already carries an Export block declaring no export name",
+		},
+		{
+			name:   "an Export that is not a block",
+			export: "orders-db-host-as-a-plain-value",
+			found:  "already carries an Export that is not a block",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("LinkPublish panicked: %v", r)
+				}
+			}()
+			out, err := LinkPublish(testLinkEdge(nil, nil), producerStackWithBody(t, ownEntry, tc.export))
+			if err == nil {
+				t.Fatalf("LinkPublish accepted an Export the link did not write at its own output; got %+v", out)
+			}
+			if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+				t.Fatalf("want the output-name-collision condition, got %v", err)
+			}
+			for _, want := range []string{
+				"the stack output a cross-boundary link publishes its export on already carries an Export the link did not write",
+				derived,
+				`provides key "host"`,
+				`component "orders-db"`,
+				`boundary "prod/data"`,
+				`Release "` + testRelease + `"`,
+				tc.found,
+				"remove that entry's Export block and let the link publish the export every consumer imports",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the diagnostic does not carry %s\n  got: %v", want, err)
+				}
+			}
+			// The assembled Output name is this provider's own, so the halt
+			// names the component and the key it was assembled from instead.
+			if strings.Contains(err.Error(), ownEntry) {
+				t.Errorf("the diagnostic presents the assembled Output name %q as something to search for\n  got: %v", ownEntry, err)
+			}
+		})
 	}
 }

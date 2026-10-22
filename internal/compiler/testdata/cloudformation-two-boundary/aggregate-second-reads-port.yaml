@@ -1,0 +1,50 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-second-reads-port
+  version: "1.0.0"
+  description: >
+    The sibling aggregate.yaml with one difference: app-b's edge onto the
+    database injects its port as well as its host, so the second consumer reads
+    a provides key the first does not. app-a is declared first, so its edge is
+    published first and exports the host; app-b's edge then reuses that export
+    and adds only the port's.
+spec:
+  components:
+    db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        # RDS generates and rotates the master password itself, so the slot is
+        # delegated to the engine.
+        root_password:
+          type: core/generated-secret
+    app-a:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /app-a/db-host
+      uses:
+        database:
+          primary:
+            target: db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host
+    app-b:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /app-b/db-host
+      uses:
+        database:
+          primary:
+            target: db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host
+                - in: DB_PORT
+                  from: port

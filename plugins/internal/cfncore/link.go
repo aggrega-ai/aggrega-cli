@@ -44,10 +44,23 @@ const (
 // stack names. Every name is a deterministic pointer string the compiler pipes
 // and never resolves against AWS state.
 //
+// A produced value several cross-boundary edges consume is published once. The
+// host applies each publish's wiring to the consumed endpoint's files before it
+// publishes the next edge, so a later edge onto a key an earlier edge already
+// exported finds that key's own Output carrying an Export named exactly the
+// derived name. The publish then returns that name in its handle and emits no
+// operation for the key, and every consumer imports the one name. A key no
+// earlier edge injected still gets its own Export.
+//
 // The consumed endpoint's assembled files are read to check each derived export
 // name against the export names the stack's other Outputs entries already
 // declare, and a match halts: one name, two declarations, only one of which
-// appears in any file the author wrote. The check is scoped
+// appears in any file the author wrote. The key's own Output is checked too: an
+// Export already there under any name other than the derived one — a different
+// string, a name given as an intrinsic, an Export block naming nothing, or an
+// Export that is not a block at all — halts, because publishing the link's export would overwrite what the author
+// wrote there, and keeping the author's would leave the consumers importing a
+// name the link did not publish. The checks are scoped
 // to this build: what a name meets in an account and region it is deployed into
 // is a property of the deployment, which nothing here can observe. Files
 // carrying no stack template yield no comparison, which is the answer whenever
@@ -62,20 +75,39 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 		handleStackNameKey: StackName(edge.Target.Release, edge.Target.Boundary),
 	}
 	ops := make([]frp.JSONPatchOp, 0, len(keys))
-	var shadowed []string
+	var shadowed, overwritten []string
 	for _, outputKey := range keys {
 		exportName := ExportName(edge.Target.Release, edge.Target.Boundary, edge.Target.Node, outputKey)
 		ownOutputName := OutputLogicalID(edge.Target.Node, outputKey)
+		alreadyExported := false
 		for _, a := range authored {
-			// The entry this publish writes to is skipped rather than compared:
-			// it holds either the provides-to-Outputs projection this Export
-			// attaches to, or an Export this same publish already wrote for
-			// another edge sharing the consumed endpoint — the host applies each
-			// publish's wiring to the group before the next edge is published,
-			// so the second edge reads the first one's Export back. Neither is a
-			// name declared independently of this derivation, and comparing
-			// against them would halt on edge order.
-			if a.outputName == ownOutputName || a.name != exportName {
+			if a.outputName == ownOutputName {
+				// The entry this publish writes to is not compared against the
+				// derived name as a shadowing declaration: it holds the
+				// provides-to-Outputs projection this Export attaches to, and,
+				// once an earlier edge sharing the consumed endpoint has been
+				// published, that edge's Export. An Export there naming exactly
+				// the derived name is the one this publish would write, so it is
+				// reused; any other Export there is the author's, and it halts.
+				switch {
+				case a.named && a.name == exportName:
+					alreadyExported = true
+				case !a.block:
+					overwritten = append(overwritten, ownExportClause(edge, outputKey, exportName,
+						"already carries an Export that is not a block, where CloudFormation expects one carrying a Name"))
+				case a.named:
+					overwritten = append(overwritten, ownExportClause(edge, outputKey, exportName,
+						fmt.Sprintf("already declares the export name %q", a.name)))
+				case a.nameGiven:
+					overwritten = append(overwritten, ownExportClause(edge, outputKey, exportName,
+						"already declares an export name that is not a string — one given as an intrinsic, which resolves at deploy time, so this provider cannot read what it spells"))
+				default:
+					overwritten = append(overwritten, ownExportClause(edge, outputKey, exportName,
+						"already carries an Export block declaring no export name"))
+				}
+				continue
+			}
+			if !a.named || a.name != exportName {
 				continue
 			}
 			shadowed = append(shadowed, fmt.Sprintf(
@@ -83,6 +115,9 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 				exportName, outputKey, edge.Target.Node, edge.Target.Boundary, edge.Target.Release, a.outputName))
 		}
 		handle[handleExportNamePrefix+outputKey] = exportName
+		if alreadyExported {
+			continue
+		}
 		ops = append(ops, frp.JSONPatchOp{
 			Scope: frp.DocumentScopeOwn,
 			Key:   StackTemplateName,
@@ -91,11 +126,18 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 			Value: map[string]any{"Name": exportName},
 		})
 	}
+	var refusals []string
+	if len(overwritten) > 0 {
+		refusals = append(refusals, fmt.Sprintf("cloudformation-provider: the stack output a cross-boundary link publishes its export on already carries an Export the link did not write: %s; remove that entry's Export block and let the link publish the export every consumer imports",
+			strings.Join(overwritten, "; ")))
+	}
 	if len(shadowed) > 0 {
+		refusals = append(refusals, fmt.Sprintf("cloudformation-provider: an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack: %s; each shadowing Outputs entry spells its export name exactly as the halt does, so searching your Recipes for that name reaches the entry — rename the export name the entry declares, or remove that entry's Export block and let the link publish the export",
+			strings.Join(shadowed, "; ")))
+	}
+	if len(refusals) > 0 {
 		return rendercore.LinkPublishOutput{}, cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
-			cerrors.TranslationError, cerrors.SourceLocation{},
-			fmt.Sprintf("cloudformation-provider: an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack: %s; each shadowing Outputs entry spells its export name exactly as the halt does, so searching your Recipes for that name reaches the entry — rename the export name the entry declares, or remove that entry's Export block and let the link publish the export",
-				strings.Join(shadowed, "; ")))
+			cerrors.TranslationError, cerrors.SourceLocation{}, strings.Join(refusals, "; and "))
 	}
 	out := rendercore.LinkPublishOutput{Handle: handle}
 	if len(ops) > 0 {
@@ -216,8 +258,8 @@ func findStackFile(files []rendercore.RenderedFile) ([]byte, bool) {
 	return nil, false
 }
 
-// authoredExport is one export name an assembled stack declares, paired with the
-// name of the stack Output carrying it.
+// authoredExport is one Export block an assembled stack's Outputs carry, paired
+// with the name of the stack Output carrying it.
 //
 // Only the export name is authored. The output name is this core's own, built at
 // assembly from the component and the entry an author wrote ([OutputLogicalID]),
@@ -227,23 +269,33 @@ func findStackFile(files []rendercore.RenderedFile) ([]byte, bool) {
 // authored: the encoded name is nothing the author typed or would recognise,
 // which is why a diagnostic built from this pair leans on the export name and
 // never presents the output name as something an author wrote.
+//
+// block reports that the Export is a mapping; an Export written as any other
+// value is carried with block unset and nothing else. named reports that the
+// block's Name is a string, which name then holds. nameGiven reports that a Name
+// is present but is not a string — an intrinsic, which resolves at deploy time
+// rather than here, so this core cannot know what it spells and does not guess.
+// A block with neither set names nothing. Only a named entry can declare a name
+// another one shadows; every other shape matters only at the Output a publish
+// writes to, where any Export but the one it would write is the author's.
 type authoredExport struct {
 	outputName string
 	name       string
+	block      bool
+	named      bool
+	nameGiven  bool
 }
 
-// authoredExportNames returns the export names an assembled stack's Outputs
-// entries declare, ordered by the stack's own Output names so a diagnostic built
-// from them reads the same across runs of identical input.
+// authoredExportNames returns the Exports an assembled stack's Outputs entries
+// carry, ordered by the stack's own Output names so a diagnostic built from them
+// reads the same across runs of identical input.
 //
-// Every reading that is not an export name spelled as a string yields no entry
-// rather than an error: a stack with no Outputs section declares none, an Output
-// with no Export block declares none, and an Export whose Name is an intrinsic
-// resolves at deploy time rather than here, so this core cannot know what it
-// spells and does not guess. A template that does not parse likewise yields
-// none — the publish needs no document to author its own wiring, and a stack
-// this core cannot read is reported where it is read to be written, when the
-// publish's wiring is applied to it.
+// Every reading that carries no Export yields no entry rather than an error: a
+// stack with no Outputs section carries none, and an Output with no Export key
+// carries none. A template that does not parse likewise yields none — the
+// publish needs no document to author its own wiring, and a stack this core
+// cannot read is reported where it is read to be written, when the publish's
+// wiring is applied to it.
 func authoredExportNames(stack []byte) []authoredExport {
 	var doc any
 	if err := json.Unmarshal(stack, &doc); err != nil {
@@ -263,15 +315,34 @@ func authoredExportNames(stack []byte) []authoredExport {
 		if !ok {
 			continue
 		}
-		export, ok := body["Export"].(map[string]any)
-		if !ok {
+		rawExport, present := body["Export"]
+		if !present {
 			continue
 		}
-		if name, ok := export["Name"].(string); ok {
-			found = append(found, authoredExport{outputName: outputName, name: name})
+		entry := authoredExport{outputName: outputName}
+		export, ok := rawExport.(map[string]any)
+		if !ok {
+			found = append(found, entry)
+			continue
 		}
+		entry.block = true
+		if raw, present := export["Name"]; present {
+			entry.name, entry.named = raw.(string)
+			entry.nameGiven = !entry.named
+		}
+		found = append(found, entry)
 	}
 	return found
+}
+
+// ownExportClause describes, for the halt, an Export the key's own stack Output
+// already carries that the link did not write. The Output is named by the
+// component and the provides key it was assembled from, which are strings the
+// author wrote, rather than by its assembled name.
+func ownExportClause(edge rendercore.LinkEdge, outputKey, exportName, found string) string {
+	return fmt.Sprintf(
+		"the link derives the export name %q for provides key %q of component %q in boundary %q of Release %q, and the stack output this provider assembles for that key and component %s",
+		exportName, outputKey, edge.Target.Node, edge.Target.Boundary, edge.Target.Release, found)
 }
 
 // findSentinelPaths walks a decoded JSON document for the placeholder token and

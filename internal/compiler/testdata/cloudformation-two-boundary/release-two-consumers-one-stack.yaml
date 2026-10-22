@@ -1,0 +1,36 @@
+# Two consumers of one produced value, both across the boundary: the database
+# assembles into stack A alone, and both applications that read its host
+# assemble into stack B. Each application's uses edge crosses the boundary onto
+# the same provides key, so the producer stack publishes that key's export once
+# and both consumers import the one name. The topology is the sibling
+# aggregate/manifest unchanged — only the placement differs from release.yaml.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-two-consumers
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    stack-b:
+      directory: ./dist/stack-b
+      components:
+        app-a: {}
+        app-b: {}

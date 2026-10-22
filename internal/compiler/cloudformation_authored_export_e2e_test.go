@@ -58,29 +58,11 @@ const cfnDerivedDbHostExportName = "aggrega--cloudformation-two-boundary--dist-z
 func cfnAuthoredExportInput(t *testing.T, variantDir string) pipelinetest.Input {
 	t.Helper()
 	skipIfNoSiblingCatalog(t)
-	const replaced = "/recipe/cloudformation/db-reader/1.0.0/recipe.yaml"
-	shared := cfnCatalogPaths()
-	paths := make([]string, 0, len(shared))
-	dropped := 0
-	for _, p := range shared {
-		if strings.HasSuffix(p, replaced) {
-			dropped++
-			continue
-		}
-		paths = append(paths, p)
-	}
-	// A substitution that removed nothing would leave two definitions of one
-	// Recipe identity, and the catalog keeps the one loaded first — which here is
-	// the shared path, so the fixture-local Outputs block would simply not be in
-	// the build. Every case below would then fail on a missing output or on a
-	// build that shipped, neither of which names the actual cause. Name it here.
-	if dropped != 1 {
-		t.Fatalf("expected to replace exactly one catalog Recipe path ending %q, dropped %d; paths: %v", replaced, dropped, shared)
-	}
-	paths = append(paths, "testdata/cloudformation-two-boundary/catalog/"+variantDir+"/db-reader.recipe.yaml")
 	return pipelinetest.Input{
-		ReleasePath:  "testdata/cloudformation-two-boundary/release.yaml",
-		CatalogPaths: paths,
+		ReleasePath: "testdata/cloudformation-two-boundary/release.yaml",
+		CatalogPaths: cfnCatalogPathsReplacing(t,
+			"/recipe/cloudformation/db-reader/1.0.0/recipe.yaml",
+			"testdata/cloudformation-two-boundary/catalog/"+variantDir+"/db-reader.recipe.yaml"),
 	}
 }
 

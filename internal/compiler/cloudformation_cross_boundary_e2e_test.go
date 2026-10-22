@@ -33,6 +33,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 const cfnHubCatalog = "../../../aggrega-hub/aggrega-catalog"
@@ -59,6 +61,33 @@ func cfnCatalogPaths() []string {
 		cfnHubCatalog + "/feature-recipe/cloudformation/generated-secret/1.0.0/recipe.yaml",
 		"testdata/cloudformation-two-boundary/catalog/cloudformation-renderer.plugin.yaml",
 	}
+}
+
+// cfnCatalogPathsReplacing is cfnCatalogPaths with the one catalog entity path
+// ending in replaced swapped for the fixture-local file at replacement, so a
+// build differs from the shared workspace in that one entity alone.
+//
+// A substitution that removed nothing would leave two definitions of one entity
+// identity, and the catalog keeps the one loaded first — which here is the
+// shared path, so the fixture-local file would simply not be in the build. A
+// case would then fail on a missing output or on a build that shipped, neither
+// of which names the actual cause. Name it here.
+func cfnCatalogPathsReplacing(t *testing.T, replaced, replacement string) []string {
+	t.Helper()
+	shared := cfnCatalogPaths()
+	paths := make([]string, 0, len(shared))
+	dropped := 0
+	for _, p := range shared {
+		if strings.HasSuffix(p, replaced) {
+			dropped++
+			continue
+		}
+		paths = append(paths, p)
+	}
+	if dropped != 1 {
+		t.Fatalf("expected to replace exactly one catalog Recipe path ending %q, dropped %d; paths: %v", replaced, dropped, shared)
+	}
+	return append(paths, replacement)
 }
 
 func skipIfNoSiblingCatalog(t *testing.T) {
@@ -307,8 +336,9 @@ func TestCloudFormationTwoBoundary_Deterministic(t *testing.T) {
 // and assume-role) rather than the same-account stack-export import
 // (Fn::ImportValue) the sibling same-account build produces. The producer stack
 // still projects the database host into an Output carrying an Export.Name — the
-// publish adds the Export unconditionally — even though the cross-account
-// consumer reads it by stack-output rather than by import. The stack name the
+// publish exports every key a cross-boundary edge injects, whatever the reading
+// consumer's placement — even though the cross-account consumer reads it by
+// stack-output rather than by import. The stack name the
 // consumer reads is checked for round-trip identity against the producer's
 // export name structurally, so the proof survives later additions to the name's
 // composition.
@@ -366,7 +396,8 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 	t.Logf("cross-account read: Fn::GetStackOutput %#v", getStackOutput)
 
 	// Producer: the database's host output STILL carries an Export.Name even on the
-	// cross-account path — the publish adds the Export unconditionally.
+	// cross-account path — the publish exports the key whatever the consumer's
+	// placement.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
 	hostOut := mustCfnMap(t, producerOutputs, "dbXXhost")
 	exportBlock := mustCfnMap(t, hostOut, "Export")
@@ -492,6 +523,249 @@ func TestCloudFormationTwoBoundary_SameAccountDeclaredImportValue(t *testing.T) 
 func TestCloudFormationTwoBoundary_SameAccountDeclaredDeterministic(t *testing.T) {
 	in := cfnSameAccountDeclaredInput(t)
 	pipelinetest.AssertDeterministic(t, in)
+}
+
+// cfnFixtureInput is the two-boundary workspace built from one of the fixture's
+// Release files, against the shared catalog paths.
+func cfnFixtureInput(t *testing.T, release string) pipelinetest.Input {
+	t.Helper()
+	skipIfNoSiblingCatalog(t)
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/cloudformation-two-boundary/" + release,
+		CatalogPaths: cfnCatalogPaths(),
+	}
+}
+
+// cfnExportsIn returns, for each Outputs entry of a stack that carries an Export
+// block, the entry's name mapped to its Export.Name.
+func cfnExportsIn(t *testing.T, stack map[string]any) map[string]any {
+	t.Helper()
+	exports := map[string]any{}
+	for name, body := range mustCfnMap(t, stack, "Outputs") {
+		entry, ok := body.(map[string]any)
+		if !ok {
+			continue
+		}
+		if export, ok := entry["Export"].(map[string]any); ok {
+			exports[name] = export["Name"]
+		}
+	}
+	return exports
+}
+
+// cfnConsumerValue returns the parameter Value a db-reader consumer's resource
+// carries in the stack whose dist directory contains stackSegment.
+func cfnConsumerValue(t *testing.T, artifacts map[string][]byte, stackSegment, resource string) map[string]any {
+	t.Helper()
+	stack, raw := findCfnStack(t, artifacts, stackSegment)
+	props := mustCfnMap(t, mustCfnMap(t, mustCfnMap(t, stack, "Resources"), resource), "Properties")
+	value, ok := props["Value"].(map[string]any)
+	if !ok {
+		t.Fatalf("consumer %s.Properties.Value in %s is not an object; got %#v\n%s", resource, stackSegment, props["Value"], raw)
+	}
+	return value
+}
+
+// assertNoLinkPlaceholder fails when any emitted artifact still carries a
+// cross-boundary link placeholder.
+func assertNoLinkPlaceholder(t *testing.T, artifacts map[string][]byte) {
+	t.Helper()
+	for k, v := range artifacts {
+		if strings.Contains(string(v), rendercore.CrossBoundaryLinkSentinelPrefix) {
+			t.Fatalf("artifact %q retains a cross-boundary link placeholder:\n%s", k, v)
+		}
+	}
+}
+
+// TestCloudFormationTwoBoundary_TwoConsumersShareOneExport builds two consumers
+// of the database host, both across the boundary from it, end-to-end through the
+// real cloudformation guest, and proves from the emitted bytes that the value is
+// published once: the producer stack carries ONE Export, on the host output, and
+// both consumers import that same name. The second edge's publish finds the
+// first one's Export already at the output and reuses it, where writing it again
+// is what halted the build. Each row varies only where the two consumers are
+// placed.
+func TestCloudFormationTwoBoundary_TwoConsumersShareOneExport(t *testing.T) {
+	type consumer struct{ stack, resource string }
+	for _, tc := range []struct {
+		scenario  string
+		release   string
+		consumers []consumer
+	}{
+		{
+			scenario:  "both consumers in one stack",
+			release:   "release-two-consumers-one-stack.yaml",
+			consumers: []consumer{{"stack-b", "AppA"}, {"stack-b", "AppB"}},
+		},
+		{
+			scenario:  "the consumers in two different stacks",
+			release:   "release-two-consumers-two-stacks.yaml",
+			consumers: []consumer{{"stack-b", "AppA"}, {"stack-c", "AppB"}},
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			result := pipelinetest.Build(t, cfnFixtureInput(t, tc.release))
+			assertNoLinkPlaceholder(t, result.Artifacts)
+
+			producer, producerRaw := findCfnStack(t, result.Artifacts, "stack-a")
+			t.Logf("producer stack template (stack-a):\n%s", producerRaw)
+			exports := cfnExportsIn(t, producer)
+			if len(exports) != 1 {
+				t.Fatalf("the producer stack carries %d Exports, want exactly one, on the host output; got %v", len(exports), exports)
+			}
+			exportName, ok := exports["dbXXhost"].(string)
+			if !ok || exportName == "" {
+				t.Fatalf("the producer's one Export is not a named Export on dbXXhost; got %v", exports)
+			}
+
+			for _, c := range tc.consumers {
+				value := cfnConsumerValue(t, result.Artifacts, c.stack, c.resource)
+				if got := value["Fn::ImportValue"]; got != exportName {
+					t.Fatalf("consumer %s in %s reads %#v, want Fn::ImportValue of the one published export %q", c.resource, c.stack, value, exportName)
+				}
+			}
+			t.Logf("both consumers import the one export %s", exportName)
+		})
+	}
+}
+
+// TestCloudFormationTwoBoundary_TwoConsumersMixedPlacement builds two consumers
+// of the database host whose stacks are placed differently: one shares the
+// producer's account and region and imports the export, the other sits in
+// another account and reads the producer stack's output instead. The producer
+// stack still publishes the one Export, and both reads name the same output.
+func TestCloudFormationTwoBoundary_TwoConsumersMixedPlacement(t *testing.T) {
+	result := pipelinetest.Build(t, cfnFixtureInput(t, "release-two-consumers-mixed-placement.yaml"))
+	assertNoLinkPlaceholder(t, result.Artifacts)
+
+	producer, producerRaw := findCfnStack(t, result.Artifacts, "stack-a")
+	t.Logf("producer stack template (stack-a):\n%s", producerRaw)
+	exports := cfnExportsIn(t, producer)
+	exportName, ok := exports["dbXXhost"].(string)
+	if len(exports) != 1 || !ok || exportName == "" {
+		t.Fatalf("want exactly one named Export, on dbXXhost; got %v", exports)
+	}
+
+	imported := cfnConsumerValue(t, result.Artifacts, "stack-b", "AppA")
+	if got := imported["Fn::ImportValue"]; got != exportName {
+		t.Fatalf("the same-placement consumer reads %#v, want Fn::ImportValue of %q", imported, exportName)
+	}
+	read := cfnConsumerValue(t, result.Artifacts, "stack-c", "AppB")
+	gso, ok := read["Fn::GetStackOutput"].(map[string]any)
+	if !ok {
+		t.Fatalf("the other-account consumer reads %#v, want an Fn::GetStackOutput read", read)
+	}
+	if gso["OutputName"] != "dbXXhost" {
+		t.Fatalf("Fn::GetStackOutput.OutputName = %#v, want the output the export is published on, \"dbXXhost\"", gso["OutputName"])
+	}
+	stackName, ok := gso["StackName"].(string)
+	if !ok || !strings.HasPrefix(exportName, stackName+"-") {
+		t.Fatalf("Fn::GetStackOutput.StackName = %#v does not name the stack the export %q is published from", gso["StackName"], exportName)
+	}
+}
+
+// TestCloudFormationTwoBoundary_SecondConsumerReadsAnotherKey builds two
+// consumers of one database where the second also reads a provides key the
+// first does not: the first edge exports the host, the second reuses that export
+// and adds the port's alone. The producer stack carries exactly those two
+// Exports, and both consumers import the one host export.
+func TestCloudFormationTwoBoundary_SecondConsumerReadsAnotherKey(t *testing.T) {
+	result := pipelinetest.Build(t, cfnFixtureInput(t, "release-second-reads-port.yaml"))
+	assertNoLinkPlaceholder(t, result.Artifacts)
+
+	producer, producerRaw := findCfnStack(t, result.Artifacts, "stack-a")
+	t.Logf("producer stack template (stack-a):\n%s", producerRaw)
+	exports := cfnExportsIn(t, producer)
+	if len(exports) != 2 {
+		t.Fatalf("the producer stack carries %d Exports, want two — the host's and the port's; got %v", len(exports), exports)
+	}
+	hostExport, ok := exports["dbXXhost"].(string)
+	if !ok || hostExport == "" {
+		t.Fatalf("no named Export on dbXXhost; got %v", exports)
+	}
+	portExport, ok := exports["dbXXport"].(string)
+	if !ok || portExport == "" || portExport == hostExport || !strings.HasSuffix(portExport, "--port") {
+		t.Fatalf("no distinct named Export for the port on dbXXport; got %v", exports)
+	}
+
+	for _, resource := range []string{"AppA", "AppB"} {
+		value := cfnConsumerValue(t, result.Artifacts, "stack-b", resource)
+		if got := value["Fn::ImportValue"]; got != hostExport {
+			t.Fatalf("consumer %s reads %#v, want Fn::ImportValue of the one host export %q", resource, value, hostExport)
+		}
+	}
+}
+
+// TestCloudFormationTwoBoundary_SharedExportDeterministic asserts each build
+// whose produced value several consumers read is byte-identical across repeated
+// runs (the Deterministic Output invariant).
+func TestCloudFormationTwoBoundary_SharedExportDeterministic(t *testing.T) {
+	for _, release := range []string{
+		"release-two-consumers-one-stack.yaml",
+		"release-two-consumers-two-stacks.yaml",
+		"release-two-consumers-mixed-placement.yaml",
+		"release-second-reads-port.yaml",
+	} {
+		t.Run(release, func(t *testing.T) {
+			pipelinetest.AssertDeterministic(t, cfnFixtureInput(t, release))
+		})
+	}
+}
+
+// TestCloudFormationTwoBoundary_ProducerOwnExportNameHalts builds the
+// two-boundary workspace with the database's Recipe replaced by a fixture-local
+// variant whose fragment writes the host output itself, with an Export under a
+// name it chose. That output is the one the app-b -> db link publishes its
+// export on, so publishing would overwrite the author's Export and keeping it
+// would leave the consumer importing a name the link never published: the build
+// halts, from the publish, naming what it found and the remedy.
+func TestCloudFormationTwoBoundary_ProducerOwnExportNameHalts(t *testing.T) {
+	skipIfNoSiblingCatalog(t)
+	paths := cfnCatalogPathsReplacing(t,
+		"/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
+		"testdata/cloudformation-two-boundary/catalog/producer-export-own-name/mariadb-rds.recipe.yaml")
+
+	result, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/cloudformation-two-boundary/release.yaml",
+		CatalogPaths: paths,
+	})
+	if err == nil {
+		emitted := make([]string, 0, len(result.Artifacts))
+		for k := range result.Artifacts {
+			emitted = append(emitted, k)
+		}
+		t.Fatalf("build succeeded; want a halt on the producer's own Export at the output the link publishes on. emitted artifacts: %v", emitted)
+	}
+	msg := cerrors.CauseChain(err)
+	t.Logf("emitted diagnostic, verbatim:\n%s", msg)
+
+	// The refusal is the guest's, through the condition the shadowing halt
+	// raises, and its identity crosses the socket with it.
+	hostShort, _ := cerrors.ShortCodeOf(wasm.ErrWasmGuestError())
+	if short, ok := cerrors.ShortCodeOf(err); !ok || short == hostShort {
+		t.Errorf("the build's error reports short code %q (present %v), want the condition the guest raised rather than the host's generic %q", short, ok, hostShort)
+	}
+
+	for _, want := range []string{
+		`cross-boundary link publish for uses edge "app-b" -> "db"`,
+		"the stack output a cross-boundary link publishes its export on already carries an Export the link did not write",
+		cfnDerivedDbHostExportName,
+		`provides key "host"`,
+		`component "db"`,
+		`boundary "dist/stack-a/cloudformation"`,
+		`Release "cloudformation-two-boundary"`,
+		`already declares the export name "db-host-chosen-by-hand"`,
+		"remove that entry's Export block and let the link publish the export every consumer imports",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("diagnostic is missing %q; got:\n%s", want, msg)
+		}
+	}
+	// The codec's refusal is what the build met before the publish read the
+	// output; it must not be what the author reads now.
+	if strings.Contains(msg, "has no in-place form") {
+		t.Fatalf("the halt is still the codec's rather than the publish's:\n%s", msg)
+	}
 }
 
 // findCfnStack returns the assembled CloudFormation stack template for the

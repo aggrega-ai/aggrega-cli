@@ -1,0 +1,34 @@
+# Two consumers of one producer across the boundary, the second reading a
+# provides key the first does not: the database assembles into stack A, and both
+# applications into stack B. The producer stack publishes the host's export once,
+# for the first edge, and the port's for the second.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-second-reads-port
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-second-reads-port.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    stack-b:
+      directory: ./dist/stack-b
+      components:
+        app-a: {}
+        app-b: {}

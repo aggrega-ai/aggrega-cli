@@ -1,0 +1,47 @@
+# Two consumers of one produced value in two stacks whose placements differ:
+# stack B declares the producer's own account and region, so its application
+# imports the export; stack C declares another account, so its application reads
+# the producer stack's output across accounts instead. The producer stack still
+# publishes the key's export once.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-mixed-placement
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      annotations:
+        aggrega.ai/aws-account: "111111111111"
+        aggrega.ai/aws-region: "eu-west-1"
+        aggrega.ai/aws-assume-role-arn: "arn:aws:iam::111111111111:role/cross-stack-reader"
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    stack-b:
+      directory: ./dist/stack-b
+      annotations:
+        aggrega.ai/aws-account: "111111111111"
+        aggrega.ai/aws-region: "eu-west-1"
+      components:
+        app-a: {}
+    stack-c:
+      directory: ./dist/stack-c
+      annotations:
+        aggrega.ai/aws-account: "222222222222"
+      components:
+        app-b: {}

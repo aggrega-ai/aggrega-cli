@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# A fixture-local mariadb-rds Recipe, loaded in place of the catalog's own under
+# the same Recipe identity (cloudformation/mariadb-rds:1.0.0), so a build differs
+# from the cross-boundary wiring proof only in the database's fragment. That
+# fragment writes the database's `host` output itself, as an explicit Outputs
+# entry carrying an Export under a name of its own, instead of projecting it from
+# a fragment provides entry. The entry reaches the stack under the same output
+# name the projection would have given it — the one a cross-boundary link onto
+# `host` publishes its export on — so the link meets an Export it did not write,
+# and the build halts.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: mariadb-rds
+  version: 1.0.0
+  description: >
+    The database of this fixture, rendered as a CloudFormation fragment whose
+    host output is an explicit Outputs entry carrying an Export name the Recipe
+    chose, rather than one projected from the fragment's provides.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: core/datastore/mariadb:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  # The value pipe a consumer's inject block reads, as the catalog's Recipe
+  # publishes it: every key the Component's provides contract declares.
+  provides:
+    host: "!GetAtt {{ .locals.logical_id }}.Endpoint.Address"
+    port: "{{ .infra.port }}"
+    user: "admin"
+    database: "{{ .values.database }}"
+    protocol: "mariadb"
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::RDS::DBInstance
+          DeletionPolicy: Snapshot
+          Properties:
+            Engine: mariadb
+            EngineVersion: "{{ .infra.engine_version }}"
+            Port: {{ .infra.port }}
+            DBName: "{{ .values.database }}"
+            MasterUsername: admin
+            ManageMasterUserPassword: true
+            DBInstanceClass: db.t3.small
+            AllocatedStorage: {{ trimSuffix "Gi" .infra.storage.size }}
+            StorageType: "{{ .infra.storage.type | default "gp3" }}"
+      Outputs:
+        # The host output, written here with an Export the Recipe named.
+        host:
+          Value: !GetAtt {{ .locals.logical_id }}.Endpoint.Address
+          Export:
+            Name: db-host-chosen-by-hand
+      provides:
+        port: "{{ .infra.port }}"
+        user: "admin"
+        database: "{{ .values.database }}"
+        protocol: mariadb

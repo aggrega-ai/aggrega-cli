@@ -1,0 +1,39 @@
+# Two consumers of one produced value, each in a stack of its own: the database
+# assembles into stack A, one application into stack B and the other into stack
+# C. Both uses edges cross a boundary onto the same provides key, so the
+# producer stack publishes that key's export once and both consuming stacks
+# import the one name. No placement annotations, so all three stacks share an
+# account and region.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-two-consumer-stacks
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    stack-b:
+      directory: ./dist/stack-b
+      components:
+        app-a: {}
+    stack-c:
+      directory: ./dist/stack-c
+      components:
+        app-b: {}
