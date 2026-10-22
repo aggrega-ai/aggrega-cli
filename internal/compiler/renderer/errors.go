@@ -1143,6 +1143,10 @@ var errBoundaryDirectoryNotBeneathOutputRoot = cerrors.Register("boundary-direct
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// boundaryDirectoryAdvice is the remedy a refused boundary output directory names.
+const boundaryDirectoryAdvice = "write a directory beneath the output root, such as \"deploy/prod\" — no leading " +
+	"\"/\", no \"..\" climbing above it, and not the output root itself"
+
 // ErrBoundaryFeatureNameNotADirectory is the Loud Guardrail halt raised when a
 // Feature attached at a Release boundary is named `.` or `..` and the provider
 // rendering it gives each contributor a directory of its own.
@@ -1166,6 +1170,11 @@ var errBoundaryFeatureNameNotADirectory = cerrors.Register("boundary-feature-nam
 	Message:   "boundary-level Feature instance name is not a directory name",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
+
+// boundaryFeatureNameAdvice is the remedy a refused boundary-level Feature
+// instance name names.
+const boundaryFeatureNameAdvice = "rename the Feature instance under the boundary's features to an ordinary " +
+	"name, such as \"audit\""
 
 // ErrEmptySource is the Loud Guardrail halt raised when a Recipe declares
 // `source:` and gives it an empty string. The two authoring modes a Recipe's

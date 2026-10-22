@@ -6,6 +6,7 @@ package renderer
 import (
 	"bytes"
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -506,6 +507,150 @@ var AssemblyGroupDerivesEachNameOnce = constraint.Check[
 				)
 				out = append(out, s.RaiseWith(ErrDerivedKeyCollision(), details...))
 			}
+		}
+		return out
+	},
+}
+
+// AssemblyPathNamesADirectoryBeneathTheOutputRoot reports each boundary path
+// declaration that sent a contribution to a dispatch group whose evaluated path
+// does not name a directory beneath the output root: one climbing out of it,
+// naming an absolute location, or cleaning to the output root itself.
+//
+// The group's path is the directory every file its contributors render is written
+// under. A path climbing out would put output outside the directory the build was
+// asked to write, and one naming the root itself would put the boundary's output at
+// the top of the output directory, beside every other boundary's — so the build
+// halts here, before any group assembles and before anything is written, rather
+// than at the write. That is a Loud Guardrail case: the author wrote the value and
+// is the one who can change it.
+//
+// It reads the group's path from its subject, because the path IS the group's
+// coordinate, and one fact: what each contribution's declaration evaluated to. The
+// path is the predicate; the declarations are what make the finding actionable,
+// since the field an operator edits is written on a boundary and the path names
+// none.
+//
+// It raises one objection per distinct boundary, field and value rather than one
+// per contribution, because a boundary's components usually evaluate its
+// declaration alike and an author edits the field once. The field named is the one
+// the fault comes from — `directory:` where no sub-directory is composed or where
+// the directory alone already leaves the root, `subDirectory:` otherwise — with the
+// value that field evaluated to, because the value is often a template whose
+// evaluation the author has not seen. A group always received at least one
+// declaration, since a group comes into existence when its first contribution is
+// sorted into it; a group reporting none is still refused, naming its path, so a
+// record that came out empty cannot pass a path the rule refuses.
+//
+// Its detail captions every value. The Release, the boundary, the field and the
+// path are four values of the same shape, and the caption is what tells them apart.
+var AssemblyPathNamesADirectoryBeneathTheOutputRoot = constraint.Check[
+	constraint.DispatchedView,
+	constraint.AssemblyPathProviderSubject,
+]{
+	Sentinel: ErrBoundaryDirectoryNotBeneathOutputRoot(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.AssemblyPathProviderSubject,
+	) []constraint.Objection {
+		if s.AssemblyPath() != "." && pathscope.IsLocalSlash(s.AssemblyPath()) {
+			return nil
+		}
+		declared := v.AssemblyGroupBoundaryPathDeclarations(s.AssemblyPath(), s.ProviderName())
+		if len(declared) == 0 {
+			return []constraint.Objection{s.RaiseWithAdvice(
+				ErrBoundaryDirectoryNotBeneathOutputRoot(), boundaryDirectoryAdvice,
+				constraint.Captioned("output path", s.AssemblyPath()),
+			)}
+		}
+		var named [][3]string
+		out := make([]constraint.Objection, 0, len(declared))
+		for _, d := range declared {
+			field, value := boundaryPathFieldAtFault(d.Directory, d.SubDirectory)
+			key := [3]string{d.Boundary, field, value}
+			if slices.Contains(named, key) {
+				continue
+			}
+			named = append(named, key)
+			out = append(out, s.RaiseWithAdvice(
+				ErrBoundaryDirectoryNotBeneathOutputRoot(), boundaryDirectoryAdvice,
+				constraint.Captioned("Release", d.Release),
+				constraint.Captioned("boundary", d.Boundary),
+				constraint.Captioned(field, value),
+				constraint.Captioned("output path", s.AssemblyPath()),
+			))
+		}
+		return out
+	},
+}
+
+// boundaryPathFieldAtFault is the field a refused dispatch path came from, and the
+// value that field evaluated to: `directory:` where no sub-directory is composed or
+// where the directory alone already leaves the output root, `subDirectory:`
+// otherwise.
+func boundaryPathFieldAtFault(evalDir, evalSub string) (field, value string) {
+	if subDirectoryDisabled(evalSub) || (evalDir != "" && !pathscope.IsLocalSlash(path.Clean(evalDir))) {
+		return "directory:", evalDir
+	}
+	return "subDirectory:", evalSub
+}
+
+// AssemblyGroupPlacesEachContributorInADirectoryOfItsOwn reports each contributor
+// a dispatch group would place under a directory whose name is `.` or `..`.
+//
+// A group gives a contributor a directory of its own where its provider nests each
+// contributor under one, and, for a component, where the group is written flat and
+// the component's artifacts block placed files, which are named by a key carrying
+// nothing of the component. That directory is named for the contributor alone, and
+// the one contributor that can arrive at `.` or `..` is a Feature attached at a
+// boundary under such an instance name, which the Release admits. As a directory the first
+// names the position holding every contributor and the second the one above it, so
+// the Feature's files would land outside the position the group gave it — and in
+// the first case among every other contributor's files. The build halts here,
+// before any group assembles and before anything is written. That is a Loud
+// Guardrail case: the instance name is the operator's to change.
+//
+// It reads one fact: the contributors the group places under a directory of their
+// own, each with the segment the group would write. A contributor the group places
+// under no directory of its own is not in that fact, so a Feature named `.` in a
+// group that folds its output, or in one written flat — where a boundary-level
+// Feature's files are named with a prefix beside the boundary's own rather than
+// placed in a directory — is not refused: its name never becomes a directory.
+//
+// Its detail captions every value, and names a Feature by the boundary it is
+// attached at and its instance name, which is the key the operator wrote. Any other
+// contributor is named by its kind and its own coordinates, for the case the
+// schema already keeps out of reach.
+var AssemblyGroupPlacesEachContributorInADirectoryOfItsOwn = constraint.Check[
+	constraint.DispatchedView,
+	constraint.AssemblyPathProviderSubject,
+]{
+	Sentinel: ErrBoundaryFeatureNameNotADirectory(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.AssemblyPathProviderSubject,
+	) []constraint.Objection {
+		var out []constraint.Objection
+		for _, d := range v.AssemblyGroupContributorDirectories(s.AssemblyPath(), s.ProviderName()) {
+			if d.Segment != "." && d.Segment != ".." {
+				continue
+			}
+			details := []constraint.DetailValue{constraint.Captioned("Release", d.Release)}
+			if d.ContributorKind == producerKindFeature {
+				details = append(details,
+					constraint.Captioned("boundary", d.ContributorScope),
+					constraint.Captioned("feature", d.Contributor))
+			} else {
+				details = append(details, constraint.Captioned(d.ContributorKind, d.Contributor))
+				if d.ContributorScope != "" {
+					details = append(details, constraint.Captioned(
+						derivedNameScopeCaption(d.ContributorKind), d.ContributorScope))
+				}
+			}
+			out = append(out, s.RaiseWithAdvice(
+				ErrBoundaryFeatureNameNotADirectory(), boundaryFeatureNameAdvice, details...))
 		}
 		return out
 	},

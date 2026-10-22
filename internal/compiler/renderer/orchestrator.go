@@ -20,7 +20,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -229,6 +228,18 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	derivedNames *derivedNameSets
+
+	// directories is the render's retained record of what each dispatch group's
+	// path declarations evaluated to and which contributors the group places under
+	// a directory of their own.
+	//
+	// It is published here for the reason the election is: what each group received
+	// is the render's own working state and is dropped when the render returns,
+	// while the presentation of the grouping outlives it.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	directories *groupDirectories
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -475,6 +486,9 @@ type dispatchKey struct {
 // into this dispatch group — used for diagnostic messages on collision /
 // chart-name-mismatch errors and for chart-name cascade lookups against
 // the resolver-side BoundaryAnnotations map.
+// pathDeclarations records, beside it and at the same sites, what each
+// contribution's boundary path declaration evaluated to, deduplicated, so a rule
+// about the group's path can name the boundary and the field an author edits.
 // derivedKeys accumulates the names every contributor to this group declares it
 // derived, across all of them, so the injectivity check runs once per group with
 // every declaration in view rather than per contributor as each arrives.
@@ -496,6 +510,7 @@ type pendingDispatch struct {
 	assemblerCandidates    []assemblerCandidate
 	engineByNode           map[string]Provider
 	contributingBoundaries []string
+	pathDeclarations       []boundaryPathDeclaration
 	// boundaryFiles are the files this group's contributors declared for the
 	// boundary's shared output, in node-processing order, each with the label of
 	// the contributor that declared it. They are written in the group's own
@@ -737,7 +752,7 @@ func nodeProducerLabel(producer derivedKeyProducer) string {
 // alphabet already admits the composition returns that name unchanged, so an
 // ordinary contributor reaches the directory it always reached.
 //
-// # A segment that is not a directory name is refused here
+// # A segment that is not a directory name is refused before it is placed
 //
 // That pass-through is why "." and ".." can arrive: a contributor identified by
 // one coordinate that is itself "." or ".." — a Feature attached at a boundary
@@ -745,28 +760,19 @@ func nodeProducerLabel(producer derivedKeyProducer) string {
 // that string, and as a directory it names the position holding every
 // contributor, or the one above it, rather than a position of its own. A segment
 // composed from two coordinates always carries the separator and can never be
-// either. This is the one composition of a contributor's directory, so the refusal
-// sits here and every position a group names is guarded by it: the nesting
-// placement, the position the assembler is told, and a flat group's directory for
-// author-named artifact files. release is the Release the refusal names.
-func nodeOutputSegment(release string, producer derivedKeyProducer) (string, error) {
-	segment := contributorDirSegment(producer.name)
+// either. This composes and judges nothing: the segment of every contributor a
+// group places under a directory of its own is recorded from here once the
+// grouping is complete ([contributorsGivenADirectory]), and the rule over that
+// record, [AssemblyGroupPlacesEachContributorInADirectoryOfItsOwn], halts the
+// build before any group is assembled — so every position this composition names
+// later, the nesting placement, the position the assembler is told, and a flat
+// group's directory for author-named artifact files, is one the rule has already
+// read.
+func nodeOutputSegment(producer derivedKeyProducer) string {
 	if producer.kind == producerKindComponent && producer.scope != "" {
-		segment = contributorDirSegment(producer.name, producer.scope)
+		return contributorDirSegment(producer.name, producer.scope)
 	}
-	if segment != "." && segment != ".." {
-		return segment, nil
-	}
-	details := []string{fmt.Sprintf("Release %q", release)}
-	if producer.kind == producerKindFeature {
-		details = append(details, fmt.Sprintf("boundary %q", producer.scope), fmt.Sprintf("feature %q", producer.name))
-	} else {
-		details = append(details, nodeProducerLabel(producer))
-	}
-	return "", cerrors.Wrap(ErrBoundaryFeatureNameNotADirectory(),
-		cerrors.OpsError, cerrors.SourceLocation{File: release},
-		cerrors.ComposeMessage(ErrBoundaryFeatureNameNotADirectory(), details,
-			"rename the Feature instance under the boundary's features to an ordinary name, such as \"audit\""))
+	return contributorDirSegment(producer.name)
 }
 
 // nodeRelFor is the position a nesting dispatch group writes the files keyed
@@ -780,12 +786,69 @@ func nodeOutputSegment(release string, producer derivedKeyProducer) (string, err
 // to the group's assembler read it, so a contributor's files are written where
 // the assembler was told they are rather than at a position one side composed and
 // the other re-derived.
-func (pd *pendingDispatch) nodeRelFor(release, nestPrefix, nodeID string) (string, error) {
-	segment, err := nodeOutputSegment(release, pd.producerOf(nodeID))
-	if err != nil {
-		return "", err
+func (pd *pendingDispatch) nodeRelFor(nestPrefix, nodeID string) string {
+	return nestPrefix + nodeOutputSegment(pd.producerOf(nodeID)) + "/"
+}
+
+// groupAssemblesAt reports whether a dispatch group at the evaluated path is
+// handed to its elected engine's assembler: the elected engine can carry an
+// assembly out, and the group has a path to assemble at.
+//
+// It is the one home of which branch a group is finalized by, read both by the
+// finalization and by the record of which contributors the group places under a
+// directory of their own, so the rule reading that record and the placement it
+// guards cannot come to disagree about a group's layout. It reads the election
+// rather than the bound assembler, because the record is taken before any group is
+// bound — and [selectBoundaryAssembler] binds exactly the engine this reads.
+func groupAssemblesAt(pd *pendingDispatch, assemblyPath string) bool {
+	_, assembles := groupAssemblerEngine(pd).(BoundaryAssembler)
+	return assembles && assemblyPath != ""
+}
+
+// artifactsPlacedBy is the names of the files one contributor's artifacts block
+// placed in its dispatch group, read from what the contributor PLACED — the record
+// carrying each file's input-kind origin.
+//
+// It is the one reading of that set, taken both by a flat group's finalization,
+// which writes those files under the contributor's own directory, and by the
+// record of which contributors a group places under a directory of their own.
+func artifactsPlacedBy(pd *pendingDispatch, nodeID string) map[string]struct{} {
+	out := make(map[string]struct{}, len(pd.placed[nodeID]))
+	for _, f := range pd.placed[nodeID] {
+		if f.Origin == EmitOriginArtifactsInline || f.Origin == EmitOriginArtifactsImport {
+			out[f.Name] = struct{}{}
+		}
 	}
-	return nestPrefix + segment + "/", nil
+	return out
+}
+
+// contributorsGivenADirectory is the per-node keys of the contributors one dispatch
+// group places under a directory of their own, in sorted key order.
+//
+// Which contributors those are follows from how the group is finalized. A group
+// handed to an assembler whose provider nests places every contributor it holds
+// output for under a directory of its own; one whose provider folds places none.
+// A group finalized flat places a contributor under its own directory only where
+// its artifacts block placed a file, and only a contributor holding files there —
+// the files such a block places are named by the key their author wrote, which
+// carries nothing of the contributor.
+//
+// The order is sorted rather than the sets' own, so where several contributors are
+// refused the findings come out in an order that is a function of the input.
+func contributorsGivenADirectory(pd *pendingDispatch, assemblyPath string) []string {
+	if groupAssemblesAt(pd, assemblyPath) {
+		if !boundaryNestingOf(groupAssemblerEngine(pd)).PerNode {
+			return nil
+		}
+		return slices.Sorted(maps.Keys(pd.contributorKeys()))
+	}
+	var out []string
+	for _, nodeID := range slices.Sorted(maps.Keys(pd.files)) {
+		if len(artifactsPlacedBy(pd, nodeID)) > 0 {
+			out = append(out, nodeID)
+		}
+	}
+	return out
 }
 
 // contributorKeys is every per-node key this dispatch group holds output for.
@@ -2373,16 +2436,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 			parameters = input.ResolveResult.Parameters
 		}
-		finalPath, err := computeFinalPath(releaseNameOf(input), nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+		pathEval, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
-			// A refused dispatch path already names the Release, the boundary and
-			// the field, which is what its reader edits; a node frame above it would
-			// lead the diagnostic with a component nobody has to change.
-			if errors.Is(err, ErrBoundaryDirectoryNotBeneathOutputRoot()) {
-				return nil, err
-			}
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("path eval node %q", nodeID))
 		}
+		finalPath := pathEval.path
 
 		// Recipe pipeline (own scope). Runs per-node AFTER the primary render
 		// (state.EmittedFiles carries source/workload/artifacts — the node's
@@ -2531,6 +2589,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if !alreadyContributing {
 			dispatch[key].contributingBoundaries = append(dispatch[key].contributingBoundaries, bp)
 		}
+		dispatch[key].recordPathDeclaration(bp, pathEval)
 		nodeFileMap := make(map[string][]byte, len(state.EmittedFiles))
 		nodeFormatMap := map[string]string{}
 		for _, f := range state.EmittedFiles {
@@ -2780,14 +2839,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// evaluate alike are MEANT to feed one group; sending them to two by
 		// disambiguating this value would not separate two contributors, it would
 		// separate two groups and take the whole question off the table.
-		finalPath, err := computeFinalPath(releaseNameOf(input), boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+		pathEval, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
-			if errors.Is(err, ErrBoundaryDirectoryNotBeneathOutputRoot()) {
-				return nil, err
-			}
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope FR %q path eval", key.FRInstance))
 		}
-		dKey := dispatchKey{Path: finalPath, Provider: frProvider}
+		dKey := dispatchKey{Path: pathEval.path, Provider: frProvider}
 		// Both coordinates the author wrote, through the one home that spells this
 		// contributor's dispatch identity — the same call the render that produced
 		// these files made for the same tuple, so the identity the group holds this
@@ -2992,6 +3048,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if !alreadyContributing {
 			dispatch[dKey].contributingBoundaries = append(dispatch[dKey].contributingBoundaries, key.BoundaryPath)
 		}
+		dispatch[dKey].recordPathDeclaration(key.BoundaryPath, pathEval)
 	}
 
 	// Finalize per-(path, provider) output. Sort dispatch keys for
@@ -3047,6 +3104,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// stops before an assembler merges output whose names were already known to
 	// collide.
 	result.derivedNames = newDerivedNameSets(dispatch, orderedDispatch)
+
+	// Record what each group's path declarations evaluated to and which of its
+	// contributors it places under a directory of their own. Both are complete once
+	// every contributor has been sorted into its group, and the rules declared over
+	// the grouping read them below — so a path naming no directory beneath the
+	// output root, and a contributor whose directory would name the position holding
+	// every contributor, halt the build before any group assembles or anything is
+	// written.
+	result.directories = newGroupDirectories(dispatch, orderedDispatch, releaseNameOf(input))
 
 	// Present how the grouping came out, with the facts complete earlier answered
 	// by the presentation built before the node walk.
@@ -3112,7 +3178,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
 		// nest per-node under the sub-directory the provider declares and emit assembled files at
 		// the dispatch path.
-		if pd.assembler != nil && key.Path != "" {
+		if groupAssemblesAt(pd, key.Path) {
 			edges := make([]IREdgeInfo, 0, len(graph.Spec.Edges))
 			for _, e := range graph.Spec.Edges {
 				edges = append(edges, IREdgeInfo{Source: e.Source, Target: e.Target})
@@ -3170,14 +3236,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			var nodeOutputDirectory map[string]string
 			if nesting.PerNode {
 				nodeOutputDirectory = make(map[string]string, len(pd.files))
-				// In sorted order rather than the set's own, so where two contributors
-				// are refused the one reported is a function of the input.
 				for _, nodeID := range slices.Sorted(maps.Keys(pd.contributorKeys())) {
-					rel, rerr := pd.nodeRelFor(releaseNameOf(input), nestPrefix, nodeID)
-					if rerr != nil {
-						return nil, rerr
-					}
-					nodeOutputDirectory[nodeID] = strings.TrimSuffix(rel, "/")
+					nodeOutputDirectory[nodeID] = strings.TrimSuffix(pd.nodeRelFor(nestPrefix, nodeID), "/")
 				}
 			}
 			info := BoundaryInfo{
@@ -3248,11 +3308,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
 				if nesting.PerNode {
-					rel, rerr := pd.nodeRelFor(releaseNameOf(input), nestPrefix, nodeID)
-					if rerr != nil {
-						return nil, rerr
-					}
-					nodeRel = rel
+					nodeRel = pd.nodeRelFor(nestPrefix, nodeID)
 				}
 				producer := nodeProducerLabel(pd.producerOf(nodeID))
 				for p, c := range nodeFiles {
@@ -3291,26 +3347,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// what leaves a boundary-scope attachment's own layout untouched.
 			//
 			// The contributor's directory is composed only for a contributor that
-			// placed such a file, because only then is it a directory at all, and in
-			// sorted order so that where two contributors are refused the one reported
-			// is a function of the input.
+			// placed such a file, because only then is it a directory at all — the
+			// same set the rule over contributor directories read before any group was
+			// assembled ([contributorsGivenADirectory]).
 			for _, nodeID := range slices.Sorted(maps.Keys(pd.files)) {
 				nodeFiles := pd.files[nodeID]
 				nodeFormats := pd.formats[nodeID]
 				producer := nodeProducerLabel(pd.producerOf(nodeID))
-				fromArtifacts := make(map[string]struct{}, len(pd.placed[nodeID]))
-				for _, f := range pd.placed[nodeID] {
-					if f.Origin == EmitOriginArtifactsInline || f.Origin == EmitOriginArtifactsImport {
-						fromArtifacts[f.Name] = struct{}{}
-					}
-				}
+				fromArtifacts := artifactsPlacedBy(pd, nodeID)
 				artifactsDir := ""
 				if len(fromArtifacts) > 0 {
-					segment, serr := nodeOutputSegment(releaseNameOf(input), pd.producerOf(nodeID))
-					if serr != nil {
-						return nil, serr
-					}
-					artifactsDir = segment + "/"
+					artifactsDir = nodeOutputSegment(pd.producerOf(nodeID)) + "/"
 				}
 				for p, c := range nodeFiles {
 					path := p
@@ -3751,16 +3798,18 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
 // maps. .parent_boundary.parameters mirrors .parameters since parameters
 // are Release-global.
 //
-// release is the name of the Release the boundary is declared in, which a refusal
-// of the evaluated path names; the composition and the refusal are
-// [cleanDispatchPath]'s.
+// It returns the two evaluated values together with the path they compose to,
+// because the path alone cannot say which field an author would edit to change it:
+// the composition is [cleanDispatchPath]'s, and whether the path names a directory
+// beneath the output root is the rule [AssemblyPathNamesADirectoryBeneathTheOutputRoot]
+// asks of the group the path keys, once every contribution has been sorted.
 func computeFinalPath(
-	release, nodeID, bp, providerName, recipeName string,
+	nodeID, bp, providerName, recipeName string,
 	bi *resolver.BoundaryInfra,
 	parameters map[string]any,
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
-) (string, error) {
+) (dispatchPathEvaluation, error) {
 	data := PathTemplateContext{
 		Capability:     providerName,
 		BoundaryName:   bp,
@@ -3785,7 +3834,7 @@ func computeFinalPath(
 		var err error
 		evalDir, err = EvalPathTemplate("directory:"+bp, "directory", bp, bi.Directory, data)
 		if err != nil {
-			return "", err
+			return dispatchPathEvaluation{}, err
 		}
 	}
 
@@ -3799,14 +3848,53 @@ func computeFinalPath(
 	}
 	evalSub, err := EvalPathTemplate("subDirectory:"+bp+":"+nodeID, "subDirectory", bp, subTmpl, data)
 	if err != nil {
-		return "", err
+		return dispatchPathEvaluation{}, err
 	}
-	return cleanDispatchPath(release, bp, evalDir, evalSub)
+	return dispatchPathEvaluation{
+		directory:    evalDir,
+		subDirectory: evalSub,
+		path:         cleanDispatchPath(evalDir, evalSub),
+	}, nil
+}
+
+// dispatchPathEvaluation is what one contribution's boundary path declaration
+// evaluated to: the `directory:` and `subDirectory:` values, and the dispatch path
+// they compose to.
+type dispatchPathEvaluation struct {
+	directory    string
+	subDirectory string
+	path         string
+}
+
+// boundaryPathDeclaration is one boundary's path declaration as a dispatch group
+// received it: the boundary, and what its two fields evaluated to.
+type boundaryPathDeclaration struct {
+	boundary     string
+	directory    string
+	subDirectory string
+}
+
+// recordPathDeclaration adds what one contribution's boundary path declaration
+// evaluated to, once per distinct declaration, in the order the group first
+// received each.
+func (pd *pendingDispatch) recordPathDeclaration(boundary string, eval dispatchPathEvaluation) {
+	d := boundaryPathDeclaration{boundary: boundary, directory: eval.directory, subDirectory: eval.subDirectory}
+	if !slices.Contains(pd.pathDeclarations, d) {
+		pd.pathDeclarations = append(pd.pathDeclarations, d)
+	}
+}
+
+// subDirectoryDisabled reports whether an evaluated `subDirectory:` composes no
+// sub-directory, leaving the directory alone as the path: an empty value, and `.`.
+//
+// It is the one home of that reading, taken by the composition below and by the
+// rule naming which field a refused path came from.
+func subDirectoryDisabled(evalSub string) bool {
+	return evalSub == "" || evalSub == "."
 }
 
 // cleanDispatchPath composes a boundary's evaluated `directory:` and
-// `subDirectory:` into the dispatch path, cleaned once, and refuses one that does
-// not name a directory beneath the output root.
+// `subDirectory:` into the dispatch path, cleaned once.
 //
 // The dispatch path is a slash-separated output name, not a host path: it
 // prefixes every emitted file's name and reaches an assembling provider as its
@@ -3821,36 +3909,17 @@ func computeFinalPath(
 // `subDirectory:` keeps meaning "no sub-directory": the path is the directory
 // alone.
 //
-// The containment question is the shared logical-name predicate's, so the path
-// refused here is the path the write would refuse: one climbing out of the output
-// root, or naming an absolute location. A path cleaning to the root itself is
-// refused too, because it names no directory of the boundary's own. The refusal
-// names the field the fault comes from — `directory:` where the directory alone
-// already leaves the root or where no sub-directory is composed, `subDirectory:`
-// otherwise — with the value that field evaluated to.
-func cleanDispatchPath(release, bp, evalDir, evalSub string) (string, error) {
-	noSubDirectory := evalSub == "" || evalSub == "."
+// It composes and judges nothing. A path climbing out of the output root, naming
+// an absolute location or cleaning to the root itself is grouped like any other,
+// and the rule declared over the grouping,
+// [AssemblyPathNamesADirectoryBeneathTheOutputRoot], halts the build on it before
+// any group is assembled or anything is written.
+func cleanDispatchPath(evalDir, evalSub string) string {
 	joined := evalDir
-	if !noSubDirectory {
+	if !subDirectoryDisabled(evalSub) {
 		joined = path.Join(evalDir, evalSub)
 	}
-	cleaned := path.Clean(joined)
-	if cleaned != "." && pathscope.IsLocalSlash(cleaned) {
-		return cleaned, nil
-	}
-	field, value := "subDirectory:", evalSub
-	if noSubDirectory || (evalDir != "" && !pathscope.IsLocalSlash(path.Clean(evalDir))) {
-		field, value = "directory:", evalDir
-	}
-	return "", cerrors.Wrap(ErrBoundaryDirectoryNotBeneathOutputRoot(),
-		cerrors.OpsError, cerrors.SourceLocation{File: release},
-		cerrors.ComposeMessage(ErrBoundaryDirectoryNotBeneathOutputRoot(), []string{
-			fmt.Sprintf("Release %q", release),
-			fmt.Sprintf("boundary %q", bp),
-			fmt.Sprintf("%s %q", field, value),
-			fmt.Sprintf("output path %q", cleaned),
-		}, "write a directory beneath the output root, such as \"deploy/prod\" — no leading \"/\", no \"..\" "+
-			"climbing above it, and not the output root itself"))
+	return path.Clean(joined)
 }
 
 // releaseNameOf is the name of the Release a render was resolved from, or "" for

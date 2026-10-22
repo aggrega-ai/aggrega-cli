@@ -189,11 +189,12 @@ var stages = []stageDecl{
 		Extends: "emitted",
 		Holds: "every node's own rendered output sorted into the assembly groups " +
 			"it will be merged in: the evaluated assembly path and the provider " +
-			"each group is keyed by, the boundaries that fed each, what each " +
-			"group's elected engine declared about combining and naming that " +
-			"group's output, and the names each group's contributors declared they " +
-			"derived inside their own output — all of it complete before any group " +
-			"assembles",
+			"each group is keyed by, the boundaries that fed each and the path " +
+			"declarations they evaluated, what each group's elected engine " +
+			"declared about combining and naming that group's output, the " +
+			"contributors each group places under a directory of their own, and " +
+			"the names each group's contributors declared they derived inside " +
+			"their own output — all of it complete before any group assembles",
 		// Producing this stage's facts renders every node, which calls the
 		// rendering provider's guest across the boundary. The grouping itself
 		// reaches for nothing further: it evaluates each boundary's own path
@@ -342,6 +343,48 @@ var records = []recordDecl{
 			{Name: "ContributorScope", Type: "string", Doc: "ContributorScope is the further authored coordinate that completes the contributor's identity within what its kind names: the attachment key a component carries, or the path of the boundary a feature is attached at. It is empty where the kind's own name identifies the contributor on its own, which is the case for a component's own render. It is carried apart from Contributor rather than run together with it because the pair is compared as well as read: two contributors differing only in this coordinate have to arrive as two, and one joined string could fold them into one — leaving a name two of them derived compared against nothing."},
 			{Name: "RepeatedWithinOneDeclaration", Type: "bool", Doc: "RepeatedWithinOneDeclaration reports whether a single one of that contributor's declarations carried this name more than once inside this space, which is a failure of that contributor's own derivation rather than a meeting between two of them."},
 			{Name: "OutputPlacedStandalone", Type: "bool", Doc: "OutputPlacedStandalone reports whether the render wrote this contributor's output as discrete files at its own position rather than handing it to its dispatch group's assembler. It states where the output went and nothing that follows from it: it is true for every contributor to a group whose provider folds nothing into one document, because such a group has no assembled document for anything to be handed to. A reader treating it alone as a reason not to compare two names would therefore stop comparing everywhere, which is a removal rather than a narrowing — what the group's provider declares it does with the group's output is a separate answer, and the two are read together."},
+		},
+	},
+	{
+		Name: "BoundaryPathDeclaration",
+		Doc: "BoundaryPathDeclaration is what one boundary's own path declaration " +
+			"evaluated to for a contribution its group received: the Release the " +
+			"boundary is declared in, the boundary, and the values its " +
+			"`directory:` and `subDirectory:` evaluated to before they were " +
+			"composed into the group's path.\n\nIt is one fact rather than " +
+			"several because no part of it answers anything alone. The group's " +
+			"path is the composition of the two values, so a reader holding the " +
+			"path alone cannot say which of the two fields an author would edit " +
+			"to change it, and a reader holding one value cannot say what the " +
+			"path came to. The boundary travels with the pair because several " +
+			"boundaries reach one group exactly when their declarations evaluate " +
+			"alike, and the Release travels with it because a finding about a " +
+			"declaration names the document the declaration is written in.",
+		Fields: []recordField{
+			{Name: "Release", Type: "string", Doc: "Release is the name of the Release the boundary is declared in, empty for a render given no Release."},
+			{Name: "Boundary", Type: "string", Doc: "Boundary is the boundary whose declaration this is, by its path among the Release's boundaries."},
+			{Name: "Directory", Type: "string", Doc: "Directory is the value the boundary's `directory:` evaluated to, or the default the compiler supplies where the field is not written, as evaluated and before it is cleaned."},
+			{Name: "SubDirectory", Type: "string", Doc: "SubDirectory is the value the boundary's `subDirectory:` evaluated to for the contribution, or the default the compiler supplies where the field is not written, as evaluated and before it is cleaned. An empty value and `.` both mean the directory alone is the path."},
+		},
+	},
+	{
+		Name: "ContributorDirectory",
+		Doc: "ContributorDirectory is one contributor a dispatch group places under " +
+			"a directory of its own: every coordinate that identifies the " +
+			"contributor in the author's input, the directory segment those " +
+			"coordinates compose to, and the Release the group's boundaries are " +
+			"declared in.\n\nIt is one fact rather than several because neither " +
+			"half answers anything alone. The segment is what the group writes, " +
+			"so it is what a rule about the directory reads; the coordinates are " +
+			"what an author wrote and can change, so they are what such a rule " +
+			"names. A reader handed the two apart would have to re-pair them, " +
+			"which is the re-derivation a declared fact exists to close.",
+		Fields: []recordField{
+			{Name: "Release", Type: "string", Doc: "Release is the name of the Release the group's boundaries are declared in, empty for a render given no Release."},
+			{Name: "Contributor", Type: "string", Doc: "Contributor is the authoring-level name of the contributor: a component instance, or a feature instance attached to a boundary."},
+			{Name: "ContributorKind", Type: "string", Doc: "ContributorKind is what that contributor is in authoring terms, either a component or a feature, which is what says where its name is written."},
+			{Name: "ContributorScope", Type: "string", Doc: "ContributorScope is the further authored coordinate that completes the contributor's identity: the attachment key a component carries, or the path of the boundary a feature is attached at, and empty for a component's own render."},
+			{Name: "Segment", Type: "string", Doc: "Segment is the directory segment the group places the contributor's files under, composed from those coordinates by the one composition of a contributor's directory."},
 		},
 	},
 	{
@@ -6686,6 +6729,64 @@ var facts = []factDecl{
 			"name is an opaque string its declarer derived, so a rule over this " +
 			"covers every space any contributor declares without naming a " +
 			"provider or learning a format.",
+	},
+	{
+		Name:        "assembly-group-boundary-path-declarations",
+		Stage:       "dispatched",
+		SourceField: "renderer.pendingDispatch.pathDeclarations",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "[]BoundaryPathDeclaration",
+		Doc: "AssemblyGroupBoundaryPathDeclarations are the path declarations " +
+			"whose evaluation sent a contribution to one dispatch group: for each, " +
+			"the boundary and the values its `directory:` and `subDirectory:` " +
+			"evaluated to, deduplicated, in the order the group first received " +
+			"each.\n\nThe group's evaluated assembly path is the composition of " +
+			"these values, cleaned, and it is the group's own coordinate — so a " +
+			"rule about whether that path names a directory beneath the output " +
+			"root reads the path from its subject, and reads this to say which " +
+			"boundary and which field an author would edit. More than one entry " +
+			"means several declarations evaluated to one path: several " +
+			"boundaries meeting at one directory, or one boundary whose " +
+			"sub-directory evaluates differently for different components.\n\nIt " +
+			"is keyed by the group because the group is what the evaluation " +
+			"decides. A sub-directory is evaluated once for each contribution — " +
+			"it may read the component it is evaluated for — and a boundary-scope " +
+			"attachment's contribution is evaluated as well as each component's, " +
+			"so neither a boundary nor a node keys every evaluation; what every " +
+			"evaluation shares is the group it sent its contribution to, which " +
+			"exists once the contributions are sorted.",
+	},
+	{
+		Name:        "assembly-group-contributor-directories",
+		Stage:       "dispatched",
+		SourceField: "renderer.pendingDispatch.nodeProducer",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "[]ContributorDirectory",
+		Doc: "AssemblyGroupContributorDirectories are the contributors one " +
+			"dispatch group places under a directory of their own, each with the " +
+			"segment that directory is named by, in the order of the keys the " +
+			"group holds them under.\n\nWhich contributors those are follows from " +
+			"how the group's elected provider lays the group out, and the answer " +
+			"is stated here rather than left to a reader to work out from the " +
+			"provider's claim: a group whose provider nests places every " +
+			"contributor under a directory of its own; a group written flat " +
+			"places a contributor there only for the files its artifacts block " +
+			"placed, because only those are named by a key carrying nothing of " +
+			"the contributor; and a group whose provider folds its output into " +
+			"one document places none. It is empty for a group placing none, " +
+			"which is the ordinary answer for most groups.\n\nThe segment is the " +
+			"one the group writes, composed once from the contributor's own " +
+			"coordinates by the composition the placement itself reads, so a rule " +
+			"over it reads the directory the build would create rather than a " +
+			"second composition of it.",
 	},
 
 	// ---------------------------------------------------------------- rendered

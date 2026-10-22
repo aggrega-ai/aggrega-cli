@@ -52,7 +52,7 @@ func stampCrossBoundaryLinkSentinels(
 		parameters = input.ResolveResult.Parameters
 	}
 
-	srcKey, err := onDemandDispatchKey(releaseNameOf(input), nodeID, providerName, recipeName, node.BoundaryPath,
+	srcKey, err := onDemandDispatchKey(nodeID, providerName, recipeName, node.BoundaryPath,
 		boundaryInfraFor(input, nodeID), parameters, boundaryDirEvals, perBoundaryAnnotations)
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func stampCrossBoundaryLinkSentinels(
 			continue
 		}
 		tgtProvider := ProviderEngineKind(tgtRecipe.Spec.Capability)
-		tgtKey, err := onDemandDispatchKey(releaseNameOf(input), edge.Target, tgtProvider, tgtRecipe.Metadata.Name, tgtNode.BoundaryPath,
+		tgtKey, err := onDemandDispatchKey(edge.Target, tgtProvider, tgtRecipe.Metadata.Name, tgtNode.BoundaryPath,
 			boundaryInfraFor(input, edge.Target), parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return err
@@ -98,17 +98,17 @@ func stampCrossBoundaryLinkSentinels(
 // the target's own loop iteration reaches it. It shares [computeFinalPath] with
 // the loop, so the key it returns is byte-identical to the one the loop records.
 func onDemandDispatchKey(
-	release, nodeID, providerName, recipeName, boundaryPath string,
+	nodeID, providerName, recipeName, boundaryPath string,
 	bi *resolver.BoundaryInfra,
 	parameters map[string]any,
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
 ) (dispatchKey, error) {
-	finalPath, err := computeFinalPath(release, nodeID, boundaryPath, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+	eval, err := computeFinalPath(nodeID, boundaryPath, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 	if err != nil {
 		return dispatchKey{}, err
 	}
-	return dispatchKey{Path: finalPath, Provider: providerName}, nil
+	return dispatchKey{Path: eval.path, Provider: providerName}, nil
 }
 
 // boundaryInfraFor returns the resolver-side per-component BoundaryInfra for a

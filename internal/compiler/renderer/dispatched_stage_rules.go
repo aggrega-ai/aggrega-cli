@@ -67,6 +67,18 @@ func runDispatchedStageRules(
 	}
 	raised, err := constraint.RunOnAssemblyPathProviders(
 		ctx.Err, coordinates, coordinates, view,
+		AssemblyPathNamesADirectoryBeneathTheOutputRoot,
+	)
+	if err != nil {
+		return err
+	}
+	if halt := objectionsAsOpsHalt(
+		raised, "boundary output directories not beneath the output root",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
 		AssemblyPathServesOneProvider,
 	)
 	if err != nil {
@@ -108,8 +120,20 @@ func runDispatchedStageRules(
 	if err != nil {
 		return err
 	}
-	return objectionsAsTranslationHalt(
-		raised, "dispatch groups whose contributors derive one name more than once in one key space")
+	if halt := objectionsAsTranslationHalt(
+		raised, "dispatch groups whose contributors derive one name more than once in one key space",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
+		AssemblyGroupPlacesEachContributorInADirectoryOfItsOwn,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsOpsHalt(
+		raised, "boundary-level Feature instances whose name is not a directory name")
 }
 
 // objectionsAsOpsHalt renders what a rule about a build's grouping raised as the

@@ -256,6 +256,77 @@ type DerivedNameDeclaration struct {
 	OutputPlacedStandalone bool
 }
 
+// BoundaryPathDeclaration is what one boundary's own path declaration
+// evaluated to for a contribution its group received: the Release the
+// boundary is declared in, the boundary, and the values its `directory:`
+// and `subDirectory:` evaluated to before they were composed into the
+// group's path.
+//
+// It is one fact rather than several because no part of it answers
+// anything alone. The group's path is the composition of the two values,
+// so a reader holding the path alone cannot say which of the two fields an
+// author would edit to change it, and a reader holding one value cannot
+// say what the path came to. The boundary travels with the pair because
+// several boundaries reach one group exactly when their declarations
+// evaluate alike, and the Release travels with it because a finding about
+// a declaration names the document the declaration is written in.
+type BoundaryPathDeclaration struct {
+	// Release is the name of the Release the boundary is declared in, empty
+	// for a render given no Release.
+	Release string
+
+	// Boundary is the boundary whose declaration this is, by its path among
+	// the Release's boundaries.
+	Boundary string
+
+	// Directory is the value the boundary's `directory:` evaluated to, or the
+	// default the compiler supplies where the field is not written, as
+	// evaluated and before it is cleaned.
+	Directory string
+
+	// SubDirectory is the value the boundary's `subDirectory:` evaluated to
+	// for the contribution, or the default the compiler supplies where the
+	// field is not written, as evaluated and before it is cleaned. An empty
+	// value and `.` both mean the directory alone is the path.
+	SubDirectory string
+}
+
+// ContributorDirectory is one contributor a dispatch group places under a
+// directory of its own: every coordinate that identifies the contributor
+// in the author's input, the directory segment those coordinates compose
+// to, and the Release the group's boundaries are declared in.
+//
+// It is one fact rather than several because neither half answers anything
+// alone. The segment is what the group writes, so it is what a rule about
+// the directory reads; the coordinates are what an author wrote and can
+// change, so they are what such a rule names. A reader handed the two
+// apart would have to re-pair them, which is the re-derivation a declared
+// fact exists to close.
+type ContributorDirectory struct {
+	// Release is the name of the Release the group's boundaries are declared
+	// in, empty for a render given no Release.
+	Release string
+
+	// Contributor is the authoring-level name of the contributor: a component
+	// instance, or a feature instance attached to a boundary.
+	Contributor string
+
+	// ContributorKind is what that contributor is in authoring terms, either a
+	// component or a feature, which is what says where its name is written.
+	ContributorKind string
+
+	// ContributorScope is the further authored coordinate that completes the
+	// contributor's identity: the attachment key a component carries, or the
+	// path of the boundary a feature is attached at, and empty for a
+	// component's own render.
+	ContributorScope string
+
+	// Segment is the directory segment the group places the contributor's
+	// files under, composed from those coordinates by the one composition of a
+	// contributor's directory.
+	Segment string
+}
+
 // InjectDelivery is one delivery a node's injection pipe carries or was
 // asked to carry: the mechanism and the key it is delivered under,
 // whatever attachment asked for it, and whether a value actually arrived.
@@ -6065,10 +6136,12 @@ type EmittedView interface {
 // DispatchedView exposes the facts complete at the dispatched stage: every
 // node's own rendered output sorted into the assembly groups it will be
 // merged in: the evaluated assembly path and the provider each group is
-// keyed by, the boundaries that fed each, what each group's elected engine
-// declared about combining and naming that group's output, and the names
-// each group's contributors declared they derived inside their own output
-// — all of it complete before any group assembles.
+// keyed by, the boundaries that fed each and the path declarations they
+// evaluated, what each group's elected engine declared about combining and
+// naming that group's output, the contributors each group places under a
+// directory of their own, and the names each group's contributors declared
+// they derived inside their own output — all of it complete before any
+// group assembles.
 //
 // It embeds EmittedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -6256,6 +6329,56 @@ type DispatchedView interface {
 	// Keyed by (assembly-path, provider); read from
 	// rendercore.RenderNodeOutput.DerivedKeys.
 	AssemblyGroupDerivedNames(assemblyPath string, provider string) []DerivedNameDeclaration
+
+	// AssemblyGroupBoundaryPathDeclarations are the path declarations whose
+	// evaluation sent a contribution to one dispatch group: for each, the
+	// boundary and the values its `directory:` and `subDirectory:` evaluated
+	// to, deduplicated, in the order the group first received each.
+	//
+	// The group's evaluated assembly path is the composition of these values,
+	// cleaned, and it is the group's own coordinate — so a rule about
+	// whether that path names a directory beneath the output root reads the
+	// path from its subject, and reads this to say which boundary and which
+	// field an author would edit. More than one entry means several
+	// declarations evaluated to one path: several boundaries meeting at one
+	// directory, or one boundary whose sub-directory evaluates differently for
+	// different components.
+	//
+	// It is keyed by the group because the group is what the evaluation
+	// decides. A sub-directory is evaluated once for each contribution — it
+	// may read the component it is evaluated for — and a boundary-scope
+	// attachment's contribution is evaluated as well as each component's, so
+	// neither a boundary nor a node keys every evaluation; what every
+	// evaluation shares is the group it sent its contribution to, which exists
+	// once the contributions are sorted.
+	//
+	// Keyed by (assembly-path, provider); read from
+	// renderer.pendingDispatch.pathDeclarations.
+	AssemblyGroupBoundaryPathDeclarations(assemblyPath string, provider string) []BoundaryPathDeclaration
+
+	// AssemblyGroupContributorDirectories are the contributors one dispatch
+	// group places under a directory of their own, each with the segment that
+	// directory is named by, in the order of the keys the group holds them
+	// under.
+	//
+	// Which contributors those are follows from how the group's elected
+	// provider lays the group out, and the answer is stated here rather than
+	// left to a reader to work out from the provider's claim: a group whose
+	// provider nests places every contributor under a directory of its own; a
+	// group written flat places a contributor there only for the files its
+	// artifacts block placed, because only those are named by a key carrying
+	// nothing of the contributor; and a group whose provider folds its output
+	// into one document places none. It is empty for a group placing none,
+	// which is the ordinary answer for most groups.
+	//
+	// The segment is the one the group writes, composed once from the
+	// contributor's own coordinates by the composition the placement itself
+	// reads, so a rule over it reads the directory the build would create
+	// rather than a second composition of it.
+	//
+	// Keyed by (assembly-path, provider); read from
+	// renderer.pendingDispatch.nodeProducer.
+	AssemblyGroupContributorDirectories(assemblyPath string, provider string) []ContributorDirectory
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact

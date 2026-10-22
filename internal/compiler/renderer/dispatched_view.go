@@ -49,6 +49,14 @@ type assemblyGroupFacts interface {
 	// AssemblyGroupDerivedNames are the names the group's contributors declared
 	// they derived inside their own output, in space, name and contributor order.
 	AssemblyGroupDerivedNames(assemblyPath string, provider string) []constraint.DerivedNameDeclaration
+
+	// AssemblyGroupBoundaryPathDeclarations are what each contribution's boundary
+	// path declaration evaluated to, in the order the group first received each.
+	AssemblyGroupBoundaryPathDeclarations(assemblyPath string, provider string) []constraint.BoundaryPathDeclaration
+
+	// AssemblyGroupContributorDirectories are the contributors the group places
+	// under a directory of their own, each with its segment.
+	AssemblyGroupContributorDirectories(assemblyPath string, provider string) []constraint.ContributorDirectory
 }
 
 // assemblyGroups answers those facts from the render's own group attribution.
@@ -152,6 +160,32 @@ func (a assemblyGroups) AssemblyGroupDerivedNames(
 	assemblyPath string, provider string,
 ) []constraint.DerivedNameDeclaration {
 	return a.result.groupDerivedNames(assemblyPath, provider)
+}
+
+// AssemblyGroupBoundaryPathDeclarations returns what each contribution's boundary
+// path declaration evaluated to for one dispatch group, in the order the group
+// first received each.
+//
+// It is the result's own reader verbatim, for the reason the answers above are:
+// the declarations are recorded once, as each contribution is sorted into its
+// group, and reading them in one place is what keeps a rule's input from being
+// derived a second way.
+func (a assemblyGroups) AssemblyGroupBoundaryPathDeclarations(
+	assemblyPath string, provider string,
+) []constraint.BoundaryPathDeclaration {
+	return a.result.groupBoundaryPathDeclarations(assemblyPath, provider)
+}
+
+// AssemblyGroupContributorDirectories returns the contributors one dispatch group
+// places under a directory of their own, each with the segment it is named by.
+//
+// It is the result's own reader verbatim. The record is taken from the layout the
+// group's finalization reads and the composition it writes with, so the
+// directories a rule reads here are the ones the build would create.
+func (a assemblyGroups) AssemblyGroupContributorDirectories(
+	assemblyPath string, provider string,
+) []constraint.ContributorDirectory {
+	return a.result.groupContributorDirectories(assemblyPath, provider)
 }
 
 // dispatchedView presents, as named facts, how a build's rendered nodes were

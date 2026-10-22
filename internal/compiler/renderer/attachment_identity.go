@@ -197,11 +197,13 @@ var contributorDirEncoding = namesegment.NewEncoding('-', isContributorDirRune)
 // Neither is introduced by this encoding: the same coordinate reaches the same
 // directory name where no encoding is applied at all, because an admitted
 // character is carried through as authored. The alphabet cannot refuse a
-// character it is required to carry, so the refusal sits with the one composition
-// of a contributor's directory, [nodeOutputSegment], which halts on a segment
-// that is "." or ".." for every provider and every position it names. A segment
-// opening with the escape opener is a directory name like any other and is left
-// as it is.
+// character it is required to carry, so the refusal sits with the rule over the
+// directories a dispatch group gives its contributors,
+// [AssemblyGroupPlacesEachContributorInADirectoryOfItsOwn], which reads the segment
+// the one composition of a contributor's directory, [nodeOutputSegment], produces
+// for every contributor a group places under a directory of its own, and halts on
+// one that is "." or ".." before any group assembles. A segment opening with the
+// escape opener is a directory name like any other and is left as it is.
 func isContributorDirRune(r rune) bool {
 	return r >= 'a' && r <= 'z' ||
 		r >= 'A' && r <= 'Z' ||

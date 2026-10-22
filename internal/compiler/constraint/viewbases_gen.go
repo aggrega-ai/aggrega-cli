@@ -3107,6 +3107,20 @@ func (RenderedViewBase) AssemblyGroupDerivedNames(assemblyPath string, provider 
 	panic("this view does not carry assembly-group-derived-names, which is read from rendercore.RenderNodeOutput.DerivedKeys")
 }
 
+// AssemblyGroupBoundaryPathDeclarations panics. This view does not carry
+// assembly-group-boundary-path-declarations, which is read from
+// renderer.pendingDispatch.pathDeclarations.
+func (RenderedViewBase) AssemblyGroupBoundaryPathDeclarations(assemblyPath string, provider string) []BoundaryPathDeclaration {
+	panic("this view does not carry assembly-group-boundary-path-declarations, which is read from renderer.pendingDispatch.pathDeclarations")
+}
+
+// AssemblyGroupContributorDirectories panics. This view does not carry
+// assembly-group-contributor-directories, which is read from
+// renderer.pendingDispatch.nodeProducer.
+func (RenderedViewBase) AssemblyGroupContributorDirectories(assemblyPath string, provider string) []ContributorDirectory {
+	panic("this view does not carry assembly-group-contributor-directories, which is read from renderer.pendingDispatch.nodeProducer")
+}
+
 // AggregateDocumentFacts are the document-stage facts an Aggregate
 // carries.
 //
@@ -3554,6 +3568,8 @@ type DispatchedStageFacts interface {
 	AssemblyGroupAssemblyNameAnnotation(assemblyPath string, provider string) (string, bool)
 	AssemblyGroupBoundaryAssemblyNames(assemblyPath string, provider string) types.OrderedMap[string]
 	AssemblyGroupDerivedNames(assemblyPath string, provider string) []DerivedNameDeclaration
+	AssemblyGroupBoundaryPathDeclarations(assemblyPath string, provider string) []BoundaryPathDeclaration
+	AssemblyGroupContributorDirectories(assemblyPath string, provider string) []ContributorDirectory
 }
 
 // RenderedStageFacts are the facts the rendered stage declares itself, and

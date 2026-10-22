@@ -53,10 +53,12 @@ var judgementsThatWriteNothing = map[string]string{
 		"composing it under its key, for a Recipe's own artifacts and its boundary block alike; the walk hands " +
 		"the composed name to its caller and writes nothing, and the name reaches disk only as a path of the " +
 		"render's file set, which the rendered-artifact write places with PlaceBeneath",
-	"internal/compiler/renderer:cleanDispatchPath": "judges the directory a Release boundary's output is " +
-		"written under, composed from its evaluated directory and sub-directory; it returns the cleaned dispatch " +
-		"path and writes nothing, and the path reaches disk only as the prefix of the render's file names, which " +
-		"the rendered-artifact write places with PlaceBeneath",
+	"internal/compiler/renderer:AssemblyPathNamesADirectoryBeneathTheOutputRoot": "judges the directory a " +
+		"Release boundary's output is written under, the dispatch path its evaluated directory and sub-directory " +
+		"compose to; it raises a finding and writes nothing, and the path reaches disk only as the prefix of the " +
+		"render's file names, which the rendered-artifact write places with PlaceBeneath",
+	"internal/compiler/renderer:boundaryPathFieldAtFault": "judges which of a Release boundary's two path fields " +
+		"a refused dispatch path came from, to name it in a finding; it returns the field and writes nothing",
 	"pkg/docscache:readTarEntry": "looks a page up inside a documentation bundle held in memory; the cache " +
 		"writes the bundle whole and lays no entry out",
 	"internal/mcp:bundlePageForURI": "looks a page up inside a documentation bundle held in memory",

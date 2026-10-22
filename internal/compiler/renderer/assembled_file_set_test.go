@@ -4,11 +4,14 @@
 package renderer
 
 import (
+	"context"
 	"errors"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
 // TestAssembledFileSet_AttributionInvariantUnderPlacementOrder proves the
@@ -133,15 +136,6 @@ func TestNodeProducerLabel(t *testing.T) {
 func TestNodeOutputSegment(t *testing.T) {
 	t.Parallel()
 
-	nodeOutputSegment := func(p derivedKeyProducer) string {
-		t.Helper()
-		segment, err := nodeOutputSegment("release", p)
-		if err != nil {
-			t.Fatalf("nodeOutputSegment(%+v) refused an ordinary contributor: %v", p, err)
-		}
-		return segment
-	}
-
 	if got, want := nodeOutputSegment(derivedKeyProducerFor(producerKindComponent, "api", "")), "api"; got != want {
 		t.Errorf("nodeOutputSegment(component) = %q, want %q", got, want)
 	}
@@ -175,8 +169,46 @@ func TestNodeOutputSegment(t *testing.T) {
 	}
 }
 
+// contributorDirectoryView presents one group's contributor directories, and
+// nothing else: the rule under test reads that one fact, so any other read panics
+// through the embedded interface rather than answering a zero value.
+type contributorDirectoryView struct {
+	constraint.DispatchedView
+	directories []constraint.ContributorDirectory
+}
+
+func (v contributorDirectoryView) AssemblyGroupContributorDirectories(
+	_ string, _ string,
+) []constraint.ContributorDirectory {
+	return v.directories
+}
+
+// runContributorDirectoryRule invokes the rule declared over a group's contributor
+// directories the way a build does — through the traversal, over one group — with
+// one contributor whose directory is composed by the one composition there is.
+func runContributorDirectoryRule(t *testing.T, producer derivedKeyProducer) []constraint.Objection {
+	t.Helper()
+	axes := derivedNamesAxes{path: "infra", provider: "terraform"}
+	var view constraint.DispatchedView = contributorDirectoryView{directories: []constraint.ContributorDirectory{{
+		Release:          "shop",
+		Contributor:      producer.name,
+		ContributorKind:  producer.kind,
+		ContributorScope: producer.scope,
+		Segment:          nodeOutputSegment(producer),
+	}}}
+	raised, err := constraint.RunOnAssemblyPathProviders(
+		func() error { return nil }, axes, axes, view,
+		AssemblyGroupPlacesEachContributorInADirectoryOfItsOwn,
+	)
+	if err != nil {
+		t.Fatalf("the traversal failed: %v", err)
+	}
+	return raised
+}
+
 // TestABoundaryFeatureNamedDotOrDotDotIsNotAContributorDirectory drives the one
-// composition of a contributor's directory with a boundary-level Feature named
+// composition of a contributor's directory and the rule declared over the
+// directories a group gives its contributors with a boundary-level Feature named
 // "." and "..", each refused with the condition's own identity and with the
 // Release, the boundary and the instance named, and with a dotted ordinary name
 // admitted as itself.
@@ -197,17 +229,19 @@ func TestABoundaryFeatureNamedDotOrDotDotIsNotAContributorDirectory(t *testing.T
 			t.Parallel()
 			defer func() {
 				if r := recover(); r != nil {
-					t.Fatalf("nodeOutputSegment panicked on the instance name %q: %v", name, r)
+					t.Fatalf("the rule panicked on the instance name %q: %v", name, r)
 				}
 			}()
-			segment, err := nodeOutputSegment("shop", derivedKeyProducerFor(producerKindFeature, name, "prod"))
-			if !errors.Is(err, ErrBoundaryFeatureNameNotADirectory()) {
-				t.Fatalf("a boundary Feature named %q composed the directory %q (err %v); want "+
-					"ErrBoundaryFeatureNameNotADirectory", name, segment, err)
+			producer := derivedKeyProducerFor(producerKindFeature, name, "prod")
+			raised := runContributorDirectoryRule(t, producer)
+			if len(raised) != 1 || !errors.Is(raised[0].Sentinel(), ErrBoundaryFeatureNameNotADirectory()) {
+				t.Fatalf("a boundary Feature named %q composed the directory %q and the rule raised %v; want "+
+					"one ErrBoundaryFeatureNameNotADirectory", name, nodeOutputSegment(producer), raised)
 			}
+			message := constraint.ObjectionMessage(raised[0])
 			for _, want := range []string{`Release "shop"`, `boundary "prod"`, `feature "` + name + `"`, "rename"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("the refusal does not carry %q:\n%s", want, err)
+				if !strings.Contains(message, want) {
+					t.Errorf("the refusal does not carry %q:\n%s", want, message)
 				}
 			}
 		})
@@ -225,15 +259,89 @@ func TestABoundaryFeatureNamedDotOrDotDotIsNotAContributorDirectory(t *testing.T
 		tc := tc
 		t.Run("admitted "+tc.name, func(t *testing.T) {
 			t.Parallel()
-			segment, err := nodeOutputSegment("shop", tc.producer)
-			if err != nil {
-				t.Fatalf("%s was refused: %v", tc.name, err)
+			segment := nodeOutputSegment(tc.producer)
+			if raised := runContributorDirectoryRule(t, tc.producer); len(raised) != 0 {
+				t.Fatalf("%s was refused: %s", tc.name, constraint.ObjectionMessage(raised[0]))
 			}
 			if tc.want != "" && segment != tc.want {
 				t.Errorf("%s composed %q; want %q", tc.name, segment, tc.want)
 			}
 			if segment == "." || segment == ".." {
 				t.Errorf("%s composed %q, which is not a directory name", tc.name, segment)
+			}
+		})
+	}
+}
+
+// layoutEngine is a provider engine reporting one boundary-assembly mode and, where
+// asked, offering the assembly that mode names. It renders nothing: the cases below
+// read only which contributors a group's layout gives a directory of their own.
+type layoutEngine struct {
+	mode string
+}
+
+func (layoutEngine) Render(context.Context, map[string]any, NodeRenderContext) ([]RenderedFile, error) {
+	return nil, nil
+}
+func (layoutEngine) Contract() ProviderContract { return ProviderContract{} }
+func (e layoutEngine) BoundaryAssembly() string { return e.mode }
+func (layoutEngine) AssembleBoundary(context.Context, BoundaryInfo) (map[string]AssembledFile, error) {
+	return nil, nil
+}
+
+// flatEngineOf is a layoutEngine reporting mode and offering no assembly: only its
+// Provider and BoundaryAssemblyReporter methods are carried, so the group's elected
+// engine is not an assembler and the group is finalized flat.
+func flatEngineOf(mode string) Provider {
+	return struct {
+		Provider
+		BoundaryAssemblyReporter
+	}{layoutEngine{mode}, layoutEngine{mode}}
+}
+
+// TestTheContributorsGivenADirectoryAreTheOnesTheGroupPlacesUnderOne holds the
+// record the rule over contributor directories reads to the layout a group's
+// finalization writes: a nesting group gives every contributor it holds output
+// for a directory, a folding group gives none, and a flat group gives one only to
+// a contributor whose artifacts block placed a file — so a Feature named "." in a
+// group that folds, or written flat with no artifacts file, is never refused.
+func TestTheContributorsGivenADirectoryAreTheOnesTheGroupPlacesUnderOne(t *testing.T) {
+	t.Parallel()
+
+	group := func(engine Provider) *pendingDispatch {
+		pd := &pendingDispatch{
+			files: map[string]map[string][]byte{
+				"api":  {"api.tf.json": []byte("{}")},
+				"<fr>": {"audit.tf.json": []byte("{}")},
+			},
+			intermediates: map[string][]EmittedFile{"fragment": {{Name: "x"}}},
+			placed: map[string][]EmittedFile{
+				"api":  {{Name: "api.tf.json", Origin: EmitOriginArtifactsInline}},
+				"<fr>": {{Name: "audit.tf.json", Origin: EmitOriginSource}},
+			},
+		}
+		if engine != nil {
+			pd.assemblerCandidates = []assemblerCandidate{{engine: engine}}
+		}
+		return pd
+	}
+
+	for _, tc := range []struct {
+		name   string
+		engine Provider
+		path   string
+		want   []string
+	}{
+		{"a nesting group gives every contributor a directory", layoutEngine{"nest"}, "infra", []string{"<fr>", "api", "fragment"}},
+		{"a folding group gives none", layoutEngine{"merge"}, "infra", nil},
+		{"a flat group gives one only for artifacts files", nil, "infra", []string{"api"}},
+		{"a flat-mode engine offering no assembly is flat", flatEngineOf("nest"), "infra", []string{"api"}},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := contributorsGivenADirectory(group(tc.engine), tc.path); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("contributorsGivenADirectory = %v, want %v", got, tc.want)
 			}
 		})
 	}
