@@ -12,7 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -46,7 +46,7 @@ func nonconformingStepLookup(t *testing.T) pluginpath.Lookup {
 	if err != nil {
 		t.Fatalf("resolve guest source: %v", err)
 	}
-	path := wasmtest.EnsureLocalGuestBuilt(t, src, "nonconforming-step.wasm")
+	path := wasmfixture.EnsureLocalGuestBuilt(t, src, "nonconforming-step.wasm")
 	return pluginpath.NewResolver(
 		pluginpath.ResolutionContext{Override: path}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve
 }

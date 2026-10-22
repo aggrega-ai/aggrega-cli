@@ -116,7 +116,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -193,7 +193,7 @@ func writeFetchingProviderWorkspace(t *testing.T, root string) string {
 	// No skip path, deliberately: the guest is plain Go targeting wasip1, which
 	// ships with every Go distribution, so a skip here could only hide a proof
 	// that did not run.
-	guestPath := wasmtest.EnsureLocalGuestBuilt(t, src, "fetching-provider.wasm")
+	guestPath := wasmfixture.EnsureLocalGuestBuilt(t, src, "fetching-provider.wasm")
 
 	catalogDir := filepath.Join(root, "catalog")
 

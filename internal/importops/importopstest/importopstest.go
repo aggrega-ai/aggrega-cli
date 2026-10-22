@@ -66,6 +66,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -537,7 +538,7 @@ func localTestGuest(t *testing.T, source, artifact string) string {
 	for {
 		src := filepath.Join(dir, source)
 		if _, err := os.Stat(filepath.Join(src, "main.go")); err == nil {
-			return wasmtest.EnsureLocalGuestBuilt(t, src, artifact)
+			return wasmfixture.EnsureLocalGuestBuilt(t, src, artifact)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {

@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -1193,7 +1194,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve guest source: %v", err)
 	}
-	spinningPath := wasmtest.EnsureLocalGuestBuilt(t, spinningSrc, "spinning-step.wasm")
+	spinningPath := wasmfixture.EnsureLocalGuestBuilt(t, spinningSrc, "spinning-step.wasm")
 
 	// The helm PROVIDER-rendering plugin is core infrastructure: its entity ships
 	// in the standard catalog and its .wasm is embedded in the binary. It is

@@ -24,9 +24,16 @@
 // mtime under the source directory and the trees it builds against —
 // for a Go guest, also every file of each package of this module it
 // imports. Both layouts hand back a path under
-// `aggrega-cli/internal/wasm/testdata/`, written only by this package and
-// only by rename, so a test never reads an artifact another test process
-// is in the middle of writing.
+// `aggrega-cli/internal/wasm/testdata/`, written only by rename, so a test
+// never reads an artifact another test process is in the middle of
+// writing.
+//
+// The module root, the shared fixture directory, the once-per-process
+// build memo, the cross-process build lock, the staging directory,
+// publishing by rename and the freshness walk are the wasmfixture
+// package's, which also builds a guest whose source lives inside this
+// module ([wasmfixture.EnsureLocalGuestBuilt]). What is here is what reads
+// the sibling checkouts.
 //
 // Concurrency is guarded at two scopes, because they answer different
 // questions. Publishing by rename keeps a reader from seeing a half-written
@@ -43,81 +50,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/tools/projectionparity"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
-
-// fixtureResults caches the per-fixture build outcome for the
-// lifetime of the `go test` process. The cached value is either the
-// built artifact's path (a string) or the skip reason (an error). A
-// build run that succeeds or skips is not retried by subsequent tests
-// in the same process.
-var fixtureResults sync.Map
-
-// fixtureBuildLocks holds one mutex per artifact name, so at most one
-// builder per artifact runs at a time. Consulting the result cache and
-// building on a miss are two steps rather than one, and acting on an
-// unlocked miss is what lets every caller that missed at the same moment
-// start its own build of the same output path. The lock is per artifact
-// rather than one global lock so unrelated fixtures still build
-// concurrently.
-var fixtureBuildLocks sync.Map
-
-// buildFixtureOnce returns the memoised outcome for artifactName, calling
-// build at most once per artifact across concurrent callers. Callers that
-// arrive while a build is in flight queue on the artifact's lock and then
-// observe the stored result rather than repeating the build. A skip reason
-// is cached and shared, so it is derived once per process rather than once
-// per caller.
-//
-// A build that ends the calling goroutine (t.Fatalf, t.Skipf) stores
-// nothing: a hard failure is the calling test's, not a verdict to serve to
-// every later caller.
-func buildFixtureOnce(artifactName string, build func() (string, error)) (string, error) {
-	if path, skip, ok := loadFixtureResult(artifactName); ok {
-		return path, skip
-	}
-
-	actual, _ := fixtureBuildLocks.LoadOrStore(artifactName, &sync.Mutex{})
-	mu := actual.(*sync.Mutex)
-	mu.Lock()
-	defer mu.Unlock()
-
-	// The unlocked read above is only a fast path. This one is
-	// authoritative: a caller that queued behind the builder ahead of it
-	// finds that builder's result here instead of rebuilding.
-	if path, skip, ok := loadFixtureResult(artifactName); ok {
-		return path, skip
-	}
-
-	path, err := build()
-	if err != nil {
-		fixtureResults.Store(artifactName, err)
-		return "", err
-	}
-	fixtureResults.Store(artifactName, path)
-	return path, nil
-}
-
-func loadFixtureResult(artifactName string) (path string, skip error, ok bool) {
-	cached, found := fixtureResults.Load(artifactName)
-	if !found {
-		return "", nil, false
-	}
-	switch v := cached.(type) {
-	case string:
-		return v, nil, true
-	case error:
-		return "", v, true
-	}
-	return "", nil, false
-}
 
 // EnsureFixtureBuilt resolves a .wasm artifact from its source.
 // Returns the artifact's absolute path after ensuring it exists and
@@ -144,7 +83,7 @@ func loadFixtureResult(artifactName string) (path string, skip error, ok bool) {
 func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 	t.Helper()
 
-	path, skip := buildFixtureOnce(artifactName, func() (string, error) {
+	path, skip := wasmfixture.BuildFixtureOnce(artifactName, func() (string, error) {
 		t.Helper()
 
 		moduleRoot := ModuleRoot(t)
@@ -210,7 +149,7 @@ func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) strin
 	}
 	stamped := strings.TrimSuffix(artifactName, ".wasm") + "@" + version + ".wasm"
 
-	path, skip := buildFixtureOnce(stamped, func() (string, error) {
+	path, skip := wasmfixture.BuildFixtureOnce(stamped, func() (string, error) {
 		t.Helper()
 		moduleRoot := ModuleRoot(t)
 		siblingsDir, err := siblingCheckoutsDir()
@@ -228,97 +167,6 @@ func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) strin
 	})
 	if skip != nil {
 		t.Skipf("%v", skip)
-	}
-	return path
-}
-
-// EnsureLocalGuestBuilt builds a self-contained Go guest whose source lives
-// inside this module and returns the built artifact's absolute path.
-//
-// srcDir is an absolute path to a directory holding the guest's main.go and its
-// own go.mod. It is addressed directly rather than derived from an artifact
-// name, so this reaches a guest the two name-parsed layouts above cannot: one
-// authored here rather than in a per-language plugin kit. artifactName is the
-// name the built guest is published under in the shared fixture directory, and
-// it must not collide with a name either of those layouts owns.
-//
-// It exists for a guest that is DELIBERATELY non-conforming — one built to
-// violate the plugin contract so a host refusal can be driven and its
-// diagnostic read. Such a guest belongs beside the tests that drive it rather
-// than in a kit of reference examples, and it hand-writes its own wire bytes,
-// because a generated codec exists precisely to make the mistakes it has to make
-// unrepresentable. It serves equally a conforming guest built to make one
-// contract claim no reference example makes, so the host's consumers of that
-// claim can be driven with a real guest before any shipped plugin declares it.
-//
-// There is no toolchain-absent skip and there must not be one. The build is the
-// standard Go toolchain targeting wasip1, which ships with every Go
-// distribution, so the toolchain is present whenever this runs at all — a caller
-// is executing under `go test`. A skip here would let a proof that never ran
-// read as a proof that passed, which for a fixture whose whole purpose is to
-// make an unprovable registration provable is the one failure mode worth
-// refusing outright. Any build failure is therefore a hard test failure.
-//
-// The cache, lock and publish-by-rename discipline is the same as the layouts
-// above: at most one builder per artifact across processes, and the destination
-// only ever written by rename.
-func EnsureLocalGuestBuilt(t *testing.T, srcDir, artifactName string) string {
-	t.Helper()
-
-	path, skip := buildFixtureOnce(artifactName, func() (string, error) {
-		t.Helper()
-
-		moduleRoot := ModuleRoot(t)
-		if _, err := os.Stat(filepath.Join(srcDir, "main.go")); err != nil {
-			t.Fatalf("local guest source missing at %s: %v (the fixture's main.go is supposed to ship; absence is a regression)", srcDir, err)
-		}
-
-		testdataDir := fixtureDir(moduleRoot)
-		artifactPath := filepath.Join(testdataDir, artifactName)
-		if isFresh(artifactPath, srcDir) {
-			return artifactPath, nil
-		}
-		if err := os.MkdirAll(testdataDir, 0o755); err != nil {
-			t.Fatalf("mkdir testdata: %v", err)
-		}
-
-		release := lockFixtureBuild(testdataDir, artifactName)
-		defer release()
-
-		if isFresh(artifactPath, srcDir) {
-			return artifactPath, nil
-		}
-
-		stageDir, err := newStageDir(testdataDir)
-		if err != nil {
-			t.Fatalf("stage local guest build for %s: %v", artifactName, err)
-		}
-		defer os.RemoveAll(stageDir)
-
-		staged := filepath.Join(stageDir, artifactName)
-		// GOWORK=off is what makes the guest's own go.mod authoritative: a Go
-		// workspace file in an enclosing directory does not enrol these
-		// single-file guest modules, and resolving them through it would either
-		// fail or bind them to whatever that workspace pins rather than to what
-		// the guest declares.
-		cmd := exec.Command("go", "build", "-buildmode=c-shared", "-o", staged, "./")
-		cmd.Dir = srcDir
-		cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("local guest build failed for %s at %s: %v\noutput:\n%s",
-				artifactName, srcDir, err, string(output))
-		}
-		if _, err := os.Stat(staged); err != nil {
-			t.Fatalf("local guest build for %s reported success but produced nothing at %s: %v",
-				artifactName, staged, err)
-		}
-		if err := publishArtifact(staged, artifactPath); err != nil {
-			t.Fatalf("publish local guest %s: %v", artifactName, err)
-		}
-		return artifactPath, nil
-	})
-	if skip != nil {
-		t.Fatalf("%v", skip)
 	}
 	return path
 }
@@ -347,7 +195,7 @@ func buildPDKFixture(t *testing.T, moduleRoot, siblingsDir, artifactName, socket
 // example's build script as its version stamp; empty builds the example's own
 // default.
 func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outName, socket, lang, version string) (string, error) {
-	testdataDir := fixtureDir(moduleRoot)
+	testdataDir := wasmfixture.FixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, outName)
 
 	sourceDir := filepath.Join(siblingsDir, "aggrega-pdk", lang, "examples", socket)
@@ -362,7 +210,7 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	// own source is untouched, so a regenerated PDK or ABI forces a
 	// rebuild rather than reusing a now-incompatible prebuilt fixture.
 	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, lang)
-	if isFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
+	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
 		return artifactPath, nil
 	}
 
@@ -385,14 +233,14 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	//
 	// Every test package is its own process and no in-process lock spans them,
 	// so this has to be a lock on the filesystem.
-	release := lockFixtureBuild(testdataDir, artifactName)
+	release := wasmfixture.LockFixtureBuild(testdataDir, artifactName)
 	defer release()
 
 	// Freshness is re-checked now the lock is held. A process that queued
 	// behind another builder finds that builder's finished artifact here and
 	// skips the build, so contention costs it a wait rather than a rebuild and
 	// only the first arrival pays the build cost.
-	if isFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
+	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
 		return artifactPath, nil
 	}
 
@@ -401,7 +249,7 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	// file readable while it is still being written. Aim it at a private
 	// staging directory instead and publish the finished artifact by
 	// rename.
-	stageDir, err := newStageDir(testdataDir)
+	stageDir, err := wasmfixture.NewStageDir(testdataDir)
 	if err != nil {
 		t.Fatalf("stage fixture build for %s: %v", artifactName, err)
 	}
@@ -436,7 +284,7 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 			artifactName, stageDir, err)
 	}
 
-	if err := publishArtifact(staged, artifactPath); err != nil {
+	if err := wasmfixture.PublishArtifact(staged, artifactPath); err != nil {
 		t.Fatalf("publish fixture %s: %v", artifactName, err)
 	}
 
@@ -504,7 +352,7 @@ func buildPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, na
 		t.Fatalf("plugin source missing at %s: %v, and no main.go beside it (a production plugin is a Cargo crate or a Go guest; absence is a regression)", manifestPath, err)
 	}
 
-	testdataDir := fixtureDir(moduleRoot)
+	testdataDir := wasmfixture.FixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, artifactName)
 
 	// Freshness watches the plugin's own src/ AND the path-dependency
@@ -513,12 +361,12 @@ func buildPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, na
 	// even though the plugin's own src/ is untouched, so a regenerated
 	// ABI forces a rebuild rather than reusing a now-incompatible
 	// prebuilt artifact. buildPluginArtifact knows the plugin's deps;
-	// isFresh stays a generic newest-mtime walk over the dirs it is given.
+	// wasmfixture.IsFresh stays a generic newest-mtime walk over the dirs it is given.
 	srcDir := filepath.Join(pluginDir, "src")
 	pdkSrc := filepath.Join(siblingsDir, "aggrega-pdk", "rust", "src")
 	abiSrc := filepath.Join(siblingsDir, "aggrega-abi", "rust", "src")
 
-	if isFresh(artifactPath, srcDir, pdkSrc, abiSrc) {
+	if wasmfixture.IsFresh(artifactPath, srcDir, pdkSrc, abiSrc) {
 		return artifactPath, nil
 	}
 
@@ -651,18 +499,18 @@ func isFreshAgainst(artifactPath string, paths []string) bool {
 // most of what it does in packages beside it under plugins/internal/, so a change
 // there rebuilds every guest importing the changed package and no other.
 //
-// There is no toolchain-absent skip, for the reason EnsureLocalGuestBuilt gives:
+// There is no toolchain-absent skip, for the reason [wasmfixture.EnsureLocalGuestBuilt] gives:
 // the standard Go toolchain targeting wasip1 is present whenever a test runs at
 // all, so any build failure is a hard test failure.
 func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, outName, name, version string) (string, error) {
 	t.Helper()
 	pluginDir := pluginSourceDir(moduleRoot, name)
-	testdataDir := fixtureDir(moduleRoot)
+	testdataDir := wasmfixture.FixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, outName)
 
 	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, "go")
 	fresh := func() bool {
-		if !isFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+		if !wasmfixture.IsFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
 			return false
 		}
 		inputs, err := guestModuleInputs(moduleRoot, name)
@@ -677,14 +525,14 @@ func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, 
 		t.Fatalf("mkdir testdata: %v", err)
 	}
 
-	release := lockFixtureBuild(testdataDir, artifactName)
+	release := wasmfixture.LockFixtureBuild(testdataDir, artifactName)
 	defer release()
 
 	if fresh() {
 		return artifactPath, nil
 	}
 
-	stageDir, err := newStageDir(testdataDir)
+	stageDir, err := wasmfixture.NewStageDir(testdataDir)
 	if err != nil {
 		t.Fatalf("stage Go guest build for %s: %v", outName, err)
 	}
@@ -702,7 +550,7 @@ func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, 
 	if _, err := os.Stat(staged); err != nil {
 		t.Fatalf("Go guest build for %s reported success but produced nothing at %s: %v", outName, staged, err)
 	}
-	if err := publishArtifact(staged, artifactPath); err != nil {
+	if err := wasmfixture.PublishArtifact(staged, artifactPath); err != nil {
 		t.Fatalf("publish Go guest %s: %v", outName, err)
 	}
 	return artifactPath, nil
@@ -777,7 +625,7 @@ func ForcePluginBuild(t *testing.T, name string) string {
 		t.Skipf("%v", skipErr)
 	}
 
-	artifactPath := filepath.Join(fixtureDir(moduleRoot), name+".wasm")
+	artifactPath := filepath.Join(wasmfixture.FixtureDir(moduleRoot), name+".wasm")
 	return publishPluginArtifact(t, pluginDir, name, artifactPath)
 }
 
@@ -852,54 +700,11 @@ func parsePluginArtifactName(name string) (pluginName string, ok bool) {
 	return stem, true
 }
 
-// ModuleRoot returns the root directory of the module this package belongs to:
-// the directory of the nearest Go module file at or above the test's working
-// directory. Every path a fixture build reads or writes inside this repository —
-// a plugin's source, the shared fixture directory, the module a Go guest is built
-// from — is joined onto it, so those paths resolve inside the repository however
-// it is checked out.
-//
-// The module file found must declare the module that holds this package. A test
-// whose working directory has moved outside the module fails here rather than
-// resolving its fixtures against an unrelated tree, which is why a test that
-// changes its working directory resolves its fixtures first.
+// ModuleRoot is [wasmfixture.ModuleRoot]: the root directory of this module,
+// which every in-repository fixture path is joined onto.
 func ModuleRoot(t testing.TB) string {
 	t.Helper()
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("locate the working directory: %v", err)
-	}
-	root, err := moduleRootAbove(cwd)
-	if err != nil {
-		t.Fatalf("resolve this module's root: %v", err)
-	}
-	return root
-}
-
-// moduleRootAbove is [ModuleRoot] from an explicit starting directory.
-func moduleRootAbove(start string) (string, error) {
-	root, modulePath, err := projectionparity.ModuleRoot(start)
-	if err != nil {
-		return "", err
-	}
-	if !strings.HasPrefix(ownImportPath, modulePath+"/") {
-		return "", fmt.Errorf("the module file nearest %s declares module %s, which does not hold %s",
-			start, modulePath, ownImportPath)
-	}
-	return root, nil
-}
-
-// ownImportPath is this package's import path, read from a type it declares
-// rather than spelled, so the check in moduleRootAbove follows the module if it
-// is renamed.
-var ownImportPath = reflect.TypeOf(moduleAnchor{}).PkgPath()
-
-// moduleAnchor carries this package's import path for ownImportPath.
-type moduleAnchor struct{}
-
-// fixtureDir is the shared fixture directory every layout publishes into.
-func fixtureDir(moduleRoot string) string {
-	return filepath.Join(moduleRoot, "internal", "wasm", "testdata")
+	return wasmfixture.ModuleRoot(t)
 }
 
 // pluginSourceDir is the source directory of the production plugin name.
@@ -932,58 +737,9 @@ func siblingCheckoutsDir() (string, error) {
 	}
 }
 
-// newStageDir creates a private directory for one build to write into,
-// nested inside destDir. Nesting is what makes the staging usable: a
-// finished artifact is published by renaming it to its final name, and a
-// rename is only atomic within a single filesystem, so the staging area has
-// to sit on the same one as the destination. The caller removes the
-// directory when the build is done with it.
-func newStageDir(destDir string) (string, error) {
-	root := filepath.Join(destDir, stageDirName)
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return "", err
-	}
-	return os.MkdirTemp(root, "build-")
-}
-
-// stageDirName is the staging area's fixed name so it can be ignored by
-// version control in one entry rather than by pattern.
-const stageDirName = ".stage"
-
-// lockFixtureBuild takes the cross-process lock for one artifact's build and
-// returns the release function the caller defers.
-//
-// The lock is per artifact rather than global, so unrelated fixtures still build
-// concurrently and only builders of the same fixture take turns. Keying on the
-// artifact name is keying on the shared directory it is built from: each
-// artifact name resolves to exactly one source directory under both supported
-// layouts, so two builds contend precisely when they would write the same
-// intermediate paths.
-//
-// The lock file sits in the staging area, which version control already ignores,
-// so holding a lock cannot leave the working tree dirty.
-func lockFixtureBuild(destDir, artifactName string) func() {
-	return filelock.Acquire(filepath.Join(destDir, stageDirName, artifactName+".lock"))
-}
-
-// publishArtifact moves a finished artifact from a staging path to the
-// shared path tests read it from.
-//
-// A rename swaps the destination name in a single step, so a reader in any
-// process opens either the previous artifact or the new one and never a
-// half-written file — and a reader that already has the old file open keeps
-// reading it intact.
-//
-// This covers the destination only. It says nothing about whether the bytes
-// being published are the right ones, because they were produced before the
-// rename; the build lock is what covers that.
-func publishArtifact(staged, dst string) error {
-	return os.Rename(staged, dst)
-}
-
 // publishArtifactCopy publishes a copy of src, for a source that has to stay
 // where it is because another tool owns it. The copy lands in the staging
-// area first and reaches dst through publishArtifact, so the destination is
+// area first and reaches dst through [wasmfixture.PublishArtifact], so the destination is
 // still only ever written by rename.
 func publishArtifactCopy(src, dst string) error {
 	in, err := os.Open(src)
@@ -992,7 +748,7 @@ func publishArtifactCopy(src, dst string) error {
 	}
 	defer in.Close()
 
-	stageDir, err := newStageDir(filepath.Dir(dst))
+	stageDir, err := wasmfixture.NewStageDir(filepath.Dir(dst))
 	if err != nil {
 		return err
 	}
@@ -1011,54 +767,5 @@ func publishArtifactCopy(src, dst string) error {
 		return err
 	}
 
-	return publishArtifact(staged, dst)
-}
-
-// isFresh returns true when artifactPath exists and its mtime is at or
-// after the latest mtime among the source files under every sourceDir.
-// Mtime-based freshness is sufficient for development cadence: a
-// source edit moves the mtime forward and forces a rebuild; a fresh
-// CI checkout has no artifact and forces a rebuild. The walker skips
-// hidden directories so build sidecars (e.g. .git, node_modules) and
-// cargo's own target/ dir don't pin freshness to unrelated changes.
-//
-// Callers pass every directory whose contents the artifact is built
-// from — the plugin's own source plus any path-dependency source trees
-// — so a change anywhere in the dependency closure forces a rebuild.
-func isFresh(artifactPath string, sourceDirs ...string) bool {
-	artifactInfo, err := os.Stat(artifactPath)
-	if err != nil {
-		return false
-	}
-	artifactMtime := artifactInfo.ModTime()
-
-	var newestSrc int64
-	for _, sourceDir := range sourceDirs {
-		err = filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				if strings.HasPrefix(d.Name(), ".") && path != sourceDir {
-					return filepath.SkipDir
-				}
-				if d.Name() == "target" {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			if t := info.ModTime().UnixNano(); t > newestSrc {
-				newestSrc = t
-			}
-			return nil
-		})
-		if err != nil {
-			return false
-		}
-	}
-	return artifactMtime.UnixNano() >= newestSrc
+	return wasmfixture.PublishArtifact(staged, dst)
 }

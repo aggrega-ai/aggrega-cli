@@ -31,7 +31,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -44,7 +44,7 @@ func echoGuestPath(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("abs guest source: %v", err)
 	}
-	return wasmtest.EnsureLocalGuestBuilt(t, src, "payload-echo-linter.wasm")
+	return wasmfixture.EnsureLocalGuestBuilt(t, src, "payload-echo-linter.wasm")
 }
 
 // echoDispatch is the production linter dispatch run at the echoing guest alone,

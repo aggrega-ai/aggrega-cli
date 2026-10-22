@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 )
 
 // omitsMarkReport is the name the guest gives the file it writes its account of the
@@ -49,7 +49,7 @@ func TestOmitsSensitiveMark_ABoundaryScopeEntryReadingASensitiveValueReachesTheP
 			// No skip path: the guest is plain Go targeting wasip1, which ships
 			// with every Go distribution, so a skip could only hide a proof that
 			// did not run.
-			b, err := os.ReadFile(wasmtest.EnsureLocalGuestBuilt(t, src, "omits-provider.wasm"))
+			b, err := os.ReadFile(wasmfixture.EnsureLocalGuestBuilt(t, src, "omits-provider.wasm"))
 			if err != nil {
 				t.Fatalf("read the built guest: %v", err)
 			}

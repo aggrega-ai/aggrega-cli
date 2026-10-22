@@ -14,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -43,7 +43,7 @@ func nonconformingProviderEngine(t *testing.T) renderer.Provider {
 	if err != nil {
 		t.Fatalf("resolve guest source: %v", err)
 	}
-	path := wasmtest.EnsureLocalGuestBuilt(t, src, "nonconforming-provider.wasm")
+	path := wasmfixture.EnsureLocalGuestBuilt(t, src, "nonconforming-provider.wasm")
 	guestBytes, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read guest %s: %v", path, err)

@@ -14,7 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -33,7 +33,7 @@ func guestBytes(t *testing.T, dir, artifact string) []byte {
 	if err != nil {
 		t.Fatalf("resolve guest source: %v", err)
 	}
-	b, err := os.ReadFile(wasmtest.EnsureLocalGuestBuilt(t, src, artifact))
+	b, err := os.ReadFile(wasmfixture.EnsureLocalGuestBuilt(t, src, artifact))
 	if err != nil {
 		t.Fatalf("read built guest %s: %v", artifact, err)
 	}
