@@ -244,8 +244,11 @@ type Catalog struct {
 // are silently skipped — the catalog tree may legitimately contain
 // non-entity YAML (catalog-conventions docs, fixture configs, build
 // metadata) and the loader does not assume every .yaml file is an entity.
-// Unknown kinds (e.g. "Manifest", "Release", or a typo'd kind) parse cleanly
-// and are also silently skipped — Manifest and Release are deployment-side
+// That skip reaches a file declaring an Aggrega apiVersion as well, which is
+// why the whole-catalog checks read every document through
+// [UnloadableDocument] themselves rather than relying on this load to refuse
+// one that does not parse. Unknown kinds (e.g. "Manifest", "Release", or a
+// typo'd kind) parse cleanly and are also silently skipped — Manifest and Release are deployment-side
 // entities loaded through different code paths and are expected to coexist
 // in some directory layouts.
 //
@@ -265,8 +268,10 @@ type Catalog struct {
 // work lets cross-document $ref expansion succeed regardless of filesystem
 // walk order: a Feature authored before its SchemaLibrary in walk order still
 // validates because the library is in the map by the time pillar validation
-// runs. Indexing-walk errors are fail-fast (a YAML parse failure aborts the
-// walk); pillar-validation errors are collected across entities and surfaced
+// runs. Indexing-walk errors are fail-fast (a file that cannot be read, or a
+// recognised entity whose document fails its kind's parse, aborts the walk; a
+// file whose YAML yields no kind header is skipped, per the error model above);
+// pillar-validation errors are collected across entities and surfaced
 // as a single aggregate CatalogError so authors fix all schema failures in one
 // editing pass.
 func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
@@ -1113,7 +1118,10 @@ type entityHeader struct {
 func (c *Catalog) indexFile(data []byte, path string) error {
 	var header entityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return nil // skip non-entity YAML files silently
+		// Passed over whatever the file declares, an Aggrega document included.
+		// A whole-catalog check refuses such a document itself, through
+		// UnloadableDocument, before it loads.
+		return nil
 	}
 	if c.entityBytes == nil {
 		c.entityBytes = make(map[string][]byte)

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -126,6 +129,48 @@ func TestWholeCatalogValidationRunsOncePerRelease(t *testing.T) {
 	}
 	if !strings.Contains(diag.String(), "core/no-such-parent") || !strings.Contains(diag.String(), "1 extends resolution error(s)") {
 		t.Errorf("the broken variant's reason is not on the diagnostic stream:\n%s", diag.String())
+	}
+}
+
+// TestWholeCatalogPerReleasePassesHaltOnAnAggregaDocumentTheyCannotLoad plants
+// an Aggrega document that does not parse in one of two catalog variants and
+// holds both whole-catalog scopes, run once per Release, to the halt over that
+// variant: lint stops with the document-load condition naming the file, and
+// validate reports the file under the failing Release's pass and names that
+// Release in its verdict, while the clean variant's pass still passes.
+func TestWholeCatalogPerReleasePassesHaltOnAnAggregaDocumentTheyCannotLoad(t *testing.T) {
+	t.Parallel()
+	rw := perReleaseCatalogWorkspace(t, twoVariantsConfig,
+		[]string{"release-a.yaml", "release-b.yaml", "release-off.yaml"},
+		map[string]string{
+			"variant-a/feature/secret-value.yaml": perReleaseFeature(""),
+			"variant-b/feature/secret-value.yaml": perReleaseFeature(""),
+			"variant-b/component/broken.yaml":     unloadableSyntaxComponent,
+		})
+	passes := serve.WholeCatalogPasses(rw, nil)
+	broken := filepath.Join("variant-b", "component", "broken.yaml")
+
+	var lintOut, lintDiag bytes.Buffer
+	lintErr := lintops.RunCatalogWide(context.Background(), rw, passes, nil, &lintOut, &lintDiag, nil)
+	if !errors.Is(lintErr, resolver.ErrYAMLLoad()) {
+		t.Errorf("whole-catalog lint over the broken variant did not halt on the document-load condition: %v", lintErr)
+	} else if chain := cerrors.CauseChain(lintErr); !strings.Contains(chain, broken) {
+		t.Errorf("whole-catalog lint halted without naming %s:\n%s", broken, chain)
+	}
+
+	var out, diag bytes.Buffer
+	err := validateCatalogPasses(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes, &diag, &out)
+	if err == nil {
+		t.Fatalf("whole-catalog validation passed a variant holding an Aggrega document it cannot load\nout:\n%s\ndiag:\n%s", out.String(), diag.String())
+	}
+	if got, want := err.Error(), "catalog validation failed in the catalog directories of release-b.yaml"; got != want {
+		t.Errorf("the verdict reads %q; want %q", got, want)
+	}
+	if !strings.Contains(diag.String(), broken) {
+		t.Errorf("the failing pass's reason does not name %s:\n%s", broken, diag.String())
+	}
+	if !strings.Contains(out.String(), "Release release-a.yaml reads variant-a\ncatalog validation passed") {
+		t.Errorf("the clean variant's pass did not pass:\n%s", out.String())
 	}
 }
 

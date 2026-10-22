@@ -48,13 +48,17 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // resolvedToolWorkspace resolves the workspace a validate tool call operates in,
@@ -317,6 +321,76 @@ spec:
 		}
 		if !reflect.DeepEqual(payload.Diagnostics, want) {
 			t.Fatalf("diagnostics diverge from core:\n payload: %#v\n core:    %#v", payload.Diagnostics, want)
+		}
+	})
+
+	// An Aggrega document the catalog cannot load halts the core before anything
+	// is checked, and the tool answers with that halt: the document-load
+	// condition and every such file, with a chart template in the same catalog
+	// passed over. The core is asserted through the condition's accessor; the
+	// tool's answer is text, so it is read for the condition's descriptive code,
+	// taken from the same accessor, and for the files.
+	t.Run("unloadable document", func(t *testing.T) {
+		s := newTestServer(t)
+		dir := t.TempDir()
+		writeCatalogFile(t, filepath.Join(dir, "component", "broken.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/compute/broken
+  version: "1.0.0"
+spec:
+  schema: values: [
+`)
+		writeCatalogFile(t, filepath.Join(dir, "component", "listed.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  - name: core/compute/listed
+spec: {}
+`)
+		writeCatalogFile(t, filepath.Join(dir, "chart", "templates", "ingress.yaml"), `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.targetName }}-ingress
+  {{- with .Values.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+`)
+		dirs := []string{dir}
+		tw := resolvedToolWorkspace(t, s, dir, dirs)
+
+		var res *callToolResult
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("the validate tool panicked: %v", r)
+				}
+			}()
+			res = callTool(t, s, "validate", validateArgs{
+				Catalog:       true,
+				WorkspaceRoot: dir,
+				CatalogDirs:   dirs,
+			})
+		}()
+		if !res.IsError {
+			t.Fatalf("the catalog scope answered a catalog it cannot load as a result: %s", res.Content[0].Text)
+		}
+		text := res.Content[0].Text
+		code, ok := cerrors.CodeOf(resolver.ErrYAMLLoad())
+		if !ok || !strings.Contains(text, code) {
+			t.Errorf("the tool's answer does not name the %s condition:\n%s", code, text)
+		}
+		for _, want := range []string{"broken.yaml", "listed.yaml"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("the tool's answer does not name %s:\n%s", want, text)
+			}
+		}
+		if strings.Contains(text, "ingress.yaml") {
+			t.Errorf("the tool's answer names the chart template:\n%s", text)
+		}
+
+		_, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named)
+		if !errors.Is(coreErr, resolver.ErrYAMLLoad()) {
+			t.Fatalf("the core did not halt on the document-load condition: %v", coreErr)
 		}
 	})
 }

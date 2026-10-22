@@ -33,6 +33,13 @@ var errInvalidParameterRef = cerrors.Register("invalid-parameter-ref", cerrors.M
 // Recipe's or FeatureRecipe's valuesMapping, workload or artifacts entry imports
 // — each of them a path an author wrote, and a file that yielded nothing to use.
 //
+// It also covers a document a whole-catalog check reads under the catalog
+// directories — whole-catalog lint and validate — when the document declares an
+// Aggrega apiVersion and cannot be read, does not parse, or does not decode into
+// the header the check reads. No author wrote a path to such a file; the check
+// read it because it sits there, and the failure and the remedy are the same
+// ones.
+//
 // One identity covers them all, and the reason is that neither the failure nor
 // the remedy varies with which key named the path: the file is absent,
 // unreadable or malformed, and what the author does is correct the path or
@@ -59,8 +66,9 @@ func ErrYAMLLoad() error { return errYAMLLoad }
 var errYAMLLoad = cerrors.Register("document-not-loadable", cerrors.Meta{
 	ShortCode: "E0175",
 	Message:   "file load failed: the file could not be read, or its bytes did not parse",
-	RulePlace: cerrors.NotARule("A file a build had to read could not be read, or its bytes could not be parsed, so the " +
-		"surface that named it was left with nothing to use. The file is opened when the load runs, " +
+	RulePlace: cerrors.NotARule("A file a build had to read, or an Aggrega document a whole-catalog check read under " +
+		"the catalog directories, could not be read, or its bytes could not be parsed, so the surface that named or " +
+		"read it was left with nothing to use. The file is opened when the load runs, " +
 		"and what it reports is a load that did not yield content."),
 })
 

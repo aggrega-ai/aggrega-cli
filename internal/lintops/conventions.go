@@ -591,12 +591,20 @@ func isLintableCatalogKind(kind string) bool {
 // checked and found clean.
 //
 // Anything else the walk passes over is absent from that count by design and is
-// skipped silently: a file that does not parse as an entity header, and a file
-// whose top-level kind is not one of the entity kinds at all. A catalog tree
-// legitimately carries YAML that is not an Aggrega document — chart values,
-// workflow definitions, editor configuration — and every such file names some
-// kind or none. Counting those would report the tree's ordinary contents as a
-// coverage gap.
+// skipped silently: a file that is not an Aggrega document, and a file whose
+// top-level kind is not one of the entity kinds at all. A catalog tree
+// legitimately carries YAML that is not an Aggrega document — chart values and
+// templates, workflow definitions, editor configuration — and every such file
+// names some kind or none. Counting those would report the tree's ordinary
+// contents as a coverage gap.
+//
+// An Aggrega document the walk cannot load is the one file it does not pass
+// over: [catalog.UnloadableDocument] decides which files those are, and the walk
+// reads every file before it halts with [catalog.UnloadableDocumentsHalt],
+// naming each of them and returning no file at all. A check over a tree that
+// returned the rest would report a clean catalog over a document it never read —
+// the one outcome its count would then misstate. The release-scoped pass walks
+// the same way and halts alike.
 //
 // cacheDir is the workspace's artifact cache location, interpreted relative to
 // wsRoot; the walk steps over it, so an entity resolved from a cache slot is
@@ -625,6 +633,7 @@ func isLintableCatalogKind(kind string) bool {
 // handed to the walk unjudged.
 func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
 	var files []catalogEntityFile
+	var unloadable []error
 	passedOver := map[string]int{}
 	seen := map[string]struct{}{}
 	for _, dir := range dirs {
@@ -632,17 +641,9 @@ func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []st
 			if serr := stopped(ctx); serr != nil {
 				return serr
 			}
-			data, rerr := os.ReadFile(path)
-			if rerr != nil {
-				return nil
-			}
-			var header lintEntityHeader
-			if uerr := yaml.Unmarshal(data, &header); uerr != nil {
-				return nil
-			}
-			// Identity is established before the kind gate so that a file reached
-			// twice — catalog directories are allowed to overlap — is counted once
-			// whichever side of the gate it falls on.
+			// Identity is established before anything is read so that a file reached
+			// twice — catalog directories are allowed to overlap — is read, counted
+			// and reported once whichever way it falls.
 			abs, aerr := filepath.Abs(path)
 			if aerr != nil {
 				abs = path
@@ -651,6 +652,15 @@ func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []st
 				return nil
 			}
 			seen[abs] = struct{}{}
+			data, rerr := os.ReadFile(path)
+			var header lintEntityHeader
+			if f := catalog.UnloadableDocument(path, data, rerr, &header); f != nil {
+				unloadable = append(unloadable, f)
+				return nil
+			}
+			if uerr := yaml.Unmarshal(data, &header); uerr != nil {
+				return nil
+			}
 			if !isLintableCatalogKind(header.Kind) {
 				if entitykind.IsKind(entitykind.Kind(header.Kind)) {
 					passedOver[header.Kind]++
@@ -676,6 +686,9 @@ func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []st
 			}
 			return nil, nil, fmt.Errorf("walk catalog directory %s: %w", dir, err)
 		}
+	}
+	if halt := catalog.UnloadableDocumentsHalt(unloadable); halt != nil {
+		return nil, nil, halt
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, passedOver, nil

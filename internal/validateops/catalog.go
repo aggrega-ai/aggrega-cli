@@ -5,6 +5,8 @@ package validateops
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -44,7 +46,16 @@ type CatalogResult struct {
 // input-kind). A catalog that cannot load at all is returned as an error. The
 // caller supplies the already-resolved workspace root, cache directory, catalog
 // search directories, and the part of them somebody named.
+//
+// Before anything is loaded, every document under dirs is read and an Aggrega
+// document that cannot be loaded halts the pass, naming each such file — see
+// unloadableCatalogDocuments. The load on its own passes over a file whose YAML
+// does not parse, as a build's load does, so without that walk the pass would
+// report a clean catalog over a document it never read.
 func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResult, error) {
+	if err := unloadableCatalogDocuments(wsRoot, cacheDir, dirs, named); err != nil {
+		return CatalogResult{}, err
+	}
 	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		return CatalogResult{}, err
@@ -75,6 +86,45 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 	// ResolveAllExtends). Informational only: advisories never escalate the exit
 	// code. Emission order is deterministic — the accumulator walks sorted keys.
 	return CatalogResult{Valid: true, Notices: cat.LintWarnings()}, nil
+}
+
+// unloadableCatalogDocuments walks dirs as the catalog's own walk reads them,
+// reads every document beneath them once, and returns the halt naming each
+// Aggrega document among them that cannot be loaded, or nil when there is none.
+// Which documents those are is [catalog.UnloadableDocument]'s answer, the same
+// one whole-catalog lint reads at its walk. The walk completes before it
+// halts, so every such file is named in one run rather than the first alone. A
+// file reached twice — catalog directories may overlap — is read and reported
+// once.
+//
+// A walk that stops early — on a link leading out of a directory's root — has
+// not read every document, so it raises nothing of its own and leaves the
+// refusal to the load that follows, which walks the same directories, stops on
+// the same link and reports it in the words a whole-catalog load always has.
+func unloadableCatalogDocuments(wsRoot, cacheDir string, dirs, named []string) error {
+	var found []error
+	seen := map[string]struct{}{}
+	for _, dir := range dirs {
+		err := catalog.WalkDocuments(wsRoot, dir, cacheDir, named, func(path string) error {
+			abs, aerr := filepath.Abs(path)
+			if aerr != nil {
+				abs = path
+			}
+			if _, dup := seen[abs]; dup {
+				return nil
+			}
+			seen[abs] = struct{}{}
+			data, rerr := os.ReadFile(path)
+			if f := catalog.UnloadableDocument(path, data, rerr, nil); f != nil {
+				found = append(found, f)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil
+		}
+	}
+	return catalog.UnloadableDocumentsHalt(found)
 }
 
 // InputKindCapabilityErrors reports each Recipe / FeatureRecipe that declares a
