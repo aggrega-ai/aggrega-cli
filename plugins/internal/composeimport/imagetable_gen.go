@@ -7,7 +7,7 @@ package composeimport
 
 // TableRevision is the aggrega-hub revision whose Compose Recipes and
 // Components the image table was generated from.
-const TableRevision = "83ab23a21d30ace1c5e958fb8b654d82dddf619d"
+const TableRevision = "f9771aaf7148b7beca7a30bb99cf1ed7c11bfd94"
 
 // imageTable maps each image repository the main container of a Compose
 // Recipe of the hub names literally to the Component the Recipe implements,
