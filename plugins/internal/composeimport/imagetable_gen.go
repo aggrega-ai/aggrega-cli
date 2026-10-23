@@ -7,7 +7,7 @@ package composeimport
 
 // TableRevision is the aggrega-hub revision whose Compose Recipes and
 // Components the image table was generated from.
-const TableRevision = "ae85413f178211075cb25c341dbe4a387d7b63c8"
+const TableRevision = "83ab23a21d30ace1c5e958fb8b654d82dddf619d"
 
 // imageTable maps each image repository the main container of a Compose
 // Recipe of the hub names literally to the Component the Recipe implements,
@@ -141,6 +141,7 @@ var imageTable = []imageRow{
 		"datastore.aggrega.ai/engine":             "vector",
 	}},
 	{Repository: "mysql", Component: "core/datastore/mysql", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 	}},
