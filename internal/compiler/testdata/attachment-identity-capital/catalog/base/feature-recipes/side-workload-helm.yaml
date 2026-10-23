@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: side-workload-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.id/side-workload
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: side:1.0
+        ports:
+          web: 9090
+    services:
+      default:
+        type: ClusterIP
+        ports:
+          web: 9090

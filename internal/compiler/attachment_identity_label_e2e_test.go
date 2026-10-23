@@ -16,9 +16,12 @@
 package compiler_test
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 )
@@ -339,6 +342,177 @@ func TestAttachmentIdentity_DetachingTheFeaturesRemovesExactlyTheirContributions
 			t.Errorf("the detached build still emits an attachment file at %q\nkeys:\n%s",
 				k, strings.Join(sortedKeys(detached.Artifacts), "\n"))
 		}
+	}
+}
+
+// capitalIdentityInput compiles the fixture whose host component and its one
+// Feature attachment are named with a capital: component `myApi`, attached under
+// `worker`, by a FeatureRecipe declaring a workload with a `default` Service.
+func capitalIdentityInput(target string) pipelinetest.Input {
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/attachment-identity-capital/release-" + target + ".yaml",
+		CatalogPaths: []string{"testdata/attachment-identity-capital/catalog/base"},
+	}
+}
+
+// capitalAttachmentIdentity is the identity the `worker` attachment on `myApi`
+// composes to: the capital written out as an escape, so the value is a resource
+// name as well as a label value. Written out here rather than composed, so a
+// composition that moved arrives as a failure rather than as agreement.
+const capitalAttachmentIdentity = "cfr--my-zx000041pi--worker"
+
+// rfc1123LabelName and rfc1035LabelName are the grammars the Kubernetes API
+// server holds a Deployment and a Service name to, written out rather than taken
+// from the compiler so the check is independent of what it checks.
+var (
+	rfc1123LabelName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	rfc1035LabelName = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
+)
+
+// emittedObject is the part of a rendered Kubernetes document these cases read.
+type emittedObject struct {
+	Kind     string `yaml:"kind"`
+	Metadata struct {
+		Name   string            `yaml:"name"`
+		Labels map[string]string `yaml:"labels"`
+	} `yaml:"metadata"`
+	Spec struct {
+		Selector yaml.Node `yaml:"selector"`
+		Template struct {
+			Metadata struct {
+				Labels map[string]string `yaml:"labels"`
+			} `yaml:"metadata"`
+		} `yaml:"template"`
+	} `yaml:"spec"`
+}
+
+// selectorLabels reads a selector in either of the two shapes a workload's
+// documents carry it: a Service's flat map, or a Deployment's matchLabels.
+func selectorLabels(t *testing.T, node yaml.Node) map[string]string {
+	t.Helper()
+	var flat map[string]any
+	if err := node.Decode(&flat); err != nil {
+		t.Fatalf("decode selector: %v", err)
+	}
+	out := map[string]string{}
+	if nested, ok := flat["matchLabels"].(map[string]any); ok {
+		flat = nested
+	}
+	for k, v := range flat {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// TestAttachmentIdentity_ACapitalInAnAuthoredNameReachesNoResourceName builds a
+// workload a Feature attachment synthesizes, under a host component named with a
+// capital, through the real helm provider, and reads every name it emitted.
+//
+// The cluster holds a Deployment's name to an RFC 1123 label and a Service's to an
+// RFC 1035 one, and neither admits a capital. The workload is named after the
+// attachment's composed identity, so the capital the author wrote has to be
+// written out there — and the labels and selectors, which carry the same value,
+// have to agree with the names, or the Service would select nothing. Each is read
+// from the emitted bytes. The capital spelling is also asserted absent from the
+// whole output, since a single surface still carrying it is a name a cluster
+// refuses while the build reports success.
+func TestAttachmentIdentity_ACapitalInAnAuthoredNameReachesNoResourceName(t *testing.T) {
+	t.Parallel()
+
+	res := pipelinetest.Build(t, capitalIdentityInput("helm"))
+	bodies := joinArtifactBodies(res.Artifacts)
+	if strings.Contains(bodies, "cfr--myApi") {
+		t.Errorf("the emitted output still spells the attachment's identity with its capital\n%s", bodies)
+	}
+
+	var controllers, services int
+	for _, k := range sortedKeys(res.Artifacts) {
+		dec := yaml.NewDecoder(strings.NewReader(string(res.Artifacts[k])))
+		for {
+			var obj emittedObject
+			if err := dec.Decode(&obj); err != nil {
+				break
+			}
+			if obj.Metadata.Labels["aggrega.ai/component-id"] != capitalAttachmentIdentity {
+				continue
+			}
+			for _, key := range []string{"aggrega.ai/component-id", "app.kubernetes.io/name", "app"} {
+				if got := obj.Metadata.Labels[key]; got != capitalAttachmentIdentity {
+					t.Errorf("%s %q in %s: label %s = %q, want %q", obj.Kind, obj.Metadata.Name, k, key, got, capitalAttachmentIdentity)
+				}
+			}
+			if sel := selectorLabels(t, obj.Spec.Selector); sel["app"] != capitalAttachmentIdentity {
+				t.Errorf("%s %q in %s selects %v, want app=%q", obj.Kind, obj.Metadata.Name, k, sel, capitalAttachmentIdentity)
+			}
+			switch obj.Kind {
+			case "Deployment":
+				controllers++
+				if obj.Metadata.Name != capitalAttachmentIdentity || !rfc1123LabelName.MatchString(obj.Metadata.Name) {
+					t.Errorf("the attachment's Deployment is named %q, want %q as a name the cluster accepts",
+						obj.Metadata.Name, capitalAttachmentIdentity)
+				}
+				if got := obj.Spec.Template.Metadata.Labels["app"]; got != capitalAttachmentIdentity {
+					t.Errorf("the attachment's pod template carries app=%q, want %q", got, capitalAttachmentIdentity)
+				}
+			case "Service":
+				services++
+				want := capitalAttachmentIdentity + "-default"
+				if obj.Metadata.Name != want || !rfc1035LabelName.MatchString(obj.Metadata.Name) {
+					t.Errorf("the attachment's Service is named %q, want %q as a name the cluster accepts", obj.Metadata.Name, want)
+				}
+			default:
+				t.Errorf("the attachment emitted an unexpected %s %q in %s", obj.Kind, obj.Metadata.Name, k)
+			}
+		}
+	}
+	if controllers != 1 || services != 1 {
+		t.Fatalf("the attachment emitted %d Deployment objects and %d Services, want one of each\nkeys:\n%s",
+			controllers, services, strings.Join(sortedKeys(res.Artifacts), "\n"))
+	}
+}
+
+// TestAttachmentIdentity_ACapitalInAnAuthoredNameReachesNoComposeServiceName is
+// the same build for the compose target, which names the attachment's service
+// after the same composed identity: the service key and its identity label carry
+// the escaped value, and the capital spelling appears nowhere in the document.
+func TestAttachmentIdentity_ACapitalInAnAuthoredNameReachesNoComposeServiceName(t *testing.T) {
+	t.Parallel()
+
+	res := pipelinetest.Build(t, capitalIdentityInput("compose"))
+	bodies := joinArtifactBodies(res.Artifacts)
+	if strings.Contains(bodies, "cfr--myApi") {
+		t.Errorf("the emitted output still spells the attachment's identity with its capital\n%s", bodies)
+	}
+
+	found := false
+	for _, k := range sortedKeys(res.Artifacts) {
+		var doc struct {
+			Services map[string]struct {
+				Labels map[string]string `yaml:"labels"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(res.Artifacts[k], &doc); err != nil {
+			continue
+		}
+		for name, svc := range doc.Services {
+			id := svc.Labels["aggrega.ai/component-id"]
+			if !strings.HasPrefix(id, "cfr--") {
+				continue
+			}
+			if name != capitalAttachmentIdentity || id != capitalAttachmentIdentity {
+				t.Errorf("the attachment's compose service is %q carrying component-id %q, want both %q",
+					name, id, capitalAttachmentIdentity)
+			}
+			if !rfc1123LabelName.MatchString(name) {
+				t.Errorf("the attachment's compose service %q is not an RFC 1123 label", name)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no compose document carries a service named %q\n%s", capitalAttachmentIdentity, bodies)
 	}
 }
 

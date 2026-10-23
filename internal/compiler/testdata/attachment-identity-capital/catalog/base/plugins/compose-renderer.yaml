@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: compose
+  version: 1.0.0
+  pluginType: provider
+  description: Provider-rendering plugin for the compose provider.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - compose
+  exports:
+    - name: render_node
+    - name: assemble_boundary
+  runtime:
+    maxMemoryPages: 4096
+    timeoutMs: 300000

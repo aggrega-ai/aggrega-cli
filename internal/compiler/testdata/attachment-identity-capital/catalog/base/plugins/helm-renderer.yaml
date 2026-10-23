@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm
+  version: 1.0.0
+  pluginType: provider
+  description: Provider-rendering plugin for the helm provider.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - helm
+  exports:
+    - name: render_node
+  runtime:
+    maxMemoryPages: 4096
+    timeoutMs: 300000

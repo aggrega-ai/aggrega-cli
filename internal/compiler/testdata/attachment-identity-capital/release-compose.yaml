@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: capital-identity-release-compose
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: capital-identity-app
+  manifest: capital-identity-manifest-compose
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        myApi: {}

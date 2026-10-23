@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: capital-identity-manifest-helm
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/host: host-helm:1.0.0
+    features:
+      type:
+        feature.id/side-workload: side-workload-helm:1.0.0

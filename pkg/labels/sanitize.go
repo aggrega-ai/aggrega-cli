@@ -12,9 +12,10 @@
 //
 // Where a value identifies something composed of several authored parts,
 // [ComposeComponentIdentity] COMPOSES it from those parts through an encoding
-// that writes out what the label alphabet refuses instead of folding it away —
-// so two identities differing at all reach two values, and the value reads back
-// into the parts it was built from.
+// that writes out what its alphabet — the lowercase letters and the digits —
+// refuses instead of folding it away, so two identities differing at all reach
+// two values, the value reads back into the parts it was built from, and it is a
+// resource name a target can spend as well as a label value.
 //
 // Where a value is a node identity, [EncodeNodeIdentity] writes it into the
 // alphabet every authored name already satisfies. A node one aggregate composes

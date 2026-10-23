@@ -45,7 +45,11 @@ import (
 // LabelComponentID is NOT encoded again, and must not be: it is already composed
 // through an encoding of its own, over its own alphabet, and encoding it a second
 // time would write out the join it was composed with and spell one identity two
-// ways.
+// ways. That alphabet is the lowercase letters and the digits, with every other
+// character — a capital included — written out as an escape, because a surface
+// naming the workload a Feature attachment synthesizes spends this value as a
+// resource name and a resource name admits no capital. So the value is returned
+// as carried, and it is already both a label value and a name a cluster accepts.
 //
 // It is NOT the value a target derives its own names from. That is
 // [TargetNameBasis], and reading this one in its place is the mistake the two

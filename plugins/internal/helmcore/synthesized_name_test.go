@@ -359,25 +359,74 @@ func TestSynthesizedWorkload_NamesEveryResourceAfterTheReleaseName(t *testing.T)
 // workload renders against its host's node identity, so a release name derived
 // there would name the attachment's resources after the host; it is named after
 // the attachment's composed identity instead, carried as it was composed.
+//
+// The rows carry a capital in the host's name, in the attachment's, and neither,
+// because the composed identity is spent here as the name of every resource the
+// workload emits and a resource name admits no capital. Each composed value is
+// written out literally, and every name the workload carries is held to the
+// grammar the API server holds it to — so an identity that kept a capital would
+// fail here with the build still green, which is exactly what a cluster would
+// otherwise be first to report.
 func TestSynthesizedWorkload_AnAttachmentKeepsItsComposedIdentity(t *testing.T) {
 	t.Parallel()
-	composed := labels.ComposeComponentIdentity(labels.AttachmentScope, 63, "kv", "sidecar")
-	nodeCtx := nodeCtxFor("kv")
-	nodeCtx.LabelComponentID = composed
+	for _, tc := range []struct {
+		host, attachment string
+		composed         string
+	}{
+		{host: "kv", attachment: "sidecar", composed: "cfr--kv--sidecar"},
+		{host: "myKv", attachment: "side", composed: "cfr--my-zx00004bv--side"},
+		{host: "kv", attachment: "mySide", composed: "cfr--kv--my-zx000053ide"},
+		{host: "kv", attachment: "my_side", composed: "cfr--kv--my-zuside"},
+	} {
+		t.Run(tc.host+"/"+tc.attachment, func(t *testing.T) {
+			t.Parallel()
+			composed := labels.ComposeComponentIdentity(labels.AttachmentScope, 63, tc.host, tc.attachment)
+			if composed != tc.composed {
+				t.Fatalf("the composed identity of %q with %q is %q, want %q", tc.host, tc.attachment, composed, tc.composed)
+			}
+			nodeCtx := nodeCtxFor(tc.host)
+			nodeCtx.LabelComponentID = composed
 
-	files, err := SynthesizeWorkloadCore(namingWorkload(rendercore.WorkloadFormStateless, "ca"), namingProvides(), nodeCtx)
-	if err != nil {
-		t.Fatalf("SynthesizeWorkloadCore: %v", err)
-	}
-	got := decodeSynthesized(t, files)
-	if got.stateless == nil || got.stateless.Metadata.Name != composed {
-		t.Fatalf("attachment Deployment %v, want it named %q", got.stateless, composed)
-	}
-	if releaseName(nodeCtx) == composed {
-		t.Fatalf("the host's release name %q equals the composed identity, so this case proves nothing", composed)
-	}
-	if svc := got.services[0].Metadata.Name; svc != composed+"-default" {
-		t.Errorf("attachment Service %q, want %q", svc, composed+"-default")
+			files, err := SynthesizeWorkloadCore(namingWorkload(rendercore.WorkloadFormStateless, "ca"), namingProvides(), nodeCtx)
+			if err != nil {
+				t.Fatalf("SynthesizeWorkloadCore: %v", err)
+			}
+			got := decodeSynthesized(t, files)
+			if got.stateless == nil || got.stateless.Metadata.Name != composed {
+				t.Fatalf("attachment Deployment %v, want it named %q", got.stateless, composed)
+			}
+			if releaseName(nodeCtx) == composed {
+				t.Fatalf("the host's release name %q equals the composed identity, so this case proves nothing", composed)
+			}
+			if name := got.stateless.Metadata.Name; !isSubdomainName(name) {
+				t.Errorf("attachment Deployment %q is not a name a Deployment may carry", name)
+			}
+			if len(got.services) != 1 {
+				t.Fatalf("attachment Services = %d, want the one default Service", len(got.services))
+			}
+			if svc := got.services[0].Metadata.Name; svc != composed+"-default" || !isLabelName(svc, rfc1035Label) {
+				t.Errorf("attachment Service %q, want %q as a name a Service may carry", svc, composed+"-default")
+			}
+			if len(got.claims) != 1 {
+				t.Fatalf("attachment claims = %d, want 1", len(got.claims))
+			}
+			if claim := got.claims[0].Metadata.Name; claim != composed+"-data" || !isSubdomainName(claim) {
+				t.Errorf("attachment claim %q, want %q as a name a claim may carry", claim, composed+"-data")
+			}
+			pod := got.stateless.Spec.Template
+			for _, v := range pod.Spec.Volumes {
+				if !isLabelName(v.Name, rfc1123Label) {
+					t.Errorf("attachment pod volume %q is not a name a pod volume may carry", v.Name)
+				}
+			}
+			selector := got.stateless.Spec.Selector.MatchLabels
+			if selector["app"] != composed || pod.Metadata.Labels["app"] != composed || !labelValue.MatchString(composed) {
+				t.Errorf("selector %v / pod labels %v, want app=%q on both as a valid label value", selector, pod.Metadata.Labels, composed)
+			}
+			if svcSel := got.services[0].Spec.Selector["app"]; svcSel != composed {
+				t.Errorf("attachment Service selects app=%q, want %q", svcSel, composed)
+			}
+		})
 	}
 }
 

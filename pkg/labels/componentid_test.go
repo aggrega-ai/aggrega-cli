@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegmenttest"
 )
 
@@ -264,10 +265,13 @@ func TestBoundaryScopeIdentity_ShorteningReservesAFixedRunAndKeepsTheHead(t *tes
 		t.Errorf("the boundary-path budget is %d, want %d", shippedBudget, want)
 	}
 
-	instance := strings.Repeat("i", 40) + "TAIL"
+	// The tail is lowercase so that it is carried through as written: a capital
+	// would be written out as an escape, and the check below that no tail survives
+	// would then pass whichever end the cut kept.
+	instance := strings.Repeat("i", 40) + "tail"
 	// Both the long-instance and the short-instance case below have to reach the
 	// shortened path, so the boundary path alone is over the limit.
-	path := []string{strings.Repeat("c", 80) + "TAIL"}
+	path := []string{strings.Repeat("c", 80) + "tail"}
 	got := boundaryID(instance, path)
 
 	regions := strings.Split(got, componentIdentityJoin)
@@ -283,7 +287,7 @@ func TestBoundaryScopeIdentity_ShorteningReservesAFixedRunAndKeepsTheHead(t *tes
 	if want := strings.Repeat("i", identityInstanceReserve); regions[2] != want {
 		t.Errorf("the instance region is %q, want the first %d written characters %q", regions[2], identityInstanceReserve, want)
 	}
-	if strings.Contains(got, "TAIL") {
+	if strings.Contains(got, "tail") {
 		t.Errorf("%q kept a tail, so the cut is not head-first", got)
 	}
 
@@ -547,6 +551,268 @@ func TestNodeIdentityBound_MeasuresWhatTheWrittenFormCosts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// k8sResourceNamePattern is what Kubernetes accepts as a resource name of the
+// strictest kind a composed value is spent as: an RFC 1123 label, lowercase
+// letters, digits and hyphens, opening and closing on a letter or a digit.
+// Written out here for the same reason the label-value pattern is.
+var k8sResourceNamePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// labelAlphabetEncoding is the segment encoding over the letters of BOTH cases
+// and the digits — the label-value alphabet — kept here as the comparison side
+// for the claim that only a part carrying a capital is written differently by
+// the composition's own, lowercase alphabet.
+//
+// It is a deliberate second encoding rather than a reading of the shipped one:
+// a comparison drawing both of its sides from one declaration agrees with itself
+// whatever that declaration holds.
+var labelAlphabetEncoding = namesegment.NewEncoding('-', func(r rune) bool {
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+})
+
+// hasCapital reports whether s carries an ASCII capital letter.
+func hasCapital(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			return true
+		}
+	}
+	return false
+}
+
+// assertComposedName holds one composed value to every rule a target spends it
+// under: a resource name, a label value, at most the bound, and opening on a
+// lowercase letter — the first character a Service name may carry.
+func assertComposedName(t *testing.T, what, got string) {
+	t.Helper()
+	if !k8sResourceNamePattern.MatchString(got) {
+		t.Errorf("%s: %q is not a name a Kubernetes resource may carry", what, got)
+	}
+	if !k8sLabelValuePattern.MatchString(got) {
+		t.Errorf("%s: %q is not a valid label value", what, got)
+	}
+	if len(got) > testIdentityBound {
+		t.Errorf("%s: %q is %d characters, over the %d bound", what, got, len(got), testIdentityBound)
+	}
+	if got == "" || got[0] < 'a' || got[0] > 'z' {
+		t.Errorf("%s: %q does not open on a lowercase letter", what, got)
+	}
+}
+
+// TestComposedIdentity_ACapitalIsWrittenOut pins what a capital in an authored
+// part becomes: an escape, as every other character a resource name refuses
+// already is, so the composed value is a name the cluster accepts.
+//
+// The expected values are written out literally rather than derived, so a
+// composition that moved would fail here rather than agree with itself. Every row
+// is also read back into its parts, because writing a capital out must not cost
+// the composition its injectivity, and held against the label-alphabet encoding,
+// which keeps the capital — so each row would fail were the capital carried
+// through.
+func TestComposedIdentity_ACapitalIsWrittenOut(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		scope ComponentIdentityScope
+		parts []string
+		want  string
+	}{
+		{"a capital in the host part", AttachmentScope, []string{"myApi", "worker"}, "cfr--my-zx000041pi--worker"},
+		{"a capital in the attachment part", AttachmentScope, []string{"kv", "mySide"}, "cfr--kv--my-zx000053ide"},
+		{"a capital opening the host part", AttachmentScope, []string{"Api", "worker"}, "cfr---zx000041pi--worker"},
+		{"a capital opening the attachment part", AttachmentScope, []string{"kv", "Side"}, "cfr--kv---zx000053ide"},
+		{"an underscore beside a capital", AttachmentScope, []string{"kv", "my_Side"}, "cfr--kv--my-zu-zx000053ide"},
+		{"capitals in every part of a boundary path", BoundaryFeatureScope, []string{"Prod", "EU", "Gateway"},
+			"bfr---zx000050rod---zx000045-zx000055---zx000047ateway"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ComposeComponentIdentity(tc.scope, testIdentityBound, tc.parts...)
+			if got != tc.want {
+				t.Fatalf("ComposeComponentIdentity(%q, %q) = %q, want %q", tc.scope.prefix, tc.parts, got, tc.want)
+			}
+			assertComposedName(t, tc.name, got)
+
+			want := append([]string{tc.scope.prefix}, tc.parts...)
+			read := namesegmenttest.ReadName(t, '-', got)
+			if strings.Join(read, "\x1f") != strings.Join(want, "\x1f") {
+				t.Errorf("%q read back as %q, want %q", got, read, want)
+			}
+
+			kept := labelAlphabetEncoding.Name(want...)
+			if kept == got {
+				t.Errorf("%q is what an alphabet keeping capitals writes too, so this row cannot tell the two apart", got)
+			}
+		})
+	}
+}
+
+// TestComposedIdentity_AShortenedValueWithACapitalIsAName holds the shortening
+// path to the same rule: a part long enough to be shortened, carrying capitals in
+// the region the cut keeps, still yields a resource name within the bound.
+//
+// Each row is asserted to have needed shortening, so a row that fitted cannot
+// pass while saying nothing about the cut. Two rows differing only in the case of
+// their letters are asserted apart, because the digest is taken over the written
+// identity and a capital is written differently from its lowercase letter.
+func TestComposedIdentity_AShortenedValueWithACapitalIsAName(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		scope ComponentIdentityScope
+		parts []string
+	}{
+		{"capitals in a long attachment part", AttachmentScope, []string{"kv", strings.Repeat("Side", 20)}},
+		{"capitals in a long host part", AttachmentScope, []string{strings.Repeat("Host", 20), "side"}},
+		{"capitals in a long boundary path", BoundaryFeatureScope, []string{strings.Repeat("Region", 15), "gateway"}},
+	} {
+		got := ComposeComponentIdentity(tc.scope, testIdentityBound, tc.parts...)
+		if plain := ComposeComponentIdentity(tc.scope, Unbounded, tc.parts...); len(plain) <= testIdentityBound {
+			t.Fatalf("%s: %q fits the bound, so the shortening path is not exercised", tc.name, plain)
+		}
+		assertComposedName(t, tc.name, got)
+		if !strings.HasPrefix(got, tc.scope.prefix+componentIdentityJoin) {
+			t.Errorf("%s: %q does not open with its scope", tc.name, got)
+		}
+
+		lower := make([]string, len(tc.parts))
+		for i, p := range tc.parts {
+			lower[i] = strings.ToLower(p)
+		}
+		if again := ComposeComponentIdentity(tc.scope, testIdentityBound, lower...); again == got {
+			t.Errorf("%s: %q is also what the lowercase parts %q reach", tc.name, got, lower)
+		}
+	}
+}
+
+// TestComposedIdentity_EveryInputYieldsAResourceName is the claim the alphabet
+// exists for, over the whole part corpus: whatever an author writes, under
+// either scope, the composed value is a Kubernetes resource name as well as a
+// label value.
+//
+// The corpus holds capitals as whole parts and inside them, alongside input that
+// is not valid UTF-8, so a composition carrying any character a resource name
+// refuses fails here naming the input that reached it.
+func TestComposedIdentity_EveryInputYieldsAResourceName(t *testing.T) {
+	t.Parallel()
+	sawCapital := false
+	for _, scope := range []ComponentIdentityScope{BoundaryFeatureScope, AttachmentScope} {
+		for _, last := range componentIDParts() {
+			for _, lead := range componentIDPaths() {
+				parts := append(append([]string{}, lead...), last)
+				sawCapital = sawCapital || hasCapital(strings.Join(parts, ""))
+				got := ComposeComponentIdentity(scope, testIdentityBound, parts...)
+				if !k8sResourceNamePattern.MatchString(got) || len(got) > testIdentityBound {
+					t.Errorf("scope %q parts %q -> %q is not a resource name of at most %d characters",
+						scope.prefix, parts, got, testIdentityBound)
+				}
+			}
+		}
+	}
+	if !sawCapital {
+		t.Fatal("the corpus carries no capital, so this proves nothing about one")
+	}
+}
+
+// authoredAttachmentNames is every host component and attachment name the
+// documentation examples and the standard-library catalog's Aggregates attach a
+// Feature under — none of them carrying a capital. They are the identities
+// deployed today, so they are the ones that must not move.
+var authoredAttachmentNames = [][2]string{
+	{"adminer", "dns-resolver"}, {"api", "auth_key"}, {"api", "credential"}, {"api", "crypt_key"},
+	{"api", "inner_api_key"}, {"api", "secret_key"}, {"api", "services_internal_key"}, {"app", "app_credentials"},
+	{"app", "identity"}, {"app", "shared-settings"}, {"app", "shared_config"}, {"assistant", "credential"},
+	{"auth", "api_key"}, {"auth", "credential"}, {"backend", "password"}, {"bridge", "gateway"},
+	{"broker", "password"}, {"bus", "password"}, {"cache", "password"}, {"chat", "credential"},
+	{"console", "auth_key"}, {"console", "crypt_key"}, {"counters", "credential"}, {"counters", "password"},
+	{"dashboards", "admin_password"}, {"data", "shared-settings"}, {"data", "shared_config"},
+	{"db", "app_user_password"}, {"db", "credential"}, {"db", "password"}, {"db", "root_password"},
+	{"db", "user_password"}, {"edge", "budget"}, {"embedder", "credential"}, {"embeddings", "api_key"},
+	{"embeddings", "credential"}, {"gateway", "admin_key"}, {"gateway", "budget"}, {"gateway", "credential"},
+	{"guard", "upstream_key"}, {"harbor.registry", "core_secret"}, {"harbor.registry", "secret_key"},
+	{"harbor.registry", "token_key"}, {"llm", "credential"}, {"masking-gateway", "masking"},
+	{"media", "api_secret"}, {"media", "credential"}, {"mobile", "auth_key"}, {"mobile", "crypt_key"},
+	{"model", "allowlist"}, {"objects", "credential"}, {"objstore", "root_password"},
+	{"payments-db", "root_password"}, {"payments-db", "storage-headroom"},
+	{"payments-db", "storage-headroom-strict"}, {"plugins", "credential"}, {"plugins", "plugin_daemon_key"},
+	{"query", "scrape"}, {"registry", "admin_password"}, {"registry", "csrf_key"},
+	{"registry", "jobservice_secret"}, {"registry", "registry_http_secret"}, {"replies", "credential"},
+	{"router", "answers"}, {"router", "api_key"}, {"router", "metrics"}, {"router", "provider_key"},
+	{"router", "published"}, {"router", "selection"}, {"router", "shield"}, {"router_model", "credential"},
+	{"runner", "credential"}, {"runner", "runner_token"}, {"s3", "credential"},
+	{"sandbox", "code_execution_key"}, {"sandbox", "credential"}, {"scheduler", "auth_key"},
+	{"scheduler", "crypt_key"}, {"search", "endpoint"}, {"server", "admin_password"},
+	{"services", "auth_key"}, {"services", "credential"}, {"services", "crypt_key"},
+	{"services", "services_internal_key"}, {"store", "root_password"}, {"summarizer", "credential"},
+	{"web", "db_binding"}, {"worker", "inner_api_key"}, {"worker", "secret_key"},
+	{"worker_queues", "auth_key"}, {"worker_queues", "crypt_key"}, {"worker_streams", "auth_key"},
+	{"worker_streams", "crypt_key"},
+}
+
+// TestComposedIdentity_ACapitalFreeIdentityIsUnchanged is the other half of the
+// rule: writing a capital out moves nothing else. An identity composed from parts
+// carrying no capital is the value an alphabet keeping capitals composes, byte for
+// byte, so every such identity already deployed keeps its name.
+//
+// Three sides are asserted. A handful of values the public documentation shows,
+// written out literally. Every name the documentation examples and the catalog
+// attach a Feature under, composed under both scopes and compared with the
+// label-alphabet encoding. And every capital-free part of the shared corpus,
+// compared one written segment at a time — the shortening path cuts written
+// segments, so two encodings writing every segment alike shorten alike too.
+func TestComposedIdentity_ACapitalFreeIdentityIsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		scope ComponentIdentityScope
+		parts []string
+		want  string
+	}{
+		{AttachmentScope, []string{"kv", "sidecar"}, "cfr--kv--sidecar"},
+		{AttachmentScope, []string{"app", "identity"}, "cfr--app--identity"},
+		{AttachmentScope, []string{"router", "gpt.credential"}, "cfr--router--gpt-zdcredential"},
+		{AttachmentScope, []string{"db", "root_password"}, "cfr--db--root-zupassword"},
+		{AttachmentScope, []string{"api", "mon"}, "cfr--api--mon"},
+		{AttachmentScope, []string{"payments-db", "storage-headroom"}, "cfr--payments-db--storage-headroom"},
+		{BoundaryFeatureScope, []string{"bridge", "gateway"}, "bfr--bridge--gateway"},
+		{BoundaryFeatureScope, []string{"prod", "eu", "gateway"}, "bfr--prod--eu--gateway"},
+		{BoundaryFeatureScope, []string{"stack", "aux"}, "bfr--stack--aux"},
+	} {
+		if got := ComposeComponentIdentity(tc.scope, testIdentityBound, tc.parts...); got != tc.want {
+			t.Errorf("ComposeComponentIdentity(%q, %q) = %q, want %q", tc.scope.prefix, tc.parts, got, tc.want)
+		}
+	}
+
+	for _, scope := range []ComponentIdentityScope{AttachmentScope, BoundaryFeatureScope} {
+		for _, pair := range authoredAttachmentNames {
+			if hasCapital(pair[0] + pair[1]) {
+				t.Fatalf("%q is in the capital-free corpus and carries a capital", pair)
+			}
+			got := ComposeComponentIdentity(scope, testIdentityBound, pair[0], pair[1])
+			want := labelAlphabetEncoding.Name(scope.prefix, pair[0], pair[1])
+			if len(want) > testIdentityBound {
+				t.Fatalf("%q composes to %d characters; the corpus is meant to fit so the comparison is whole", pair, len(want))
+			}
+			if got != want {
+				t.Errorf("scope %q parts %q moved: %q, where the label alphabet writes %q", scope.prefix, pair, got, want)
+			}
+		}
+	}
+
+	compared := 0
+	for _, part := range append(componentIDParts(), strings.Repeat("instance", 30), strings.Repeat("a_b.c-d", 20)) {
+		if hasCapital(part) {
+			continue
+		}
+		compared++
+		if got, want := componentIdentityEncoding.Segment(part), labelAlphabetEncoding.Segment(part); got != want {
+			t.Errorf("part %q is written as %q, where the label alphabet writes %q", part, got, want)
+		}
+	}
+	if compared == 0 {
+		t.Fatal("no capital-free part was compared")
 	}
 }
 

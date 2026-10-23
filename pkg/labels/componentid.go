@@ -89,22 +89,35 @@ const identityInstanceReserve = 12
 // kind of guarantee exactly where it was.
 const identityDigestLength = 10
 
-// componentIdentityEncoding writes an authored part into the characters a
-// Kubernetes label value admits, escaping every character the alphabet refuses
-// rather than substituting for it — so two parts differing at all reach two
-// written forms.
+// componentIdentityEncoding writes an authored part into the characters both a
+// Kubernetes label value and a Kubernetes resource name admit, escaping every
+// character the alphabet refuses rather than substituting for it — so two parts
+// differing at all reach two written forms.
 //
-// The admitted alphabet is the ASCII letters and the digits and nothing else,
-// which is deliberately narrower than the label-value charset. A label value
-// also carries an underscore, a dot and a hyphen, but it has to begin and end
-// with a letter or a digit; the hyphen is the encoding's own and no alphabet may
-// admit it; and admitting the underscore or the dot would let an authored part
-// END with one, leaving a composed value ending on a character the target
-// refuses. With the alphanumerics alone, every character a composition emits is
-// a letter, a digit or a hyphen, a written part never ends with a hyphen, and a
-// composition always opens with its scope — so a composed value is a valid label
-// value for every input by construction, rather than by a check that could be
-// reached with nothing left to return.
+// The admitted alphabet is the lowercase ASCII letters and the digits and nothing
+// else, [isComponentIdentityRune]. A capital letter is written out as an escape,
+// exactly as an underscore, a dot or any other character outside that set is.
+//
+// It is narrower than the label-value charset, and each exclusion has its own
+// reason. A label value also carries an underscore, a dot and a hyphen, but it has
+// to begin and end with a letter or a digit; the hyphen is the encoding's own and
+// no alphabet may admit it; and admitting the underscore or the dot would let an
+// authored part END with one, leaving a composed value ending on a character the
+// target refuses. A label value admits capitals, but a composed value is not only
+// a label: it is also spent as a NAME inside the cluster — the workload, Services
+// and claims a Feature attachment's synthesized workload is named after, and a
+// compose service — and a Kubernetes resource name admits no capital. With the
+// lowercase letters and the digits alone, every character a composition emits is
+// a lowercase letter, a digit or a hyphen, a written part never ends with a
+// hyphen, and a composition always opens with its scope — so a composed value
+// meets the character and edge rules of a label value and of a resource name for
+// every input by construction, rather than by a check that could be reached with
+// nothing left to return. Its length is the target's to bound, as stated below.
+//
+// A part carrying no capital is written exactly as an alphabet of the letters of
+// both cases would write it, because every character it holds is admitted, or
+// refused, by both alike — so of every part an author can write, only one holding
+// a capital is written differently by the two.
 //
 // The alphabet is held here while the LENGTH bound is not, and the asymmetry is
 // deliberate. A length is one target's limit: holding it here would apply it to
@@ -116,7 +129,18 @@ const identityDigestLength = 10
 // whose own derivation folds rather than escapes: an alphabet admitting the dot
 // would hand it a name it must fold, and two identities can fold to one. The
 // guest-side channel therefore carries lengths and grammars; the alphabet stays here.
-var componentIdentityEncoding = namesegment.NewEncoding('-', isAlphanumeric)
+var componentIdentityEncoding = namesegment.NewEncoding('-', isComponentIdentityRune)
+
+// isComponentIdentityRune reports whether a character is carried through
+// [componentIdentityEncoding] as itself: a lowercase ASCII letter or a digit.
+// Every other character, a capital letter included, is escaped.
+//
+// It is deliberately not [isAlphanumeric], which admits capitals: that predicate
+// states what a label value admits, and an authored identity is held to it where
+// it is authored, while a composed value has to be a resource name as well.
+func isComponentIdentityRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+}
 
 // nodeIdentityEncoding writes a node identity into the alphabet every authored
 // name already satisfies: the ASCII letters, the digits and the underscore.
@@ -302,12 +326,22 @@ func identityContextReserve(scope ComponentIdentityScope, bound, regions int) in
 //
 // The identity is COMPOSED from those parts rather than read out of any string
 // the compiler built for its own use, and that is what makes it injective. Each
-// part is written into the label alphabet by an encoding that escapes what the
-// alphabet refuses instead of folding it away, and the parts are assembled with
+// part is written into the identity alphabet — the lowercase ASCII letters and
+// the digits — by an encoding that escapes what the alphabet refuses, a capital
+// letter included, instead of folding it away, and the parts are assembled with
 // a join no written part can contain. So two identities differing at all — in a
 // character the alphabet refuses, in where one part ends and the next begins, in
 // how many parts there are — reach two identities, and reading an identity back
 // at its joins returns exactly the scope and parts it was built from.
+//
+// Every value composed here meets the character rules of a Kubernetes label
+// value and of a Kubernetes resource name at once: it carries only lowercase
+// letters, digits and hyphens,
+// opens with its scope and never ends with a hyphen. Both matter because a target
+// spends the value as a name as well as a label — a workload a Feature attachment
+// synthesizes is named after it — and a resource name admits no capital, so an
+// authored part's capital is written out as an escape rather than carried
+// through, and no other character a part holds is written differently for it.
 //
 // Two identities composed under DIFFERENT scopes can never meet, because an
 // identity opens with its scope written through the same encoding and the
@@ -430,7 +464,7 @@ func shortenComponentIdentity(plain string, scope ComponentIdentityScope, bound 
 // more often than they share their leading characters.
 //
 // The cut is by byte, which is exact here because a written region carries only
-// ASCII — an admitted character is an ASCII letter or digit, and every other
+// ASCII — an admitted character is a lowercase ASCII letter or a digit, and every other
 // character is written as an escape built from ASCII. The cutset is the join,
 // whose character is the only non-alphanumeric one a written region can carry.
 // Dropping a trailing one is for readability rather than validity: the digest

@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: capital-identity-app
+  version: "1.0.0"
+spec:
+  components:
+    myApi:
+      type: core/host
+      features:
+        worker:
+          type: feature.id/side-workload

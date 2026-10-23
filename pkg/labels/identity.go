@@ -115,8 +115,8 @@ func InspectComponentIdentity(identity string) (ComponentIdentityDefect, string)
 // name is written for, and this package has no target: the answer travels from
 // the guest that renders for one, which is what keeps a single target's number
 // from being applied to every target. What is left here is the character set and
-// the edge rule, which are properties of the identity alphabet the composition
-// itself writes into.
+// the edge rule, which are properties of a label value itself rather than of any
+// one target.
 func labelValueDefect(identity string) ComponentIdentityDefect {
 	if identity == "" {
 		return ComponentIdentityUsable
