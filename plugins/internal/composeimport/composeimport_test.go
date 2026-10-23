@@ -57,7 +57,7 @@ var catalog = &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
 		"component.aggrega.ai/hosting": "mixed", "component.aggrega.ai/upstream-licensing": "osi-approved"}},
 	{Name: "core/datastore/redis", Version: "1.0.0", Labels: map[string]string{
 		"component.aggrega.ai/type": "server", "component.aggrega.ai/category": "datastore",
-		"datastore.aggrega.ai/engine": "kv", "component.aggrega.ai/upstream-licensing": "osi-approved"}},
+		"datastore.aggrega.ai/engine": "kv", "component.aggrega.ai/upstream-licensing": "mixed"}},
 }}
 
 // catalogHoldingTheRuntime is catalog with the standard library's Docker Model
