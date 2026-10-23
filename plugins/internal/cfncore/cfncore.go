@@ -842,6 +842,24 @@ func decodeToValue(content []byte) (any, error) {
 	return nodeToValue(root.Content[0])
 }
 
+// readProvidesValue reads one provides value — the text a producer's Recipe wrote
+// for a key — the way the provides-to-Outputs projection reads that text in a
+// fragment's own provides block: decoded as YAML, with a short-form intrinsic tag
+// expanded to its long form. It returns the decoded value and reports whether that
+// value is one CloudFormation intrinsic — a Ref, a Condition or an Fn:: function —
+// so a short-form tag and a long-form mapping read alike. Text that does not
+// decode is plain text, returned as it stands.
+func readProvidesValue(text string) (value any, intrinsic bool) {
+	v, err := decodeToValue([]byte(text))
+	if err != nil {
+		return text, false
+	}
+	if m, ok := v.(map[string]any); ok && isIntrinsicObject(m) {
+		return m, true
+	}
+	return v, false
+}
+
 // nodeToValue converts one YAML node to a plain Go value, resolving aliases and
 // expanding a CloudFormation short-form intrinsic tag into its long-form object
 // spelling.

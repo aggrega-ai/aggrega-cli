@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
@@ -336,4 +337,66 @@ func TestHostGuestWireParity_LinkEdge(t *testing.T) {
 		t.Fatalf("compiler-side encode: %v", err)
 	}
 	crossSide(t, "LinkPublishInput", got, &abi.LinkPublishInput{})
+}
+
+// TestHostGuestWireParity_LinkEdgeReadProvidesKeys holds the compiler side's link
+// payload to the shared vectors that carry it, with and without the list of
+// provides keys a consuming template read. Each vector's binary half is decoded
+// strictly by the compiler side and re-encoded to the same bytes, its JSON half
+// is decoded and re-encoded to the same document, and the compiler side's bytes
+// cross to the plugin side unchanged. The vector without the list staying
+// byte-identical, with no key for the list on either wire, is what shows the
+// field costs a payload that does not carry it nothing.
+func TestHostGuestWireParity_LinkEdgeReadProvidesKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		vector   string
+		wantKeys []string
+	}{
+		{vector: "MapOrderLinkEdgeReadProvidesKeys", wantKeys: []string{"d", "bbbb", "cc"}},
+		{vector: "MapOrderLinkEdge"},
+	} {
+		t.Run(tc.vector, func(t *testing.T) {
+			t.Parallel()
+
+			wantCBOR, err := hex.DecodeString(string(sharedVector(t, tc.vector+".cbor.hex")))
+			if err != nil {
+				t.Fatalf("read the vector's binary half: %v", err)
+			}
+			var fromCBOR rendercore.LinkEdge
+			if err := fromCBOR.DecodeCBORStrict(wantCBOR); err != nil {
+				t.Fatalf("compiler-side strict decode of the shared vector: %v", err)
+			}
+			if !slices.Equal(fromCBOR.ReadProvidesKeys, tc.wantKeys) {
+				t.Errorf("compiler side decoded read_provides_keys %q, want %q", fromCBOR.ReadProvidesKeys, tc.wantKeys)
+			}
+			gotCBOR, err := fromCBOR.EncodeCBOR()
+			if err != nil {
+				t.Fatalf("compiler-side re-encode: %v", err)
+			}
+			if !bytes.Equal(wantCBOR, gotCBOR) {
+				t.Errorf("the compiler side does not write the shared vector's bytes:\n vector: %s\n    got: %s",
+					hex.EncodeToString(wantCBOR), hex.EncodeToString(gotCBOR))
+			}
+
+			wantJSON := sharedVector(t, tc.vector+".golden.json")
+			var fromJSON rendercore.LinkEdge
+			if err := fromJSON.UnmarshalJSONStrict(wantJSON); err != nil {
+				t.Fatalf("compiler-side strict decode of the JSON document: %v", err)
+			}
+			gotJSON, err := json.Marshal(fromJSON)
+			if err != nil {
+				t.Fatalf("compiler-side JSON re-encode: %v", err)
+			}
+			if !bytes.Equal(wantJSON, gotJSON) {
+				t.Errorf("the compiler-side JSON wire moved:\n vector: %s\n    got: %s", wantJSON, gotJSON)
+			}
+			if tc.wantKeys == nil && bytes.Contains(gotJSON, []byte(`"read_provides_keys"`)) {
+				t.Errorf("an absent list reached the JSON wire: %s", gotJSON)
+			}
+
+			crossSide(t, tc.vector, gotCBOR, &abi.LinkEdge{})
+		})
+	}
 }

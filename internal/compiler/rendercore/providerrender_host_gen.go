@@ -467,6 +467,8 @@ type LinkEdge struct {
 	Provides types.OrderedMap[string] `json:"provides" yaml:"provides" cbor:"provides"`
 	// Inject The consuming endpoint's inject mapping, keyed by delivery mechanism to an author-ordered key set, describing how the consuming end receives the consumed endpoint's output. Preserves author order so the payload is byte-identical across runs of identical input.
 	Inject types.OrderedMap[types.OrderedMap[string]] `json:"inject" yaml:"inject" cbor:"inject"`
+	// ReadProvidesKeys The keys of the consumed endpoint's provides output that the consuming endpoint's templates read directly through .context.uses, whether or not the inject mapping also delivers them, in the author order of provides. Each entry is one of the keys provides carries. The list rides on the edge so the producer-side publish and the consumer-side resolve read one list. Absent when the consuming endpoint read no provides key directly, and a provider handed none wires the link exactly as it would if the field did not exist.
+	ReadProvidesKeys []string `json:"read_provides_keys,omitempty" yaml:"read_provides_keys,omitempty" cbor:"read_provides_keys,omitempty"`
 }
 
 // LinkPatch One per-file structural patch a provider returns as artifact wiring: the output file and the ordered structural operations to apply to it. A later host pass carves the named file, applies the operations, and reassembles it byte-faithfully. The operation shape is the shared pipeline patch-operation vocabulary; it is opaque at this schema layer, so a guest carries each operation verbatim while the host realizes the typed operation its pipeline applies.
@@ -5202,6 +5204,22 @@ func (t LinkEdge) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if len(t.ReadProvidesKeys) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"read_provides_keys\":")
+		buf.WriteByte('[')
+		for i := range t.ReadProvidesKeys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.ReadProvidesKeys[i]
+			writeJSONString(&buf, ev)
+		}
+		buf.WriteByte(']')
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -5300,6 +5318,23 @@ func (t *LinkEdge) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "read_provides_keys":
+			t.ReadProvidesKeys = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					elem = s
+				}
+				t.ReadProvidesKeys = append(t.ReadProvidesKeys, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -5319,7 +5354,7 @@ func (t *LinkEdge) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *LinkEdge) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "source", "target", "target_annotations", "source_annotations", "socket", "provides", "inject"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "source", "target", "target_annotations", "source_annotations", "socket", "provides", "inject", "read_provides_keys"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -10522,6 +10557,9 @@ func (t LinkEdge) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t LinkEdge) appendCBOR(dst []byte) ([]byte, error) {
 	n := 5
+	if len(t.ReadProvidesKeys) != 0 {
+		n++
+	}
 	if len(t.SourceAnnotations) != 0 {
 		n++
 	}
@@ -10558,6 +10596,14 @@ func (t LinkEdge) appendCBOR(dst []byte) ([]byte, error) {
 		dst = appendCBORHead(dst, 4, 2)
 		dst = appendCBORTextString(dst, k)
 		dst = appendCBORTextString(dst, mv)
+	}
+	if len(t.ReadProvidesKeys) != 0 {
+		dst = appendCBORTextString(dst, "read_provides_keys")
+		dst = appendCBORHead(dst, 4, uint64(len(t.ReadProvidesKeys)))
+		for i := range t.ReadProvidesKeys {
+			ev := t.ReadProvidesKeys[i]
+			dst = appendCBORTextString(dst, ev)
+		}
 	}
 	if len(t.SourceAnnotations) != 0 {
 		dst = appendCBORTextString(dst, "source_annotations")
@@ -10739,6 +10785,24 @@ func (t *LinkEdge) decodeCBOR(dec *cborDec) error {
 				}
 				t.Inject = om
 			}
+		case "read_provides_keys":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.ReadProvidesKeys = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -10755,7 +10819,7 @@ func (t *LinkEdge) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *LinkEdge) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "source", "target", "target_annotations", "source_annotations", "socket", "provides", "inject"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "source", "target", "target_annotations", "source_annotations", "socket", "provides", "inject", "read_provides_keys"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

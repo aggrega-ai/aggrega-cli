@@ -27,16 +27,22 @@ const (
 )
 
 // LinkPublish produces the producer-side wiring for one cross-boundary link on
-// the consumed (target) endpoint's side: for each output key the consuming edge
-// injects, it adds an Export to that key's stack Output and records the export
-// name — plus the producer stack name — in the published handle the consumer
-// resolves against. The Output itself already exists from the provides-to-Outputs
-// projection at assembly; the publish adds only the Export block that makes the
-// Output importable across stacks. It is addressed by the same node-and-entry
-// name the projection gave it ([OutputLogicalID]), which the consumed node's id
-// and the output key together determine — so the publish reaches the right
-// producer's output even where another node in the same stack exports the same
-// key.
+// the consumed (target) endpoint's side: for each key the link carries across as
+// a cross-stack reference ([linkedKeys] — every output key the consuming edge
+// injects, and every key the consuming templates read off the edge whose value is
+// a CloudFormation intrinsic), it adds an Export to that key's stack Output and
+// records the export name — plus the producer stack name — in the published
+// handle the consumer resolves against. A key read off the edge whose value is
+// plain text gets no Export: the resolve writes its value back in place. The
+// Output itself already exists from the provides-to-Outputs projection at
+// assembly; the publish adds only the Export block that makes the Output
+// importable across stacks. It is addressed by the same node-and-entry name the
+// projection gave it ([OutputLogicalID]), which the consumed node's id and the
+// output key together determine — so the publish reaches the right producer's
+// output even where another node in the same stack exports the same key. A key
+// whose producer's fragment projects no Output for it gets the same Export
+// operation, and applying it halts naming the Output it could not find, whether
+// the key was injected or read.
 //
 // The export and stack names carry the consumed endpoint's Release as their
 // leading scope segment, so two distinct Releases sharing an account and region —
@@ -66,7 +72,11 @@ const (
 // carrying no stack template yield no comparison, which is the answer whenever
 // the host has no assembled producer output to hand the publish.
 func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFile) (rendercore.LinkPublishOutput, error) {
-	keys := injectedOutputKeys(edge)
+	linked, err := linkedKeys(edge)
+	if err != nil {
+		return rendercore.LinkPublishOutput{}, err
+	}
+	keys := linked.referenced
 	var authored []authoredExport
 	if stack, ok := findStackFile(producerFiles); ok {
 		authored = authoredExportNames(stack)
@@ -147,24 +157,41 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 }
 
 // LinkResolve produces the consumer-side wiring for one cross-boundary link on
-// the consuming (source) endpoint's side: for each output key the edge injects,
-// it locates the deterministic placeholder the host stamped into the consuming
-// stack and replaces it with a CloudFormation cross-stack reference. Both ends'
-// placement annotations select the reference shape: only when both ends declare
-// a placement (account or region) and those placements differ is the value read
-// with Fn::GetStackOutput against the producer stack, output, region, and
-// assume-role — the producer (target) side supplies the region and assume-role,
-// and the output is named as the producer stack named it ([OutputLogicalID]);
-// otherwise the value is imported with Fn::ImportValue against the published
-// export name. A placement declared on only one end, or matching placements on
-// both, resolves to the same-placement import. Every reference field is a
-// deterministic pointer string the compiler pipes and the runtime resolves.
+// the consuming (source) endpoint's side. For each key the link carries across as
+// a cross-stack reference ([linkedKeys] — every output key the edge injects, and
+// every key the consuming templates read off the edge whose value is a
+// CloudFormation intrinsic), it locates the deterministic placeholder the host
+// stamped into the consuming stack and replaces it with a CloudFormation
+// cross-stack reference. Both ends' placement annotations select the reference
+// shape: only when both ends declare a placement (account or region) and those
+// placements differ is the value read with Fn::GetStackOutput against the
+// producer stack, output, region, and assume-role — the producer (target) side
+// supplies the region and assume-role, and the output is named as the producer
+// stack named it ([OutputLogicalID]); otherwise the value is imported with
+// Fn::ImportValue against the published export name. A placement declared on
+// only one end, or matching placements on both, resolves to the same-placement
+// import. Every reference field is a deterministic pointer string the compiler
+// pipes and the runtime resolves.
 //
-// A placeholder that survives only inside a larger string halts loudly: a
-// cross-reference is an intrinsic object and can replace only a whole scalar. A
-// placeholder absent from the consumer stack contributes no operation — the
-// consumer did not render that injected value, so there is nothing to wire.
+// A placeholder of such a key that survives only inside a larger string halts
+// loudly: a cross-reference is an intrinsic object and can replace only a whole
+// scalar. A placeholder absent from the consumer stack contributes no operation —
+// the consumer did not render that value, so there is nothing to wire.
+//
+// For each key the consuming templates read off the edge whose value is plain
+// text, and which the edge does not also inject, the value is written back in
+// place of its placeholder: a whole-scalar placeholder becomes the value as the
+// provides-to-Outputs projection reads it, so a port written as a number lands as
+// a number, and a placeholder inside a larger string becomes the text the
+// producer wrote. The consumer then carries the producer's value itself, which
+// means the same in its stack as in the producer's, and the publish exports
+// nothing for such a key. A key both injected and read follows the injected rule
+// at every occurrence.
 func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFiles []rendercore.RenderedFile) (rendercore.LinkResolveOutput, error) {
+	linked, err := linkedKeys(edge)
+	if err != nil {
+		return rendercore.LinkResolveOutput{}, err
+	}
 	stack, ok := findStackFile(consumerFiles)
 	if !ok {
 		return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
@@ -184,16 +211,16 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	crossAccountOrRegion := targetDeclared && sourceDeclared && differ
 
 	ops := make([]frp.JSONPatchOp, 0)
-	for _, outputKey := range injectedOutputKeys(edge) {
+	for _, outputKey := range linked.referenced {
 		sentinel := rendercore.CrossBoundaryLinkSentinel(edge.Source.Node, edge.Target.Node, edge.Socket, outputKey)
 		paths, interpolated := findSentinelPaths(doc, sentinel)
-		if interpolated {
+		if len(interpolated) > 0 {
 			return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
 				cerrors.TranslationError, cerrors.SourceLocation{},
 				fmt.Sprintf("cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key %q on socket %q", outputKey, edge.Socket))
 		}
 		if len(paths) == 0 {
-			// The consumer did not render this injected value; nothing to wire.
+			// The consumer did not render this value; nothing to wire.
 			continue
 		}
 		var value any
@@ -217,6 +244,42 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 			})
 		}
 	}
+	// A string carrying several plain placeholders is rewritten once, with every
+	// one written back, so no operation replaces a string an earlier one already
+	// replaced. Strings are kept in the order they are first met, which the walk
+	// order and the read order together fix.
+	var rewrittenPaths []string
+	rewritten := map[string]string{}
+	for _, read := range linked.plain {
+		sentinel := rendercore.CrossBoundaryLinkSentinel(edge.Source.Node, edge.Target.Node, edge.Socket, read.key)
+		paths, interpolated := findSentinelPaths(doc, sentinel)
+		for _, path := range paths {
+			ops = append(ops, frp.JSONPatchOp{
+				Scope: frp.DocumentScopeOwn,
+				Key:   StackTemplateName,
+				Op:    "replace",
+				Path:  path,
+				Value: read.value,
+			})
+		}
+		for _, s := range interpolated {
+			current, seen := rewritten[s.path]
+			if !seen {
+				current = s.text
+				rewrittenPaths = append(rewrittenPaths, s.path)
+			}
+			rewritten[s.path] = strings.ReplaceAll(current, sentinel, read.text)
+		}
+	}
+	for _, path := range rewrittenPaths {
+		ops = append(ops, frp.JSONPatchOp{
+			Scope: frp.DocumentScopeOwn,
+			Key:   StackTemplateName,
+			Op:    "replace",
+			Path:  path,
+			Value: rewritten[path],
+		})
+	}
 	out := rendercore.LinkResolveOutput{}
 	if len(ops) > 0 {
 		out.Patches = []rendercore.LinkPatch{{File: StackTemplateName, Ops: ops}}
@@ -224,10 +287,84 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	return out, nil
 }
 
+// edgeLinkKeys is how one cross-boundary link wires the consumed endpoint's
+// provides keys.
+type edgeLinkKeys struct {
+	// referenced are the keys carried across as a cross-stack reference: the
+	// publish exports each and the resolve replaces each placeholder with a
+	// reference to that export. Sorted, so the publish operations and handle
+	// entries are byte-identical across runs of identical input.
+	referenced []string
+	// plain are the keys read off the edge, not injected, whose value is plain
+	// text, in the order the edge lists them.
+	plain []plainReadKey
+}
+
+// plainReadKey is one key a consuming template read off the edge whose value is
+// plain text: the text the producer wrote, which is what a placeholder inside a
+// larger string is written back as, and that text as the provides-to-Outputs
+// projection reads it, which is what a whole-scalar placeholder is written back
+// as.
+type plainReadKey struct {
+	key   string
+	text  string
+	value any
+}
+
+// linkedKeys splits an edge's provides keys into the two ways the link wires
+// them. Every key the edge injects is referenced, as it always is. Every key the
+// consuming templates read directly off the edge — the edge's read-keys list —
+// and which the edge does not also inject is referenced when its value is a
+// CloudFormation intrinsic and plain otherwise. A key both injected and read is
+// referenced once, by the injected rule.
+//
+// The intrinsic-or-plain decision is made here, in the provider, rather than by
+// the host: the host hands every provides value as the text the producer's
+// Recipe wrote and reads none of it, and only CloudFormation's own reading tells a
+// value naming a resource in the producer's stack — which the consumer's stack
+// cannot resolve — from a value that means the same thing in any stack. The
+// reading is the one the provides-to-Outputs projection applies
+// ([readProvidesValue]), so a key is referenced exactly when the producer's stack
+// Output for it carries an intrinsic.
+//
+// A read key the edge's provides does not carry halts: it names a value the host
+// never delivered, so there is nothing to wire it to.
+func linkedKeys(edge rendercore.LinkEdge) (edgeLinkKeys, error) {
+	injected := injectedOutputKeys(edge)
+	carried := make(map[string]bool, len(injected)+len(edge.ReadProvidesKeys))
+	for _, key := range injected {
+		carried[key] = true
+	}
+	referenced := append([]string(nil), injected...)
+	var plain []plainReadKey
+	for _, key := range edge.ReadProvidesKeys {
+		if carried[key] {
+			continue
+		}
+		carried[key] = true
+		text, ok := edge.Provides.Get(key)
+		if !ok {
+			return edgeLinkKeys{}, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+				cerrors.TranslationError, cerrors.SourceLocation{},
+				fmt.Sprintf("cloudformation-provider: cross-boundary link lists provides key %q as read by component %q off its edge on socket %q, but component %q provides no such key",
+					key, edge.Source.Node, edge.Socket, edge.Target.Node))
+		}
+		value, intrinsic := readProvidesValue(text)
+		if intrinsic {
+			referenced = append(referenced, key)
+			continue
+		}
+		plain = append(plain, plainReadKey{key: key, text: text, value: value})
+	}
+	sort.Strings(referenced)
+	return edgeLinkKeys{referenced: referenced, plain: plain}, nil
+}
+
 // injectedOutputKeys returns the sorted, de-duplicated set of consumed output
 // keys the edge injects across its env, file, and arg mechanisms — the keys the
-// producer must export and the consumer must resolve. Sorting makes the publish
-// operations and handle entries byte-identical across runs of identical input.
+// producer must export and the consumer must resolve whatever their value.
+// Sorting makes the publish operations and handle entries byte-identical across
+// runs of identical input.
 func injectedOutputKeys(edge rendercore.LinkEdge) []string {
 	seen := map[string]struct{}{}
 	for _, mech := range []string{"env", "file", "arg"} {
@@ -345,15 +482,24 @@ func ownExportClause(edge rendercore.LinkEdge, outputKey, exportName, found stri
 		exportName, outputKey, edge.Target.Node, edge.Target.Boundary, edge.Target.Release, found)
 }
 
+// interpolatedString is one string in a decoded document that carries a
+// placeholder inside larger text: its RFC 6901 pointer and the string as it
+// stands.
+type interpolatedString struct {
+	path string
+	text string
+}
+
 // findSentinelPaths walks a decoded JSON document for the placeholder token and
-// returns the RFC 6901 pointer to every whole-scalar occurrence, in walk order (map
-// keys walked in sorted order, list items in their own, so the result is
-// deterministic), and whether the token appears inside a larger string anywhere. A
+// returns the RFC 6901 pointer to every whole-scalar occurrence, and every string
+// carrying the token inside larger text, each in walk order (map keys walked in
+// sorted order, list items in their own, so the result is deterministic). A
 // whole-scalar occurrence is a replaceable target, and every one is replaced: a
 // value a sourced template's parameter was bound to lands wherever the template
 // referenced the parameter, which can be several places. An interpolated
-// occurrence cannot carry an intrinsic, and the caller halts on it.
-func findSentinelPaths(doc any, sentinel string) (paths []string, interpolated bool) {
+// occurrence cannot carry an intrinsic, so the caller halts on one for a key it
+// references, and writes plain text into one for a key it writes back.
+func findSentinelPaths(doc any, sentinel string) (paths []string, interpolated []interpolatedString) {
 	var walk func(node any, ptr string)
 	walk = func(node any, ptr string) {
 		switch v := node.(type) {
@@ -363,7 +509,7 @@ func findSentinelPaths(doc any, sentinel string) (paths []string, interpolated b
 				return
 			}
 			if strings.Contains(v, sentinel) {
-				interpolated = true
+				interpolated = append(interpolated, interpolatedString{path: ptr, text: v})
 			}
 		case map[string]any:
 			keys := make([]string, 0, len(v))

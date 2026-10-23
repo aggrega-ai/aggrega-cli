@@ -598,3 +598,283 @@ func TestLinkPublishRefusesAnotherExportAtItsOwnOutput(t *testing.T) {
 		})
 	}
 }
+
+// readLinkEdge builds the test edge with the producer's provides set from
+// key/value pairs, in the order given, and the given keys listed as read off the
+// edge by the consuming templates. It injects nothing unless inject is true, in
+// which case it keeps testLinkEdge's injection of "host".
+func readLinkEdge(t *testing.T, inject bool, read []string, provides ...string) rendercore.LinkEdge {
+	t.Helper()
+	if len(provides)%2 != 0 {
+		t.Fatalf("readLinkEdge: odd provides key/value count %d", len(provides))
+	}
+	edge := testLinkEdge(nil, nil)
+	if !inject {
+		edge.Inject = types.OrderedMap[types.OrderedMap[string]]{}
+	}
+	var p types.OrderedMap[string]
+	for i := 0; i < len(provides); i += 2 {
+		p.Set(provides[i], provides[i+1])
+	}
+	edge.Provides = p
+	edge.ReadProvidesKeys = read
+	return edge
+}
+
+// sentinelFor is the placeholder the host stamps for one provides key of the test
+// edge, which every placeholder the resolve locates is.
+func sentinelFor(key string) string {
+	return rendercore.CrossBoundaryLinkSentinel("api", "orders-db", "database", key)
+}
+
+// TestLinkPublishOverReadProvidesKeys holds the publish to exporting a key read
+// off the edge exactly when its value is a CloudFormation intrinsic, by the same
+// reading whichever form the intrinsic is written in, and to exporting nothing for
+// a read key whose value is plain text.
+func TestLinkPublishOverReadProvidesKeys(t *testing.T) {
+	cases := []struct {
+		name     string
+		value    string
+		exported bool
+	}{
+		{name: "a short-form intrinsic", value: "!GetAtt OrdersDb.Endpoint.Address", exported: true},
+		{name: "a short-form Ref", value: "!Ref OrdersDbEndpoint", exported: true},
+		{name: "a long-form intrinsic", value: `{"Fn::GetAtt": ["OrdersDb", "Endpoint.Address"]}`, exported: true},
+		{name: "plain text", value: "orders.internal.example", exported: false},
+		{name: "a number", value: "5432", exported: false},
+		{name: "empty", value: "", exported: false},
+		{name: "a mapping that is no intrinsic", value: `{"Name": "orders"}`, exported: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			edge := readLinkEdge(t, false, []string{"host"}, "host", tc.value, "port", "5432")
+			out, err := LinkPublish(edge, nil)
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			wantExport := ExportName(testRelease, "prod/data", "orders-db", "host")
+			got, handled := out.Handle[handleExportNamePrefix+"host"]
+			if !tc.exported {
+				if handled || len(out.Patches) != 0 {
+					t.Fatalf("a plain read key was exported: handle %v, patches %+v", out.Handle, out.Patches)
+				}
+				return
+			}
+			if got != wantExport {
+				t.Errorf("handle export name = %q, want %q", got, wantExport)
+			}
+			if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
+				t.Fatalf("want one patch with one op, got %+v", out.Patches)
+			}
+			op := out.Patches[0].Ops[0]
+			if want := "/Outputs/" + OutputLogicalID("orders-db", "host") + "/Export"; op.Op != "add" || op.Path != want {
+				t.Errorf("op = %q at %q, want add at %q", op.Op, op.Path, want)
+			}
+			if val, ok := op.Value.(map[string]any); !ok || val["Name"] != wantExport {
+				t.Errorf("op value = %+v, want {Name:%q}", op.Value, wantExport)
+			}
+			// The provides key nothing read stays unexported.
+			if _, present := out.Handle[handleExportNamePrefix+"port"]; present {
+				t.Errorf("a provides key nothing read or injected was exported: %v", out.Handle)
+			}
+		})
+	}
+}
+
+// TestLinkResolveRewritesAnIntrinsicReadKey holds the resolve to replacing every
+// placeholder of a read key whose value is an intrinsic exactly as it replaces an
+// injected key's: an import of the published export where the ends share a
+// placement, a cross-placement read where both declare differing ones.
+func TestLinkResolveRewritesAnIntrinsicReadKey(t *testing.T) {
+	cases := []struct {
+		name      string
+		targetAnn map[string]string
+		sourceAnn map[string]string
+		check     func(t *testing.T, value map[string]any)
+	}{
+		{
+			name: "same placement",
+			check: func(t *testing.T, value map[string]any) {
+				if want := ExportName(testRelease, "prod/data", "orders-db", "host"); value["Fn::ImportValue"] != want {
+					t.Errorf("Fn::ImportValue = %v, want %q", value["Fn::ImportValue"], want)
+				}
+			},
+		},
+		{
+			name:      "differing placements",
+			targetAnn: map[string]string{annotationAWSAccount: "222222222222", annotationAWSRegion: "eu-west-1"},
+			sourceAnn: map[string]string{annotationAWSAccount: "111111111111"},
+			check: func(t *testing.T, value map[string]any) {
+				gso, ok := value["Fn::GetStackOutput"].(map[string]any)
+				if !ok {
+					t.Fatalf("value carries no Fn::GetStackOutput: %+v", value)
+				}
+				if want := OutputLogicalID("orders-db", "host"); gso["OutputName"] != want {
+					t.Errorf("OutputName = %v, want %q", gso["OutputName"], want)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			edge := readLinkEdge(t, false, []string{"host"}, "host", "!GetAtt OrdersDb.Endpoint.Address")
+			edge.TargetAnnotations = tc.targetAnn
+			edge.SourceAnnotations = tc.sourceAnn
+			pub, err := LinkPublish(edge, nil)
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			stack := []byte(`{"Resources":{"Api":{"Properties":{"Environment":{"DB_HOST":"` + sentinelFor("host") + `"},"Tags":[{"Key":"db","Value":"` + sentinelFor("host") + `"}]}}}}`)
+			out, err := LinkResolve(edge, pub.Handle, []rendercore.RenderedFile{{Path: StackTemplateName, Content: stack}})
+			if err != nil {
+				t.Fatalf("LinkResolve: %v", err)
+			}
+			if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 2 {
+				t.Fatalf("want one patch replacing both occurrences, got %+v", out.Patches)
+			}
+			for _, op := range out.Patches[0].Ops {
+				value, ok := op.Value.(map[string]any)
+				if op.Op != "replace" || !ok {
+					t.Fatalf("op %q at %q carries %+v, want a replace by a reference", op.Op, op.Path, op.Value)
+				}
+				tc.check(t, value)
+			}
+		})
+	}
+}
+
+// TestLinkResolveWritesBackAPlainReadKey holds the resolve to writing a plain read
+// key's value back in place of its placeholder: a whole-scalar placeholder as the
+// value the provides-to-Outputs projection reads, so a number lands as a number
+// and an empty value as nothing, and placeholders inside one larger string as the
+// text the producer wrote, in one operation for that string. The publish exports
+// nothing for any of them.
+func TestLinkResolveWritesBackAPlainReadKey(t *testing.T) {
+	edge := readLinkEdge(t, false, []string{"protocol", "port", "user"},
+		"protocol", "postgres", "port", "5432", "user", "")
+	pub, err := LinkPublish(edge, nil)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	if len(pub.Patches) != 0 {
+		t.Fatalf("the publish exported a plain read key: %+v", pub.Patches)
+	}
+	stack := []byte(`{"Resources":{"Api":{"Properties":{"Environment":{` +
+		`"DB_PORT":"` + sentinelFor("port") + `",` +
+		`"DB_URL":"` + sentinelFor("protocol") + `://orders:` + sentinelFor("port") + `/app",` +
+		`"DB_USER":"` + sentinelFor("user") + `"}}}}}`)
+	out, err := LinkResolve(edge, pub.Handle, []rendercore.RenderedFile{{Path: StackTemplateName, Content: stack}})
+	if err != nil {
+		t.Fatalf("LinkResolve: %v", err)
+	}
+	if len(out.Patches) != 1 {
+		t.Fatalf("want one patch, got %+v", out.Patches)
+	}
+	got := map[string]any{}
+	for _, op := range out.Patches[0].Ops {
+		if op.Op != "replace" {
+			t.Errorf("op %q at %q, want replace", op.Op, op.Path)
+		}
+		if _, twice := got[op.Path]; twice {
+			t.Errorf("the path %q is replaced twice", op.Path)
+		}
+		got[op.Path] = op.Value
+	}
+	const env = "/Resources/Api/Properties/Environment/"
+	want := map[string]any{
+		env + "DB_PORT": int64(5432),
+		env + "DB_URL":  "postgres://orders:5432/app",
+		env + "DB_USER": nil,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("replaced %v, want exactly %v", got, want)
+	}
+	for path, value := range want {
+		if v, ok := got[path]; !ok || v != value {
+			t.Errorf("%s = %#v, want %#v", path, got[path], value)
+		}
+	}
+}
+
+// TestLinkKeyBothInjectedAndReadFollowsTheInjectedRule holds a key the edge both
+// injects and lists as read to the injected rule at every occurrence: exported
+// once and imported everywhere, even where its value is plain text, which a read
+// alone would write back.
+func TestLinkKeyBothInjectedAndReadFollowsTheInjectedRule(t *testing.T) {
+	edge := readLinkEdge(t, true, []string{"host"}, "host", "orders.internal.example")
+	pub, err := LinkPublish(edge, nil)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	if len(pub.Patches) != 1 || len(pub.Patches[0].Ops) != 1 {
+		t.Fatalf("want one export, got %+v", pub.Patches)
+	}
+	stack := []byte(`{"Resources":{"Api":{"Properties":{"Environment":{"DB_HOST":"` + sentinelFor("host") + `","DIRECT":"` + sentinelFor("host") + `"}}}}}`)
+	out, err := LinkResolve(edge, pub.Handle, []rendercore.RenderedFile{{Path: StackTemplateName, Content: stack}})
+	if err != nil {
+		t.Fatalf("LinkResolve: %v", err)
+	}
+	if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 2 {
+		t.Fatalf("want both occurrences replaced, got %+v", out.Patches)
+	}
+	wantExport := ExportName(testRelease, "prod/data", "orders-db", "host")
+	for _, op := range out.Patches[0].Ops {
+		if value, ok := op.Value.(map[string]any); !ok || value["Fn::ImportValue"] != wantExport {
+			t.Errorf("%s = %+v, want an import of %q", op.Path, op.Value, wantExport)
+		}
+	}
+}
+
+// TestLinkResolveHaltsOnAnInterpolatedIntrinsicReadKey holds a read key whose value
+// is an intrinsic to the same halt an injected key meets inside a larger string.
+func TestLinkResolveHaltsOnAnInterpolatedIntrinsicReadKey(t *testing.T) {
+	edge := readLinkEdge(t, false, []string{"host"}, "host", "!GetAtt OrdersDb.Endpoint.Address")
+	pub, err := LinkPublish(edge, nil)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	files := []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack("jdbc://" + sentinelFor("host") + ":5432")}}
+	_, err = LinkResolve(edge, pub.Handle, files)
+	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		t.Fatalf("want the value-not-representable condition, got %v", err)
+	}
+	if want := `cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key "host" on socket "database"`; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the halt is not the one an injected key meets.\n  want: %s\n  got:  %v", want, err)
+	}
+}
+
+// TestLinkHaltsOnAReadKeyTheEdgeDoesNotCarry holds both exports to refusing a read
+// key that names no provides key of the edge, naming the key, the consumer, the
+// socket and the producer, rather than wiring it to nothing.
+func TestLinkHaltsOnAReadKeyTheEdgeDoesNotCarry(t *testing.T) {
+	edge := readLinkEdge(t, false, []string{"replica"}, "host", "orders.internal.example")
+	check := func(t *testing.T, err error) {
+		t.Helper()
+		if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+			t.Fatalf("want the unresolved-required-input condition, got %v", err)
+		}
+		for _, want := range []string{`provides key "replica"`, `component "api"`, `socket "database"`, `component "orders-db" provides no such key`} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the halt does not carry %s\n  got: %v", want, err)
+			}
+		}
+	}
+	t.Run("publish", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("LinkPublish panicked: %v", r)
+			}
+		}()
+		_, err := LinkPublish(edge, nil)
+		check(t, err)
+	})
+	t.Run("resolve", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("LinkResolve panicked: %v", r)
+			}
+		}()
+		_, err := LinkResolve(edge, nil, []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack("x")}})
+		check(t, err)
+	})
+}

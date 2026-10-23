@@ -419,6 +419,9 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.IRNodeProjection](t, "MapOrderIRNodeProjection", false)
 	vec[abi.IRSpec](t, "MapOrderIRSpec", false)
 	vec[abi.LinkEdge](t, "MapOrderLinkEdge", false)
+	// The same payload with its endpoints, socket and provides values populated and
+	// read_provides_keys carried, which the vector above leaves absent.
+	vec[abi.LinkEdge](t, "MapOrderLinkEdgeReadProvidesKeys", false)
 	vec[abi.LinkPublishOutput](t, "MapOrderLinkPublishOutput", false)
 	vec[abi.LinkResolveInput](t, "MapOrderLinkResolveInput", false)
 	vec[abi.LinterInput](t, "MapOrderLinterInput", false)
