@@ -7,7 +7,7 @@ package composeimport
 
 // TableRevision is the aggrega-hub revision whose Compose Recipes and
 // Components the image table was generated from.
-const TableRevision = "2d7d7d9197dbd2674f20b76b49905a51fe6ff6d9"
+const TableRevision = "725d9e2903ab92745530575ee718158ad2b6577c"
 
 // imageTable maps each image repository the main container of a Compose
 // Recipe of the hub names literally to the Component the Recipe implements,
@@ -207,6 +207,7 @@ var imageTable = []imageRow{
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 	}},
 	{Repository: "redis", Component: "core/datastore/redis", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "kv",
