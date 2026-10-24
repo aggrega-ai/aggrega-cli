@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# A Feature whose FeatureRecipe delivers a value onto the attached component's
+# inject pipe, read directly off one of the component's connections.
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: example/direct-host
+  version: "1.0.0"
+  description: >
+    Delivers the host of the database the component's primary connection reaches,
+    read directly off that connection, onto the component's inject pipe.
+spec:
+  schema: {}

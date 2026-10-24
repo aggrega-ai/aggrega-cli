@@ -53,6 +53,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -227,6 +228,14 @@ type BoundaryFRState struct {
 	// the merge, rather than recovering it afterwards, is what keeps the
 	// attribution the answer the merge actually applied.
 	ConsumerEnvOverrideProducers map[string][]consumerEnvOverride
+
+	// links is the render's one classification of the uses edges the
+	// cross-boundary link pass wires, and its record of what templates read off
+	// them. It rides on this state because the state is what both boundary-scope
+	// renders — the provides pre-pass and the per-boundary dispatch — already
+	// share, and each stamps the edge views it builds through it. Nil in a render
+	// that wires no links, which stamps nothing.
+	links *crossBoundaryLinks
 }
 
 // consumerEnvOverride is one boundary-scope attachment's override of one
@@ -509,6 +518,7 @@ func dispatchBoundaryScopeFR(
 	if err != nil {
 		return err
 	}
+	boundaryFRState.links.stampBoundaryLinkReads(frCtx)
 	// What the Feature this attachment names declares, governing the infra this
 	// context carries, and the locals computed from it — the set every template this
 	// render evaluates is withheld by.
@@ -883,6 +893,7 @@ func PrepopulateBoundaryScopeProvides(
 			if err != nil {
 				return err
 			}
+			state.links.stampBoundaryLinkReads(frCtx)
 			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key,
 				boundaryFRKeys(fr, declaredLeavesOf(declared, bf.Type))); err != nil {
 				return err
@@ -905,8 +916,21 @@ func PrepopulateBoundaryScopeProvides(
 					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: selecting its rendering plugin", instName))
 				}
 				if ov, ok := eng.(BoundaryEnvOverrider); ok {
-					overrides, ovErr := ov.BoundaryEnvOverrides(ctx, frCtx.Boundary.InternalUsesEdges, frCtx.Infra)
+					// An edge the link pass wires carries read placeholders in its
+					// provides; they reach the plugin only in the delivery form, and
+					// the plugin is held to copying them (envOverridesOverLinkReads).
+					overrides, ovErr := state.links.envOverridesOverLinkReads(frCtx.Boundary.InternalUsesEdges,
+						fmt.Sprintf("consumer env overrides of boundary-scope FeatureRecipe %q", instName),
+						func(edges []types.EnrichedEdge) (map[string]map[string]string, error) {
+							return ov.BoundaryEnvOverrides(ctx, edges, frCtx.Infra)
+						})
 					if ovErr != nil {
+						// The copy-only halt is the FeatureRecipe author's to act on and
+						// already names the surface, so it is returned as raised rather
+						// than charged to the plugin.
+						if errors.Is(ovErr, ErrCrossBoundaryLinkValueNotCopied()) {
+							return ovErr
+						}
 						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
 					}
 					mergeConsumerEnvOverrides(state, key, overrides)

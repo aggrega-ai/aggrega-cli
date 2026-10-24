@@ -42,3 +42,30 @@ func CrossBoundaryLinkSentinel(source, target, socket, providesKey string) strin
 	sum := sha256.Sum256([]byte(source + "\x1f" + target + "\x1f" + socket + "\x1f" + providesKey))
 	return CrossBoundaryLinkSentinelPrefix + hex.EncodeToString(sum[:])
 }
+
+// crossBoundaryLinkReadMarker follows the shared prefix in a read placeholder and
+// in no delivery placeholder, whose prefix is followed by hexadecimal digits
+// alone — so the two forms can never be mistaken for one another.
+const crossBoundaryLinkReadMarker = "read-"
+
+// CrossBoundaryLinkReadPlaceholder builds the deterministic placeholder the host
+// stamps in place of one provides value a consuming node's templates can read
+// directly off a cross-boundary link, rather than receive on the edge's delivery
+// pipe.
+//
+// It is distinct from [CrossBoundaryLinkSentinel] for the same link and key, and
+// the distinction is what makes the host's check of a read possible: the host
+// evaluates a template once over these placeholders and once over the real values,
+// writes each placeholder in the first output back to its real value, and the two
+// must then agree byte for byte. A delivered placeholder sitting in the same output
+// is left alone by that write-back because it is a different string. Once the check
+// passes, each read placeholder in the output is rewritten to the delivery
+// placeholder for the same key, which is the one form a provider locates — so this
+// form never leaves the host.
+//
+// It shares [CrossBoundaryLinkSentinelPrefix], so one that survived the host's own
+// rewrite would still be caught by the scan for unresolved placeholders.
+func CrossBoundaryLinkReadPlaceholder(source, target, socket, providesKey string) string {
+	sum := sha256.Sum256([]byte("read\x1f" + source + "\x1f" + target + "\x1f" + socket + "\x1f" + providesKey))
+	return CrossBoundaryLinkSentinelPrefix + crossBoundaryLinkReadMarker + hex.EncodeToString(sum[:])
+}

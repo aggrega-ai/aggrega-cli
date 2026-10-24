@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# The edge-read Aggregate with an attachment on the application whose
+# FeatureRecipe's inject mapping reads the database's host directly off the
+# connection and delivers it onto the application's inject pipe, which the
+# application's Recipe then renders.
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-two-boundary
+  version: "1.0.0"
+  description: >
+    A MariaDB database and an application whose attachment delivers the
+    database host it reads directly off the connection.
+spec:
+  components:
+    db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        root_password:
+          type: core/generated-secret
+    app-b:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /app-b/db-host
+      features:
+        direct-host:
+          type: example/direct-host
+      uses:
+        database:
+          primary:
+            target: db

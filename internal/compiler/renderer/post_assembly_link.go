@@ -74,6 +74,7 @@ func wireCrossBoundaryLinks(
 	engineFactory EngineFactory,
 	yamlIndent int,
 	releaseID string,
+	links *crossBoundaryLinks,
 ) ([]Diagnostic, error) {
 	var warnings []Diagnostic
 	for _, edge := range graph.Spec.Edges {
@@ -109,7 +110,8 @@ func wireCrossBoundaryLinks(
 			continue
 		}
 
-		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], nodeAnnotations[edge.Source], releaseID)
+		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], nodeAnnotations[edge.Source], releaseID,
+			links.readKeys(edge, allProvides))
 
 		// Producer-side: publish on the consumed (target) end's guest against the
 		// target group's assembled files, then apply its wiring to those same
@@ -230,7 +232,13 @@ func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
 // end's provides plus the consuming end's inject mapping. Edge enrichment is
 // single-sourced through [EnrichedEdgeViewFromIREdge]; the host reads the
 // projected view, it does not build a second edge-enrichment path.
-func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations, sourceAnnotations map[string]string, releaseID string) LinkEdge {
+//
+// readKeys are the provides keys the consuming end's templates read directly off
+// the edge, in the producer's author order — the keys the render recorded when a
+// template copied a value's placeholder into its output. They are carried as the
+// edge's read_provides_keys, absent when no template read one, so a provider
+// publishing and resolving the link reads one list.
+func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations, sourceAnnotations map[string]string, releaseID string, readKeys []string) LinkEdge {
 	view := EnrichedEdgeViewFromIREdge(edge, allProvides)
 	return LinkEdge{
 		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Release: releaseID},
@@ -240,6 +248,7 @@ func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides No
 		Socket:            view.Socket,
 		Provides:          view.Provides,
 		Inject:            view.Inject,
+		ReadProvidesKeys:  readKeys,
 	}
 }
 

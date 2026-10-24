@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# One of the alternative db-reader Recipes under this fixture's catalog directory,
+# each in its own subdirectory because they share one Recipe identity
+# (cloudformation/db-reader:1.0.0). A build loads exactly one of them in place of
+# the catalog's own db-reader Recipe.
+#
+# This variant renders the database host its attachment's inject mapping
+# delivered, which the mapping read directly off the connection.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-reader
+  version: 1.0.0
+  description: >
+    The fixture's application rendering the host its attachment delivered on its inject pipe.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: example/compute/db-reader:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SSM::Parameter
+          Properties:
+            Name: "{{ .values.parameter_name }}"
+            Type: String
+            Tier: "{{ .infra.tier }}"
+            Value: {{ .context.inject.env.DIRECT_HOST }}

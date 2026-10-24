@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# Branches on the database protocol it reads directly off the connection,
+# which the build refuses.
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: direct-host
+  version: "1.0.0"
+  description: >
+    Branches on the database protocol read off the connection.
+spec:
+  capability: cloudformation
+  implements: example/direct-host:1.0.0
+  injectMapping: |
+    {"env": {"DIRECT_HOST": "{{ if eq .context.uses.primary.provides.protocol `mariadb` }}mariadb{{ else }}other{{ end }}"}}

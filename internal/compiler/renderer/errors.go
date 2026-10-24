@@ -1089,6 +1089,28 @@ var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("orphan-cross-boundary
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrCrossBoundaryLinkValueNotCopied is the Loud Guardrail halt raised when a
+// template does more than copy a value it reads off a connection whose two ends
+// render into different outputs. On such a connection the producer's provides
+// values reach a template as placeholders the provider later rewrites into its own
+// cross-reference, so a template may write one whole or inside a larger string,
+// but a comparison, a branch, a length or a function that changes the value would
+// evaluate against the placeholder rather than the value. The host proves the rule
+// by evaluating the template over the placeholders and over the real values and
+// halting where the two disagree once each placeholder is written back. The
+// diagnostic names the template and, for each provides key involved, the
+// consuming component, the connection's alias and socket, and the producing
+// component. Category: CATALOG_ERROR, because the template that reads the value is
+// the Recipe's or the FeatureRecipe's. Match with
+// errors.Is(err, ErrCrossBoundaryLinkValueNotCopied()).
+func ErrCrossBoundaryLinkValueNotCopied() error { return errCrossBoundaryLinkValueNotCopied }
+
+var errCrossBoundaryLinkValueNotCopied = cerrors.Register("cross-boundary-link-value-not-copied", cerrors.Meta{
+	ShortCode: "E0354",
+	Message:   "a template does more than copy a value it reads off a cross-boundary link",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrNestSegmentNotOneDirectory is the Loud Guardrail halt raised when a
 // provider declares a per-node sub-directory that is not a single directory
 // name. A nesting provider names the directory its contributors' own

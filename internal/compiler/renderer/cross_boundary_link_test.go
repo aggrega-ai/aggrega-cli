@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -219,5 +221,95 @@ func TestCrossBoundaryLink_OpaqueTargetHalts(t *testing.T) {
 		context.Background(), []types.IREdge{linkEdge()}, nodes, nil, factory, 2)
 	if !errors.Is(err, frp.ErrPipelineTargetOpaque()) {
 		t.Fatalf("want ErrPipelineTargetOpaque, got %v", err)
+	}
+}
+
+// TestCrossBoundaryLink_TemplateMayOnlyCopyALinkedValue holds a template reading
+// a value off a connection that crosses into another output to copying it: a
+// template writing the value whole, inside a larger string, or through a function
+// that leaves it as it is evaluates, its output carrying the delivery placeholder
+// the provider later rewrites and the key recorded as read; one that compares,
+// branches on, measures or changes the value halts, naming the template and each
+// provides key the difference turns on — and only those. A template reading none
+// of the connection's values evaluates as it always has and records nothing.
+func TestCrossBoundaryLink_TemplateMayOnlyCopyALinkedValue(t *testing.T) {
+	var provides types.OrderedMap[string]
+	provides.Set("port", "3306")
+	provides.Set("host", "!GetAtt Db.Endpoint.Address")
+	provides.Set("protocol", "mariadb")
+	host := rendercore.CrossBoundaryLinkSentinel("consumer", "producer", "db", "host")
+	port := rendercore.CrossBoundaryLinkSentinel("consumer", "producer", "db", "port")
+
+	for _, tc := range []struct {
+		name     string
+		text     string
+		wantOut  string
+		wantRead []string
+		halts    []string // provides keys the halt names; empty means the template evaluates
+		notNamed []string // provides keys the halt must not name
+	}{
+		{name: "a value written whole", text: `Value: {{ .context.uses.primary.provides.host }}`, wantOut: "Value: " + host, wantRead: []string{"host"}},
+		{name: "a value inside a larger string", text: `url: "db://{{ .context.uses.primary.provides.host }}:{{ .context.uses.primary.provides.port }}"`,
+			wantOut: `url: "db://` + host + `:` + port + `"`, wantRead: []string{"port", "host"}},
+		{name: "a value quoted", text: `{{ .context.uses.primary.provides.host | quote }}`, wantOut: `"` + host + `"`, wantRead: []string{"host"}},
+		{name: "a value piped through toString", text: `{{ .context.uses.primary.provides.port | toString }}`, wantOut: port, wantRead: []string{"port"}},
+		{name: "no linked value read", text: `socket: {{ .context.uses.primary.socket }}`, wantOut: "socket: db"},
+		{name: "a branch on a value", text: `{{ if eq .context.uses.primary.provides.protocol "mariadb" }}yes{{ else }}no{{ end }}`, halts: []string{"protocol"}},
+		{name: "a value changed", text: `{{ upper .context.uses.primary.provides.host }}`, halts: []string{"host"}},
+		{name: "a value measured", text: `{{ len .context.uses.primary.provides.port }}`, halts: []string{"port"}},
+		{name: "a branch beside a copy names only the branched key",
+			text:  `{{ .context.uses.primary.provides.host }} {{ if eq .context.uses.primary.provides.protocol "mariadb" }}yes{{ end }}`,
+			halts: []string{"protocol"}, notNamed: []string{"host"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("evaluation panicked: %v", r)
+				}
+			}()
+			out, read, err := renderer.EvalOverLinkReadsForTest("artifacts[consumer/template.yaml]", tc.text, provides)
+			if len(tc.halts) == 0 {
+				if err != nil {
+					t.Fatalf("a template copying the value halted: %v", err)
+				}
+				if out != tc.wantOut {
+					t.Errorf("output = %q, want %q", out, tc.wantOut)
+				}
+				if strings.Contains(out, rendercore.CrossBoundaryLinkSentinelPrefix+"read-") {
+					t.Errorf("the read placeholder left the host in the output %q", out)
+				}
+				if !slices.Equal(read, tc.wantRead) {
+					t.Errorf("recorded read keys %q, want %q", read, tc.wantRead)
+				}
+				return
+			}
+			if !errors.Is(err, renderer.ErrCrossBoundaryLinkValueNotCopied()) {
+				t.Fatalf("want the copy-only halt, got output %q, error %v", out, err)
+			}
+			msg := err.Error()
+			for _, want := range []string{
+				"a template does more than copy a value it reads off a cross-boundary link",
+				`template "artifacts[consumer/template.yaml]"`,
+				"branch on a value of the component's own instead",
+			} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("the halt does not carry %q\n  got: %s", want, msg)
+				}
+			}
+			for _, key := range tc.halts {
+				want := `provides key "` + key + `" that component "consumer" reads off its connection "primary" on socket "db" to component "producer"`
+				if !strings.Contains(msg, want) {
+					t.Errorf("the halt does not name %s\n  got: %s", want, msg)
+				}
+			}
+			for _, key := range tc.notNamed {
+				if strings.Contains(msg, `provides key "`+key+`"`) {
+					t.Errorf("the halt names %q, which the template only copied\n  got: %s", key, msg)
+				}
+			}
+			if len(read) != 0 {
+				t.Errorf("a halting template recorded read keys %q", read)
+			}
+		})
 	}
 }

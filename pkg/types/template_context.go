@@ -60,6 +60,24 @@ type TemplateContext struct {
 	// A template reads the same attachments under the connection each was written
 	// on, at [EnrichedEdge.Features], keyed by slot rather than by this name.
 	ConnectionAttachments OrderedMap[TemplateAttachment] `json:"-" yaml:"-"`
+
+	// LinkReads is the render's record of the provides values this context carries
+	// as placeholders, because the connection they arrive on joins two ends the
+	// compiler renders into different outputs. It is set only on a context that
+	// carries such a placeholder, and a copy of the context carries the same
+	// record, so every template evaluated against either reads it.
+	//
+	// It is not visible to a template — the field carries no template name — and
+	// it is the compiler's own: nothing outside the compiler sets or reads it.
+	LinkReads CrossBoundaryLinkReads `json:"-" yaml:"-"`
+}
+
+// CrossBoundaryLinkReads is the compiler's record of the provides values a
+// render's contexts carry as placeholders on a connection whose two ends render
+// into different outputs. Only the compiler implements it.
+type CrossBoundaryLinkReads interface {
+	// HoldsLinkReadPlaceholders reports whether the record holds any placeholder.
+	HoldsLinkReadPlaceholders() bool
 }
 
 // AttachmentPillars returns the projected attachment a FeatureRecipe bound to

@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# The database and one application that reads it, with no inject block on the
+# connection: the application's Recipe reads the database's values directly off
+# the connection, through .context.uses, rather than receiving them injected. A
+# Release placing the two in different stacks therefore exports a value only
+# because the application's template read it.
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-two-boundary
+  version: "1.0.0"
+  description: >
+    A MariaDB database and an application that reads its values directly off
+    the connection rather than through an inject block.
+spec:
+  components:
+    db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        root_password:
+          type: core/generated-secret
+    app-b:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /app-b/db-host
+      uses:
+        database:
+          primary:
+            target: db

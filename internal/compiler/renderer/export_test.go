@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -72,6 +73,68 @@ func RunCrossBoundaryLinkPassForTest(
 	engineFactory EngineFactory,
 	yamlIndent int,
 ) (warnings []string, filesByPath map[string]map[string][]byte, err error) {
+	return runCrossBoundaryLinkPass(ctx, edges, nodes, allProvides, engineFactory, yamlIndent, nil)
+}
+
+// EvalOverLinkReadsForTest evaluates one template the way a consuming node's
+// template is evaluated when its connection crosses into another output: the
+// context's connection "primary" — consumer "consumer" to producer "producer" on
+// socket "db", classified as one the link pass wires — carries the given provides
+// stamped as read placeholders. It returns the template's output, the provides
+// keys recorded as read off the link in the producer's order, and the error.
+func EvalOverLinkReadsForTest(name, tmplText string, provides types.OrderedMap[string]) (string, []string, error) {
+	edge := types.IREdge{Source: "consumer", Target: "producer", Socket: "db", Alias: "primary"}
+	links := newCrossBoundaryLinks()
+	links.fires[linkTripleOf(edge)] = true
+	links.aliases[linkTripleOf(edge)] = "primary"
+	var uses types.OrderedMap[types.EnrichedEdge]
+	uses.Set("primary", types.EnrichedEdge{Target: "producer", Socket: "db", Provides: provides})
+	ctx := &types.TemplateContext{Context: types.ContextBlock{InstanceID: "consumer", Uses: uses}}
+	graph := &types.IRGraph{Spec: types.IRSpec{Edges: []types.IREdge{edge}}}
+	stampCrossBoundaryLinkReads(ctx, "consumer", graph, links)
+	out, err := EvalTemplate(name, tmplText, ctx, redact.Keys{})
+	return out, links.readKeys(edge, NodeProvides{"producer": provides}), err
+}
+
+// LinkReadForTest is one provides key a consuming end's templates read off an
+// edge, named by the edge's consuming node, consumed node and socket.
+type LinkReadForTest struct {
+	Source, Target, Socket, Key string
+}
+
+// RunCrossBoundaryLinkPassWithReadsForTest drives the pass exactly as
+// RunCrossBoundaryLinkPassForTest does, with the render's record already holding
+// the given reads — what the render would have recorded had templates copied those
+// keys' placeholders — so a test can read what the pass hands each provider.
+func RunCrossBoundaryLinkPassWithReadsForTest(
+	ctx context.Context,
+	edges []types.IREdge,
+	nodes map[string]LinkPassNode,
+	allProvides NodeProvides,
+	engineFactory EngineFactory,
+	yamlIndent int,
+	reads []LinkReadForTest,
+) (warnings []string, filesByPath map[string]map[string][]byte, err error) {
+	links := newCrossBoundaryLinks()
+	for _, r := range reads {
+		link := linkTriple{source: r.Source, target: r.Target, socket: r.Socket}
+		if links.read[link] == nil {
+			links.read[link] = map[string]bool{}
+		}
+		links.read[link][r.Key] = true
+	}
+	return runCrossBoundaryLinkPass(ctx, edges, nodes, allProvides, engineFactory, yamlIndent, links)
+}
+
+func runCrossBoundaryLinkPass(
+	ctx context.Context,
+	edges []types.IREdge,
+	nodes map[string]LinkPassNode,
+	allProvides NodeProvides,
+	engineFactory EngineFactory,
+	yamlIndent int,
+	links *crossBoundaryLinks,
+) (warnings []string, filesByPath map[string]map[string][]byte, err error) {
 	graph := &types.IRGraph{Spec: types.IRSpec{Edges: edges}}
 	nodeDispatch := map[string]dispatchKey{}
 	nodeEngine := map[string]Provider{}
@@ -95,7 +158,7 @@ func RunCrossBoundaryLinkPassForTest(
 
 	raised, err := wireCrossBoundaryLinks(
 		ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations,
-		assembledByDispatch, engineFactory, yamlIndent, "",
+		assembledByDispatch, engineFactory, yamlIndent, "", links,
 	)
 	for _, d := range raised {
 		warnings = append(warnings, RenderDiagnosticText(d))

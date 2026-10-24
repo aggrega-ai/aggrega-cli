@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# One of the alternative db-reader Recipes under this fixture's catalog directory,
+# each in its own subdirectory because they share one Recipe identity
+# (cloudformation/db-reader:1.0.0). A build loads exactly one of them in place of
+# the catalog's own db-reader Recipe.
+#
+# This variant branches on the database protocol it reads directly off the
+# connection, which the build refuses because the branch would be decided
+# against the placeholder rather than the value.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-reader
+  version: 1.0.0
+  description: >
+    The fixture's application branching on the database protocol it reads off its connection.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: example/compute/db-reader:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SSM::Parameter
+          Properties:
+            Name: "{{ .values.parameter_name }}"
+            Type: String
+            Tier: "{{ .infra.tier }}"
+            Description: "{{ if eq .context.uses.primary.provides.protocol `mariadb` }}mariadb{{ else }}other{{ end }}"
+            Value: "{{ .values.parameter_name }}"

@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# The edge-read Release with the two stacks placed in different accounts: a value
+# the application's template copies off the connection reaches its stack as a
+# read of the database stack's output rather than as an import.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-cross-account
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-edge-read.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      annotations:
+        aggrega.ai/aws-account: "111111111111"
+        aggrega.ai/aws-region: "eu-west-1"
+        aggrega.ai/aws-assume-role-arn: "arn:aws:iam::111111111111:role/cross-stack-reader"
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    stack-b:
+      directory: ./dist/stack-b
+      annotations:
+        aggrega.ai/aws-account: "222222222222"
+      components:
+        app-b: {}

@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# The database in one stack and the application reading its values directly off
+# the connection in another, both in the same account and region: a value the
+# application's template copies off the connection reaches its stack as an import
+# of an export the database's stack publishes.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-two-boundary
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-edge-read.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    stack-b:
+      directory: ./dist/stack-b
+      components:
+        app-b: {}

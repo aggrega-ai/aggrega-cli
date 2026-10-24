@@ -27,12 +27,15 @@ package compiler_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -765,6 +768,249 @@ func TestCloudFormationTwoBoundary_ProducerOwnExportNameHalts(t *testing.T) {
 	// output; it must not be what the author reads now.
 	if strings.Contains(msg, "has no in-place form") {
 		t.Fatalf("the halt is still the codec's rather than the publish's:\n%s", msg)
+	}
+}
+
+// cfnEdgeReadInput is the two-boundary workspace built from one of the fixture's
+// Release files with the catalog's db-reader Recipe replaced by the variant under
+// catalog/<variant>/, plus any further fixture-local entity paths.
+func cfnEdgeReadInput(t *testing.T, release, variant string, extra ...string) pipelinetest.Input {
+	t.Helper()
+	skipIfNoSiblingCatalog(t)
+	paths := cfnCatalogPathsReplacing(t,
+		"/recipe/cloudformation/db-reader/1.0.0/recipe.yaml",
+		"testdata/cloudformation-two-boundary/catalog/"+variant+"/db-reader.recipe.yaml")
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/cloudformation-two-boundary/" + release,
+		CatalogPaths: append(paths, extra...),
+	}
+}
+
+// cfnDirectHostAttachment is the fixture-local Feature and FeatureRecipe pair an
+// attachment on the application binds to, with the FeatureRecipe taken from the
+// named variant directory.
+func cfnDirectHostAttachment(variant string) []string {
+	return []string{
+		"testdata/cloudformation-two-boundary/catalog/edge-read-attached/direct-host.feature.yaml",
+		"testdata/cloudformation-two-boundary/catalog/" + variant + "/direct-host.featurerecipe.yaml",
+	}
+}
+
+// TestCloudFormationTwoBoundary_EdgeReadWiring builds consumers that read the
+// database's values directly off a connection crossing into another stack —
+// through .context.uses rather than an inject block — end-to-end through the real
+// cloudformation guest, and asserts against the emitted bytes. The edge-read
+// Releases' connection injects nothing, so an Export the producer stack carries
+// for a key exists only because the link payload the guest received listed that
+// key among the edge's read provides keys: the Export is the observable proof of
+// the list. Each row varies one thing.
+func TestCloudFormationTwoBoundary_EdgeReadWiring(t *testing.T) {
+	importOf := func(t *testing.T, value map[string]any, export string) {
+		t.Helper()
+		if got := value["Fn::ImportValue"]; got != export {
+			t.Fatalf("consumer value = %#v, want Fn::ImportValue of %q", value, export)
+		}
+	}
+	for _, tc := range []struct {
+		scenario string
+		in       func(t *testing.T) pipelinetest.Input
+		check    func(t *testing.T, artifacts map[string][]byte, hostExport string)
+	}{
+		{
+			scenario: "the host read off the edge",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-host")
+			},
+			check: func(t *testing.T, artifacts map[string][]byte, hostExport string) {
+				importOf(t, cfnConsumerValue(t, artifacts, "stack-b", "AppB"), hostExport)
+			},
+		},
+		{
+			scenario: "the host and the port read off the edge, the port plain",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-host-port")
+			},
+			check: func(t *testing.T, artifacts map[string][]byte, hostExport string) {
+				importOf(t, cfnConsumerValue(t, artifacts, "stack-b", "AppB"), hostExport)
+				// The port is plain text, so it is written back as the value itself —
+				// the same value the producer stack projects for it — rather than as a
+				// reference, and the producer publishes no export for it.
+				producer, _ := findCfnStack(t, artifacts, "stack-a")
+				portOut := mustCfnMap(t, mustCfnMap(t, producer, "Outputs"), "dbXXport")
+				consumer, raw := findCfnStack(t, artifacts, "stack-b")
+				port := mustCfnMap(t, mustCfnMap(t, mustCfnMap(t, consumer, "Resources"), "AppBPort"), "Properties")["Value"]
+				if _, isRef := port.(map[string]any); isRef || fmt.Sprint(port) != fmt.Sprint(portOut["Value"]) {
+					t.Fatalf("the port read off the edge renders %#v, want the plain value %#v the producer projects\n%s", port, portOut["Value"], raw)
+				}
+			},
+		},
+		{
+			scenario: "the host read off the edge and received by inject",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release.yaml", "edge-read-and-inject")
+			},
+			check: func(t *testing.T, artifacts map[string][]byte, hostExport string) {
+				importOf(t, cfnConsumerValue(t, artifacts, "stack-b", "AppB"), hostExport)
+				importOf(t, cfnConsumerValue(t, artifacts, "stack-b", "AppBDirect"), hostExport)
+			},
+		},
+		{
+			scenario: "the host quoted as it is read off the edge",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-quote")
+			},
+			check: func(t *testing.T, artifacts map[string][]byte, hostExport string) {
+				importOf(t, cfnConsumerValue(t, artifacts, "stack-b", "AppB"), hostExport)
+			},
+		},
+		{
+			scenario: "the host copied onto the inject pipe by an attachment's inject mapping",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read-attached.yaml", "edge-read-attached", cfnDirectHostAttachment("edge-read-attached")...)
+			},
+			check: func(t *testing.T, artifacts map[string][]byte, hostExport string) {
+				importOf(t, cfnConsumerValue(t, artifacts, "stack-b", "AppB"), hostExport)
+			},
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			result := pipelinetest.Build(t, tc.in(t))
+			assertNoLinkPlaceholder(t, result.Artifacts)
+
+			producer, producerRaw := findCfnStack(t, result.Artifacts, "stack-a")
+			_, consumerRaw := findCfnStack(t, result.Artifacts, "stack-b")
+			t.Logf("producer stack template (stack-a):\n%s", producerRaw)
+			t.Logf("consumer stack template (stack-b):\n%s", consumerRaw)
+			exports := cfnExportsIn(t, producer)
+			hostExport, ok := exports["dbXXhost"].(string)
+			if len(exports) != 1 || !ok || hostExport == "" {
+				t.Fatalf("the producer stack carries Exports %v, want exactly one, on dbXXhost", exports)
+			}
+			if !strings.HasPrefix(hostExport, "aggrega-") || !strings.HasSuffix(hostExport, "--host") {
+				t.Fatalf("the host export name %q is not the one the link derives", hostExport)
+			}
+			tc.check(t, result.Artifacts, hostExport)
+		})
+	}
+}
+
+// TestCloudFormationTwoBoundary_EdgeReadAcrossPlacements builds the host read off
+// the edge with the two stacks placed in different accounts: the consumer's value
+// is a read of the producer stack's output rather than an import.
+func TestCloudFormationTwoBoundary_EdgeReadAcrossPlacements(t *testing.T) {
+	result := pipelinetest.Build(t, cfnEdgeReadInput(t, "release-edge-read-cross-account.yaml", "edge-read-host"))
+	assertNoLinkPlaceholder(t, result.Artifacts)
+	value := cfnConsumerValue(t, result.Artifacts, "stack-b", "AppB")
+	gso, ok := value["Fn::GetStackOutput"].(map[string]any)
+	if !ok {
+		t.Fatalf("the consumer reads %#v, want an Fn::GetStackOutput read", value)
+	}
+	if gso["OutputName"] != "dbXXhost" || gso["Region"] != "eu-west-1" {
+		t.Fatalf("Fn::GetStackOutput = %#v, want the host output in eu-west-1", gso)
+	}
+}
+
+// TestCloudFormationTwoBoundary_EdgeReadDeterministic asserts each edge-read
+// build is byte-identical across repeated runs.
+func TestCloudFormationTwoBoundary_EdgeReadDeterministic(t *testing.T) {
+	for _, tc := range []struct{ release, variant string }{
+		{"release-edge-read.yaml", "edge-read-host-port"},
+		{"release.yaml", "edge-read-and-inject"},
+		{"release-edge-read-cross-account.yaml", "edge-read-host"},
+	} {
+		t.Run(tc.variant, func(t *testing.T) {
+			pipelinetest.AssertDeterministic(t, cfnEdgeReadInput(t, tc.release, tc.variant))
+		})
+	}
+}
+
+// TestCloudFormationTwoBoundary_EdgeReadHalts builds consumers that do more with a
+// value read off a connection crossing into another stack than the link can
+// carry, and asserts each halts naming what it must. A value written inside a
+// larger string meets the provider's own refusal, since a cross-stack reference
+// can only stand as a whole value. A template comparing a value, branching on it
+// or changing it meets the host's copy-only halt, which names the template and,
+// for each provides key involved, the consuming component, the connection's alias
+// and socket, and the producing component — on the application's own template and
+// on an attachment's inject mapping alike.
+func TestCloudFormationTwoBoundary_EdgeReadHalts(t *testing.T) {
+	copyOnly := func(key, template string) []string {
+		return []string{
+			"a template does more than copy a value it reads off a cross-boundary link",
+			template,
+			`provides key "` + key + `" that component "app-b" reads off its connection "primary" on socket "database" to component "db"`,
+			"branch on a value of the component's own instead",
+		}
+	}
+	for _, tc := range []struct {
+		scenario  string
+		in        func(t *testing.T) pipelinetest.Input
+		condition error
+		want      []string
+	}{
+		{
+			scenario: "the host inside a larger string",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-interpolated")
+			},
+			condition: wasm.ErrPluginValueNotRepresentable(),
+			want: []string{
+				`cross-boundary link resolve for uses edge "app-b" -> "db"`,
+				`cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key "host" on socket "database"`,
+			},
+		},
+		{
+			scenario: "a branch on the protocol",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-branch")
+			},
+			condition: renderer.ErrCrossBoundaryLinkValueNotCopied(),
+			want:      copyOnly("protocol", `template "artifacts[db-reader/template.yaml]"`),
+		},
+		{
+			scenario: "the host upper-cased",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-upper")
+			},
+			condition: renderer.ErrCrossBoundaryLinkValueNotCopied(),
+			want:      copyOnly("host", `template "artifacts[db-reader/template.yaml]"`),
+		},
+		{
+			scenario: "an attachment's inject mapping branching on the protocol",
+			in: func(t *testing.T) pipelinetest.Input {
+				return cfnEdgeReadInput(t, "release-edge-read-attached.yaml", "edge-read-attached", cfnDirectHostAttachment("edge-read-attached-branch")...)
+			},
+			condition: renderer.ErrCrossBoundaryLinkValueNotCopied(),
+			want:      copyOnly("protocol", `template "injectMapping[direct-host/direct-host]"`),
+		},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			result, err := pipelinetest.BuildE(t, tc.in(t))
+			if err == nil {
+				emitted := make([]string, 0, len(result.Artifacts))
+				for k := range result.Artifacts {
+					emitted = append(emitted, k)
+				}
+				t.Fatalf("build succeeded; want a halt. emitted artifacts: %v", emitted)
+			}
+			msg := cerrors.CauseChain(err)
+			t.Logf("emitted diagnostic, verbatim:\n%s", msg)
+			if tc.condition == renderer.ErrCrossBoundaryLinkValueNotCopied() {
+				if !errors.Is(err, tc.condition) {
+					t.Fatalf("want the copy-only halt, got %v", err)
+				}
+			} else {
+				want, _ := cerrors.ShortCodeOf(tc.condition)
+				if got, ok := cerrors.ShortCodeOf(err); !ok || got != want {
+					t.Fatalf("the build reports short code %q (present %v), want %q", got, ok, want)
+				}
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(msg, want) {
+					t.Fatalf("diagnostic is missing %q; got:\n%s", want, msg)
+				}
+			}
+		})
 	}
 }
 

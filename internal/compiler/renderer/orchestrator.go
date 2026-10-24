@@ -1428,6 +1428,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// See boundary_fr.go.
 	boundaryFRState := NewBoundaryFRState()
 
+	// The render's one classification of which uses edges the cross-boundary link
+	// pass wires, taken before any template is evaluated: the boundary-scope
+	// pre-pass below and each node's walk stamp the connection views those edges
+	// reach templates through before any template reads them, and the link pass
+	// hands the providers the keys templates read off them.
+	crossLinks := classifyCrossBoundaryLinks(graph, nodeRecipes, engineFactory, input, boundaryDirEvals, perBoundaryAnnotations)
+	boundaryFRState.links = crossLinks
+
 	// Provides pre-pass: evaluate every boundary-scope FeatureRecipe's
 	// provides before the per-node loop so a per-component consumer's uses
 	// edge can resolve them during Phase A inject rehydration. The per-node
@@ -1958,6 +1966,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// interception. Where another attachment delivered the key, by its own
 		// block or its mapping, the build halts below, naming both attachments,
 		// so the merge never decides between two attachments' deliveries.
+		// Cross-boundary read placeholders, stamped into the connection views the
+		// node's templates read before the first of them evaluates — the attached
+		// FeatureRecipes' inject mappings just below — so every template that reads
+		// a value off a linked connection reads the placeholder the provider later
+		// rewrites, and is held to copying it.
+		stampCrossBoundaryLinkReads(tmplCtx, nodeID, graph, crossLinks)
+
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
 		attachmentLeaves := func(instanceName string) resolver.SensitiveLeaves {
 			entry, ok := attachments.Get(instanceName)
@@ -2070,12 +2085,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// link pass replaces it there with the provider-native cross-reference.
 		// Inert (no mutation) for every non-linking provider and every edge that
 		// does not cross a boundary, so a build holding no such edge evaluates its
-		// values mappings against exactly the pipe it did before.
-		stampRecipeName := ""
-		if recipe != nil {
-			stampRecipeName = recipe.Metadata.Name
-		}
-		if err := stampCrossBoundaryLinkSentinels(tmplCtx, nodeID, providerName, stampRecipeName, engine, node, graph, nodeRecipes, input, boundaryDirEvals, perBoundaryAnnotations); err != nil {
+		// values mappings against exactly the pipe it did before. Which edges cross
+		// is the render's one classification, taken before the walk.
+		if err := stampCrossBoundaryLinkSentinels(tmplCtx, nodeID, graph, crossLinks); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("cross-boundary link stamp node %q", nodeID))
 		}
 
@@ -3399,7 +3411,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// the retained assembled artifacts in place. Inert on inputs whose providers
 	// advertise no linking (no file change, no warning).
 	releaseID := releaseNameOf(input)
-	linkWarnings, err := wireCrossBoundaryLinks(ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations, assembledByDispatch, engineFactory, input.YAMLIndent, releaseID)
+	linkWarnings, err := wireCrossBoundaryLinks(ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations, assembledByDispatch, engineFactory, input.YAMLIndent, releaseID, crossLinks)
 	if err != nil {
 		return nil, err
 	}

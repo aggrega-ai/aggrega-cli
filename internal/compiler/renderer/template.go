@@ -87,6 +87,14 @@ func (e templateEval) run() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// A context carrying the placeholders of a connection that crosses into
+	// another output holds the template to copying what it reads off that
+	// connection; see runCopyOnly. Every other evaluation runs exactly as below.
+	if links := linkReadsOf(e.scope.data); links != nil {
+		if out, checked, err := links.runCopyOnly(e, t, refs); checked {
+			return out, err
+		}
+	}
 	out, err := e.execute(t, refs, false)
 	if err != nil {
 		return "", e.wrap(stageExecute, e.withholdFailure(t, refs, err))
@@ -165,7 +173,13 @@ func (e templateEval) missingKeyPolicy() templateMissingKey {
 // datum the author left unset is still unset when it is seeded — a template
 // testing whether it was supplied takes the branch it took on the real data.
 func (e templateEval) execute(t *template.Template, refs []gotmpl.RootRef, substitute bool) (string, error) {
-	data := toLowercaseMap(e.scope.data)
+	return e.executeData(t, refs, toLowercaseMap(e.scope.data), substitute)
+}
+
+// executeData runs a prepared tree over data already converted from the surface's
+// context — a fresh private copy the caller allocated for this execution alone —
+// substituted first when substitute is set.
+func (e templateEval) executeData(t *template.Template, refs []gotmpl.RootRef, data any, substitute bool) (string, error) {
 	if substitute {
 		e.scope.withheld.SubstituteTree(data)
 	}
