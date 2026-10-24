@@ -104,7 +104,11 @@ name: Publish and sign core plugins
 #                        job built, docker (to load and push the image archive),
 #                        gh and curl. On a real publish it hands the plugin
 #                        publish's own output on, as its plugin_push_output, to
-#                        record-published.
+#                        record-published. Once the release step has run, a dry
+#                        run's included, it renders the Homebrew formula and the
+#                        Scoop manifest from the files it attached and their
+#                        SHA256SUMS, and hands both on to
+#                        publish-package-channels.
 #   record-published     After a real publish only — on a dry run it is skipped —
 #                        records what sign-and-publish published on aggrega-hub's
 #                        published branch: each plugin's reference, version and
@@ -143,6 +147,25 @@ name: Publish and sign core plugins
 #                        create-github-app-token action; it runs no action but
 #                        checkout and that one, and no program but git and the
 #                        shell's own utilities. The token reaches git through its
+#                        environment and is never written to disk.
+#   publish-package-channels
+#                        Once sign-and-publish has succeeded, commits the
+#                        Homebrew formula it rendered, Formula/aggrega.rb, to the
+#                        aggrega-ai/homebrew-tap repository, and the Scoop
+#                        manifest, bucket/aggrega.json, to aggrega-ai/scoop-bucket,
+#                        each as one commit on that repository's main branch,
+#                        pushed as a fast-forward and never forced. A file
+#                        already there unchanged is left as it is, and so is one
+#                        naming a later release. On a dry run it prints both
+#                        files and where each would go, and pushes nothing. It
+#                        runs on a GitHub-hosted runner, checks nothing out and
+#                        needs nothing from the hand-over folder. Its one
+#                        credential is a GitHub App installation token for those
+#                        two repositories alone, asking for their contents
+#                        alone, minted only on a real publish by GitHub's own
+#                        create-github-app-token action; it runs no action but
+#                        that one, and no program but git and the shell's own
+#                        utilities. The token reaches git through its
 #                        environment and is never written to disk.
 #   clean-up             Runs last, whatever every other job did, a failure or a
 #                        cancellation included: deletes every artifact this run
@@ -246,11 +269,13 @@ name: Publish and sign core plugins
 # This workflow NEVER creates or pushes a git tag on this repository. Deciding
 # the version and cutting the tag is a human action; this workflow publishes the
 # OCI artifacts and attaches the built binaries and the extension package to the
-# GitHub release for the already-pushed tag. Its git writes are two, both after a
-# real publish and both to another repository: record-published's one commit on
-# aggrega-hub's published branch, never on a main branch, and publish-skills'
-# one commit on aggrega-skills' main branch with the release tag on it, a
-# repository that holds nothing but the generated skills tree.
+# GitHub release for the already-pushed tag. Its git writes are four, all after a
+# real publish and all to another repository: record-published's one commit on
+# aggrega-hub's published branch, never on a main branch; publish-skills' one
+# commit on aggrega-skills' main branch with the release tag on it, a repository
+# that holds nothing but the generated skills tree; and publish-package-channels'
+# one commit on the main branch of each of aggrega-ai/homebrew-tap and
+# aggrega-ai/scoop-bucket, each changing one file.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image included — signs the
@@ -258,8 +283,9 @@ name: Publish and sign core plugins
 # are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads the image archive and
 # prints what it would push, publish, sign and release, doing none of it,
-# record-published is skipped, and publish-skills prints the tree it would
-# publish to aggrega-skills, pushing nothing.
+# record-published is skipped, publish-skills prints the tree it would
+# publish to aggrega-skills, and publish-package-channels prints the formula and
+# the manifest it would commit, pushing nothing.
 #
 # Which refs may sign is decided by the signing identity's federated
 # credentials in Azure. The refs this workflow takes them to admit — the main
@@ -322,6 +348,15 @@ name: Publish and sign core plugins
 #                                        publish, handed to the action that
 #                                        mints the write token and to nothing
 #                                        else)
+#              PACKAGE_CHANNELS_APP_CLIENT_ID   the App installed on
+#              PACKAGE_CHANNELS_APP_PRIVATE_KEY aggrega-ai/homebrew-tap and
+#                                        aggrega-ai/scoop-bucket alone, with
+#                                        their contents' write permission, that
+#                                        commits the formula and the manifest
+#                                        there (publish-package-channels only,
+#                                        on a real publish, handed to the action
+#                                        that mints the write token and to
+#                                        nothing else)
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
@@ -364,7 +399,9 @@ on:
 # delete this run's artifacts and does not let it read the repository.
 # record-published keeps contents:read: what it writes is aggrega-hub's published
 # branch, with the App token it mints, never this repository; so does
-# publish-skills, which writes aggrega-skills with the App token it mints.
+# publish-skills, which writes aggrega-skills with the App token it mints, and
+# publish-package-channels, which writes the Homebrew tap and the Scoop bucket
+# with the App token it mints.
 # sources keeps contents:read too: it reads the sibling repositories with the
 # App token it mints.
 permissions:
@@ -1956,8 +1993,15 @@ jobs:
     # What the plugin publish printed, on a real publish: record-published reads
     # each published plugin's reference, version and digest from it. Empty on a
     # dry run, which publishes nothing.
+    #
+    # The Homebrew formula and the Scoop manifest the render step wrote, and the
+    # version their binaries carry: publish-package-channels commits the two
+    # files to the tap and the bucket. Set on a dry run too, which renders them.
     outputs:
       plugin_push_output: ${{ steps.plugins.outputs.push_output }}
+      homebrew_formula: ${{ steps.package-channels.outputs.formula }}
+      scoop_manifest: ${{ steps.package-channels.outputs.manifest }}
+      release_version: ${{ steps.package-channels.outputs.version }}
 
     env:
       # Destination registry host, the same variable the build named the image
@@ -2036,9 +2080,11 @@ jobs:
         # name in the runner's temporary directory can still hold an earlier
         # run's files, which this run would then read as inputs it was handed or
         # release beside its own. The signed Windows binaries arrive in a
-        # directory of this run's own, WINDOWS_SIGNED, and the release assets
-        # are assembled in another, RELEASE_DIR, both made empty here; the steps
-        # below read them from the environment, and the last steps remove them.
+        # directory of this run's own, WINDOWS_SIGNED, the release assets are
+        # assembled in another, RELEASE_DIR, and the Homebrew formula and the
+        # Scoop manifest are rendered into a third, CHANNELS_DIR, all made empty
+        # here; the steps below read them from the environment, and the last
+        # steps remove them.
         # The release inputs are read where the build job left them, in this
         # run's hand-over folder, INPUTS, once the next step has held that
         # folder to its list; clean-up removes the folder.
@@ -2048,8 +2094,9 @@ jobs:
           handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
           windows_signed="$(mktemp -d "$RUNNER_TEMP/windows-signed.XXXXXX")"
           release="$(mktemp -d "$RUNNER_TEMP/release.XXXXXX")"
-          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nRELEASE_DIR=%s\n' \
-            "$handover" "$handover/release-inputs" "$windows_signed" "$release" >> "$GITHUB_ENV"
+          channels="$(mktemp -d "$RUNNER_TEMP/channels.XXXXXX")"
+          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nRELEASE_DIR=%s\nCHANNELS_DIR=%s\n' \
+            "$handover" "$handover/release-inputs" "$windows_signed" "$release" "$channels" >> "$GITHUB_ENV"
 
       - name: Hold the hand-over folder to the build job's list
         # Before anything in it is used or run: every file in this run's
@@ -2339,6 +2386,9 @@ jobs:
           # version and ABI version strings read here.
           BIN_VERSION="$("$AGGREGA_BIN" version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          # The version the asset names carry, for the step that renders the
+          # Homebrew formula and the Scoop manifest from these assets.
+          printf 'RELEASE_VERSION=%s\n' "$BIN_VERSION" >> "$GITHUB_ENV"
 
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
           smoke_require_bash
@@ -2428,6 +2478,34 @@ jobs:
               --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64, the same bytes the tooling image carries), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
           fi
 
+      - name: Render the Homebrew formula and the Scoop manifest
+        # After the release step, a dry run's included, from the files that
+        # step attached, in RELEASE_DIR, and the SHA256SUMS it attached with
+        # them, through scripts/render-package-channels.sh at the commit the
+        # build job built. The script holds every file there to the list before
+        # it reads a digest from it, so the formula and the manifest carry the
+        # digests of the bytes the release attached and no other; it computes
+        # none of its own, and names each binary as the release step does. On a
+        # real publish the release exists by now, so the addresses the two files
+        # name resolve by the time publish-package-channels commits them. Both
+        # files, and the version, are handed on as this job's outputs, each file
+        # under a delimiter drawn at random for this run.
+        id: package-channels
+        run: |
+          set -euo pipefail
+          [ -n "${RELEASE_VERSION:-}" ] || { echo "sign-and-publish: the release step recorded no version" >&2; exit 1; }
+          aggrega-cli/scripts/render-package-channels.sh "$RELEASE_DIR" "$RELEASE_VERSION" "$CHANNELS_DIR"
+          delimiter="package-channels-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            printf 'version=%s\n' "$RELEASE_VERSION"
+            printf 'formula<<%s\n' "$delimiter"
+            awk 1 "$CHANNELS_DIR/aggrega.rb"
+            printf '%s\n' "$delimiter"
+            printf 'manifest<<%s\n' "$delimiter"
+            awk 1 "$CHANNELS_DIR/aggrega.json"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Remove this run's directories
         # Whatever the steps above did, so nothing this run received or
         # assembled in the runner's temporary directory is left on the persistent
@@ -2436,8 +2514,8 @@ jobs:
         # clean-up's to remove.
         if: ${{ always() && env.RELEASE_DIR != '' }}
         run: |
-          chmod -R u+w -- "$WINDOWS_SIGNED" "$RELEASE_DIR" 2>/dev/null || true
-          rm -rf -- "$WINDOWS_SIGNED" "$RELEASE_DIR"
+          chmod -R u+w -- "$WINDOWS_SIGNED" "$RELEASE_DIR" "$CHANNELS_DIR" 2>/dev/null || true
+          rm -rf -- "$WINDOWS_SIGNED" "$RELEASE_DIR" "$CHANNELS_DIR"
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
@@ -2794,6 +2872,183 @@ jobs:
           g ls-tree -r "$tree" | awk -F'\t' '{ print "  " $2 }'
           g push --atomic "$SKILLS_REMOTE" "$commit:refs/heads/main" "$commit:refs/tags/$TAG"
           echo "publish-skills: published $TAG to aggrega-skills"
+
+  publish-package-channels:
+    # Commits the Homebrew formula and the Scoop manifest sign-and-publish
+    # rendered from this release's own files: Formula/aggrega.rb to the
+    # Homebrew tap, so `brew install aggrega-ai/tap/aggrega` installs this
+    # release, and bucket/aggrega.json to the Scoop bucket, so
+    # `scoop install aggrega` does once the bucket is added. Each file is
+    # written into its repository's main branch as the remote holds it, every
+    # other file there kept, in one commit pushed as a fast-forward and never
+    # forced: a branch another push moved meanwhile is refused by the remote,
+    # and nothing is written there. A file already there unchanged is left as
+    # it is and nothing is pushed; so is one naming a later release, so that
+    # publishing an earlier tag again never takes a channel back to it.
+    #
+    # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
+    # prints both files and where each would go, mints no token, reads nothing
+    # from either repository and pushes nothing. A job of its own, on a
+    # GitHub-hosted runner, so the token that writes the two repositories shares
+    # a job with no other credential. It checks nothing out, since what it
+    # commits reaches it as sign-and-publish's outputs, and runs no action but
+    # GitHub's own create-github-app-token and no program but git and the
+    # shell's own utilities.
+    #
+    # The two repositories' names are written once, in this job's env, which
+    # the token step and the commit step both read.
+    needs: [sign-and-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_TAP_REPOSITORY: homebrew-tap
+      SCOOP_BUCKET_REPOSITORY: scoop-bucket
+
+    steps:
+      - name: Mint the token that writes the tap and the bucket
+        # On a real publish only. A GitHub App installation token for the tap
+        # and the bucket alone, asking for write access to their contents and
+        # nothing else; the App is installed on those two repositories alone.
+        # The App's secrets are handed to this action and to no step, and an
+        # installation token expires an hour after it is minted.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        id: channels-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PACKAGE_CHANNELS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PACKAGE_CHANNELS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ env.HOMEBREW_TAP_REPOSITORY }},${{ env.SCOOP_BUCKET_REPOSITORY }}
+          permission-contents: write
+
+      - name: Commit the formula to the tap and the manifest to the bucket
+        # The formula and the manifest are written exactly as sign-and-publish
+        # rendered them. On a real publish the tag must be a release tag, and
+        # the version the binaries carry must be the tag's, or nothing is
+        # committed. For each repository, its main branch is read as the remote
+        # holds it; the one file is put into that branch's tree, every other
+        # file kept, and the commit pushed on top of it. A repository with no
+        # main branch yet receives a first commit holding that file alone. The
+        # token reaches git as an Authorization header through git's
+        # environment configuration (GIT_CONFIG_COUNT), so it is never placed
+        # on a command line or written to disk; a git too old to read that is
+        # refused, naming its version, before anything is read or written.
+        env:
+          CHANNELS_TOKEN: ${{ steps.channels-token.outputs.token }}
+          APP_SLUG: ${{ steps.channels-token.outputs.app-slug }}
+          FORMULA: ${{ needs.sign-and-publish.outputs.homebrew_formula }}
+          MANIFEST: ${{ needs.sign-and-publish.outputs.scoop_manifest }}
+          RELEASE_VERSION: ${{ needs.sign-and-publish.outputs.release_version }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+            TAG="$DISPATCH_TAG"
+          else
+            DRY="false"
+            TAG="$REF_NAME"
+          fi
+
+          if [ -z "$FORMULA" ] || [ -z "$MANIFEST" ] || [ -z "$RELEASE_VERSION" ]; then
+            echo "publish-package-channels: sign-and-publish handed on no formula, manifest or version; nothing was committed" >&2
+            exit 1
+          fi
+          work="$(mktemp -d "$RUNNER_TEMP/channels.XXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          printf '%s\n' "$FORMULA" > "$work/aggrega.rb"
+          printf '%s\n' "$MANIFEST" > "$work/aggrega.json"
+
+          if [ "$DRY" = "true" ]; then
+            echo "publish-package-channels: dry run: would commit Formula/aggrega.rb to https://github.com/$OWNER/$HOMEBREW_TAP_REPOSITORY and bucket/aggrega.json to https://github.com/$OWNER/$SCOOP_BUCKET_REPOSITORY, each on its main branch, for aggrega $RELEASE_VERSION; nothing is pushed."
+            echo "publish-package-channels: Formula/aggrega.rb would read:"
+            cat "$work/aggrega.rb"
+            echo "publish-package-channels: bucket/aggrega.json would read:"
+            cat "$work/aggrega.json"
+            exit 0
+          fi
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "publish-package-channels: '$TAG' is not a release tag of the form vMAJOR.MINOR.PATCH; nothing was committed" >&2
+            exit 1
+          fi
+          if [ "$TAG" != "v$RELEASE_VERSION" ]; then
+            echo "publish-package-channels: the release tag is $TAG, but its binaries carry the version $RELEASE_VERSION; nothing was committed" >&2
+            exit 1
+          fi
+          if [ -z "$CHANNELS_TOKEN" ]; then
+            echo "publish-package-channels: no token for the tap and the bucket was minted; nothing was committed" >&2
+            exit 1
+          fi
+          probe="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=packagechannels.probe GIT_CONFIG_VALUE_0=read git config --get packagechannels.probe || true)"
+          if [ "$probe" != read ]; then
+            echo "publish-package-channels: this machine's $(git --version) does not read configuration from GIT_CONFIG_COUNT, which is how the token reaches git without being written to disk; git 2.31 or later does. Nothing was committed." >&2
+            exit 1
+          fi
+          auth="$(printf 'x-access-token:%s' "$CHANNELS_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          # The commit is authored in the App's name, at a no-reply address.
+          author="${APP_SLUG:-aggrega-cli-release}[bot]"
+          export GIT_AUTHOR_NAME="$author" GIT_COMMITTER_NAME="$author"
+          export GIT_AUTHOR_EMAIL="$author@users.noreply.github.com" GIT_COMMITTER_EMAIL="$author@users.noreply.github.com"
+          message="$(printf 'aggrega %s\n\nWritten by the release https://github.com/%s/aggrega-cli/releases/tag/%s.\n' "$RELEASE_VERSION" "$OWNER" "$TAG")"
+
+          # commit_file <repository> <path in it> <file>
+          commit_file() {
+            local repo="$1" path="$2" file="$3"
+            local remote="https://github.com/$OWNER/$repo.git"
+            local git_dir="$work/$repo.git" index="$work/$repo.index" current="$work/$repo.current"
+            local heads parent="" published="" newest blob tree commit
+            local -a parents=()
+            git init -q --bare "$git_dir"
+            if ! heads="$(git --git-dir="$git_dir" ls-remote "$remote" refs/heads/main)"; then
+              echo "publish-package-channels: could not read $remote; nothing was committed there" >&2
+              return 1
+            fi
+            if [ -n "$heads" ]; then
+              git --git-dir="$git_dir" fetch -q --no-tags "$remote" "refs/heads/main:refs/published/main"
+              parent="$(git --git-dir="$git_dir" rev-parse refs/published/main)"
+              parents=(-p "$parent")
+              if git --git-dir="$git_dir" cat-file -e "$parent:$path" 2>/dev/null; then
+                git --git-dir="$git_dir" cat-file blob "$parent:$path" > "$current"
+                if cmp -s "$current" "$file"; then
+                  echo "publish-package-channels: $OWNER/$repo already holds this $path; nothing to push"
+                  return 0
+                fi
+                published="$(awk 'match($0, /\/releases\/download\/v[^\/]+\//) { print substr($0, RSTART + 20, RLENGTH - 21); exit }' "$current")"
+                if [ -n "$published" ] && [ "$published" != "$RELEASE_VERSION" ]; then
+                  newest="$(printf '%s\n%s\n' "$published" "$RELEASE_VERSION" | sort -V | tail -n 1)"
+                  if [ "$newest" != "$RELEASE_VERSION" ]; then
+                    echo "publish-package-channels: $OWNER/$repo's $path names aggrega $published, later than $RELEASE_VERSION; it is left as it is"
+                    return 0
+                  fi
+                fi
+              fi
+            fi
+            blob="$(git --git-dir="$git_dir" hash-object -w "$file")"
+            if [ -n "$parent" ]; then
+              GIT_INDEX_FILE="$index" git --git-dir="$git_dir" read-tree "$parent"
+            else
+              GIT_INDEX_FILE="$index" git --git-dir="$git_dir" read-tree --empty
+            fi
+            GIT_INDEX_FILE="$index" git --git-dir="$git_dir" update-index --add --cacheinfo "100644,$blob,$path"
+            tree="$(GIT_INDEX_FILE="$index" git --git-dir="$git_dir" write-tree)"
+            commit="$(git --git-dir="$git_dir" commit-tree "$tree" "${parents[@]}" -m "$message")"
+            git --git-dir="$git_dir" push "$remote" "$commit:refs/heads/main"
+            echo "publish-package-channels: committed $path to $OWNER/$repo as $commit, for aggrega $RELEASE_VERSION"
+          }
+
+          commit_file "$HOMEBREW_TAP_REPOSITORY" Formula/aggrega.rb "$work/aggrega.rb"
+          commit_file "$SCOOP_BUCKET_REPOSITORY" bucket/aggrega.json "$work/aggrega.json"
 
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
@@ -3170,7 +3425,7 @@ jobs:
     # image to an archive and loads nothing, and sign-and-publish's publish
     # script removes every reference it loads when it exits, a refusal
     # included.
-    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, publish-skills, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, publish-skills, publish-package-channels, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15

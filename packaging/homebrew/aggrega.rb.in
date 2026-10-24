@@ -1,0 +1,40 @@
+# Written by every Aggrega release from packaging/homebrew/aggrega.rb.in in
+# https://github.com/aggrega-ai/aggrega-cli; a change made here is replaced by
+# the next release.
+class Aggrega < Formula
+  desc "Deterministic ahead-of-time compiler for deployment artifacts"
+  homepage "https://aggrega.ai"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/aggrega-ai/aggrega-cli/releases/download/v@VERSION@/@ASSET_DARWIN_ARM64@"
+      sha256 "@SHA256_DARWIN_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/aggrega-ai/aggrega-cli/releases/download/v@VERSION@/@ASSET_DARWIN_AMD64@"
+      sha256 "@SHA256_DARWIN_AMD64@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/aggrega-ai/aggrega-cli/releases/download/v@VERSION@/@ASSET_LINUX_ARM64@"
+      sha256 "@SHA256_LINUX_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/aggrega-ai/aggrega-cli/releases/download/v@VERSION@/@ASSET_LINUX_AMD64@"
+      sha256 "@SHA256_LINUX_AMD64@"
+    end
+  end
+
+  def install
+    # The download is the executable itself, staged under the file name its
+    # address ends in.
+    bin.install File.basename(stable.url) => "aggrega"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/aggrega version")
+  end
+end

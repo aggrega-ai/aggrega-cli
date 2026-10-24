@@ -22,7 +22,10 @@
 # smoke_check_sums. The SHA256SUMS a release attaches is written the same way, by
 # smoke_write_tree_sums over the directory holding exactly the files the release
 # attaches, and held to them by smoke_check_sums before the release is made; the
-# names the release gives its binaries are smoke_release_asset_name's. The smoke
+# names the release gives its binaries are smoke_release_asset_name's. The
+# Homebrew formula and the Scoop manifest each release writes for its default
+# binaries take every digest from that list, through smoke_listed_digest, once
+# smoke_check_tree_sums has held the list to the files. The smoke
 # run's install step lays out a release the same way, with the same two
 # functions, so the install scripts are proven against the names and the list a
 # release carries.
@@ -146,6 +149,14 @@
 #     names something else or is not in that form, every file missing from <dir>
 #     and every digest that differs. Needs sha256sum, which the Git for Windows
 #     shell and Linux both carry.
+#
+#   smoke_listed_digest <list> <name>
+#     Prints the SHA-256 digest <list>, a list in the form smoke_check_sums
+#     reads, gives <name>, reading each line through the same statement of that
+#     form. Returns 1, printing nothing on standard output, when the list is
+#     missing, holds a line not in that form, or names <name> other than exactly
+#     once. It reads the list and nothing else: what holds the list to the bytes
+#     it describes is smoke_check_sums.
 #
 #   smoke_write_tree_sums <dir>
 #     Writes <dir>/SHA256SUMS: the SHA-256 of every file beneath <dir>, by its
@@ -526,7 +537,6 @@ smoke_require_space_and_non_ascii() {
 
 smoke_check_sums() {
   local LC_ALL=C list="$1" dir="$2" line digest name actual bad=0
-  local re='^([0-9a-f]{64}) [ *](.+)$'
   shift 2
   local -A wanted=() listed=()
   for name in "$@"; do wanted[$name]=1; done
@@ -541,7 +551,7 @@ smoke_check_sums() {
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     [ -n "$line" ] || continue
-    if [[ ! $line =~ $re ]]; then
+    if ! smoke_sums_line "$line"; then
       printf 'smoke: %s holds a line that is not "<SHA-256>  <name>": %s\n' "${list##*/}" "$line" >&2
       bad=1
       continue
@@ -581,6 +591,40 @@ smoke_check_sums() {
   done
   [ "$bad" = 0 ] || return 1
   printf 'ok: %s lists exactly the %d file(s), and each in %s matches it\n' "${list##*/}" "$#" "$dir"
+}
+
+# smoke_sums_line <line> — returns 0 when <line> is a line of a SHA-256 list in
+# the form sha256sum writes, leaving the digest in BASH_REMATCH[1] and the name
+# in BASH_REMATCH[2], and 1 otherwise. The one statement of that form, which
+# smoke_check_sums and smoke_listed_digest both read lines through.
+smoke_sums_line() {
+  local LC_ALL=C re='^([0-9a-f]{64}) [ *](.+)$'
+  [[ $1 =~ $re ]]
+}
+
+smoke_listed_digest() {
+  local list="$1" want="$2" line digest="" count=0
+  if [ ! -f "$list" ]; then
+    printf 'smoke: there is no SHA-256 list at %s\n' "$list" >&2
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    [ -n "$line" ] || continue
+    if ! smoke_sums_line "$line"; then
+      printf 'smoke: %s holds a line that is not "<SHA-256>  <name>": %s\n' "${list##*/}" "$line" >&2
+      return 1
+    fi
+    if [ "${BASH_REMATCH[2]}" = "$want" ]; then
+      count=$((count + 1))
+      digest="${BASH_REMATCH[1]}"
+    fi
+  done < "$list"
+  if [ "$count" -ne 1 ]; then
+    printf 'smoke: %s lists %s %d time(s); it must list it exactly once\n' "${list##*/}" "$want" "$count" >&2
+    return 1
+  fi
+  printf '%s\n' "$digest"
 }
 
 # smoke_tree_refuse_special <dir> — returns 1, naming each, when <dir> holds
