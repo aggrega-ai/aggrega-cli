@@ -78,12 +78,14 @@ func UndecidedPairs() []UndecidedPair {
 // The rows are grouped by surface and follow the operation set's order within a
 // surface, so a reader meets them in the same sequence the checks report them.
 //
-// It is EMPTY, and an empty bound is the state this list is for rather than a
-// signal that it has been retired: every operation on every surface is now either
+// An empty bound is the state this list is for rather than a signal that it has
+// been retired: every operation it does not name is, on every surface, either
 // exposed under a named method or declined with a reason a reader can check
-// against the package. The next capability whose disposition nobody has settled
-// takes a row here, and the ceiling in the test file rises by one deliberately.
-var undecidedPairs = []UndecidedPair{}
+// against the package. A capability whose disposition nobody has settled takes a
+// row here, and the ceiling in the test file rises by one deliberately.
+var undecidedPairs = []UndecidedPair{
+	{Surface: SurfaceServe, ID: "skills-install", Disposition: pending},
+}
 
 // isUndecided reports whether the bound excuses an availability declaration for
 // the given operation on the given surface.

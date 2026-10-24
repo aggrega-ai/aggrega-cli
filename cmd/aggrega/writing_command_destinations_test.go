@@ -36,7 +36,9 @@ const guestVersionToken = "<version>"
 //   - `aggrega plugin gen-catalog --output-dir out` writes beneath out in the
 //     folder the command runs in, since a path you type resolves there;
 //   - `aggrega pin` of a relative entity path writes the entity.lock beside the
-//     entity.
+//     entity;
+//   - `aggrega skills install` naming no --global writes the assistant's skill
+//     folder beneath the folder the command runs in.
 //
 // A command added later that writes by default into the folder it runs in has a
 // row to land in here, and the row it gets says so in the open.
@@ -106,6 +108,16 @@ func TestEveryWritingCommandWritesWhereItsDestinationSays(t *testing.T) {
 			name:        "pin of a relative entity path",
 			args:        []string{"pin", "../catalog/local/recipe.yaml"},
 			wantChanges: []string{"ws/catalog/local/entity.lock was created"},
+		},
+		{
+			name: "skills install for a project",
+			args: []string{"skills", "install", "--agent", "claude-code"},
+			wantChanges: []string{
+				"ws/sub/.claude was created",
+				"ws/sub/.claude/skills was created",
+				"ws/sub/.claude/skills/aggrega was created",
+				"ws/sub/.claude/skills/aggrega/SKILL.md was created",
+			},
 		},
 	} {
 		t.Run(row.name, func(t *testing.T) {

@@ -144,6 +144,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"search":             opsurface.Exposed("aggrega search"),
 	"serve":              opsurface.Exposed("aggrega serve"),
 	"sign":               opsurface.Exposed("aggrega sign"),
+	"skills-install":     opsurface.Exposed("aggrega skills install"),
 	"validate":           opsurface.Exposed("aggrega validate"),
 	"version":            opsurface.Exposed("aggrega version"),
 

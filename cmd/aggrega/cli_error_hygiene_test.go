@@ -212,6 +212,9 @@ var runtimeErrorCommands = []struct {
 	// registry update resolves its argument to a host before contacting
 	// anything, so a token that cannot be a registry reference fails locally.
 	{path: "aggrega registry update", args: []string{"registry", "update", "not a registry!!!"}},
+	// skills install refuses an assistant it knows no skill folder for inside its
+	// own work, before any target is checked, so nothing is written.
+	{path: "aggrega skills install", args: []string{"skills", "install", "--agent", "no-such-assistant"}},
 }
 
 // TestCLIErrorHygiene_RuntimeErrorSuppressesUsageAndError drives each

@@ -136,6 +136,7 @@ func newRootCmd() *cobra.Command {
 	mustAttach(root, newSearchCmd(), "search")
 	attachConfigCommands(root)
 	attachCacheCommands(root)
+	attachSkillsCommands(root)
 	mustAttach(root, newLoginCmd(), "login")
 	mustAttach(root, newLogoutCmd(), "logout")
 	mustAttach(root, newVersionCmd(), "version")

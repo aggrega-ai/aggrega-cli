@@ -420,7 +420,15 @@ import (
 // is currently excused — so the next capability whose disposition nobody has
 // settled has to raise this number deliberately and argue for it, which is exactly
 // the cost the bound exists to impose.
-const boundCeiling = 0
+//
+// It stands at ONE while the daemon's disposition of installing the assistant
+// skill into an assistant's skill folder is open. The command line carries it,
+// and the tool protocol carries it through the tool it generates from that
+// command. What the daemon would carry is not settled by the rule its writing
+// methods run under, because carrying it needs a method name of its own and an
+// answer to which folder a project install lands in when the caller is an
+// editor rather than a terminal standing in a folder.
+const boundCeiling = 1
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

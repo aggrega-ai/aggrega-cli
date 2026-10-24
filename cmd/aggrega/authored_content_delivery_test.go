@@ -585,6 +585,7 @@ func TestTheProductClassificationIsCarriedByTheCommandSurface(t *testing.T) {
 		{"aggrega plugin add", "a plugin attachment the operator goes on editing", "dry-run"},
 		{"aggrega config capture", "a record of what the configuration resolved to", ""},
 		{"aggrega plugin sync", "the compiler's own bookkeeping about a plugin module", ""},
+		{"aggrega skills install", "a copy of the skill this binary ships, which the next install replaces", ""},
 	} {
 		t.Run(row.path, func(t *testing.T) {
 			cmd, _, err := newRootCmd().Find(strings.Fields(row.path)[1:])

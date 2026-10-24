@@ -185,6 +185,10 @@ var operations = []Operation{
 	{"search", ReachNone, "Search the local index of configured registries."},
 	{"serve", ReachMachine, "Serve the compiler over JSON-RPC on a stream."},
 	{"sign", ReachRegistry, "Sign already-published artifacts and attach their signatures."},
+	// The skill lands in an assistant's project folder by default and in its
+	// per-user folder under the home directory on request, which every project on
+	// the machine reads, so the class is what the widest resolution reaches.
+	{"skills-install", ReachMachine, "Write the Aggrega assistant skill into an AI assistant's skill folder."},
 	{"validate", ReachNone, "Check correctness across a catalog, a Release, or one entity."},
 	{"version", ReachNone, "Report the binary's own version."},
 

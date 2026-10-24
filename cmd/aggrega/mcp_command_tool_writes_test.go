@@ -71,6 +71,7 @@ var commandToolWrites = map[string]bool{
 	"cli-registry-remove":    true,
 	"cli-registry-update":    true,
 	"cli-sign":               true,
+	"cli-skills-install":     true,
 }
 
 // capabilityIndexOverTheRealSurface drives the server at its real entry point
