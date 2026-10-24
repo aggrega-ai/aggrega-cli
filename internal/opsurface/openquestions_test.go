@@ -421,14 +421,16 @@ import (
 // settled has to raise this number deliberately and argue for it, which is exactly
 // the cost the bound exists to impose.
 //
-// It stands at ONE while the daemon's disposition of installing the assistant
-// skill into an assistant's skill folder is open. The command line carries it,
-// and the tool protocol carries it through the tool it generates from that
-// command. What the daemon would carry is not settled by the rule its writing
-// methods run under, because carrying it needs a method name of its own and an
-// answer to which folder a project install lands in when the caller is an
-// editor rather than a terminal standing in a folder.
-const boundCeiling = 1
+// It stands at TWO while the daemon's disposition of the assistant skill is
+// open: installing the skill into an assistant's skill folder, and listing the
+// skills and the assistants they install for. Both are carried by the command
+// line, and the tool protocol carries both through the tools it generates from
+// those commands. What the daemon would carry is not settled by the rule its
+// writing methods run under, because carrying either needs a method name of its
+// own, and the install would need an answer to which folder a project install
+// lands in when the caller is an editor rather than a terminal standing in a
+// folder.
+const boundCeiling = 2
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

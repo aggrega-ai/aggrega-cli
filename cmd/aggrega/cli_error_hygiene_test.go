@@ -340,6 +340,10 @@ func TestCLIErrorHygiene_AllRunECommandsCovered(t *testing.T) {
 	// version. Measured, not assumed: driven with no arguments and with a
 	// non-existent workspace root, it succeeds both ways.
 	covered["aggrega cache status"] = true
+	// skills list reports the skills and assistants this binary carries, which
+	// are compiled into it, so it has no runtime error to drive — the same shape
+	// as version.
+	covered["aggrega skills list"] = true
 	// auth token's RunE begins the interactive identity acquisition, which
 	// cannot be driven here at all: every path through it either opens a browser
 	// or contacts the identity provider. It is exempt for the opposite reason to

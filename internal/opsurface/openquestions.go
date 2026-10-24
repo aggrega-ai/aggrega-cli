@@ -85,6 +85,7 @@ func UndecidedPairs() []UndecidedPair {
 // row here, and the ceiling in the test file rises by one deliberately.
 var undecidedPairs = []UndecidedPair{
 	{Surface: SurfaceServe, ID: "skills-install", Disposition: pending},
+	{Surface: SurfaceServe, ID: "skills-list", Disposition: pending},
 }
 
 // isUndecided reports whether the bound excuses an availability declaration for

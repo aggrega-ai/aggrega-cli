@@ -45,6 +45,7 @@ version you have.`,
 	}
 	mustAttachGroup(parent, c)
 	mustAttach(c, newSkillsInstallCmd(), "skills-install")
+	mustAttach(c, newSkillsListCmd(), "skills-list")
 }
 
 // skillToInstall is the skill `aggrega skills install` writes. The binary ships

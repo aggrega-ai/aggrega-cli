@@ -189,6 +189,7 @@ var operations = []Operation{
 	// per-user folder under the home directory on request, which every project on
 	// the machine reads, so the class is what the widest resolution reaches.
 	{"skills-install", ReachMachine, "Write the Aggrega assistant skill into an AI assistant's skill folder."},
+	{"skills-list", ReachNone, "Report the assistant skills the binary ships and the assistants it installs them for."},
 	{"validate", ReachNone, "Check correctness across a catalog, a Release, or one entity."},
 	{"version", ReachNone, "Report the binary's own version."},
 

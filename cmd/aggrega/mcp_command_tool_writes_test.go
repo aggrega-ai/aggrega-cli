@@ -47,6 +47,7 @@ var commandToolWrites = map[string]bool{
 	"cli-registry-list": false,
 	"cli-scaffold":      false,
 	"cli-search":        false,
+	"cli-skills-list":   false,
 	"cli-validate":      false,
 	"cli-version":       false,
 
