@@ -421,16 +421,23 @@ import (
 // settled has to raise this number deliberately and argue for it, which is exactly
 // the cost the bound exists to impose.
 //
-// It stands at TWO while the daemon's disposition of the assistant skill is
-// open: installing the skill into an assistant's skill folder, and listing the
-// skills and the assistants they install for. Both are carried by the command
-// line, and the tool protocol carries both through the tools it generates from
-// those commands. What the daemon would carry is not settled by the rule its
-// writing methods run under, because carrying either needs a method name of its
-// own, and the install would need an answer to which folder a project install
-// lands in when the caller is an editor rather than a terminal standing in a
-// folder.
-const boundCeiling = 2
+// It came down by TWO, to zero again, when the daemon took on the assistant
+// skill: installing it into an assistant's skill folder, and listing the skills
+// and the assistants they install for. The two rows left together because they
+// were one question asked about one capability — whether the surface an editor
+// speaks to carries what the command line and the tool protocol already carried
+// — and the listing is how a caller learns the identifiers the installation
+// takes, so settling one alone would have split it.
+//
+// What the rule its writing methods run under could not settle, and what the
+// disposition had to, is where a project installation lands when the caller is
+// an editor rather than a terminal standing in a folder. The answer is the
+// workspace the request names: the folder an editor opened is the project the
+// caller means, while the directory the daemon runs in is a property of how it
+// was started, and a write there would land wherever that happened to be. Each
+// path the installation writes in that workspace is held to it, as every other
+// write the daemon makes there is.
+const boundCeiling = 0
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

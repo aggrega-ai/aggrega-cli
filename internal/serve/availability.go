@@ -491,6 +491,27 @@ var operationAvailability = map[string]serveAvailability{
 	"config-init":    servedAt(at("aggrega/configInit", (*Server).dispatchConfigInit)),
 	"config-capture": servedAt(at("aggrega/configCapture", (*Server).dispatchConfigCapture)),
 
+	// The session installs the assistant skill built into this binary into an AI
+	// assistant's skill folder, and lists the skills it ships with the assistants
+	// it installs them for. The installation writes, and it is admitted on the rule
+	// every writing method here runs under: a caller that sent it has asked for the
+	// skill to be written. The listing writes nothing and reaches nothing.
+	//
+	// A project installation lands in the workspace the request names, never in
+	// the directory the daemon runs in: the folder an editor opened is the project
+	// a caller means, while the daemon's own working directory is a property of
+	// how it was started. Each path it writes there is held to that workspace. With
+	// the per-user override it writes under the home directory instead, which every
+	// project on the machine reads, so its response says whether the change is
+	// machine-wide, on the ground the configuration seeding above states.
+	//
+	// Both take the workspace parameter. The installation's project folders are
+	// that workspace's. The listing takes it on the terms the credential removal
+	// above takes it: it reads nothing from the workspace, and the caller sends the
+	// field every request here carries.
+	"skills-install": servedAt(at("aggrega/skillsInstall", (*Server).dispatchSkillsInstall)),
+	"skills-list":    servedAt(at("aggrega/skillsList", (*Server).dispatchSkillsList)),
+
 	// The session converts a foreign source description into draft authoring
 	// files. It writes, and it is admitted on the rule every writing method here
 	// runs under: a caller that sent it has asked for the drafts, exactly as a
