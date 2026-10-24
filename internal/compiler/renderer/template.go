@@ -87,19 +87,44 @@ func (e templateEval) run() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	p := preparedTemplate{eval: e, tree: t, refs: refs}
 	// A context carrying the placeholders of a connection that crosses into
 	// another output holds the template to copying what it reads off that
 	// connection; see runCopyOnly. Every other evaluation runs exactly as below.
 	if links := linkReadsOf(e.scope.data); links != nil {
-		if out, checked, err := links.runCopyOnly(e, t, refs); checked {
+		if out, checked, err := links.runCopyOnly(p); checked {
 			return out, err
 		}
 	}
 	out, err := e.execute(t, refs, false)
 	if err != nil {
-		return "", e.wrap(stageExecute, e.withholdFailure(t, refs, err))
+		return "", p.executionFailure(err)
 	}
 	return out, nil
+}
+
+// preparedTemplate is one evaluation whose template has been parsed and whose
+// references have been checked: the evaluation, the tree to execute and the
+// references it makes. It is how an evaluation hands its own execution to a step
+// that runs the same template more than once over different data, so that step
+// executes through this evaluator rather than holding a template of its own.
+type preparedTemplate struct {
+	eval templateEval
+	tree *template.Template
+	refs []gotmpl.RootRef
+}
+
+// executeOver runs the prepared tree over data already converted from the
+// surface's context — a fresh private copy allocated for this execution alone.
+func (p preparedTemplate) executeOver(data any) (string, error) {
+	return p.eval.executeData(p.tree, p.refs, data, false)
+}
+
+// executionFailure reports a failed execution of the prepared tree the way the
+// surface names it, withholding any text a value an author declared sensitive
+// could reach.
+func (p preparedTemplate) executionFailure(err error) error {
+	return p.eval.wrap(stageExecute, p.eval.withholdFailure(p.tree, p.refs, err))
 }
 
 // runSubstituted evaluates the template once, over its data with every datum the

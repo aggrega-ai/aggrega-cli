@@ -8,10 +8,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -357,16 +355,17 @@ func linkReadsOf(data any) *crossBoundaryLinks {
 //
 // It reports checked false when the data carries none of the record's
 // placeholders, and the caller evaluates the template as it otherwise would.
-func (l *crossBoundaryLinks) runCopyOnly(e templateEval, t *template.Template, refs []gotmpl.RootRef) (string, bool, error) {
-	data := toLowercaseMap(e.scope.data)
+func (l *crossBoundaryLinks) runCopyOnly(p preparedTemplate) (string, bool, error) {
+	scopeData := p.eval.scope.data
+	data := toLowercaseMap(scopeData)
 	present := l.placeholdersInTree(data)
 	if len(present) == 0 {
 		return "", false, nil
 	}
-	out, outErr := e.executeData(t, refs, data, false)
-	realOut, realErr := e.executeData(t, refs, l.writtenBack(e.scope.data, present, ""), false)
+	out, outErr := p.executeOver(data)
+	realOut, realErr := p.executeOver(l.writtenBack(scopeData, present, ""))
 	if outErr != nil && realErr != nil {
-		return "", true, e.wrap(stageExecute, e.withholdFailure(t, refs, realErr))
+		return "", true, p.executionFailure(realErr)
 	}
 	if outErr == nil && realErr == nil && l.writeBack(out, present) == realOut {
 		read := l.placeholdersInText(out, present)
@@ -374,9 +373,9 @@ func (l *crossBoundaryLinks) runCopyOnly(e templateEval, t *template.Template, r
 		return l.deliveredForm(out, read), true, nil
 	}
 	involved := l.involved(present, realErr == nil, func(except string) (string, error) {
-		return e.executeData(t, refs, l.writtenBack(e.scope.data, present, except), false)
+		return p.executeOver(l.writtenBack(scopeData, present, except))
 	}, realOut)
-	return "", true, l.notCopiedError(fmt.Sprintf("template %q", e.name), e.name, involved)
+	return "", true, l.notCopiedError(fmt.Sprintf("template %q", p.eval.name), p.eval.name, involved)
 }
 
 // involved names the placeholders a failed copy check turns on, key by key: each
