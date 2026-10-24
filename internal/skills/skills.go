@@ -45,7 +45,11 @@ var embedded embed.FS
 
 // skillNames are the skills this binary ships, in the order every listing and
 // every written tree takes them.
-var skillNames = []string{"aggrega"}
+var skillNames = []string{InstalledSkill}
+
+// InstalledSkill is the skill an installation writes. The binary ships one, so
+// no surface that installs it asks which.
+const InstalledSkill = "aggrega"
 
 // Banner is the line every written copy of a skill file carries.
 //

@@ -38,7 +38,7 @@ const guestVersionToken = "<version>"
 //   - `aggrega pin` of a relative entity path writes the entity.lock beside the
 //     entity;
 //   - `aggrega skills install` naming no --global writes the assistant's skill
-//     folder beneath the folder the command runs in.
+//     folder beneath the workspace root.
 //
 // A command added later that writes by default into the folder it runs in has a
 // row to land in here, and the row it gets says so in the open.
@@ -113,10 +113,10 @@ func TestEveryWritingCommandWritesWhereItsDestinationSays(t *testing.T) {
 			name: "skills install for a project",
 			args: []string{"skills", "install", "--agent", "claude-code"},
 			wantChanges: []string{
-				"ws/sub/.claude was created",
-				"ws/sub/.claude/skills was created",
-				"ws/sub/.claude/skills/aggrega was created",
-				"ws/sub/.claude/skills/aggrega/SKILL.md was created",
+				"ws/.claude was created",
+				"ws/.claude/skills was created",
+				"ws/.claude/skills/aggrega was created",
+				"ws/.claude/skills/aggrega/SKILL.md was created",
 			},
 		},
 	} {

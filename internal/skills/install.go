@@ -33,6 +33,12 @@ type InstallRequest struct {
 	// Global selects each assistant's per-user skill folder, beneath the home
 	// directory Base names, in place of its project skill folder.
 	Global bool
+
+	// Guard, when set, is asked about every path the installation would write —
+	// each skill folder and each file in it — before anything is written. An error
+	// it returns refuses the installation with every folder left as it was, so a
+	// caller that holds its writes to a tree can hold this one to it too.
+	Guard func(path string) error
 }
 
 // Installed reports one skill folder an installation wrote.
@@ -116,6 +122,11 @@ func Install(req InstallRequest) ([]Installed, error) {
 	}
 
 	for _, t := range targets {
+		if req.Guard != nil {
+			if err := guardTarget(req.Guard, t.Dir, files); err != nil {
+				return nil, err
+			}
+		}
 		replaced, err := checkTarget(t.Dir, files)
 		if err != nil {
 			return nil, err
@@ -140,6 +151,20 @@ func unknownAgentError(id string) error {
 		"for are %s. An assistant that is not listed can still use Aggrega through its MCP server: connect it to "+
 		"the command \"aggrega mcp\" as %s describes",
 		id, strings.Join(AgentIDs(), ", "), SetupPage)
+}
+
+// guardTarget asks guard about a skill folder and about every file the skill
+// writes in it, in that order.
+func guardTarget(guard func(string) error, dir string, files []File) error {
+	if err := guard(dir); err != nil {
+		return err
+	}
+	for _, f := range files {
+		if err := guard(filepath.Join(dir, filepath.FromSlash(f.Path))); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkTarget reports whether a skill folder already holds a copy the skill may

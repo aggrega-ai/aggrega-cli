@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/skills"
+	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
 // attachSkillsCommands builds the `skills` command family under parent: the
@@ -48,10 +49,6 @@ version you have.`,
 	mustAttach(c, newSkillsListCmd(), "skills-list")
 }
 
-// skillToInstall is the skill `aggrega skills install` writes. The binary ships
-// one, so the command takes no argument naming it.
-const skillToInstall = "aggrega"
-
 // newSkillsInstallCmd builds the `skills install` command: it writes the skill
 // built into this binary into each named assistant's skill folder.
 func newSkillsInstallCmd() *cobra.Command {
@@ -64,10 +61,16 @@ func newSkillsInstallCmd() *cobra.Command {
 		Long: `Write the Aggrega skill into the skill folder of each assistant named with
 --agent, so the assistant knows how to install and use Aggrega.
 
-By default the skill goes into the assistant's project skill folder inside the
-directory you run the command in, which is where a project's own skills are
-committed. With --global it goes into the assistant's per-user skill folder
-in your home directory instead, where the assistant reads it in every project.
+By default the skill goes into the assistant's project skill folder at the root
+of your workspace — the one found from the directory you run the command in, or
+named with --workspace-root; a directory no workspace marks is its own root —
+which is where a project's own skills are committed. With --global it goes
+into the assistant's per-user skill folder in your home directory instead,
+where the assistant reads it in every project.
+
+Every folder and file a project installation writes is held to the workspace:
+a skill folder reached through a link leading out of it is refused, and
+nothing is written.
 
 --agent may be given more than once. Where several of the named assistants read
 the same folder, the skill is written there once.
@@ -98,12 +101,19 @@ through its MCP server: connect it to "aggrega mcp" as
 			if err != nil {
 				return fmt.Errorf("aggrega skills install: %w", err)
 			}
-			installed, err := skills.Install(skills.InstallRequest{
-				Skill:  skillToInstall,
+			req := skills.InstallRequest{
+				Skill:  skills.InstalledSkill,
 				Agents: agentIDs,
 				Base:   base,
 				Global: global,
-			})
+			}
+			if !global {
+				// A project installation is held to the workspace it lands in, so a
+				// skill folder reached through a link leading out of it is refused
+				// rather than written wherever the link points.
+				req.Guard = func(path string) error { return writescope.CheckWrite(base, path) }
+			}
+			installed, err := skills.Install(req)
 			if err != nil {
 				return fmt.Errorf("aggrega skills install: %w", err)
 			}
@@ -114,17 +124,24 @@ through its MCP server: connect it to "aggrega mcp" as
 	c.Flags().StringArrayVar(&agentIDs, "agent", nil,
 		"Assistant to install the skill for, by identifier (for example claude-code, codex, cursor or gemini-cli). Repeatable; the help lists every identifier and the folder each one writes.")
 	c.Flags().BoolVar(&global, "global", false,
-		"Install into each assistant's per-user skill folder in your home directory, which it reads in every project, instead of the project skill folder in the directory you run the command in.")
+		"Install into each assistant's per-user skill folder in your home directory, which it reads in every project, instead of the project skill folder at the root of your workspace.")
 	_ = c.MarkFlagRequired("agent")
 	return c
 }
 
 // skillsInstallBase returns the folder the assistants' skill folders are taken
 // relative to: the home directory under --global, read through the environment
-// the invocation runs against, and the working directory otherwise.
+// the invocation runs against, and otherwise the root of the workspace this
+// invocation resolves — the one every command resolves, so --workspace-root and
+// discovery from the folder the command runs in decide it here as they do
+// everywhere else, and a folder no workspace marks is its own root.
 func skillsInstallBase(cmd *cobra.Command, global bool) (string, error) {
 	if !global {
-		return os.Getwd()
+		ws, err := workspaceFromContext(cmd.Context())
+		if err != nil {
+			return "", err
+		}
+		return ws.Root(), nil
 	}
 	platform, lookup := machineFromContext(cmd.Context())
 	if lookup == nil {
@@ -141,7 +158,7 @@ func writeSkillsInstalled(out io.Writer, installed []skills.Installed) {
 		if in.Replaced {
 			verb = "Replaced"
 		}
-		fmt.Fprintf(out, "%s the %s skill for %s at %s\n", verb, skillToInstall, in.AgentNames(), in.Dir)
+		fmt.Fprintf(out, "%s the %s skill for %s at %s\n", verb, skills.InstalledSkill, in.AgentNames(), in.Dir)
 	}
 }
 
