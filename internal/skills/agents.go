@@ -43,6 +43,8 @@ type Agent struct {
 // instead, which every listed assistant can reach as well.
 var agents = []Agent{
 	{ID: "amp", Name: "Amp", ProjectDir: ".agents/skills", UserDir: ".config/amp/skills"},
+	{ID: "antigravity", Name: "Antigravity", ProjectDir: ".agents/skills", UserDir: ".gemini/config/skills"},
+	{ID: "antigravity-cli", Name: "Antigravity CLI", ProjectDir: ".agents/skills", UserDir: ".gemini/antigravity-cli/skills"},
 	{ID: "claude-code", Name: "Claude Code", ProjectDir: ".claude/skills", UserDir: ".claude/skills"},
 	{ID: "cline", Name: "Cline", ProjectDir: ".cline/skills", UserDir: ".cline/skills"},
 	{ID: "codex", Name: "Codex", ProjectDir: ".agents/skills", UserDir: ".agents/skills"},

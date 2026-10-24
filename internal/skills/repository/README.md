@@ -33,6 +33,8 @@ assistant's per-user skill folder instead of the current project's. The assistan
 | `--agent` | Assistant | Project folder | Per-user folder |
 | --- | --- | --- | --- |
 | `amp` | Amp | `.agents/skills` | `~/.config/amp/skills` |
+| `antigravity` | Antigravity | `.agents/skills` | `~/.gemini/config/skills` |
+| `antigravity-cli` | Antigravity CLI | `.agents/skills` | `~/.gemini/antigravity-cli/skills` |
 | `claude-code` | Claude Code | `.claude/skills` | `~/.claude/skills` |
 | `cline` | Cline | `.cline/skills` | `~/.cline/skills` |
 | `codex` | Codex | `.agents/skills` | `~/.agents/skills` |

@@ -122,6 +122,27 @@ name: Publish and sign core plugins
 #                        OIDC token, and runs no action but checkout and that one.
 #                        The token reaches the writer's git commands through their
 #                        environment and is never written to disk.
+#   publish-skills       Once sign-and-publish has succeeded, publishes the
+#                        skills built into the aggrega binary to the public
+#                        aggrega-skills repository: the tree committed at
+#                        internal/skills/repository, at the commit the build job
+#                        built, which the build job has held to what the skills
+#                        built into the binary generate. It makes one commit on
+#                        that repository's main branch whose tree is exactly that
+#                        tree, tags it with the release tag, and pushes both
+#                        together as a fast-forward, never forcing: a tag already
+#                        there is left as it is when it names the same tree and
+#                        refused when it names another. On a dry run it prints the
+#                        tree it would publish and pushes nothing. It runs on a
+#                        GitHub-hosted runner and needs nothing from the hand-over
+#                        folder. Its one credential beside the run's own read-only
+#                        token is a GitHub App installation token for
+#                        aggrega-skills alone, asking for its contents alone,
+#                        minted only on a real publish by GitHub's own
+#                        create-github-app-token action; it runs no action but
+#                        checkout and that one, and no program but git and the
+#                        shell's own utilities. The token reaches git through its
+#                        environment and is never written to disk.
 #   clean-up             Runs last, whatever every other job did, a failure or a
 #                        cancellation included: deletes every artifact this run
 #                        uploaded, through the REST API with the run's own token,
@@ -221,20 +242,23 @@ name: Publish and sign core plugins
 # self-reported descriptor) and before the plugins are staged for publishing
 # (which needs each guest's compiled module).
 #
-# This workflow NEVER creates or pushes a git tag. Deciding the version and
-# cutting the tag is a human action; this workflow publishes the OCI artifacts and
-# attaches the built binaries and the extension package to the GitHub release
-# for the already-pushed tag. Its one git write is record-published's, after a
-# real publish: one commit on aggrega-hub's published branch, never on a main
-# branch.
+# This workflow NEVER creates or pushes a git tag on this repository. Deciding
+# the version and cutting the tag is a human action; this workflow publishes the
+# OCI artifacts and attaches the built binaries and the extension package to the
+# GitHub release for the already-pushed tag. Its git writes are two, both after a
+# real publish and both to another repository: record-published's one commit on
+# aggrega-hub's published branch, never on a main branch, and publish-skills'
+# one commit on aggrega-skills' main branch with the release tag on it, a
+# repository that holds nothing but the generated skills tree.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image included — signs the
 # Windows binaries as a real run does, so the signing and the signature check
 # are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads the image archive and
-# prints what it would push, publish, sign and release, doing none of it, and
-# record-published is skipped.
+# prints what it would push, publish, sign and release, doing none of it,
+# record-published is skipped, and publish-skills prints the tree it would
+# publish to aggrega-skills, pushing nothing.
 #
 # Which refs may sign is decided by the signing identity's federated
 # credentials in Azure. The refs this workflow takes them to admit — the main
@@ -289,6 +313,14 @@ name: Publish and sign core plugins
 #                                        branch (record-published only, handed
 #                                        to the action that mints the write
 #                                        token and to nothing else)
+#              SKILLS_PUBLISH_APP_CLIENT_ID   the App installed on
+#              SKILLS_PUBLISH_APP_PRIVATE_KEY aggrega-skills alone, with its
+#                                        contents' write permission, that
+#                                        publishes the skills there
+#                                        (publish-skills only, on a real
+#                                        publish, handed to the action that
+#                                        mints the write token and to nothing
+#                                        else)
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
@@ -330,9 +362,10 @@ on:
 # a tag. clean-up replaces it with actions:write alone, which lets it list and
 # delete this run's artifacts and does not let it read the repository.
 # record-published keeps contents:read: what it writes is aggrega-hub's published
-# branch, with the App token it mints, never this repository. sources keeps
-# contents:read too: it reads the sibling repositories with the App token it
-# mints.
+# branch, with the App token it mints, never this repository; so does
+# publish-skills, which writes aggrega-skills with the App token it mints.
+# sources keeps contents:read too: it reads the sibling repositories with the
+# App token it mints.
 permissions:
   contents: read
 
@@ -874,6 +907,28 @@ jobs:
           # the cache is not redundant and its absence means re-downloading the whole
           # dependency graph every run.
           cache: false
+
+      - name: Check that the committed skills repository is what the skills generate
+        # publish-skills publishes the tree committed at
+        # internal/skills/repository, at the commit this job builds, to the
+        # public aggrega-skills repository, so that tree must be exactly what the
+        # skills built into the binary generate: the skills package's generator
+        # writes the tree into a folder of its own here, and any file missing,
+        # added or different stops the run before anything is published, naming
+        # the difference. The comparison runs here, in a job that names no secret,
+        # because the generator is compiled from the module, which reaches its
+        # dependencies' build logic; publish-skills, which holds the token that
+        # writes aggrega-skills, compiles nothing and pushes this commit's tree.
+        run: |
+          set -euo pipefail
+          generated="$(mktemp -d "$RUNNER_TEMP/skills-repository.XXXXXX")"
+          trap 'rm -rf -- "$generated"' EXIT
+          (cd aggrega-cli && GOWORK=off go run ./internal/skills/genrepository -out "$generated")
+          if ! diff -r aggrega-cli/internal/skills/repository "$generated"; then
+            echo "build: aggrega-cli/internal/skills/repository, which publish-skills publishes to aggrega-skills, is not what the skills built into the binary generate (the differences are above); run go generate ./internal/skills in aggrega-cli and commit the result" >&2
+            exit 1
+          fi
+          echo "build: aggrega-cli/internal/skills/repository is what the skills built into the binary generate"
 
       - name: Install the Rust toolchains the guests pin
         # Building the CLI regenerates its core guests, and each Rust guest pins
@@ -2545,6 +2600,178 @@ jobs:
           chmod -R u+w -- "$RECORD_DIR" 2>/dev/null || true
           rm -rf -- "$RECORD_DIR"
 
+  publish-skills:
+    # Publishes the skills built into the aggrega binary to the public
+    # aggrega-skills repository, so an assistant's own skills tool can install
+    # them from there, tagged with the release they were generated from. What
+    # it publishes is the tree committed at internal/skills/repository, at the
+    # commit the build job built, which the build job has held to what the
+    # skills built into the binary generate: a tree that differs stopped the
+    # run there, before anything was published.
+    #
+    # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
+    # prints the tree it would publish and mints no token, reads nothing from
+    # aggrega-skills and pushes nothing. A job of its own, on a GitHub-hosted
+    # runner, so the token that writes aggrega-skills shares a job with no other
+    # credential but the run's own token, which here reads this repository and
+    # nothing more. It runs no action but checkout and GitHub's own
+    # create-github-app-token, and no program but git and the shell's own
+    # utilities; it compiles nothing, which is why the comparison with the
+    # generator runs in the build job.
+    needs: [build, sign-and-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the CLI at the commit the build job built
+        # For the committed skills repository tree only.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Mint the token that writes aggrega-skills
+        # On a real publish only. A GitHub App installation token for
+        # aggrega-skills alone, asking for write access to its contents and
+        # nothing else; the App is installed on aggrega-skills alone. The App's
+        # secrets are handed to this action and to no step, and an installation
+        # token expires an hour after it is minted.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        id: skills-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SKILLS_PUBLISH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SKILLS_PUBLISH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: aggrega-skills
+          permission-contents: write
+
+      - name: Publish the skills to aggrega-skills, tagged with the release
+        # The commit's tree is exactly the checked-out tree, read into a
+        # repository of this job's own, so a file the tree no longer has is gone
+        # from the published copy too. The commit goes on top of aggrega-skills'
+        # main branch as the remote holds it; when that branch already holds
+        # this tree, the tag goes on its head and no commit is made. The branch
+        # and the tag are pushed in one atomic push, never forced: a branch
+        # another push moved meanwhile, or a tag already there, is refused by
+        # the remote and nothing is written. A tag already there is read first:
+        # naming this tree it is left as it is and the step passes, naming
+        # another tree it is refused, since a published tag never moves. The
+        # token reaches git as an Authorization header through git's
+        # environment configuration (GIT_CONFIG_COUNT), so it is never placed
+        # on a command line or written to disk; a git too old to read that is
+        # refused, naming its version, before anything is read or written.
+        env:
+          SKILLS_TOKEN: ${{ steps.skills-token.outputs.token }}
+          APP_SLUG: ${{ steps.skills-token.outputs.app-slug }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ needs.build.outputs.commit }}
+          SKILLS_REMOTE: https://github.com/${{ github.repository_owner }}/aggrega-skills.git
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+            TAG="$DISPATCH_TAG"
+          else
+            DRY="false"
+            TAG="$REF_NAME"
+          fi
+
+          src="$PWD/aggrega-cli/internal/skills/repository"
+          if [ ! -f "$src/README.md" ] || [ ! -d "$src/skills" ]; then
+            echo "publish-skills: aggrega-cli at $SOURCE_COMMIT holds no skills repository tree at internal/skills/repository; nothing was published" >&2
+            exit 1
+          fi
+
+          work="$(mktemp -d "$RUNNER_TEMP/skills.XXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          repo="$work/repo.git"
+          git init -q --bare "$repo"
+          g() { git --git-dir="$repo" "$@"; }
+          (cd "$src" && GIT_INDEX_FILE="$work/index" git --git-dir="$repo" --work-tree=. add -A)
+          tree="$(GIT_INDEX_FILE="$work/index" g write-tree)"
+
+          if [ "$DRY" = "true" ]; then
+            echo "publish-skills: dry run: would publish this tree from aggrega-cli $SOURCE_COMMIT to $SKILLS_REMOTE, as the main branch tagged ${TAG:-with the release tag}; nothing is pushed:"
+            g ls-tree -r "$tree" | awk -F'\t' '{ print "  " $2 }'
+            echo "publish-skills: tree $tree"
+            exit 0
+          fi
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "publish-skills: '$TAG' is not a release tag of the form vMAJOR.MINOR.PATCH; nothing was published" >&2
+            exit 1
+          fi
+          if [ -z "$SKILLS_TOKEN" ]; then
+            echo "publish-skills: no token for aggrega-skills was minted; nothing was published" >&2
+            exit 1
+          fi
+          probe="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=publishskills.probe GIT_CONFIG_VALUE_0=read git config --get publishskills.probe || true)"
+          if [ "$probe" != read ]; then
+            echo "publish-skills: this machine's $(git --version) does not read configuration from GIT_CONFIG_COUNT, which is how the token reaches git without being written to disk; git 2.31 or later does. Nothing was published." >&2
+            exit 1
+          fi
+          auth="$(printf 'x-access-token:%s' "$SKILLS_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          # The commit is authored in the App's name, at a no-reply address.
+          author="${APP_SLUG:-aggrega-cli-release}[bot]"
+          export GIT_AUTHOR_NAME="$author" GIT_COMMITTER_NAME="$author"
+          export GIT_AUTHOR_EMAIL="$author@users.noreply.github.com" GIT_COMMITTER_EMAIL="$author@users.noreply.github.com"
+
+          if ! heads="$(g ls-remote "$SKILLS_REMOTE" refs/heads/main "refs/tags/$TAG")"; then
+            echo "publish-skills: could not read $SKILLS_REMOTE; nothing was published" >&2
+            exit 1
+          fi
+          main_on_remote=no
+          tag_on_remote=no
+          while IFS=$'\t' read -r _ ref; do
+            case "$ref" in
+              refs/heads/main) main_on_remote=yes ;;
+              "refs/tags/$TAG") tag_on_remote=yes ;;
+            esac
+          done <<< "$heads"
+
+          if [ "$tag_on_remote" = yes ]; then
+            g fetch -q --no-tags "$SKILLS_REMOTE" "refs/tags/$TAG:refs/published/tag"
+            published="$(g rev-parse "refs/published/tag^{tree}")"
+            if [ "$published" = "$tree" ]; then
+              echo "publish-skills: $TAG is already on aggrega-skills with this tree; nothing to push"
+              exit 0
+            fi
+            echo "publish-skills: $TAG is already on aggrega-skills and names tree $published, not this release's $tree; a published tag is never moved, so nothing was published" >&2
+            exit 1
+          fi
+
+          parent=""
+          if [ "$main_on_remote" = yes ]; then
+            g fetch -q --no-tags "$SKILLS_REMOTE" "refs/heads/main:refs/published/main"
+            parent="$(g rev-parse refs/published/main)"
+          fi
+          if [ -n "$parent" ] && [ "$(g rev-parse "$parent^{tree}")" = "$tree" ]; then
+            commit="$parent"
+            echo "publish-skills: aggrega-skills' main branch already holds this tree; tagging its head $commit"
+          else
+            message="$(printf 'Publish the Aggrega skills from aggrega-cli %s\n\nGenerated from aggrega-ai/aggrega-cli at %s.\n' "$TAG" "$SOURCE_COMMIT")"
+            if [ -n "$parent" ]; then
+              commit="$(g commit-tree "$tree" -p "$parent" -m "$message")"
+            else
+              commit="$(g commit-tree "$tree" -m "$message")"
+            fi
+            echo "publish-skills: commit $commit on aggrega-skills' main branch, tagged $TAG"
+          fi
+          g ls-tree -r "$tree" | awk -F'\t' '{ print "  " $2 }'
+          g push --atomic "$SKILLS_REMOTE" "$commit:refs/heads/main" "$commit:refs/tags/$TAG"
+          echo "publish-skills: published $TAG to aggrega-skills"
+
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
     # binaries and hands them to windows-smoke as an artifact, saved under the
@@ -2897,7 +3124,7 @@ jobs:
     # image to an archive and loads nothing, and sign-and-publish's publish
     # script removes every reference it loads when it exits, a refusal
     # included.
-    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, publish-skills, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15
