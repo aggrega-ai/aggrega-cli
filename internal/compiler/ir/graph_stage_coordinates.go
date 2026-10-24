@@ -4,8 +4,6 @@
 package ir
 
 import (
-	"sort"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -412,14 +410,12 @@ func (c *GraphStageCoordinates) Mechanisms(node string) []string {
 }
 
 // DeliveryKeys returns the keys a node's own injection block delivers under one
-// mechanism, in author order where the authored shape carries one and
-// alphabetically where it does not.
+// mechanism, in author order.
 //
 // The order is the authored shape's rather than a chosen one, because a rule
 // raises in the order it is invoked and that order reaches the build's output.
-// Every mechanism is authored as an array of entries, each naming the identifier
-// it delivers into, so the authored order is the array's; the mapping shapes are
-// answered in sorted order because a plain mapping carries none.
+// Every mechanism is authored as a list of entries, each naming the identifier
+// it delivers into, so the authored order is the list's.
 //
 // # Why this reads the block rather than the fact that names the same keys
 //
@@ -472,52 +468,27 @@ func injectMechanismPayload(inject *types.InjectBlock, mechanism string) any {
 }
 
 // injectDeliveryKeys returns the identifiers one mechanism of an injection block
-// delivers into.
+// delivers into, in the order the author wrote them.
 //
-// The array shape is the one an authored document reaches: every mechanism is
-// authored as an array of entries, and each entry is decoded through the one
-// decoder that reads such an entry rather than by reaching into it here. The
-// mapping shapes are read defensively and sorted, since a mapping carries no
-// order of its own; an entry that decodes to no identifier is skipped rather
-// than contributing an empty coordinate no fact could answer for.
+// A mechanism is a list of entries, and each entry is decoded through the one
+// decoder that reads such an entry rather than by reaching into it here. An
+// entry that decodes to no identifier is skipped rather than contributing an
+// empty coordinate no fact could answer for, and a mechanism that is not a list
+// contributes none.
 func injectDeliveryKeys(inject *types.InjectBlock, mechanism string) []string {
-	switch payload := injectMechanismPayload(inject, mechanism).(type) {
-	case []any:
-		out := make([]string, 0, len(payload))
-		for _, entry := range payload {
-			if in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry); ok {
-				out = append(out, in)
-			}
-		}
-		if len(out) == 0 {
-			return nil
-		}
-		return out
-	case *types.OrderedMap[any]:
-		if payload == nil {
-			return nil
-		}
-		return payload.Keys()
-	case map[string]any:
-		return sortedKeys(payload)
-	case map[string]string:
-		return sortedKeys(payload)
-	default:
+	payload, ok := injectMechanismPayload(inject, mechanism).([]any)
+	if !ok {
 		return nil
 	}
-}
-
-// sortedKeys returns a mapping's keys in sorted order, which is the only
-// deterministic order a plain mapping admits.
-func sortedKeys[V any](m map[string]V) []string {
-	if len(m) == 0 {
+	out := make([]string, 0, len(payload))
+	for _, entry := range payload {
+		if in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry); ok {
+			out = append(out, in)
+		}
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
 	return out
 }
 

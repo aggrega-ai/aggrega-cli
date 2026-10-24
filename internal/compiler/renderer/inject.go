@@ -50,8 +50,8 @@ func BuildInjectPipe(rawInject *types.InjectBlock) (inject types.InjectPipe, inj
 }
 
 // RehydrateInjectFromProvides resolves developer inject keys against target provides.
-// For each edge's inject block, the developer wrote {env: {DB_URL: "host"}} meaning
-// "resolve key 'host' from the target's provides dictionary."
+// For each edge's inject block, the developer wrote {env: [{in: DB_URL, from: host}]}
+// meaning "resolve key 'host' from the target's provides dictionary."
 //
 // An edge whose OriginFeature names a boundary-scope FeatureRecipe resolves its
 // provided values from boundaryFRState rather than the per-component allProvides
@@ -207,66 +207,28 @@ func mergeSorted(dest *types.OrderedMap[string], src types.OrderedMap[string]) {
 	}
 }
 
-// normalizeInjectMechanism converts the polymorphic inject mechanism value
-// (map[string]string, map[string]any, *types.OrderedMap[any], or []any
-// entries) to OrderedMap[string].
-//
-// The []any arm is the authored one: every delivery mechanism is authored as
-// an array of {in, from?, value?} entries, which iterates in source order,
-// and value: wins over from: where an entry carries both. The two plain-map
-// arms lose authoring order at decode and are sorted alphabetically here for
-// stability. The *types.OrderedMap[any] arm is defensive and no authored
-// document reaches it, because a mechanism carrying a mapping rather than an
-// array is refused before resolution begins; it walks the payload in author
-// order rather than assuming an order.
+// normalizeInjectMechanism converts one inject mechanism — the list of
+// {in, from?, value?} entries the inject_delivery definition describes — to an
+// OrderedMap[string] in the order the author wrote the entries. value: wins
+// over from: where an entry carries both, and an entry whose in: does not
+// decode is skipped. A mechanism that is not a list yields an empty map.
 func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
-	if raw == nil {
+	entries, ok := raw.([]any)
+	if !ok {
 		return out
 	}
-	switch v := raw.(type) {
-	case *types.OrderedMap[any]:
-		if v == nil {
-			return out
+	for _, entry := range entries {
+		in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+		if !ok {
+			continue
 		}
-		for k, val := range v.All() {
-			if s, ok := val.(string); ok {
-				out.Set(k, s)
-			}
+		if hasValue {
+			out.Set(in, value)
+			continue
 		}
-	case map[string]string:
-		keys := make([]string, 0, len(v))
-		for k := range v {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			out.Set(k, v[k])
-		}
-	case map[string]any:
-		keys := make([]string, 0, len(v))
-		for k := range v {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			if s, ok := v[k].(string); ok {
-				out.Set(k, s)
-			}
-		}
-	case []any:
-		for _, entry := range v {
-			in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
-			if !ok {
-				continue
-			}
-			if hasValue {
-				out.Set(in, value)
-				continue
-			}
-			if hasFrom {
-				out.Set(in, from)
-			}
+		if hasFrom {
+			out.Set(in, from)
 		}
 	}
 	return out

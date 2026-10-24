@@ -2082,8 +2082,7 @@ type NormalizedView interface {
 	AuthoredInjectMechanismNames(node string) []string
 
 	// AuthoredInjectDeliveryKeys are the keys an instance's injection block
-	// delivers through one mechanism, in author order where the authored shape
-	// carries one and alphabetically where it does not.
+	// delivers through one mechanism, in author order.
 	//
 	// Keyed by (node, mechanism, delivery-key); read from
 	// types.ComponentInstance.Inject.

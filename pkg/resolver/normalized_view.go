@@ -726,8 +726,7 @@ func (v *normalizedView) AuthoredInjectMechanismNames(node string) []string {
 }
 
 // AuthoredInjectDeliveryKeys returns the keys an instance delivers through one
-// mechanism, in author order where the authored shape carries one and
-// alphabetically where it does not.
+// mechanism, in author order.
 func (v *normalizedView) AuthoredInjectDeliveryKeys(node string, mechanism string) []string {
 	return injectDeliveryKeys(v.instances[node].Inject, mechanism)
 }
@@ -737,9 +736,8 @@ func (v *normalizedView) AuthoredInjectDeliveryKeys(node string, mechanism strin
 // published key at all.
 //
 // It reads the entry through the same decoder a connection's delivery payload is
-// read with, in the mode that treats a bare string value as a literal — which is
-// what such a value is on this surface, where the same shape on a connection is a
-// reference.
+// read with, so a `from:` entry is a reference on both surfaces and a `value:`
+// entry is none.
 func (v *normalizedView) AuthoredInjectProvidesReference(
 	node string, mechanism string, deliveryKey string,
 ) (string, bool) {
@@ -747,7 +745,7 @@ func (v *normalizedView) AuthoredInjectProvidesReference(
 	if inject == nil {
 		return "", false
 	}
-	for _, entry := range decodeFromEntries(injectMechanismPayload(inject, mechanism), true) {
+	for _, entry := range decodeFromEntries(injectMechanismPayload(inject, mechanism)) {
 		if entry.deliveryKey == deliveryKey {
 			return entry.providesKey, true
 		}
@@ -1460,14 +1458,12 @@ func injectMechanismPayload(inject *types.InjectBlock, mechanism string) any {
 }
 
 // injectDeliveryKeys returns the keys one mechanism's authored payload delivers,
-// in the order the author wrote them where the authored shape carries an order,
-// and alphabetically where it does not.
+// in the order the author wrote them.
 //
-// The payload shapes are recognised by the one collector that knows them, so a
-// shape that collector walks is a shape this walks — and the order each shape
-// yields is settled there too. Sorting again here would be wrong rather than
-// redundant: it would flatten the author order the ordered shapes carry, which
-// is the order this reading exists to report.
+// The payload is opened by the one collector that reads a mechanism, so this
+// reading and a connection's cannot differ about which keys it carries.
+// Sorting here would be wrong rather than redundant: it would flatten the author
+// order the list carries, which is the order this reading exists to report.
 func injectDeliveryKeys(inject *types.InjectBlock, mechanism string) []string {
 	collected := map[string][]string{}
 	appendInjectDeliveryKeys(collected, mechanism, injectMechanismPayload(inject, mechanism))

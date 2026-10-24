@@ -41,12 +41,10 @@ var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors
 // validator at envelope load is the primary check; this validator catches
 // schema-bypass paths.
 //
-// Returns nil for compact-form (map-shaped) mechanism payloads — compact
-// form cannot structurally express the both-present case. Returns nil for
-// non-recognized shapes (the existing decode arms skip them, so validation
-// stays silent for shapes that never decode). Returns a wrapped
-// ErrInjectEntryAmbiguous only for verbose-form entries ([]any) where a
-// single element carries both `value:` AND `from:`.
+// A mechanism is the list of {in, from?, value?} entries the inject_delivery
+// definition describes. Returns a wrapped ErrInjectEntryAmbiguous only for a
+// list ([]any) in which a single element carries both `value:` AND `from:`;
+// a mechanism that is not a list is not examined here.
 //
 // pathPrefix anchors the error's field path. Callers pass an entity-level
 // prefix (e.g., `.spec.components["api"].inject`) and the validator
@@ -55,13 +53,10 @@ var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors
 // Out-of-scope conditions (intentionally not flagged by this validator):
 //
 //   - Entries lacking `in:` or carrying a non-string `in:` — the helper
-//     [types.DecodeVerboseInjectEntry] returns ok=false and the decode arms
-//     skip silently. Surfacing those as errors here is a separate concern
-//     that may land at a future hardening pass.
-//   - Compact-form (map-shaped) payloads — the JSON Schema validator
-//     rejects these at envelope load now that inject_delivery accepts only
-//     the verbose array form. Duplicating the check here would carry no
-//     additional defensive value.
+//     [types.DecodeVerboseInjectEntry] returns ok=false and every reader of a
+//     mechanism skips the entry.
+//   - A mechanism that is not a list — the JSON Schema validator refuses one
+//     at envelope load, since inject_delivery admits only the list.
 func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 	if b == nil {
 		return nil

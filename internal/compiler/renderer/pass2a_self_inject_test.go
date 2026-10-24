@@ -26,7 +26,7 @@ func TestExecutePass2a_LiteralValue(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]any{"PORT": "8080"},
+		Env: []any{map[string]any{"in": "PORT", "value": "8080"}},
 	}
 
 	err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
@@ -48,8 +48,8 @@ func TestExecutePass2a_FromOwnProvides(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]any{
-			"MY_HOST": map[string]any{"from": "host"},
+		Env: []any{
+			map[string]any{"in": "MY_HOST", "from": "host"},
 		},
 	}
 	ownProvides := types.OrderedMap[string]{}
@@ -70,8 +70,8 @@ func TestExecutePass2a_ValueTemplate(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]any{
-			"APP_ID": map[string]any{"value": "{{ .context.instance_id }}-app"},
+		Env: []any{
+			map[string]any{"in": "APP_ID", "value": "{{ .context.instance_id }}-app"},
 		},
 	}
 	siCtx := SelfInjectContext{
@@ -93,8 +93,8 @@ func TestExecutePass2a_ForbiddenReference(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]any{
-			"BAD": map[string]any{"value": "{{ .context.inject.env.SECRET }}"},
+		Env: []any{
+			map[string]any{"in": "BAD", "value": "{{ .context.inject.env.SECRET }}"},
 		},
 	}
 
@@ -145,8 +145,8 @@ func TestExecutePass2a_FromMissingProvides(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env: map[string]any{
-			"X": map[string]any{"from": "nonexistent"},
+		Env: []any{
+			map[string]any{"in": "X", "from": "nonexistent"},
 		},
 	}
 
@@ -156,21 +156,25 @@ func TestExecutePass2a_FromMissingProvides(t *testing.T) {
 	}
 }
 
-// TestNormalizeSelfInjectEntries_OrderedMapShape_DecodesEntries pins the
-// typed-arm fix at normalizeSelfInjectEntries. When the InjectBlock field
-// arrives as *types.OrderedMap[any] (the round-trip-fidelity decode shape
-// produced when the inject block flows through an OrderedMap[any]-routed
-// authoring path), the function decodes via .All() rather than silently
-// returning an empty map. Both the literal-string shorthand and the
-// verbose {value, from} shape are exercised.
-func TestNormalizeSelfInjectEntries_OrderedMapShape_DecodesEntries(t *testing.T) {
+// TestNormalizeSelfInjectEntries_OrderedMapEntries_Decode pins that a list
+// whose entries arrive as *types.OrderedMap[any] — the shape an order-preserving
+// decode gives each entry — reads exactly as one whose entries are plain maps,
+// and that a mechanism arriving as an ordered map rather than a list yields no
+// entry.
+func TestNormalizeSelfInjectEntries_OrderedMapEntries_Decode(t *testing.T) {
 	t.Parallel()
-	raw := types.NewOrderedMap[any]()
-	raw.Set("zulu", "literal-1")
-	inner := types.NewOrderedMap[any]()
-	inner.Set("from", "alpha-key")
-	raw.Set("alpha", inner)
-	raw.Set("middle", "literal-2")
+	entry := func(pairs ...string) *types.OrderedMap[any] {
+		m := types.NewOrderedMap[any]()
+		for i := 0; i+1 < len(pairs); i += 2 {
+			m.Set(pairs[i], pairs[i+1])
+		}
+		return m
+	}
+	raw := []any{
+		entry("in", "zulu", "value", "literal-1"),
+		entry("in", "alpha", "from", "alpha-key"),
+		entry("in", "middle", "value", "literal-2"),
+	}
 
 	entries, err := normalizeSelfInjectEntries(raw)
 	if err != nil {
@@ -179,24 +183,26 @@ func TestNormalizeSelfInjectEntries_OrderedMapShape_DecodesEntries(t *testing.T)
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
-	if e, ok := entries["zulu"]; !ok || !e.isLiteral || e.value != "literal-1" {
-		t.Errorf("zulu: %+v want isLiteral=true value=literal-1", e)
+	if e, ok := entries["zulu"]; !ok || e.value != "literal-1" || e.from != "" {
+		t.Errorf("zulu: %+v want value=literal-1", e)
 	}
-	if e, ok := entries["alpha"]; !ok || e.from != "alpha-key" {
+	if e, ok := entries["alpha"]; !ok || e.from != "alpha-key" || e.value != "" {
 		t.Errorf("alpha: %+v want from=alpha-key", e)
 	}
-	if e, ok := entries["middle"]; !ok || !e.isLiteral || e.value != "literal-2" {
-		t.Errorf("middle: %+v want isLiteral=true value=literal-2", e)
+	if e, ok := entries["middle"]; !ok || e.value != "literal-2" || e.from != "" {
+		t.Errorf("middle: %+v want value=literal-2", e)
+	}
+
+	notAList := entry("zulu", "literal-1")
+	if got, err := normalizeSelfInjectEntries(notAList); err != nil || len(got) != 0 {
+		t.Errorf("an ordered map in place of a list: got err=%v entries=%+v, want no entries", err, got)
 	}
 }
 
-// TestNormalizeSelfInjectEntries_VerboseArrayForm pins the schema-verbose-form
-// outer-array decode arm. The schema's inject_delivery accepts
-// [{in: K, from?: P, value?: V}] as the canonical authoring shape after the
-// compact-form retirement. The `in:` field maps to the entry key; `value:`
-// and `from:` propagate to the selfInjectEntry's value / from fields with
-// the same per-field semantics as the existing per-key {value, from}
-// extraction arms above.
+// TestNormalizeSelfInjectEntries_VerboseArrayForm pins the list decode. The
+// schema's inject_delivery is a list of {in: K, from?: P, value?: V} entries.
+// The `in:` field maps to the entry key; `value:` and `from:` propagate to the
+// selfInjectEntry's value / from fields.
 func TestNormalizeSelfInjectEntries_VerboseArrayForm(t *testing.T) {
 	t.Parallel()
 
@@ -461,9 +467,9 @@ func TestExecutePass2a_NoCustomMechanismLeavesAdditionalEmpty(t *testing.T) {
 
 	inject := emptyPipe()
 	selfInject := &types.InjectBlock{
-		Env:  map[string]any{"PORT": "8080"},
-		File: map[string]any{"CERT": "/etc/cert.pem"},
-		Arg:  map[string]any{"--port": "8080"},
+		Env:  []any{map[string]any{"in": "PORT", "value": "8080"}},
+		File: []any{map[string]any{"in": "CERT", "value": "/etc/cert.pem"}},
+		Arg:  []any{map[string]any{"in": "--port", "value": "8080"}},
 	}
 
 	if err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {

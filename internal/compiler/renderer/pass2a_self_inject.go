@@ -38,10 +38,10 @@ type SelfInjectContextBlock struct {
 // wrote into that node's injection pipe, before the pipe is rehydrated from what
 // the node's dependencies provide.
 //
-// For each mechanism the block declares:
-//   - Compact form (string values) → treated as literals
-//   - Verbose form with from: → resolved from own provides
-//   - Verbose form with value: → evaluated as Go template with restricted context
+// Each mechanism the block declares is a list of entries, and each entry
+// resolves one delivery key:
+//   - from: → resolved from the node's own provides
+//   - value: → evaluated as a Go template with the restricted context
 //
 // The resolved keys are observable on the pipe it populates and are returned
 // nowhere. Whether one of them is also delivered by a dependency connection is
@@ -131,141 +131,40 @@ func processSelfInjectMechanism(
 
 // selfInjectEntry represents one normalized self-inject entry.
 type selfInjectEntry struct {
-	isLiteral bool   // compact form: literal string
-	value     string // value: template text or literal
-	from      string // from: provides key reference
+	value string // value: template text
+	from  string // from: provides key reference
 }
 
+// normalizeSelfInjectEntries reads one mechanism of a component-level injection
+// block: the list of {in, from?, value?} entries the inject_delivery definition
+// describes, keyed by each entry's in:. An entry whose in: does not decode is
+// skipped, and a mechanism that is not a list yields no entries.
+//
+// Schema validation enforces that an entry carries exactly one of value: and
+// from:, and the IR build's inject-block validation refuses an entry carrying
+// both before any reader runs. Where both still reach this decode — a block
+// handed straight to the resolver rather than through a build — both populate
+// the entry, and resolveSelfInjectEntry reads from: ahead of value:.
 func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 	result := map[string]selfInjectEntry{}
-
-	switch v := raw.(type) {
-	case *types.OrderedMap[any]:
-		// A defensive arm that no authored document reaches: every delivery
-		// mechanism is authored as an array of entries, so a mechanism
-		// carrying a mapping is refused before resolution begins. The arm
-		// walks the payload in author order rather than assuming an order,
-		// which is what keeps it correct for whatever does reach it.
-		if v == nil {
-			return result, nil
-		}
-		for key, val := range v.All() {
-			switch vv := val.(type) {
-			case string:
-				result[key] = selfInjectEntry{isLiteral: true, value: vv}
-			case *types.OrderedMap[any]:
-				// Verbose form post-migration: {value: ...} or {from: ...}.
-				if vv == nil {
-					continue
-				}
-				entry := selfInjectEntry{}
-				if valStr, ok := vv.Get("value"); ok {
-					if s, ok := valStr.(string); ok {
-						entry.value = s
-					}
-				}
-				if fromStr, ok := vv.Get("from"); ok {
-					if s, ok := fromStr.(string); ok {
-						entry.from = s
-					}
-				}
-				result[key] = entry
-			case map[string]any:
-				// Defensive — accepts the legacy map shape from in-memory
-				// fixtures or pre-migration call paths.
-				entry := selfInjectEntry{}
-				if valStr, ok := vv["value"]; ok {
-					if s, ok := valStr.(string); ok {
-						entry.value = s
-					}
-				}
-				if fromStr, ok := vv["from"]; ok {
-					if s, ok := fromStr.(string); ok {
-						entry.from = s
-					}
-				}
-				result[key] = entry
-			default:
-				result[key] = selfInjectEntry{isLiteral: true, value: fmt.Sprintf("%v", val)}
-			}
-		}
-	case map[string]any:
-		for key, val := range v {
-			switch vv := val.(type) {
-			case string:
-				// Compact form in component.inject = literal
-				result[key] = selfInjectEntry{isLiteral: true, value: vv}
-			case *types.OrderedMap[any]:
-				// Mixed shape: outer is plain Go map, inner is *OrderedMap[any]
-				// (e.g., test fixture authored as map[string]any{"key": orderedMap}).
-				if vv == nil {
-					continue
-				}
-				entry := selfInjectEntry{}
-				if valStr, ok := vv.Get("value"); ok {
-					if s, ok := valStr.(string); ok {
-						entry.value = s
-					}
-				}
-				if fromStr, ok := vv.Get("from"); ok {
-					if s, ok := fromStr.(string); ok {
-						entry.from = s
-					}
-				}
-				result[key] = entry
-			case map[string]any:
-				// Verbose form: {value: ...} or {from: ...}
-				entry := selfInjectEntry{}
-				if valStr, ok := vv["value"]; ok {
-					if s, ok := valStr.(string); ok {
-						entry.value = s
-					}
-				}
-				if fromStr, ok := vv["from"]; ok {
-					if s, ok := fromStr.(string); ok {
-						entry.from = s
-					}
-				}
-				result[key] = entry
-			default:
-				result[key] = selfInjectEntry{isLiteral: true, value: fmt.Sprintf("%v", val)}
-			}
-		}
-	case map[string]string:
-		for key, val := range v {
-			result[key] = selfInjectEntry{isLiteral: true, value: val}
-		}
-	case []any:
-		// Schema-verbose-form: array of {in, from?, value?} per inject_delivery
-		// definition. The `in:` field carries the inject key (parallel to the
-		// per-key iteration key in the map-based arms above); `value:` and
-		// `from:` carry the same semantics as the verbose-shape extraction
-		// in the *OrderedMap[any] and map[string]any arms above. Schema
-		// validation enforces mutual-exclusivity of value: and from: per
-		// entry; the IR-build-time validator at ir.ValidateInjectBlocks is
-		// the second-line-of-defense halt that catches schema-bypass paths
-		// before any consumer site (including this one) runs. If both
-		// fields somehow reach decode here, both populate the entry — the
-		// rendering-time fallthrough is direct-construction unit tests
-		// only; downstream resolveSelfInjectEntry's if/else cascade picks
-		// from: over value: in that scenario per the
-		// reference-before-template ordering of its function body.
-		for _, entry := range v {
-			in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
-			if !ok {
-				continue
-			}
-			outEntry := selfInjectEntry{}
-			if hasValue {
-				outEntry.value = value
-			}
-			if hasFrom {
-				outEntry.from = from
-			}
-			result[in] = outEntry
-		}
+	entries, ok := raw.([]any)
+	if !ok {
+		return result, nil
 	}
-
+	for _, entry := range entries {
+		in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+		if !ok {
+			continue
+		}
+		outEntry := selfInjectEntry{}
+		if hasValue {
+			outEntry.value = value
+		}
+		if hasFrom {
+			outEntry.from = from
+		}
+		result[in] = outEntry
+	}
 	return result, nil
 }
 
@@ -277,11 +176,6 @@ func resolveSelfInjectEntry(
 	siCtx SelfInjectContext,
 	withheld redact.Keys,
 ) (string, error) {
-	// Compact literal
-	if entry.isLiteral {
-		return entry.value, nil
-	}
-
 	// from: → resolve from own provides
 	if entry.from != "" {
 		val, ok := ownProvides.Get(entry.from)

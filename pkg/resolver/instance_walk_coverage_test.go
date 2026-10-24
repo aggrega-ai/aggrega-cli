@@ -52,7 +52,7 @@ func TestTheNodeAxisPresentsAComponentDeclaredInsideASubsystem(t *testing.T) {
 	// locator is the subsystem-scoped component path with that block's key on it.
 	// The segments before it are what this test is about.
 	want := []string{".spec.subsystems.svc.components.db.inject"}
-	if got := ask(&types.InjectBlock{Env: map[string]any{"X": "1"}}); !equalStrings(got, want) {
+	if got := ask(&types.InjectBlock{Env: []any{map[string]any{"in": "X", "value": "1"}}}); !equalStrings(got, want) {
 		t.Errorf("raised sequence = %v; want %v — the locator names the subsystem the author "+
 			"wrote", got, want)
 	}

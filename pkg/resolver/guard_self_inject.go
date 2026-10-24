@@ -73,49 +73,27 @@ func InjectMechanismPayloads(inject *types.InjectBlock) types.OrderedMap[any] {
 
 // appendInjectDeliveryKeys appends the delivery-key names carried by one
 // mechanism payload onto result[mech]. It is the single place either
-// delivery-key reading knows the payload shapes a mechanism value can arrive in
-// — a component's own injection block on one side, a connection's authored
-// delivery payload on the other — so the two cannot recognise different shapes:
-// a payload shape one reading walks is a shape both walk. That matters because
-// both feed a collision rule, and a reading that returns no keys for a shape it
-// does not recognise makes the rule approve a declaration it never examined —
-// indistinguishable, from the outside, from a rule that examined it and found
-// nothing wrong.
+// delivery-key reading opens a mechanism value — a component's own injection
+// block on one side, a connection's authored delivery payload on the other — so
+// the two cannot read it differently. That matters because both feed a
+// collision rule, and two readings that disagreed about which keys a payload
+// carries would let the rule approve a declaration one of them never examined.
 //
-// The recognised shapes are the ordered mapping form, the two plain-map forms,
-// and the array form whose elements carry the delivery key under `in`. An
-// unrecognised shape contributes nothing. Does not mutate the payload.
-//
-// Order follows the shape, because only some shapes carry one. The ordered
-// mapping form and the array form contribute their keys in the order the author
-// wrote them. A plain map carries no author order to preserve — ranging one
-// yields a sequence that varies between reads of the very same payload — so
-// those two arms contribute their keys alphabetically. That is what makes a walk
-// over the collected keys repeatable whatever shape the payload arrived in,
-// which the keys reaching a diagnostic sequence depend on.
+// A mechanism is the list of entries the inject_delivery definition describes,
+// each carrying its delivery key under `in`, and the keys are contributed in the
+// order the author wrote them, which the keys reaching a diagnostic sequence
+// depend on. An entry whose `in` does not decode is skipped, and a payload that
+// is not a list contributes nothing. Does not mutate the payload.
 func appendInjectDeliveryKeys(result map[string][]string, mech string, raw any) {
-	if raw == nil {
+	entries, ok := raw.([]any)
+	if !ok {
 		return
 	}
-	switch v := raw.(type) {
-	case *types.OrderedMap[any]:
-		if v == nil {
-			return
+	for _, entry := range entries {
+		in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
+		if !ok {
+			continue
 		}
-		for k := range v.All() {
-			result[mech] = append(result[mech], k)
-		}
-	case map[string]any:
-		result[mech] = append(result[mech], sortedKeysOf(v)...)
-	case map[string]string:
-		result[mech] = append(result[mech], sortedKeysOf(v)...)
-	case []any:
-		for _, entry := range v {
-			in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
-			if !ok {
-				continue
-			}
-			result[mech] = append(result[mech], in)
-		}
+		result[mech] = append(result[mech], in)
 	}
 }

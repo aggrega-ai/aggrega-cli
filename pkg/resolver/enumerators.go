@@ -376,8 +376,7 @@ func (c *coordinateSet) Mechanisms(node string) []string {
 }
 
 // DeliveryKeys returns the keys one node delivers through one mechanism,
-// delegated to the fact that names them: in author order where the authored
-// shape carries one, and alphabetically where it does not.
+// delegated to the fact that names them, in author order.
 func (c *coordinateSet) DeliveryKeys(node string, mechanism string) []string {
 	return c.view.AuthoredInjectDeliveryKeys(node, mechanism)
 }

@@ -11,102 +11,60 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestNormalizeSelfInjectEntries_AllShapes pins every dispatch arm:
-// *OrderedMap[any] with nested string + nested *OrderedMap[any] +
-// nested map[string]any + nested default; map[string]any with all
-// variants; map[string]string; schema-verbose []any.
-func TestNormalizeSelfInjectEntries_AllShapes(t *testing.T) {
+// TestNormalizeSelfInjectEntries_ReadsTheListAndNothingElse pins the one shape a
+// mechanism takes — a list of {in, from?, value?} entries, each entry either a
+// plain map or an ordered map — and that a mechanism in any other shape yields no
+// entry at all rather than being rendered some other way.
+func TestNormalizeSelfInjectEntries_ReadsTheListAndNothingElse(t *testing.T) {
 	t.Parallel()
-	// *OrderedMap[any] outer (all inner variants).
-	om := types.NewOrderedMap[any]()
-	om.Set("compact-key", "literal-value")
-	innerOM := types.NewOrderedMap[any]()
-	innerOM.Set("value", "templated-value")
-	innerOM.Set("from", "ignored-because-value-wins-in-resolveSelfInjectEntry")
-	om.Set("verbose-om", innerOM)
-	om.Set("verbose-map", map[string]any{"from": "provides.key"})
-	om.Set("default-val", 42)
-	got, err := normalizeSelfInjectEntries(om)
-	if err != nil {
-		t.Fatalf("om: %v", err)
-	}
-	if got["compact-key"].value != "literal-value" || !got["compact-key"].isLiteral {
-		t.Errorf("compact: got %+v", got["compact-key"])
-	}
-	if got["verbose-om"].value != "templated-value" {
-		t.Errorf("verbose-om: got %+v", got["verbose-om"])
-	}
-	if got["verbose-map"].from != "provides.key" {
-		t.Errorf("verbose-map from: got %+v", got["verbose-map"])
-	}
-	if got["default-val"].value != "42" {
-		t.Errorf("default coercion: got %+v", got["default-val"])
-	}
 
-	// Nil *OrderedMap[any].
-	got, err = normalizeSelfInjectEntries((*types.OrderedMap[any])(nil))
-	if err != nil || len(got) != 0 {
-		t.Errorf("nil *OrderedMap[any]: %v / %d", err, len(got))
-	}
-
-	// map[string]any outer (all inner variants).
-	plain := map[string]any{
-		"compact":     "literal",
-		"verbose-map": map[string]any{"value": "tmpl"},
-		"mixed-om":    innerOM,
-		"default":     true,
-	}
-	got, err = normalizeSelfInjectEntries(plain)
-	if err != nil {
-		t.Fatalf("plain: %v", err)
-	}
-	if got["compact"].value != "literal" {
-		t.Errorf("compact: got %+v", got["compact"])
-	}
-	if got["verbose-map"].value != "tmpl" {
-		t.Errorf("verbose-map: got %+v", got["verbose-map"])
-	}
-	if got["mixed-om"].value != "templated-value" {
-		t.Errorf("mixed-om: got %+v", got["mixed-om"])
-	}
-	if got["default"].value != "true" {
-		t.Errorf("default-bool: got %+v", got["default"])
-	}
-
-	// map[string]string outer.
-	got, err = normalizeSelfInjectEntries(map[string]string{"K": "v"})
-	if err != nil || got["K"].value != "v" || !got["K"].isLiteral {
-		t.Errorf("map-string-string: %v / %+v", err, got)
-	}
-
-	// []any schema-verbose.
+	orderedEntry := types.NewOrderedMap[any]()
+	orderedEntry.Set("in", "K4")
+	orderedEntry.Set("value", "tmpl4")
 	verbose := []any{
 		map[string]any{"in": "K1", "value": "tmpl1"},
 		map[string]any{"in": "K2", "from": "provides.x"},
 		map[string]any{"in": "K3", "value": "tmpl3", "from": "from3"},
+		orderedEntry,
 		map[string]any{"value": "no-in"}, // skipped
 	}
-	got, err = normalizeSelfInjectEntries(verbose)
+	got, err := normalizeSelfInjectEntries(verbose)
 	if err != nil {
-		t.Fatalf("verbose: %v", err)
+		t.Fatalf("list: %v", err)
 	}
-	if got["K1"].value != "tmpl1" {
-		t.Errorf("K1: got %+v", got["K1"])
+	want := map[string]selfInjectEntry{
+		"K1": {value: "tmpl1"},
+		"K2": {from: "provides.x"},
+		"K3": {value: "tmpl3", from: "from3"},
+		"K4": {value: "tmpl4"},
 	}
-	if got["K2"].from != "provides.x" {
-		t.Errorf("K2: got %+v", got["K2"])
+	if len(got) != len(want) {
+		t.Errorf("list: got %d entries %+v, want %d", len(got), got, len(want))
 	}
-	if got["K3"].value != "tmpl3" || got["K3"].from != "from3" {
-		t.Errorf("K3: got %+v", got["K3"])
-	}
-	if _, has := got["no-in"]; has {
-		t.Errorf("entry without `in` should be skipped")
+	for key, w := range want {
+		if g, ok := got[key]; !ok || g != w {
+			t.Errorf("list entry %q: got %+v (present=%v), want %+v", key, g, ok, w)
+		}
 	}
 
-	// Unsupported outer.
-	got, err = normalizeSelfInjectEntries("scalar")
-	if err != nil || len(got) != 0 {
-		t.Errorf("unsupported outer: err=%v len=%d", err, len(got))
+	notAList := types.NewOrderedMap[any]()
+	notAList.Set("K", "literal")
+	for _, tc := range []struct {
+		name string
+		raw  any
+	}{
+		{"nil", nil},
+		{"plain map of strings", map[string]any{"K": "literal"}},
+		{"plain map of entries", map[string]any{"K": map[string]any{"value": "tmpl"}}},
+		{"string map", map[string]string{"K": "v"}},
+		{"ordered map", notAList},
+		{"nil ordered map", (*types.OrderedMap[any])(nil)},
+		{"scalar", "scalar"},
+	} {
+		got, err := normalizeSelfInjectEntries(tc.raw)
+		if err != nil || len(got) != 0 {
+			t.Errorf("%s: got err=%v entries=%+v, want no entries", tc.name, err, got)
+		}
 	}
 }
 

@@ -106,7 +106,7 @@ func TestExecutePass2a_LiteralEnvMechanism(t *testing.T) {
 	t.Parallel()
 	inject := &types.InjectPipe{}
 	selfInject := &types.InjectBlock{
-		Env: map[string]string{"K1": "literal-value"},
+		Env: []any{map[string]any{"in": "K1", "value": "literal-value"}},
 	}
 	if err := ExecutePass2a(inject, selfInject, "node-1", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{}); err != nil {
 		t.Fatalf("literal env: %v", err)
@@ -126,12 +126,12 @@ func TestProcessSelfInjectMechanism_NilRaw(t *testing.T) {
 	}
 }
 
-// TestResolveSelfInjectEntry_LiteralAndValueAndFrom pins the three
-// dispatch arms.
+// TestResolveSelfInjectEntry_LiteralAndValueAndFrom pins the dispatch arms: a
+// value: carrying no template reference, from:, and a value: template.
 func TestResolveSelfInjectEntry_LiteralAndValueAndFrom(t *testing.T) {
 	t.Parallel()
-	// Literal.
-	got, err := resolveSelfInjectEntry("K", selfInjectEntry{isLiteral: true, value: "literal"}, "env", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
+	// A value: with no template reference delivers the text the author typed.
+	got, err := resolveSelfInjectEntry("K", selfInjectEntry{value: "literal"}, "env", types.OrderedMap[string]{}, SelfInjectContext{}, redact.Keys{})
 	if err != nil || got != "literal" {
 		t.Errorf("literal: (%q, %v)", got, err)
 	}

@@ -1544,11 +1544,10 @@ func verboseDelivery(deliveryKey, reference string) map[string]any {
 	return map[string]any{"in": deliveryKey, "from": reference}
 }
 
-// deliveryBlock is what one injection block delivers, per mechanism. The array
-// authoring form is used throughout because it is the one shape carrying the
-// author's own order — a mapping form carries none and is read back
-// alphabetically, so a row written against one could not tell an answer that
-// preserved the author's order from an answer that sorted it.
+// deliveryBlock is what one injection block delivers, per mechanism, as the list
+// of entries the inject_delivery definition describes. A list carries the
+// author's own order, so a row can tell an answer that preserved it from an
+// answer that sorted it.
 //
 // custom carries the entries of a mechanism the product does not name as one of
 // its own, under the name given.
@@ -2015,8 +2014,8 @@ type mechanismDelivery struct {
 // carries — including one written and left empty, which is a different document
 // from one not written at all and the two require opposite verdicts.
 //
-// The array authoring form is used throughout because it is the one shape
-// carrying the author's own order, so a row written against it can tell an answer
+// Each mechanism is written as the list the inject_delivery definition
+// describes, which carries the author's own order, so a row can tell an answer
 // preserving that order from an answer that sorted it. Every entry carries a
 // literal rather than a reference, so no row here also states a fault the rule
 // about a delivery entry reading an unpublished key would report.
@@ -2382,31 +2381,33 @@ func TestTheSelfDeliveryKeyAgainstAConnectionRuleReportsAKeyClaimedTwice(t *test
 	}
 }
 
-// TestTheCollisionRuleWalksTheOrderedMappingPayloadShapeToo holds the delivery-key
-// fact to the union of payload shapes rather than to the array form every row
-// above writes.
+// TestTheCollisionRuleWalksOrderedMapEntriesToo holds the delivery-key fact to
+// both shapes a list entry can arrive in rather than to the plain-map entries
+// every row above writes.
 //
-// The ordered-mapping shape is defensive and no authored document reaches it: a
-// delivery mechanism is authored as an array of entries, so a mechanism carrying a
-// mapping is refused against its schema before any rule is asked. What this pins is
-// that the fact RECOGNISES the shape rather than answering with no keys for it — a
-// reading that returned nothing would approve a component it never examined, which
-// is the failure a collision rule exists to prevent, and no row over the array form
-// can see it.
+// An entry decoded through a path that records key order arrives as an ordered
+// map. What this pins is that the fact RECOGNISES such an entry rather than
+// answering with no keys for it — a reading that returned nothing would approve a
+// component it never examined, which is the failure a collision rule exists to
+// prevent, and no row over plain-map entries can see it.
 //
 // The payload is constructed here rather than parsed, so what the test proves is a
 // property of the walk and never of what parsing produces.
-func TestTheCollisionRuleWalksTheOrderedMappingPayloadShapeToo(t *testing.T) {
+func TestTheCollisionRuleWalksOrderedMapEntriesToo(t *testing.T) {
 	t.Parallel()
 
 	ordered := types.NewOrderedMap[any]()
-	ordered.Set("SHARED", "localhost")
-	block := &types.InjectBlock{Env: ordered}
+	ordered.Set("in", "SHARED")
+	ordered.Set("value", "localhost")
+	block := &types.InjectBlock{Env: []any{ordered}}
 
+	connectionEntry := types.NewOrderedMap[any]()
+	connectionEntry.Set("in", "SHARED")
+	connectionEntry.Set("from", "host")
 	connection := types.OrderedMap[types.VerboseUsesEntry]{}
 	connection.Set("primary", types.VerboseUsesEntry{
 		Target: "cache",
-		Inject: &types.InjectBlock{Env: map[string]any{"SHARED": "host"}},
+		Inject: &types.InjectBlock{Env: []any{connectionEntry}},
 	})
 	web := types.ComponentInstance{Type: selfDeliveryOpenType, Inject: block}
 	web.Uses.Set("db", types.UsesSocketValue{Verbose: connection})
@@ -2425,8 +2426,8 @@ func TestTheCollisionRuleWalksTheOrderedMappingPayloadShapeToo(t *testing.T) {
 	// The fact first, because a rule reporting nothing here would otherwise be
 	// indistinguishable from a fact that read no keys.
 	if got := view.AuthoredInjectDeliveryKeys("web", "env"); !equalStrings(got, []string{"SHARED"}) {
-		t.Fatalf("the delivery-key fact read %v from an ordered-mapping payload; want [SHARED].\n"+
-			"INVARIANT: the fact recognises every payload shape the block admits.\n"+
+		t.Fatalf("the delivery-key fact read %v from a list of ordered-map entries; want [SHARED].\n"+
+			"INVARIANT: the fact recognises every shape a list entry arrives in.\n"+
 			"CONSEQUENCE: a rule over it approves a component whose keys were never read.", got)
 	}
 

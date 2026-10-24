@@ -644,76 +644,47 @@ func authoredUsesCopy(uses types.OrderedMap[types.UsesSocketValue]) types.Ordere
 // Mechanism enumeration draws from four sources: the three typed fields and
 // the Additional OrderedMap. Each mechanism's payload flows through the
 // InjectBlock unmarshal hooks at pkg/types/common.go, so by the time this
-// function runs it has been decoded into one of the Go shapes the type-switch
-// below handles.
+// function runs an authored list has been decoded into []any.
 //
-// Type-coercion contract. Two payload shapes are accepted, and they are the
-// two that carry the order the author wrote — which is what lets this function
-// promise author-ordered output:
+// Type-coercion contract. A mechanism is the list of {in, from?, value?}
+// entries the Aggregate and Release schemas' inject_delivery definition
+// describes, and a list carries the order the author wrote, which is what lets
+// this function promise author-ordered output. Each entry is decoded with
+// types.DecodeVerboseInjectEntry and kept only when it is itself map-shaped and
+// carries an in: that is a non-empty string; in: becomes the delivery key, and
+// its value is value: when value: is a string, otherwise from: when from: is a
+// string. An entry with a usable in: but neither field string-typed
+// contributes no delivery key at all, and nothing is reported for it.
 //
-//   - []any, the array of {in, from?, value?} entries the Aggregate schema's
-//     inject_delivery definition describes.
-//   - *types.OrderedMap[any], an order-bearing mapping of delivery key to
-//     value.
-//
-// Both fill the same OrderedMap[string], and both drop whatever they cannot
-// express as one string per delivery key, which is what IREdge.Inject holds;
-// nothing is reported for a dropped entry. The two shapes filter differently.
-// The mapping keeps the entries whose values type-assert to string. The array
-// decodes each entry with types.DecodeVerboseInjectEntry and keeps it only
-// when the entry is itself map-shaped and carries an in: that is a non-empty
-// string; in: becomes the delivery key, and its value is value: when value: is
-// a string, otherwise from: when from: is a string. An entry with a usable in:
-// but neither field string-typed contributes no delivery key at all.
-//
-// A plain Go map is deliberately not among the accepted shapes. It carries no
-// key order, so ranging one here would let Go's map iteration order reach the
-// serialized IR and the same input would stop producing the same bytes. Nor
-// can one arrive from an authored document: inject_delivery is an array in
-// both the Aggregate and Release schemas and every inject surface refers to
-// it, so a mapping-shaped delivery is refused by envelope validation before
-// this function is reached. Any other shape contributes nothing.
+// A mechanism that is not a list contributes nothing here: the list is the one
+// shape a mechanism takes, and the document envelope refuses any other before
+// a build reads it.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
 		return result
 	}
 	convert := func(mech string, raw any) {
-		if raw == nil {
+		entries, ok := raw.([]any)
+		if !ok {
 			return
 		}
-		switch v := raw.(type) {
-		case *types.OrderedMap[any]:
-			if v == nil {
-				return
+		m := types.OrderedMap[string]{}
+		for _, entry := range entries {
+			in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+			if !ok {
+				continue
 			}
-			m := types.OrderedMap[string]{}
-			for k, val := range v.All() {
-				if s, ok := val.(string); ok {
-					m.Set(k, s)
-				}
+			if hasValue {
+				m.Set(in, value)
+				continue
 			}
-			if m.Len() > 0 {
-				result.Set(mech, m)
+			if hasFrom {
+				m.Set(in, from)
 			}
-		case []any:
-			m := types.OrderedMap[string]{}
-			for _, entry := range v {
-				in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
-				if !ok {
-					continue
-				}
-				if hasValue {
-					m.Set(in, value)
-					continue
-				}
-				if hasFrom {
-					m.Set(in, from)
-				}
-			}
-			if m.Len() > 0 {
-				result.Set(mech, m)
-			}
+		}
+		if m.Len() > 0 {
+			result.Set(mech, m)
 		}
 	}
 	convert("env", inject.Env)

@@ -168,7 +168,7 @@ func overrideKeyInput(row overrideKeyRow) (RendererInput, RecipeLookup, *overrid
 	nodes := types.OrderedMap[types.IRNode]{}
 	api := types.IRNode{Component: "core/compute/api-server", ResolvedVersion: "1.0.0", BoundaryPath: boundary}
 	if row.selfKey != "" {
-		api.SelfInject = &types.InjectBlock{Env: map[string]any{row.selfKey: "from-component"}}
+		api.SelfInject = &types.InjectBlock{Env: []any{map[string]any{"in": row.selfKey, "value": "from-component"}}}
 	}
 	nodes.Set("api", api)
 	nodes.Set("db", types.IRNode{Component: "core/datastore/db", ResolvedVersion: "1.0.0", BoundaryPath: boundary})

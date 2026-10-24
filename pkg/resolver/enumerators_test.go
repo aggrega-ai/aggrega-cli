@@ -268,11 +268,10 @@ func TestEveryAxisReturnsOneSequenceAcrossRepeatedConstructions(t *testing.T) {
 	features.Set("metrics", types.FeatureInstance{Type: "core/metrics:1.0.0"})
 	features.Set("audit", types.FeatureInstance{Type: "core/audit:1.0.0"})
 
-	inject := &types.InjectBlock{}
-	env := types.OrderedMap[any]{}
-	env.Set("SVC_HOST", "x")
-	env.Set("SVC_PORT", "y")
-	inject.Env = &env
+	inject := &types.InjectBlock{Env: []any{
+		map[string]any{"in": "SVC_HOST", "value": "x"},
+		map[string]any{"in": "SVC_PORT", "value": "y"},
+	}}
 
 	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
 	verbose.Set("primary", types.VerboseUsesEntry{Target: "db"})

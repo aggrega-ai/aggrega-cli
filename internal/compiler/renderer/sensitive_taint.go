@@ -294,11 +294,11 @@ func usesWithheld(
 //     question uses, over the over-collecting walk, against the node's `values`
 //     and `infra` declarations.
 //
-// A compact-form entry is an authored literal: the author typed the delivered
-// string, no declaration stands between them and it, so it contributes nothing.
-// Mechanisms outside env, file and arg contribute nothing either, because the
-// self-inject pass delivers those three and a key never placed on the pipe has
-// nothing to withhold.
+// A `value:` carrying no template reference is an authored literal: the author
+// typed the delivered string, no declaration stands between them and it, so it
+// contributes nothing. Mechanisms outside env, file and arg contribute nothing
+// either, because the self-inject pass delivers those three and a key never
+// placed on the pipe has nothing to withhold.
 //
 // The reading is STATIC: authored entries plus declared leaf paths. It resolves no
 // `from:` and evaluates no template, and it never inspects a delivered value.
@@ -331,9 +331,6 @@ func selfInjectWithheld(
 			continue
 		}
 		for deliveryKey, entry := range entries {
-			if entry.isLiteral {
-				continue
-			}
 			withheld := false
 			switch {
 			case entry.from != "":

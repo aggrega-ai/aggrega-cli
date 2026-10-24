@@ -237,7 +237,7 @@ func TestExecutePhaseA_CustomMechanismFlowsToAdditional(t *testing.T) {
 	uses.Set("my-secret", types.EnrichedEdge{Target: "vault", Provides: provides})
 
 	authoredInject := &types.InjectBlock{}
-	authoredInject.Additional.Set("ssm_param", map[string]any{"DB_PASSWORD": "password"})
+	authoredInject.Additional.Set("ssm_param", []any{map[string]any{"in": "DB_PASSWORD", "from": "password"}})
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
@@ -302,7 +302,7 @@ func TestExecutePhaseA_UnmappedCustomMechanismIsRecorded(t *testing.T) {
 	t.Parallel()
 
 	authoredInject := &types.InjectBlock{}
-	authoredInject.Additional.Set("ssm_param", map[string]any{"DB_PASSWORD": "password"})
+	authoredInject.Additional.Set("ssm_param", []any{map[string]any{"in": "DB_PASSWORD", "from": "password"}})
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
@@ -362,7 +362,7 @@ func TestExecutePhaseA_MappedCustomMechanismIsRecordedMapped(t *testing.T) {
 	t.Parallel()
 
 	authoredInject := &types.InjectBlock{}
-	authoredInject.Additional.Set("ssm_param", map[string]any{"DB_PASSWORD": "password"})
+	authoredInject.Additional.Set("ssm_param", []any{map[string]any{"in": "DB_PASSWORD", "from": "password"}})
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
@@ -413,7 +413,7 @@ func TestExecutePhaseA_FlatOutputRecordsNoPairing(t *testing.T) {
 	t.Parallel()
 
 	authoredInject := &types.InjectBlock{}
-	authoredInject.Additional.Set("ssm_param", map[string]any{"DB_PASSWORD": "password"})
+	authoredInject.Additional.Set("ssm_param", []any{map[string]any{"in": "DB_PASSWORD", "from": "password"}})
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
@@ -460,7 +460,7 @@ func TestExecutePhaseA_FlatMapFallbackUnchanged(t *testing.T) {
 	t.Parallel()
 
 	authoredInject := &types.InjectBlock{
-		Env: map[string]any{"DB_URL": "host"},
+		Env: []any{map[string]any{"in": "DB_URL", "from": "host"}},
 	}
 
 	provides := types.OrderedMap[string]{}

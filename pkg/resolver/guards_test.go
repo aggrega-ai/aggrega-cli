@@ -84,7 +84,7 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 	components.Set("web", types.ComponentInstance{
 		Type:     "core/server:1.0.0",
 		Features: features,
-		Inject:   &types.InjectBlock{Env: map[string]any{"PORT": "8080"}},
+		Inject:   &types.InjectBlock{Env: []any{map[string]any{"in": "PORT", "value": "8080"}}},
 	})
 	components.Set("db", types.ComponentInstance{Type: "core/worker:1.0.0"})
 	agg := &types.Aggregate{

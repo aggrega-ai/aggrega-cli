@@ -135,7 +135,7 @@ func pipeKeyInput(row pipeKeyRow) (renderer.RendererInput, renderer.RecipeLookup
 
 	api, _ := input.Graph.Spec.Nodes.Get("api")
 	if row.selfKey != "" {
-		api.SelfInject = &types.InjectBlock{Env: map[string]any{row.selfKey: "from-component"}}
+		api.SelfInject = &types.InjectBlock{Env: []any{map[string]any{"in": row.selfKey, "value": "from-component"}}}
 	}
 	input.Graph.Spec.Nodes.Set("api", api)
 	input.Graph.Spec.Nodes.Set("db", types.IRNode{

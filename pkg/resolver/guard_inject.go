@@ -16,96 +16,24 @@ type fromEntry struct {
 }
 
 // decodeFromEntries extracts (delivery-key, provides-key) pairs from one
-// inject mechanism's authored value. The selfMode flag distinguishes the two
-// reference surfaces:
-//
-//   - selfMode true (component-level self-inject): a compact string value is a
-//     literal, not a provides-key reference, and is skipped. Only verbose
-//     `from:` entries yield a reference.
-//   - selfMode false (uses-level cross-inject): every compact string value is a
-//     provides-key reference, and verbose `from:` entries yield references too.
-//
-// Verbose `value:` entries (templates) are never provides-key references in
-// either mode. The mechanism value may arrive as a compact map
-// (map[string]any / map[string]string), a verbose array, or the ordered-map
-// round-trip shape; each is handled. Iteration order is not significant —
-// the caller's errors are sorted at the resolver boundary.
-func decodeFromEntries(raw any, selfMode bool) []fromEntry {
+// inject mechanism's authored value: the list of {in, from?, value?} entries
+// the inject_delivery definition describes. Each entry carrying a non-empty
+// `from:` yields a reference, on a component's own injection block and on a
+// connection's alike; a `value:` entry is a template or a literal and never a
+// provides-key reference. A payload that is not a list yields none. The pairs
+// come in author order.
+func decodeFromEntries(raw any) []fromEntry {
 	var out []fromEntry
-	if raw == nil {
+	entries, ok := raw.([]any)
+	if !ok {
 		return out
 	}
-	switch v := raw.(type) {
-	case map[string]any:
-		for k, val := range v {
-			switch vv := val.(type) {
-			case string:
-				// Compact string: a literal in self-inject, a provides-key
-				// reference in uses-inject.
-				if !selfMode {
-					out = append(out, fromEntry{deliveryKey: k, providesKey: vv})
-				}
-			case map[string]any:
-				// Verbose form: {from: K} is a provides-key reference in both modes.
-				if fromRaw, ok := vv["from"]; ok {
-					if s, ok := fromRaw.(string); ok && s != "" {
-						out = append(out, fromEntry{deliveryKey: k, providesKey: s})
-					}
-				}
-			case *types.OrderedMap[any]:
-				if vv == nil {
-					continue
-				}
-				if fromRaw, ok := vv.Get("from"); ok {
-					if s, ok := fromRaw.(string); ok && s != "" {
-						out = append(out, fromEntry{deliveryKey: k, providesKey: s})
-					}
-				}
-			}
+	for _, entry := range entries {
+		in, _, from, _, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
+		if !ok || !hasFrom || from == "" {
+			continue
 		}
-	case map[string]string:
-		for k, s := range v {
-			if !selfMode {
-				out = append(out, fromEntry{deliveryKey: k, providesKey: s})
-			}
-		}
-	case *types.OrderedMap[any]:
-		if v == nil {
-			return out
-		}
-		for k, val := range v.All() {
-			switch vv := val.(type) {
-			case string:
-				if !selfMode {
-					out = append(out, fromEntry{deliveryKey: k, providesKey: vv})
-				}
-			case *types.OrderedMap[any]:
-				if vv == nil {
-					continue
-				}
-				if fromRaw, ok := vv.Get("from"); ok {
-					if s, ok := fromRaw.(string); ok && s != "" {
-						out = append(out, fromEntry{deliveryKey: k, providesKey: s})
-					}
-				}
-			case map[string]any:
-				if fromRaw, ok := vv["from"]; ok {
-					if s, ok := fromRaw.(string); ok && s != "" {
-						out = append(out, fromEntry{deliveryKey: k, providesKey: s})
-					}
-				}
-			}
-		}
-	case types.OrderedMap[any]:
-		return decodeFromEntries(&v, selfMode)
-	case []any:
-		for _, entry := range v {
-			in, _, from, _, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
-			if !ok || !hasFrom || from == "" {
-				continue
-			}
-			out = append(out, fromEntry{deliveryKey: in, providesKey: from})
-		}
+		out = append(out, fromEntry{deliveryKey: in, providesKey: from})
 	}
 	return out
 }

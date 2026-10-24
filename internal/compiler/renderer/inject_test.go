@@ -33,8 +33,8 @@ func TestBuildInjectPipe_NilRaw(t *testing.T) {
 func TestBuildInjectPipe_WithValues(t *testing.T) {
 	t.Parallel()
 	rawBlock := &types.InjectBlock{
-		Env:  map[string]any{"DB_URL": "host"},
-		File: map[string]any{"config": "/etc/app.yaml"},
+		Env:  []any{map[string]any{"in": "DB_URL", "from": "host"}},
+		File: []any{map[string]any{"in": "config", "value": "/etc/app.yaml"}},
 	}
 	inject, raw := BuildInjectPipe(rawBlock)
 	if raw == nil {
@@ -59,7 +59,7 @@ func TestBuildInjectPipe_GuaranteedKeys(t *testing.T) {
 	t.Parallel()
 	// Even with only env set, file and arg must be empty but usable
 	rawBlock := &types.InjectBlock{
-		Env: map[string]any{"X": "1"},
+		Env: []any{map[string]any{"in": "X", "value": "1"}},
 	}
 	inject, _ := BuildInjectPipe(rawBlock)
 	if inject.File.Len() != 0 {
@@ -156,19 +156,20 @@ func TestBuildInjectAll_CustomMechanisms(t *testing.T) {
 	}
 }
 
-// TestNormalizeInjectMechanism_OrderedMapShape_PreservesAuthorOrder pins
-// the typed-arm fix at normalizeInjectMechanism. When the InjectBlock
-// field arrives as *types.OrderedMap[any] (the round-trip-fidelity decode
-// shape), the function walks via .All() and the resulting OrderedMap[string]
-// preserves the input's authoring sequence rather than the alphabetical-
-// sort fallback applied to the plain map[string]X arms (where author
-// order is already lost at decode).
-func TestNormalizeInjectMechanism_OrderedMapShape_PreservesAuthorOrder(t *testing.T) {
+// TestNormalizeInjectMechanism_OrderedMapEntries_PreserveAuthorOrder pins that
+// a list whose entries arrive as *types.OrderedMap[any] — the shape an
+// order-preserving decode gives each entry — yields its keys in the order the
+// author wrote the entries, and that a mechanism arriving as an ordered map
+// rather than a list yields nothing.
+func TestNormalizeInjectMechanism_OrderedMapEntries_PreserveAuthorOrder(t *testing.T) {
 	t.Parallel()
-	raw := types.NewOrderedMap[any]()
-	raw.Set("zulu", "z-value")
-	raw.Set("alpha", "a-value")
-	raw.Set("middle", "m-value")
+	entry := func(in, value string) *types.OrderedMap[any] {
+		m := types.NewOrderedMap[any]()
+		m.Set("in", in)
+		m.Set("value", value)
+		return m
+	}
+	raw := []any{entry("zulu", "z-value"), entry("alpha", "a-value"), entry("middle", "m-value")}
 
 	out := normalizeInjectMechanism(raw)
 	if out.Len() != 3 {
@@ -184,11 +185,17 @@ func TestNormalizeInjectMechanism_OrderedMapShape_PreservesAuthorOrder(t *testin
 			t.Errorf("out[%q] = %q, want %q", k, got, want)
 		}
 	}
+
+	notAList := types.NewOrderedMap[any]()
+	notAList.Set("zulu", "z-value")
+	if got := normalizeInjectMechanism(notAList); got.Len() != 0 {
+		t.Errorf("an ordered map in place of a list: got keys %v, want none", got.Keys())
+	}
 }
 
-// TestNormalizeInjectMechanism_VerboseArrayForm pins the schema-verbose-form
-// decode arm. Entries decode in source order; value: wins over from: when
-// both are present. Entries without `in:` skip.
+// TestNormalizeInjectMechanism_VerboseArrayForm pins the list decode. Entries
+// decode in source order; value: wins over from: when both are present.
+// Entries without `in:` skip.
 func TestNormalizeInjectMechanism_VerboseArrayForm(t *testing.T) {
 	t.Parallel()
 

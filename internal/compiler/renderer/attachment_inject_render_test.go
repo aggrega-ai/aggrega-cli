@@ -76,7 +76,7 @@ func injectCollisionInput(attachmentKey string) (renderer.RendererInput, rendere
 	input := testInput()
 
 	node, _ := input.Graph.Spec.Nodes.Get("api")
-	node.SelfInject = &types.InjectBlock{Env: map[string]any{"DB_PASSWORD": "from-self-inject"}}
+	node.SelfInject = &types.InjectBlock{Env: []any{map[string]any{"in": "DB_PASSWORD", "value": "from-self-inject"}}}
 	input.Graph.Spec.Nodes.Set("api", node)
 
 	envInj := types.OrderedMap[string]{}

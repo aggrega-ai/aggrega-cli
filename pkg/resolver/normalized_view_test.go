@@ -317,17 +317,13 @@ func TestTheRulesReportEachFaultOfOneDocumentExactlyOnce(t *testing.T) {
 		"values:\n  size:\n    type: string\n    required: true\nprovides:\n  host:\n    type: string\n"))
 
 	values := types.OrderedMap[any]{}
-	inject := &types.InjectBlock{}
-	env := types.OrderedMap[any]{}
-	entry := types.OrderedMap[any]{}
-	entry.Set("from", "not_published")
-	env.Set("SVC_HOST", &entry)
-	inject.Env = &env
+	inject := &types.InjectBlock{
+		Env: []any{map[string]any{"in": "SVC_HOST", "from": "not_published"}},
+	}
 
-	edgeInject := &types.InjectBlock{}
-	edgeEnv := types.OrderedMap[any]{}
-	edgeEnv.Set("PEER_HOST", "also_not_published")
-	edgeInject.Env = &edgeEnv
+	edgeInject := &types.InjectBlock{
+		Env: []any{map[string]any{"in": "PEER_HOST", "from": "also_not_published"}},
+	}
 	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
 	verbose.Set("peer", types.VerboseUsesEntry{Target: "peer", Inject: edgeInject})
 	uses := types.OrderedMap[types.UsesSocketValue]{}

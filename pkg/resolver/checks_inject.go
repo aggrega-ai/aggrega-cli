@@ -218,16 +218,12 @@ var OriginatedConnectionInjectReferenceIsPublished = constraint.Check[
 // authored delivery payload carries, in delivery-key order.
 //
 // It reads the payload through the same decoder the component's own injection
-// block is read with, in the mode that treats a bare string value as a reference
-// — which is what a connection's delivery entry is, where the same shape in a
-// component's own block is a literal.
+// block is read with, so a `from:` entry is a reference on both surfaces.
 //
-// The ordering is this reader's own and not the payload's. Of the shapes an
-// author may write a delivery payload in, only one carries an order, so a reader
-// yielding entries in payload order would emit a different sequence for two
-// documents that say the same thing.
+// The ordering is this reader's own and not the payload's: the diagnostics this
+// reading feeds are emitted in delivery-key order.
 func connectionProvidesReferences(payload any) []fromEntry {
-	entries := decodeFromEntries(payload, false)
+	entries := decodeFromEntries(payload)
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].deliveryKey < entries[j].deliveryKey
 	})

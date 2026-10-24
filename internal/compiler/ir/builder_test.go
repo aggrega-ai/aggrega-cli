@@ -388,14 +388,13 @@ func TestConvertInjectBlock_AdditionalIteration(t *testing.T) {
 	inject := &types.InjectBlock{
 		Env: []any{map[string]any{"in": "DB_URL", "from": "host"}},
 	}
-	ssm := types.NewOrderedMap[any]()
-	ssm.Set("DB_PASSWORD", "connection.password")
-	ssm.Set("API_KEY", "connection.token")
-	inject.Additional.Set("ssm_param", ssm)
-
-	vault := types.NewOrderedMap[any]()
-	vault.Set("VAULT_TOKEN", "vault.token")
-	inject.Additional.Set("vault_secret", vault)
+	inject.Additional.Set("ssm_param", []any{
+		map[string]any{"in": "DB_PASSWORD", "from": "connection.password"},
+		map[string]any{"in": "API_KEY", "from": "connection.token"},
+	})
+	inject.Additional.Set("vault_secret", []any{
+		map[string]any{"in": "VAULT_TOKEN", "from": "vault.token"},
+	})
 
 	result := convertInjectBlock(inject)
 
@@ -459,12 +458,11 @@ func TestConvertInjectBlock_CoreOnlyUnchanged(t *testing.T) {
 	}
 }
 
-// TestConvertInjectBlock_VerboseArrayForm pins the array-of-entries decode
-// arm. Its [{in: K, from?: P, value?: V}] elements decode into the same
-// OrderedMap[string] shape the ordered-mapping arm produces. The `value:`
-// field is preferred over `from:` if both are present (defensive; schema
-// validation should preempt). Empty arrays produce no mechanism entry;
-// entries without `in:` or with non-string `in:` are skipped.
+// TestConvertInjectBlock_VerboseArrayForm pins the list decode. Its
+// [{in: K, from?: P, value?: V}] elements decode into an OrderedMap[string]
+// keyed by in:. The `value:` field is preferred over `from:` if both are
+// present (defensive; schema validation should preempt). Empty lists produce no
+// mechanism entry; entries without `in:` or with non-string `in:` are skipped.
 func TestConvertInjectBlock_VerboseArrayForm(t *testing.T) {
 	t.Parallel()
 

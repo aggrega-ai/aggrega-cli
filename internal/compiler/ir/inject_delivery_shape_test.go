@@ -15,24 +15,21 @@ import (
 // Two properties are pinned here together because each one is only meaningful
 // while the other holds.
 //
-// The inject-delivery conversion accepts several payload shapes, and they do not
-// all carry an order. An array of entries and an ordered mapping both record the
-// order the author wrote; a plain Go map records no order at all, because the
-// order is gone before the value is handed over. So the conversion can promise
-// author-ordered output only for the shapes that carry an order, and the promise
-// is worth having only if the shapes that do not carry one cannot arrive from an
-// authored document.
+// The inject-delivery conversion reads one payload shape, the list of entries,
+// and a list records the order the author wrote. So the conversion can promise
+// author-ordered output, and the promise is worth having only while a delivery
+// authored in any other shape cannot arrive from a document.
 //
 // The first group pins the arrival side: a delivery authored as a mapping is
 // refused against the entity's schema, on a core mechanism and on a custom one
-// alike, so no authored document reaches the conversion with an orderless
-// payload. The second group pins the output side: the shapes that do arrive
-// serialise in the author's order, byte-identically on every run.
+// alike. The second group pins the output side: a list serialises in the
+// author's order, byte-identically on every run, whether its entries are plain
+// or ordered maps, and a payload in any other shape contributes nothing.
 //
 // Relaxing the schema to accept a mapping again would turn the first group red,
-// which is the point: it names the conversion as the place that then owes an
-// order rule, rather than leaving the relaxation to surface as output that
-// changes between runs.
+// which is the point: it names the conversion as the place that would then owe
+// a reading and an order rule for the new shape, rather than leaving the
+// relaxation to surface as deliveries that silently vanish.
 
 // shapeProbeRuns is the repeat count for the ordering pins. Go randomises map
 // iteration order per range, so a single pass can coincidentally produce any one
@@ -95,15 +92,40 @@ func TestInjectDelivery_ArrayFormPreservesAuthorOrder(t *testing.T) {
 	assertStableAuthorOrder(t, &types.InjectBlock{Env: entries})
 }
 
-// TestInjectDelivery_OrderedMappingPreservesAuthorOrder pins the ordered-mapping
-// shape, which an inject block acquires when it is decoded through a path that
-// records key order, as ordered on output, on every run.
-func TestInjectDelivery_OrderedMappingPreservesAuthorOrder(t *testing.T) {
-	payload := types.NewOrderedMap[any]()
+// TestInjectDelivery_OrderedMapEntriesPreserveAuthorOrder pins a list whose
+// entries are ordered maps — the shape each entry acquires when it is decoded
+// through a path that records key order — as ordered on output, on every run.
+func TestInjectDelivery_OrderedMapEntriesPreserveAuthorOrder(t *testing.T) {
+	entries := make([]any, 0, len(shapeProbeKeys))
 	for _, k := range shapeProbeKeys {
-		payload.Set(k, "value-of-"+k)
+		entry := types.NewOrderedMap[any]()
+		entry.Set("in", k)
+		entry.Set("value", "value-of-"+k)
+		entries = append(entries, entry)
 	}
-	assertStableAuthorOrder(t, &types.InjectBlock{Env: payload})
+	assertStableAuthorOrder(t, &types.InjectBlock{Env: entries})
+}
+
+// TestInjectDelivery_APayloadThatIsNotAListContributesNothing pins that the
+// conversion reads no shape but the list: a mapping handed to it through the Go
+// API, ordered or plain, delivers no key rather than being read as literals.
+func TestInjectDelivery_APayloadThatIsNotAListContributesNothing(t *testing.T) {
+	ordered := types.NewOrderedMap[any]()
+	ordered.Set("ZETA_KEY", "literal-z")
+	for _, tc := range []struct {
+		name    string
+		payload any
+	}{
+		{"ordered map", ordered},
+		{"plain map", map[string]any{"ZETA_KEY": "literal-z"}},
+		{"string map", map[string]string{"ZETA_KEY": "literal-z"}},
+	} {
+		block := &types.InjectBlock{Env: tc.payload}
+		block.Additional.Set("sidecar", tc.payload)
+		if got := convertInjectBlock(block); got.Len() != 0 {
+			t.Errorf("%s: conversion produced mechanisms %v, want none", tc.name, got.Keys())
+		}
+	}
 }
 
 // injectShapeAggregate wraps one inject block body in the smallest Aggregate its

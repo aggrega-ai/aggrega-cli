@@ -263,9 +263,7 @@ func TestPipeline_SimpleTopology(t *testing.T) {
 
 func TestPipeline_PolymorphicUses(t *testing.T) {
 	t.Parallel()
-	envOM := types.NewOrderedMap[any]()
-	envOM.Set("DB_URL", "host")
-	inject := &types.InjectBlock{Env: envOM}
+	inject := &types.InjectBlock{Env: []any{map[string]any{"in": "DB_URL", "from": "host"}}}
 	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
 	verbose.Set("hr-db", types.VerboseUsesEntry{Target: "main-db", Inject: inject})
 	uses := types.OrderedMap[types.UsesSocketValue]{}

@@ -2109,8 +2109,7 @@ var facts = []factDecl{
 		},
 		Returns: "[]string",
 		Doc: "AuthoredInjectDeliveryKeys are the keys an instance's injection " +
-			"block delivers through one mechanism, in author order where the " +
-			"authored shape carries one and alphabetically where it does not.",
+			"block delivers through one mechanism, in author order.",
 	},
 	{
 		Name:        "authored-inject-provides-reference",

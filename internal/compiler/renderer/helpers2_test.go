@@ -13,56 +13,44 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestNormalizeInjectMechanism_AllShapes pins each documented dispatch
-// arm: nil, *OrderedMap[any] (nil + populated), map[string]string,
-// map[string]any, schema-verbose []any.
-func TestNormalizeInjectMechanism_AllShapes(t *testing.T) {
+// TestNormalizeInjectMechanism_ReadsTheListAndNothingElse pins that a list
+// entry whose value: and from: are both absent or non-string contributes no key,
+// and that a mechanism in any shape other than a list yields an empty map
+// rather than being read some other way.
+func TestNormalizeInjectMechanism_ReadsTheListAndNothingElse(t *testing.T) {
 	t.Parallel()
-	// Nil.
-	if got := normalizeInjectMechanism(nil); got.Len() != 0 {
-		t.Errorf("nil → empty; got %v", got)
-	}
-	// Nil pointer.
-	var nilOM *types.OrderedMap[any]
-	if got := normalizeInjectMechanism(nilOM); got.Len() != 0 {
-		t.Errorf("nil OrderedMap pointer → empty; got %v", got)
-	}
-	// Populated *OrderedMap[any] with non-string values filtered out.
-	om := types.NewOrderedMap[any]()
-	om.Set("k1", "v1")
-	om.Set("k2", 42) // skipped (non-string)
-	om.Set("k3", "v3")
-	got := normalizeInjectMechanism(om)
+	got := normalizeInjectMechanism([]any{
+		map[string]any{"in": "k1", "value": "v1"},
+		map[string]any{"in": "k2", "value": 42}, // skipped: no string value: or from:
+		map[string]any{"in": "k3", "from": "v3"},
+	})
 	if got.Len() != 2 {
-		t.Errorf("populated *OrderedMap[any]: Len=%d; want 2", got.Len())
+		t.Errorf("list: Len=%d; want 2", got.Len())
 	}
 	if v, _ := got.Get("k1"); v != "v1" {
 		t.Errorf("k1 = %q; want v1", v)
 	}
 	if _, ok := got.Get("k2"); ok {
-		t.Errorf("non-string k2 should be filtered out")
+		t.Errorf("k2 carries no string value: or from: and should contribute no key")
 	}
-	// map[string]string.
-	got = normalizeInjectMechanism(map[string]string{"z": "z-val", "a": "a-val"})
-	if got.Len() != 2 {
-		t.Errorf("map[string]string: Len=%d; want 2", got.Len())
-	}
-	keys := got.Keys()
-	if keys[0] != "a" {
-		t.Errorf("plain map keys should sort; got %v", keys)
-	}
-	// map[string]any with mixed value types.
-	got = normalizeInjectMechanism(map[string]any{
-		"keep": "value",
-		"skip": 99,
-	})
-	if got.Len() != 1 {
-		t.Errorf("map[string]any: Len=%d; want 1 (non-string filtered)", got.Len())
-	}
-	// Unsupported shape.
-	got = normalizeInjectMechanism("scalar-not-a-map")
-	if got.Len() != 0 {
-		t.Errorf("unsupported shape → empty; got %v", got)
+
+	om := types.NewOrderedMap[any]()
+	om.Set("k1", "v1")
+	var nilOM *types.OrderedMap[any]
+	for _, tc := range []struct {
+		name string
+		raw  any
+	}{
+		{"nil", nil},
+		{"nil ordered map", nilOM},
+		{"ordered map", om},
+		{"string map", map[string]string{"z": "z-val", "a": "a-val"}},
+		{"plain map", map[string]any{"keep": "value"}},
+		{"scalar", "scalar-not-a-list"},
+	} {
+		if got := normalizeInjectMechanism(tc.raw); got.Len() != 0 {
+			t.Errorf("%s: got keys %v, want none", tc.name, got.Keys())
+		}
 	}
 }
 

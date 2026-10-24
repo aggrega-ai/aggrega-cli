@@ -16,11 +16,10 @@ import (
 // sequence a reader meets the resulting diagnostics in, and one unchanged
 // document has to answer with one sequence however often it is read.
 //
-// An author may write a mechanism's payload as a mapping or as an array, and the
-// two carry different amounts of information — an array states an order, a
-// mapping states none. Both are read here from one document, because the claim is
-// about what the reading makes of each shape rather than about either shape
-// alone.
+// A mechanism's payload is a list, which states an order. A payload in the shape
+// of a mapping is refused by the document envelope before a build reads it, and
+// is read here too, decoded without that envelope, to pin that the reading makes
+// nothing of it rather than inventing an order for it.
 
 // deliveryKeyReadCount is how many times each payload is read below.
 //
@@ -34,10 +33,10 @@ const deliveryKeyReadCount = 200
 // deliveryKeyOrderDocument declares the same five delivery keys twice on one
 // Aggregate: once as a mapping and once as an array.
 //
-// Both are written in the same deliberately non-alphabetical order, so an answer
+// The array is written in a deliberately non-alphabetical order, so an answer
 // reporting the author's order and an answer reporting a sorted one cannot be
 // mistaken for each other. A fixture written ALPHA, BRAVO, CHARLIE would read
-// identically either way and would prove nothing about either.
+// identically either way and would prove nothing.
 const deliveryKeyOrderDocument = `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -82,9 +81,9 @@ func TestRereadingOneInjectionBlockAnswersWithOneDeliveryKeySequence(t *testing.
 		want      []string
 	}{
 		{
-			name:      "a payload written as a mapping answers alphabetically, the one sequence a mapping can be read in repeatably",
+			name:      "a payload written as a mapping answers with no keys, because a mechanism is a list",
 			component: "mapping-payload",
-			want:      []string{"ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO"},
+			want:      nil,
 		},
 		{
 			name:      "a payload written as an array answers in the order it was written, which is the order that shape carries",
@@ -116,12 +115,11 @@ func TestRereadingOneInjectionBlockAnswersWithOneDeliveryKeySequence(t *testing.
 }
 
 // TestAnInjectionPayloadArrivesInTheShapeItWasWritten establishes that the two
-// rows above measure two different readings rather than one.
+// rows above measure two different inputs rather than one.
 //
 // The mapping row is a measurement only if a mapping payload actually arrives as
-// a plain map — the shape carrying no order of its own. Were it to arrive already
-// ordered, that row would be reporting the ordered reading a second time and
-// would pass whatever the plain-map reading did.
+// a plain map rather than as a list. Were it to arrive as a list, that row would
+// be reading the list a second time and would say nothing about a mapping.
 func TestAnInjectionPayloadArrivesInTheShapeItWasWritten(t *testing.T) {
 	t.Parallel()
 

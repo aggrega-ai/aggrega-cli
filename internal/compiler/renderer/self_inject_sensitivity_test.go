@@ -24,8 +24,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// selfInjectVerbose builds one mechanism's authored entries in the verbose shape,
-// from (deliveryKey, field, text) triples where field is "from" or "value".
+// selfInjectVerbose builds one mechanism's authored entries as the list the
+// inject_delivery definition describes, from (deliveryKey, field, text) triples
+// where field is "from" or "value". Each entry is an ordered map, the shape an
+// order-preserving decode gives it.
 //
 // It panics on a triple count that does not divide, rather than silently building
 // fewer entries than the caller wrote: every negative assertion below is "this key
@@ -35,16 +37,17 @@ func selfInjectVerbose(triples ...string) any {
 	if len(triples) == 0 || len(triples)%3 != 0 {
 		panic("selfInjectVerbose: want (deliveryKey, field, text) triples")
 	}
-	out := types.OrderedMap[any]{}
+	out := []any{}
 	for i := 0; i+2 < len(triples); i += 3 {
-		entry := types.OrderedMap[any]{}
+		entry := types.NewOrderedMap[any]()
+		entry.Set("in", triples[i])
 		entry.Set(triples[i+1], triples[i+2])
-		out.Set(triples[i], &entry)
+		out = append(out, entry)
 	}
-	if out.Len() != len(triples)/3 {
+	if len(out) != len(triples)/3 {
 		panic("selfInjectVerbose: entries lost while building the fixture")
 	}
-	return &out
+	return out
 }
 
 func TestSelfInjectWithheld_FromResolvesAgainstTheNodesOwnProvides(t *testing.T) {
@@ -137,16 +140,14 @@ func TestSelfInjectWithheld_EveryDeliveredMechanismIsRead(t *testing.T) {
 }
 
 // TestSelfInjectWithheld_AnAuthoredLiteralIsNotARoute pins the one entry shape the
-// reading deliberately ignores. A compact-form entry is the string the author
-// typed; no declaration stands between them and it, so withholding it would put a
-// placeholder over a value its own author wrote in the clear.
+// reading deliberately ignores. A value: carrying no template reference is the
+// string the author typed; no declaration stands between them and it, so
+// withholding it would put a placeholder over a value its own author wrote in the
+// clear.
 func TestSelfInjectWithheld_AnAuthoredLiteralIsNotARoute(t *testing.T) {
 	t.Parallel()
-	literal := types.OrderedMap[any]{}
-	literal.Set("ZZ_LITERAL", "rootPassword")
-
 	got := selfInjectWithheld(
-		&types.InjectBlock{Env: &literal},
+		&types.InjectBlock{Env: selfInjectVerbose("ZZ_LITERAL", "value", "rootPassword")},
 		map[string]bool{"rootPassword": true}, nil, nil)
 
 	if len(got) != 0 {
