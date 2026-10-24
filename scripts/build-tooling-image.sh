@@ -17,35 +17,30 @@
 # separate signing pass is needed. A --save archive carries both references the
 # same way, for a publish that happens later.
 #
-# This script does NOT build the binary. The binary is produced by the
-# repository build (`scripts/build.sh` at the workspace root), which regenerates
-# the embedded Wasm guests and stamps the git-describe version. Run that first;
-# this script verifies the resulting binary is embedded and stamped, then builds
-# and (optionally) pushes the image. Keeping the build in one place means the
-# image always packages the artifact the build scripts produce, stripped of its
-# debug information as described next.
+# This script does NOT build the binary. The binary is produced by this
+# repository's build, `scripts/build.sh`, which regenerates the embedded Wasm
+# guests, stamps the git-describe version, and writes ./aggrega, the binary
+# without its debug information, beside ./aggrega-debug, the same binary with
+# it. Run that first; this script verifies the resulting binary is embedded and
+# stamped and carries no debug information, then builds and (optionally) pushes
+# the image. Keeping the build in one place means the image always packages the
+# artifact the build script produces: the binary a release attaches as
+# aggrega-<version>-linux-amd64 is the very file the image carries.
 #
-# WHY the image carries a stripped copy of the binary: the hub registry, the
-# default --registry, refuses a single upload request above 100,000,000 bytes.
-# It runs as a Cloudflare Worker, whose request body is capped by the hosting
-# account's plan, and it advertises the same figure as the largest upload chunk
-# it accepts. docker buildx sends each layer in one request, and the binary is
-# one file, so its layer cannot be split; with its debug information that layer
-# comes close to the ceiling, and it grows with every release. So this script
-# writes a copy of the binary with its debug information removed
-# (`strip --strip-debug`; the symbol table stays) into a build context of its
-# own, a temporary directory holding only that copy under the name `aggrega`,
-# and builds the image from it. The recipe is the shared one in
-# scripts/lib/strip-debug.sh, which `scripts/build.sh --stripped` also uses for
-# a Linux target, so a Linux stripped binary is the same bytes whichever script
-# writes it; the one a release attaches is the copy --keep-stripped keeps here.
-# scripts/build.sh decides, per target format, how a stripped binary is made,
-# and says there why a Windows or macOS one is linked without its debug
-# information instead. The binary given by --binary is never modified.
-# The copy must report the same `version` and `abiVersion` in
-# `aggrega version -o json` as the original, or the script refuses. It strips on
-# every run, a dry run included: stripping is local, and a dry run exists to
-# show that the real run would work. `strip` (GNU binutils) must be on PATH.
+# WHY the image carries the binary without its debug information: the hub
+# registry, the default --registry, refuses a single upload request above
+# 100,000,000 bytes. It runs as a Cloudflare Worker, whose request body is capped
+# by the hosting account's plan, and it advertises the same figure as the largest
+# upload chunk it accepts. docker buildx sends each layer in one request, and the
+# binary is one file, so its layer cannot be split; with its debug information
+# that layer comes close to the ceiling, and it grows with every release. So this
+# script refuses a binary that carries debug information — an ELF section whose
+# name begins .debug_ or .zdebug_, as `readelf` (GNU binutils, which must be on
+# PATH) lists them — naming ./aggrega as the binary to give it. It copies the
+# binary as it is, under the name `aggrega`, into a build context of its own, a
+# temporary directory holding only that copy, and builds the image from it; it
+# strips nothing, so the bytes the image carries are the bytes the build wrote.
+# The binary given by --binary is never modified.
 #
 # After a push, sign the image by reference:
 #   aggrega sign <registry>/tools/aggrega:<tag>
@@ -59,17 +54,11 @@
 #   --tag <tag>         Image tag (default: git describe --tags --always
 #                       --dirty, with any leading v stripped).
 #   --registry <host>   Registry host (default: hub.aggrega.ai).
-#   --binary <path>     Path to the pre-built aggrega binary (default: the
-#                       aggrega binary beside this script's parent, i.e. the
-#                       build output at <aggrega-cli>/aggrega).
+#   --binary <path>     Path to the pre-built aggrega binary, without its debug
+#                       information (default: the aggrega binary beside this
+#                       script's parent, i.e. the build output at
+#                       <aggrega-cli>/aggrega).
 #   --platform <p>      Target platform (default: linux/amd64).
-#   --keep-stripped <path>
-#                       Also keep the stripped copy of the binary at <path>. It
-#                       is the same file the image carries, byte for byte, so a
-#                       caller can publish exactly what the image holds. Without
-#                       it the stripped copy exists only in the temporary build
-#                       context, which is removed when the script exits. <path>
-#                       must not name the --binary file itself.
 #   --push              Push the image after building (default: build only,
 #                       loaded into the local docker image store).
 #   --save <dir>        Build the image and write it, instead of pushing or
@@ -84,8 +73,8 @@
 #   --allow-dirty       Permit building/pushing a -dirty tag (refused by
 #                       default when --push or --save is set, so a
 #                       work-in-progress tree is never published).
-#   --dry-run           Strip and check the copy as a real run does, then print
-#                       the planned commands without running docker.
+#   --dry-run           Check the binary as a real run does, then print the
+#                       planned commands without running docker.
 #   -h, --help          Show this help.
 #
 # Exit non-zero on the first failing step.
@@ -94,17 +83,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# The stripped-copy recipe (strip_debug_copy) has one home, shared with
-# scripts/build.sh; see the header.
-# shellcheck source-path=SCRIPTDIR source=lib/strip-debug.sh
-. "$SCRIPT_DIR/lib/strip-debug.sh"
-
 REGISTRY="hub.aggrega.ai"
 IMAGE_NAME="tools/aggrega"
 PLATFORM="linux/amd64"
 BINARY="$CLI_DIR/aggrega"
 TAG=""
-KEEP_STRIPPED=""
 SAVE_DIR=""
 PUSH=0
 ALLOW_DIRTY=0
@@ -118,9 +101,6 @@ while [ "$#" -gt 0 ]; do
     --registry)   REGISTRY="${2:-}"; shift 2 ;;
     --binary)     BINARY="${2:-}"; shift 2 ;;
     --platform)   PLATFORM="${2:-}"; shift 2 ;;
-    --keep-stripped)
-      [ -n "${2:-}" ] || die "--keep-stripped needs a path"
-      KEEP_STRIPPED="$2"; shift 2 ;;
     --push)       PUSH=1; shift ;;
     --save)
       [ -n "${2:-}" ] || die "--save needs a directory"
@@ -169,10 +149,9 @@ fi
 # Whitespace is stripped before the match so the extraction is insensitive to
 # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
 # only where the extracted value contains no whitespace, which holds for the
-# version and ABI version strings read here. The stripped copy below is read
-# through the same function, so the two identities are compared field for field.
-# An absent field yields an empty value rather than a failed pipeline, so the
-# refusals below name what is missing instead of the script exiting silently.
+# version and ABI version strings read here. An absent field yields an empty
+# value rather than a failed pipeline, so the refusals below name what is missing
+# instead of the script exiting silently.
 json_field() { printf '%s' "$1" | tr -d '[:space:]' | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4 || true; }
 
 VERSION_JSON="$("$BINARY" version -o json 2>/dev/null)" || die "could not read version from $BINARY"
@@ -194,37 +173,31 @@ case "$TAG" in
     ;;
 esac
 
-# Strip a copy of the binary into a build context of its own (see the header
-# for why), through the shared recipe, which writes the copy and leaves the
-# input untouched.
-command -v strip >/dev/null 2>&1 || die "strip not found on PATH.
-the tooling image carries a copy of the binary stripped of its debug information
-(see --help for why); install GNU binutils, which provides strip, and re-run."
-if [ -n "$KEEP_STRIPPED" ] && [ -e "$KEEP_STRIPPED" ] && [ "$KEEP_STRIPPED" -ef "$BINARY" ]; then
-  die "--keep-stripped names the --binary file itself ($KEEP_STRIPPED); the binary must stay as built"
-fi
-if [ -n "$KEEP_STRIPPED" ] && [ -d "$KEEP_STRIPPED" ]; then
-  die "--keep-stripped names a directory ($KEEP_STRIPPED); give the path of the file to write"
-fi
+# Refuse a binary that carries debug information (see the header for why), on
+# every run, a dry run included: the check is local, and a dry run exists to
+# show that the real run would work. readelf lists the binary's sections; a
+# section whose name begins .debug_ or .zdebug_ holds debug information, written
+# compressed or not.
+command -v readelf >/dev/null 2>&1 || die "readelf not found on PATH.
+the tooling image refuses a binary that carries debug information, which readelf
+reads (see --help for why); install GNU binutils, which provides readelf, and re-run."
+SECTIONS="$(readelf --section-headers --wide "$BINARY" 2>&1)" || die "readelf could not read the sections of $BINARY:
+$SECTIONS"
+case "$SECTIONS" in
+  *" .debug_"* | *" .zdebug_"*)
+    die "binary at $BINARY carries debug information.
+the tooling image carries the binary without it, because the registry refuses a
+single upload above 100,000,000 bytes and the binary's layer is one upload (see
+--help); give it the ./aggrega that scripts/build.sh writes, not ./aggrega-debug."
+    ;;
+esac
 
+# Copy the binary, as it is, into a build context of its own: the Dockerfile
+# copies the file named aggrega from it, and nothing else is in it.
 CONTEXT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aggrega-tooling-image.XXXXXX")" || die "could not create a temporary build context"
 trap 'rm -rf "$CONTEXT_DIR"' EXIT
-STRIPPED="$CONTEXT_DIR/aggrega"
-strip_debug_copy "$BINARY" "$STRIPPED" || die "could not write the stripped copy of $BINARY"
-
-STRIPPED_JSON="$("$STRIPPED" version -o json 2>/dev/null)" || die "the stripped copy of $BINARY does not run: could not read its version"
-STRIPPED_VERSION="$(json_field "$STRIPPED_JSON" version)"
-STRIPPED_ABI="$(json_field "$STRIPPED_JSON" abiVersion)"
-if [ "$STRIPPED_VERSION" != "$BIN_VERSION" ] || [ "$STRIPPED_ABI" != "$BIN_ABI" ]; then
-  die "the stripped copy reports version '$STRIPPED_VERSION' and abiVersion '$STRIPPED_ABI',
-but $BINARY reports version '$BIN_VERSION' and abiVersion '$BIN_ABI';
-refusing to build an image whose binary does not report the original's identity"
-fi
-
-if [ -n "$KEEP_STRIPPED" ]; then
-  cp "$STRIPPED" "$KEEP_STRIPPED" || die "could not keep the stripped copy at $KEEP_STRIPPED"
-  chmod 0755 "$KEEP_STRIPPED"
-fi
+cp "$BINARY" "$CONTEXT_DIR/aggrega" || die "could not copy $BINARY into the build context"
+chmod 0755 "$CONTEXT_DIR/aggrega"
 
 IMAGE_REF="$REGISTRY/$IMAGE_NAME:$TAG"
 STABLE_REF="$REGISTRY/$IMAGE_NAME:stable"
@@ -267,12 +240,8 @@ elif [ -n "$SAVE_DIR" ]; then
 else
   printf 'push:      no (local load)\n'
 fi
-printf 'binary:    %s (%s bytes, left as built)\n' "$BINARY" "$(wc -c < "$BINARY" | tr -d '[:space:]')"
-printf 'stripped:  %s bytes, debug information removed; same version and abiVersion\n' "$(wc -c < "$STRIPPED" | tr -d '[:space:]')"
-printf 'context:   %s (the stripped copy only; removed on exit)\n' "$CONTEXT_DIR"
-if [ -n "$KEEP_STRIPPED" ]; then
-  printf 'kept:      %s (the same file the image carries)\n' "$KEEP_STRIPPED"
-fi
+printf 'binary:    %s (%s bytes, no debug information; copied as it is)\n' "$BINARY" "$(wc -c < "$BINARY" | tr -d '[:space:]')"
+printf 'context:   %s (the copy only; removed on exit)\n' "$CONTEXT_DIR"
 
 if [ "$DRY_RUN" = 1 ]; then
   printf 'dry-run — would run:\n  %s\n' "${BUILD_CMD[*]}"

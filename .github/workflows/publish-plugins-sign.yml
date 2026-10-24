@@ -1,7 +1,8 @@
 name: Publish and sign core plugins
 
 # Tag-driven publisher for the CLI release: the binaries for Linux, Windows and
-# macOS, the desktop extension package, the tooling image, and the core plugins
+# macOS with the SHA256SUMS list of what the release attaches, the desktop
+# extension package, the tooling image, and the core plugins
 # the core-plugin list names — the ones embedded in the aggrega binary and the
 # ones built and published with it but not embedded.
 #
@@ -47,7 +48,7 @@ name: Publish and sign core plugins
 #                        the one shared recipe, builds the binary and every
 #                        core guest (plus the light no-embed binary),
 #                        asserts host/guest ABI self-consistency, builds the
-#                        Windows and macOS binaries, stages each smoke run's
+#                        Windows, macOS and ARM Linux binaries, stages each smoke run's
 #                        inputs, packs the desktop extension package, generates
 #                        the core Plugin catalog entities and pairs each with
 #                        its guest, and builds the tooling image into an
@@ -89,8 +90,10 @@ name: Publish and sign core plugins
 #                        windows-binaries-signed, and publishes them: it pushes
 #                        the tooling image from the archive, publishes each
 #                        plugin with its guest, signs both, and creates the
-#                        GitHub release with the downloadable binaries and the
-#                        extension package. It may mint the OIDC token, for
+#                        GitHub release with the downloadable binaries, the
+#                        extension package and SHA256SUMS, the list of their
+#                        SHA-256 digests it writes from the very files it
+#                        attaches. It may mint the OIDC token, for
 #                        those Sigstore signatures, and alone holds the token
 #                        that writes the release; the registry password it
 #                        holds is otherwise held only by registry-credential. It
@@ -141,7 +144,7 @@ name: Publish and sign core plugins
 # are written by one function of the repository's smoke library. A run with no
 # such runner stops in its first job, saying so: nothing falls back to a hosted
 # runner or to artifacts. Only what a GitHub-hosted job runs is uploaded — the
-# Windows and macOS smoke inputs, the signed Windows binaries, and the earlier
+# Windows, macOS and ARM Linux smoke inputs, the signed Windows binaries, and the earlier
 # release's binaries smoke_binaries_from names — and clean-up deletes it all when
 # the run ends, so no artifact outlives the run that made it; the one-day
 # retention each upload names is what removes them should clean-up never run. A
@@ -166,9 +169,10 @@ name: Publish and sign core plugins
 # job that may delete the run's artifacts is granted anything else, runs any
 # action or a build step, or names a secret.
 #
-# Two more jobs prove the Windows and macOS binaries on GitHub-hosted machines
-# of each platform: windows-smoke on a Windows runner, and macos-smoke on an
-# Apple silicon (darwin/arm64) and an Intel (darwin/amd64) macOS runner. Each
+# Three more jobs prove the Windows, macOS and ARM Linux binaries on
+# GitHub-hosted machines of each platform: windows-smoke on a Windows runner,
+# macos-smoke on an Apple silicon (darwin/arm64) and an Intel (darwin/amd64)
+# macOS runner, and linux-smoke on an ARM Linux (linux/arm64) runner. Each
 # runs every binary's version report, the protocol handshake over standard input
 # and output, a validate, pull and build of a worked example whose result it
 # compares byte for byte with the result the build job produced; then, in a
@@ -192,8 +196,9 @@ name: Publish and sign core plugins
 # sibling repository, no toolchain, no secret, no network beyond their own
 # loopback address — because the build job stages everything each runs as one
 # workflow artifact per target. They publish nothing, and sign-and-publish
-# waits for all of them: it starts only when the Windows run and both macOS
-# runs have passed, on a release tag and on a dispatch, a dry run's included.
+# waits for all of them: it starts only when the Windows run, both macOS runs
+# and the ARM Linux run have passed, on a release tag and on a dispatch, a dry
+# run's included.
 # So a binary that fails on its own platform stops the release before anything
 # is pushed, and a smoke job that never starts holds sign-and-publish back with
 # it. A dry run proves the binaries the same way before a tag is pushed.
@@ -226,7 +231,7 @@ name: Publish and sign core plugins
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image included — signs the
 # Windows binaries as a real run does, so the signing and the signature check
-# are proven before a tag exists, runs the Windows and macOS smoke jobs in full,
+# are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads the image archive and
 # prints what it would push, publish, sign and release, doing none of it, and
 # record-published is skipped.
@@ -709,14 +714,15 @@ jobs:
 
     # The commit this job built — the one the sources job recorded, whose go.mod
     # chose the sibling checkouts — which sign-and-publish checks out for its
-    # scripts, and the commits the Windows and the macOS smoke inputs were staged
-    # from, which the windows-smoke and macos-smoke jobs check out: on a dispatch
-    # naming a tag the tree is moved onto that tag, so the commit the run was
-    # launched at may not be it.
+    # scripts, and the commits the Windows, the macOS and the ARM Linux smoke
+    # inputs were staged from, which the windows-smoke, macos-smoke and
+    # linux-smoke jobs check out: on a dispatch naming a tag the tree is moved onto
+    # that tag, so the commit the run was launched at may not be it.
     outputs:
       commit: ${{ needs.sources.outputs.commit }}
       smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
       macos_smoke_commit: ${{ steps.macos-smoke-inputs.outputs.commit }}
+      linux_smoke_commit: ${{ steps.linux-smoke-inputs.outputs.commit }}
 
     # No secret appears anywhere in this job, the App's that reads the sibling
     # repositories included: it runs third-party build code, so it holds no
@@ -914,7 +920,11 @@ jobs:
 
       - name: Build the binary and embedded guests
         # Regenerates the Wasm guests and their descriptors and produces the
-        # version-stamped binary with the guests embedded. NOT the light build —
+        # version-stamped binary with the guests embedded, twice:
+        # aggrega-cli/aggrega-debug as the linker writes it, with its debug
+        # information, and aggrega-cli/aggrega, that binary without it, which
+        # every later step that runs the binary runs, the tooling image carries
+        # and the release attaches under the plain name. NOT the light build —
         # the light binary embeds no guests and could neither generate the core
         # entities nor supply the guests to publish. Scoped to aggrega-cli:
         # publishing needs only the binary and its embedded guests, not the PDK
@@ -926,12 +936,13 @@ jobs:
 
       - name: Build the light binary for the release
         # The light no-embed binary ships as a downloadable release asset beside
-        # the full binary. It embeds no Wasm guests (-tags light) and resolves
-        # every provider through the plugin cascade, so it plays no part in image
-        # or plugin publishing — it is built here purely for the GitHub release.
-        # Built alongside the full build so a light-build failure halts before
-        # any external side effect. The output is aggrega-cli/aggrega-light,
-        # beside the full aggrega-cli/aggrega.
+        # the default and debug binaries. It embeds no Wasm guests (-tags light)
+        # and resolves every provider through the plugin cascade, so it plays no
+        # part in image or plugin publishing — it is built here purely for the
+        # GitHub release. Built alongside the embedded build so a light-build
+        # failure halts before any external side effect. The output is
+        # aggrega-cli/aggrega-light, beside aggrega-cli/aggrega and
+        # aggrega-cli/aggrega-debug.
         run: |
           set -euo pipefail
           aggrega-cli/scripts/build.sh --light
@@ -1004,22 +1015,21 @@ jobs:
 
           echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
 
-      - name: Build the full and stripped Windows binaries for the release
+      - name: Build the default and debug Windows binaries for the release
         # The release also carries the CLI for windows/amd64, built by the same
         # build script as the Linux binary with the target named, so the two
-        # cannot follow different build steps. The full binary embeds the guests
+        # cannot follow different build steps. Both binaries embed the guests
         # the Linux build above regenerated, which are WebAssembly and the same
-        # for every system. --stripped also writes the stripped binary, the full
-        # binary without its debug information, which for Windows the linker
-        # writes from the full binary's own build with -w added, rather than
-        # strip after linking as for Linux; the build script says why. A Windows
-        # binary cannot run on this runner, so the script reads each binary's
-        # stamped version from the binary itself and refuses, naming both,
-        # unless it is the version the Linux binary reports — which, whenever a
-        # release tag is in play, the ABI gate above has already held to that
-        # tag. Writes
+        # for every system. The default binary is the debug one without its
+        # debug information, which for Windows the linker writes from the debug
+        # binary's own build with -w added, rather than strip after linking as
+        # for Linux; the build script says why. A Windows binary cannot run on
+        # this runner, so the script reads each binary's stamped version from
+        # the binary itself and refuses, naming both, unless it is the version
+        # the Linux binary reports — which, whenever a release tag is in play,
+        # the ABI gate above has already held to that tag. Writes
         # aggrega-cli/aggrega-windows-amd64.exe and
-        # aggrega-cli/aggrega-stripped-windows-amd64.exe, unsigned. No external
+        # aggrega-cli/aggrega-debug-windows-amd64.exe, unsigned. No external
         # side effect: a dry run builds both, and sign-windows signs them before
         # the Windows smoke run and the release step see them.
         run: |
@@ -1030,7 +1040,7 @@ jobs:
           # version string read here.
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          aggrega-cli/scripts/build.sh --target windows/amd64 --stripped --expect-version "$BIN_VERSION"
+          aggrega-cli/scripts/build.sh --target windows/amd64 --expect-version "$BIN_VERSION"
 
       - name: Build the light Windows binary for the release
         # The light no-embed binary for windows/amd64, by the same build script
@@ -1047,24 +1057,24 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target windows/amd64 --expect-version "$BIN_VERSION"
 
-      - name: Build the full and stripped macOS arm64 binaries for the release
+      - name: Build the default and debug macOS arm64 binaries for the release
         # The release also carries the CLI for macOS on Apple silicon
-        # (darwin/arm64) and on Intel (darwin/amd64), in the full, light and
-        # stripped variants, built by the same build script as the Linux and
-        # Windows binaries with the target named; the full binary embeds the
-        # guests the Linux build above regenerated. --stripped also writes the
-        # stripped binary, the full binary without its debug information, which
-        # for macOS, as for Windows, the linker writes from the full binary's own
-        # build with -w added, rather than strip after linking as for Linux; the
-        # build script says why. A macOS binary cannot run on this runner, so the
+        # (darwin/arm64) and on Intel (darwin/amd64), in the default, debug and
+        # light variants, built by the same build script as the Linux and
+        # Windows binaries with the target named; the default and debug binaries
+        # embed the guests the Linux build above regenerated. The default binary
+        # is the debug one without its debug information, which for macOS, as
+        # for Windows, the linker writes from the debug binary's own build with
+        # -w added, rather than strip after linking as for Linux; the build
+        # script says why. A macOS binary cannot run on this runner, so the
         # script reads each binary's stamped version from the binary itself and
         # refuses, naming both, unless it is the version the Linux binary
         # reports — which, whenever a release tag is in play, the ABI gate above
         # has already held to that tag. The Go linker signs an arm64 binary ad
-        # hoc, the stripped one included, which an Apple silicon Mac requires
-        # before it runs one; no macOS binary carries a Developer ID signature or
-        # is notarized. Writes aggrega-cli/aggrega-darwin-arm64 and
-        # aggrega-cli/aggrega-stripped-darwin-arm64. No external side effect: a
+        # hoc, each of the two, which an Apple silicon Mac requires before it
+        # runs one; no macOS binary carries a Developer ID signature or is
+        # notarized. Writes aggrega-cli/aggrega-darwin-arm64 and
+        # aggrega-cli/aggrega-debug-darwin-arm64. No external side effect: a
         # dry run builds both, and the release step attaches them.
         run: |
           set -euo pipefail
@@ -1074,7 +1084,7 @@ jobs:
           # version string read here.
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          aggrega-cli/scripts/build.sh --target darwin/arm64 --stripped --expect-version "$BIN_VERSION"
+          aggrega-cli/scripts/build.sh --target darwin/arm64 --expect-version "$BIN_VERSION"
 
       - name: Build the light macOS arm64 binary for the release
         # The light no-embed binary for darwin/arm64, by the same build script
@@ -1090,12 +1100,12 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target darwin/arm64 --expect-version "$BIN_VERSION"
 
-      - name: Build the full and stripped macOS amd64 binaries for the release
-        # The full and stripped binaries for darwin/amd64, by the same build
+      - name: Build the default and debug macOS amd64 binaries for the release
+        # The default and debug binaries for darwin/amd64, by the same build
         # script and held to the same version as the macOS arm64 steps above,
         # for the same reasons; an amd64 binary carries no signature, which an
         # Intel Mac does not require. Writes aggrega-cli/aggrega-darwin-amd64 and
-        # aggrega-cli/aggrega-stripped-darwin-amd64; a dry run builds both too.
+        # aggrega-cli/aggrega-debug-darwin-amd64; a dry run builds both too.
         run: |
           set -euo pipefail
           # Whitespace is stripped before the match so the extraction is insensitive to
@@ -1104,7 +1114,7 @@ jobs:
           # version string read here.
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          aggrega-cli/scripts/build.sh --target darwin/amd64 --stripped --expect-version "$BIN_VERSION"
+          aggrega-cli/scripts/build.sh --target darwin/amd64 --expect-version "$BIN_VERSION"
 
       - name: Build the light macOS amd64 binary for the release
         # The light no-embed binary for darwin/amd64, by the same build script
@@ -1119,6 +1129,45 @@ jobs:
           BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target darwin/amd64 --expect-version "$BIN_VERSION"
+
+      - name: Build the default and debug Linux arm64 binaries for the release
+        # The release also carries the CLI for Linux on 64-bit ARM
+        # (linux/arm64), in the default, debug and light variants, built by the
+        # same build script as the other binaries with the target named and held
+        # to the same version for the same reasons; the default and debug
+        # binaries embed the guests the Linux build above regenerated. The
+        # default binary is the debug one without its debug information, which
+        # for any target the build is given, as for Windows and macOS, the linker
+        # writes from the debug binary's own build with -w added: this runner's
+        # strip reads only its own architecture's executables; the build script
+        # says why. An arm64 binary cannot run on this runner, so its stamped
+        # version is read from the binary itself. Writes aggrega-cli/aggrega-linux-arm64 and
+        # aggrega-cli/aggrega-debug-linux-arm64. No external side effect: a dry
+        # run builds both, linux-smoke runs them, and the release step attaches
+        # them.
+        run: |
+          set -euo pipefail
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version string read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          aggrega-cli/scripts/build.sh --target linux/arm64 --expect-version "$BIN_VERSION"
+
+      - name: Build the light Linux arm64 binary for the release
+        # The light no-embed binary for linux/arm64, by the same build script
+        # and held to the same version as the step above, for the same reasons.
+        # Writes aggrega-cli/aggrega-light-linux-arm64; a dry run builds it too.
+        run: |
+          set -euo pipefail
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version string read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          aggrega-cli/scripts/build.sh --light --target linux/arm64 --expect-version "$BIN_VERSION"
 
       - name: Make this run's own staging directories
         # On the persistent self-hosted runner AGGREGA_RUNNER names, a fixed name
@@ -1139,8 +1188,9 @@ jobs:
           mkdir "$HANDOVER/windows-unsigned" "$HANDOVER/release-inputs"
           windows_smoke="$(mktemp -d "$RUNNER_TEMP/windows-smoke.XXXXXX")"
           macos_smoke="$(mktemp -d "$RUNNER_TEMP/macos-smoke.XXXXXX")"
-          printf 'WINDOWS_UNSIGNED=%s\nRELEASE_INPUTS=%s\nWINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\n' \
-            "$HANDOVER/windows-unsigned" "$HANDOVER/release-inputs" "$windows_smoke" "$macos_smoke" >> "$GITHUB_ENV"
+          linux_smoke="$(mktemp -d "$RUNNER_TEMP/linux-smoke.XXXXXX")"
+          printf 'WINDOWS_UNSIGNED=%s\nRELEASE_INPUTS=%s\nWINDOWS_SMOKE_INPUTS=%s\nMACOS_SMOKE_INPUTS=%s\nLINUX_SMOKE_INPUTS=%s\n' \
+            "$HANDOVER/windows-unsigned" "$HANDOVER/release-inputs" "$windows_smoke" "$macos_smoke" "$linux_smoke" >> "$GITHUB_ENV"
           echo "hand-over folder: $HANDOVER"
 
       - name: Collect the Windows binaries for signing
@@ -1150,7 +1200,7 @@ jobs:
         # missing file fails the copy.
         run: |
           set -euo pipefail
-          for built in aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe; do
+          for built in aggrega-windows-amd64.exe aggrega-debug-windows-amd64.exe aggrega-light-windows-amd64.exe; do
             cp "aggrega-cli/$built" "$WINDOWS_UNSIGNED/$built"
           done
           ls -l "$WINDOWS_UNSIGNED"
@@ -1169,7 +1219,7 @@ jobs:
         # built for Windows from a module go.mod already pins, one entity to
         # publish to it, and a copy of the first example that pulls that entity
         # from it. The examples build from catalogs in this repository and the
-        # guests the full binary embeds, offline and with no configuration of
+        # guests the default binary embeds, offline and with no configuration of
         # this machine read, so the Windows run needs no registry but the one it
         # starts on its own loopback address. The script builds each reference
         # twice, in two directories, and refuses when the two differ. No external
@@ -1203,7 +1253,7 @@ jobs:
       - name: Stage the macOS smoke runs' inputs
         # Everything each macos-smoke job runs, staged by the same script as the
         # Windows inputs, once per macOS target into a directory of its own: the
-        # full, light and stripped binaries above for that target, its test
+        # default, debug and light binaries above for that target, its test
         # executables, cross-compiled here, and the two worked examples, each
         # with the workspace this machine's validate, pull and build of it leave.
         # The tests listed for Windows alone are left out and named in the log.
@@ -1245,6 +1295,40 @@ jobs:
         with:
           name: macos-smoke-inputs-darwin-amd64
           path: ${{ env.MACOS_SMOKE_INPUTS }}/darwin-amd64
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: true
+
+      - name: Stage the ARM Linux smoke run's inputs
+        # Everything the linux-smoke job runs, staged by the same script as the
+        # Windows and macOS inputs: the default, debug and light linux/arm64
+        # binaries above, its test executables, cross-compiled here, and the two
+        # worked examples, each with the workspace this machine's validate, pull
+        # and build of it leave. The tests listed for Windows alone are left out
+        # and named in the log. No external side effect; a dry run stages too.
+        id: linux-smoke-inputs
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/stage-platform-smoke.sh --target linux/arm64 --output-dir "$LINUX_SMOKE_INPUTS"
+          # The commit the linux-smoke job checks out is the one the staged
+          # inputs record, so the job and the inputs cannot name different ones.
+          while IFS='=' read -r key value; do
+            if [ "$key" = commit ]; then
+              printf 'commit=%s\n' "$value" >> "$GITHUB_OUTPUT"
+            fi
+          done < "$LINUX_SMOKE_INPUTS/smoke.env"
+
+      - name: Upload the ARM Linux smoke run's inputs
+        # One workflow artifact, read only by the linux-smoke job of this same
+        # run, which runs on a GitHub-hosted ARM Linux machine, and deleted by
+        # clean-up when the run ends (kept a day at most should clean-up never
+        # run). Hidden files are included so the example reaches the ARM Linux
+        # run exactly as it was built here. An artifact does not keep file
+        # modes; the smoke script makes the executables executable again.
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-smoke-inputs-linux-arm64
+          path: ${{ env.LINUX_SMOKE_INPUTS }}
           if-no-files-found: error
           retention-days: 1
           include-hidden-files: true
@@ -1374,37 +1458,36 @@ jobs:
         # :stable one, which sign-and-publish loads and pushes without building
         # anything. Both references come from one build and name one image.
         #
-        # The image carries a copy of the binary stripped of its debug
+        # The image carries aggrega-cli/aggrega, the binary without its debug
         # information, because of the registry's per-request ceiling: the
         # registry refuses a single upload request above 100,000,000 bytes, and
         # each layer is sent in one request, the binary's layer included. The
-        # build script keeps that copy where --keep-stripped names, and the
-        # release step attaches that same file, so the image and the release
-        # asset cannot differ. aggrega-cli/aggrega itself stays as built.
+        # image build copies that file as it is and refuses one carrying debug
+        # information, and the release step attaches that same file, so the
+        # image and the release asset cannot differ.
         run: |
           set -euo pipefail
-          mkdir -p "$RELEASE_INPUTS/bin"
           aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" \
-            --keep-stripped "$RELEASE_INPUTS/bin/aggrega-stripped" \
             --save "$RELEASE_INPUTS/image"
 
       - name: Collect the binaries the release carries
         # The binaries the steps above wrote, under the names they wrote them,
         # into the release inputs sign-and-publish reads from the hand-over
-        # folder: aggrega (which sign-and-publish also runs to log in, publish
-        # and sign), aggrega-light, and the macOS binaries. The stripped Linux
-        # binary is already there, kept by the image step. The Windows binaries
-        # are not: the release attaches them signed, from sign-windows' artifact,
-        # so the release inputs leave them out and the unsigned ones have no way
-        # to the release. A copy keeps each file's mode, so aggrega stays
-        # executable. A missing file fails the copy.
+        # folder: aggrega (the file the tooling image carries, which
+        # sign-and-publish also runs to log in, publish and sign), aggrega-debug,
+        # aggrega-light, and the macOS and ARM Linux binaries. The Windows
+        # binaries are not: the release attaches them signed, from sign-windows'
+        # artifact, so the release inputs leave them out and the unsigned ones
+        # have no way to the release. A copy keeps each file's mode, so aggrega
+        # stays executable. A missing file fails the copy.
         run: |
           set -euo pipefail
           BIN="$RELEASE_INPUTS/bin"
           mkdir -p "$BIN"
-          for built in aggrega aggrega-light \
-              aggrega-darwin-arm64 aggrega-light-darwin-arm64 aggrega-stripped-darwin-arm64 \
-              aggrega-darwin-amd64 aggrega-light-darwin-amd64 aggrega-stripped-darwin-amd64; do
+          for built in aggrega aggrega-debug aggrega-light \
+              aggrega-darwin-arm64 aggrega-debug-darwin-arm64 aggrega-light-darwin-arm64 \
+              aggrega-darwin-amd64 aggrega-debug-darwin-amd64 aggrega-light-darwin-amd64 \
+              aggrega-linux-arm64 aggrega-debug-linux-arm64 aggrega-light-linux-arm64; do
             cp "aggrega-cli/$built" "$BIN/$built"
           done
           ls -l "$BIN"
@@ -1440,8 +1523,8 @@ jobs:
         # sign-and-publish read it after this job, and clean-up removes it.
         if: ${{ always() && env.WINDOWS_SMOKE_INPUTS != '' }}
         run: |
-          chmod -R u+w -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" 2>/dev/null || true
-          rm -rf -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS"
+          chmod -R u+w -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" "$LINUX_SMOKE_INPUTS" 2>/dev/null || true
+          rm -rf -- "$WINDOWS_SMOKE_INPUTS" "$MACOS_SMOKE_INPUTS" "$LINUX_SMOKE_INPUTS"
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
@@ -1537,7 +1620,7 @@ jobs:
       JAVA_URL: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz
       JAVA_SHA256: 2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500
       # The binaries this job signs, under the names the build wrote them.
-      WINDOWS_BINARIES: aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe
+      WINDOWS_BINARIES: aggrega-windows-amd64.exe aggrega-debug-windows-amd64.exe aggrega-light-windows-amd64.exe
     steps:
       - name: Refuse a signing setting that is not set
         # Before any request, so a missing variable is named rather than
@@ -1791,7 +1874,7 @@ jobs:
 
   sign-and-publish:
     # Waits for the build, for sign-windows and for every smoke run —
-    # windows-smoke and both targets of macos-smoke — and starts only when each
+    # windows-smoke, both targets of macos-smoke and linux-smoke — and starts only when each
     # one succeeded: a job is skipped when a job it needs failed, was cancelled
     # or was skipped, and this job carries no if: of its own, so it never starts
     # beside a job it needs that did not succeed. sign-windows is skipped on a
@@ -1806,7 +1889,7 @@ jobs:
     # outputs only of the jobs it names, and sign-windows because this job
     # attaches the Windows binaries it signed; from the smoke jobs this job
     # reads nothing but their result.
-    needs: [build, sign-windows, windows-smoke, macos-smoke]
+    needs: [build, sign-windows, windows-smoke, macos-smoke, linux-smoke]
     # The runner the build ran on, with no hosted fallback: this job reads the
     # release inputs from the hand-over folder on that machine's disk.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
@@ -2122,37 +2205,52 @@ jobs:
             printf '%s\n' "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create the GitHub release and upload the binaries and the extension package
-        # The final side effect: attach the full, light and stripped binaries for
-        # linux/amd64, for windows/amd64, for darwin/arm64 and for darwin/amd64,
-        # and the desktop extension package, to the GitHub release for this tag
-        # so they are downloadable from the release page. A stripped binary is
-        # the full binary without its debug information. The Linux one is the
-        # very file the tooling image carries, which the build job's image step
-        # kept; this step copies that file and never strips, so the asset and the
-        # image cannot differ. The macOS ones, the stripped ones among them, are
-        # the files the build job's macOS steps wrote, each already held to the
-        # Linux binary's version. The Windows ones are the files the build
-        # job's Windows steps wrote, held to that version too, as sign-windows
-        # signed them: the step above held them to sign-windows' SHA-256 list,
-        # so they are byte for byte the files windows-smoke ran and whose
-        # signatures it checked. Those are signed bytes, which differ from one
-        # signing to the next; what the build reproduces is the unsigned bytes,
-        # and the Authenticode digest, which leaves the signature out, is the
-        # same for both. The extension package
-        # is the file the pack step wrote, copied under the name the pack script
-        # gave it. The embedded guests are NOT uploaded here — they publish to
-        # the registry with their Plugin entities; the release carries only the
-        # runnable binaries and the extension package, and GitHub attaches the
-        # source archives on its own. The step refuses to release when any of
-        # those files is missing. A dry run prints the planned release and asset
-        # names and creates nothing. The release lands on this repository —
-        # GH_REPO pins it explicitly — for the tag the human already pushed;
-        # contents:write authorizes it. Asset names carry the binary's reported
-        # version; the binaries' also carry their build's target, linux/amd64,
-        # windows/amd64 (with .exe), darwin/arm64 or darwin/amd64, and the
-        # extension package's carries none, because it holds no program and
-        # serves every platform its manifest declares.
+      - name: Create the GitHub release and upload the binaries, the extension package and SHA256SUMS
+        # The final side effect: attach the default, debug and light binaries for
+        # linux/amd64, linux/arm64, windows/amd64, darwin/arm64 and darwin/amd64,
+        # the desktop extension package, and SHA256SUMS, the SHA-256 list of all
+        # of them, to the GitHub release for this tag so they are downloadable
+        # from the release page. The default binary, under the plain name, is the
+        # debug one without its debug information. The linux/amd64 one is the
+        # very file the tooling image carries, which the image step copied as it
+        # is, so the asset and the image cannot differ. The macOS and ARM Linux
+        # ones are the files the build job's steps for them wrote, each already
+        # held to the Linux binary's version. The Windows ones are the files the
+        # build job's Windows steps wrote, held to that version too, as
+        # sign-windows signed them: the step above held them to sign-windows'
+        # SHA-256 list, so they are byte for byte the files windows-smoke ran and
+        # whose signatures it checked. Those are signed bytes, which differ from
+        # one signing to the next; what the build reproduces is the unsigned
+        # bytes, and the Authenticode digest, which leaves the signature out, is
+        # the same for both. The extension package is the file the pack step
+        # wrote, copied under the name the pack script gave it. Which binaries a
+        # target's release carries, and under what names the build writes them,
+        # is read from the smoke library's smoke_target_binaries for every target
+        # it lists, the list the smoke runs ran; linux/amd64, which this build
+        # machine is, writes them under the bare names. The embedded guests are
+        # NOT uploaded here — they publish to the registry with their Plugin
+        # entities; the release carries only the runnable binaries, the
+        # extension package and the list, and GitHub attaches the source archives
+        # on its own. The step refuses to release when any of those files is
+        # missing.
+        #
+        # SHA256SUMS is written here, from the very files the release attaches,
+        # once this run's release directory holds exactly them, by the smoke
+        # library's one writer of such lists, in the form sha256sum writes and
+        # `sha256sum -c` reads; it is then held to them by the library's one
+        # reader of such lists, which refuses unless it names each attached file
+        # exactly once, with the digest of the bytes about to be attached, and
+        # nothing else. So a release whose list misses an asset, names one it
+        # does not attach or gives one other bytes is refused before anything is
+        # created, and what a downloader checks against is what was uploaded,
+        # the signed Windows binaries included. A dry run writes and checks the
+        # list too, prints it with the planned release and asset names, and
+        # creates nothing. The release lands on this repository — GH_REPO pins it
+        # explicitly — for the tag the human already pushed; contents:write
+        # authorizes it. Asset names carry the binary's reported version; the
+        # binaries' also carry their build's target, with .exe for windows/amd64,
+        # and the extension package's carries none, because it holds no program
+        # and serves every platform its manifest declares.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -2174,15 +2272,10 @@ jobs:
           BIN_VERSION="$("$AGGREGA_BIN" version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
 
-          BIN="$INPUTS/bin"
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
 
-          # The stripped binary is the file the image step kept; refuse rather
-          # than release two binaries when it is missing.
-          STRIPPED_BINARY="$BIN/aggrega-stripped"
-          if [ ! -f "$STRIPPED_BINARY" ]; then
-            echo "the image step kept no stripped binary (expected at '$STRIPPED_BINARY')" >&2
-            exit 1
-          fi
+          BIN="$INPUTS/bin"
 
           # The extension package is the one file the pack step wrote; refuse
           # rather than release without it, or with a second one beside it.
@@ -2195,78 +2288,54 @@ jobs:
           fi
           MCP_BUNDLE="${bundles[0]}"
 
-          # The Windows binaries are the files sign-windows signed, held to its
-          # SHA-256 list above; refuse rather than release without one when it
-          # is missing.
-          WIN_FULL="$WINDOWS_SIGNED/aggrega-windows-amd64.exe"
-          WIN_LIGHT="$WINDOWS_SIGNED/aggrega-light-windows-amd64.exe"
-          WIN_STRIPPED="$WINDOWS_SIGNED/aggrega-stripped-windows-amd64.exe"
-          for built in "$WIN_FULL" "$WIN_LIGHT" "$WIN_STRIPPED"; do
-            if [ ! -f "$built" ]; then
-              echo "sign-windows handed on no signed $(basename "$built") (expected at '$built')" >&2
-              exit 1
-            fi
-          done
-
-          # The macOS binaries are the files the macOS build steps wrote; refuse
-          # rather than release without one when it is missing.
-          MAC_ARM_FULL="$BIN/aggrega-darwin-arm64"
-          MAC_ARM_LIGHT="$BIN/aggrega-light-darwin-arm64"
-          MAC_ARM_STRIPPED="$BIN/aggrega-stripped-darwin-arm64"
-          MAC_AMD_FULL="$BIN/aggrega-darwin-amd64"
-          MAC_AMD_LIGHT="$BIN/aggrega-light-darwin-amd64"
-          MAC_AMD_STRIPPED="$BIN/aggrega-stripped-darwin-amd64"
-          for built in "$MAC_ARM_FULL" "$MAC_ARM_LIGHT" "$MAC_ARM_STRIPPED" "$MAC_AMD_FULL" "$MAC_AMD_LIGHT" "$MAC_AMD_STRIPPED"; do
-            if [ ! -f "$built" ]; then
-              echo "the macOS build steps wrote no $(basename "$built") (expected at '$built')" >&2
-              exit 1
-            fi
-          done
-
-          # RELEASE_DIR is this run's own directory, made empty by the step that
-          # makes this run's own directories.
-          FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-linux-amd64"
-          LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-linux-amd64"
-          STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-linux-amd64"
-          WIN_FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-windows-amd64.exe"
-          WIN_LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-windows-amd64.exe"
-          WIN_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-windows-amd64.exe"
-          MAC_ARM_FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-darwin-arm64"
-          MAC_ARM_LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-darwin-arm64"
-          MAC_ARM_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-darwin-arm64"
-          MAC_AMD_FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-darwin-amd64"
-          MAC_AMD_LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-darwin-amd64"
-          MAC_AMD_STRIPPED_ASSET="$RELEASE_DIR/aggrega-stripped-$BIN_VERSION-darwin-amd64"
-          BUNDLE_ASSET="$RELEASE_DIR/$(basename "$MCP_BUNDLE")"
-          cp "$BIN/aggrega" "$FULL_ASSET"
-          cp "$BIN/aggrega-light" "$LIGHT_ASSET"
-          cp "$STRIPPED_BINARY" "$STRIPPED_ASSET"
-          cp "$WIN_FULL" "$WIN_FULL_ASSET"
-          cp "$WIN_LIGHT" "$WIN_LIGHT_ASSET"
-          cp "$WIN_STRIPPED" "$WIN_STRIPPED_ASSET"
-          cp "$MAC_ARM_FULL" "$MAC_ARM_FULL_ASSET"
-          cp "$MAC_ARM_LIGHT" "$MAC_ARM_LIGHT_ASSET"
-          cp "$MAC_ARM_STRIPPED" "$MAC_ARM_STRIPPED_ASSET"
-          cp "$MAC_AMD_FULL" "$MAC_AMD_FULL_ASSET"
-          cp "$MAC_AMD_LIGHT" "$MAC_AMD_LIGHT_ASSET"
-          cp "$MAC_AMD_STRIPPED" "$MAC_AMD_STRIPPED_ASSET"
-          cp "$MCP_BUNDLE" "$BUNDLE_ASSET"
-
           # The one list of what the release carries: the dry run prints it, and
-          # the upload and the creation attach exactly it.
-          ASSETS=(
-            "$FULL_ASSET" "$LIGHT_ASSET" "$STRIPPED_ASSET"
-            "$WIN_FULL_ASSET" "$WIN_LIGHT_ASSET" "$WIN_STRIPPED_ASSET"
-            "$MAC_ARM_FULL_ASSET" "$MAC_ARM_LIGHT_ASSET" "$MAC_ARM_STRIPPED_ASSET"
-            "$MAC_AMD_FULL_ASSET" "$MAC_AMD_LIGHT_ASSET" "$MAC_AMD_STRIPPED_ASSET"
-            "$BUNDLE_ASSET"
-          )
+          # the upload and the creation attach exactly it. attach copies a file
+          # into RELEASE_DIR, this run's own directory made empty by the step
+          # that makes this run's own directories, under its asset name, and
+          # refuses rather than release without it when it is missing.
+          ASSETS=()
+          attach() { # <file> <asset name> <what wrote it>
+            if [ ! -f "$1" ]; then
+              echo "$3 wrote no $(basename "$1") (expected at '$1')" >&2
+              exit 1
+            fi
+            cp "$1" "$RELEASE_DIR/$2"
+            ASSETS+=("$RELEASE_DIR/$2")
+          }
+          for variant in aggrega aggrega-debug aggrega-light; do
+            attach "$BIN/$variant" "$variant-$BIN_VERSION-linux-amd64" "the linux/amd64 build steps"
+          done
+          for target in linux/arm64 darwin/arm64 darwin/amd64; do
+            suffix="${target%/*}-${target#*/}"
+            names="$(smoke_target_binaries "$target")"
+            while IFS= read -r name; do
+              attach "$BIN/$name" "${name%-"$suffix"}-$BIN_VERSION-$suffix" "the $target build steps"
+            done <<<"$names"
+          done
+          names="$(smoke_target_binaries windows/amd64)"
+          while IFS= read -r name; do
+            stem="${name%.exe}"
+            attach "$WINDOWS_SIGNED/$name" "${stem%-windows-amd64}-$BIN_VERSION-windows-amd64.exe" "sign-windows"
+          done <<<"$names"
+          attach "$MCP_BUNDLE" "$(basename "$MCP_BUNDLE")" "the pack step"
+
+          # SHA256SUMS, written from the files RELEASE_DIR now holds, which are
+          # exactly the ones in ASSETS, then held to ASSETS by name and digest.
+          smoke_write_tree_sums "$RELEASE_DIR"
+          asset_names=()
+          for asset in "${ASSETS[@]}"; do
+            asset_names+=("$(basename "$asset")")
+          done
+          smoke_check_sums "$RELEASE_DIR/SHA256SUMS" "$RELEASE_DIR" "${asset_names[@]}"
+          ASSETS+=("$RELEASE_DIR/SHA256SUMS")
 
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
             for asset in "${ASSETS[@]}"; do
               echo "  $(basename "$asset")"
             done
+            echo "publish-plugins (dry-run): SHA256SUMS would read:"
+            cat "$RELEASE_DIR/SHA256SUMS"
             exit 0
           fi
 
@@ -2278,7 +2347,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for linux/amd64, for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (full, with embedded plugin guests), aggrega-light (no-embed, resolves plugins through the cascade) and aggrega-stripped (the full binary without its debug information; for linux/amd64, the same bytes the tooling image carries). $(basename "$BUNDLE_ASSET") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux."
+              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64, the same bytes the tooling image carries), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
           fi
 
       - name: Remove this run's directories
@@ -2502,7 +2571,7 @@ jobs:
           dir="$RUNNER_TEMP/substituted-binaries"
           mkdir -p "$dir"
           version="${SUBSTITUTE_TAG#v}"
-          for name in aggrega aggrega-light aggrega-stripped; do
+          for name in aggrega aggrega-debug aggrega-light; do
             gh release download "$SUBSTITUTE_TAG" -R "$GITHUB_REPOSITORY" \
               -p "$name-$version-windows-amd64.exe" -O "$dir/$name-windows-amd64.exe"
           done
@@ -2745,6 +2814,71 @@ jobs:
           set -euo pipefail
           aggrega-cli/scripts/platform-smoke.sh --target "$TARGET" --inputs "$RUNNER_TEMP/macos-smoke"
 
+  linux-smoke:
+    # Runs the ARM Linux binaries the build job built, on an ARM Linux machine,
+    # through the same script and the same checks as macos-smoke: the machine
+    # check, the versions, the handshake, both examples compared byte for byte
+    # with the build machine's, config init placed by HOME alone, the entity
+    # cache, the catalog named twice, the escape check, and the named tests, its
+    # configuration check holding the Linux rule, which reads HOME and places the
+    # caches under its .cache. It proves that the binaries start, answer, and
+    # build what the x86-64 Linux build builds, byte for byte, on the other
+    # architecture. The script refuses a machine whose architecture is not the
+    # target's, because a Linux machine with an emulator registered runs a
+    # binary of another architecture too. Everything it runs comes from the
+    # artifact the build job staged; it checks out this repository only so that
+    # each test executable runs from its package directory, at the commit the
+    # artifact records. It holds no secret and reads only this repository.
+    # sign-and-publish waits for it, so a failure here publishes nothing.
+    #
+    # ubuntu-24.04-arm names GitHub's hosted ARM Linux image. A label GitHub does
+    # not offer leaves the job queued, waiting for a runner that never comes, and
+    # sign-and-publish waiting behind it, so a job that never starts is the sign
+    # that its label needs changing here. The smoke script checks for every tool
+    # it runs and names one the image does not carry.
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep line endings exactly as committed
+        # The comparison and the tests read checked-out files, so the checkout
+        # must hold the committed bytes whatever the runner's Git is configured
+        # to do with line endings.
+        run: git config --global core.autocrlf false
+
+      - name: Check out the CLI at the commit the inputs were staged from
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.linux_smoke_commit }}
+          persist-credentials: false
+
+      - name: Download the ARM Linux smoke run's inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-smoke-inputs-linux-arm64
+          path: ${{ runner.temp }}/linux-smoke
+
+      - name: Run the ARM Linux binaries and tests
+        # The machine check, the versions, the handshake, the first example and
+        # its byte comparison — with a planted one-byte difference shown turning
+        # it red — then config init placed by HOME alone, a pull from a registry
+        # on this machine into the entity cache and a build from it, a catalog
+        # directory named twice, and the chart-backed example compared the same
+        # way, all in a path with a space and an accented letter, every command's
+        # redirected output free of escape bytes, each check shown refusing a
+        # planted fault; then the named tests, any of which skipping or not
+        # running fails the step. aggrega-cli/scripts/platform-smoke.sh --help
+        # says what each check asserts.
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/platform-smoke.sh --target linux/arm64 --inputs "$RUNNER_TEMP/linux-smoke"
+
   clean-up:
     # Runs last, once every other job has ended, whatever each did — passed,
     # failed, was skipped or was cancelled — so a run leaves nothing behind it:
@@ -2763,7 +2897,7 @@ jobs:
     # image to an archive and loads nothing, and sign-and-publish's publish
     # script removes every reference it loads when it exits, a refusal
     # included.
-    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, smoke-binaries, windows-smoke, macos-smoke]
+    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15

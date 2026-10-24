@@ -19,7 +19,9 @@
 # folder in which those jobs hand files to each other is listed where files enter
 # it by smoke_write_tree_sums, in the form smoke_check_sums reads, and held to
 # that list where they leave by smoke_check_tree_sums, which reads it through
-# smoke_check_sums.
+# smoke_check_sums. The SHA256SUMS a release attaches is written the same way, by
+# smoke_write_tree_sums over the directory holding exactly the files the release
+# attaches, and held to them by smoke_check_sums before the release is made.
 #
 # Sourcing defines these functions and sets no variables:
 #
@@ -30,10 +32,10 @@
 #
 #   smoke_target_binaries <goos>/<goarch>
 #     Prints, one per line, the file names of the binaries the release carries for
-#     the target, as the build writes them, the full binary first, then the light
-#     and the stripped ones: for windows/amd64, darwin/arm64 and darwin/amd64
-#     alike. A target the smoke run does not cover is refused with exit 2, naming
-#     the targets it does cover.
+#     the target, as the build writes them: the default binary, without its debug
+#     information, first, then the debug and the light ones; for windows/amd64,
+#     darwin/arm64, darwin/amd64 and linux/arm64 alike. A target the smoke run
+#     does not cover is refused with exit 2, naming the targets it does cover.
 #
 #   smoke_native_path <path>
 #     Prints <path> in the form a native program on this system reads: the Windows
@@ -137,7 +139,7 @@
 #     file, or when it already holds a list, since a list is written once, after
 #     the last file is in place. Prints how many files and bytes it listed. Needs
 #     GNU find, sha256sum and bash 4.4 (mapfile -d), which the Linux machine that
-#     builds a release carries; no smoke run calls it.
+#     builds and publishes a release carries; no smoke run calls it.
 #
 #   smoke_check_tree_sums <dir>
 #     Holds every file beneath <dir> to <dir>/SHA256SUMS through
@@ -171,13 +173,13 @@ smoke_require_bash() {
 smoke_target_binaries() {
   case "$1" in
     windows/amd64)
-      printf '%s\n' aggrega-windows-amd64.exe aggrega-light-windows-amd64.exe aggrega-stripped-windows-amd64.exe
+      printf '%s\n' aggrega-windows-amd64.exe aggrega-debug-windows-amd64.exe aggrega-light-windows-amd64.exe
       ;;
-    darwin/arm64 | darwin/amd64)
-      printf '%s\n' "aggrega-${1%/*}-${1#*/}" "aggrega-light-${1%/*}-${1#*/}" "aggrega-stripped-${1%/*}-${1#*/}"
+    darwin/arm64 | darwin/amd64 | linux/arm64)
+      printf '%s\n' "aggrega-${1%/*}-${1#*/}" "aggrega-debug-${1%/*}-${1#*/}" "aggrega-light-${1%/*}-${1#*/}"
       ;;
     *)
-      printf 'smoke: no smoke run covers the target %s; it covers windows/amd64, darwin/arm64 and darwin/amd64\n' "$1" >&2
+      printf 'smoke: no smoke run covers the target %s; it covers windows/amd64, darwin/arm64, darwin/amd64 and linux/arm64\n' "$1" >&2
       return 2
       ;;
   esac

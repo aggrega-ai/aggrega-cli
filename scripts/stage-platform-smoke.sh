@@ -3,16 +3,17 @@
 # the release, everything one platform's smoke run needs, in one directory.
 #
 # The smoke run (scripts/platform-smoke.sh) runs on a machine of the target
-# platform, a Windows or a macOS machine, that has none of what building needs: no
-# sibling repositories, no toolchains, no credentials, no registry. So the
-# machine that built the release hands it, in the directory this script writes:
+# platform, a Windows, a macOS or an ARM Linux machine, that has none of what
+# building needs: no sibling repositories, no toolchains, no credentials, no
+# registry. So the machine that built the release hands it, in the directory this
+# script writes:
 #
 #   bin/        the binaries the build wrote for the target, as
 #               scripts/lib/platform-smoke-common.sh lists them: for windows/amd64
-#               aggrega-windows-amd64.exe, aggrega-light-windows-amd64.exe and
-#               aggrega-stripped-windows-amd64.exe; for darwin/<arch>
-#               aggrega-darwin-<arch>, aggrega-light-darwin-<arch> and
-#               aggrega-stripped-darwin-<arch>. The
+#               aggrega-windows-amd64.exe, aggrega-debug-windows-amd64.exe and
+#               aggrega-light-windows-amd64.exe; for darwin/<arch> and
+#               linux/arm64 aggrega-<os>-<arch>, aggrega-debug-<os>-<arch> and
+#               aggrega-light-<os>-<arch>. The
 #               Windows ones are unsigned: the smoke run runs the signed copies
 #               the release attaches, handed to it apart (its --signed), and
 #               holds these as what its signature check must refuse; or, given
@@ -47,7 +48,7 @@
 # its one Recipe carries, and is laid out as a catalog of one's own must be: the
 # Recipe in a directory of its own, its chart beside it, and the entity.lock that
 # `aggrega pin` writes, which its pull verifies every chart file against. Each has
-# its catalog beside it and its provider embedded in the full binary, so it builds
+# its catalog beside it and its provider embedded in the default binary, so it builds
 # with no registry at all: every run of either here is offline and reads no
 # configuration of this machine. Each reference is built twice, in two directories
 # of different depth, and the two trees compared; a difference refuses, because a
@@ -55,7 +56,7 @@
 # against it meaningless.
 #
 # Run it from the release build's checkout after the target's binaries are built:
-# it needs ./aggrega (the full binary for this machine), the target's binaries
+# it needs ./aggrega (the embedded binary for this machine), the target's binaries
 # beside it, the embedded guests they embed (the test executables embed the same
 # guests), and a Go toolchain with the modules go.mod requires. The smoke run
 # holds every binary to the version ./aggrega reports, so all of them must come
@@ -68,8 +69,8 @@
 #   scripts/stage-platform-smoke.sh --target <goos>/<goarch> --output-dir <dir>
 #   scripts/stage-platform-smoke.sh --help
 #
-# <goos>/<goarch> is windows/amd64, darwin/arm64 or darwin/amd64. <dir> must not
-# exist or be empty. An argument it cannot use is refused with exit 2, before
+# <goos>/<goarch> is windows/amd64, darwin/arm64, darwin/amd64 or linux/arm64.
+# <dir> must not exist or be empty. An argument it cannot use is refused with exit 2, before
 # anything is staged. Exit non-zero on the first failing step.
 set -euo pipefail
 
@@ -114,46 +115,47 @@ REGISTRY_PROGRAM="github.com/google/go-containerregistry/cmd/registry"
 # proves a platform split behaves there, and each runs with -test.run naming it; a
 # named test the run sees skipped, or not run at all, fails the run. A test
 # declared in a file built only for Windows is listed for windows alone, since a
-# macOS build does not contain it; the staging names each test it leaves out.
+# macOS or Linux build does not contain it; the staging names each test it leaves
+# out.
 TESTS=(
   # Cross-process locking of the shared compile cache: one process waits for, or
   # is refused by, a lock another process holds, and never both write.
-  "windows,darwin internal/wasm TestCompileLockMakesASecondProcessWait"
-  "windows,darwin internal/wasm TestCompileCacheReclaimLockRefusesASecondProcess"
-  "windows,darwin internal/wasm TestCompileCacheReclaimLockIsExclusiveAndNonBlocking"
+  "windows,darwin,linux internal/wasm TestCompileLockMakesASecondProcessWait"
+  "windows,darwin,linux internal/wasm TestCompileCacheReclaimLockRefusesASecondProcess"
+  "windows,darwin,linux internal/wasm TestCompileCacheReclaimLockIsExclusiveAndNonBlocking"
   # The file lock every cache lock is built on. The last three are the Windows
   # lock's own tests, declared in a Windows-only file.
-  "windows,darwin internal/wasm/filelock TestAcquireSerializesHolders"
-  "windows,darwin internal/wasm/filelock TestAcquireDegradesWhenLockPathUnusable"
-  "windows,darwin internal/wasm/filelock TestAcquireReleasesForReuse"
+  "windows,darwin,linux internal/wasm/filelock TestAcquireSerializesHolders"
+  "windows,darwin,linux internal/wasm/filelock TestAcquireDegradesWhenLockPathUnusable"
+  "windows,darwin,linux internal/wasm/filelock TestAcquireReleasesForReuse"
   "windows internal/wasm/filelock TestLockAndTryLockCreateNoDirectory"
   "windows internal/wasm/filelock TestTryLockRefusesWhileHeld"
   "windows internal/wasm/filelock TestLockSharedAdmitsReadersTogetherAndExcludesAWriter"
   # A file another process holds open: removal is refused on Windows, and the
   # cache verbs leave such a file in place and say so rather than failing; on
-  # macOS removal succeeds, and the same tests hold the verbs to that. The index
+  # macOS and Linux removal succeeds, and the same tests hold the verbs to that. The index
   # tests are the Windows read lock's own, declared in Windows-only files.
-  "windows,darwin internal/wasm/filelock TestHeldOpenNamesTheRefusalToRemoveAnOpenFile"
-  "windows,darwin internal/wasm TestReclaimCompileCacheLeavesAnEntryAnotherProcessHasOpen"
+  "windows,darwin,linux internal/wasm/filelock TestHeldOpenNamesTheRefusalToRemoveAnOpenFile"
+  "windows,darwin,linux internal/wasm TestReclaimCompileCacheLeavesAnEntryAnotherProcessHasOpen"
   "windows internal/wasm/attribindex TestLoadWaitsForAWriterHoldingTheIndexLock"
   "windows internal/wasm/attribindex TestAWriterReplacesTheIndexOnceItsReadersHaveClosedIt"
   "windows internal/wasm/provindex TestLoadWaitsForAWriterHoldingTheIndexLock"
   "windows internal/wasm/provindex TestAWriterReplacesTheIndexOnceItsReadersHaveClosedIt"
-  "windows,darwin internal/cacheops TestRemoveAllLeavingHeldOpenLeavesOnlyTheOpenFile"
-  "windows,darwin internal/cacheops TestClearLeavesWhatACompileHoldsAndClearsEverythingElse"
-  "windows,darwin cmd/aggrega TestCachePruneLeavesWhatAnotherProcessHasOpen"
-  "windows,darwin cmd/aggrega TestCacheEvictLeavesALeafAnotherProcessHasOpen"
-  "windows,darwin cmd/aggrega TestCacheClearLeavesTheLockACompileHolds"
+  "windows,darwin,linux internal/cacheops TestRemoveAllLeavingHeldOpenLeavesOnlyTheOpenFile"
+  "windows,darwin,linux internal/cacheops TestClearLeavesWhatACompileHoldsAndClearsEverythingElse"
+  "windows,darwin,linux cmd/aggrega TestCachePruneLeavesWhatAnotherProcessHasOpen"
+  "windows,darwin,linux cmd/aggrega TestCacheEvictLeavesALeafAnotherProcessHasOpen"
+  "windows,darwin,linux cmd/aggrega TestCacheClearLeavesTheLockACompileHolds"
   # Paths the compiler writes or answers with are spelled with forward slashes.
-  "windows,darwin internal/compiler/renderer TestComputeFinalPathIsSlashSeparated"
-  "windows,darwin internal/compiler/trace TestMemoryWriter_CollectsEntriesUnderRelativePaths"
-  "windows,darwin pkg/catalog TestRelativeToWorkspaceSpellsRelativePathsWithSlashes"
-  "windows,darwin internal/serve TestReleasePathCompletionsAreSlashSeparated"
+  "windows,darwin,linux internal/compiler/renderer TestComputeFinalPathIsSlashSeparated"
+  "windows,darwin,linux internal/compiler/trace TestMemoryWriter_CollectsEntriesUnderRelativePaths"
+  "windows,darwin,linux pkg/catalog TestRelativeToWorkspaceSpellsRelativePathsWithSlashes"
+  "windows,darwin,linux internal/serve TestReleasePathCompletionsAreSlashSeparated"
   # A Unix-socket listen address: served, removed on close, and an address in
   # neither form refused.
-  "windows,darwin internal/mcp TestListenerServesPlaintextOnAUnixSocket"
-  "windows,darwin internal/mcp TestAUnixSocketIsRemovedWhenTheListenerCloses"
-  "windows,darwin internal/mcp TestListenerRefusesAnAddressInNeitherForm"
+  "windows,darwin,linux internal/mcp TestListenerServesPlaintextOnAUnixSocket"
+  "windows,darwin,linux internal/mcp TestAUnixSocketIsRemovedWhenTheListenerCloses"
+  "windows,darwin,linux internal/mcp TestListenerRefusesAnAddressInNeitherForm"
   # A name Windows cannot hold as written — a device name, one as a directory, a
   # segment of two dots and a space — is refused when an archive is laid out in
   # the cache and when an import drafts it, naming it, with nothing written; and
@@ -207,7 +209,7 @@ OUT="$(cd "$OUT" && pwd)"
 # What this stages from must already be built.
 [ -x ./aggrega ] || { fail "./aggrega is not built; run scripts/build.sh first"; exit 1; }
 for bin in "${BINARIES[@]}"; do
-  [ -f "$bin" ] || { fail "./$bin is not built; run scripts/build.sh --target $TARGET --stripped (and --light) first"; exit 1; }
+  [ -f "$bin" ] || { fail "./$bin is not built; run scripts/build.sh --target $TARGET (and --light) first"; exit 1; }
 done
 if ! bash scripts/check-embedded-guests.sh >/dev/null 2>&1; then
   fail "the embedded guests are stale or missing; run scripts/build.sh first, so the test executables embed what the binaries embed"

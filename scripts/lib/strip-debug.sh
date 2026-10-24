@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/lib/strip-debug.sh
 #
-# The single home for the stripped-copy recipe, SOURCED (never executed) by every
-# script that writes a copy of a built aggrega binary without its debug
-# information: the tooling image's build (scripts/build-tooling-image.sh), whose
-# copy a release also attaches as the Linux stripped binary, and
-# `scripts/build.sh --stripped`, which writes the stripped binary with it for a
-# Linux target and for the machine it runs on. Sourcing one recipe means a
-# stripped copy is made the same way whichever script made it. A Windows or macOS
-# binary is not stripped here: scripts/build.sh has the linker write those
-# stripped binaries instead, and says why where it decides how each target's
-# stripped binary is made.
+# The single home for the recipe that copies a built aggrega binary without its
+# debug information, SOURCED (never executed) by scripts/build.sh, which makes
+# ./aggrega with it from ./aggrega-debug in a build for the machine it runs on.
+# That ./aggrega is the binary a release attaches for linux/amd64 under the plain
+# name and the one the tooling image carries, which copies it as it is: this is
+# the one place a binary is stripped. A binary built for another system with
+# --target is not stripped here: scripts/build.sh has the linker write those
+# without their debug information instead, and says why where it decides how
+# each build's ./aggrega is made.
 #
 # Sourcing defines one function and sets no variables:
 #   strip_debug_copy <binary> <copy>

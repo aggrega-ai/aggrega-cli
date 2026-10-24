@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/platform-smoke.sh — run one platform's binaries and tests on
-# a machine of that platform, and hold what the full binary builds to the bytes
+# a machine of that platform, and hold what the default binary builds to the bytes
 # the release's own build machine built.
 #
 # It reads the directory scripts/stage-platform-smoke.sh wrote for the target
 # (--inputs) and runs from a checkout of this repository at the commit that
-# directory names: under the Git for Windows shell on Windows, under bash on macOS.
+# directory names: under the Git for Windows shell on Windows, under bash on macOS
+# and on Linux.
 # For windows/amd64 it also reads the directory the release's signing wrote
 # (--signed): the Windows binaries with their Authenticode signatures, and
 # SHA256SUMS, the SHA-256 list of them. The signed binaries are the ones every
@@ -13,8 +14,9 @@
 # the build wrote, staged in bin/, run in no step, and step 11 holds them as what
 # its checks must refuse. On a run that signs nothing, --unsigned takes the place
 # of --signed: every step runs the unsigned copies in bin/, and step 11, with no
-# signature to check, is not applicable. The macOS binaries are not signed by the
-# release, so a darwin target runs the staged ones and takes neither.
+# signature to check, is not applicable. The macOS and Linux binaries are not
+# signed by the release, so a darwin or linux target runs the staged ones and
+# takes neither.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
 # registry but the one it starts on this machine; it does need bash 4.3 or later,
 # which macOS does not ship. Before the checks it holds the inputs and the machine
@@ -22,18 +24,21 @@
 #
 #   - the staged inputs name the target given with --target, and bin/ holds
 #     exactly the binaries scripts/lib/platform-smoke-common.sh lists for it: the
-#     full, light and stripped binaries, for windows/amd64, darwin/arm64 and
-#     darwin/amd64 alike. For windows/amd64 the --signed directory
-#     holds exactly those binaries too, and SHA256SUMS beside them
-#   - on macOS, the machine is the target's: uname -m reports arm64 for
-#     darwin/arm64 and x86_64 for darwin/amd64. A Mac with Apple silicon also runs
-#     an amd64 binary, through Rosetta 2, and that binary still reports
-#     darwin/amd64, so without this check an Apple silicon machine would pass for
-#     an Intel one
-#   - on macOS, the binaries, the registry program and the test executables are
-#     made executable again, because a workflow artifact does not keep file modes,
-#     and none of them may carry the quarantine mark, under which Gatekeeper would
-#     assess a program that is not notarized before it runs
+#     default binary, without its debug information, and the debug and light
+#     ones, for windows/amd64, darwin/arm64, darwin/amd64 and linux/arm64 alike.
+#     For windows/amd64 the --signed directory holds exactly those binaries too,
+#     and SHA256SUMS beside them
+#   - on macOS and Linux, the machine is the target's: uname -m reports arm64 for
+#     darwin/arm64, x86_64 for darwin/amd64 and aarch64 for linux/arm64. A Mac
+#     with Apple silicon also runs an amd64 binary, through Rosetta 2, and that
+#     binary still reports darwin/amd64, so without this check an Apple silicon
+#     machine would pass for an Intel one; a Linux machine with an emulator
+#     registered runs a binary of another architecture the same way
+#   - on macOS and Linux, the binaries, the registry program and the test
+#     executables are made executable again, because a workflow artifact does not
+#     keep file modes; and on macOS none of them may carry the quarantine mark,
+#     under which Gatekeeper would assess a program that is not notarized before
+#     it runs
 #
 # Then, in order, stopping at the first failure with what failed unless
 # --unsigned or --binaries is given (below):
@@ -41,9 +46,9 @@
 #   1. versions   each binary reports, as `version` and as `version -o json`, the
 #                 version staged with it, and the JSON names the target as its
 #                 platform
-#   2. handshake  the full binary, run as `aggrega mcp`, answers an initialize
+#   2. handshake  the default binary, run as `aggrega mcp`, answers an initialize
 #                 request on standard input with a result on standard output
-#   3. example    the full binary validates, pulls and builds the staged worked
+#   3. example    the default binary validates, pulls and builds the staged worked
 #                 example in a fresh directory, the pull and the build with
 #                 --progress, whose plain progress lines must be printed; the whole
 #                 workspace it leaves — the rendered tree and the lockfile with it —
@@ -60,17 +65,18 @@
 #                 to place the global configuration: on Windows with HOME,
 #                 XDG_CONFIG_HOME and AGGREGA_CONFIG unset and APPDATA and
 #                 LOCALAPPDATA naming directories of step 4's, as a Windows prompt
-#                 gives them; on macOS with XDG_CONFIG_HOME, AGGREGA_CONFIG,
-#                 APPDATA and LOCALAPPDATA unset and HOME naming one. It must exit 0,
-#                 write the file where that rule puts it — %APPDATA%\aggrega\config.yaml
-#                 on Windows, $HOME/.config/aggrega/config.yaml on macOS — report
+#                 gives them; on macOS and Linux with XDG_CONFIG_HOME,
+#                 XDG_CACHE_HOME, AGGREGA_CONFIG, APPDATA and LOCALAPPDATA unset
+#                 and HOME naming one. It must exit 0, write the file where that
+#                 rule puts it — %APPDATA%\aggrega\config.yaml on Windows,
+#                 $HOME/.config/aggrega/config.yaml on macOS and Linux — report
 #                 that file, the directory the machine-wide caches are kept in and
 #                 the registry it registered, print nothing on standard error and
 #                 no warning; the same check against a directory holding no file
 #                 must refuse it
 #   6. entity cache
 #                 the registry program staged with the binaries serves an
-#                 in-memory registry on this machine's loopback address; the full
+#                 in-memory registry on this machine's loopback address; the default
 #                 binary pushes the staged FeatureRecipe to it, then pulls a copy of
 #                 the example whose catalog lacks that entity and whose Manifest
 #                 names it by provider, so the pull fetches it from the registry
@@ -88,7 +94,7 @@
 #                 the pull must write the lockfile and print no notice that a
 #                 catalog file is shadowed; the same check over its output with
 #                 such a notice planted must refuse it
-#   8. chart      the full binary validates, pulls and builds the staged
+#   8. chart      the default binary validates, pulls and builds the staged
 #                 chart-backed example — a Recipe whose workload is the Helm chart
 #                 beside it, pinned file by file in the entity.lock beside it — in a
 #                 fresh directory beneath step 4's; the whole workspace it leaves is
@@ -114,7 +120,7 @@
 #                 TimeStamperCertificate), which keeps the signature valid after
 #                 its certificate, issued for a few days only, expires. Each file's
 #                 status, signer and timestamper are printed. Then the same
-#                 signature check over the unsigned full binary staged in bin/,
+#                 signature check over the unsigned default binary staged in bin/,
 #                 and the same list check over bin/, must refuse them. Given
 #                 --unsigned it checks nothing: it prints that it is not
 #                 applicable, and the run's last lines list it so, never as
@@ -138,11 +144,11 @@
 #
 # --signed <dir> names the directory holding the signed Windows binaries and
 # SHA256SUMS. It is required for windows/amd64, unless --unsigned is given, and
-# refused for a darwin target.
+# refused for a darwin or linux target.
 #
 # --unsigned runs the windows/amd64 binaries staged in bin/, unsigned as the
 # build wrote them: the way to run the checks on a run that signs nothing. It is
-# refused with --signed and for a darwin target. Each step then runs whatever an
+# refused with --signed and for a darwin or linux target. Each step then runs whatever an
 # earlier one reported; step 11 checks nothing and is reported not applicable,
 # never passed; and the run ends naming every step that failed and the step that
 # was not applicable. It exits 1 when a step failed and 3 when none did — never
@@ -150,14 +156,14 @@
 #
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
 # them, in place of the ones it would run otherwise (the --signed ones for
-# windows/amd64, the staged ones for macOS and with --unsigned): the way to show
+# windows/amd64, the staged ones for macOS, Linux and with --unsigned): the way to show
 # which checks the binaries of another release fail. Each step then runs whatever
 # an earlier one reported, and the run ends naming every step that failed. It
 # exits 1 when one did and 3 when none did — never 0, since what passed is
 # binaries the release does not carry. With --unsigned as well, step 11 is not
 # applicable, as above.
 #
-# <goos>/<goarch> is windows/amd64, darwin/arm64 or darwin/amd64. Writes its working
+# <goos>/<goarch> is windows/amd64, darwin/arm64, darwin/amd64 or linux/arm64. Writes its working
 # files under <dir>/run, which must not exist yet. An argument it cannot use is
 # refused with exit 2, before anything runs.
 set -euo pipefail
@@ -217,9 +223,9 @@ GOOS_T="${TARGET%/*}" GOARCH_T="${TARGET#*/}"
 EXE_SUFFIX=""
 [ "$GOOS_T" = windows ] && EXE_SUFFIX=".exe"
 # The release signs the Windows binaries and no others, so the signed directory is
-# what a Windows run must be handed and what a macOS run must not be. A Windows
-# run that signs nothing says so with --unsigned in its place, and a macOS run
-# takes neither.
+# what a Windows run must be handed and what a macOS or Linux run must not be. A
+# Windows run that signs nothing says so with --unsigned in its place, and a macOS
+# or Linux run takes neither.
 [ -z "$SIGNED" ] || [ -z "$UNSIGNED" ] ||
   { fail "--signed and --unsigned cannot both be given: --signed runs the signed binaries in its directory, --unsigned the unsigned ones in bin/"; exit 2; }
 case "$GOOS_T" in
@@ -249,6 +255,7 @@ WORK="$INPUTS/run"
 
 TOOLS=(cat cmp cp dd git head sleep tr uname)
 [ "$GOOS_T" = darwin ] && TOOLS+=(chmod xattr)
+[ "$GOOS_T" = linux ] && TOOLS+=(chmod)
 [ "$GOOS_T" = windows ] && TOOLS+=(powershell.exe sha256sum)
 for tool in "${TOOLS[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { fail "$tool not found on PATH"; exit 1; }
@@ -335,14 +342,23 @@ case "$GOOS_T" in
       exit 1
     fi
     ;;
+  linux)
+    case "$GOARCH_T" in
+      arm64) want_machine=aarch64 ;;
+    esac
+    if [ "$MACHINE" != "$want_machine" ]; then
+      fail "this machine reports $MACHINE: the $TARGET binaries are proved only on a Linux machine reporting $want_machine"
+      exit 1
+    fi
+    ;;
 esac
 
 mkdir -p "$WORK"
 
-if [ "$GOOS_T" = darwin ]; then
+if [ "$GOOS_T" = darwin ] || [ "$GOOS_T" = linux ]; then
   # A workflow artifact does not keep file modes, so each executable comes back
-  # without its execute bit; and a file written by a program that marks its
-  # downloads would carry the quarantine mark, which this run must not meet.
+  # without its execute bit; and on macOS a file written by a program that marks
+  # its downloads would carry the quarantine mark, which this run must not meet.
   executables=("$REGISTRY_PROGRAM")
   declare -A listed=()
   for name in "${BINARY_NAMES[@]}"; do executables+=("$BIN_DIR/$name"); done
@@ -353,15 +369,19 @@ if [ "$GOOS_T" = darwin ]; then
   done < "$INPUTS/tests/tests.txt"
   for path in "${executables[@]}"; do
     chmod 0755 "$path"
-    if xattr -p com.apple.quarantine "$path" >/dev/null 2>&1; then
+    if [ "$GOOS_T" = darwin ] && xattr -p com.apple.quarantine "$path" >/dev/null 2>&1; then
       fail "${path#"$INPUTS/"} carries the quarantine mark, so Gatekeeper would assess it before it runs"
       exit 1
     fi
   done
-  echo "ok: ${#executables[@]} executable(s) marked executable, none carrying the quarantine mark"
+  if [ "$GOOS_T" = darwin ]; then
+    echo "ok: ${#executables[@]} executable(s) marked executable, none carrying the quarantine mark"
+  else
+    echo "ok: ${#executables[@]} executable(s) marked executable"
+  fi
 fi
 
-FULL="$BIN_DIR/${BINARY_NAMES[0]}"
+DEFAULT_BIN="$BIN_DIR/${BINARY_NAMES[0]}"
 BINARIES=()
 for name in "${BINARY_NAMES[@]}"; do BINARIES+=("$BIN_DIR/$name"); done
 LOGS="$WORK/logs"
@@ -399,7 +419,7 @@ check_handshake() {
   mkdir -p "$WORK/mcp"
   # Standard input closes after the one request, which ends the session once it
   # is answered.
-  if ! (cd "$WORK/mcp" && printf '%s\n' "$request" | "$FULL" mcp > "$WORK/mcp.out" 2> "$WORK/mcp.err"); then
+  if ! (cd "$WORK/mcp" && printf '%s\n' "$request" | "$DEFAULT_BIN" mcp > "$WORK/mcp.out" 2> "$WORK/mcp.err"); then
     cat "$WORK/mcp.err" >&2
     fail "aggrega mcp exited non-zero"
     return 1
@@ -461,7 +481,7 @@ check_example() {
   local log="$LOGS/example"
   mkdir -p "$WORK/example"
   cp -R "$INPUTS/example/input/." "$WORK/example/"
-  smoke_build_example "$FULL" "$WORK/example" "$RELEASE" "$log" --progress || return 1
+  smoke_build_example "$DEFAULT_BIN" "$WORK/example" "$RELEASE" "$log" --progress || return 1
   if [ ! -s "$log/pull.err" ] || [ ! -s "$log/build.err" ]; then
     fail "the pull or the build with --progress printed no progress line, so the escape check over their output read none"
     return 1
@@ -495,19 +515,23 @@ check_configuration() {
         LOCALAPPDATA="$(smoke_native_path "$base/AppData/Local")"
         export APPDATA LOCALAPPDATA
         cd "$base/cwd"
-        smoke_run_logged "$log" config-init "$FULL" config init
+        smoke_run_logged "$log" config-init "$DEFAULT_BIN" config init
       ) || { fail "config init with only APPDATA and LOCALAPPDATA to place its files did not succeed"; return 1; }
       ;;
-    darwin)
+    darwin | linux)
       mkdir -p "$base/home"
       config_file="$base/home/.config/aggrega/config.yaml"
       printed_file="$config_file"
-      printed_cache="$base/home/Library/Caches/aggrega"
+      if [ "$GOOS_T" = darwin ]; then
+        printed_cache="$base/home/Library/Caches/aggrega"
+      else
+        printed_cache="$base/home/.cache/aggrega"
+      fi
       (
         unset XDG_CONFIG_HOME XDG_CACHE_HOME AGGREGA_CONFIG APPDATA LOCALAPPDATA
         export HOME="$base/home"
         cd "$base/cwd"
-        smoke_run_logged "$log" config-init "$FULL" config init
+        smoke_run_logged "$log" config-init "$DEFAULT_BIN" config init
       ) || { fail "config init with only HOME to place its files did not succeed"; return 1; }
       ;;
   esac
@@ -569,16 +593,16 @@ check_entity_cache() {
     export HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
     unset NO_PROXY no_proxy
     cd "$publish"
-    smoke_run_logged "$log" push "$FULL" --offline=false --workspace-root "$(smoke_native_path "$publish")" \
+    smoke_run_logged "$log" push "$DEFAULT_BIN" --offline=false --workspace-root "$(smoke_native_path "$publish")" \
       push "$(smoke_native_path "$entity")" --registry "localhost:$port"
     cd "$consumer"
-    smoke_run_logged "$log" pull "$FULL" --offline=false --workspace-root "$(smoke_native_path "$consumer")" \
+    smoke_run_logged "$log" pull "$DEFAULT_BIN" --offline=false --workspace-root "$(smoke_native_path "$consumer")" \
       pull --release "$RELEASE" --detail
   ) || { fail "the push to, or the pull from, the registry on this machine did not succeed"; return 1; }
   smoke_check_fetched "$log/pull.out" "$REGISTRY_REFERENCE" || { fail "the pull did not fetch the entity from the registry"; return 1; }
   smoke_check_entity_cache "$consumer" || { fail "the pull did not write the entity cache under names Windows accepts"; return 1; }
 
-  ( cd "$consumer" && smoke_run_logged "$log" build "$FULL" --workspace-root "$(smoke_native_path "$consumer")" build --release "$RELEASE" ) ||
+  ( cd "$consumer" && smoke_run_logged "$log" build "$DEFAULT_BIN" --workspace-root "$(smoke_native_path "$consumer")" build --release "$RELEASE" ) ||
     { fail "the build, offline, from the entity cache did not succeed"; return 1; }
   if ! smoke_compare_trees "$INPUTS/example/reference/dist" "$consumer/dist"; then
     fail "the build from the entity cache rendered other bytes than the build from the catalog"
@@ -608,7 +632,7 @@ check_catalog() {
   # The pull must write the lockfile, or its silence would prove nothing.
   rm -f "$ws/${RELEASE%.yaml}.lock"
   printf 'workspace:\n  catalog_dirs:\n    - catalog\n' > "$ws/.aggrega-config.yaml"
-  ( cd "$ws" && smoke_run_logged "$log" pull "$FULL" --workspace-root "$(smoke_native_path "$ws")" pull --release "$RELEASE" --catalog catalog ) ||
+  ( cd "$ws" && smoke_run_logged "$log" pull "$DEFAULT_BIN" --workspace-root "$(smoke_native_path "$ws")" pull --release "$RELEASE" --catalog catalog ) ||
     { fail "the pull naming the catalog by configuration and by flag did not succeed"; return 1; }
   [ -s "$ws/${RELEASE%.yaml}.lock" ] || { fail "the pull wrote no lockfile, so its silence proves nothing"; return 1; }
   smoke_refuse_shadow_notices "$log/pull.out" "$log/pull.err" ||
@@ -629,7 +653,7 @@ check_chart() {
   local ws="$ODD/chart example"
   mkdir -p "$ws"
   cp -R "$INPUTS/chart/input/." "$ws/"
-  smoke_build_example "$FULL" "$ws" "$CHART_RELEASE" "$LOGS/chart" || return 1
+  smoke_build_example "$DEFAULT_BIN" "$ws" "$CHART_RELEASE" "$LOGS/chart" || return 1
   compare_with_reference "$INPUTS/chart/reference" "$ws" "$ODD/chart planted"
 }
 
