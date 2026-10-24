@@ -184,6 +184,147 @@ func TestValidateInjectBlock_ShapeAndAmbiguityAreBothReported(t *testing.T) {
 	}
 }
 
+// releaseAttachmentUses is a Release attachment's uses block drawing one
+// connection, backend/primary, that carries block.
+func releaseAttachmentUses(block *types.InjectBlock) types.OrderedMap[types.FeatureUsesSocketValue] {
+	verbose := types.OrderedMap[types.FeatureUsesEntry]{}
+	verbose.Set("primary", types.FeatureUsesEntry{Target: "db", Inject: block})
+	uses := types.OrderedMap[types.FeatureUsesSocketValue]{}
+	uses.Set("backend", types.FeatureUsesSocketValue{Verbose: verbose})
+	return uses
+}
+
+// releaseWithAttachmentBlock places one Release attachment, named metrics and
+// carrying block on its backend/primary connection, at the position named by
+// where, and returns the Release with the locator the walk must name that
+// attachment under.
+func releaseWithAttachmentBlock(where string, block *types.InjectBlock) (*types.Release, string) {
+	attachment := types.OrderedMap[types.BoundaryFeature]{}
+	attachment.Set("metrics", types.BoundaryFeature{Type: "core/metrics", Uses: releaseAttachmentUses(block)})
+	component := types.OrderedMap[types.BoundaryComponent]{}
+	component.Set("api", types.BoundaryComponent{Features: attachment})
+
+	rel := &types.Release{}
+	boundaries := types.OrderedMap[types.Boundary]{}
+	switch where {
+	case "boundary-wide":
+		boundaries.Set("prod", types.Boundary{Features: attachment})
+		rel.Spec.Boundaries = boundaries
+		return rel, `.spec.boundaries["prod"].features["metrics"]`
+	case "on a component":
+		boundaries.Set("prod", types.Boundary{Components: component})
+		rel.Spec.Boundaries = boundaries
+		return rel, `.spec.boundaries["prod"].components["api"].features["metrics"]`
+	case "in a nested boundary":
+		inner := types.OrderedMap[types.Boundary]{}
+		inner.Set("eks", types.Boundary{Features: attachment})
+		boundaries.Set("aws", types.Boundary{Boundaries: inner})
+		rel.Spec.Boundaries = boundaries
+		return rel, `.spec.boundaries["aws"].boundaries["eks"].features["metrics"]`
+	case "on a routed component":
+		routed := types.OrderedMap[types.AggregateRouting]{}
+		routed.Set("data", types.AggregateRouting{Components: component})
+		boundaries.Set("prod", types.Boundary{Aggregates: routed})
+		rel.Spec.Boundaries = boundaries
+		return rel, `.spec.boundaries["prod"].aggregates["data"].components["api"].features["metrics"]`
+	case "on a top-level component":
+		rel.Spec.Components = component
+		return rel, `.spec.components["api"].features["metrics"]`
+	}
+	panic("releaseWithAttachmentBlock: unknown position " + where)
+}
+
+// releaseAttachmentPositions are every position a Release attachment drawing a
+// connection can be written at.
+var releaseAttachmentPositions = []string{
+	"boundary-wide", "on a component", "in a nested boundary", "on a routed component", "on a top-level component",
+}
+
+// TestValidateInjectBlocks_ReleaseAttachmentConnectionMapShapedIsRefused pins the
+// shape refusal on the Release's side: a map-shaped delivery on a connection a
+// Release attachment draws halts with the delivery-shape condition, at the key
+// path the Release author wrote, wherever the attachment is written.
+func TestValidateInjectBlocks_ReleaseAttachmentConnectionMapShapedIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, where := range releaseAttachmentPositions {
+		t.Run(where, func(t *testing.T) {
+			t.Parallel()
+			rel, attachmentPath := releaseWithAttachmentBlock(where, &types.InjectBlock{
+				Env: map[string]any{"DB_URL": "host"},
+			})
+			err := ValidateInjectBlocks(normalized(t, nil), rel)
+			if !errors.Is(err, ErrInjectDeliveryShape()) {
+				t.Fatalf("want ErrInjectDeliveryShape; got %v", err)
+			}
+			want := "inject delivery: shape must be a list of entries, each `in:` with exactly one of `from:` or `value:`: " +
+				attachmentPath + `.uses["backend"]["primary"].inject.env`
+			if got := err.Error(); got != want {
+				t.Errorf("message\n got: %s\nwant: %s", got, want)
+			}
+		})
+	}
+}
+
+// TestValidateInjectBlocks_ReleaseAttachmentConnectionAmbiguousEntryIsRefused pins
+// the ambiguous-entry refusal on the same surface.
+func TestValidateInjectBlocks_ReleaseAttachmentConnectionAmbiguousEntryIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, where := range releaseAttachmentPositions {
+		t.Run(where, func(t *testing.T) {
+			t.Parallel()
+			rel, attachmentPath := releaseWithAttachmentBlock(where, &types.InjectBlock{
+				Env: []any{verboseEntry("DB_URL", "literal", "host")},
+			})
+			err := ValidateInjectBlocks(normalized(t, nil), rel)
+			if !errors.Is(err, ErrInjectEntryAmbiguous()) {
+				t.Fatalf("want ErrInjectEntryAmbiguous; got %v", err)
+			}
+			if wantPath := attachmentPath + `.uses["backend"]["primary"].inject.env[0]`; !strings.Contains(err.Error(), wantPath) {
+				t.Errorf("refusal must name %s; got %v", wantPath, err)
+			}
+		})
+	}
+}
+
+// TestValidateInjectBlocks_ReleaseAttachmentConnectionListFormValidates is the
+// other side: the list form on the same surface passes.
+func TestValidateInjectBlocks_ReleaseAttachmentConnectionListFormValidates(t *testing.T) {
+	t.Parallel()
+	for _, where := range releaseAttachmentPositions {
+		t.Run(where, func(t *testing.T) {
+			t.Parallel()
+			rel, _ := releaseWithAttachmentBlock(where, &types.InjectBlock{
+				Env: []any{verboseEntry("DB_URL", "", "host")},
+			})
+			if err := ValidateInjectBlocks(normalized(t, nil), rel); err != nil {
+				t.Errorf("the list form must validate; got %v", err)
+			}
+		})
+	}
+}
+
+// TestValidateInjectBlocks_AggregateBeforeRelease pins the emission order: every
+// Aggregate finding precedes every Release finding.
+func TestValidateInjectBlocks_AggregateBeforeRelease(t *testing.T) {
+	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Inject: &types.InjectBlock{Env: map[string]any{"DB_URL": "connection.url"}},
+	})
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
+	rel, _ := releaseWithAttachmentBlock("boundary-wide", &types.InjectBlock{Env: map[string]any{"DB_URL": "host"}})
+
+	err := ValidateInjectBlocks(normalized(t, agg), rel)
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	aggregateAt, releaseAt := strings.Index(msg, `.spec.components["api"].inject.env`), strings.Index(msg, `.spec.boundaries["prod"]`)
+	if aggregateAt < 0 || releaseAt < 0 || aggregateAt > releaseAt {
+		t.Errorf("want the Aggregate finding before the Release finding; got %v", err)
+	}
+}
+
 // TestValidateInjectBlocks_MapShapedSelfInjectIsRefusedAtItsPath pins the refusal
 // through the walk a build runs: a component's own block carrying a map-shaped
 // env halts at the root-shaped locator of that mechanism.

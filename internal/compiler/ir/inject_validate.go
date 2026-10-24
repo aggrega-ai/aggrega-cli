@@ -138,23 +138,43 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 //   - Subsystems[*].Features[*].Inject, and Subsystems[*].Subsystems[*]...
 //     recursively
 //
-// The Release is not walked. The one Release surface carrying an InjectBlock
-// is a connection a Release attachment draws — [types.BoundaryFeature]'s Uses,
-// whose verbose entries are [types.FeatureUsesEntry] — and its blocks are not
-// examined here, so neither refusal above reaches them. The Release schema's
-// inject_delivery admits only the list, so an authored Release is refused at
-// envelope load all the same; a Release built through the Go API is not.
+// Release-side surfaces walked, over the boundary tree recursively, after the
+// whole Aggregate: the one Release surface carrying an InjectBlock is a
+// connection a Release attachment draws — [types.BoundaryFeature]'s Uses, whose
+// verbose entries are [types.FeatureUsesEntry]. Per boundary, in author order:
 //
-// Errors are aggregated across all walks with semicolon-separated field
-// paths; the operator sees every violation at once rather than fixing one
-// at a time. nil resolution targets (nil Aggregate or nil Release)
-// short-circuit silently — IR build's existing nil-handling already
-// surfaces those at upstream layers.
-func ValidateInjectBlocks(na types.NormalizedAggregate, _ *types.Release) error {
-	agg := na.Aggregate()
-	if agg == nil {
+//   - each component the boundary declares, on both of its axes (named directly,
+//     or routed in through a sub-module's routing entry), and every attachment
+//     on it: Components[*].Features[*].Uses[*].Verbose[*].Inject
+//   - the boundary-wide attachments: Features[*].Uses[*].Verbose[*].Inject
+//   - then each nested boundary
+//
+// A Release diagnostic names the key path the Release author wrote:
+// `.spec.boundaries["<b>"]` per boundary level, a routed component through its
+// `aggregates["<module>"]` entries under the local name it was written with, and
+// a component authored at the top-level `.spec.components` surface at that root
+// shape rather than under the boundary the compiler synthesizes for it.
+//
+// Errors are aggregated across all walks; the operator sees every violation at
+// once rather than fixing one at a time. A nil Aggregate or a nil Release is
+// not walked — IR build's existing nil-handling already surfaces those at
+// upstream layers.
+func ValidateInjectBlocks(na types.NormalizedAggregate, rel *types.Release) error {
+	var errs []error
+	if agg := na.Aggregate(); agg != nil {
+		errs = append(errs, validateAggregateInjectBlocks(agg)...)
+	}
+	if rel != nil {
+		errs = append(errs, validateReleaseInjectBlocks(types.NormalizeRelease(rel).Release())...)
+	}
+	if len(errs) == 0 {
 		return nil
 	}
+	return errors.Join(errs...)
+}
+
+// validateAggregateInjectBlocks walks the Aggregate's subsystem tree.
+func validateAggregateInjectBlocks(agg *types.Aggregate) []error {
 	var errs []error
 	// No visitor callback fails, so the walk cannot: every violation is collected
 	// and joined so the operator sees them all at once.
@@ -183,13 +203,56 @@ func ValidateInjectBlocks(na types.NormalizedAggregate, _ *types.Release) error 
 				}
 			},
 		})
-	// Release-side: no typed *InjectBlock surfaces today. If a future
-	// schema revision adds InjectBlock-bearing fields under Boundary,
-	// BoundaryComponent, or BoundaryFeature, walk them here.
-	if len(errs) == 0 {
-		return nil
+	return errs
+}
+
+// validateReleaseInjectBlocks walks a normalized Release's boundary tree. The
+// boundary's components are read through [types.BoundaryComponentDeclarations],
+// the one enumeration of both axes that hands back the authored locator, so a
+// routed component is named under the key its author typed.
+func validateReleaseInjectBlocks(rel *types.Release) []error {
+	var errs []error
+	// No visitor callback fails, so the walk cannot: every violation is collected
+	// and joined so the operator sees them all at once.
+	_ = types.WalkInstanceTree(rel.Spec.Boundaries, types.BoundaryTree(), ".spec", struct{}{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, struct{}]{
+			// The synthesized default holds components authored at the top-level
+			// `.spec.components` surface; render their diagnostics at that root shape
+			// rather than under the generated boundary name.
+			Path: func(parentPath, name string, synthesized bool) string {
+				if synthesized {
+					return parentPath
+				}
+				return fmt.Sprintf("%s.boundaries[%q]", parentPath, name)
+			},
+			// Components are read here rather than in Visit, which hands a routed
+			// component its flattened id rather than the key the author wrote.
+			Leave: func(b types.Boundary, _, path string, _ struct{}) {
+				for _, decl := range types.BoundaryComponentDeclarations(b) {
+					compPath := path + releaseLocator(decl.Locator)
+					for fname, feat := range decl.Component.Features.All() {
+						errs = append(errs, validateUsesBlock(types.FeatureUsesConnections(feat.Uses),
+							fmt.Sprintf("%s.features[%q]", compPath, fname))...)
+					}
+				}
+				for fname, feat := range b.Features.All() {
+					errs = append(errs, validateUsesBlock(types.FeatureUsesConnections(feat.Uses),
+						fmt.Sprintf("%s.features[%q]", path, fname))...)
+				}
+			},
+		})
+	return errs
+}
+
+// releaseLocator renders a boundary-relative authored key path — alternating
+// key and name segments, such as ["aggregates", "data", "components", "store"] —
+// in the locator spelling every inject diagnostic uses.
+func releaseLocator(segments []string) string {
+	var out string
+	for i := 0; i+1 < len(segments); i += 2 {
+		out += fmt.Sprintf(".%s[%q]", segments[i], segments[i+1])
 	}
-	return errors.Join(errs...)
+	return out
 }
 
 func validateComponentInstance(comp types.ComponentInstance, prefix string) []error {

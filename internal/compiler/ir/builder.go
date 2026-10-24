@@ -660,8 +660,7 @@ func authoredUsesCopy(uses types.OrderedMap[types.UsesSocketValue]) types.Ordere
 // A mechanism that is not a list contributes nothing here: the list is the one
 // shape a mechanism takes. The document envelope refuses any other before a
 // build reads it, and [ValidateInjectBlocks] refuses one on every block the
-// Aggregate carries before this runs; a block on a connection a Release
-// attachment draws is checked by the envelope alone.
+// Aggregate and the Release carry before this runs.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
