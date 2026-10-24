@@ -266,11 +266,12 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	topo := cfg.Topology
 	res := cfg.ResolveResult
 
-	// Defense-in-depth: catch any verbose-form inject entry that carries
-	// both `value:` and `from:` simultaneously. Schema validation at
-	// envelope load preempts this case in production paths; the validator
-	// here covers schema-bypass paths (in-memory fixtures, programmatic
-	// catalog builders) per ErrInjectEntryAmbiguous's contract.
+	// Defense-in-depth: refuse an inject delivery mechanism that is not a
+	// list, and a list entry carrying both `value:` and `from:`. Schema
+	// validation at envelope load preempts both in production paths; the
+	// validator here covers schema-bypass paths (in-memory fixtures,
+	// programmatic catalog builders) per ErrInjectDeliveryShape's and
+	// ErrInjectEntryAmbiguous's contracts.
 	if res != nil {
 		if err := ValidateInjectBlocks(types.Normalize(res.Aggregate), res.Release); err != nil {
 			return nil, nil, AttachmentSites{}, err
@@ -657,8 +658,10 @@ func authoredUsesCopy(uses types.OrderedMap[types.UsesSocketValue]) types.Ordere
 // contributes no delivery key at all, and nothing is reported for it.
 //
 // A mechanism that is not a list contributes nothing here: the list is the one
-// shape a mechanism takes, and the document envelope refuses any other before
-// a build reads it.
+// shape a mechanism takes. The document envelope refuses any other before a
+// build reads it, and [ValidateInjectBlocks] refuses one on every block the
+// Aggregate carries before this runs; a block on a connection a Release
+// attachment draws is checked by the envelope alone.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {

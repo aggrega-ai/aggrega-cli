@@ -34,37 +34,56 @@ var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ValidateInjectBlock walks a single InjectBlock's mechanisms (env, file,
-// arg, and each Additional[...] entry) and reports any verbose-form entry
-// that violates the schema's mutual-exclusivity invariant. The validator
-// is **defense-in-depth, not primary enforcement** — the JSON Schema
-// validator at envelope load is the primary check; this validator catches
-// schema-bypass paths.
+// ErrInjectDeliveryShape reports an inject delivery mechanism — env, file, arg
+// or a mechanism an author names beside them — whose value is not a list of
+// entries. A mechanism is the list of {in, from?, value?} entries the
+// inject_delivery definition describes, and every reader of a mechanism reads
+// that list and nothing else. The Aggregate and Release schemas refuse any other
+// shape at envelope load; a block that never passed an envelope — one built
+// through the Go API — reaches IR build with whatever it carries, and this
+// condition halts it there instead of letting the delivery vanish.
+func ErrInjectDeliveryShape() error { return errInjectDeliveryShape }
+
+var errInjectDeliveryShape = cerrors.Register("inject-delivery-shape", cerrors.Meta{
+	ShortCode: "E0355",
+	Message:   "inject delivery: shape must be a list of entries, each `in:` with exactly one of `from:` or `value:`",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ValidateInjectBlock checks a single InjectBlock's mechanisms (env, file, arg,
+// and each Additional[...] entry, in that order) and reports two faults. The
+// validator is **defense-in-depth, not primary enforcement** — the JSON Schema
+// validator at envelope load is the primary check; this validator catches a
+// block that reached IR build without passing it.
 //
-// A mechanism is the list of {in, from?, value?} entries the inject_delivery
-// definition describes. Returns a wrapped ErrInjectEntryAmbiguous only for a
-// list ([]any) in which a single element carries both `value:` AND `from:`;
-// a mechanism that is not a list is not examined here.
+//   - A mechanism whose value is not a list ([]any) — a mapping, a scalar, any
+//     other shape — returns a wrapped ErrInjectDeliveryShape naming
+//     `<pathPrefix>.<mechanism>`. A mechanism carrying no value at all (nil)
+//     delivers nothing and is not a fault.
+//   - A list entry carrying both `value:` AND `from:` returns a wrapped
+//     ErrInjectEntryAmbiguous naming `<pathPrefix>.<mechanism>[<index>]`.
+//
+// Every violation of one kind is named in one error, separated by "; ". Where
+// both kinds occur, the two errors are joined, the shape refusal first.
 //
 // pathPrefix anchors the error's field path. Callers pass an entity-level
-// prefix (e.g., `.spec.components["api"].inject`) and the validator
-// appends `.<mechanism>[<index>]` per violation.
+// prefix (e.g., `.spec.components["api"].inject`).
 //
-// Out-of-scope conditions (intentionally not flagged by this validator):
-//
-//   - Entries lacking `in:` or carrying a non-string `in:` — the helper
-//     [types.DecodeVerboseInjectEntry] returns ok=false and every reader of a
-//     mechanism skips the entry.
-//   - A mechanism that is not a list — the JSON Schema validator refuses one
-//     at envelope load, since inject_delivery admits only the list.
+// Out of scope: an entry lacking `in:` or carrying a non-string `in:` — the
+// helper [types.DecodeVerboseInjectEntry] returns ok=false and every reader of
+// a mechanism skips the entry.
 func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 	if b == nil {
 		return nil
 	}
-	var violations []string
+	var notAList, ambiguous []string
 	check := func(mech string, raw any) {
+		if raw == nil {
+			return
+		}
 		arr, ok := raw.([]any)
 		if !ok {
+			notAList = append(notAList, fmt.Sprintf("%s.%s", pathPrefix, mech))
 			return
 		}
 		for i, entry := range arr {
@@ -73,7 +92,7 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 				continue
 			}
 			if hasValue && hasFrom {
-				violations = append(violations,
+				ambiguous = append(ambiguous,
 					fmt.Sprintf("%s.%s[%d]", pathPrefix, mech, i))
 			}
 		}
@@ -84,10 +103,21 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 	for mech, raw := range b.Additional.All() {
 		check(mech, raw)
 	}
-	if len(violations) == 0 {
-		return nil
+	var errs []error
+	if len(notAList) > 0 {
+		errs = append(errs, fmt.Errorf("%w: %s", ErrInjectDeliveryShape(), strings.Join(notAList, "; ")))
 	}
-	return fmt.Errorf("%w: %s", ErrInjectEntryAmbiguous(), strings.Join(violations, "; "))
+	if len(ambiguous) > 0 {
+		errs = append(errs, fmt.Errorf("%w: %s", ErrInjectEntryAmbiguous(), strings.Join(ambiguous, "; ")))
+	}
+	switch len(errs) {
+	case 0:
+		return nil
+	case 1:
+		return errs[0]
+	default:
+		return errors.Join(errs...)
+	}
 }
 
 // ValidateInjectBlocks walks every InjectBlock surface in the resolved
@@ -108,16 +138,12 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 //   - Subsystems[*].Features[*].Inject, and Subsystems[*].Subsystems[*]...
 //     recursively
 //
-// Release-side surfaces walked: the resolved Release.Spec.Boundaries tree
-// is structurally walked for symmetry with the operator's stated scope.
-// As of the current schema, no Release-side struct type carries a
-// top-level *types.InjectBlock — BoundaryFeature has
-// Type/Description/Infra/Uses (uses carries its own inject inline via
-// the verbose UsesSocketValue form, not a struct-level InjectBlock), and
-// both Boundary.Features and BoundaryComponent.Features are
-// OrderedMap[BoundaryFeature]. The walk is therefore a structural no-op
-// today; if a future schema revision adds an InjectBlock-bearing field to
-// any Release surface, the walker is the extension point.
+// The Release is not walked. The one Release surface carrying an InjectBlock
+// is a connection a Release attachment draws — [types.BoundaryFeature]'s Uses,
+// whose verbose entries are [types.FeatureUsesEntry] — and its blocks are not
+// examined here, so neither refusal above reaches them. The Release schema's
+// inject_delivery admits only the list, so an authored Release is refused at
+// envelope load all the same; a Release built through the Go API is not.
 //
 // Errors are aggregated across all walks with semicolon-separated field
 // paths; the operator sees every violation at once rather than fixing one

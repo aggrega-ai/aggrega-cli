@@ -72,20 +72,135 @@ func TestValidateInjectBlock_BothPresent_MultipleMechanisms(t *testing.T) {
 	}
 }
 
-// TestValidateInjectBlock_CompactForm_OK pins that map-shaped (compact-form)
-// mechanism payloads are silently accepted — compact form cannot
-// structurally express the both-present case. (Schema validation rejects
-// the compact form itself at envelope load post-flip; this validator stays
-// silent on map shapes to avoid duplicating that check.)
-func TestValidateInjectBlock_CompactForm_OK(t *testing.T) {
+// TestValidateInjectBlock_MapShapedEnvIsRefused pins the refusal of a mechanism
+// that is not a list: a map-shaped env halts with the delivery-shape condition,
+// naming the mechanism's path, and the whole message is the registered text
+// followed by that path.
+func TestValidateInjectBlock_MapShapedEnvIsRefused(t *testing.T) {
 	t.Parallel()
 
 	b := &types.InjectBlock{
 		Env: map[string]any{"DB_URL": "connection.url"},
 	}
 
+	err := ValidateInjectBlock(b, ".inject")
+	if err == nil {
+		t.Fatal("a map-shaped env must be refused; got nil")
+	}
+	if !errors.Is(err, ErrInjectDeliveryShape()) {
+		t.Errorf("error is not ErrInjectDeliveryShape: %v", err)
+	}
+	if errors.Is(err, ErrInjectEntryAmbiguous()) {
+		t.Errorf("a shape refusal must not also report an ambiguous entry: %v", err)
+	}
+	const want = "inject delivery: shape must be a list of entries, each `in:` with exactly one of `from:` or `value:`: .inject.env"
+	if got := err.Error(); got != want {
+		t.Errorf("message\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestValidateInjectBlock_EveryNonListShapeIsRefusedOnEveryMechanism pins that the
+// refusal reads the shape alone — a mapping in any of its decoded forms, a
+// scalar — and reaches every mechanism, the three typed ones and one an author
+// names beside them, each named at its own path in the order the block holds
+// them.
+func TestValidateInjectBlock_EveryNonListShapeIsRefusedOnEveryMechanism(t *testing.T) {
+	t.Parallel()
+
+	ordered := types.NewOrderedMap[any]()
+	ordered.Set("DB_URL", "connection.url")
+
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{"plain map", map[string]any{"DB_URL": "connection.url"}},
+		{"string map", map[string]string{"DB_URL": "connection.url"}},
+		{"ordered map", ordered},
+		{"scalar", "connection.url"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := &types.InjectBlock{Env: tc.value, File: tc.value, Arg: tc.value}
+			b.Additional.Set("ssm_param", tc.value)
+
+			err := ValidateInjectBlock(b, ".inject")
+			if err == nil {
+				t.Fatalf("%s on every mechanism must be refused; got nil", tc.name)
+			}
+			if !errors.Is(err, ErrInjectDeliveryShape()) {
+				t.Errorf("error is not ErrInjectDeliveryShape: %v", err)
+			}
+			const wantPaths = ": .inject.env; .inject.file; .inject.arg; .inject.ssm_param"
+			if !strings.HasSuffix(err.Error(), wantPaths) {
+				t.Errorf("error must name every mechanism in block order, ending %q; got %v", wantPaths, err)
+			}
+		})
+	}
+}
+
+// TestValidateInjectBlock_ListFormValidates pins the other side of the refusal:
+// a list on every mechanism — entries as plain or ordered maps, an empty list —
+// and a mechanism carrying no value at all pass.
+func TestValidateInjectBlock_ListFormValidates(t *testing.T) {
+	t.Parallel()
+
+	ordered := types.NewOrderedMap[any]()
+	ordered.Set("in", "CERT")
+	ordered.Set("value", "/etc/cert.pem")
+
+	b := &types.InjectBlock{
+		Env:  []any{verboseEntry("DB_URL", "", "connection.url"), verboseEntry("PORT", "8080", "")},
+		File: []any{ordered},
+		Arg:  []any{},
+	}
+	b.Additional.Set("ssm_param", []any{verboseEntry("API_KEY", "", "secret.path")})
+	b.Additional.Set("unset", nil)
+
 	if err := ValidateInjectBlock(b, ".inject"); err != nil {
-		t.Errorf("compact-form should not error; got %v", err)
+		t.Errorf("the list form must validate; got %v", err)
+	}
+}
+
+// TestValidateInjectBlock_ShapeAndAmbiguityAreBothReported pins that a block
+// carrying both faults reports both, the shape refusal first, so an author sees
+// every fault at once.
+func TestValidateInjectBlock_ShapeAndAmbiguityAreBothReported(t *testing.T) {
+	t.Parallel()
+
+	b := &types.InjectBlock{
+		Env: map[string]any{"DB_URL": "connection.url"},
+		Arg: []any{verboseEntry("FLAG", "v", "ref")},
+	}
+
+	err := ValidateInjectBlock(b, ".inject")
+	if !errors.Is(err, ErrInjectDeliveryShape()) || !errors.Is(err, ErrInjectEntryAmbiguous()) {
+		t.Fatalf("want both ErrInjectDeliveryShape and ErrInjectEntryAmbiguous; got %v", err)
+	}
+	msg := err.Error()
+	shapeAt, ambiguousAt := strings.Index(msg, ".inject.env"), strings.Index(msg, ".inject.arg[0]")
+	if shapeAt < 0 || ambiguousAt < 0 || shapeAt > ambiguousAt {
+		t.Errorf("want the shape refusal at .inject.env before the ambiguous entry at .inject.arg[0]; got %v", err)
+	}
+}
+
+// TestValidateInjectBlocks_MapShapedSelfInjectIsRefusedAtItsPath pins the refusal
+// through the walk a build runs: a component's own block carrying a map-shaped
+// env halts at the root-shaped locator of that mechanism.
+func TestValidateInjectBlocks_MapShapedSelfInjectIsRefusedAtItsPath(t *testing.T) {
+	t.Parallel()
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Inject: &types.InjectBlock{Env: map[string]any{"DB_URL": "connection.url"}},
+	})
+	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
+
+	err := ValidateInjectBlocks(normalized(t, agg), nil)
+	if err == nil || !errors.Is(err, ErrInjectDeliveryShape()) {
+		t.Fatalf("want ErrInjectDeliveryShape; got %v", err)
+	}
+	if !strings.Contains(err.Error(), `: .spec.components["api"].inject.env`) {
+		t.Errorf("refusal must name the mechanism's path; got %v", err)
 	}
 }
 
@@ -116,9 +231,8 @@ func TestValidateInjectBlock_VerboseOnlyValue_OK(t *testing.T) {
 }
 
 // TestValidateInjectBlock_MalformedEntries_OK pins the out-of-scope contract:
-// entries lacking `in:` or carrying a non-map shape are NOT flagged by this
-// validator (decode arms skip them silently; surfacing those as errors here
-// is a separate concern for a future hardening pass).
+// entries of a list lacking `in:` or carrying a non-map shape are NOT flagged
+// by this validator; every reader of a mechanism skips them.
 func TestValidateInjectBlock_MalformedEntries_OK(t *testing.T) {
 	t.Parallel()
 
