@@ -37,7 +37,8 @@
 #               entity and whose Manifest names it by provider, so its pull fetches
 #               the entity from the registry and writes it into its entity cache
 #   smoke.env   the target, the version every binary must report, the commit the
-#               examples and the tests come from, the example's Release, the
+#               examples and the tests come from — the one the smoke run's checkout
+#               must be at, whose install scripts it runs — the example's Release, the
 #               chart-backed example's Release (chart_release), the staged
 #               entity's path (registry_entity) and the reference its pull
 #               resolves (registry_reference)

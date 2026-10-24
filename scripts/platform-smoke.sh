@@ -11,16 +11,17 @@
 # (--signed): the Windows binaries with their Authenticode signatures, and
 # SHA256SUMS, the SHA-256 list of them. The signed binaries are the ones every
 # step runs, because they are the ones the release attaches; the unsigned copies
-# the build wrote, staged in bin/, run in no step, and step 11 holds them as what
+# the build wrote, staged in bin/, run in no step, and step 12 holds them as what
 # its checks must refuse. On a run that signs nothing, --unsigned takes the place
-# of --signed: every step runs the unsigned copies in bin/, and step 11, with no
+# of --signed: every step runs the unsigned copies in bin/, and step 12, with no
 # signature to check, is not applicable. The macOS and Linux binaries are not
 # signed by the release, so a darwin or linux target runs the staged ones and
 # takes neither.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
-# registry but the one it starts on this machine; it does need bash 4.3 or later,
-# which macOS does not ship. Before the checks it holds the inputs and the machine
-# to the target:
+# registry or server but the ones it starts on this machine; it does need bash 4.3
+# or later, which macOS does not ship, and Python 3.7 or later, as python3 or
+# python, which step 11 serves a release folder with. Before the checks it holds
+# the inputs and the machine to the target:
 #
 #   - the staged inputs name the target given with --target, and bin/ holds
 #     exactly the binaries scripts/lib/platform-smoke-common.sh lists for it: the
@@ -57,9 +58,9 @@
 #                 runs against a copy of the reference with one byte changed, and
 #                 must report that difference, so the comparison shown passing is
 #                 one that can fail
-#   4. path       steps 5 to 8 work in a directory whose path holds a space and a
-#                 letter outside ASCII, as a user's own directories often do; the
-#                 same check over a plain path must refuse it
+#   4. path       steps 5 to 8 and 11 work in a directory whose path holds a
+#                 space and a letter outside ASCII, as a user's own directories
+#                 often do; the same check over a plain path must refuse it
 #   5. configuration
 #                 `aggrega config init` runs with only the platform's own rule able
 #                 to place the global configuration: on Windows with HOME,
@@ -111,7 +112,30 @@
 #                 -test.timeout 10m and -test.v; every named test must report PASS,
 #                 and a named test that skips, a run that finds no test to run, or a
 #                 count of passes other than the count of names fails the run
-#  11. signature  windows/amd64 only. Each binary the steps above ran must have
+#  11. install    the install scripts this checkout carries, packaging/install/,
+#                 install the default binary from a folder laid out as a release
+#                 is: the binaries this run runs, under the names the release
+#                 gives them, the two scripts, and SHA256SUMS over them, written by
+#                 the functions the release step writes its own with. The folder
+#                 is served on this machine's loopback address by
+#                 scripts/lib/serve-release-folder.py, which answers
+#                 latest/download/ with a redirect to the release, as GitHub does,
+#                 and is named to the scripts as their mirror, AGGREGA_MIRROR. On
+#                 macOS and Linux, `curl -fsSL <url>/install.sh | sh` runs with HOME
+#                 naming a directory beneath step 4's; on Windows,
+#                 `irm <url>/install.ps1 | iex` runs under Windows PowerShell
+#                 (powershell.exe) and under PowerShell 7 (pwsh), each with
+#                 LOCALAPPDATA naming one. Each must install the served default
+#                 binary, byte for byte, as $HOME/.local/bin/aggrega or
+#                 %LOCALAPPDATA%\Programs\aggrega\aggrega.exe, the folder holding
+#                 nothing else, and the installed binary must report the version
+#                 staged; on Windows the folder must then be on the user PATH
+#                 once, and the user PATH is put back as it was. Then one byte of
+#                 the served default binary is changed, and each script, run the
+#                 same way into a fresh directory, must refuse it with the sentence
+#                 naming the checksum it computed and the one SHA256SUMS lists,
+#                 install nothing, and on Windows leave the user PATH as it was
+#  12. signature  windows/amd64 only. Each binary the steps above ran must have
 #                 the SHA-256 that SHA256SUMS lists for it, the list naming exactly
 #                 those binaries; and Windows' own Get-AuthenticodeSignature, run
 #                 through Windows PowerShell on each, must report Status Valid, a
@@ -126,17 +150,22 @@
 #                 applicable, and the run's last lines list it so, never as
 #                 passed
 #
-# Each binary started in steps 1-8 has every AGGREGA_ setting of the machine
-# unset, the global configuration pointed at an empty directory (XDG_CONFIG_HOME
-# and APPDATA both name it), and the offline posture on, so it reads no
-# configuration of the machine and reaches no network; steps 4, 9 and 11 start
-# none. Step 5 replaces that configuration directory with its own, and step 6
-# turns the posture off for its push and its
+# Each binary started in steps 1-8 and 11 has every AGGREGA_ setting of the
+# machine unset, the global configuration pointed at an empty directory
+# (XDG_CONFIG_HOME and APPDATA both name it), and the offline posture on, so it
+# reads no configuration of the machine and reaches no network; steps 4, 9 and 12
+# start none. Step 5 replaces that configuration directory with its own, and step
+# 6 turns the posture off for its push and its
 # pull alone, with the proxy settings naming a closed port on the loopback
 # address: a request to the registry it started, on that address, goes direct,
-# and any other request fails. The tests run in the environment the shell was
-# given; their own setup isolates what they read. Step 11 runs Windows PowerShell
-# with -NoProfile, so no profile of the machine shapes what it reports.
+# and any other request fails. Step 11 sets AGGREGA_MIRROR alone, and runs
+# the install scripts with those proxy settings and NO_PROXY naming 127.0.0.1, so
+# curl and PowerShell 7 reach the folder it serves and nothing else; Windows
+# PowerShell reads the system's proxy settings rather than these. The tests run
+# in the environment the shell was given; their own setup isolates what they
+# read. Every PowerShell steps 11 and 12 start, Windows PowerShell and
+# PowerShell 7 alike, runs with -NoProfile, so no profile of the machine shapes
+# what it does.
 #
 # Usage:
 #   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned] [--binaries <dir>]
@@ -149,7 +178,7 @@
 # --unsigned runs the windows/amd64 binaries staged in bin/, unsigned as the
 # build wrote them: the way to run the checks on a run that signs nothing. It is
 # refused with --signed and for a darwin or linux target. Each step then runs whatever an
-# earlier one reported; step 11 checks nothing and is reported not applicable,
+# earlier one reported; step 12 checks nothing and is reported not applicable,
 # never passed; and the run ends naming every step that failed and the step that
 # was not applicable. It exits 1 when a step failed and 3 when none did — never
 # 0, since what ran is not the signed binaries the release attaches.
@@ -160,7 +189,7 @@
 # which checks the binaries of another release fail. Each step then runs whatever
 # an earlier one reported, and the run ends naming every step that failed. It
 # exits 1 when one did and 3 when none did — never 0, since what passed is
-# binaries the release does not carry. With --unsigned as well, step 11 is not
+# binaries the release does not carry. With --unsigned as well, step 12 is not
 # applicable, as above.
 #
 # <goos>/<goarch> is windows/amd64, darwin/arm64, darwin/amd64 or linux/arm64. Writes its working
@@ -253,13 +282,25 @@ fi
 WORK="$INPUTS/run"
 [ ! -e "$WORK" ] || { fail "$WORK already exists; give a freshly staged directory"; exit 2; }
 
-TOOLS=(cat cmp cp dd git head sleep tr uname)
-[ "$GOOS_T" = darwin ] && TOOLS+=(chmod xattr)
-[ "$GOOS_T" = linux ] && TOOLS+=(chmod)
-[ "$GOOS_T" = windows ] && TOOLS+=(powershell.exe sha256sum)
+TOOLS=(cat cmp cp dd find git head sleep sort tr uname)
+[ "$GOOS_T" = darwin ] && TOOLS+=(chmod curl sh xattr)
+[ "$GOOS_T" = linux ] && TOOLS+=(chmod curl sh)
+[ "$GOOS_T" = windows ] && TOOLS+=(powershell.exe pwsh sha256sum)
 for tool in "${TOOLS[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { fail "$tool not found on PATH"; exit 1; }
 done
+# Step 11 serves its release folder with Python. Which name a machine gives it
+# differs — Windows may carry only python — so each is tried, and held to the
+# version the server needs by running it rather than by finding it.
+PYTHON=""
+for candidate in python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1 &&
+    "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)' >/dev/null 2>&1; then
+    PYTHON="$candidate"
+    break
+  fi
+done
+[ -n "$PYTHON" ] || { fail "neither python3 nor python on PATH runs Python 3.7 or later, which step 11 serves the release folder with"; exit 1; }
 
 STAGED_TARGET="" VERSION="" COMMIT="" RELEASE="" CHART_RELEASE="" REGISTRY_ENTITY="" REGISTRY_REFERENCE=""
 while IFS='=' read -r key value; do
@@ -321,7 +362,7 @@ if [ -n "$SIGNED" ]; then
   echo "platform-smoke: running the signed binaries in $SIGNED; bin/ holds the unsigned ones the build wrote"
 fi
 if [ -n "$UNSIGNED" ]; then
-  echo "platform-smoke: --unsigned: this run signs nothing, so the binaries it runs are the unsigned ones in bin/, as the build wrote them, and step 11 is not applicable"
+  echo "platform-smoke: --unsigned: this run signs nothing, so the binaries it runs are the unsigned ones in bin/, as the build wrote them, and step 12 is not applicable"
 fi
 if [ -n "$SUBSTITUTE" ]; then
   require_binary_set "$SUBSTITUTE"
@@ -385,7 +426,7 @@ DEFAULT_BIN="$BIN_DIR/${BINARY_NAMES[0]}"
 BINARIES=()
 for name in "${BINARY_NAMES[@]}"; do BINARIES+=("$BIN_DIR/$name"); done
 LOGS="$WORK/logs"
-# Steps 5 to 8 work beneath this directory. Its last name carries a space and an
+# Steps 5 to 8 and 11 work beneath this directory. Its last name carries a space and an
 # e with an acute accent, written as its UTF-8 bytes so this file stays ASCII.
 ODD="$WORK/work space "$'\303\251'
 
@@ -728,6 +769,227 @@ check_tests() {
   done
 }
 
+# user_path <save|holds|unchanged|restore> — what Windows keeps as the user PATH,
+# read and written through Windows PowerShell, with the folder step 11 installs
+# into in SMOKE_INSTALL_FOLDER and the file the PATH is kept in in
+# SMOKE_USER_PATH_SAVED, both in the Windows form. save keeps the PATH as it is
+# now — its value, unexpanded, and its kind, or that there is none — refusing one
+# that already holds the folder; holds refuses a PATH that does not hold the
+# folder exactly once; unchanged refuses a PATH that is not the one kept; restore
+# writes the kept one back and refuses when what is then read differs from it.
+# Each reports in a line of its own. The paths reach PowerShell through the
+# environment rather than in the command's text, so no character of them can
+# change what PowerShell runs, and are compared there, so no conversion between
+# the shell's encoding and Windows' can change them either. Its strings are in
+# single quotes, as authenticode_report's are, so the command's text carries no
+# double quote for the passing of it to a Windows program to escape.
+user_path() {
+  local script
+  script="\$ErrorActionPreference = 'Stop'; "
+  script+="\$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment'); "
+  script+="\$options = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames; "
+  script+="\$value = \$key.GetValue('Path', \$null, \$options); "
+  script+="if (\$null -eq \$value) { \$now = [pscustomobject]@{ Kind = 'Absent'; Value = '' } } "
+  script+="else { \$now = [pscustomobject]@{ Kind = \$key.GetValueKind('Path').ToString(); Value = [string]\$value } }; "
+  script+="\$folder = \$env:SMOKE_INSTALL_FOLDER; "
+  script+="\$count = @(\$now.Value.Split(';') | Where-Object { \$_ -and \$_.TrimEnd('\\') -eq \$folder }).Count; "
+  script+="switch (\$env:SMOKE_USER_PATH_ACTION) { "
+  script+="'save' { if (\$count -ne 0) { throw ('the user PATH already holds ' + \$folder) }; "
+  script+="\$now | Export-Clixml -LiteralPath \$env:SMOKE_USER_PATH_SAVED; "
+  script+="'ok: kept the user PATH, a value of kind ' + \$now.Kind } "
+  script+="'holds' { if (\$count -ne 1) { throw ('the user PATH holds ' + \$folder + ' ' + \$count + ' time(s), not once: ' + \$now.Value) }; "
+  script+="'ok: the user PATH holds ' + \$folder + ' once' } "
+  script+="'unchanged' { \$kept = Import-Clixml -LiteralPath \$env:SMOKE_USER_PATH_SAVED; "
+  script+="if (\$kept.Kind -cne \$now.Kind -or \$kept.Value -cne \$now.Value) { throw ('the user PATH is not the one kept: ' + \$now.Kind + ' ' + \$now.Value) }; "
+  script+="'ok: the user PATH is the one kept' } "
+  script+="'restore' { \$kept = Import-Clixml -LiteralPath \$env:SMOKE_USER_PATH_SAVED; "
+  script+="if (\$kept.Kind -eq 'Absent') { \$key.DeleteValue('Path', \$false) } "
+  script+="else { \$key.SetValue('Path', \$kept.Value, [Microsoft.Win32.RegistryValueKind]\$kept.Kind) }; "
+  script+="\$back = \$key.GetValue('Path', \$null, \$options); "
+  script+="if (\$kept.Kind -eq 'Absent') { if (\$null -ne \$back) { throw 'the user PATH was absent and could not be removed again' } } "
+  script+="elseif (\$back -cne \$kept.Value -or \$key.GetValueKind('Path').ToString() -cne \$kept.Kind) { throw 'the user PATH could not be put back as it was' }; "
+  script+="'ok: put the user PATH back as it was' } "
+  script+="default { throw ('unknown action ' + \$env:SMOKE_USER_PATH_ACTION) } }"
+  SMOKE_USER_PATH_ACTION="$1" MSYS_NO_PATHCONV=1 \
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script"
+}
+
+# The server step 11 starts and the user PATH it keeps, for the trap that stops
+# the one and puts the other back when step 11 ends, whatever ended it.
+INSTALL_SERVER_PID="" INSTALL_PATH_KEPT=""
+end_install() {
+  [ -z "$INSTALL_SERVER_PID" ] || kill "$INSTALL_SERVER_PID" 2>/dev/null || true
+  if [ -n "$INSTALL_PATH_KEPT" ]; then
+    user_path restore || printf 'platform-smoke: could not put the user PATH back as it was\n' >&2
+  fi
+}
+
+# install_run <log-dir> <url> <name> <sh | the PowerShell to run> <home> — run an
+# install script the way a person does, the one for Linux and macOS through the
+# shell, the one for Windows through the PowerShell named, reading the release
+# folder <url> serves, into the directory <home> stands for: HOME on Linux and
+# macOS, LOCALAPPDATA on Windows, with the temporary folder beside it. Logged as
+# <name>; returns the script's exit status.
+#
+# The script reaches the folder through the one setting naming a mirror of the
+# releases, AGGREGA_MIRROR, and nothing else: a closed port on the loopback address
+# is the proxy for every other address, as in step 6, and NO_PROXY lets a request
+# to the folder's address go direct. Step 6 needs no such list, since Go never
+# sends a request for a loopback address through a proxy; curl and PowerShell 7
+# would. Windows PowerShell reads the system's proxy settings instead.
+install_run() {
+  local log="$1" url="$2" name="$3" shell="$4" home="$5" native_home native_temp
+  local -a reach=(
+    AGGREGA_MIRROR="$url"
+    HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
+    NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
+  )
+  case "$shell" in
+    sh)
+      (
+        cd "$home"
+        # shellcheck disable=SC2016 # $1 is the inner shell's: the URL, passed as an argument.
+        smoke_run_captured "$log" "$name" env "${reach[@]}" HOME="$home" TMPDIR="$home.tmp" \
+          bash -c 'set -o pipefail; curl -fsSL "$1/latest/download/install.sh" | sh' install "$url"
+      )
+      ;;
+    *)
+      native_home="$(smoke_native_path "$home")"
+      native_temp="$(smoke_native_path "$home.tmp")"
+      (
+        cd "$home"
+        # MSYS_NO_PATHCONV keeps the Git for Windows shell from rewriting the
+        # command's text, which it could take for a path, on its way to PowerShell.
+        export MSYS_NO_PATHCONV=1
+        smoke_run_captured "$log" "$name" env "${reach[@]}" LOCALAPPDATA="$native_home" TEMP="$native_temp" TMP="$native_temp" \
+          "$shell" -NoLogo -NoProfile -NonInteractive -Command "irm $url/latest/download/install.ps1 | iex"
+      )
+      ;;
+  esac
+}
+
+check_install() {
+  local log="$LOGS/install" base="$ODD/install" tag="v$VERSION" sources="$CLI_ROOT/packaging/install"
+  local folder name asset="" listed_sum="" sum line port="" url i run shell label home dir installed text
+  local -a shells=()
+  folder="$base/release/download/$tag"
+  for name in install.sh install.ps1; do
+    [ -f "$sources/$name" ] || { fail "this checkout holds no packaging/install/$name"; return 1; }
+  done
+  mkdir -p "$log" "$folder"
+
+  # The release folder: the binaries this run runs, under the names the release
+  # gives them, and the two install scripts, under theirs, listed by the writer
+  # the release step writes its SHA256SUMS with.
+  for name in "${BINARY_NAMES[@]}"; do
+    asset="$(smoke_release_asset_name "$TARGET" "$VERSION" "$name")"
+    cp "$BIN_DIR/$name" "$folder/$asset"
+  done
+  cp "$sources/install.sh" "$sources/install.ps1" "$folder/"
+  smoke_write_tree_sums "$folder" || return 1
+  cat "$folder/SHA256SUMS"
+  asset="$(smoke_release_asset_name "$TARGET" "$VERSION" "${BINARY_NAMES[0]}")"
+  while read -r sum line; do
+    if [ "$line" = "$asset" ]; then listed_sum="$sum"; fi
+  done < "$folder/SHA256SUMS"
+  [ -n "$listed_sum" ] || { fail "the release folder's SHA256SUMS lists no $asset"; return 1; }
+
+  : > "$log/server.log"
+  "$PYTHON" -I -u "$CLI_ROOT/scripts/lib/serve-release-folder.py" "$(smoke_native_path "$base/release")" "$tag" \
+    "$(smoke_native_path "$base/port")" >> "$log/server.log" 2>&1 &
+  INSTALL_SERVER_PID=$!
+  trap end_install EXIT
+  for ((i = 0; i < 200; i++)); do
+    if [ -s "$base/port" ]; then break; fi
+    sleep 0.1
+  done
+  if [ ! -s "$base/port" ]; then
+    cat "$log/server.log" >&2
+    fail "the release folder's server named no port within 20 seconds"
+    return 1
+  fi
+  read -r port < "$base/port"
+  port="${port%$'\r'}"
+  url="http://127.0.0.1:$port"
+  echo "ok: $url serves the release folder, its latest release $tag"
+
+  if [ "$GOOS_T" = windows ]; then
+    shells=("powershell.exe:windows-powershell" "pwsh:powershell-7")
+  else
+    shells=("sh:sh")
+  fi
+
+  for run in "${shells[@]}"; do
+    shell="${run%%:*}" label="${run#*:}"
+    home="$base/$label"
+    mkdir -p "$home" "$home.tmp"
+    if [ "$GOOS_T" = windows ]; then
+      dir="$home/Programs/aggrega" installed="$home/Programs/aggrega/aggrega.exe"
+      export SMOKE_INSTALL_FOLDER SMOKE_USER_PATH_SAVED
+      SMOKE_INSTALL_FOLDER="$(smoke_native_path "$dir")"
+      SMOKE_USER_PATH_SAVED="$(smoke_native_path "$base/$label.user-path.xml")"
+      user_path save || { fail "could not keep the user PATH before $label runs install.ps1"; return 1; }
+      INSTALL_PATH_KEPT=1
+    else
+      dir="$home/.local/bin" installed="$home/.local/bin/aggrega"
+    fi
+    printf -- '--- %s: the latest release from %s\n' "$label" "$url"
+    install_run "$log" "$url" "$label" "$shell" "$home" || { fail "the install script under $label did not succeed"; return 1; }
+    [ -f "$installed" ] || { fail "the install script under $label left no ${installed#"$home/"}"; return 1; }
+    cmp -s "$BIN_DIR/${BINARY_NAMES[0]}" "$installed" ||
+      { fail "the aggrega installed under $label is not the default binary the folder served"; return 1; }
+    echo "ok: ${installed#"$home/"} is byte for byte the served $asset"
+    smoke_check_only_entries "$dir" "$(basename "$installed")" ||
+      { fail "the install folder holds more than aggrega after $label installed it"; return 1; }
+    smoke_run_logged "$log" "$label-version" "$installed" version || { fail "the installed aggrega did not run"; return 1; }
+    text="$(head -n 1 "$log/$label-version.out" | tr -d '\r')"
+    case "$text" in
+      "aggrega $VERSION ("*) echo "ok: the installed aggrega reports $VERSION" ;;
+      *) fail "the aggrega installed under $label reports '$text', not aggrega $VERSION"; return 1 ;;
+    esac
+    if [ "$GOOS_T" = windows ]; then
+      user_path holds || { fail "install.ps1 under $label did not put its folder on the user PATH once"; return 1; }
+      user_path restore || { fail "could not put the user PATH back as it was after $label"; return 1; }
+      INSTALL_PATH_KEPT=""
+    else
+      smoke_check_only_entries "$home.tmp" || { fail "install.sh left files in its temporary folder"; return 1; }
+    fi
+  done
+
+  echo "The same install, with one byte of the served $asset changed, must be refused with nothing installed:"
+  smoke_plant_one_byte "$folder/$asset" || return 1
+  echo "planted: the first byte of download/$tag/$asset; SHA256SUMS still lists $listed_sum"
+  for run in "${shells[@]}"; do
+    shell="${run%%:*}" label="${run#*:}"
+    home="$base/$label planted"
+    mkdir -p "$home" "$home.tmp"
+    if [ "$GOOS_T" = windows ]; then
+      dir="$home/Programs/aggrega"
+      SMOKE_INSTALL_FOLDER="$(smoke_native_path "$dir")"
+      SMOKE_USER_PATH_SAVED="$(smoke_native_path "$base/$label planted.user-path.xml")"
+      user_path save || { fail "could not keep the user PATH before $label runs install.ps1"; return 1; }
+      INSTALL_PATH_KEPT=1
+    else
+      dir="$home/.local/bin"
+    fi
+    if install_run "$log" "$url" "$label-planted" "$shell" "$home"; then
+      fail "the install script under $label installed a binary whose checksum is not the one SHA256SUMS lists"
+      return 1
+    fi
+    smoke_check_checksum_refusal "$asset" "$listed_sum" "$log/$label-planted.out" "$log/$label-planted.err" ||
+      { fail "the install script under $label did not refuse the planted binary for its checksum"; return 1; }
+    [ ! -e "$dir" ] || { fail "the install script under $label refused the planted binary but left ${dir#"$home/"} behind"; return 1; }
+    echo "ok: nothing was installed under $label"
+    if [ "$GOOS_T" = windows ]; then
+      user_path unchanged || { fail "install.ps1 under $label changed the user PATH although it installed nothing"; return 1; }
+      user_path restore || { fail "could not put the user PATH back as it was after $label"; return 1; }
+      INSTALL_PATH_KEPT=""
+    else
+      smoke_check_only_entries "$home.tmp" || { fail "install.sh did not delete the refused download"; return 1; }
+    fi
+  done
+}
+
 # The publisher every Windows binary must be signed as. It is stated here rather
 # than read from anything the check looks at, and deliberately so, as step 5
 # states its locations: a check that took the expected name from the signature it
@@ -848,7 +1110,12 @@ run_step "8. chart: validate, pull and build the chart-backed $CHART_RELEASE, an
 run_step "9. escapes: the escape check refuses a planted escape byte" check_escapes
 run_step "10. tests" check_tests
 if [ "$GOOS_T" = windows ]; then
-  SIGNATURE_STEP="11. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists"
+  run_step "11. install: irm <url>/install.ps1 | iex under Windows PowerShell and PowerShell 7, from a release folder on this machine" check_install isolated
+else
+  run_step "11. install: curl -fsSL <url>/install.sh | sh, from a release folder on this machine" check_install isolated
+fi
+if [ "$GOOS_T" = windows ]; then
+  SIGNATURE_STEP="12. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists"
   if [ -n "$UNSIGNED" ]; then
     not_applicable "$SIGNATURE_STEP" \
       "--unsigned: this run signs nothing, so there is no signature and no SHA256SUMS to hold the binaries to; this step neither passed nor failed"

@@ -21,7 +21,11 @@
 # that list where they leave by smoke_check_tree_sums, which reads it through
 # smoke_check_sums. The SHA256SUMS a release attaches is written the same way, by
 # smoke_write_tree_sums over the directory holding exactly the files the release
-# attaches, and held to them by smoke_check_sums before the release is made.
+# attaches, and held to them by smoke_check_sums before the release is made; the
+# names the release gives its binaries are smoke_release_asset_name's. The smoke
+# run's install step lays out a release the same way, with the same two
+# functions, so the install scripts are proven against the names and the list a
+# release carries.
 #
 # Sourcing defines these functions and sets no variables:
 #
@@ -37,6 +41,15 @@
 #     darwin/arm64, darwin/amd64 and linux/arm64 alike. A target the smoke run
 #     does not cover is refused with exit 2, naming the targets it does cover.
 #
+#   smoke_release_asset_name <goos>/<goarch> <version> <name>
+#     Prints the name a release gives the binary the build wrote as <name> for the
+#     target: <variant>-<version>-<goos>-<goarch>, with .exe for windows, where
+#     <variant> is <name> without the target the build may have appended to it
+#     and without .exe — so aggrega, as the build machine's own build writes it,
+#     and aggrega-debug-darwin-arm64, as a --target build writes it, become
+#     aggrega-<version>-linux-amd64 and aggrega-debug-<version>-darwin-arm64.
+#     Returns 2, printing nothing, when an argument is empty.
+#
 #   smoke_native_path <path>
 #     Prints <path> in the form a native program on this system reads: the Windows
 #     form under the Git for Windows shell (through cygpath), unchanged elsewhere.
@@ -50,10 +63,14 @@
 #     is read either; and sets AGGREGA_OFFLINE, so a run refuses every network
 #     reach rather than fetching what the example does not carry.
 #
-#   smoke_run_logged <log-dir> <name> <command> [<arg>...]
+#   smoke_run_captured <log-dir> <name> <command> [<arg>...]
 #     Runs the command with its standard output and its standard error each
 #     redirected to a file of <log-dir>, <name>.out and <name>.err, as a run whose
-#     output a log or another program reads, then prints both and holds them to
+#     output a log or another program reads, then prints both. Returns the
+#     command's exit status, saying so when it is not 0.
+#
+#   smoke_run_logged <log-dir> <name> <command> [<arg>...]
+#     Runs the command through smoke_run_captured, then holds both files to
 #     smoke_refuse_escapes. Returns non-zero, saying which, when the command exits
 #     non-zero or either stream carries an escape byte.
 #
@@ -137,9 +154,11 @@
 #     complete. Returns 1, writing no list, when <dir> holds anything that is
 #     neither a file nor a directory, since no list can hold it, when it holds no
 #     file, or when it already holds a list, since a list is written once, after
-#     the last file is in place. Prints how many files and bytes it listed. Needs
-#     GNU find, sha256sum and bash 4.4 (mapfile -d), which the Linux machine that
-#     builds and publishes a release carries; no smoke run calls it.
+#     the last file is in place. Prints how many files it listed, and how many
+#     bytes where du reports bytes. Digests with sha256sum, or with shasum -a 256
+#     where sha256sum is absent, as on macOS; needs find, sort -z and mv beside
+#     it, which the Linux machine that builds and publishes a release, the Git for
+#     Windows shell and macOS all carry.
 #
 #   smoke_check_tree_sums <dir>
 #     Holds every file beneath <dir> to <dir>/SHA256SUMS through
@@ -147,7 +166,22 @@
 #     nothing else, each with the digest it gives, so a file changed, added or
 #     removed since the list was written is refused. Returns 1, naming each, when
 #     <dir> holds anything that is neither a file nor a directory, and otherwise
-#     as smoke_check_sums does. Needs what smoke_write_tree_sums needs.
+#     as smoke_check_sums does. Needs find and sort -z, and what smoke_check_sums
+#     needs.
+#
+#   smoke_check_checksum_refusal <asset> <listed-digest> <file>...
+#     Returns 0, saying so, when the files, read as one text with every space,
+#     tab, carriage return and line feed taken out, hold the sentence the install
+#     scripts refuse a download with when its digest is not the one SHA256SUMS
+#     lists: "the SHA-256 checksum of the downloaded <asset> is <64 hexadecimal
+#     digits>, but SHA256SUMS lists <listed-digest>; the download was deleted and
+#     nothing was installed". The whitespace is taken out because a shell may
+#     wrap an error message it prints. Returns 1, saying so, otherwise.
+#
+#   smoke_check_only_entries <dir> [<name>...]
+#     Returns 1, naming each, unless <dir> is a directory and what lies beneath
+#     it, hidden names included, is exactly the names given: none missing and
+#     nothing else, at any depth. With no name, <dir> must be empty.
 #
 #   smoke_check_authenticode_report <report> <common-name>
 #     Holds a report of what Windows' Get-AuthenticodeSignature says about one
@@ -185,6 +219,16 @@ smoke_target_binaries() {
   esac
 }
 
+smoke_release_asset_name() {
+  local target="$1" version="$2" name="$3" goos goarch ext="" variant
+  [ -n "$target" ] && [ -n "$version" ] && [ -n "$name" ] || return 2
+  goos="${target%/*}" goarch="${target#*/}"
+  [ "$goos" = windows ] && ext=.exe
+  variant="${name%"$ext"}"
+  variant="${variant%"-$goos-$goarch"}"
+  printf '%s-%s-%s-%s%s\n' "$variant" "$version" "$goos" "$goarch" "$ext"
+}
+
 smoke_native_path() {
   if command -v cygpath >/dev/null 2>&1; then
     cygpath -w "$1"
@@ -206,7 +250,7 @@ smoke_isolate() {
   export AGGREGA_OFFLINE=true
 }
 
-smoke_run_logged() {
+smoke_run_captured() {
   local log_dir="$1" name="$2" status=0
   shift 2
   mkdir -p "$log_dir" || return 1
@@ -217,8 +261,13 @@ smoke_run_logged() {
   cat "$log_dir/$name.err"
   if [ "$status" != 0 ]; then
     printf 'smoke: %s exited %s\n' "$name" "$status" >&2
-    return 1
   fi
+  return "$status"
+}
+
+smoke_run_logged() {
+  local log_dir="$1" name="$2"
+  smoke_run_captured "$@" || return 1
   smoke_refuse_escapes "$log_dir/$name.out" "$log_dir/$name.err"
 }
 
@@ -543,7 +592,7 @@ smoke_tree_refuse_special() {
     printf 'smoke: %s is not a directory\n' "$dir" >&2
     return 1
   fi
-  if ! found="$(find "$dir" -mindepth 1 ! -type f ! -type d -printf '  %P\n')"; then
+  if ! found="$(cd "$dir" && find . -mindepth 1 ! -type f ! -type d)"; then
     printf 'smoke: could not read every entry beneath %s\n' "$dir" >&2
     return 1
   fi
@@ -552,34 +601,105 @@ smoke_tree_refuse_special() {
   return 1
 }
 
+# smoke_tree_files <dir> <array-name> [<find-test>...] — fill the indexed array
+# named <array-name> with every file beneath <dir> that the find tests given
+# also select, by its path from <dir>, in bytewise order. It reads find's
+# -print0 rather than a format of GNU find's own, and read -d '' rather than
+# mapfile -d, so it runs with the find of macOS and with bash 4.3.
+# shellcheck disable=SC2034 # files_into is a name reference: its writes fill the caller's array.
+smoke_tree_files() {
+  local dir="$1" path
+  local -n files_into="$2"
+  shift 2
+  files_into=()
+  while IFS= read -r -d '' path; do
+    files_into+=("${path#./}")
+  done < <(cd "$dir" && find . -type f "$@" -print0 | LC_ALL=C sort -z)
+}
+
 smoke_write_tree_sums() {
   local dir="$1" bytes
-  local -a files=()
+  local -a files=() digest=()
   smoke_tree_refuse_special "$dir" || return 1
   if [ -e "$dir/SHA256SUMS" ] || [ -e "$dir/SHA256SUMS.partial" ]; then
     printf 'smoke: %s already holds a SHA-256 list; a list is written once, after the last file is in place\n' "$dir" >&2
     return 1
   fi
-  mapfile -d '' -t files < <(cd "$dir" && find . -type f -printf '%P\0' | LC_ALL=C sort -z)
+  smoke_tree_files "$dir" files
   if [ "${#files[@]}" -eq 0 ]; then
     printf 'smoke: %s holds no file\n' "$dir" >&2
     return 1
   fi
-  if ! (cd "$dir" && sha256sum -- "${files[@]}" > SHA256SUMS.partial && mv SHA256SUMS.partial SHA256SUMS); then
+  # shasum -a 256 writes the lines sha256sum writes, "<digest>  <name>".
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest=(sha256sum)
+  elif command -v shasum >/dev/null 2>&1; then
+    digest=(shasum -a 256)
+  else
+    printf 'smoke: neither sha256sum nor shasum is on PATH, so no SHA-256 list of %s can be written\n' "$dir" >&2
+    return 1
+  fi
+  if ! (cd "$dir" && "${digest[@]}" -- "${files[@]}" > SHA256SUMS.partial && mv SHA256SUMS.partial SHA256SUMS); then
     rm -f -- "$dir/SHA256SUMS.partial"
     printf 'smoke: could not write the SHA-256 list of %s\n' "$dir" >&2
     return 1
   fi
-  bytes="$(du -sb "$dir")"
-  printf 'ok: %s: %d file(s), %s bytes, each listed in SHA256SUMS\n' "$dir" "${#files[@]}" "${bytes%%[[:space:]]*}"
+  if bytes="$(du -sb "$dir" 2>/dev/null)"; then
+    printf 'ok: %s: %d file(s), %s bytes, each listed in SHA256SUMS\n' "$dir" "${#files[@]}" "${bytes%%[[:space:]]*}"
+  else
+    printf 'ok: %s: %d file(s), each listed in SHA256SUMS\n' "$dir" "${#files[@]}"
+  fi
 }
 
 smoke_check_tree_sums() {
   local dir="$1"
   local -a files=()
   smoke_tree_refuse_special "$dir" || return 1
-  mapfile -d '' -t files < <(cd "$dir" && find . -type f ! -path ./SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z)
+  smoke_tree_files "$dir" files ! -path ./SHA256SUMS
   smoke_check_sums "$dir/SHA256SUMS" "$dir" "${files[@]}"
+}
+
+smoke_check_checksum_refusal() {
+  local asset="$1" listed="$2" text="" file
+  shift 2
+  for file in "$@"; do
+    [ -f "$file" ] || { printf 'smoke: there is no output to read at %s\n' "$file" >&2; return 1; }
+    text+="$(tr -d ' \t\r\n' < "$file")"
+  done
+  # The parts in quotes are matched as they are written; only the digest the
+  # script computed, which nobody here knows, is a pattern.
+  if [[ $text =~ "theSHA-256checksumofthedownloaded${asset}is"[0-9a-f]{64}",butSHA256SUMSlists${listed};thedownloadwasdeletedandnothingwasinstalled" ]]; then
+    printf 'ok: the download of %s was refused for a checksum other than the %s SHA256SUMS lists\n' "$asset" "$listed"
+    return 0
+  fi
+  printf 'smoke: no refusal of %s for a checksum other than the %s SHA256SUMS lists\n' "$asset" "$listed" >&2
+  return 1
+}
+
+smoke_check_only_entries() {
+  local dir="$1" name bad=0
+  local -A wanted=() found=()
+  shift
+  if [ ! -d "$dir" ]; then
+    printf 'smoke: %s is not a directory\n' "$dir" >&2
+    return 1
+  fi
+  for name in "$@"; do wanted[$name]=1; done
+  smoke_tree_entries "$dir" found || return 1
+  for name in "${!found[@]}"; do
+    if [ -z "${wanted[${name%/}]+set}" ]; then
+      printf 'smoke: %s holds %s, which it should not\n' "$dir" "$name" >&2
+      bad=1
+    fi
+  done
+  for name in "$@"; do
+    if [ -z "${found[$name]+set}" ] && [ -z "${found[$name/]+set}" ]; then
+      printf 'smoke: %s holds no %s\n' "$dir" "$name" >&2
+      bad=1
+    fi
+  done
+  [ "$bad" = 0 ] || return 1
+  printf 'ok: %s holds %s\n' "$dir" "${*:-nothing}"
 }
 
 smoke_check_authenticode_report() {

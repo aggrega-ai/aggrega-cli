@@ -2,7 +2,7 @@ name: Publish and sign core plugins
 
 # Tag-driven publisher for the CLI release: the binaries for Linux, Windows and
 # macOS with the SHA256SUMS list of what the release attaches, the desktop
-# extension package, the tooling image, and the core plugins
+# extension package, the install scripts, the tooling image, and the core plugins
 # the core-plugin list names — the ones embedded in the aggrega binary and the
 # ones built and published with it but not embedded.
 #
@@ -91,9 +91,10 @@ name: Publish and sign core plugins
 #                        the tooling image from the archive, publishes each
 #                        plugin with its guest, signs both, and creates the
 #                        GitHub release with the downloadable binaries, the
-#                        extension package and SHA256SUMS, the list of their
-#                        SHA-256 digests it writes from the very files it
-#                        attaches. It may mint the OIDC token, for
+#                        extension package, the install scripts from its
+#                        checkout, and SHA256SUMS, the list of their SHA-256
+#                        digests it writes from the very files it attaches. It
+#                        may mint the OIDC token, for
 #                        those Sigstore signatures, and alone holds the token
 #                        that writes the release; the registry password it
 #                        holds is otherwise held only by registry-credential. It
@@ -2020,8 +2021,10 @@ jobs:
             "$config_home" "$config_home" "$config_home/docker" >> "$GITHUB_ENV"
 
       - name: Check out the CLI at the commit the build job built
-        # For the publishing scripts only, taken from the repository at the
-        # commit the build job built rather than handed over by that job.
+        # For the publishing scripts, and the install scripts the release
+        # attaches, taken from the repository at the commit the build job built
+        # rather than handed over by that job: the commit every smoke run checks
+        # out and runs the install scripts from.
         uses: actions/checkout@v5
         with:
           path: aggrega-cli
@@ -2260,12 +2263,13 @@ jobs:
             printf '%s\n' "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create the GitHub release and upload the binaries, the extension package and SHA256SUMS
+      - name: Create the GitHub release and upload the binaries, the extension package, the install scripts and SHA256SUMS
         # The final side effect: attach the default, debug and light binaries for
         # linux/amd64, linux/arm64, windows/amd64, darwin/arm64 and darwin/amd64,
-        # the desktop extension package, and SHA256SUMS, the SHA-256 list of all
-        # of them, to the GitHub release for this tag so they are downloadable
-        # from the release page. The default binary, under the plain name, is the
+        # the desktop extension package, the install scripts install.sh and
+        # install.ps1, and SHA256SUMS, the SHA-256 list of all of them, to the
+        # GitHub release for this tag so they are downloadable from the release
+        # page. The default binary, under the plain name, is the
         # debug one without its debug information. The linux/amd64 one is the
         # very file the tooling image carries, which the image step copied as it
         # is, so the asset and the image cannot differ. The macOS and ARM Linux
@@ -2282,12 +2286,19 @@ jobs:
         # target's release carries, and under what names the build writes them,
         # is read from the smoke library's smoke_target_binaries for every target
         # it lists, the list the smoke runs ran; linux/amd64, which this build
-        # machine is, writes them under the bare names. The embedded guests are
+        # machine is, writes them under the bare names. The name each is attached
+        # under is the library's smoke_release_asset_name, which the smoke runs'
+        # install step names its release folder with too. The install scripts
+        # are read from this job's checkout, packaging/install/ at the commit the
+        # build job built — the commit each smoke run checks out, whose install
+        # step ran these very scripts on its platform — and are attached under
+        # their own names, so releases/latest/download/install.sh is always the
+        # latest release's. The embedded guests are
         # NOT uploaded here — they publish to the registry with their Plugin
         # entities; the release carries only the runnable binaries, the
-        # extension package and the list, and GitHub attaches the source archives
-        # on its own. The step refuses to release when any of those files is
-        # missing.
+        # extension package, the install scripts and the list, and GitHub
+        # attaches the source archives on its own. The step refuses to release
+        # when any of those files is missing.
         #
         # SHA256SUMS is written here, from the very files the release attaches,
         # once this run's release directory holds exactly them, by the smoke
@@ -2305,7 +2316,9 @@ jobs:
         # authorizes it. Asset names carry the binary's reported version; the
         # binaries' also carry their build's target, with .exe for windows/amd64,
         # and the extension package's carries none, because it holds no program
-        # and serves every platform its manifest declares.
+        # and serves every platform its manifest declares. The install scripts'
+        # names carry no version, so a link to the latest release's copy never
+        # changes.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -2349,30 +2362,40 @@ jobs:
           # that makes this run's own directories, under its asset name, and
           # refuses rather than release without it when it is missing.
           ASSETS=()
-          attach() { # <file> <asset name> <what wrote it>
+          attach() { # <file> <asset name> <where it comes from>
             if [ ! -f "$1" ]; then
-              echo "$3 wrote no $(basename "$1") (expected at '$1')" >&2
+              echo "found no $(basename "$1") from $3 (expected at '$1'); refusing to release without it" >&2
               exit 1
             fi
             cp "$1" "$RELEASE_DIR/$2"
             ASSETS+=("$RELEASE_DIR/$2")
           }
           for variant in aggrega aggrega-debug aggrega-light; do
-            attach "$BIN/$variant" "$variant-$BIN_VERSION-linux-amd64" "the linux/amd64 build steps"
+            asset="$(smoke_release_asset_name linux/amd64 "$BIN_VERSION" "$variant")"
+            attach "$BIN/$variant" "$asset" "the linux/amd64 build steps"
           done
           for target in linux/arm64 darwin/arm64 darwin/amd64; do
-            suffix="${target%/*}-${target#*/}"
             names="$(smoke_target_binaries "$target")"
             while IFS= read -r name; do
-              attach "$BIN/$name" "${name%-"$suffix"}-$BIN_VERSION-$suffix" "the $target build steps"
+              asset="$(smoke_release_asset_name "$target" "$BIN_VERSION" "$name")"
+              attach "$BIN/$name" "$asset" "the $target build steps"
             done <<<"$names"
           done
           names="$(smoke_target_binaries windows/amd64)"
           while IFS= read -r name; do
-            stem="${name%.exe}"
-            attach "$WINDOWS_SIGNED/$name" "${stem%-windows-amd64}-$BIN_VERSION-windows-amd64.exe" "sign-windows"
+            asset="$(smoke_release_asset_name windows/amd64 "$BIN_VERSION" "$name")"
+            attach "$WINDOWS_SIGNED/$name" "$asset" "sign-windows"
           done <<<"$names"
           attach "$MCP_BUNDLE" "$(basename "$MCP_BUNDLE")" "the pack step"
+          # The install scripts, each named once by its path in this checkout,
+          # which is what the release job isolation check reads them by, and
+          # attached under its own file name.
+          INSTALL_SH=aggrega-cli/packaging/install/install.sh
+          INSTALL_PS1=aggrega-cli/packaging/install/install.ps1
+          for script in "$INSTALL_SH" "$INSTALL_PS1"; do
+            attach "$script" "${script##*/}" "the checkout of the commit the build job built"
+          done
+          LATEST="https://github.com/$GH_REPO/releases/latest/download"
 
           # SHA256SUMS, written from the files RELEASE_DIR now holds, which are
           # exactly the ones in ASSETS, then held to ASSETS by name and digest.
@@ -2402,7 +2425,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64, the same bytes the tooling image carries), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
+              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64, the same bytes the tooling image carries), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
           fi
 
       - name: Remove this run's directories
@@ -2825,12 +2848,16 @@ jobs:
     # the platform splits — file locks, files another process holds open,
     # forward-slash paths, a Unix-socket listen address — behave there; and
     # that Windows itself accepts each binary's signature, from Cognitio S.r.l.
-    # and timestamped, on the very bytes sign-windows' SHA-256 list names.
+    # and timestamped, on the very bytes sign-windows' SHA-256 list names; and
+    # that install.ps1 installs the default binary, under Windows PowerShell and
+    # PowerShell 7, from a folder laid out as the release is.
     # Everything it runs comes from the artifacts the build job staged — a
     # registry program among them, which serves on this machine's loopback
-    # address alone — and sign-windows signed; it
-    # checks out this repository only so that each test executable runs from its
-    # package directory, at the commit the artifact records. It holds no secret
+    # address alone — and sign-windows signed, but for the Python and the two
+    # PowerShells the runner image carries; it
+    # checks out this repository so that each test executable runs from its
+    # package directory, and for the install scripts the release attaches, at
+    # the commit the artifact records. It holds no secret
     # and reads only this repository, and its one script stops at the first
     # failure, saying what failed. sign-and-publish waits for it, so a failure
     # here publishes nothing. On a dry run naming smoke_binaries_from it runs
@@ -2920,7 +2947,12 @@ jobs:
         # the chart-backed example compared the same way, all in a path with a
         # space and an accented letter, every command's redirected output free of
         # escape bytes, each check shown refusing a planted fault; then the named
-        # tests, any of which skipping or not running fails the step; and last
+        # tests, any of which skipping or not running fails the step; then the
+        # install script, run as irm <url>/install.ps1 | iex under Windows
+        # PowerShell and under PowerShell 7 against a release folder this
+        # machine serves on its loopback address, each install checked and the
+        # user PATH put back after it, and a planted one-byte change to the
+        # served binary refused with nothing installed; and last
         # the signatures: each binary must match sign-windows' SHA-256 list, and
         # Windows' own Get-AuthenticodeSignature must report it Valid, signed by
         # Cognitio S.r.l. and timestamped, with the unsigned copy the build wrote
@@ -2959,10 +2991,13 @@ jobs:
     # process holds open, forward-slash paths, a Unix-socket listen address —
     # behave there. The script also refuses a machine whose
     # architecture is not the target's, because a Mac with Apple silicon runs
-    # an amd64 binary too, through Rosetta 2. Everything it runs comes from the
-    # artifact the build job staged for the target; it checks out this
-    # repository only so that each test executable runs from its package
-    # directory, at the commit the artifact records. It holds no secret and
+    # an amd64 binary too, through Rosetta 2. It also proves that install.sh
+    # installs the default binary there from a folder laid out as the release
+    # is. Everything it runs comes from the artifact the build job staged for
+    # the target, but for the Python, curl and sh the runner image carries; it
+    # checks out this repository so that each test executable runs from its
+    # package directory, and for the install scripts the release attaches, at
+    # the commit the artifact records. It holds no secret and
     # reads only this repository. sign-and-publish waits for both targets, so a
     # failure on either publishes nothing.
     #
@@ -3033,8 +3068,12 @@ jobs:
         # way, all in a path with a space and an accented letter, every command's
         # redirected output free of escape bytes, each check shown refusing a
         # planted fault; then the named tests, any of which skipping or not
-        # running fails the step. aggrega-cli/scripts/platform-smoke.sh --help
-        # says what each check asserts.
+        # running fails the step; then the install script, run as
+        # curl -fsSL <url>/install.sh | sh against a release folder this machine
+        # serves on its loopback address, and a planted one-byte change to the
+        # served binary refused with nothing installed.
+        # aggrega-cli/scripts/platform-smoke.sh --help says what each check
+        # asserts.
         env:
           TARGET: ${{ matrix.target }}
         run: |
@@ -3052,9 +3091,12 @@ jobs:
     # build what the x86-64 Linux build builds, byte for byte, on the other
     # architecture. The script refuses a machine whose architecture is not the
     # target's, because a Linux machine with an emulator registered runs a
-    # binary of another architecture too. Everything it runs comes from the
-    # artifact the build job staged; it checks out this repository only so that
-    # each test executable runs from its package directory, at the commit the
+    # binary of another architecture too. It also proves that install.sh
+    # installs the default binary there from a folder laid out as the release
+    # is. Everything it runs comes from the artifact the build job staged, but
+    # for the Python, curl and sh the runner image carries; it checks out this
+    # repository so that each test executable runs from its package directory,
+    # and for the install scripts the release attaches, at the commit the
     # artifact records. It holds no secret and reads only this repository.
     # sign-and-publish waits for it, so a failure here publishes nothing.
     #
@@ -3100,8 +3142,12 @@ jobs:
         # way, all in a path with a space and an accented letter, every command's
         # redirected output free of escape bytes, each check shown refusing a
         # planted fault; then the named tests, any of which skipping or not
-        # running fails the step. aggrega-cli/scripts/platform-smoke.sh --help
-        # says what each check asserts.
+        # running fails the step; then the install script, run as
+        # curl -fsSL <url>/install.sh | sh against a release folder this machine
+        # serves on its loopback address, and a planted one-byte change to the
+        # served binary refused with nothing installed.
+        # aggrega-cli/scripts/platform-smoke.sh --help says what each check
+        # asserts.
         run: |
           set -euo pipefail
           aggrega-cli/scripts/platform-smoke.sh --target linux/arm64 --inputs "$RUNNER_TEMP/linux-smoke"
