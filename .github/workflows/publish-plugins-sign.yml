@@ -51,9 +51,13 @@ name: Publish and sign core plugins
 #                        Windows, macOS and ARM Linux binaries, stages each smoke run's
 #                        inputs, packs the desktop extension package, generates
 #                        the core Plugin catalog entities and pairs each with
-#                        its guest, and builds the tooling image into an
-#                        archive. Everything the publish needs, and the three
-#                        Windows binaries, unsigned, it leaves in the hand-over
+#                        its guest, and builds the tooling image for
+#                        linux/amd64 and linux/arm64 into one archive per
+#                        platform, after registering ARM emulation with
+#                        docker/setup-qemu-action, a third-party action this job
+#                        may run because it names no secret. Everything the
+#                        publish needs, and the three Windows binaries,
+#                        unsigned, it leaves in the hand-over
 #                        folder described below, with a SHA-256 list of every
 #                        file in it; it uploads only what the GitHub-hosted
 #                        smoke jobs run.
@@ -88,7 +92,8 @@ name: Publish and sign core plugins
 #                        release inputs from the hand-over folder once every
 #                        file there matches its list, downloads
 #                        windows-binaries-signed, and publishes them: it pushes
-#                        the tooling image from the archive, publishes each
+#                        the tooling image's platforms from their archives and
+#                        then the index joining them under one tag, publishes each
 #                        plugin with its guest, signs both, and creates the
 #                        GitHub release with the downloadable binaries, the
 #                        extension package, the install scripts from its
@@ -101,8 +106,9 @@ name: Publish and sign core plugins
 #                        runs no build or pack step and no action but checkout
 #                        and download-artifact: the programs it runs, beside the
 #                        shell's own utilities, are the aggrega binary the build
-#                        job built, docker (to load and push the image archive),
-#                        gh and curl. On a real publish it hands the plugin
+#                        job built, docker (to load and push the image archives
+#                        and join them under one tag with its own manifest
+#                        command), gh and curl. On a real publish it hands the plugin
 #                        publish's own output on, as its plugin_push_output, to
 #                        record-published. Once the release step has run, a dry
 #                        run's included, it renders the Homebrew formula and the
@@ -281,8 +287,8 @@ name: Publish and sign core plugins
 # builds everything a real run builds — the tooling image included — signs the
 # Windows binaries as a real run does, so the signing and the signature check
 # are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
-# and then, once they have passed, sign-and-publish loads the image archive and
-# prints what it would push, publish, sign and release, doing none of it,
+# and then, once they have passed, sign-and-publish loads and checks the image's
+# two archives and prints what it would push, publish, sign and release, doing none of it,
 # record-published is skipped, publish-skills prints the tree it would
 # publish to aggrega-skills, and publish-package-channels prints the formula and
 # the manifest it would commit, pushing nothing.
@@ -801,8 +807,8 @@ jobs:
     # token, and builds against the checkouts the sources job handed over.
     env:
       # Destination registry host, a variable rather than a secret: the tooling
-      # image is built under its references, and the archive carries them to the
-      # job that pushes it.
+      # image is built under its references, and the archives carry them to the
+      # job that pushes them.
       REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid' }}
       # Authored per-plugin overlay directory that catalog generation merges with
       # each guest's machine-derived contract fields. This is a REQUIRED input: the
@@ -821,6 +827,11 @@ jobs:
       # The pushed ref name (the tag on a push event), for the tag-equals-version
       # assertion.
       REF_NAME: ${{ github.ref_name }}
+      # The image that registers ARM emulation for the tooling image's ARM half,
+      # pinned by its digest (the tag beside it names the release it was read
+      # from): the emulation step runs it, privileged, and the step after the
+      # image build removes it from the machine's image store.
+      BINFMT_IMAGE: docker.io/tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
     steps:
       # Nothing in this job has an external side effect: it builds, validates and
@@ -1017,8 +1028,8 @@ jobs:
         # aggrega-cli/aggrega-debug as the linker writes it, with its debug
         # information, and aggrega-cli/aggrega, that binary without it, which
         # every later step that runs the binary runs, the tooling image carries
-        # and the release attaches under the plain name. NOT the light build —
-        # the light binary embeds no guests and could neither generate the core
+        # for linux/amd64 and the release attaches under the plain name. NOT the
+        # light build — the light binary embeds no guests and could neither generate the core
         # entities nor supply the guests to publish. Scoped to aggrega-cli:
         # publishing needs only the binary and its embedded guests, not the PDK
         # packages, so an unrelated PDK build issue cannot block a publish (and
@@ -1531,6 +1542,28 @@ jobs:
           aggrega-cli/scripts/publish-plugins.sh enumerate-embedded \
             --entities-dir "$STAGE/entities" --wasm-dir "$WASM_DIR" --pairs-out "$STAGE/pairs.tsv"
 
+      - name: Register ARM emulation for the tooling image
+        # The tooling image is built for linux/amd64 and linux/arm64, and its
+        # Dockerfile's RUN step runs as the code of the platform being built, so
+        # the ARM half needs an emulator for aarch64 registered with this
+        # machine's kernel. This action registers it: it runs BINFMT_IMAGE,
+        # privileged, with --install arm64, which registers the emulator it
+        # carries for aarch64 binaries. The action is pinned by its commit (its
+        # release tag in the comment), and its image by digest. It comes before
+        # the builder is made available because the builder reads which
+        # platforms it can build when it starts. cache-image is off: with it on,
+        # the action keeps the image in the Actions cache and runs the cached copy
+        # when a pull fails, which would run bytes the digest does not name. The
+        # registration lasts until the machine restarts, so later runs, and
+        # anything else on this machine, can run aarch64 binaries too. This job
+        # names no secret, so the action reaches none (see the header). It runs on
+        # a dry run too, because a dry run builds the image.
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: ${{ env.BINFMT_IMAGE }}
+          platforms: arm64
+          cache-image: false
+
       - name: Make the image builder available
         # The tooling image is built with `docker buildx build --platform …`, and
         # buildx is a docker CLI PLUGIN rather than part of docker itself. Where
@@ -1544,32 +1577,55 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build the tooling image
-        # Packages the freshly-built embedded binary as the tooling image at the
+        # Packages the freshly-built embedded binaries as the tooling image at the
         # reserved tools/ namespace so consumer CI can run the CLI without a Go
-        # toolchain. The image is built here, for real on a dry run too, and
-        # written as an archive carrying its version reference and the moving
-        # :stable one, which sign-and-publish loads and pushes without building
-        # anything. Both references come from one build and name one image.
+        # toolchain, on an x86-64 or an ARM Linux machine alike. The image is
+        # built here, for real on a dry run too, once per platform from the one
+        # Dockerfile, and written as one archive per platform carrying the
+        # version reference, with the list of platforms and the references the
+        # image is published under: sign-and-publish loads and pushes each
+        # platform's image and joins them under the version tag and :stable,
+        # without building anything. The script refuses to build unless the
+        # builder lists linux/arm64, which the emulation step above makes
+        # possible.
         #
-        # The image carries aggrega-cli/aggrega, the binary without its debug
+        # The linux/amd64 image carries aggrega-cli/aggrega and the linux/arm64
+        # one aggrega-cli/aggrega-linux-arm64, each the binary without its debug
         # information, because of the registry's per-request ceiling: the
         # registry refuses a single upload request above 100,000,000 bytes, and
         # each layer is sent in one request, the binary's layer included. The
-        # image build copies that file as it is and refuses one carrying debug
-        # information, and the release step attaches that same file, so the
-        # image and the release asset cannot differ.
+        # image build copies each file as it is and refuses one carrying debug
+        # information or built for the other processor, and the release step
+        # attaches those same files, so the image and the release assets cannot
+        # differ.
         run: |
           set -euo pipefail
           aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" \
+            --platform linux/amd64=aggrega-cli/aggrega \
+            --platform linux/arm64=aggrega-cli/aggrega-linux-arm64 \
             --save "$RELEASE_INPUTS/image"
+
+      - name: Remove the emulation installer image
+        # The emulation step pulled BINFMT_IMAGE into the machine's image store
+        # to run it; the run leaves no image there, so it is removed, whatever
+        # the steps since did. The emulator it registered stays registered.
+        # It is removed by its ID, since a pull by digest gives it no tag to
+        # remove it by; where the machine also keeps it under a tag of its own,
+        # docker refuses and the step warns, leaving it.
+        if: ${{ always() }}
+        run: |
+          if id="$(docker image inspect --format '{{.Id}}' "$BINFMT_IMAGE" 2>/dev/null)"; then
+            docker image rm "$id" >/dev/null || echo "::warning::could not remove $BINFMT_IMAGE ($id) from the image store"
+          fi
 
       - name: Collect the binaries the release carries
         # The binaries the steps above wrote, under the names they wrote them,
         # into the release inputs sign-and-publish reads from the hand-over
-        # folder: aggrega (the file the tooling image carries, which
-        # sign-and-publish also runs to log in, publish and sign), aggrega-debug,
-        # aggrega-light, and the macOS and ARM Linux binaries. The Windows
-        # binaries are not: the release attaches them signed, from sign-windows'
+        # folder: aggrega (the file the tooling image carries for linux/amd64,
+        # which sign-and-publish also runs to log in, publish and sign),
+        # aggrega-debug, aggrega-light, and the macOS and ARM Linux binaries,
+        # aggrega-linux-arm64 being the file the image carries for linux/arm64.
+        # The Windows binaries are not: the release attaches them signed, from sign-windows'
         # artifact, so the release inputs leave them out and the unsigned ones
         # have no way to the release. A copy keeps each file's mode, so aggrega
         # stays executable. A missing file fails the copy.
@@ -2050,8 +2106,10 @@ jobs:
         # command in this job reads, writes or cleans the runner user's own
         # Docker configuration, and the last step removes the directory
         # RUN_CONFIG_HOME names, the credential with it. The docker commands
-        # this job runs — load, image inspect, push and image rm — are
-        # docker's own and need no CLI plugin. docker reaches its daemon as it
+        # this job runs — load, image inspect, tag, push, image rm, and
+        # manifest create, push and rm, which join the tooling image's platforms
+        # under one tag and keep their working list in this same configuration —
+        # are docker's own and need no CLI plugin. docker reaches its daemon as it
         # does with no configuration of its own: through DOCKER_HOST when the
         # runner's environment sets it, otherwise through the default socket.
         # Docker keeps its contexts in its configuration, so none of the user's
@@ -2226,15 +2284,20 @@ jobs:
           echo "SIGSTORE_ID_TOKEN=$id_token" >> "$GITHUB_ENV"
 
       - name: Publish and sign the tooling image
-        # Loads the archive the build job wrote and pushes each reference it was
-        # built under — the version tag and the moving :stable tag, one image —
-        # then signs the version reference by reference, keyless against public
-        # Sigstore; the signature resolves to the shared digest, so it covers
-        # :stable too. Nothing is built here. A dry run loads the archive and
-        # checks both references are in it, then prints what it would push and
-        # sign, pushing nothing. The image tag equals the binary's reported
-        # version (v-less), so the pushed reference and the binary stay in
-        # lockstep.
+        # Loads the build job's archives, one per platform, and checks each
+        # carries the version reference and an image for the platform its line
+        # names; then pushes each platform's image under the version tag in turn
+        # and, once both are stored, joins them by digest in one index pushed
+        # under the version tag and the moving :stable tag, so `docker pull` on
+        # x86-64 and on ARM each gets its own image and no tag is left naming a
+        # single platform's. The index goes last because the registry accepts it
+        # only when every image it names is already stored. Then it signs the
+        # version reference by reference, keyless against public Sigstore; the
+        # signature resolves to the index digest, which :stable shares, so it
+        # covers :stable too. Nothing is built here. A dry run loads and checks
+        # the archives, then prints what it would push and sign, pushing
+        # nothing. The image tag equals the binary's reported version (v-less),
+        # so the pushed reference and the binary stay in lockstep.
         run: |
           set -euo pipefail
 
@@ -2317,9 +2380,10 @@ jobs:
         # install.ps1, and SHA256SUMS, the SHA-256 list of all of them, to the
         # GitHub release for this tag so they are downloadable from the release
         # page. The default binary, under the plain name, is the
-        # debug one without its debug information. The linux/amd64 one is the
-        # very file the tooling image carries, which the image step copied as it
-        # is, so the asset and the image cannot differ. The macOS and ARM Linux
+        # debug one without its debug information. The linux/amd64 and linux/arm64
+        # ones are the very files the tooling image carries for those platforms,
+        # which the image step copied as they are, so the assets and the image
+        # cannot differ. The macOS and ARM Linux
         # ones are the files the build job's steps for them wrote, each already
         # held to the Linux binary's version. The Windows ones are the files the
         # build job's Windows steps wrote, held to that version too, as
@@ -2475,7 +2539,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64, the same bytes the tooling image carries), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
+              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
           fi
 
       - name: Render the Homebrew formula and the Scoop manifest
@@ -3422,9 +3486,10 @@ jobs:
     # action, names no secret, and its token reaches curl on standard input.
     # It touches no container image and no Docker configuration: the run leaves
     # no image in the machine's image store — the build job writes the tooling
-    # image to an archive and loads nothing, and sign-and-publish's publish
-    # script removes every reference it loads when it exits, a refusal
-    # included.
+    # image to one archive per platform, loads nothing, and removes the
+    # emulation's installer image once the image is built, and
+    # sign-and-publish's publish script removes every image and reference it
+    # loads when it exits, a refusal included.
     needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, publish-skills, publish-package-channels, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
