@@ -141,6 +141,17 @@ spec:
           uses:
             db:
               - store
+            # A connection in the long form carrying an injection block, on a
+            # component inside a scope the author declared, which is the site
+            # the delivery axis names through the component and then the
+            # connection's socket and alias.
+            database:
+              primary:
+                target: store
+                inject:
+                  env:
+                    - in: DB_URL
+                      from: host
       subsystems:
         payments:
           features:
@@ -149,11 +160,19 @@ spec:
             # the scope holds, so its locator names this block and never the
             # consuming component's dependency block — which is what the
             # originated-connection coordinates are walked against.
+            #
+            # It also writes an injection block of its own, which the delivery
+            # axis names at this block, inside the nested scope, and at no
+            # component.
             tls:
               uses:
                 issuer:
                   ca:
                     target: ca
+              inject:
+                arg:
+                  - in: --ca-file
+                    value: /etc/ca.pem
             audit: {}
 `,
 		// A Release whose boundaries nest. The fixture enumerates the inner one as
@@ -190,7 +209,19 @@ spec:
           subDirectory: "{{ .component_id }}"
           features:
             shared-db: {}
-            audit: {}
+            # A boundary-wide attachment drawing a connection that carries an
+            # injection block. The Release writes no block on an attachment
+            # itself, only on the connections it draws, so the delivery axis
+            # names this connection inside the nested boundary.
+            audit:
+              uses:
+                sink:
+                  main:
+                    target: archive
+                    inject:
+                      ssm_param:
+                        - in: AUDIT_TOKEN
+                          from: token
           # The routed one of a boundary's two component-naming axes. A whole
           # sub-module is placed here, and a component inside it is named under
           # the LOCAL name it carries within that module — so the id it addresses,
@@ -217,6 +248,20 @@ spec:
                       sessions:
                         infra:
                           maxmemory: 256mb
+                  # An attachment on the routed component drawing a connection
+                  # that carries an injection block, which the delivery axis
+                  # names through the routing entry's keys rather than the id
+                  # the component addresses.
+                  features:
+                    metrics:
+                      uses:
+                        backend:
+                          primary:
+                            target: store
+                            inject:
+                              env:
+                                - in: DB_URL
+                                  from: host
           components:
             # The Release's own edge surface, wiring a socket the Aggregate
             # declared and left unbound. A connection drawn here is authored on

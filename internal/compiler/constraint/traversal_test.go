@@ -585,14 +585,15 @@ func newTraversalFixture() traversalFixture {
 			},
 		},
 		// Every shape of site an injection block is written at, across both
-		// documents. The first block is a component's own at the Aggregate's top
-		// level, whose scope normalization synthesized, so it names the top-level
-		// shape; the second a connection on a component inside a nested subsystem,
-		// which spells each level under the container's key again; the third a
-		// scope-wide attachment's block, which names the scope and no component. The
-		// last two are the Release's: a connection an attachment draws on a component
-		// a routing entry names, whose routing keys arrive whole, and one drawn by a
-		// boundary-wide attachment.
+		// documents, each one a block the authored documents beside this fixture
+		// hold. The first block is a component's own at the Aggregate's top level,
+		// whose scope normalization synthesized, so it names the top-level shape; the
+		// second a connection on a component inside a scope the author declared; the
+		// third a scope-wide attachment's own block inside a nested scope, which
+		// spells each level under the container's key again and names no component.
+		// The last two are the Release's, both inside a nested boundary: a connection
+		// an attachment draws on a component a routing entry names, whose routing keys
+		// arrive whole, and one drawn by a boundary-wide attachment.
 		//
 		// The first block carries two mechanisms out of alphabetical order, so a
 		// sort anywhere in the traversal would be visible.
@@ -613,27 +614,27 @@ func newTraversalFixture() traversalFixture {
 			},
 			{
 				Document:   AuthoringDocumentAggregate,
-				Block:      fixtureKey("billing.payments", "api", "", "database", "primary"),
+				Block:      fixtureKey("billing", "api", "", "database", "primary"),
 				Mechanism:  "env",
-				Site:       AuthoredSite{ScopePath: "billing.payments", Component: "api"},
+				Site:       AuthoredSite{ScopePath: "billing", Component: "api"},
 				Socket:     "database",
 				Alias:      "primary",
 				SourceFile: "billing/aggregate.yaml",
 			},
 			{
 				Document:   AuthoringDocumentAggregate,
-				Block:      fixtureKey("billing", "", "tls", "", ""),
+				Block:      fixtureKey("billing.payments", "", "tls", "", ""),
 				Mechanism:  "arg",
-				Site:       AuthoredSite{ScopePath: "billing"},
+				Site:       AuthoredSite{ScopePath: "billing.payments"},
 				Attachment: "tls",
 				SourceFile: "billing/aggregate.yaml",
 			},
 			{
 				Document:      AuthoringDocumentRelease,
-				Block:         fixtureKey("prod/edge", "", "aggregates", "data", "components", "store", "metrics", "backend", "primary"),
+				Block:         fixtureKey("prod/edge", "", "aggregates", "billing", "components", "api", "metrics", "backend", "primary"),
 				Mechanism:     "env",
 				Site:          AuthoredSite{ScopePath: "prod/edge"},
-				ComponentKeys: []string{"aggregates", "data", "components", "store"},
+				ComponentKeys: []string{"aggregates", "billing", "components", "api"},
 				Attachment:    "metrics",
 				Socket:        "backend",
 				Alias:         "primary",
@@ -641,9 +642,9 @@ func newTraversalFixture() traversalFixture {
 			},
 			{
 				Document:   AuthoringDocumentRelease,
-				Block:      fixtureKey("prod", "", "audit", "sink", "main"),
+				Block:      fixtureKey("prod/edge", "", "audit", "sink", "main"),
 				Mechanism:  "ssm_param",
-				Site:       AuthoredSite{ScopePath: "prod"},
+				Site:       AuthoredSite{ScopePath: "prod/edge"},
 				Attachment: "audit",
 				Socket:     "sink",
 				Alias:      "main",
@@ -1882,12 +1883,17 @@ func traversalCases() []traversalCase {
 			// The first two are one block reached once per mechanism, in the order
 			// the enumerator returned them. The Aggregate's top-level component
 			// names the top-level shape, because the scope holding it is one
-			// normalization synthesized; a component in a nested subsystem spells
-			// each level under the container's key, and the connection's socket and
-			// alias follow it; a scope-wide attachment's block names the scope and
-			// no component. On the Release, the routing entry's keys arrive whole
-			// and the nested boundary spells each level again, and a boundary-wide
-			// attachment's connection names the boundary's own block.
+			// normalization synthesized; a component in a declared subsystem names
+			// that scope, and the connection's socket and alias follow it; a
+			// scope-wide attachment's block inside a nested subsystem spells each
+			// level under the container's key and names no component. On the
+			// Release, the nested boundary spells each level again, the routing
+			// entry's keys arrive whole, and a boundary-wide attachment's connection
+			// names the boundary's own block.
+			//
+			// Every one of these is walked through the authored documents by the
+			// test that resolves each produced locator in its file, so a site this
+			// fixture names and those documents do not hold fails there.
 			kind: SubjectInjectDelivery,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnInjectDeliveries(cancelled, f, v, raisingCheck[InjectDeliverySubject]())
@@ -1895,10 +1901,10 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"aggregate.yaml|.spec.components.web.inject.file",
 				"aggregate.yaml|.spec.components.web.inject.env",
-				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.components.api.uses.database.primary.inject.env",
-				"billing/aggregate.yaml|.spec.subsystems.billing.features.tls.inject.arg",
-				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.data.components.store.features.metrics.uses.backend.primary.inject.env",
-				"release.yaml|.spec.boundaries.prod.features.audit.uses.sink.main.inject.ssm_param",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.database.primary.inject.env",
+				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.tls.inject.arg",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.billing.components.api.features.metrics.uses.backend.primary.inject.env",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.features.audit.uses.sink.main.inject.ssm_param",
 			},
 		},
 	}
@@ -3094,10 +3100,10 @@ func coordinateFlowCases() []coordinateFlowCase {
 			want: []string{
 				"aggregate|/web|file",
 				"aggregate|/web|env",
-				"aggregate|billing.payments/api//database/primary|env",
-				"aggregate|billing//tls//|arg",
-				"release|prod/edge//aggregates/data/components/store/metrics/backend/primary|env",
-				"release|prod//audit/sink/main|ssm_param",
+				"aggregate|billing/api//database/primary|env",
+				"aggregate|billing.payments//tls//|arg",
+				"release|prod/edge//aggregates/billing/components/api/metrics/backend/primary|env",
+				"release|prod/edge//audit/sink/main|ssm_param",
 			},
 		},
 	}
