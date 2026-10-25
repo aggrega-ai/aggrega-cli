@@ -81,10 +81,10 @@ var selfInjectReferenceIsPublished = constraint.Check[
 // published contract here to measure the reference against.
 //
 // Delivery entries are read out of the connection's own authored payload, and
-// the entries of one mechanism are reported in key order. Only one of the shapes
-// an author may write that payload in carries an order of its own, so reporting
-// in the order the payload yields would make the emitted set depend on which
-// shape was written.
+// the entries of one mechanism are reported in delivery-key order: the reading
+// of a payload this rule shares with the rule over every connection the
+// composition drew returns them sorted, so the two report one connection's
+// entries in one sequence.
 //
 // The detail is the mechanism, the delivery key, the key the entry reads from,
 // the component type it was resolved against, and then the keys that type
