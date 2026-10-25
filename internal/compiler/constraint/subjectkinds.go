@@ -1150,6 +1150,76 @@ func newNodeMechanismDeliveryKeySubject(
 	}
 }
 
+// InjectDeliverySubject is the subject of a check invoked once per delivery
+// mechanism of every injection block either authoring document writes.
+//
+// It is rooted at the BLOCK rather than at a component, and that is what the kind
+// exists for. An injection block is written on a component, on an attachment, and
+// on a connection either of those draws — in the Release as well as in the
+// Aggregate, and on a component a Release routes in from a sub-module, which no
+// node of the normalized documents names. A node-rooted kind reaches the first of
+// those alone, so a rule over what an author wrote under a mechanism would be
+// asked about one block in several and its silence on the rest would read as
+// approval.
+//
+// Its single coordinate is the delivery, whose identity is the authoring document,
+// the block and the mechanism taken together, so it carries an accessor for each
+// element of that identity rather than one naming the delivery — on the terms
+// [AuthoredAnnotationSubject] does. The document is in the identity because a
+// block's key path is spelled within its own document, so one path can name a
+// block in each; and it is provenance as well as coordinate, because a finding
+// about a block is filed under the document whose author wrote it.
+type InjectDeliverySubject interface {
+	Subject
+
+	// AuthoringDocumentKind is the document the block was written in: one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease].
+	AuthoringDocumentKind() string
+
+	// InjectBlockPath identifies the block within its document, as every keyed
+	// fact takes it: the authored keys reaching the block, joined. It is an
+	// identity and not a position — where a finding is positioned is the
+	// subject's locator — so a check passes it back to a fact and never shows it.
+	InjectBlockPath() string
+
+	// MechanismName is the delivery mechanism the check was invoked for: env,
+	// file, arg, or one an author names beside them.
+	MechanismName() string
+
+	injectDelivery()
+}
+
+type injectDeliverySubject struct {
+	provenance
+	document  string
+	block     string
+	mechanism string
+}
+
+func (injectDeliverySubject) injectDelivery() {}
+
+func (s injectDeliverySubject) AuthoringDocumentKind() string { return s.document }
+
+func (s injectDeliverySubject) InjectBlockPath() string { return s.block }
+
+func (s injectDeliverySubject) MechanismName() string { return s.mechanism }
+
+// newInjectDeliverySubject records the document as provenance as well as a
+// coordinate, so an objection about the block carries the document its author
+// wrote it in. The kind has no second constructor: its document is always
+// known, because the block's identity includes it.
+func newInjectDeliverySubject(
+	sourceFile, document, block, mechanism string,
+	segments ...string,
+) InjectDeliverySubject {
+	return injectDeliverySubject{
+		provenance: newProvenanceIn(document, sourceFile, segments...),
+		document:   document,
+		block:      block,
+		mechanism:  mechanism,
+	}
+}
+
 // NodePillarLeafSubject is the subject of a check invoked once per leaf of one
 // configuration pillar a node's author wrote.
 type NodePillarLeafSubject interface {

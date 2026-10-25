@@ -6,6 +6,7 @@ package resolver
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
@@ -149,6 +150,21 @@ type normalizedView struct {
 	// entry nobody wrote.
 	annotationValues map[authoredAnnotationCoordinates]any
 
+	// aggregateDeliveries and releaseDeliveries are every delivery mechanism of
+	// every injection block each authoring document writes, in the order its
+	// walk below reaches them, and deliveryPayloads is the value each carries,
+	// keyed by the delivery's own coordinates.
+	//
+	// They are recorded by the same walks that fill the maps above, for the
+	// reason the annotations are: one reading of each document tree, so the
+	// coordinate a rule is invoked for and the value it reads cannot disagree
+	// about which blocks exist. They are held per document because the
+	// enumerating axis returns the Aggregate's before the Release's, which is
+	// the opposite of the order the walks run in.
+	aggregateDeliveries []constraint.InjectDeliveryInstance
+	releaseDeliveries   []constraint.InjectDeliveryInstance
+	deliveryPayloads    map[injectDeliveryCoordinates]any
+
 	// componentContracts is the resolved contract of each component type in
 	// play, produced once when this value was built.
 	componentContracts map[string]resolvedContract
@@ -184,6 +200,21 @@ type authoredAnnotationCoordinates struct {
 	key       string
 	subkey    string
 }
+
+// injectDeliveryCoordinates identifies one delivery mechanism of one injection
+// block as this presentation keys it: the document, the block's identity within
+// it, and the mechanism.
+type injectDeliveryCoordinates struct {
+	document  string
+	block     string
+	mechanism string
+}
+
+// injectBlockPathSeparator joins the authored keys reaching an injection block
+// into the block's identity. It is the NUL byte because the identity is a key and
+// never a position: any separator an author can type inside a key would let two
+// blocks collide on one joined value.
+const injectBlockPathSeparator = "\x00"
 
 // socketPillarKey identifies one socket's contract over one of the two pillars a
 // connection into it may carry.
@@ -253,6 +284,7 @@ func newNormalizedView(
 		subsystemFeatures:  map[string]types.OrderedMap[types.FeatureInstance]{},
 		boundaryFeatures:   map[string]types.OrderedMap[types.BoundaryFeature]{},
 		annotationValues:   map[authoredAnnotationCoordinates]any{},
+		deliveryPayloads:   map[injectDeliveryCoordinates]any{},
 		componentContracts: map[string]resolvedContract{},
 		socketContracts:    map[socketPillarKey]resolvedContract{},
 	}
@@ -343,6 +375,17 @@ func (v *normalizedView) collectSubsystemContent(
 				constraint.AuthoringDocumentAggregate, component,
 				constraint.AuthoredSite{ScopePath: child, Component: component},
 				nil, inst.Annotations)
+			v.recordComponentDeliveries(constraint.AuthoredSite{ScopePath: child, Component: component}, inst)
+		}
+		// A scope's own attachments after its components and before the scopes
+		// nested in it, so the delivery axis reads outer scope first. A synthesized
+		// scope declares no attachments of its own.
+		if !sub.Synthesized {
+			for name, feat := range sub.Features.All() {
+				v.recordAttachmentDeliveries(constraint.AuthoringDocumentAggregate,
+					constraint.AuthoredSite{ScopePath: child}, nil, name,
+					feat.Inject, types.FeatureUsesConnections(feat.Uses))
+			}
 		}
 		v.collectSubsystemContent(child, sub.Subsystems)
 	}
@@ -409,6 +452,21 @@ func (v *normalizedView) collectBoundaryContent(nr types.NormalizedRelease) {
 			v.recordAnnotations(
 				constraint.AuthoringDocumentRelease, decl.ID,
 				site, routed, decl.Component.Annotations)
+			// A Release attachment carries no block of its own, only the ones on
+			// the connections it draws.
+			for name, feat := range decl.Component.Features.All() {
+				v.recordAttachmentDeliveries(constraint.AuthoringDocumentRelease, site, routed, name,
+					nil, types.FeatureUsesConnections(feat.Uses))
+			}
+		}
+		// The scope-wide attachments after the scope's components, as on the
+		// other authoring document. A synthesized scope declares none.
+		if !b.Synthesized {
+			for name, feat := range b.Features.All() {
+				v.recordAttachmentDeliveries(constraint.AuthoringDocumentRelease,
+					constraint.AuthoredSite{ScopePath: path}, nil, name,
+					nil, types.FeatureUsesConnections(feat.Uses))
+			}
 		}
 		for name, child := range b.Boundaries.All() {
 			next := name
@@ -489,6 +547,109 @@ func (v *normalizedView) recordAnnotation(
 		key:       key,
 		subkey:    subkey,
 	}] = value
+}
+
+// recordComponentDeliveries records the deliveries of every injection block one
+// Aggregate component writes: its own, those on its own connections, and those
+// on each attachment it carries and on the connections that attachment draws —
+// in that order, each container in author order.
+func (v *normalizedView) recordComponentDeliveries(site constraint.AuthoredSite, inst types.ComponentInstance) {
+	const document = constraint.AuthoringDocumentAggregate
+	v.recordDeliveries(document, site, nil, "", "", "", inst.Inject)
+	v.recordConnectionDeliveries(document, site, nil, "", inst.Uses)
+	for name, feat := range inst.Features.All() {
+		v.recordAttachmentDeliveries(document, site, nil, name, feat.Inject, types.FeatureUsesConnections(feat.Uses))
+	}
+}
+
+// recordAttachmentDeliveries records the deliveries of one attachment's own
+// injection block, then those on the connections it draws. A Release attachment
+// writes no block of its own, so its inject is nil and contributes nothing.
+func (v *normalizedView) recordAttachmentDeliveries(
+	document string,
+	site constraint.AuthoredSite,
+	componentKeys []string,
+	attachment string,
+	inject *types.InjectBlock,
+	uses types.OrderedMap[types.UsesSocketValue],
+) {
+	v.recordDeliveries(document, site, componentKeys, attachment, "", "", inject)
+	v.recordConnectionDeliveries(document, site, componentKeys, attachment, uses)
+}
+
+// recordConnectionDeliveries records the deliveries of the block on every
+// connection a dependency block draws, socket and alias in author order. A
+// connection written in the short form carries no block.
+func (v *normalizedView) recordConnectionDeliveries(
+	document string,
+	site constraint.AuthoredSite,
+	componentKeys []string,
+	attachment string,
+	uses types.OrderedMap[types.UsesSocketValue],
+) {
+	for socket, value := range uses.All() {
+		for alias, entry := range value.Verbose.All() {
+			v.recordDeliveries(document, site, componentKeys, attachment, socket, alias, entry.Inject)
+		}
+	}
+}
+
+// recordDeliveries appends one instance per mechanism one injection block
+// declares, in the order the block's own enumeration gives, and records the
+// payload each carries under the same coordinates in the same step.
+//
+// Every mechanism the block declares is recorded, a mechanism carrying no value
+// included: whether such a mechanism delivers anything is a rule's question, and
+// a walk that answered it here would be a second statement of that rule.
+func (v *normalizedView) recordDeliveries(
+	document string,
+	site constraint.AuthoredSite,
+	componentKeys []string,
+	attachment, socket, alias string,
+	inject *types.InjectBlock,
+) {
+	payloads := InjectMechanismPayloads(inject)
+	if payloads.Len() == 0 {
+		return
+	}
+	parts := make([]string, 0, len(componentKeys)+5)
+	parts = append(parts, site.ScopePath, site.Component)
+	parts = append(parts, componentKeys...)
+	parts = append(parts, attachment, socket, alias)
+	block := strings.Join(parts, injectBlockPathSeparator)
+
+	for mechanism, payload := range payloads.All() {
+		instance := constraint.InjectDeliveryInstance{
+			Document:      document,
+			Block:         block,
+			Mechanism:     mechanism,
+			Site:          site,
+			ComponentKeys: componentKeys,
+			Attachment:    attachment,
+			Socket:        socket,
+			Alias:         alias,
+		}
+		if document == constraint.AuthoringDocumentRelease {
+			v.releaseDeliveries = append(v.releaseDeliveries, instance)
+		} else {
+			v.aggregateDeliveries = append(v.aggregateDeliveries, instance)
+		}
+		v.deliveryPayloads[injectDeliveryCoordinates{
+			document:  document,
+			block:     block,
+			mechanism: mechanism,
+		}] = payload
+	}
+}
+
+// AuthoredInjectDelivery returns the payload one mechanism of one injection block
+// carries as the author wrote it, nil for a coordinate no block carries.
+func (v *normalizedView) AuthoredInjectDelivery(document string, block string, mechanism string) any {
+	return v.deliveryPayloads[injectDeliveryCoordinates{
+		document:  document,
+		block:     block,
+		mechanism: mechanism,
+	}]
 }
 
 // AuthoredAnnotationSubvalue returns the value an author wrote at one annotation

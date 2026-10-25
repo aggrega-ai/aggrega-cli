@@ -141,10 +141,10 @@ type selfInjectEntry struct {
 // skipped, and a mechanism that is not a list yields no entries.
 //
 // Schema validation enforces that an entry carries exactly one of value: and
-// from:, and the IR build's inject-block validation refuses an entry carrying
-// both before any reader runs. Where both still reach this decode — a block
-// handed straight to the resolver rather than through a build — both populate
-// the entry, and resolveSelfInjectEntry reads from: ahead of value:.
+// from:, and the rules asked while the documents are resolved refuse an entry
+// carrying both before any reader runs. Where both still reach this decode — a
+// block handed straight to the renderer rather than through a build — both
+// populate the entry, and resolveSelfInjectEntry reads from: ahead of value:.
 func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 	result := map[string]selfInjectEntry{}
 	entries, ok := raw.([]any)

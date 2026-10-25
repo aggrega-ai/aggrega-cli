@@ -45,6 +45,7 @@ type traversalFixture struct {
 	references    []BoundaryComponentReferenceInstance
 	placements    []BoundaryPlacementInstance
 	edgeConfigs   []ReleaseEdgeConfigurationInstance
+	deliveries    []InjectDeliveryInstance
 	annotations   []AuthoredAnnotationInstance
 	boundaries    []AuthoredCoordinate
 	subsystems    []AuthoredCoordinate
@@ -159,6 +160,10 @@ func (f traversalFixture) BoundaryPlacements() []BoundaryPlacementInstance {
 
 func (f traversalFixture) ReleaseEdgeConfigurations() []ReleaseEdgeConfigurationInstance {
 	return f.edgeConfigs
+}
+
+func (f traversalFixture) InjectDeliveries() []InjectDeliveryInstance {
+	return f.deliveries
 }
 
 func (f traversalFixture) AuthoredAnnotations() []AuthoredAnnotationInstance {
@@ -577,6 +582,72 @@ func newTraversalFixture() traversalFixture {
 				},
 				Site:       AuthoredSite{Component: "web"},
 				SourceFile: "release-flat.yaml",
+			},
+		},
+		// Every shape of site an injection block is written at, across both
+		// documents. The first block is a component's own at the Aggregate's top
+		// level, whose scope normalization synthesized, so it names the top-level
+		// shape; the second a connection on a component inside a nested subsystem,
+		// which spells each level under the container's key again; the third a
+		// scope-wide attachment's block, which names the scope and no component. The
+		// last two are the Release's: a connection an attachment draws on a component
+		// a routing entry names, whose routing keys arrive whole, and one drawn by a
+		// boundary-wide attachment.
+		//
+		// The first block carries two mechanisms out of alphabetical order, so a
+		// sort anywhere in the traversal would be visible.
+		deliveries: []InjectDeliveryInstance{
+			{
+				Document:   AuthoringDocumentAggregate,
+				Block:      fixtureKey("", "web"),
+				Mechanism:  "file",
+				Site:       AuthoredSite{Component: "web"},
+				SourceFile: "aggregate.yaml",
+			},
+			{
+				Document:   AuthoringDocumentAggregate,
+				Block:      fixtureKey("", "web"),
+				Mechanism:  "env",
+				Site:       AuthoredSite{Component: "web"},
+				SourceFile: "aggregate.yaml",
+			},
+			{
+				Document:   AuthoringDocumentAggregate,
+				Block:      fixtureKey("billing.payments", "api", "", "database", "primary"),
+				Mechanism:  "env",
+				Site:       AuthoredSite{ScopePath: "billing.payments", Component: "api"},
+				Socket:     "database",
+				Alias:      "primary",
+				SourceFile: "billing/aggregate.yaml",
+			},
+			{
+				Document:   AuthoringDocumentAggregate,
+				Block:      fixtureKey("billing", "", "tls", "", ""),
+				Mechanism:  "arg",
+				Site:       AuthoredSite{ScopePath: "billing"},
+				Attachment: "tls",
+				SourceFile: "billing/aggregate.yaml",
+			},
+			{
+				Document:      AuthoringDocumentRelease,
+				Block:         fixtureKey("prod/edge", "", "aggregates", "data", "components", "store", "metrics", "backend", "primary"),
+				Mechanism:     "env",
+				Site:          AuthoredSite{ScopePath: "prod/edge"},
+				ComponentKeys: []string{"aggregates", "data", "components", "store"},
+				Attachment:    "metrics",
+				Socket:        "backend",
+				Alias:         "primary",
+				SourceFile:    "release.yaml",
+			},
+			{
+				Document:   AuthoringDocumentRelease,
+				Block:      fixtureKey("prod", "", "audit", "sink", "main"),
+				Mechanism:  "ssm_param",
+				Site:       AuthoredSite{ScopePath: "prod"},
+				Attachment: "audit",
+				Socket:     "sink",
+				Alias:      "main",
+				SourceFile: "release.yaml",
 			},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
@@ -1803,6 +1874,33 @@ func traversalCases() []traversalCase {
 				"release-flat.yaml|.spec.components.web.uses.queue.jobs",
 			},
 		},
+		{
+			// The injection-delivery axis, whose transcript shows that every site
+			// a block is written at is named through the one authored-site rule
+			// both documents share.
+			//
+			// The first two are one block reached once per mechanism, in the order
+			// the enumerator returned them. The Aggregate's top-level component
+			// names the top-level shape, because the scope holding it is one
+			// normalization synthesized; a component in a nested subsystem spells
+			// each level under the container's key, and the connection's socket and
+			// alias follow it; a scope-wide attachment's block names the scope and
+			// no component. On the Release, the routing entry's keys arrive whole
+			// and the nested boundary spells each level again, and a boundary-wide
+			// attachment's connection names the boundary's own block.
+			kind: SubjectInjectDelivery,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnInjectDeliveries(cancelled, f, v, raisingCheck[InjectDeliverySubject]())
+			},
+			want: []string{
+				"aggregate.yaml|.spec.components.web.inject.file",
+				"aggregate.yaml|.spec.components.web.inject.env",
+				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.components.api.uses.database.primary.inject.env",
+				"billing/aggregate.yaml|.spec.subsystems.billing.features.tls.inject.arg",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.data.components.store.features.metrics.uses.backend.primary.inject.env",
+				"release.yaml|.spec.boundaries.prod.features.audit.uses.sink.main.inject.ssm_param",
+			},
+		},
 	}
 }
 
@@ -2969,6 +3067,37 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"release|prod/edge|web|database|primary",
 				"release|prod/edge|billing.api|cache|sessions",
 				"release||web|queue|jobs",
+			},
+		},
+
+		// The injection-delivery axis, whose readback is the only assertion that
+		// can see two of its three coordinates at all. The provenance transcript
+		// above sees the document only as the file a locator is assembled in, and
+		// the block not at all: the block's identity is a key the facts take and
+		// never a position. So a traversal that dropped either would read as
+		// correct there and hand a rule a payload read for the empty block, and
+		// this is what would fail. The mechanism appears in both and is read back
+		// anyway, because a rule keys the fact it reads by it.
+		{
+			kind: SubjectInjectDelivery,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, InjectDeliverySubject]) ([]Objection, error) {
+					return RunOnInjectDeliveries(nil, f, traversalView{}, c)
+				}, func(s InjectDeliverySubject) string {
+					return strings.Join([]string{
+						s.AuthoringDocumentKind(), strings.ReplaceAll(s.InjectBlockPath(), "\x00", "/"),
+						s.MechanismName(),
+					}, "|")
+				})
+			},
+			want: []string{
+				"aggregate|/web|file",
+				"aggregate|/web|env",
+				"aggregate|billing.payments/api//database/primary|env",
+				"aggregate|billing//tls//|arg",
+				"release|prod/edge//aggregates/data/components/store/metrics/backend/primary|env",
+				"release|prod//audit/sink/main|ssm_param",
 			},
 		},
 	}

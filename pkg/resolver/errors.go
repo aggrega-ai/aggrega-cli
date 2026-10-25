@@ -217,6 +217,47 @@ var errInvalidInjectKey = cerrors.Register("invalid-inject-key", cerrors.Meta{
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrInjectEntryAmbiguous reports an inject delivery mechanism holding an entry
+// that carries both `value:` and `from:`. An entry delivers a literal or a key
+// read from the component a connection points at, never both, and an entry
+// naming both offers no rule for choosing one, so it is refused rather than
+// having one of the two quietly win.
+//
+// The Aggregate and Release schemas admit exactly one of the pair, so a document
+// read from a file is refused when it loads. This condition refuses the same
+// shape in a document built through the Go API, which no schema has read: it is
+// asked of every injection block either document writes while the documents are
+// resolved, and the build halts with one finding per offending mechanism,
+// positioned at that mechanism and naming each offending entry by its `in:`.
+func ErrInjectEntryAmbiguous() error { return errInjectEntryAmbiguous }
+
+var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors.Meta{
+	ShortCode: "E0014",
+	Message:   "inject entry carries both `value:` and `from:`; schema requires exactly one",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// ErrInjectDeliveryShape reports an inject delivery mechanism — env, file, arg
+// or a mechanism an author names beside them — whose value is not a list of
+// entries. A mechanism is the list of {in, from?, value?} entries the
+// inject_delivery definition describes, and every reader of a mechanism reads
+// that list and nothing else, so a mechanism holding anything else would
+// deliver nothing.
+//
+// The Aggregate and Release schemas refuse any other shape when a document
+// loads. This condition refuses it in a document built through the Go API,
+// which no schema has read: it is asked of every injection block either
+// document writes while the documents are resolved, and the build halts with
+// one finding per offending mechanism, positioned at that mechanism. A
+// mechanism carrying no value at all delivers nothing and is not refused.
+func ErrInjectDeliveryShape() error { return errInjectDeliveryShape }
+
+var errInjectDeliveryShape = cerrors.Register("inject-delivery-shape", cerrors.Meta{
+	ShortCode: "E0355",
+	Message:   "inject delivery: shape must be a list of entries, each `in:` with exactly one of `from:` or `value:`",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrSchemaConformance wraps a developer-authored component-instance
 // values or infra pillar that does not conform to the catalog
 // Component's declared schema for that pillar (wrong type, out of

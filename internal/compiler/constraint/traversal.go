@@ -2318,6 +2318,64 @@ func RunOnReleaseEdgeConfigurations[V View](
 	return out, nil
 }
 
+// RunOnInjectDeliveries invokes check once per delivery mechanism of every
+// injection block the enumerator returns, in the order it returns them.
+//
+// The set is walked flat rather than per node, because a block is written on more
+// than a component: a walk rooted at the node set would reach a component's own
+// block and none of the others, and its silence on them would read as documents
+// that wrote nothing there.
+//
+// The locator is the block's site on its document's nesting axis, then the keys
+// reaching the block, then the `inject` key and the mechanism:
+// .spec.components.<c>.inject.<mechanism> for a component's own block,
+// .spec.components.<c>.uses.<socket>.<alias>.inject.<mechanism> for a
+// connection's, .spec.subsystems.<s>.features.<a>.inject.<mechanism> for a
+// scope-wide attachment's, and
+// .spec.boundaries.<b>.aggregates.<m>.components.<local>.features.<a>.uses.<socket>.<alias>.inject.<mechanism>
+// for a connection a Release attachment draws on a component a routing entry
+// names. It is assembled through the shared authored-site rule rather than a
+// spelling of its own, so a block and the component or scope holding it are named
+// by one rule.
+//
+// A delivery whose document this rule cannot name gets no segments, which is the
+// mechanical form of not inventing a locator: the scope nesting is selected by the
+// document, and a document outside the closed pair selects none.
+func RunOnInjectDeliveries[V View](
+	cancelled Cancellation,
+	deliveries InjectDeliveryEnumerator,
+	view V,
+	check Check[V, InjectDeliverySubject],
+) ([]Objection, error) {
+	var out []Objection
+	for _, delivery := range deliveries.InjectDeliveries() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		var segments []string
+		if nesting, named := originNesting(delivery.Document); named {
+			keys := make([]string, 0, len(delivery.ComponentKeys)+7)
+			keys = append(keys, delivery.ComponentKeys...)
+			if delivery.Attachment != "" {
+				keys = append(keys, authoredKeyFeatures, delivery.Attachment)
+			}
+			if delivery.Socket != "" {
+				keys = append(keys, authoredKeyUses, delivery.Socket, delivery.Alias)
+			}
+			keys = append(keys, authoredKeyInject, delivery.Mechanism)
+			segments = authoredSiteSegments(nesting, delivery.Site, keys...)
+		}
+		out = append(out, check.Run(view, newInjectDeliverySubject(
+			delivery.SourceFile,
+			delivery.Document,
+			delivery.Block,
+			delivery.Mechanism,
+			segments...,
+		))...)
+	}
+	return out, nil
+}
+
 // releaseEdgeConfigurationSegments returns the segments naming where one entry of
 // the Release's per-edge `uses` surface was written, with tail appended inside
 // the entry: the boundary it sits in, the keys reaching the consuming component's

@@ -235,18 +235,17 @@ func TestNormalizeSelfInjectEntries_VerboseArrayForm(t *testing.T) {
 // pins the architectural-intent record: a verbose-form entry that
 // simultaneously carries `value:` AND `from:` is schema-illegal (the
 // inject_delivery schema's `oneOf: [required:[from], required:[value]]`
-// rejects it at envelope load); the IR-build-time second-line-of-defense
-// validator at [ir.ValidateInjectBlocks] halts the build with
-// [ir.ErrInjectEntryAmbiguous] for code paths that bypass envelope-load
-// validation (in-memory fixtures, programmatic catalog builders). The
-// renderer-layer decode arm still populates both selfInjectEntry fields
-// verbatim if the case somehow reaches Pass 2a (e.g., a unit test that
-// constructs entries directly without running through IR build); this
-// test documents that direct-construction path and pins
+// rejects it at envelope load); the rules asked while the documents are
+// resolved halt the build with [resolver.ErrInjectEntryAmbiguous] for code
+// paths that bypass envelope-load validation (in-memory fixtures, programmatic
+// catalog builders). The renderer-layer decode arm still populates both
+// selfInjectEntry fields verbatim if the case somehow reaches Pass 2a (e.g., a
+// unit test that constructs entries directly without resolving the documents);
+// this test documents that direct-construction path and pins
 // resolveSelfInjectEntry's downstream behavior in that scenario — `from:`
 // resolves first per the function body's if/else cascade. The pin is
 // architectural-intent documentation; the case is unreachable in any
-// production path through BuildIR because the validator blocks it.
+// production path through a build because resolution refuses it first.
 func TestNormalizeSelfInjectEntries_BothFieldsPresent_BlocksTheCaseBeforeResolveRuns(t *testing.T) {
 	t.Parallel()
 

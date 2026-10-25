@@ -95,7 +95,7 @@ func FindingsAtTheirOwnDocument(
 //
 // It is the conversion for a rule whose subject is neither of the two documents a
 // resolve is about, and is not a third document either — a divergence inside the
-// compiler, which every author's file is equally uninvolved in. The other two
+// compiler, which every author's file is equally uninvolved in. The other
 // conversions choose WHICH document a finding names; this one is the case where
 // the honest answer is none, and naming one anyway would send a reader to a key
 // they have no reason to open and no way to change.
@@ -106,8 +106,8 @@ func FindingsAtTheirOwnDocument(
 // assumed, which is the misdirection in its most confusing form rather than a
 // milder version of it.
 //
-// It shares the per-objection derivation with the other two conversions, so the
-// three differ in the subject they attach and in nothing else — the sentinel, the
+// It shares the per-objection derivation with the other conversions, so they
+// differ in the subject they attach and in nothing else — the sentinel, the
 // message and the ordering are derived identically.
 func findingsWithNoSubject(objections []constraint.Objection) []*ResolverError {
 	return findings(objections, func(constraint.Objection) (string, string) {
@@ -140,6 +140,35 @@ func findingsAtTheirOwnDocument(
 ) []*ResolverError {
 	return findings(objections, func(o constraint.Objection) (string, string) {
 		return DocumentEntity(kind, o.SourceFile(), fallback), o.Locator()
+	})
+}
+
+// findingsAtTheirAuthoringDocument renders what a check raised into the finding
+// shape, attributing each finding to whichever of the two authoring documents its
+// own subject was written in.
+//
+// It exists for a rule whose axis spans both documents, where neither binding
+// [FindingsFromObjections] offers is right for the whole set: a block the
+// developer wrote and one the operator wrote are raised by one rule, and each
+// finding has to send its reader to the file its author edits. The document is
+// read from the objection, where the traversal recorded it from the site, and
+// never inferred from the locator's shape.
+//
+// A finding whose subject recorded no document names the developer's, as a rule
+// bound to the developer's document would.
+//
+// It shares the per-objection derivation with [FindingsFromObjections], so the
+// two differ in where the entity comes from and in nothing else.
+func findingsAtTheirAuthoringDocument(
+	objections []constraint.Objection,
+	developerDocument string,
+	operatorDocument string,
+) []*ResolverError {
+	return findings(objections, func(o constraint.Objection) (string, string) {
+		if o.AuthoringDocument() == constraint.AuthoringDocumentRelease {
+			return operatorDocument, o.Locator()
+		}
+		return developerDocument, o.Locator()
 	})
 }
 

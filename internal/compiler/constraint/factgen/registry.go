@@ -2141,6 +2141,38 @@ var facts = []factDecl{
 			"delivery payload, and the two are independently absent.",
 	},
 	{
+		Name:        "authored-inject-delivery",
+		Stage:       "normalized",
+		SourceField: "types.InjectBlock",
+		Subject:     []string{"inject-delivery"},
+		Params: []paramDecl{
+			{Name: "document", Type: "string"},
+			{Name: "block", Type: "string"},
+			{Name: "mechanism", Type: "string"},
+		},
+		Returns: "any",
+		Doc: "AuthoredInjectDelivery is one delivery mechanism of one injection " +
+			"block as the author wrote it, carried as an opaque payload, and nil " +
+			"for a coordinate no block carries.\n\nIt answers for every injection " +
+			"block either authoring document writes: a component's own, an " +
+			"attachment's, and the one on each connection either of those draws " +
+			"in the Aggregate; and the one on each connection a Release attachment " +
+			"draws, wherever the Release writes the attachment. The facts keyed by " +
+			"a node answer for a component's own block alone, which is why this " +
+			"one is keyed by the delivery rather than by the component the block " +
+			"is reached through.\n\nThe payload is the authored value and nothing " +
+			"read out of it. A rule whose predicate is \"what the author wrote " +
+			"under this mechanism has the shape a delivery takes\" has that value " +
+			"as its input, and a shape can be judged only on the value itself: a " +
+			"reading that decoded it first would hand the rule the entries it " +
+			"could decode and drop the rest, which is the value the rule exists " +
+			"to see.\n\nThe block is named by an identity rather than by a " +
+			"position: the authored keys reaching it, joined by a byte no " +
+			"authored key carries. It is a key and never shown to an author; " +
+			"where a finding about the block is positioned is the subject's " +
+			"locator.",
+	},
+	{
 		Name:        "authored-values-pillar",
 		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Values",

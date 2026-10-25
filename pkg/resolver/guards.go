@@ -417,9 +417,10 @@ func releaseDocumentName(release *types.Release) string {
 // finding can name. Which one each rule takes is the rule's subject matter: a
 // rule reading what the Release wrote names the Release, so an operator
 // reading the diagnostic is sent to the file they wrote in rather than to the
-// Aggregate's.
+// Aggregate's. A rule whose axis spans both documents takes neither for the whole
+// set: each of its findings names the document its own subject was written in.
 //
-// A rule may also name NEITHER, and that third binding is not a special case of
+// A rule may also name NEITHER, and that binding is not a special case of
 // the two: it is the answer for a rule reporting a divergence inside the
 // compiler, which no author wrote and no author can correct. Such a rule's
 // findings carry no document and no locator, because the only thing a subject
@@ -460,7 +461,17 @@ func runDeclaredRules(
 	operatorRule := func(objections []constraint.Objection, err error) error {
 		return collect(operatorDocument, objections, err)
 	}
-	// The third binding, for a rule whose finding belongs to neither document.
+	// The binding for a rule whose axis spans both documents: each finding names
+	// the document its own subject was written in, so one rule over a block either
+	// author can write sends each author to their own file.
+	authoredRule := func(objections []constraint.Objection, err error) error {
+		if err != nil {
+			return err
+		}
+		errs = append(errs, findingsAtTheirAuthoringDocument(objections, developerDocument, operatorDocument)...)
+		return nil
+	}
+	// The binding for a rule whose finding belongs to neither document.
 	// A rule reporting a divergence inside the compiler has no author to send a
 	// reader to, so its findings name no document and sit at no locator; binding
 	// it here rather than letting it take the developer document is what keeps
@@ -570,6 +581,18 @@ func runDeclaredRules(
 	if err := developerRule(constraint.RunOnNodeMechanismDeliveryKeys(
 		cancelled, coordinates, coordinates, coordinates, facts,
 		selfInjectKeyNotOnTwoMechanisms)); err != nil {
+		return nil, err
+	}
+
+	// Once per delivery mechanism of every injection block either document
+	// writes. The shape first, so a block faulting both ways reads the mechanism
+	// that delivers nothing ahead of the entries that say two things.
+	if err := authoredRule(constraint.RunOnInjectDeliveries(
+		cancelled, coordinates, facts, injectDeliveryIsAList)); err != nil {
+		return nil, err
+	}
+	if err := authoredRule(constraint.RunOnInjectDeliveries(
+		cancelled, coordinates, facts, injectDeliveryEntryIsUnambiguous)); err != nil {
 		return nil, err
 	}
 

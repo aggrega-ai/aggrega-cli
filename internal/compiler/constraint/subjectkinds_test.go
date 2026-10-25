@@ -481,6 +481,18 @@ var coordinateAccessors = map[string][]string{
 	"release-edge-configuration": {
 		"AuthoringDocumentKind", "BoundaryPath", "NodeID", "SocketName", "AliasName",
 	},
+	// The seventh entry that is not one-to-one, and the reason is the
+	// authored-annotation row's applied to an injection block. A delivery's
+	// identity is the document the block was written in, the block within it and
+	// the mechanism, all taken together: one mechanism name is written in many
+	// blocks, and a block's key path is spelled within its own document, so no
+	// shorter tuple names a delivery. The block's accessor carries the Path suffix
+	// because the value is the joined key path reaching the block rather than one
+	// authored key, the reason the scope rows below carry it; the mechanism reuses
+	// the mechanism row's name, because one accessor name means one thing wherever
+	// it appears.
+	"inject-delivery": {"AuthoringDocumentKind", "InjectBlockPath", "MechanismName"},
+
 	"node":   {"NodeID"},
 	"socket": {"SocketName"},
 	"edge":   {"NodeID", "SocketName", "AliasName"},
@@ -1397,6 +1409,23 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", "boundaries", "prod", "boundaries", "edge",
 				"aggregates", "data", "components", "store",
 				"uses", "database", "primary")
+		},
+	},
+	SubjectInjectDelivery: {
+		iface: reflect.TypeOf((*InjectDeliverySubject)(nil)).Elem(),
+		// A connection a Release attachment draws on a component a routing entry
+		// names under a nested boundary, because it is the one reaching the
+		// locator's full depth: the boundary spells each level under its own
+		// container key, the routing entry contributes its keys, and the
+		// attachment, the connection and the mechanism follow. Every segment is
+		// separator-free, which is what exercises the assembly to that depth.
+		make: func(f string) Subject {
+			return newInjectDeliverySubject(f, AuthoringDocumentRelease,
+				"prod/edge\x00\x00aggregates\x00data\x00components\x00store\x00metrics\x00backend\x00primary",
+				"env",
+				"spec", "boundaries", "prod", "boundaries", "edge",
+				"aggregates", "data", "components", "store",
+				"features", "metrics", "uses", "backend", "primary", "inject", "env")
 		},
 	},
 	SubjectBoundaryComponentReference: {

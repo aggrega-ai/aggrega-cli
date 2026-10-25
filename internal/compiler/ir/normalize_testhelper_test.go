@@ -10,7 +10,7 @@ import (
 )
 
 // normalized wraps a raw test Aggregate as a [types.NormalizedAggregate] for the
-// consumers (inject validator, feature walker) that take the normalized type.
+// consumers (the feature walker) that take the normalized type.
 // [types.Normalize] is non-mutating, so the caller's agg is untouched and
 // remains safe to inspect after the call.
 func normalized(t *testing.T, agg *types.Aggregate) types.NormalizedAggregate {

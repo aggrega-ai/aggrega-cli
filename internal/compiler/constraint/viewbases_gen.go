@@ -1933,6 +1933,12 @@ func (TopologyViewBase) AuthoredInjectProvidesReference(node string, mechanism s
 	panic("this view does not carry authored-inject-provides-reference, which is read from types.ComponentInstance.Inject")
 }
 
+// AuthoredInjectDelivery panics. This view does not carry
+// authored-inject-delivery, which is read from types.InjectBlock.
+func (TopologyViewBase) AuthoredInjectDelivery(document string, block string, mechanism string) any {
+	panic("this view does not carry authored-inject-delivery, which is read from types.InjectBlock")
+}
+
 // AuthoredValuesPillar panics. This view does not carry
 // authored-values-pillar, which is read from
 // types.ComponentInstance.Values.
@@ -3321,6 +3327,7 @@ type NormalizedStageFacts interface {
 	AuthoredInjectMechanismNames(node string) []string
 	AuthoredInjectDeliveryKeys(node string, mechanism string) []string
 	AuthoredInjectProvidesReference(node string, mechanism string, deliveryKey string) (string, bool)
+	AuthoredInjectDelivery(document string, block string, mechanism string) any
 	AuthoredValuesPillar(node string, pillar string) types.OrderedMap[any]
 	AuthoredAttachmentBlock(node string) types.OrderedMap[types.FeatureInstance]
 	SocketSelector(componentType string, socket string) string

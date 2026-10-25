@@ -94,6 +94,9 @@ const (
 	// SubjectNodeMechanismDeliveryKey is the subject kind (node, mechanism, delivery-key), keyed by 3 declared facts.
 	SubjectNodeMechanismDeliveryKey SubjectKind = "(node, mechanism, delivery-key)"
 
+	// SubjectInjectDelivery is the subject kind inject-delivery, keyed by 1 declared fact.
+	SubjectInjectDelivery SubjectKind = "inject-delivery"
+
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodePillarLeaf SubjectKind = "(node, pillar, leaf)"
 
@@ -208,6 +211,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeSlot, Coordinates: []string{"node", "slot"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanism, Coordinates: []string{"node", "mechanism"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanismDeliveryKey, Coordinates: []string{"node", "mechanism", "delivery-key"}, Traversal: TraversalPull},
+	{Kind: SubjectInjectDelivery, Coordinates: []string{"inject-delivery"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePillarLeaf, Coordinates: []string{"node", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachment, Coordinates: []string{"boundary", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},

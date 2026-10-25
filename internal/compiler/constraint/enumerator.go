@@ -731,6 +731,78 @@ type ReleaseEdgeConfigurationEnumerator interface {
 	ReleaseEdgeConfigurations() []ReleaseEdgeConfigurationInstance
 }
 
+// InjectDeliveryInstance is one delivery mechanism of one injection block,
+// together with where the block was written: the coordinates that identify the
+// delivery, and the site and keys a locator is built from.
+//
+// The site and the keys are provenance and key nothing, the division
+// [BoundaryComponentReferenceInstance] already draws. They are taken from the
+// walk that reached the block rather than recovered by matching it back against
+// the document, so the coordinates and the position cannot come to disagree about
+// which block they describe.
+type InjectDeliveryInstance struct {
+	// Document is the authoring document the block was written in, one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the
+	// scope nesting the site path is spelled with.
+	Document string
+
+	// Block identifies the block within its document, as the fact keyed by this
+	// axis takes it. It is an identity and never a position.
+	Block string
+
+	// Mechanism is the delivery mechanism, as the block names it.
+	Mechanism string
+
+	// Site names the scope the block's owner sits in, and the component key it was
+	// written under where the owner is a component the scope names directly. A
+	// scope-wide attachment's block names no component.
+	//
+	// An empty scope path is a scope normalization synthesized to hold what an
+	// author wrote at the document's top level, and the owner is then named at
+	// that top-level shape — the collapse [AuthoredSite] already declares.
+	Site AuthoredSite
+
+	// ComponentKeys are the authoring keys reaching a component's own block from
+	// a site that names no component — the routing container, the module, the
+	// component container and the local name, for a component a Release names
+	// inside a routing entry — and nothing where the site names the component.
+	ComponentKeys []string
+
+	// Attachment is the name of the attachment the block is written on, or whose
+	// connection carries it, and empty for a block written on a component or on
+	// one of the component's own connections.
+	Attachment string
+
+	// Socket and Alias are the keys of the connection the block is written on,
+	// and empty for a block written on a component or an attachment itself.
+	Socket string
+	Alias  string
+
+	// SourceFile is the workspace-relative document the block was written in,
+	// empty when it has no single-file origin.
+	SourceFile string
+}
+
+// InjectDeliveryEnumerator supplies the delivery set: every mechanism of every
+// injection block either authoring document writes, each carrying the site its
+// block was written at.
+//
+// It is a flat axis rather than one nested under the node set, because a block is
+// written on more than a component — on an attachment, on a connection, and in the
+// Release on a component a routing entry names, which no node of the normalized
+// documents names — so nesting it under the nodes would drop exactly the blocks a
+// rule over this axis has to be invoked for.
+//
+// One enumerator covers both documents for the reason
+// [AuthoredAnnotationEnumerator] does: a rule over what an author wrote under a
+// mechanism asks one question of either document, and the document travels on
+// each instance.
+type InjectDeliveryEnumerator interface {
+	// InjectDeliveries returns every delivery, in a deterministic order the
+	// implementation declares.
+	InjectDeliveries() []InjectDeliveryInstance
+}
+
 // AttachmentSite names where one attachment a node carries was written: the
 // block holding it, in the document whose author wrote it, and the key it is
 // written under there.

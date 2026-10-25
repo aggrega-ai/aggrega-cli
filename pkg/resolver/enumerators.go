@@ -248,6 +248,34 @@ func (c *coordinateSet) ReleaseEdgeConfigurations() []constraint.ReleaseEdgeConf
 	return ReleaseEdgeConfigurations(types.NormalizeRelease(c.view.release).Release(), c.releaseSource)
 }
 
+// InjectDeliveries returns every delivery mechanism of every injection block
+// either authoring document writes: the Aggregate's first, then the Release's.
+// Within the Aggregate, each scope's components in author order — a component's
+// own block, then those on its own connections, then each attachment's own block
+// and those on the connections it draws — then the scope's own attachments, then
+// the scopes nested inside it. Within the Release, each boundary's component
+// entries in the order the boundary declares them, then its own attachments, then
+// the boundaries nested inside it. Within a block, env, file and arg, then the
+// mechanisms an author names beside them in author order.
+//
+// It delegates to the presentation rather than re-reading the documents, on the
+// rule this type states for every axis a fact already names: the coordinate a
+// rule is invoked for and the payload it then reads come from one walk.
+//
+// The Release's deliveries carry the Release's file when the caller supplied one,
+// for the reason the per-edge axis above does: a finding about one is a path
+// inside the Release. The Aggregate's carry none, as the node axis's do.
+func (c *coordinateSet) InjectDeliveries() []constraint.InjectDeliveryInstance {
+	out := make([]constraint.InjectDeliveryInstance, 0,
+		len(c.view.aggregateDeliveries)+len(c.view.releaseDeliveries))
+	out = append(out, c.view.aggregateDeliveries...)
+	for _, delivery := range c.view.releaseDeliveries {
+		delivery.SourceFile = c.releaseSource
+		out = append(out, delivery)
+	}
+	return out
+}
+
 // authoredCoordinates presents recorded scope paths as the coordinate shape the
 // scope traversals take, preserving the order they were recorded in.
 func authoredCoordinates(paths []string) []constraint.AuthoredCoordinate {
@@ -465,4 +493,5 @@ var (
 	_ constraint.ProvidesKeyEnumerator         = (*coordinateSet)(nil)
 
 	_ constraint.ReleaseEdgeConfigurationEnumerator = (*coordinateSet)(nil)
+	_ constraint.InjectDeliveryEnumerator           = (*coordinateSet)(nil)
 )
