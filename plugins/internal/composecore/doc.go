@@ -47,8 +47,11 @@
 // assembled file can hold only what those types carry. So each fragment is
 // decoded through decodeFragment, which refuses one writing a key no type here
 // declares, naming the key, its path in the fragment and the fragment, rather
-// than letting the assembled file leave it out. That decode is the only one into
-// those types, so the refusal is raised in one place for all three inputs.
+// than letting the assembled file leave it out. A network a fragment declares of
+// its own under the top-level networks: block is refused the same way, as a
+// whole entry, because the assembled file's networks are the ones the merge
+// derives. That decode is the only one into those types, so the refusal is
+// raised in one place for all three inputs.
 //
 // # Fragments are intermediates, never output
 //

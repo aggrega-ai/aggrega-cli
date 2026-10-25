@@ -70,7 +70,6 @@ func TestDecodeFragment_RefusesAKeyTheTypesDoNotCarry(t *testing.T) {
 		{"inside a volume entry", "services:\n  web:\n    volumes:\n      - type: bind\n        source: ./a\n        target: /a\n        bind:\n          create_host_path: true\n", "bind", "services.web.volumes[0].bind"},
 		{"inside a long-form depends_on entry", "services:\n  db:\n    image: a\n  web:\n    depends_on:\n      db:\n        condition: service_started\n        restart: true\n", "restart", "services.web.depends_on.db.restart"},
 		{"on a top-level volume", "volumes:\n  data:\n    external: true\n", "external", "volumes.data.external"},
-		{"on a top-level network", "networks:\n  back:\n    internal: true\n", "internal", "networks.back.internal"},
 		{"on a top-level config", "configs:\n  c:\n    content: x\n    name: c\n", "name", "configs.c.name"},
 		// The anchor sits inside a model body, which carries every member, so the
 		// one key refused is the one the merge key brings into the service.
@@ -128,6 +127,116 @@ func TestDecodeFragment_NamesEveryUncarriedKeyInDocumentOrder(t *testing.T) {
 	}
 	if !strings.Contains(msg, "writes keys the compose provider") || !strings.Contains(msg, "where they are written in the fragment, remove them from it") {
 		t.Errorf("want the refusal worded for several keys:\n%s", msg)
+	}
+}
+
+// TestDecodeFragment_RefusesANetworkTheFragmentDeclares pins that a fragment's
+// own top-level networks: entry is refused as a whole, whatever its body holds,
+// one entry per row: the halt names the cannot-express condition, the entry and
+// its path, the fragment and the node, and points at the namespace annotation
+// and the compose-bridge Feature. An entry carrying a key no network declaration
+// models is refused as an entry, not reported key by key.
+func TestDecodeFragment_RefusesANetworkTheFragmentDeclares(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, body string }{
+		{"an entry with an empty body", "networks:\n  back: {}\n"},
+		{"an entry with a null body", "networks:\n  back:\n"},
+		{"an entry writing only what a network declaration models", "networks:\n  back:\n    driver: bridge\n    labels:\n      tier: back\n"},
+		{"an entry writing a key no network declaration models", "networks:\n  back:\n    internal: true\n"},
+		{"an entry beside a service", "services:\n  web:\n    image: a\n    networks: [back]\nnetworks:\n  back: {}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("decode panicked: %v", r)
+					}
+				}()
+				_, err = decodeFragment([]byte(tc.body), "web", `fragment "web.compose-fragment.yaml"`)
+			}()
+			if err == nil {
+				t.Fatal("decode accepted a fragment declaring a network of its own")
+			}
+			if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+				t.Errorf("refusal does not carry the cannot-express condition: %v", err)
+			}
+			msg := err.Error()
+			for _, want := range []string{
+				`node "web" fragment "web.compose-fragment.yaml" declares a network of its own under networks:, "back" at networks.back,`,
+				"remove the entry from the fragment",
+				"set aggrega.ai/namespace to choose the network a node joins",
+				"attach the compose-bridge Feature to reach a service on another network",
+			} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("refusal does not carry %q:\n%s", want, msg)
+				}
+			}
+			if strings.Contains(msg, "networks.back.") || strings.Contains(msg, "does not carry into the assembled file") {
+				t.Errorf("the entry is refused as a whole, so nothing inside it is reported as a key:\n%s", msg)
+			}
+		})
+	}
+}
+
+// TestDecodeFragment_OneRefusalNamesNetworksAndKeys pins the plural wording and
+// that a fragment with both faults is refused once, naming every network entry
+// and every uncarried key, so an author fixes both in one pass.
+func TestDecodeFragment_OneRefusalNamesNetworksAndKeys(t *testing.T) {
+	t.Parallel()
+
+	_, err := decodeFragment([]byte("networks:\n  front: {}\n  back: {}\nservices:\n  web:\n    image: a\n    tty: true\n"), "web", `fragment "f.yaml"`)
+	if err == nil {
+		t.Fatal("decode accepted two network entries and an uncarried key")
+	}
+	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		t.Errorf("refusal does not carry the cannot-express condition: %v", err)
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		`declares networks of its own under networks:, "front" at networks.front; "back" at networks.back,`,
+		"remove the entries from the fragment",
+		`; and it writes a key the compose provider does not carry into the assembled file: "tty" at services.web.tty;`,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("refusal does not carry %q:\n%s", want, msg)
+		}
+	}
+}
+
+// TestDecodeFragment_NoNetworkDeclaredIsNoRefusal is the networks positive
+// control: an empty networks: block, and a service naming a network in its own
+// networks: list, declare no network of the fragment's own and decode.
+func TestDecodeFragment_NoNetworkDeclaredIsNoRefusal(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, body string }{
+		{"an empty block", "networks: {}\nservices:\n  web:\n    image: a\n"},
+		{"a service's own networks list", "services:\n  web:\n    image: a\n    networks: [back]\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := decodeFragment([]byte(tc.body), "web", `fragment "f.yaml"`); err != nil {
+				t.Fatalf("decode refused a fragment declaring no network of its own: %v", err)
+			}
+		})
+	}
+}
+
+// TestComposeAssemble_AFragmentNetworkHaltsTheMerge drives the refusal through
+// the merge an artifacts: fragment reaches: the assembly halts naming the entry
+// and the fragment rather than writing a file without it.
+func TestComposeAssemble_AFragmentNetworkHaltsTheMerge(t *testing.T) {
+	t.Parallel()
+
+	_, err := assembleOne(t, modelFragment("alpha", "services:\n  web:\n    image: a\nnetworks:\n  back: {}\n"))
+	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		t.Fatalf("got %v, want the cannot-express refusal of a fragment's own network", err)
+	}
+	if !strings.Contains(err.Error(), `node "alpha" fragment "alpha.compose-fragment.yaml" declares a network of its own under networks:, "back" at networks.back,`) {
+		t.Errorf("refusal does not name the entry and the fragment:\n%v", err)
 	}
 }
 

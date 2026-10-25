@@ -14,6 +14,10 @@
 // fragment, and the fragment it came from. The merge is the only caller, which
 // is what makes this the one place the refusal is raised.
 //
+// A fragment's top-level networks: block is the one place a declared key is
+// refused: the assembled file's networks are the ones the merge derives, so an
+// entry a fragment declares there has nowhere to go and is refused as a whole.
+//
 // The walk reads the shape from the types themselves — the yaml tag on each
 // field, an inline struct's fields as the parent's own, an inline map as
 // accepting every remaining key — so a key added to a type is carried the moment
@@ -86,11 +90,10 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 		root = root.Content[0]
 	}
 	w.walk(root, composeFileType, "")
-	if len(w.uncarried) > 0 {
+	if refusal := w.refusal(); refusal != "" {
 		return ComposeFile{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("compose: node %q %s writes %s the compose provider does not carry into the assembled file: %s; the assembled file holds only the keys the provider carries, so where %s written in the fragment, remove %s from it, and where the fragment is rendered from a compose source whose Recipe declares no valuesMapping:, the node's values are laid over that file as they are, so declare a valuesMapping: that places each value under a key the provider carries",
-				nodeID, origin, pluralKeys(len(w.uncarried)), strings.Join(w.uncarried, "; "), keysAre(len(w.uncarried)), pronounKeys(len(w.uncarried))))
+			fmt.Sprintf("compose: node %q %s %s", nodeID, origin, refusal))
 	}
 
 	var frag ComposeFile
@@ -98,6 +101,37 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 		return ComposeFile{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q %s: parse", nodeID, origin))
 	}
 	return frag, nil
+}
+
+// refusal words what the walk found, or returns "" when it found nothing: the
+// networks the fragment declares of its own, then the keys it writes that the
+// types do not carry, in one sentence so one halt names everything the author
+// has to change.
+func (w *fragmentKeyWalk) refusal() string {
+	var parts []string
+	if n := len(w.networks); n > 0 {
+		parts = append(parts, fmt.Sprintf("declares %s of its own under networks:, %s, which the assembled file cannot hold: the compose provider writes only the networks it derives, one for each aggrega.ai/namespace annotation among the contributing nodes or for the boundary path where a node carries none, and a service joins its own node's network with nothing declared, so remove %s from the fragment, set aggrega.ai/namespace to choose the network a node joins, and attach the compose-bridge Feature to reach a service on another network",
+			pluralNetworks(n), strings.Join(w.networks, "; "), pronounEntries(n)))
+	}
+	if n := len(w.uncarried); n > 0 {
+		parts = append(parts, fmt.Sprintf("writes %s the compose provider does not carry into the assembled file: %s; the assembled file holds only the keys the provider carries, so where %s written in the fragment, remove %s from it, and where the fragment is rendered from a compose source whose Recipe declares no valuesMapping:, the node's values are laid over that file as they are, so declare a valuesMapping: that places each value under a key the provider carries",
+			pluralKeys(n), strings.Join(w.uncarried, "; "), keysAre(n), pronounKeys(n)))
+	}
+	return strings.Join(parts, "; and it ")
+}
+
+func pluralNetworks(n int) string {
+	if n == 1 {
+		return "a network"
+	}
+	return "networks"
+}
+
+func pronounEntries(n int) string {
+	if n == 1 {
+		return "the entry"
+	}
+	return "the entries"
 }
 
 // pluralKeys, keysAre and pronounKeys word the refusal for one key or for
@@ -124,14 +158,36 @@ func pronounKeys(n int) string {
 }
 
 // fragmentKeyWalk collects, in document order, every key a fragment writes that
-// the type it decodes into does not carry, each as `"<key>" at <path>`.
+// the type it decodes into does not carry, each as `"<key>" at <path>`, and
+// every network the fragment declares of its own, each as `"<name>" at
+// networks.<name>`.
 type fragmentKeyWalk struct {
 	uncarried []string
+	networks  []string
 }
 
 // report records one key the decode would not carry.
 func (w *fragmentKeyWalk) report(key, path string) {
 	w.uncarried = append(w.uncarried, fmt.Sprintf("%q at %s", key, path))
+}
+
+// networkEntries records every entry of a fragment's top-level networks: block.
+//
+// The assembled file's networks are the ones the merge derives from the
+// contributing nodes — one per aggrega.ai/namespace annotation, or per boundary
+// path where a node carries none — and nothing a fragment declares at the top
+// level reaches it. So an entry is refused as a whole, whatever its body holds,
+// rather than read and left out. An empty or absent block declares nothing and
+// passes. The entry's body is not walked: refusing the entry already names
+// everything in it.
+func (w *fragmentKeyWalk) networkEntries(node *yaml.Node) {
+	node = resolveFragmentAlias(node)
+	if node == nil || node.Kind != yaml.MappingNode {
+		return
+	}
+	for _, kv := range fragmentPairs(node) {
+		w.networks = append(w.networks, fmt.Sprintf("%q at %s", kv.key, joinFragmentPath("networks", kv.key)))
+	}
 }
 
 // walk reports every key below node that a decode into t would not carry. A node
@@ -164,6 +220,10 @@ func (w *fragmentKeyWalk) walk(node *yaml.Node, t reflect.Type, path string) {
 		}
 		fields, acceptsAny := fragmentFields(t)
 		for _, kv := range fragmentPairs(node) {
+			if t == composeFileType && path == "" && kv.key == "networks" {
+				w.networkEntries(kv.value)
+				continue
+			}
 			ft, carried := fields[kv.key]
 			if !carried {
 				if !acceptsAny {

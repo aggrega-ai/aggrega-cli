@@ -422,8 +422,10 @@ func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []rend
 
 // parseNodeFragment locates Intermediate fragments in a node's intermediate-
 // file list and decodes them as ComposeFile through decodeFragment, merging into
-// one struct. A fragment writing a key ComposeFile does not carry halts the
-// merge there, naming the key, its path and the fragment.
+// one struct. A fragment writing a key ComposeFile does not carry, or declaring
+// a network of its own, halts the merge there, naming the key or the network,
+// its path and the fragment — so a decoded fragment carries no networks, and the
+// merged file's are the ones AssembleBoundaryCore derives.
 // Returns (nil, nil) when no fragments are present (defensive — should not
 // occur for compose nodes since SynthesizeWorkload always emits exactly
 // one).
@@ -452,9 +454,6 @@ func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*
 		}
 		for k, v := range frag.Volumes {
 			out.Volumes[k] = v
-		}
-		for k, v := range frag.Networks {
-			out.Networks[k] = v
 		}
 		for k, v := range frag.Configs {
 			out.Configs[k] = v
