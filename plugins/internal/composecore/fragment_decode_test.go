@@ -62,7 +62,11 @@ func TestDecodeFragment_RefusesAKeyTheTypesDoNotCarry(t *testing.T) {
 		name, body, key, path string
 	}{
 		{"on a service", "services:\n  web:\n    image: a\n    stdin_open: true\n", "stdin_open", "services.web.stdin_open"},
-		{"at the top level", "x-common: {}\nservices:\n  web:\n    image: a\n", "x-common", "x-common"},
+		{"at the top level", "name: app\nservices:\n  web:\n    image: a\n", "name", "name"},
+		// An extension member is carried only where a type holds one: the top
+		// level and a service. Inside a top-level volume it is refused.
+		{"an extension member inside a top-level volume", "volumes:\n  data:\n    x-backup: nightly\n", "x-backup", "volumes.data.x-backup"},
+		{"an extension member inside healthcheck", "services:\n  web:\n    healthcheck:\n      test: [CMD, true]\n      x-note: a\n", "x-note", "services.web.healthcheck.x-note"},
 		{"inside deploy", "services:\n  web:\n    deploy:\n      replicas: 2\n", "replicas", "services.web.deploy.replicas"},
 		{"inside deploy.resources.reservations", "services:\n  web:\n    deploy:\n      resources:\n        reservations:\n          memory: 1g\n          pids: 10\n", "pids", "services.web.deploy.resources.reservations.pids"},
 		{"inside a reservations device entry", "services:\n  web:\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: 1\n              capabilities: [gpu]\n              shared: true\n", "shared", "services.web.deploy.resources.reservations.devices[0].shared"},
@@ -292,9 +296,14 @@ volumes:
     driver: local
 `},
 		{"short forms", "services:\n  db:\n    image: a\n  web:\n    depends_on: [db]\n    models: [llm]\nmodels:\n  llm: {model: m}\n"},
-		// The anchor sits on a carried service rather than under an x- key, which
-		// is itself uncarried; what this row controls is the merged service.
 		{"merge key bringing carried keys", "services:\n  base: &base\n    image: a\n    restart: always\n  web:\n    <<: *base\n"},
+		// The common Compose idiom: a top-level extension member holds the anchor
+		// a service's merge key brings in.
+		{"merge key from a top-level extension member", "x-base: &base\n  image: a\n  restart: always\nservices:\n  web:\n    <<: *base\n"},
+		{"extension members at the top level and on a service", "x-zeta: {b: 2}\nservices:\n  web:\n    image: a\n    x-note: kept\nx-alpha: kept\n"},
+		// A trailing separator opens a document holding nothing, which is not a
+		// second document of the fragment.
+		{"a trailing document separator", "services:\n  web:\n    image: a\n---\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -334,7 +343,7 @@ func TestFragmentKeyShapes_EverySelfDecodingTypeDeclaresOne(t *testing.T) {
 		}
 		switch t.Kind() {
 		case reflect.Struct:
-			fields, _ := fragmentFields(t)
+			fields, _, _ := fragmentFields(t)
 			for _, ft := range fields {
 				visit(ft)
 			}
@@ -342,14 +351,24 @@ func TestFragmentKeyShapes_EverySelfDecodingTypeDeclaresOne(t *testing.T) {
 			visit(t.Elem())
 		}
 	}
+	// ComposeFile and Service decode themselves to keep their extension members,
+	// so the visit stops at each of them; the structs they walk through are
+	// visited as roots of their own.
 	visit(composeFileType)
+	visit(composeFileFieldsType)
+	visit(serviceFieldsType)
 	visit(reflect.TypeOf(dependsOnBody{}))
 	visit(reflect.TypeOf(ServiceModelBinding{}))
 
 	if len(undeclared) > 0 {
 		t.Errorf("self-decoding types reachable from ComposeFile declare no key shape and are not opaque: %v", undeclared)
 	}
-	if !seen[reflect.TypeOf(DependsOn{})] || !seen[reflect.TypeOf(ServiceModels{})] {
-		t.Error("the visit did not reach the self-decoding service fields, so it proves nothing")
+	for _, reached := range []reflect.Type{
+		reflect.TypeOf(DependsOn{}), reflect.TypeOf(ServiceModels{}),
+		reflect.TypeOf(Service{}), reflect.TypeOf(Volume{}),
+	} {
+		if !seen[reached] {
+			t.Errorf("the visit did not reach %v, so it proves nothing about it", reached)
+		}
 	}
 }

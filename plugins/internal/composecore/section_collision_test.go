@@ -253,6 +253,74 @@ func TestComposeAssemble_OrdinaryContributorsConflictTheSameWay(t *testing.T) {
 	}
 }
 
+// TestComposeAssemble_TwoFragmentsOfOneNodeAreTwoContributors pins that every
+// body-carrying section is compared per fragment, not per node: two fragments of
+// one component — its own fragment and an artifacts: entry — declaring one
+// volume, config or model name leave a single entry where they agree and halt
+// where they differ, naming both fragments, exactly as two components do. One
+// fault per row; each section's identical row is the positive control of its
+// differing one.
+func TestComposeAssemble_TwoFragmentsOfOneNodeAreTwoContributors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, noun, own, extra string
+		wantHalt               bool
+	}{
+		{"volume, identical", "volume", "volumes:\n  shared:\n    driver: local\n", "volumes:\n  shared:\n    driver: local\n", false},
+		{"volume, differing", "volume", "volumes:\n  shared:\n    driver: local\n", "volumes:\n  shared:\n    driver: nfs\n", true},
+		{"config, identical", "config", "configs:\n  shared:\n    content: a\n", "configs:\n  shared:\n    content: a\n", false},
+		{"config, differing", "config", "configs:\n  shared:\n    content: a\n", "configs:\n  shared:\n    content: b\n", true},
+		{"model, identical", "model", "models:\n  shared:\n    model: ai/a\n", "models:\n  shared:\n    model: ai/a\n", false},
+		{"model, differing", "model", "models:\n  shared:\n    model: ai/a\n", "models:\n  shared:\n    model: ai/b\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			own := renderer.EmittedFile{
+				Name: "alpha.compose-fragment.yaml", Origin: renderer.EmitOriginSource,
+				Body: []byte("services:\n  alpha:\n    image: app:1.0\n" + tc.own), Intermediate: true,
+			}
+			extra := renderer.EmittedFile{
+				Name: "extra.yaml", Origin: renderer.EmitOriginArtifactsInline,
+				Body: []byte(tc.extra), Intermediate: true,
+			}
+			var (
+				out map[string][]byte
+				err error
+			)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("assemble panicked: %v", r)
+					}
+				}()
+				out, _, err = AssembleBoundaryCore(
+					map[string][]renderer.EmittedFile{"alpha": {own, extra}},
+					map[string]map[string]string{"alpha": {}},
+					nil, nil, "default", 2,
+				)
+			}()
+			if !tc.wantHalt {
+				if err != nil {
+					t.Fatalf("assemble refused two fragments of one node agreeing about one %s: %v", tc.noun, err)
+				}
+				if got := strings.Count(string(out[AssembledOutputFile]), "  shared:"); got != 1 {
+					t.Errorf("%s emitted %d times, want exactly one entry:\n%s", tc.noun, got, out[AssembledOutputFile])
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("assemble accepted two fragments of one node disagreeing about one %s; want a halt", tc.noun)
+			}
+			want := `conflicting ` + tc.noun + ` declarations across contributors: ` + tc.noun + ` "shared" contributed by ` +
+				`[boundary="default" node="alpha" fragment="alpha.compose-fragment.yaml", boundary="default" node="alpha" fragment="extra.yaml"]`
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("halt does not name the %s and both fragments:\n want: %s\n  got: %s", tc.noun, want, err.Error())
+			}
+		})
+	}
+}
+
 // TestComposeAssemble_ServiceCollisionRefusesIdenticalBodies pins the deliberate
 // asymmetry between the sections, so a later change cannot relax services to the
 // conflict-only rule on the grounds that the three checks ought to agree.

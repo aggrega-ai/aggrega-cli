@@ -174,8 +174,9 @@ func TestComposeAssemble_IdenticalModelsMerge(t *testing.T) {
 // model name with bodies that disagree. Keeping either body discards the other
 // contributor's model from a build that would otherwise succeed, so it halts
 // under the condition the volume and config conflicts raise, naming the model
-// and both parties. The whole message is pinned, because it is worded by the
-// reporter the other sections share.
+// and both parties, each with the fragment it declared the model in. The whole
+// message is pinned, because it is worded by the reporter the other sections
+// share.
 func TestComposeAssemble_ConflictingModelsHalt(t *testing.T) {
 	t.Parallel()
 
@@ -190,7 +191,8 @@ func TestComposeAssemble_ConflictingModelsHalt(t *testing.T) {
 	}
 	const want = `[TRANSLATION_ERROR] compose AssembleBoundary: ` +
 		`conflicting model declarations across contributors: ` +
-		`model "llm" contributed by [boundary="default" node="alpha", boundary="default" node="zeta"]; ` +
+		`model "llm" contributed by [boundary="default" node="alpha" fragment="alpha.compose-fragment.yaml", ` +
+		`boundary="default" node="zeta" fragment="zeta.compose-fragment.yaml"]; ` +
 		`two contributors declaring one model name must declare it identically, or one of them must declare a different name`
 	if err.Error() != want {
 		t.Errorf("model conflict message:\n want: %s\n  got: %s", want, err.Error())

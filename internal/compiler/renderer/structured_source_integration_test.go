@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,9 @@ func TestRenderAll_BuildsStructuredComposeSource(t *testing.T) {
 	}
 	if len(result.Files) == 0 {
 		t.Fatalf("RenderAll produced no files; expected sourced compose output")
+	}
+	if got, want := assembledServices(t, result.Files), []string{"api"}; !slices.Equal(got, want) {
+		t.Errorf("structured compose source assembled services %v, want %v", got, want)
 	}
 }
 
@@ -260,11 +264,18 @@ func integrationInput(t *testing.T, workspaceRoot, componentType, nodeID, _provi
 	}
 }
 
+// integrationInputCompose is integrationInput for a compose Recipe sourcing a
+// fetched compose file. The node's values are empty rather than the chart's
+// image and replicas: a compose Recipe's values are laid over the compose file
+// as compose keys, where a top-level image or replicas is a key the assembled
+// file cannot hold and the build refuses, so a chart's values would make every
+// compose build here fail on them instead of on what each test reads.
 func integrationInputCompose(t *testing.T, workspaceRoot, componentType, nodeID, digest, url, version string) renderer.RendererInput {
 	t.Helper()
 	in := integrationInput(t, workspaceRoot, componentType, nodeID, "compose", digest, url, version)
 	in.Lockfile.SourceArtifacts[0].Kind = "compose-https-fragment"
 	in.Lockfile.SourceArtifacts[0].Mediatype = "application/x-yaml"
+	in.Graph.Spec.ValuesMapping.Set(nodeID, json.RawMessage(`{}`))
 	return in
 }
 

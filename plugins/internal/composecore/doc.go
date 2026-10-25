@@ -50,8 +50,12 @@
 // than letting the assembled file leave it out. A network a fragment declares of
 // its own under the top-level networks: block is refused the same way, as a
 // whole entry, because the assembled file's networks are the ones the merge
-// derives. That decode is the only one into those types, so the refusal is
-// raised in one place for all three inputs.
+// derives. An extension member — a key beginning x- — at the top level or on a
+// service is carried as written, after the keys its mapping models, because
+// ComposeFile and Service hold such members (see Extensions). A fragment holding
+// more than one YAML document is refused naming how many, because the merge
+// reads a fragment as one compose file. That decode is the only one into those
+// types, so the refusal is raised in one place for all three inputs.
 //
 // # Fragments are intermediates, never output
 //
@@ -73,7 +77,8 @@
 // sorts both its contributor descriptors and its services, so the same conflict
 // produces the same message text every time. Where a collection carries a
 // meaningful author order, that order is preserved instead — an init-container
-// chain is ordered because the ordering is the meaning.
+// chain is ordered because the ordering is the meaning, and extension members
+// keep the order their fragment wrote them in.
 //
 // # Translation discipline
 //

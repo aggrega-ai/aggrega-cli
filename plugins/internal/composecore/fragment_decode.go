@@ -18,6 +18,15 @@
 // refused: the assembled file's networks are the ones the merge derives, so an
 // entry a fragment declares there has nowhere to go and is refused as a whole.
 //
+// An extension member — a key beginning x- — is carried at the top level and on
+// a service, where the types hold one (see Extensions), and inside a model's
+// body, whose inline map takes every member; anywhere else it is refused like
+// any key the types do not model.
+//
+// A fragment is one compose file, so it is one YAML document: a body holding
+// more than one is refused naming how many it holds, rather than decoded for its
+// first and stripped of the rest.
+//
 // The walk reads the shape from the types themselves — the yaml tag on each
 // field, an inline struct's fields as the parent's own, an inline map as
 // accepting every remaining key — so a key added to a type is carried the moment
@@ -41,6 +50,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -73,19 +83,36 @@ var (
 // sentence. A source-rendered fragment is named `<nodeID>.compose-fragment.yaml`
 // and an artifacts: fragment by the name its Recipe gave it.
 //
-// The first YAML document is the one decoded; a later document in the same body
-// is not read. An empty fragment decodes to the zero ComposeFile.
+// Every YAML document of the body is read, through the one multi-document
+// decoder the renderer shares. A fragment holding content in more than one
+// document is refused naming how many: the merge reads a fragment as one compose
+// file, so a second document would otherwise be left out of the assembled file.
+// A document holding nothing — an empty one a trailing `---` opens — is not
+// counted, since it loses nothing. An empty fragment decodes to the zero
+// ComposeFile.
 func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(body, &doc); err != nil {
+	docs, err := rendercore.DecodeAllYAMLDocs(string(body))
+	if err != nil {
 		return ComposeFile{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q %s: parse", nodeID, origin))
 	}
-	if doc.Kind == 0 {
+	var withContent []*yaml.Node
+	for _, d := range docs {
+		if fragmentDocumentHoldsContent(d) {
+			withContent = append(withContent, d)
+		}
+	}
+	if n := len(withContent); n > 1 {
+		return ComposeFile{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("compose: node %q %s holds %d YAML documents, and the merge reads a fragment as one compose file, so every document after the first would be left out of the assembled file: write the fragment as one document, or give each document an artifacts: entry of its own", nodeID, origin, n))
+	}
+	if len(withContent) == 0 {
 		return ComposeFile{}, nil
 	}
+	doc := withContent[0]
 
 	w := &fragmentKeyWalk{}
-	root := &doc
+	root := doc
 	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
 		root = root.Content[0]
 	}
@@ -101,6 +128,24 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 		return ComposeFile{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q %s: parse", nodeID, origin))
 	}
 	return frag, nil
+}
+
+// fragmentDocumentHoldsContent reports whether one decoded document of a
+// fragment holds anything: a document with no node, or whose only node is a
+// null — what an empty document between two `---` lines decodes to — holds
+// nothing.
+func fragmentDocumentHoldsContent(doc *yaml.Node) bool {
+	if doc == nil || doc.Kind == 0 {
+		return false
+	}
+	root := doc
+	if root.Kind == yaml.DocumentNode {
+		if len(root.Content) == 0 {
+			return false
+		}
+		root = root.Content[0]
+	}
+	return !(root.Kind == yaml.ScalarNode && root.ShortTag() == "!!null")
 }
 
 // refusal words what the walk found, or returns "" when it found nothing: the
@@ -218,15 +263,15 @@ func (w *fragmentKeyWalk) walk(node *yaml.Node, t reflect.Type, path string) {
 		if node.Kind != yaml.MappingNode {
 			return
 		}
-		fields, acceptsAny := fragmentFields(t)
+		fields, acceptsAny, acceptsExtensions := fragmentFields(t)
 		for _, kv := range fragmentPairs(node) {
-			if t == composeFileType && path == "" && kv.key == "networks" {
+			if t == composeFileFieldsType && path == "" && kv.key == "networks" {
 				w.networkEntries(kv.value)
 				continue
 			}
 			ft, carried := fields[kv.key]
 			if !carried {
-				if !acceptsAny {
+				if !acceptsAny && !(acceptsExtensions && isExtensionKey(kv.key)) {
 					w.report(kv.key, joinFragmentPath(path, kv.key))
 				}
 				continue
@@ -252,14 +297,19 @@ func (w *fragmentKeyWalk) walk(node *yaml.Node, t reflect.Type, path string) {
 
 // fragmentFields maps each key a struct decodes to the type of the field it
 // lands in, with an inline struct's keys taken as the struct's own, and reports
-// whether an inline map takes every key the fields do not name. It reads the
-// yaml tags the decoder reads, so the two cannot disagree about a key.
-func fragmentFields(t reflect.Type) (map[string]reflect.Type, bool) {
-	fields := map[string]reflect.Type{}
-	acceptsAny := false
+// whether an inline map takes every key the fields do not name and whether an
+// Extensions field takes every extension member. It reads the yaml tags the
+// decoder reads, and the Extensions field its owner's decode fills, so the walk
+// and the decode cannot disagree about a key.
+func fragmentFields(t reflect.Type) (fields map[string]reflect.Type, acceptsAny, acceptsExtensions bool) {
+	fields = map[string]reflect.Type{}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.PkgPath != "" && !f.Anonymous {
+			continue
+		}
+		if f.Type == extensionsType {
+			acceptsExtensions = true
 			continue
 		}
 		tag := f.Tag.Get("yaml")
@@ -276,11 +326,12 @@ func fragmentFields(t reflect.Type) (map[string]reflect.Type, bool) {
 			case reflect.Map:
 				acceptsAny = true
 			case reflect.Struct:
-				inner, innerAny := fragmentFields(ft)
+				inner, innerAny, innerExtensions := fragmentFields(ft)
 				for k, v := range inner {
 					fields[k] = v
 				}
 				acceptsAny = acceptsAny || innerAny
+				acceptsExtensions = acceptsExtensions || innerExtensions
 			}
 			continue
 		}
@@ -289,7 +340,7 @@ func fragmentFields(t reflect.Type) (map[string]reflect.Type, bool) {
 		}
 		fields[name] = f.Type
 	}
-	return fields, acceptsAny
+	return fields, acceptsAny, acceptsExtensions
 }
 
 func hasTagOption(opts, want string) bool {

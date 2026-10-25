@@ -31,22 +31,24 @@
 //     singleton, so two nodes each wanting a container of their own reach
 //     one container even where their two definitions agree, and the loss is
 //     real however identical the bodies are.
-//   - Top-level volumes. Per-node volume entries union across the dispatch
-//     group. Two nodes may declare one name, because a named volume is one
-//     physical volume and two identical declarations both ask for exactly
-//     that — so identical bodies merge into the single entry they describe.
-//     Bodies that differ are a disagreement about that one volume, and
-//     AssembleBoundaryCore returns TRANSLATION_ERROR naming the volume and
-//     every contributing (boundary, nodeID) tuple rather than keeping one
-//     body and discarding the other.
-//   - Top-level configs. Per-node config declarations union the same way and
+//   - Top-level volumes. Every fragment's volume entries union across the
+//     dispatch group, each fragment a contributor of its own, so two fragments
+//     of one node are compared exactly as two nodes' fragments are. Two
+//     fragments may declare one name, because a named volume is one physical
+//     volume and two identical declarations both ask for exactly that — so
+//     identical bodies merge into the single entry they describe. Bodies that
+//     differ are a disagreement about that one volume, and AssembleBoundaryCore
+//     returns TRANSLATION_ERROR naming the volume and every contributing
+//     (boundary, nodeID, fragment) tuple rather than keeping one body and
+//     discarding the other.
+//   - Top-level configs. Every fragment's config declarations union the same way and
 //     under the same conflict rule. Every service-level configs: reference
 //     must resolve to one of them once the union is complete, or
 //     AssembleBoundaryCore returns TRANSLATION_ERROR naming each unresolved
 //     reference — the union is what makes the check honest, since one node
 //     may reference a config a different node in the dispatch group
 //     declares.
-//   - Top-level models. Per-node model declarations — Compose's own models:
+//   - Top-level models. Every fragment's model declarations — Compose's own models:
 //     section, carried from a sourced compose file or an artifacts: fragment —
 //     union the same way and under the same conflict rule: a model is one
 //     model however many services use it. Every service-level models:
@@ -54,6 +56,10 @@
 //     AssembleBoundaryCore returns TRANSLATION_ERROR naming each unresolved
 //     reference, for the reason the configs: check gives. A service's models:
 //     reference travels with its service. Nothing here reads what a model is.
+//   - Top-level extension members (keys beginning x-). Every fragment's members
+//     union the same way and under the same conflict rule. A service's own
+//     members travel with its service.
+//     Nothing here reads what a member holds.
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute services to this dispatch group, record an ungated
 //     dependency on the target service on the source service. It joins
@@ -75,6 +81,9 @@
 //     service, per-service collections (ports, depends_on, volumes,
 //     networks) are kept in stable order: edges and IR nodes iterate
 //     alphabetically; ports retain the order their fragment carried.
+//     Extension members follow the keys their mapping models, in the order
+//     first written: a service's as its fragment wrote them, the top level's
+//     across contributing nodes in name order.
 
 package composecore
 
@@ -94,14 +103,21 @@ import (
 // AssembleBoundaryCore at the dispatch path.
 const AssembledOutputFile = "docker-compose.yaml"
 
-// sectionContrib records one (boundary, nodeID) tuple that contributed an entry
+// sectionContrib records one (boundary, nodeID[, fragment]) tuple that contributed an entry
 // to a section of the merged compose output. Used by collision detection to
 // name every contributor in TRANSLATION_ERROR output. It carries no body:
 // whether a shared name is a collision at all is the contributing section's own
 // question, and only the answer reaches the reporting side.
+//
+// fragment names the fragment the entry came from, for a section whose
+// contributors are fragments rather than nodes — the body-carrying sections:
+// volumes, configs, models and the top-level extension members — so two
+// fragments of one node are told apart in the halt. It is empty for services,
+// which a node contributes as a whole.
 type sectionContrib struct {
 	boundary string
 	nodeID   string
+	fragment string
 }
 
 // bodyContrib records one contributor's declaration of a named entry in a
@@ -174,6 +190,7 @@ func AssembleBoundaryCore(
 	contribsByVolume := map[string][]bodyContrib{}
 	contribsByConfig := map[string][]bodyContrib{}
 	contribsByModel := map[string][]bodyContrib{}
+	contribsByExtension := map[string][]bodyContrib{}
 
 	// waveByService records the deployment wave of the node that contributed
 	// each service, so wave-derived ordering reads a service's wave without
@@ -199,12 +216,11 @@ func AssembleBoundaryCore(
 	}
 
 	for _, nid := range allNodeIDs {
-		fragments := intermediatesByNode[nid]
-		frag, err := parseNodeFragment(nid, fragments)
+		fragments, err := parseNodeFragments(nid, intermediatesByNode[nid])
 		if err != nil {
 			return nil, nil, err
 		}
-		if frag == nil {
+		if len(fragments) == 0 {
 			continue
 		}
 
@@ -213,44 +229,58 @@ func AssembleBoundaryCore(
 
 		party := sectionContrib{boundary: networkName, nodeID: nid}
 
-		// Volumes: union, recording each contributor's emitted body so a
-		// name two of them disagree about is refused after the walk. The
+		// The body-carrying sections — volumes, configs, models and the
+		// top-level extension members — union with every FRAGMENT a
+		// contributor of its own, so two fragments of one node are compared
+		// exactly as two nodes' fragments are: a name they declare
+		// identically leaves one entry, and one they declare differently is
+		// refused after the walk. Folding a node's fragments into one struct
+		// first would keep the later body with nothing to say so. Each
 		// assignment stays last-writer because it is only reached for names
-		// every contributor emitted identically, where either body is the
-		// one entry both of them described.
-		for k, v := range frag.Volumes {
-			emitted, err := marshalDeterministic(v, yamlIndent)
-			if err != nil {
-				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nid}, fmt.Sprintf("compose: node %q volume %q: marshal for collision comparison", nid, k))
+		// every contributor emitted identically, where either body is the one
+		// entry both of them described.
+		nodeServices := map[string]Service{}
+		for _, f := range fragments {
+			fragmentParty := sectionContrib{boundary: networkName, nodeID: nid, fragment: f.name}
+			for k, v := range f.file.Volumes {
+				if err := recordSectionBody(contribsByVolume, "volume", k, v, fragmentParty, yamlIndent); err != nil {
+					return nil, nil, err
+				}
+				merged.Volumes[k] = v
 			}
-			contribsByVolume[k] = append(contribsByVolume[k], bodyContrib{party: party, emitted: string(emitted)})
-			merged.Volumes[k] = v
-		}
-
-		// Configs: union (top-level config declarations, e.g. the
-		// compose-bridge gateway's generated nginx config), under the same
-		// conflict rule and for the same reason.
-		for k, v := range frag.Configs {
-			emitted, err := marshalDeterministic(v, yamlIndent)
-			if err != nil {
-				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nid}, fmt.Sprintf("compose: node %q config %q: marshal for collision comparison", nid, k))
+			// Configs carry, among others, the compose-bridge gateway's
+			// generated nginx config.
+			for k, v := range f.file.Configs {
+				if err := recordSectionBody(contribsByConfig, "config", k, v, fragmentParty, yamlIndent); err != nil {
+					return nil, nil, err
+				}
+				merged.Configs[k] = v
 			}
-			contribsByConfig[k] = append(contribsByConfig[k], bodyContrib{party: party, emitted: string(emitted)})
-			merged.Configs[k] = v
-		}
-
-		// Models: union under the same conflict rule and for the same reason.
-		for k, v := range frag.Models {
-			emitted, err := marshalDeterministic(v, yamlIndent)
-			if err != nil {
-				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nid}, fmt.Sprintf("compose: node %q model %q: marshal for collision comparison", nid, k))
+			for k, v := range f.file.Models {
+				if err := recordSectionBody(contribsByModel, "model", k, v, fragmentParty, yamlIndent); err != nil {
+					return nil, nil, err
+				}
+				merged.Models[k] = v
 			}
-			contribsByModel[k] = append(contribsByModel[k], bodyContrib{party: party, emitted: string(emitted)})
-			merged.Models[k] = v
+			// Extension members keep the order first written: nodes in name
+			// order, each node's fragments in their order, each fragment's
+			// members as it wrote them.
+			for _, entry := range f.file.Extensions.entries {
+				if err := recordSectionBody(contribsByExtension, "extension", entry.key, entry.value, fragmentParty, yamlIndent); err != nil {
+					return nil, nil, err
+				}
+				merged.Extensions.add(entry.key, entry.value)
+			}
+			// A service is refused on its name across nodes, below; within
+			// one node the later fragment's definition of a name replaces the
+			// earlier one.
+			for k, v := range f.file.Services {
+				nodeServices[k] = v
+			}
 		}
 
 		// Services: collision-detect, then merge with the network attached.
-		for svcName, svc := range frag.Services {
+		for svcName, svc := range nodeServices {
 			contribsByService[svcName] = append(contribsByService[svcName], party)
 			boundaryByService[svcName] = networkName
 			waveByService[svcName] = nodeSyncWave[nid]
@@ -280,6 +310,9 @@ func AssembleBoundaryCore(
 		return nil, nil, err
 	}
 	if err := checkBodyCollisions("model", contribsByModel); err != nil {
+		return nil, nil, err
+	}
+	if err := checkBodyCollisions("extension", contribsByExtension); err != nil {
 		return nil, nil, err
 	}
 
@@ -420,49 +453,49 @@ func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []rend
 	return diags
 }
 
-// parseNodeFragment locates Intermediate fragments in a node's intermediate-
-// file list and decodes them as ComposeFile through decodeFragment, merging into
-// one struct. A fragment writing a key ComposeFile does not carry, or declaring
-// a network of its own, halts the merge there, naming the key or the network,
-// its path and the fragment — so a decoded fragment carries no networks, and the
-// merged file's are the ones AssembleBoundaryCore derives.
-// Returns (nil, nil) when no fragments are present (defensive — should not
-// occur for compose nodes since SynthesizeWorkload always emits exactly
-// one).
+// nodeFragment is one decoded fragment of a node, with the name it reached the
+// merge under.
+type nodeFragment struct {
+	name string
+	file ComposeFile
+}
+
+// parseNodeFragments decodes every Intermediate fragment in a node's
+// intermediate-file list through decodeFragment, in list order, and returns
+// them one by one rather than folded together, so the merge compares each
+// fragment's declarations with every other's. A fragment writing a key
+// ComposeFile does not carry, declaring a network of its own, or holding more
+// than one document halts the merge there, naming what it found and the
+// fragment — so a decoded fragment carries no networks, and the merged file's
+// are the ones AssembleBoundaryCore derives. Returns nil when no fragments are
+// present (defensive — should not occur for compose nodes since
+// SynthesizeWorkload always emits exactly one).
 //
-// The compose fragment file's name is `<nodeID>.compose-fragment.yaml`. If
-// a future version produces multiple fragments per node, the loop merges
-// them into one ComposeFile struct.
-func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*ComposeFile, error) {
-	if len(intermediates) == 0 {
-		return nil, nil
-	}
-	out := &ComposeFile{
-		Services: map[string]Service{},
-		Volumes:  map[string]Volume{},
-		Networks: map[string]Network{},
-		Configs:  map[string]Config{},
-		Models:   map[string]Model{},
-	}
+// A source-rendered or synthesized fragment is named
+// `<nodeID>.compose-fragment.yaml`; an artifacts: fragment by the name its
+// Recipe gave it.
+func parseNodeFragments(nodeID string, intermediates []rendercore.EmittedFile) ([]nodeFragment, error) {
+	out := make([]nodeFragment, 0, len(intermediates))
 	for _, f := range intermediates {
 		frag, err := decodeFragment(f.Body, nodeID, fmt.Sprintf("fragment %q", f.Name))
 		if err != nil {
 			return nil, err
 		}
-		for k, v := range frag.Services {
-			out.Services[k] = v
-		}
-		for k, v := range frag.Volumes {
-			out.Volumes[k] = v
-		}
-		for k, v := range frag.Configs {
-			out.Configs[k] = v
-		}
-		for k, v := range frag.Models {
-			out.Models[k] = v
-		}
+		out = append(out, nodeFragment{name: f.Name, file: frag})
 	}
 	return out, nil
+}
+
+// recordSectionBody records one fragment's declaration of name in a
+// body-carrying section — the party and the bytes the body would be emitted as
+// — for checkBodyCollisions to judge once every fragment has been read.
+func recordSectionBody(contribs map[string][]bodyContrib, entryNoun, name string, body any, party sectionContrib, yamlIndent int) error {
+	emitted, err := marshalDeterministic(body, yamlIndent)
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: party.nodeID}, fmt.Sprintf("compose: node %q %s %q: marshal for collision comparison", party.nodeID, entryNoun, name))
+	}
+	contribs[name] = append(contribs[name], bodyContrib{party: party, emitted: string(emitted)})
+	return nil
 }
 
 // networkNameEncoding is the segment encoding a compose network name is built
@@ -562,7 +595,11 @@ func reportNameCollisions(class collisionClass, colliding map[string][]sectionCo
 	for _, name := range names {
 		descriptors := make([]string, 0, len(colliding[name]))
 		for _, party := range colliding[name] {
-			descriptors = append(descriptors, fmt.Sprintf("boundary=%q node=%q", party.boundary, party.nodeID))
+			descriptor := fmt.Sprintf("boundary=%q node=%q", party.boundary, party.nodeID)
+			if party.fragment != "" {
+				descriptor += fmt.Sprintf(" fragment=%q", party.fragment)
+			}
+			descriptors = append(descriptors, descriptor)
 		}
 		sort.Strings(descriptors)
 		parts = append(parts, fmt.Sprintf("%s %q contributed by [%s]", class.entryNoun, name, strings.Join(descriptors, ", ")))
