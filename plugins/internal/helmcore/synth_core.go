@@ -18,7 +18,8 @@
 //     Deployment, stateful → StatefulSet, daemon → DaemonSet, task → Job,
 //     scheduled → CronJob with spec.schedule set from the workload's schedule
 //     (a 5-field cron expression or an @-macro; a missing or malformed schedule
-//     halts loudly via the shared companion validation).
+//     halts loudly via the shared companion validation), and spec.suspend: true
+//     where the workload is suspended.
 //   - A persistentTemplate volume requires form: stateful (companion
 //     validation, single-sourced in rendercore); those volumes become the
 //     StatefulSet's volumeClaimTemplates.
@@ -260,6 +261,7 @@ func SynthesizeWorkloadCore(
 			Metadata:   ObjectMeta{Name: name, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
 			Spec: CronJobSpec{
 				Schedule:    w.Schedule,
+				Suspend:     w.Suspend,
 				JobTemplate: JobTemplateSpec{Spec: JobSpec{Template: jobValidTemplate(template)}},
 			},
 		}

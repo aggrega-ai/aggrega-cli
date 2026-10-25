@@ -71,9 +71,13 @@ type CronJob struct {
 }
 
 // CronJobSpec is a reduced CronJob spec. Schedule is the cron expression the
-// scheduler fires on; JobTemplate wraps the per-run Job.
+// scheduler fires on; Suspend, when true, keeps the scheduler from starting a
+// run on that schedule while a Job can still be created from the CronJob by
+// hand; JobTemplate wraps the per-run Job. Suspend is omitted when false, so an
+// unsuspended CronJob renders exactly as one that never carried the field.
 type CronJobSpec struct {
 	Schedule    string          `yaml:"schedule"`
+	Suspend     bool            `yaml:"suspend,omitempty"`
 	JobTemplate JobTemplateSpec `yaml:"jobTemplate"`
 }
 

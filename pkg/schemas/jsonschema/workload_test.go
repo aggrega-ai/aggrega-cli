@@ -289,3 +289,78 @@ func TestWorkloadJSONSchemaServiceType(t *testing.T) {
 		})
 	}
 }
+
+// TestWorkloadJSONSchemaSuspend proves the structural contract for a held
+// schedule: suspend is a top-level boolean the schema accepts beside a
+// form: scheduled workload, refuses as a string rather than coercing it, and
+// keeps the root closed so a near-miss spelling halts at authoring.
+//
+// The false row is not redundant with the true row: omitempty elides false, so
+// the schema must accept an explicitly authored false even though it emits
+// nothing. The absent row is the shape every scheduled workload authored
+// without the field carries.
+func TestWorkloadJSONSchemaSuspend(t *testing.T) {
+	t.Parallel()
+	var schema libschema.Schema
+	if err := json.Unmarshal([]byte(WorkloadJSONSchema), &schema); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	v, err := jsonschema.New(&schema)
+	if err != nil {
+		t.Fatalf("jsonschema.New: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		doc    string
+		wantOK bool
+	}{
+		{
+			name:   "declared true on a scheduled workload",
+			wantOK: true,
+			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+				"schedule":"@daily","suspend":true,"containers":{"main":{"image":"x"}}}`,
+		},
+		{
+			name:   "declared false on a scheduled workload",
+			wantOK: true,
+			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+				"schedule":"@daily","suspend":false,"containers":{"main":{"image":"x"}}}`,
+		},
+		{
+			name:   "absent on a scheduled workload",
+			wantOK: true,
+			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+				"schedule":"@daily","containers":{"main":{"image":"x"}}}`,
+		},
+		{
+			name:   "a string is rejected rather than coerced",
+			wantOK: false,
+			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+				"schedule":"@daily","suspend":"true","containers":{"main":{"image":"x"}}}`,
+		},
+		{
+			name:   "a near-miss spelling halts on the closed root",
+			wantOK: false,
+			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+				"schedule":"@daily","suspended":true,"containers":{"main":{"image":"x"}}}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var instance any
+			if err := json.Unmarshal([]byte(tc.doc), &instance); err != nil {
+				t.Fatalf("decode instance: %v", err)
+			}
+			report, err := v.Validate(instance, nil)
+			if err != nil {
+				t.Fatalf("validate engine error: %v", err)
+			}
+			ok := len(report.Findings) == 0
+			if ok != tc.wantOK {
+				t.Fatalf("wantOK=%v got ok=%v findings=%v", tc.wantOK, ok, report.Findings)
+			}
+		})
+	}
+}

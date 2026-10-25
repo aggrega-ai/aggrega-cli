@@ -20,6 +20,8 @@ type Workload struct {
 	Port int `json:"port,omitempty" yaml:"port,omitempty"`
 	// Schedule Cron schedule for form: scheduled — a standard 5-field crontab expression (for example '0 0 * * *') or one of the macros @hourly, @daily, @weekly, @monthly, @yearly. Required when form is scheduled and only meaningful then; the target provider pipes it verbatim into the scheduled resource's schedule field.
 	Schedule string `json:"schedule,omitempty" yaml:"schedule,omitempty"`
+	// Suspend Holds the recurring schedule of a form: scheduled workload. When true, the scheduled resource is rendered with its schedule in place, but no run starts from that schedule until it is resumed; a run can still be created from the resource by hand — on Kubernetes, kubectl create job <name> --from=cronjob/<cronjob>. suspend: false renders exactly as an absent suspend does. Only meaningful with form: scheduled. helm emits it as the CronJob's spec.suspend. compose has no scheduled shape and halts on a form: scheduled workload whether or not it is suspended.
+	Suspend bool `json:"suspend,omitempty" yaml:"suspend,omitempty"`
 	// Replicas Number of replicas. Default 1. On a compose target the value reaches no part of the output, and a warning reports it whenever it is authored — including an explicit `1`.
 	Replicas *int `json:"replicas,omitempty" yaml:"replicas,omitempty"`
 	// InitContainers Ordered list of containers that run to completion before the main containers start.
