@@ -1,8 +1,66 @@
 # aggrega
 
-The Aggrega compiler and command-line interface: a deterministic, Ahead-Of-Time
-compiler that renders deployment artifacts from Aggrega entities. Given identical
-inputs it produces byte-identical output.
+Aggrega is an open-source compiler for AI-era architecture. Describe the
+components of an application and how they connect; Aggrega turns them,
+deterministically, into the deployment files that run it.
+
+- **Use the languages you know.** A compiler for the languages you already use:
+  YAML in; Helm charts, Kubernetes manifests and Compose, Terraform or
+  CloudFormation files out.
+- **Developers describe, Ops implement.** Developers declare components, their
+  features and who uses whom; the platform team decides how and where each one
+  runs.
+- **One application, many platforms.** The same application runs on Docker
+  Compose on a laptop and on Kubernetes in production: changing target changes a
+  mapping, not your code.
+- **Reproducible and governed.** Same input, same output, with every dependency
+  pinned in a lockfile. Your policies plug into the compiler and stop a build
+  that breaks them, saying what to fix.
+
+This repository holds the compiler and its command-line interface, the `aggrega`
+binary.
+
+## Install
+
+`curl -fsSL https://aggrega.ai/install.sh | sh` on Linux and macOS, or
+`irm https://aggrega.ai/install.ps1 | iex` in PowerShell on Windows, installs the
+`aggrega` binary for the current user.
+[Setup](https://aggrega.ai/docs/authoring/setup/#install-the-binary) covers what
+the command does, the manual download, and connecting an AI assistant.
+
+## Use it with your AI assistant
+
+An assistant that can run commands on your machine can install Aggrega, add the
+Aggrega skill to itself and connect itself to the Aggrega MCP server, from one
+prompt you paste into it:
+[Use Aggrega from your AI assistant](https://aggrega.ai/docs/authoring/ai-assistant/)
+gives the prompt. To connect a client yourself, follow
+[Connect an MCP client](https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client).
+
+## Use it in your editor
+
+The [Aggrega extension for Visual Studio Code](https://github.com/aggrega-ai/aggrega-vscode-extension)
+brings validation, navigation, hover and completion to Aggrega YAML, backed by
+the `aggrega` binary.
+
+## How it works
+
+Aggrega is an Ahead-of-Time compiler: it reads the files you author and writes
+static artifacts, byte-identical for identical input, and leaves deploying them
+to other tools, such as ArgoCD or Flux. It has no access to runtime
+information, so it never reaches a running cluster or a cloud account; it builds
+no images and reconciles no state.
+
+## Where to go next
+
+- [Getting Started with Authoring](https://aggrega.ai/docs/authoring/getting-started/)
+  — the authoring loop, from a blank file to a validated one.
+- [Runnable Examples](https://aggrega.ai/docs/language-reference/examples/) —
+  complete workspaces you can build with the `aggrega` CLI.
+- [CLI Overview](https://aggrega.ai/docs/language-reference/07-cli/) — every
+  `aggrega` subcommand.
+- [Building](#building) and [Testing](#testing) below — building and testing the
+  compiler from this repository.
 
 ## Building
 
