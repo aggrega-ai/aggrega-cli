@@ -48,7 +48,10 @@ name: Publish and sign core plugins
 #                        the one shared recipe, builds the binary and every
 #                        core guest (plus the light no-embed binary),
 #                        asserts host/guest ABI self-consistency, builds the
-#                        Windows, macOS and ARM Linux binaries, stages each smoke run's
+#                        Windows, macOS and ARM Linux binaries, builds the two
+#                        program files the Windows installer carries beside
+#                        the binary — its uninstaller and the plug-in that
+#                        edits the user PATH — with makensis, stages each smoke run's
 #                        inputs, packs the desktop extension package, generates
 #                        the core Plugin catalog entities and pairs each with
 #                        its guest, and builds the tooling image for
@@ -56,46 +59,83 @@ name: Publish and sign core plugins
 #                        platform, after registering ARM emulation with
 #                        docker/setup-qemu-action, a third-party action this job
 #                        may run because it names no secret. Everything the
-#                        publish needs, and the three Windows binaries,
-#                        unsigned, it leaves in the hand-over
+#                        publish needs, and the three Windows binaries and the
+#                        installer's two program files, unsigned, it leaves in
+#                        the hand-over
 #                        folder described below, with a SHA-256 list of every
 #                        file in it; it uploads only what the GitHub-hosted
 #                        smoke jobs run.
-#   sign-windows         Signs those three Windows binaries with Authenticode,
+#   sign-windows         Signs those three Windows binaries and the installer's
+#                        two program files with Authenticode,
 #                        as Cognitio S.r.l., through Azure Artifact Signing,
 #                        every signature carrying an RFC 3161 timestamp, and
-#                        hands them on with a SHA-256 list of them as
-#                        windows-binaries-signed, on every run but a manual dry
+#                        hands them on, each set with a SHA-256 list of it, as
+#                        windows-binaries-signed and
+#                        windows-installer-parts-signed, on every run but a manual dry
 #                        run launched from a ref the signing identity is taken
 #                        not to admit, which skips it. It runs on the runner the
 #                        AGGREGA_RUNNER label names, after the build, and reads
-#                        the three from the hand-over folder once they match its
+#                        the five from the hand-over folder once they match its
 #                        list. It may mint the OIDC token, which it exchanges
 #                        with Microsoft Entra ID for the token that signs, and
 #                        holds no secret, no registry password and no release
-#                        token. It checks out nothing and runs no action but
-#                        upload-artifact; the programs it runs, beside the
-#                        shell's own utilities, are curl, and jsign under a Java
-#                        runtime of its own: each is fetched at one version and
-#                        refused unless its SHA-256 is the one written here, so
-#                        no Java the machine carries is run. It is a job of its
+#                        token. It checks out this repository at the commit the
+#                        build built, for the one script every Windows signing
+#                        runs, scripts/sign-windows-files.sh, and the smoke
+#                        library's names of the files, and runs no action but
+#                        checkout and upload-artifact; the programs it runs,
+#                        beside the shell's own utilities, are curl, and jsign
+#                        under a Java runtime of its own: each is fetched at one
+#                        version and refused unless its SHA-256 is the one that
+#                        script pins, so no Java the machine carries is run. It
+#                        is a job of its
 #                        own so that jsign and the token exchange share a job
-#                        with nothing else, and so that the Windows smoke run
-#                        and the release both see the bytes it signed. It does
+#                        with nothing else, and so that the Windows smoke run,
+#                        the installer and the release all see the bytes it
+#                        signed. It does
 #                        not confine the signing identity to itself: no claim of
 #                        the OIDC token names the job that minted it, so Azure
 #                        accepts the token of any job of this workflow on a ref
 #                        it admits, and sign-and-publish, which may mint the
 #                        token for its Sigstore signatures, could exchange one
 #                        too.
+#   windows-installer    Builds the Windows installer,
+#                        aggrega-<version>-windows-amd64-setup.exe as the
+#                        release attaches it, with makensis, from the default
+#                        Windows binary and the two program files sign-windows
+#                        signed, after holding each to its list, and from the
+#                        unsigned uninstaller in the hand-over folder, which the
+#                        uninstaller makensis generates again must match byte
+#                        for byte before the signed one is stored in its place;
+#                        on a run that signs nothing, from the unsigned files
+#                        the build wrote. It hands the installer on, unsigned,
+#                        with a SHA-256 list of it, as windows-installer. It runs
+#                        on the runner AGGREGA_RUNNER names, because it reads the
+#                        hand-over folder, holding it to its list first. It
+#                        names no secret, may not mint the OIDC token, and runs
+#                        no action but checkout and the artifact download and
+#                        upload: makensis, and the NSIS packages and the plug-in
+#                        it fetches, are third-party code, so the installer is
+#                        built in a job of its own rather than where anything
+#                        signs.
+#   sign-windows-installer
+#                        Signs the installer windows-installer built, once it
+#                        matches its list, through the same script, the same
+#                        identity and the same pinned jsign and Java runtime as
+#                        sign-windows, and hands it on with a SHA-256 list of it
+#                        as windows-installer-signed; skipped when sign-windows
+#                        is. It holds what sign-windows holds and nothing else,
+#                        and runs what sign-windows runs and nothing else.
 #   sign-and-publish     Once every smoke job below has passed, reads the
 #                        release inputs from the hand-over folder once every
 #                        file there matches its list, downloads
-#                        windows-binaries-signed, and publishes them: it pushes
+#                        windows-binaries-signed and windows-installer-signed,
+#                        and publishes them: it pushes
 #                        the tooling image's platforms from their archives and
 #                        then the index joining them under one tag, publishes each
 #                        plugin with its guest, signs both, and creates the
 #                        GitHub release with the downloadable binaries, the
+#                        Windows installer, the
 #                        extension package, the install scripts from its
 #                        checkout, and SHA256SUMS, the list of their SHA-256
 #                        digests it writes from the very files it attaches. It
@@ -181,7 +221,8 @@ name: Publish and sign core plugins
 #                        It may delete the run's artifacts (actions: write) and
 #                        holds nothing else: no checkout, no action, no secret.
 #
-# The sources, build, sign-windows, sign-and-publish, record-published and
+# The sources, build, sign-windows, windows-installer, sign-windows-installer,
+# sign-and-publish, record-published and
 # clean-up jobs run on one machine, the self-hosted runner AGGREGA_RUNNER names,
 # and hand files to each other on its disk, in the hand-over folder:
 # aggrega-release-handover/<run id>-<attempt>
@@ -195,8 +236,13 @@ name: Publish and sign core plugins
 # are written by one function of the repository's smoke library. A run with no
 # such runner stops in its first job, saying so: nothing falls back to a hosted
 # runner or to artifacts. Only what a GitHub-hosted job runs is uploaded — the
-# Windows, macOS and ARM Linux smoke inputs, the signed Windows binaries, and the earlier
-# release's binaries smoke_binaries_from names — and clean-up deletes it all when
+# Windows, macOS and ARM Linux smoke inputs, the signed Windows binaries, the
+# Windows installer, and the earlier
+# release's binaries smoke_binaries_from names — and what a job on the runner
+# writes after the hand-over folder's list and hands to the next: the
+# installer's signed program files, which windows-installer builds the installer
+# from, and the installer it builds, which sign-windows-installer signs. clean-up
+# deletes it all when
 # the run ends, so no artifact outlives the run that made it; the one-day
 # retention each upload names is what removes them should clean-up never run. A
 # re-run must re-run every job: a re-run of the failed jobs alone finds the
@@ -205,8 +251,11 @@ name: Publish and sign core plugins
 # Everything sign-and-publish signs is signed keyless via the GitHub Actions
 # OIDC identity against the public Sigstore instance (Fulcio + Rekor). The
 # Windows binaries are signed by sign-windows instead, with the Authenticode
-# signature Windows itself checks. The build reproduces the Windows binaries'
-# unsigned bytes; a signed file differs from one signing to the next, in its
+# signature Windows itself checks, and so are the program files the Windows
+# installer carries; the installer, which carries those signed files, is built
+# after them and signed by sign-windows-installer. The build reproduces the
+# Windows binaries' unsigned bytes, and windows-installer the installer's from
+# the same signed files; a signed file differs from one signing to the next, in its
 # certificate and its timestamp, while its Authenticode digest, which leaves
 # the signature out, does not. Every checkout sets persist-credentials: false,
 # so no checkout leaves its token in the repository's git configuration for a
@@ -238,9 +287,14 @@ name: Publish and sign core plugins
 # and last checks their signatures: Windows' own Get-AuthenticodeSignature must
 # report each one valid, signed by Cognitio S.r.l. and timestamped, and each
 # must match sign-windows' SHA-256 list, while the unsigned copies the build
-# wrote are shown refused. On a manual dry run from a ref the signing identity
+# wrote are shown refused; then it installs aggrega with the installer
+# sign-windows-installer signed, silently, runs it by name from a new shell,
+# installs over that install, checks the installer's and the installed files'
+# signatures the same way, and uninstalls silently, leaving neither the folder
+# nor its PATH entry. On a manual dry run from a ref the signing identity
 # is taken not to admit, nothing is signed: windows-smoke runs the unsigned
-# binaries the build wrote, through the same script, which reports the
+# binaries the build wrote, and the installer windows-installer built from
+# them, through the same script, which reports the
 # signature check not applicable rather than passed, and sign-and-publish, which
 # waits for sign-windows, is skipped with it, so such a run prints no publish
 # plan. They need nothing the build needs — no
@@ -265,8 +319,9 @@ name: Publish and sign core plugins
 # smoke run has passed, so a failure in the ABI check, in catalog generation or
 # on a smoke runner can never strand an already-pushed tooling image or a
 # half-published plugin set. The one request with an effect beyond this run
-# before then is sign-windows' signing, which publishes nothing: a signed binary
-# whose smoke run fails is never released. The Wasm guests are reproducible
+# before then is the Windows signing, sign-windows' and
+# sign-windows-installer's, which publishes nothing: a signed binary or
+# installer whose smoke run fails is never released. The Wasm guests are reproducible
 # build outputs, not tracked files, so they are absent from a fresh checkout:
 # the build MUST run before catalog generation (which reads each guest's
 # self-reported descriptor) and before the plugins are staged for publishing
@@ -284,8 +339,9 @@ name: Publish and sign core plugins
 # aggrega-ai/scoop-bucket, each changing one file.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
-# builds everything a real run builds — the tooling image included — signs the
-# Windows binaries as a real run does, so the signing and the signature check
+# builds everything a real run builds — the tooling image and the Windows
+# installer included — signs the
+# Windows binaries and the installer as a real run does, so the signing and the signature check
 # are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads and checks the image's
 # two archives and prints what it would push, publish, sign and release, doing none of it,
@@ -296,8 +352,10 @@ name: Publish and sign core plugins
 # Which refs may sign is decided by the signing identity's federated
 # credentials in Azure. The refs this workflow takes them to admit — the main
 # branch and every tag — are written once, in .github/scripts/windows-signing.sh.
-# A dry run launched from any other ref signs nothing: sign-windows is skipped,
-# windows-smoke runs the unsigned binaries the build wrote, its signature check
+# A dry run launched from any other ref signs nothing: sign-windows and
+# sign-windows-installer are skipped, windows-installer builds the installer
+# from the unsigned files the build wrote,
+# windows-smoke runs the unsigned binaries and that installer, its signature check
 # not applicable, and sign-and-publish is skipped with sign-windows. That skip
 # is decided in registry-credential by the event, the dry_run input and the ref,
 # before anything is built or signed, and never by a signing that failed; the
@@ -310,6 +368,8 @@ name: Publish and sign core plugins
 #              REGISTRY_USERNAME         the registry username
 #              AGGREGA_RUNNER            the label of the self-hosted runner
 #                                        sources, build, sign-windows,
+#                                        windows-installer,
+#                                        sign-windows-installer,
 #                                        sign-and-publish, record-published and
 #                                        clean-up run on (required; one machine)
 #              CLI_PUBLISH_OVERLAY_DIR   the per-plugin overlay directory
@@ -320,7 +380,8 @@ name: Publish and sign core plugins
 #                                        takes aggrega-hub's writer from
 #                                        (optional, main by default)
 #              AZURE_TENANT_ID           the Microsoft Entra tenant of the
-#                                        identity sign-windows signs as
+#                                        identity sign-windows and
+#                                        sign-windows-installer sign as
 #              AZURE_CLIENT_ID           that identity's client ID: an app
 #                                        registration with no secret, whose
 #                                        federated credentials accept this
@@ -329,10 +390,11 @@ name: Publish and sign core plugins
 #                                        endpoint, its account URI
 #              ARTIFACT_SIGNING_ACCOUNT  the Artifact Signing account's name
 #              ARTIFACT_SIGNING_PROFILE  the certificate profile that signs
-#                                        (sign-windows only, all five; each is
-#                                        an identifier, none a secret, and
-#                                        sign-windows refuses, naming it, any
-#                                        that is not set)
+#                                        (sign-windows and
+#                                        sign-windows-installer only, all five;
+#                                        each is an identifier, none a secret,
+#                                        and each of the two refuses, naming
+#                                        it, any that is not set)
 #   secrets    REGISTRY_PASSWORD         the registry password
 #                                        (registry-credential and
 #                                        sign-and-publish only)
@@ -392,9 +454,10 @@ on:
         type: string
 
 # Every job reads this repository and nothing more unless it says otherwise
-# below. Two jobs add to it. sign-windows adds id-token:write, which lets it
-# mint the short-lived OIDC identity token Microsoft Entra ID exchanges for the
-# token that signs the Windows binaries, so no signing secret is stored.
+# below. Three jobs add to it. sign-windows and sign-windows-installer add
+# id-token:write, which lets each mint the short-lived OIDC identity token
+# Microsoft Entra ID exchanges for the token that signs the Windows binaries, the
+# installer's program files and the installer, so no signing secret is stored.
 # sign-and-publish adds id-token:write, which lets it mint the short-lived OIDC
 # identity token keyless signing needs (no offline key is stored; the artifacts
 # publish to the public hub, so recording them in the public transparency log is
@@ -781,8 +844,8 @@ jobs:
     # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback:
     # building the embedded guests is heavy, the sibling checkouts this job
     # builds against are the ones the sources job left on that machine's disk,
-    # and sign-windows and sign-and-publish read what this job builds from that
-    # disk, in the hand-over folder. Every later step that needs this build's
+    # and sign-windows, windows-installer and sign-and-publish read what this
+    # job builds from that disk, in the hand-over folder. Every later step that needs this build's
     # outputs reads them in this job, from the hand-over folder, or, on a
     # GitHub-hosted runner, from the artifacts it uploads.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
@@ -790,16 +853,20 @@ jobs:
       contents: read
 
     # The commit this job built — the one the sources job recorded, whose go.mod
-    # chose the sibling checkouts — which sign-and-publish checks out for its
+    # chose the sibling checkouts — which sign-windows, windows-installer,
+    # sign-windows-installer and sign-and-publish check out for their
     # scripts, and the commits the Windows, the macOS and the ARM Linux smoke
     # inputs were staged from, which the windows-smoke, macos-smoke and
     # linux-smoke jobs check out: on a dispatch naming a tag the tree is moved onto
-    # that tag, so the commit the run was launched at may not be it.
+    # that tag, so the commit the run was launched at may not be it. And the
+    # version the binaries report, which windows-installer records in the
+    # installer.
     outputs:
       commit: ${{ needs.sources.outputs.commit }}
       smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
       macos_smoke_commit: ${{ steps.macos-smoke-inputs.outputs.commit }}
       linux_smoke_commit: ${{ steps.linux-smoke-inputs.outputs.commit }}
+      version: ${{ steps.installer-parts.outputs.version }}
 
     # No secret appears anywhere in this job, the App's that reads the sibling
     # repositories included: it runs third-party build code, so it holds no
@@ -1300,14 +1367,54 @@ jobs:
       - name: Collect the Windows binaries for signing
         # The three Windows binaries the steps above wrote, unsigned, under the
         # names they wrote them, into the hand-over folder's windows-unsigned/:
-        # sign-windows reads exactly these, and nothing else this job built. A
-        # missing file fails the copy.
+        # sign-windows reads exactly these and the installer's two program files
+        # the next step adds, and nothing else this job built. A missing file
+        # fails the copy.
         run: |
           set -euo pipefail
           for built in aggrega-windows-amd64.exe aggrega-debug-windows-amd64.exe aggrega-light-windows-amd64.exe; do
             cp "aggrega-cli/$built" "$WINDOWS_UNSIGNED/$built"
           done
           ls -l "$WINDOWS_UNSIGNED"
+
+      - name: Build the Windows installer's uninstaller and plug-in for signing
+        # The Windows installer carries two program files beside aggrega.exe,
+        # and every one it carries is signed, so they are built here and signed
+        # with the binaries, before the installer is built from them in
+        # windows-installer: uninstall.exe, the uninstaller, which makensis
+        # generates from packaging/windows/aggrega.nsi, and EnVar.dll, the
+        # plug-in that edits the user PATH, as its package carries it. The
+        # script fetches NSIS and the plug-in, each held to the SHA-256 it pins,
+        # and compiles the installer once to keep the uninstaller it generates;
+        # the uninstaller depends on neither the binary nor the plug-in, so
+        # windows-installer generates the same bytes again and refuses
+        # otherwise. Both go into windows-unsigned/ beside the binaries, under
+        # the names the smoke library's smoke_target_installer_parts gives
+        # them. makensis and what it reads are third-party code, which is why
+        # this runs here, in a job that names no secret, and never where a
+        # signing runs. The version the binary reports is this job's version
+        # output. No external side effect; a dry run builds them too.
+        id: installer-parts
+        run: |
+          set -euo pipefail
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version string read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          parts="$RUNNER_TEMP/windows-installer-parts"
+          aggrega-cli/scripts/build-windows-installer.sh parts --version "$BIN_VERSION" \
+            --aggrega aggrega-cli/aggrega-windows-amd64.exe --output-dir "$parts"
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          names="$(smoke_target_installer_parts windows/amd64)"
+          while IFS= read -r name; do
+            cp "$parts/$name" "$WINDOWS_UNSIGNED/$name"
+          done <<<"$names"
+          rm -rf -- "$parts"
+          ls -l "$WINDOWS_UNSIGNED"
+          printf 'version=%s\n' "$BIN_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Stage the Windows smoke run's inputs
         # Everything the windows-smoke job runs, staged by one script into one
@@ -1645,7 +1752,8 @@ jobs:
         # The last step that writes into the hand-over folder, after every step
         # of this job that runs third-party code. SHA256SUMS, at the folder's
         # root, gives the SHA-256 of every file beneath it — windows-unsigned/
-        # with the three unsigned Windows binaries, and release-inputs/ with
+        # with the three unsigned Windows binaries and the installer's two
+        # program files, and release-inputs/ with
         # bin/ (the binaries), mcp-bundle/ (the extension package), plugins/
         # (the entities, their guests and the pairing) and image/ (the tooling
         # image archive and its references) — by its path from the folder, in
@@ -1685,42 +1793,37 @@ jobs:
           rm -rf -- "$RUN_CONFIG_HOME"
 
   sign-windows:
-    # Signs the three Windows binaries the build job built, with Authenticode, so
-    # that Windows names their publisher, Cognitio S.r.l., and can tell that
-    # nothing changed them since. It runs on every trigger, a dry run's included,
+    # Signs the three Windows binaries the build job built, and the two program
+    # files the Windows installer carries beside the default one, with
+    # Authenticode, so that Windows names their publisher, Cognitio S.r.l., and
+    # can tell that nothing changed them since. It runs on every trigger, a dry run's included,
     # so the signing and the Windows smoke run's check of it are proven before a
     # tag exists — on every run but a manual dry run launched from a ref the
     # signing identity is taken not to admit, which registry-credential decides
     # before anything is built, and on which this job is skipped. Its if: reads
     # that decision and nothing else: a signing that failed cannot skip it, and
-    # on a run that publishes no ref can either. windows-smoke and
-    # sign-and-publish both wait for it.
+    # on a run that publishes no ref can either. windows-installer, windows-smoke
+    # and sign-and-publish all wait for it.
     #
-    # The signing service is Azure Artifact Signing, which keeps its keys in its
-    # own hardware: jsign sends each file's digest to it, and it signs with a
-    # certificate it issues from the account's certificate profile. Each such
-    # certificate is valid for three days, so every signature carries an RFC 3161
-    # timestamp countersignature from Microsoft's timestamp service: Windows
-    # checks a timestamped signature's certificate as of the time the timestamp
-    # attests, so the signature stays valid after the certificate expires, and
-    # one without a timestamp would stop validating when its certificate does.
-    #
-    # The job signs as an Azure identity without holding a secret: the run's
-    # OIDC token, which only a job granted id-token:write can mint, is exchanged
-    # with Microsoft Entra ID for a short-lived token that may sign with that
-    # profile. Which refs of which workflow may make that exchange is decided by
+    # The signing itself — the service, the timestamp every signature carries,
+    # the exchange of the run's OIDC token for the token that signs, and jsign
+    # under the Java runtime it fetches, each held to the SHA-256 it pins — is
+    # scripts/sign-windows-files.sh, which says how; sign-windows-installer
+    # signs the installer through the same script. Which refs of which workflow
+    # may make that exchange is decided by
     # the identity's federated credentials in Azure; the refs a dry run takes
     # them to admit are stated once, in .github/scripts/windows-signing.sh, and
     # read only to decide whether a dry run signs.
     # Everything that runs in this job can reach those tokens, so what runs is
-    # kept to the shell's own utilities, curl, GitHub's own artifact upload, and
-    # jsign — one jar, fetched at one version and refused unless its SHA-256 is
-    # the one written below — under a Java runtime fetched and held the same
-    # way, so no Java the machine carries runs here. No checkout, no secret, no
-    # build step.
+    # kept to the shell's own utilities, curl, GitHub's own checkout and artifact
+    # upload, and jsign under its own Java runtime, so no Java the machine
+    # carries runs here. The checkout, at the commit the build built, is for the
+    # signing script and the smoke library's names of the files, both read by
+    # check-release-job-isolation.sh, which refuses either if it runs a build
+    # step. No secret, no build step.
     #
     # It runs on the runner AGGREGA_RUNNER names, the machine the build ran on,
-    # and reads the three unsigned binaries from the hand-over folder there, once
+    # and reads the five unsigned files from the hand-over folder there, once
     # every file the folder's list names matches it: nothing the build wrote is
     # uploaded for it. That machine keeps state between runs, and the build's
     # third-party code ran on it, as the runner's user, before this job: what
@@ -1733,7 +1836,7 @@ jobs:
     # next, in its certificate and its timestamp, while its Authenticode digest,
     # which leaves the signature out, does not. The bytes the build reproduces
     # are the unsigned ones, and the bytes that run on Windows and ship are the
-    # ones this job signs, which its SHA-256 list names.
+    # ones this job signs, which its SHA-256 lists name.
     #
     # registry-credential is named because a job reads the outputs only of the
     # jobs it names. The condition runs this job unless the decision is skip, so
@@ -1754,58 +1857,48 @@ jobs:
       ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
       ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
       ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
-      # jsign 7.5, from Maven Central, and the SHA-256 of that jar, which is
-      # also the digest GitHub publishes for the same jar on jsign's 7.5
-      # release. Whatever the server sends, a jar with any other digest is
-      # refused before it runs; moving to another version changes both lines.
-      JSIGN_URL: https://repo1.maven.org/maven2/net/jsign/jsign/7.5/jsign-7.5.jar
-      JSIGN_SHA256: 602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c
-      # The Java runtime jsign runs under: Eclipse Temurin 21.0.12.1+1, the JRE
-      # for x64 Linux, from Adoptium's release on GitHub, and the SHA-256 of that
-      # archive, which is also the digest GitHub publishes for it, the release's
-      # own .sha256.txt and Adoptium's API. An archive with any other digest is
-      # refused before it is unpacked; moving to another version changes both
-      # lines.
-      JAVA_URL: https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz
-      JAVA_SHA256: 2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500
-      # The binaries this job signs, under the names the build wrote them.
-      WINDOWS_BINARIES: aggrega-windows-amd64.exe aggrega-debug-windows-amd64.exe aggrega-light-windows-amd64.exe
     steps:
+      - name: Check out the CLI at the commit the build job built
+        # For the signing script and the smoke library, at the commit whose
+        # build this job signs.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
       - name: Refuse a signing setting that is not set
-        # Before any request, so a missing variable is named rather than
-        # surfacing as a refusal from the token exchange or the signing service.
         run: |
           set -euo pipefail
-          missing=0
-          for name in AZURE_TENANT_ID AZURE_CLIENT_ID ARTIFACT_SIGNING_ENDPOINT ARTIFACT_SIGNING_ACCOUNT ARTIFACT_SIGNING_PROFILE; do
-            if [ -z "${!name:-}" ]; then
-              echo "sign-windows: the repository variable $name is not set" >&2
-              missing=1
-            fi
-          done
-          [ "$missing" = 0 ] || exit 1
-          echo "sign-windows: signing with the profile $ARTIFACT_SIGNING_PROFILE of the account $ARTIFACT_SIGNING_ACCOUNT at $ARTIFACT_SIGNING_ENDPOINT"
+          aggrega-cli/scripts/sign-windows-files.sh check-settings
 
-      - name: Hold the hand-over's Windows binaries to the build job's list
-        # The three unsigned binaries the build job left in this run's hand-over
-        # folder, on this machine, are signed only once every file the folder's
-        # list names still has the SHA-256 the list gives it and the list names
-        # all three; and exactly the three, nothing beside them, are copied to
-        # the directory of this job's own they are signed in. The list is read by
-        # sha256sum itself: this job checks out nothing, so it cannot read it
-        # through the smoke library's smoke_check_sums, which sign-and-publish
-        # holds the whole folder to. A folder that is not here means the build
-        # ran on another machine or in another attempt, and is refused. The
-        # digests printed are the unsigned bytes the build wrote.
+      - name: Hold the hand-over's Windows files to the build job's list
+        # The five unsigned files the build job left in this run's hand-over
+        # folder, on this machine — the three binaries smoke_target_binaries
+        # names and the installer's two program files
+        # smoke_target_installer_parts names — are signed only once every file
+        # the folder's list names still has the SHA-256 the list gives it and
+        # the list names all five; and exactly the five, nothing beside them,
+        # are copied to the directories of this job's own they are signed in,
+        # the binaries to one and the installer's files to another. The list is
+        # read by sha256sum itself, which holds every file it names; a folder
+        # that is not here means the build ran on another machine or in another
+        # attempt, and is refused. The digests printed are the unsigned bytes
+        # the build wrote.
         run: |
           set -euo pipefail
           [ -n "$RELEASE_HANDOVER" ] || { echo "sign-windows: RELEASE_HANDOVER is empty" >&2; exit 1; }
           handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
           unsigned="$handover/windows-unsigned"
-          signed="$RUNNER_TEMP/windows-signed"
-          read -r -a names <<<"$WINDOWS_BINARIES"
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          binaries_list="$(smoke_target_binaries windows/amd64)"
+          parts_list="$(smoke_target_installer_parts windows/amd64)"
+          mapfile -t binaries <<<"$binaries_list"
+          mapfile -t parts <<<"$parts_list"
+          names=("${binaries[@]}" "${parts[@]}")
           if [ ! -d "$handover" ] || [ ! -O "$handover" ] || [ ! -f "$handover/SHA256SUMS" ]; then
-            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, windows-installer, sign-windows-installer, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           if ! verified="$(cd "$handover" && sha256sum --check --strict SHA256SUMS 2>&1)"; then
@@ -1838,168 +1931,53 @@ jobs:
             done
             exit 1
           fi
-          mkdir -p "$signed"
-          for name in "${names[@]}"; do
-            cp "$unsigned/$name" "$signed/$name"
+          mkdir -p "$RUNNER_TEMP/windows-signed" "$RUNNER_TEMP/windows-installer-parts-signed"
+          for name in "${binaries[@]}"; do
+            cp "$unsigned/$name" "$RUNNER_TEMP/windows-signed/$name"
+          done
+          for name in "${parts[@]}"; do
+            cp "$unsigned/$name" "$RUNNER_TEMP/windows-installer-parts-signed/$name"
           done
           echo "unsigned, as the build job wrote them:"
-          (cd "$signed" && sha256sum "${names[@]}")
+          (cd "$RUNNER_TEMP/windows-signed" && sha256sum "${binaries[@]}")
+          (cd "$RUNNER_TEMP/windows-installer-parts-signed" && sha256sum "${parts[@]}")
 
-      - name: Fetch the Java runtime and hold it to its SHA-256
-        # The runtime jsign runs under, fetched for this job rather than taken
-        # from the machine: an archive whose digest is not the one written above
-        # is removed before anything in it is unpacked, and the step names both
-        # digests. The archive is
-        # for x64 Linux, so another machine is refused, naming what it is.
+      - name: Fetch jsign and the Java runtime it runs under
         run: |
           set -euo pipefail
-          machine="$(uname -s)/$(uname -m)"
-          if [ "$machine" != Linux/x86_64 ]; then
-            echo "sign-windows: the Java runtime this workflow pins is for x64 Linux, and this runner is $machine" >&2
-            exit 1
-          fi
-          archive="$RUNNER_TEMP/java-runtime.tar.gz"
-          runtime="$RUNNER_TEMP/java"
-          curl -sSfL --retry 3 -o "$archive" "$JAVA_URL"
-          actual="$(sha256sum < "$archive")"
-          actual="${actual%% *}"
-          if [ "$actual" != "$JAVA_SHA256" ]; then
-            rm -f -- "$archive"
-            echo "sign-windows: $JAVA_URL has SHA-256 $actual, not $JAVA_SHA256, the digest this workflow pins; refusing to unpack it" >&2
-            exit 1
-          fi
-          mkdir -p "$runtime"
-          tar -xzf "$archive" -C "$runtime" --strip-components=1
-          rm -f -- "$archive"
-          echo "java: $JAVA_URL, SHA-256 $actual, the pinned digest, unpacked at $runtime"
-          "$runtime/bin/java" -version
+          aggrega-cli/scripts/sign-windows-files.sh fetch-tools "$RUNNER_TEMP/signing-tools"
 
-      - name: Fetch jsign and hold it to its SHA-256
-        # A jar whose digest is not the one written above is removed unrun, and
-        # the step names both digests.
+      - name: Sign the Windows files
+        # All five in one signing, which asks the service for the certificate
+        # chain once.
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/jsign"
-          jar="$RUNNER_TEMP/jsign/jsign.jar"
-          curl -sSfL --retry 3 -o "$jar" "$JSIGN_URL"
-          actual="$(sha256sum < "$jar")"
-          actual="${actual%% *}"
-          if [ "$actual" != "$JSIGN_SHA256" ]; then
-            rm -f -- "$jar"
-            echo "sign-windows: $JSIGN_URL has SHA-256 $actual, not $JSIGN_SHA256, the digest this workflow pins; refusing to run it" >&2
-            exit 1
-          fi
-          echo "jsign: $JSIGN_URL, SHA-256 $actual, the pinned digest"
+          files=("$RUNNER_TEMP"/windows-signed/* "$RUNNER_TEMP"/windows-installer-parts-signed/*)
+          aggrega-cli/scripts/sign-windows-files.sh sign "$RUNNER_TEMP/signing-tools" "${files[@]}"
 
-      - name: Sign the Windows binaries
-        # Mints the run's OIDC token, exchanges it with Microsoft Entra ID for a
-        # token scoped to the signing service, and signs the three binaries with
-        # it, all in this one step, so the signing token lives only in this
-        # step's shell and in jsign's environment, and never in a file or in the
-        # environment of a later step. Neither token stands on a command line:
-        # each reaches curl on its standard input, and the signing token reaches
-        # jsign through --storepass env:, which names the variable it is read
-        # from. Each is masked in the log the moment it is read.
-        #
-        # A refused exchange fails here, naming the HTTP status, Entra ID's
-        # error and its description, and this run's ref: the identity's
-        # federated credentials in Azure decide which refs may sign, so a run
-        # that reaches this step from a ref they do not admit stops here.
-        #
-        # jsign signs the three in one invocation, because it asks the service
-        # for the certificate chain once per invocation. --tsaurl and --tsmode
-        # are both given: jsign takes the timestamp's form from --tsmode alone,
-        # so the address without it would ask for the older Authenticode
-        # timestamp rather than an RFC 3161 one.
+      - name: Write the SHA-256 lists of the signed files
+        # SHA256SUMS, in the form sha256sum writes, beside the three binaries,
+        # and another beside the installer's two files: the Windows smoke run
+        # holds the binaries it runs to the first, windows-installer holds what
+        # it builds the installer from to both, and sign-and-publish attaches the
+        # binaries only when they still match theirs, so what ships is byte for
+        # byte what ran on Windows.
         run: |
           set -euo pipefail
-          signed="$RUNNER_TEMP/windows-signed"
-          read -r -a names <<<"$WINDOWS_BINARIES"
-
-          if ! oidc_json="$(printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" |
-              curl -sSf -H @- "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange")"; then
-            echo "sign-windows: the Actions runtime did not issue this run's OIDC token" >&2
-            exit 1
-          fi
-          re='"value":"([^"]+)"'
-          if ! [[ $oidc_json =~ $re ]]; then
-            echo "sign-windows: the Actions runtime returned no OIDC token" >&2
-            exit 1
-          fi
-          oidc_token="${BASH_REMATCH[1]}"
-          echo "::add-mask::$oidc_token"
-          # The request credentials are not needed again in this step, so they are
-          # taken out of the environment jsign inherits. That narrows what jsign
-          # is handed; it is no barrier, since a program running as this job's
-          # user can still read them from the process that started it.
-          unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
-
-          token_url="https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/token"
-          if ! response="$(printf '%s' "$oidc_token" | curl -sS \
-              --data-urlencode "client_id=$AZURE_CLIENT_ID" \
-              --data-urlencode "scope=https://codesigning.azure.net/.default" \
-              --data-urlencode "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
-              --data-urlencode "client_assertion@-" \
-              --data-urlencode "grant_type=client_credentials" \
-              -w '\n%{http_code}' "$token_url")"; then
-            echo "sign-windows: the token request to $token_url did not complete" >&2
-            exit 1
-          fi
-          status="${response##*$'\n'}"
-          body="${response%$'\n'*}"
-          if [ "$status" != 200 ]; then
-            error="" description=""
-            re='"error":"([^"]*)"'
-            if [[ $body =~ $re ]]; then error="${BASH_REMATCH[1]}"; fi
-            re='"error_description":"(([^"\\]|\\.)*)"'
-            if [[ $body =~ $re ]]; then description="${BASH_REMATCH[1]}"; fi
-            echo "sign-windows: Microsoft Entra ID refused to exchange this run's OIDC token: HTTP $status, ${error:-no error code}: ${description:-no description}" >&2
-            echo "sign-windows: this run's ref is $GITHUB_REF (workflow $GITHUB_WORKFLOW_REF); the federated credentials of the identity AZURE_CLIENT_ID names decide which refs may sign" >&2
-            exit 1
-          fi
-          re='"access_token":"([^"]+)"'
-          if ! [[ $body =~ $re ]]; then
-            echo "sign-windows: Microsoft Entra ID answered HTTP 200 without an access token" >&2
-            exit 1
-          fi
-          access_token="${BASH_REMATCH[1]}"
-          echo "::add-mask::$access_token"
-          unset oidc_json oidc_token response body
-
-          files=()
-          for name in "${names[@]}"; do
-            files+=("$signed/$name")
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          for dir in "$RUNNER_TEMP/windows-signed" "$RUNNER_TEMP/windows-installer-parts-signed"; do
+            smoke_write_tree_sums "$dir"
+            echo "signed, as ${dir##*/} hands them on:"
+            cat "$dir/SHA256SUMS"
           done
-          ARTIFACT_SIGNING_TOKEN="$access_token" "$RUNNER_TEMP/java/bin/java" -jar "$RUNNER_TEMP/jsign/jsign.jar" \
-            --storetype TRUSTEDSIGNING \
-            --keystore "$ARTIFACT_SIGNING_ENDPOINT" \
-            --storepass env:ARTIFACT_SIGNING_TOKEN \
-            --alias "$ARTIFACT_SIGNING_ACCOUNT/$ARTIFACT_SIGNING_PROFILE" \
-            --tsaurl http://timestamp.acs.microsoft.com/ \
-            --tsmode RFC3161 \
-            "${files[@]}"
-          unset access_token
-
-      - name: Write the SHA-256 list of the signed binaries
-        # SHA256SUMS, in the form sha256sum writes, beside the three: the
-        # Windows smoke run holds the binaries it runs to it, and
-        # sign-and-publish attaches the binaries only when they still match it,
-        # so what ships is byte for byte what ran on Windows.
-        run: |
-          set -euo pipefail
-          signed="$RUNNER_TEMP/windows-signed"
-          read -r -a names <<<"$WINDOWS_BINARIES"
-          (cd "$signed" && sha256sum "${names[@]}") > "$signed/SHA256SUMS"
-          echo "signed, as the Windows smoke run and the release receive them:"
-          cat "$signed/SHA256SUMS"
-          ls -l "$signed"
 
       - name: Upload the signed Windows binaries and their list
         # One workflow artifact, read by windows-smoke, on a GitHub-hosted
-        # Windows machine, and by sign-and-publish of this same run, so the
-        # release attaches the very bytes the Windows run ran; deleted by
-        # clean-up when the run ends (kept a day at most should clean-up never
-        # run).
+        # Windows machine, by windows-installer, and by sign-and-publish of this
+        # same run, so the release attaches the very bytes the Windows run ran;
+        # deleted by clean-up when the run ends (kept a day at most should
+        # clean-up never run).
         uses: actions/upload-artifact@v4
         with:
           name: windows-binaries-signed
@@ -2007,19 +1985,278 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Upload the installer's signed program files and their list
+        # One workflow artifact, read by windows-installer of this same run,
+        # which builds the installer from them; deleted by clean-up when the run
+        # ends (kept a day at most should clean-up never run).
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-parts-signed
+          path: ${{ runner.temp }}/windows-installer-parts-signed
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Remove this job's directories
-        # Whatever the steps above did, so neither the binaries this job copied
+        # Whatever the steps above did, so neither the files this job copied
         # and signed nor the Java runtime and jsign it fetched are left in the
         # runner's temporary directory on the persistent runner; a directory
         # made read-only is made writable first. The hand-over folder is
         # clean-up's to remove.
         if: ${{ always() }}
         run: |
-          for dir in "$RUNNER_TEMP/windows-signed" "$RUNNER_TEMP/java" "$RUNNER_TEMP/jsign"; do
+          for dir in "$RUNNER_TEMP/windows-signed" "$RUNNER_TEMP/windows-installer-parts-signed" "$RUNNER_TEMP/signing-tools"; do
             chmod -R u+w -- "$dir" 2>/dev/null || true
             rm -rf -- "$dir"
           done
-          rm -f -- "$RUNNER_TEMP/java-runtime.tar.gz"
+
+  windows-installer:
+    # Builds the Windows installer, aggrega-<version>-windows-amd64-setup.exe as
+    # the release attaches it, from packaging/windows/aggrega.nsi, with the
+    # makensis scripts/build-windows-installer.sh fetches, which says how. Every
+    # program file the installer carries is signed before it is built: the
+    # default Windows binary and the installer's two program files, which
+    # sign-windows signed and this job holds to their lists. The uninstaller
+    # makensis generates must be byte for byte the unsigned one the build job
+    # left in the hand-over folder, which sign-windows signed, before the signed
+    # one is stored in its place, so the installer carries a signature of
+    # exactly the uninstaller it would otherwise write. On a manual dry run that
+    # signs nothing, sign-windows is skipped and the installer is built from
+    # the unsigned files the build wrote, for windows-smoke to install, and
+    # goes no further.
+    #
+    # makensis, the NSIS packages it comes from and the plug-in are third-party
+    # code, so this is a job of its own, between the two signings: it names no
+    # secret, may not mint the OIDC token, and runs no action but checkout and
+    # the artifact download and upload. It runs on the runner AGGREGA_RUNNER
+    # names because it reads the hand-over folder, holding it to its list first,
+    # and hands the installer on, unsigned, as an artifact, with a SHA-256 list
+    # of it, for sign-windows-installer to sign; on a run that signs nothing,
+    # windows-smoke installs it as it is.
+    #
+    # The if: takes the place of the default, which would skip this job
+    # whenever sign-windows is skipped: it runs when the run was not cancelled,
+    # when registry-credential and build succeeded, and when sign-windows either
+    # succeeded or was skipped on a decision of skip.
+    needs: [registry-credential, build, sign-windows]
+    if: >-
+      ${{ !cancelled()
+      && needs.registry-credential.result == 'success'
+      && needs.build.result == 'success'
+      && (needs.sign-windows.result == 'success'
+      || (needs.sign-windows.result == 'skipped' && needs.registry-credential.outputs.signing == 'skip')) }}
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # This run's signing decision, sign or skip: on skip no signed files exist,
+      # and the installer is built from the unsigned ones.
+      SIGNING: ${{ needs.registry-credential.outputs.signing }}
+      # The version the binaries report, which the installer records.
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Check out the CLI at the commit the build job built
+        # For the installer's script, the build script and the smoke library.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Hold the hand-over folder to the build job's list
+        # Before anything in it is read: every file in this run's hand-over
+        # folder, on this machine, must be one SHA256SUMS names, each once, with
+        # the SHA-256 it gives, and the list must name nothing else. A folder that
+        # is not here means the build ran on another machine or in another
+        # attempt, and is refused.
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_HANDOVER" ] || { echo "windows-installer: RELEASE_HANDOVER is empty" >&2; exit 1; }
+          handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
+          if [ ! -d "$handover" ] || [ ! -O "$handover" ] || [ ! -f "$handover/SHA256SUMS" ]; then
+            echo "windows-installer: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, windows-installer, sign-windows-installer, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            exit 1
+          fi
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          smoke_check_tree_sums "$handover"
+          printf 'HANDOVER=%s\n' "$handover" >> "$GITHUB_ENV"
+
+      - name: Download the signed Windows binaries
+        # Not on a run whose decision is skip, on which sign-windows signed
+        # nothing and uploaded nothing.
+        if: ${{ env.SIGNING != 'skip' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries-signed
+          path: ${{ runner.temp }}/windows-signed
+
+      - name: Download the installer's signed program files
+        if: ${{ env.SIGNING != 'skip' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-parts-signed
+          path: ${{ runner.temp }}/windows-installer-parts-signed
+
+      - name: Build the Windows installer
+        # From the default Windows binary and the installer's two program files,
+        # signed — each held first to the list sign-windows wrote beside it — or,
+        # on a run whose decision is skip, as the build wrote them; and from the
+        # unsigned uninstaller the build wrote, which the one makensis generates
+        # must match. SHA256SUMS is then written beside the installer, by the
+        # smoke library's one writer of such lists.
+        run: |
+          set -euo pipefail
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          binaries_list="$(smoke_target_binaries windows/amd64)"
+          parts_list="$(smoke_target_installer_parts windows/amd64)"
+          mapfile -t binaries <<<"$binaries_list"
+          mapfile -t parts <<<"$parts_list"
+          unsigned="$HANDOVER/windows-unsigned"
+          if [ "$SIGNING" = skip ]; then
+            echo "windows-installer: this run signs nothing, so the installer is built from the unsigned files the build wrote"
+            aggrega="$unsigned/${binaries[0]}"
+            given_parts="$unsigned"
+          else
+            smoke_check_sums "$RUNNER_TEMP/windows-signed/SHA256SUMS" "$RUNNER_TEMP/windows-signed" "${binaries[@]}"
+            smoke_check_sums "$RUNNER_TEMP/windows-installer-parts-signed/SHA256SUMS" "$RUNNER_TEMP/windows-installer-parts-signed" "${parts[@]}"
+            aggrega="$RUNNER_TEMP/windows-signed/${binaries[0]}"
+            given_parts="$RUNNER_TEMP/windows-installer-parts-signed"
+          fi
+          [ -n "$RELEASE_VERSION" ] || { echo "windows-installer: the build job reported no version" >&2; exit 1; }
+          aggrega-cli/scripts/build-windows-installer.sh installer --version "$RELEASE_VERSION" \
+            --aggrega "$aggrega" --parts "$given_parts" --unsigned-parts "$unsigned" \
+            --output-dir "$RUNNER_TEMP/windows-installer"
+          smoke_write_tree_sums "$RUNNER_TEMP/windows-installer"
+          cat "$RUNNER_TEMP/windows-installer/SHA256SUMS"
+
+      - name: Upload the Windows installer and its list
+        # One workflow artifact, read by sign-windows-installer of this same run,
+        # which signs it, or on a run whose decision is skip by windows-smoke;
+        # deleted by clean-up when the run ends (kept a day at most should
+        # clean-up never run).
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ runner.temp }}/windows-installer
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove this job's directories
+        # Whatever the steps above did, so nothing this job received or built is
+        # left in the runner's temporary directory on the persistent runner. The
+        # hand-over folder is clean-up's to remove.
+        if: ${{ always() }}
+        run: |
+          for dir in "$RUNNER_TEMP/windows-signed" "$RUNNER_TEMP/windows-installer-parts-signed" "$RUNNER_TEMP/windows-installer"; do
+            chmod -R u+w -- "$dir" 2>/dev/null || true
+            rm -rf -- "$dir"
+          done
+
+  sign-windows-installer:
+    # Signs the installer windows-installer built, through
+    # scripts/sign-windows-files.sh, as sign-windows signs the binaries: the
+    # same identity, the same settings, the same pinned jsign and Java runtime,
+    # and nothing else run beside them, the shell's own utilities, curl, and
+    # GitHub's own checkout and artifact actions. It is the second of the two
+    # signings because the installer carries the files the first one signed.
+    # It skips when sign-windows skips, on the same decision, and otherwise runs
+    # once windows-installer has succeeded. windows-smoke and sign-and-publish
+    # wait for it, and the installer it signs is the one both see.
+    needs: [registry-credential, build, windows-installer]
+    if: ${{ needs.registry-credential.outputs.signing != 'skip' }}
+    runs-on: ${{ vars.AGGREGA_RUNNER }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # The five settings the signing reads; each is an identifier, none a
+      # secret.
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+      ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+      ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+    steps:
+      - name: Check out the CLI at the commit the build job built
+        # For the signing script and the smoke library.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Refuse a signing setting that is not set
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/sign-windows-files.sh check-settings
+
+      - name: Download the Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ runner.temp }}/windows-installer-signed
+
+      - name: Hold the installer to its list
+        # The installer is signed only once it has the SHA-256 the list
+        # windows-installer wrote gives it, and the list names it alone. The list
+        # then goes: the one beside the signed installer is written after the
+        # signing.
+        run: |
+          set -euo pipefail
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          installer="$(smoke_target_installer windows/amd64)"
+          smoke_check_sums "$RUNNER_TEMP/windows-installer-signed/SHA256SUMS" "$RUNNER_TEMP/windows-installer-signed" "$installer"
+          rm -f -- "$RUNNER_TEMP/windows-installer-signed/SHA256SUMS"
+
+      - name: Fetch jsign and the Java runtime it runs under
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/sign-windows-files.sh fetch-tools "$RUNNER_TEMP/signing-tools"
+
+      - name: Sign the Windows installer
+        run: |
+          set -euo pipefail
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          installer="$(smoke_target_installer windows/amd64)"
+          aggrega-cli/scripts/sign-windows-files.sh sign "$RUNNER_TEMP/signing-tools" "$RUNNER_TEMP/windows-installer-signed/$installer"
+
+      - name: Write the SHA-256 list of the signed installer
+        # SHA256SUMS beside it: windows-smoke holds the installer it runs to it,
+        # and sign-and-publish attaches the installer only when it still matches
+        # it, so what ships is byte for byte what ran on Windows.
+        run: |
+          set -euo pipefail
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          smoke_write_tree_sums "$RUNNER_TEMP/windows-installer-signed"
+          cat "$RUNNER_TEMP/windows-installer-signed/SHA256SUMS"
+
+      - name: Upload the signed Windows installer and its list
+        # One workflow artifact, read by windows-smoke and by sign-and-publish
+        # of this same run; deleted by clean-up when the run ends (kept a day at
+        # most should clean-up never run).
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-signed
+          path: ${{ runner.temp }}/windows-installer-signed
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove this job's directories
+        # Whatever the steps above did, so neither the installer nor the Java
+        # runtime and jsign this job fetched are left in the runner's temporary
+        # directory on the persistent runner.
+        if: ${{ always() }}
+        run: |
+          for dir in "$RUNNER_TEMP/windows-installer-signed" "$RUNNER_TEMP/signing-tools"; do
+            chmod -R u+w -- "$dir" 2>/dev/null || true
+            rm -rf -- "$dir"
+          done
 
   sign-and-publish:
     # Waits for the build, for sign-windows and for every smoke run —
@@ -2035,10 +2272,11 @@ jobs:
     # published or released unless the
     # binaries passed on their own platforms, and a dry run prints its plan only
     # once they have. The build is named as well because a job reads the
-    # outputs only of the jobs it names, and sign-windows because this job
-    # attaches the Windows binaries it signed; from the smoke jobs this job
-    # reads nothing but their result.
-    needs: [build, sign-windows, windows-smoke, macos-smoke, linux-smoke]
+    # outputs only of the jobs it names, sign-windows because this job
+    # attaches the Windows binaries it signed, and sign-windows-installer
+    # because it attaches the installer that job signed, skipped with
+    # sign-windows; from the smoke jobs this job reads nothing but their result.
+    needs: [build, sign-windows, sign-windows-installer, windows-smoke, macos-smoke, linux-smoke]
     # The runner the build ran on, with no hosted fallback: this job reads the
     # release inputs from the hand-over folder on that machine's disk.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
@@ -2138,9 +2376,10 @@ jobs:
         # name in the runner's temporary directory can still hold an earlier
         # run's files, which this run would then read as inputs it was handed or
         # release beside its own. The signed Windows binaries arrive in a
-        # directory of this run's own, WINDOWS_SIGNED, the release assets are
-        # assembled in another, RELEASE_DIR, and the Homebrew formula and the
-        # Scoop manifest are rendered into a third, CHANNELS_DIR, all made empty
+        # directory of this run's own, WINDOWS_SIGNED, the signed Windows
+        # installer in another, WINDOWS_INSTALLER, the release assets are
+        # assembled in a third, RELEASE_DIR, and the Homebrew formula and the
+        # Scoop manifest are rendered into a fourth, CHANNELS_DIR, all made empty
         # here; the steps below read them from the environment, and the last
         # steps remove them.
         # The release inputs are read where the build job left them, in this
@@ -2151,10 +2390,11 @@ jobs:
           [ -n "$RELEASE_HANDOVER" ] || { echo "sign-and-publish: RELEASE_HANDOVER is empty" >&2; exit 1; }
           handover="$(dirname "$RUNNER_TEMP")/$RELEASE_HANDOVER"
           windows_signed="$(mktemp -d "$RUNNER_TEMP/windows-signed.XXXXXX")"
+          windows_installer="$(mktemp -d "$RUNNER_TEMP/windows-installer.XXXXXX")"
           release="$(mktemp -d "$RUNNER_TEMP/release.XXXXXX")"
           channels="$(mktemp -d "$RUNNER_TEMP/channels.XXXXXX")"
-          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nRELEASE_DIR=%s\nCHANNELS_DIR=%s\n' \
-            "$handover" "$handover/release-inputs" "$windows_signed" "$release" "$channels" >> "$GITHUB_ENV"
+          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nWINDOWS_INSTALLER=%s\nRELEASE_DIR=%s\nCHANNELS_DIR=%s\n' \
+            "$handover" "$handover/release-inputs" "$windows_signed" "$windows_installer" "$release" "$channels" >> "$GITHUB_ENV"
 
       - name: Hold the hand-over folder to the build job's list
         # Before anything in it is used or run: every file in this run's
@@ -2171,7 +2411,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
-            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
+            echo "sign-and-publish: this run's hand-over folder $HANDOVER, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, windows-installer, sign-windows-installer, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
@@ -2186,14 +2426,24 @@ jobs:
           name: windows-binaries-signed
           path: ${{ env.WINDOWS_SIGNED }}
 
-      - name: Hold the signed Windows binaries to their list
+      - name: Download the signed Windows installer
+        # The artifact sign-windows-installer uploaded and windows-smoke ran:
+        # the signed installer and its SHA-256 list.
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-signed
+          path: ${{ env.WINDOWS_INSTALLER }}
+
+      - name: Hold the signed Windows binaries and installer to their lists
         # Before anything is pushed, published or released: each signed binary
         # must have the SHA-256 that sign-windows' list gives it, the list
-        # naming exactly the Windows binaries the release carries, so what the
+        # naming exactly the Windows binaries the release carries, and the
+        # signed installer the one sign-windows-installer's list gives it, that
+        # list naming it alone, so what the
         # release attaches is byte for byte what windows-smoke ran and checked.
         # It is the same check that smoke run makes, from the same function, in
         # the repository's own smoke library at the commit the build job built;
-        # the release step below refuses a binary that is missing. A dry run
+        # the release step below refuses a file that is missing. A dry run
         # checks too.
         run: |
           set -euo pipefail
@@ -2202,6 +2452,8 @@ jobs:
           names="$(smoke_target_binaries windows/amd64)"
           mapfile -t windows_binaries <<<"$names"
           smoke_check_sums "$WINDOWS_SIGNED/SHA256SUMS" "$WINDOWS_SIGNED" "${windows_binaries[@]}"
+          installer="$(smoke_target_installer windows/amd64)"
+          smoke_check_sums "$WINDOWS_INSTALLER/SHA256SUMS" "$WINDOWS_INSTALLER" "$installer"
 
       - name: Hold the built binary to the release
         # The hand-over folder keeps each file's mode, so the binary this job
@@ -2373,10 +2625,10 @@ jobs:
             printf '%s\n' "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create the GitHub release and upload the binaries, the extension package, the install scripts and SHA256SUMS
+      - name: Create the GitHub release and upload the binaries, the Windows installer, the extension package, the install scripts and SHA256SUMS
         # The final side effect: attach the default, debug and light binaries for
         # linux/amd64, linux/arm64, windows/amd64, darwin/arm64 and darwin/amd64,
-        # the desktop extension package, the install scripts install.sh and
+        # the Windows installer, the desktop extension package, the install scripts install.sh and
         # install.ps1, and SHA256SUMS, the SHA-256 list of all of them, to the
         # GitHub release for this tag so they are downloadable from the release
         # page. The default binary, under the plain name, is the
@@ -2392,7 +2644,10 @@ jobs:
         # whose signatures it checked. Those are signed bytes, which differ from
         # one signing to the next; what the build reproduces is the unsigned
         # bytes, and the Authenticode digest, which leaves the signature out, is
-        # the same for both. The extension package is the file the pack step
+        # the same for both. The Windows installer is the one
+        # sign-windows-installer signed, held to its list above, the one
+        # windows-smoke installed and uninstalled, attached under the namer's
+        # name for it, aggrega-<version>-windows-amd64-setup.exe. The extension package is the file the pack step
         # wrote, copied under the name the pack script gave it. Which binaries a
         # target's release carries, and under what names the build writes them,
         # is read from the smoke library's smoke_target_binaries for every target
@@ -2406,8 +2661,8 @@ jobs:
         # their own names, so releases/latest/download/install.sh is always the
         # latest release's. The embedded guests are
         # NOT uploaded here — they publish to the registry with their Plugin
-        # entities; the release carries only the runnable binaries, the
-        # extension package, the install scripts and the list, and GitHub
+        # entities; the release carries only the runnable binaries, the Windows
+        # installer, the extension package, the install scripts and the list, and GitHub
         # attaches the source archives on its own. The step refuses to release
         # when any of those files is missing.
         #
@@ -2420,7 +2675,7 @@ jobs:
         # nothing else. So a release whose list misses an asset, names one it
         # does not attach or gives one other bytes is refused before anything is
         # created, and what a downloader checks against is what was uploaded,
-        # the signed Windows binaries included. A dry run writes and checks the
+        # the signed Windows binaries and installer included. A dry run writes and checks the
         # list too, prints it with the planned release and asset names, and
         # creates nothing. The release lands on this repository — GH_REPO pins it
         # explicitly — for the tag the human already pushed; contents:write
@@ -2500,6 +2755,9 @@ jobs:
             asset="$(smoke_release_asset_name windows/amd64 "$BIN_VERSION" "$name")"
             attach "$WINDOWS_SIGNED/$name" "$asset" "sign-windows"
           done <<<"$names"
+          installer="$(smoke_target_installer windows/amd64)"
+          WINDOWS_SETUP="$(smoke_release_asset_name windows/amd64 "$BIN_VERSION" "$installer")"
+          attach "$WINDOWS_INSTALLER/$installer" "$WINDOWS_SETUP" "sign-windows-installer"
           attach "$MCP_BUNDLE" "$(basename "$MCP_BUNDLE")" "the pack step"
           # The install scripts, each named once by its path in this checkout,
           # which is what the release job isolation check reads them by, and
@@ -2539,7 +2797,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
+              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files carry no Developer ID signature and are not notarized): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $WINDOWS_SETUP is the Windows installer, signed as the Windows files are: it installs the default aggrega for the current user, with no administrator rights, into %LOCALAPPDATA%\Programs\aggrega, adds that folder to the user PATH and registers an uninstaller in the list of installed apps; run it with /S to install without a window, and uninstall.exe /S in that folder to uninstall the same way. $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
           fi
 
       - name: Render the Homebrew formula and the Scoop manifest
@@ -2578,8 +2836,8 @@ jobs:
         # clean-up's to remove.
         if: ${{ always() && env.RELEASE_DIR != '' }}
         run: |
-          chmod -R u+w -- "$WINDOWS_SIGNED" "$RELEASE_DIR" "$CHANNELS_DIR" 2>/dev/null || true
-          rm -rf -- "$WINDOWS_SIGNED" "$RELEASE_DIR" "$CHANNELS_DIR"
+          chmod -R u+w -- "$WINDOWS_SIGNED" "$WINDOWS_INSTALLER" "$RELEASE_DIR" "$CHANNELS_DIR" 2>/dev/null || true
+          rm -rf -- "$WINDOWS_SIGNED" "$WINDOWS_INSTALLER" "$RELEASE_DIR" "$CHANNELS_DIR"
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
@@ -3169,10 +3427,16 @@ jobs:
     # that Windows itself accepts each binary's signature, from Cognitio S.r.l.
     # and timestamped, on the very bytes sign-windows' SHA-256 list names; and
     # that install.ps1 installs the default binary, under Windows PowerShell and
-    # PowerShell 7, from a folder laid out as the release is.
+    # PowerShell 7, from a folder laid out as the release is; and that the
+    # Windows installer, as sign-windows-installer signed it, installs aggrega
+    # silently for the user into %LOCALAPPDATA%\Programs\aggrega and onto the
+    # user PATH, so a new shell runs it by name, installs over that install,
+    # carries and installs only signed files, and uninstalls silently, leaving
+    # neither the folder nor the PATH entry.
     # Everything it runs comes from the artifacts the build job staged — a
     # registry program among them, which serves on this machine's loopback
-    # address alone — and sign-windows signed, but for the Python and the two
+    # address alone — sign-windows signed, and sign-windows-installer signed,
+    # but for the Python and the two
     # PowerShells the runner image carries; it
     # checks out this repository so that each test executable runs from its
     # package directory, and for the install scripts the release attaches, at
@@ -3183,28 +3447,33 @@ jobs:
     # the binaries smoke-binaries fetched instead, and fails whatever they do.
     #
     # On a manual dry run from a ref the signing identity is taken not to admit,
-    # registry-credential decides that nothing is signed and sign-windows is
+    # registry-credential decides that nothing is signed and sign-windows and
+    # sign-windows-installer are
     # skipped: this job then runs the unsigned binaries the build wrote, staged
-    # in its inputs, every check reporting its verdict, the signature check
+    # in its inputs, and the installer windows-installer built from them, every
+    # check reporting its verdict, the signature checks
     # reported not applicable rather than passed, and fails whatever the others
     # do. sign-and-publish is skipped on such a run, since it needs sign-windows
     # itself, so those binaries go no further.
     #
     # The if: takes the place of the default, which would skip this job whenever
     # sign-windows is skipped. It runs when the run was not cancelled, when
-    # registry-credential, build and smoke-binaries succeeded, and when
-    # sign-windows either succeeded or was skipped on a decision of skip; a
-    # sign-windows that failed, or was skipped on any other ground, skips this
-    # job. registry-credential is named because a job reads the outputs only of
-    # the jobs it names.
-    needs: [registry-credential, build, smoke-binaries, sign-windows]
+    # registry-credential, build, smoke-binaries and windows-installer
+    # succeeded, and when sign-windows and sign-windows-installer each either
+    # succeeded or was skipped on a decision of skip; one that failed, or was
+    # skipped on any other ground, skips this job. registry-credential is named
+    # because a job reads the outputs only of the jobs it names.
+    needs: [registry-credential, build, smoke-binaries, sign-windows, windows-installer, sign-windows-installer]
     if: >-
       ${{ !cancelled()
       && needs.registry-credential.result == 'success'
       && needs.build.result == 'success'
       && needs.smoke-binaries.result == 'success'
+      && needs.windows-installer.result == 'success'
       && (needs.sign-windows.result == 'success'
-      || (needs.sign-windows.result == 'skipped' && needs.registry-credential.outputs.signing == 'skip')) }}
+      || (needs.sign-windows.result == 'skipped' && needs.registry-credential.outputs.signing == 'skip'))
+      && (needs.sign-windows-installer.result == 'success'
+      || (needs.sign-windows-installer.result == 'skipped' && needs.registry-credential.outputs.signing == 'skip')) }}
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
@@ -3249,6 +3518,25 @@ jobs:
           name: windows-binaries-signed
           path: ${{ runner.temp }}/windows-signed
 
+      - name: Download the signed Windows installer
+        # The installer sign-windows-installer signed, and SHA256SUMS, its list
+        # of it: the installer the release attaches. Not on a run whose decision
+        # is skip.
+        if: ${{ env.SIGNING != 'skip' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-signed
+          path: ${{ runner.temp }}/windows-installer
+
+      - name: Download the unsigned Windows installer
+        # Only on a run whose decision is skip: the installer windows-installer
+        # built from the unsigned files the build wrote, with its list.
+        if: ${{ env.SIGNING == 'skip' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ runner.temp }}/windows-installer
+
       - name: Download the release binaries named to run in place of this run's own
         # Only on a dry run naming smoke_binaries_from: the binaries
         # smoke-binaries fetched from that release.
@@ -3275,12 +3563,16 @@ jobs:
         # the signatures: each binary must match sign-windows' SHA-256 list, and
         # Windows' own Get-AuthenticodeSignature must report it Valid, signed by
         # Cognitio S.r.l. and timestamped, with the unsigned copy the build wrote
-        # shown refused. On a dry run naming smoke_binaries_from, the binaries
+        # shown refused; then the installer, run with /S, run again over its own
+        # install, its files' signatures checked the same way, and the
+        # uninstaller run with /S, each install and the uninstall checked and
+        # the user PATH put back after them. On a dry run naming smoke_binaries_from, the binaries
         # downloaded above run instead, the signature check among the checks
         # reporting on them, and the step fails whatever they do. On a run whose
         # decision is skip, the script is told the binaries are unsigned: it runs
-        # the ones the build wrote, staged in its inputs, every check reporting
-        # its verdict, reports the signature check not applicable rather than
+        # the ones the build wrote, staged in its inputs, and the installer built
+        # from them, every check reporting
+        # its verdict, reports the signature checks not applicable rather than
         # passed, and fails whatever the others do.
         # aggrega-cli/scripts/platform-smoke.sh --help says what each check
         # asserts.
@@ -3288,7 +3580,7 @@ jobs:
           SUBSTITUTE_TAG: ${{ inputs.smoke_binaries_from }}
         run: |
           set -euo pipefail
-          args=(--target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke")
+          args=(--target windows/amd64 --inputs "$RUNNER_TEMP/windows-smoke" --installer "$RUNNER_TEMP/windows-installer")
           if [ "$SIGNING" = skip ]; then
             args+=(--unsigned)
           else
@@ -3490,7 +3782,7 @@ jobs:
     # emulation's installer image once the image is built, and
     # sign-and-publish's publish script removes every image and reference it
     # loads when it exits, a refusal included.
-    needs: [registry-credential, sources, build, sign-windows, sign-and-publish, record-published, publish-skills, publish-package-channels, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-and-publish, record-published, publish-skills, publish-package-channels, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15

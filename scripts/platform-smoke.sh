@@ -149,8 +149,34 @@
 #                 --unsigned it checks nothing: it prints that it is not
 #                 applicable, and the run's last lines list it so, never as
 #                 passed
+#  13. installer  windows/amd64 only. The installer in the --installer directory
+#                 must have the SHA-256 the SHA256SUMS beside it lists. Run as
+#                 `<installer> /S`, it must exit 0 within five minutes — a silent
+#                 install that waits is one showing a window — and leave the
+#                 folder Windows names as the user's local application data,
+#                 under Programs\aggrega, holding aggrega.exe, byte for byte the
+#                 default binary the installer was built from (the signed one, or
+#                 with --unsigned the one in bin/), uninstall.exe and EnVar.dll,
+#                 and nothing else; the user PATH holding that folder once; an
+#                 uninstall entry in the user's list of installed apps naming
+#                 Aggrega, the version staged, Cognitio S.r.l. as its publisher,
+#                 the folder, and the uninstaller in it, with /S as its quiet
+#                 form; and a new PowerShell, whose PATH is the machine's and the
+#                 user's as Windows keeps them, must find aggrega in that folder
+#                 by name and run it to report the version staged. Run again with
+#                 /S over that install, as an upgrade in place is, the same must
+#                 hold, the folder still on the PATH once. Unless --unsigned, the
+#                 installer and each program file it installed must pass step
+#                 12's signature check. Then `uninstall.exe /S` must leave, within
+#                 five minutes, no folder, no uninstall entry, and a user PATH
+#                 holding the entries it held before the install, in their order,
+#                 empty entries set aside; and the same checks that passed after
+#                 the install must refuse: no new PowerShell finds aggrega, the
+#                 PATH does not hold the folder, there is no uninstall entry. The
+#                 folder must not exist before the step, and the user PATH is put
+#                 back as it was when the step ends, whatever ended it
 #
-# Each binary started in steps 1-8 and 11 has every AGGREGA_ setting of the
+# Each binary started in steps 1-8, 11 and 13 has every AGGREGA_ setting of the
 # machine unset, the global configuration pointed at an empty directory
 # (XDG_CONFIG_HOME and APPDATA both name it), and the offline posture on, so it
 # reads no configuration of the machine and reaches no network; steps 4, 9 and 12
@@ -163,24 +189,29 @@
 # curl and PowerShell 7 reach the folder it serves and nothing else; Windows
 # PowerShell reads the system's proxy settings rather than these. The tests run
 # in the environment the shell was given; their own setup isolates what they
-# read. Every PowerShell steps 11 and 12 start, Windows PowerShell and
+# read. Every PowerShell steps 11, 12 and 13 start, Windows PowerShell and
 # PowerShell 7 alike, runs with -NoProfile, so no profile of the machine shapes
 # what it does.
 #
 # Usage:
-#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned] [--binaries <dir>]
+#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned] [--installer <dir>] [--binaries <dir>]
 #   scripts/platform-smoke.sh --help
 #
 # --signed <dir> names the directory holding the signed Windows binaries and
 # SHA256SUMS. It is required for windows/amd64, unless --unsigned is given, and
 # refused for a darwin or linux target.
 #
+# --installer <dir> names the directory holding the Windows installer, under the
+# name the build writes it, and SHA256SUMS: the signed installer, or with
+# --unsigned the one built from the unsigned binary. It is required for
+# windows/amd64 and refused for a darwin or linux target.
+#
 # --unsigned runs the windows/amd64 binaries staged in bin/, unsigned as the
 # build wrote them: the way to run the checks on a run that signs nothing. It is
 # refused with --signed and for a darwin or linux target. Each step then runs whatever an
 # earlier one reported; step 12 checks nothing and is reported not applicable,
-# never passed; and the run ends naming every step that failed and the step that
-# was not applicable. It exits 1 when a step failed and 3 when none did — never
+# never passed; step 13 checks no signature, saying so; and the run ends naming
+# every step that failed and the step that was not applicable. It exits 1 when a step failed and 3 when none did — never
 # 0, since what ran is not the signed binaries the release attaches.
 #
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
@@ -207,7 +238,7 @@ step() { printf '\n==> %s\n' "$*"; }
 . scripts/lib/platform-smoke-common.sh
 smoke_require_bash || exit 1
 
-INPUTS="" SIGNED="" UNSIGNED="" SUBSTITUTE=""
+INPUTS="" SIGNED="" UNSIGNED="" SUBSTITUTE="" INSTALLER=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target)
@@ -228,6 +259,11 @@ while [ "$#" -gt 0 ]; do
     --unsigned)
       UNSIGNED=1
       shift
+      ;;
+    --installer)
+      [ -n "${2:-}" ] || { fail "--installer needs the directory holding the installer and SHA256SUMS"; exit 2; }
+      INSTALLER="$2"
+      shift 2
       ;;
     --binaries)
       [ -n "${2:-}" ] || { fail "--binaries needs the directory holding the binaries to run"; exit 2; }
@@ -258,10 +294,14 @@ EXE_SUFFIX=""
 [ -z "$SIGNED" ] || [ -z "$UNSIGNED" ] ||
   { fail "--signed and --unsigned cannot both be given: --signed runs the signed binaries in its directory, --unsigned the unsigned ones in bin/"; exit 2; }
 case "$GOOS_T" in
-  windows) [ -n "$SIGNED" ] || [ -n "$UNSIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones; on a run that signs nothing, give --unsigned instead"; exit 2; } ;;
+  windows)
+    [ -n "$SIGNED" ] || [ -n "$UNSIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones; on a run that signs nothing, give --unsigned instead"; exit 2; }
+    [ -n "$INSTALLER" ] || { fail "--installer <dir> is required for $TARGET: the release attaches an installer for it"; exit 2; }
+    ;;
   *)
     [ -z "$SIGNED" ] || { fail "--signed applies to windows/amd64 alone; the release does not sign the $TARGET binaries"; exit 2; }
     [ -z "$UNSIGNED" ] || { fail "--unsigned applies to windows/amd64 alone; the release does not sign the $TARGET binaries, so every run of them runs them as staged"; exit 2; }
+    [ -z "$INSTALLER" ] || { fail "--installer applies to windows/amd64 alone; the release carries no installer for $TARGET"; exit 2; }
     ;;
 esac
 # The runner names directories in the Windows form; this shell works in its own.
@@ -269,6 +309,7 @@ if command -v cygpath >/dev/null 2>&1; then
   INPUTS="$(cygpath -u "$INPUTS")"
   [ -z "$SIGNED" ] || SIGNED="$(cygpath -u "$SIGNED")"
   [ -z "$SUBSTITUTE" ] || SUBSTITUTE="$(cygpath -u "$SUBSTITUTE")"
+  [ -z "$INSTALLER" ] || INSTALLER="$(cygpath -u "$INSTALLER")"
 fi
 [ -f "$INPUTS/smoke.env" ] || { fail "$INPUTS holds no smoke.env; is it the directory stage-platform-smoke.sh wrote?"; exit 2; }
 if [ -n "$SIGNED" ]; then
@@ -279,13 +320,17 @@ if [ -n "$SUBSTITUTE" ]; then
   [ -d "$SUBSTITUTE" ] || { fail "--binaries names $SUBSTITUTE, which is not a directory"; exit 2; }
   SUBSTITUTE="$(cd "$SUBSTITUTE" && pwd)"
 fi
+if [ -n "$INSTALLER" ]; then
+  [ -d "$INSTALLER" ] || { fail "--installer names $INSTALLER, which is not a directory"; exit 2; }
+  INSTALLER="$(cd "$INSTALLER" && pwd)"
+fi
 WORK="$INPUTS/run"
 [ ! -e "$WORK" ] || { fail "$WORK already exists; give a freshly staged directory"; exit 2; }
 
 TOOLS=(cat cmp cp dd find git head sleep sort tr uname)
 [ "$GOOS_T" = darwin ] && TOOLS+=(chmod curl sh xattr)
 [ "$GOOS_T" = linux ] && TOOLS+=(chmod curl sh)
-[ "$GOOS_T" = windows ] && TOOLS+=(powershell.exe pwsh sha256sum)
+[ "$GOOS_T" = windows ] && TOOLS+=(cygpath powershell.exe pwsh sha256sum timeout)
 for tool in "${TOOLS[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { fail "$tool not found on PATH"; exit 1; }
 done
@@ -769,14 +814,17 @@ check_tests() {
   done
 }
 
-# user_path <save|holds|unchanged|restore> — what Windows keeps as the user PATH,
-# read and written through Windows PowerShell, with the folder step 11 installs
-# into in SMOKE_INSTALL_FOLDER and the file the PATH is kept in in
-# SMOKE_USER_PATH_SAVED, both in the Windows form. save keeps the PATH as it is
-# now — its value, unexpanded, and its kind, or that there is none — refusing one
-# that already holds the folder; holds refuses a PATH that does not hold the
-# folder exactly once; unchanged refuses a PATH that is not the one kept; restore
-# writes the kept one back and refuses when what is then read differs from it.
+# user_path <save|holds|unchanged|same-entries|restore> — what Windows keeps as
+# the user PATH, read and written through Windows PowerShell, with the folder
+# step 11 or 13 installs into in SMOKE_INSTALL_FOLDER and the file the PATH is
+# kept in in SMOKE_USER_PATH_SAVED, both in the Windows form. save keeps the PATH
+# as it is now — its value, unexpanded, and its kind, or that there is none —
+# refusing one that already holds the folder; holds refuses a PATH that does not
+# hold the folder exactly once; unchanged refuses a PATH that is not the one
+# kept; same-entries refuses a PATH whose entries, empty ones set aside, are not
+# the kept one's in their order, or whose kind is not the kept one's when one was
+# kept; restore writes the kept one back and refuses when what is then read
+# differs from it.
 # Each reports in a line of its own. The paths reach PowerShell through the
 # environment rather than in the command's text, so no character of them can
 # change what PowerShell runs, and are compared there, so no conversion between
@@ -802,6 +850,12 @@ user_path() {
   script+="'unchanged' { \$kept = Import-Clixml -LiteralPath \$env:SMOKE_USER_PATH_SAVED; "
   script+="if (\$kept.Kind -cne \$now.Kind -or \$kept.Value -cne \$now.Value) { throw ('the user PATH is not the one kept: ' + \$now.Kind + ' ' + \$now.Value) }; "
   script+="'ok: the user PATH is the one kept' } "
+  script+="'same-entries' { \$kept = Import-Clixml -LiteralPath \$env:SMOKE_USER_PATH_SAVED; "
+  script+="\$was = @(\$kept.Value.Split(';') | Where-Object { \$_ }) -join ';'; "
+  script+="\$is = @(\$now.Value.Split(';') | Where-Object { \$_ }) -join ';'; "
+  script+="if (\$was -cne \$is) { throw ('the user PATH does not hold the entries kept, in their order: ' + \$now.Value) }; "
+  script+="if (\$kept.Kind -ne 'Absent' -and \$kept.Kind -cne \$now.Kind) { throw ('the user PATH is a value of kind ' + \$now.Kind + ', not ' + \$kept.Kind) }; "
+  script+="'ok: the user PATH holds the entries kept, in their order, as a value of kind ' + \$now.Kind } "
   script+="'restore' { \$kept = Import-Clixml -LiteralPath \$env:SMOKE_USER_PATH_SAVED; "
   script+="if (\$kept.Kind -eq 'Absent') { \$key.DeleteValue('Path', \$false) } "
   script+="else { \$key.SetValue('Path', \$kept.Value, [Microsoft.Win32.RegistryValueKind]\$kept.Kind) }; "
@@ -1058,6 +1112,177 @@ check_signature() {
   echo "ok: the signature check refuses an unsigned binary, and the list check the unsigned binaries"
 }
 
+# How long step 13 gives the installer, and the uninstaller, to finish.
+INSTALLER_SECONDS=300
+
+# installed_app <present|absent> — what the user's list of installed apps holds
+# under the installer's uninstall entry, read through Windows PowerShell, with
+# the install folder in SMOKE_INSTALL_FOLDER and the version staged in
+# SMOKE_VERSION. present prints the entry's values and refuses one that is
+# missing or does not name Aggrega, the version, Cognitio S.r.l., the folder,
+# and the uninstaller in it, quoted, with /S as its quiet form; absent refuses
+# an entry that is there. Its strings are in single quotes and the quote around
+# the uninstaller's path is [char]34, as user_path's and authenticode_report's
+# text carries no double quote.
+installed_app() {
+  local script
+  script="\$ErrorActionPreference = 'Stop'; "
+  script+="\$key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\aggrega'; "
+  script+="\$q = [string][char]34; "
+  script+="\$uninstaller = Join-Path \$env:SMOKE_INSTALL_FOLDER 'uninstall.exe'; "
+  script+="\$want = [ordered]@{ DisplayName = 'Aggrega'; DisplayVersion = \$env:SMOKE_VERSION; Publisher = 'Cognitio S.r.l.'; "
+  script+="InstallLocation = \$env:SMOKE_INSTALL_FOLDER; UninstallString = \$q + \$uninstaller + \$q; QuietUninstallString = \$q + \$uninstaller + \$q + ' /S' }; "
+  script+="switch (\$env:SMOKE_INSTALLED_APP) { "
+  script+="'present' { if (-not (Test-Path -LiteralPath \$key)) { throw 'the list of installed apps holds no entry for aggrega' }; "
+  script+="\$entry = Get-ItemProperty -LiteralPath \$key; "
+  script+="foreach (\$name in \$want.Keys) { \$value = [string]\$entry.\$name; 'entry: ' + \$name + ' = ' + \$value; "
+  script+="if (\$value -cne \$want[\$name]) { throw ('the entry' + [char]39 + 's ' + \$name + ' is ' + \$value + ', not ' + \$want[\$name]) } }; "
+  script+="'ok: the list of installed apps holds the entry for aggrega' } "
+  script+="'absent' { if (Test-Path -LiteralPath \$key) { throw 'the list of installed apps still holds an entry for aggrega' }; "
+  script+="'ok: the list of installed apps holds no entry for aggrega' } "
+  script+="default { throw ('unknown action ' + \$env:SMOKE_INSTALLED_APP) } }"
+  SMOKE_INSTALLED_APP="$1" MSYS_NO_PATHCONV=1 \
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script"
+}
+
+# new_shell_version — run aggrega by name in a new Windows PowerShell whose PATH
+# is the machine's and the user's, as Windows keeps them and gives a new
+# session, rather than the PATH this shell inherited: it must find aggrega.exe in
+# SMOKE_INSTALL_FOLDER, first, and run it as `aggrega version`. Prints where it
+# found it and what it printed; returns non-zero when it finds none, finds
+# another first, or the command fails.
+new_shell_version() {
+  local script
+  script="\$ErrorActionPreference = 'Stop'; "
+  script+="\$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User'); "
+  script+="\$found = @(Get-Command aggrega -CommandType Application -ErrorAction SilentlyContinue); "
+  script+="if (\$found.Count -eq 0) { throw 'a new shell finds no aggrega on its PATH' }; "
+  script+="\$want = Join-Path \$env:SMOKE_INSTALL_FOLDER 'aggrega.exe'; "
+  script+="if (\$found[0].Source -ne \$want) { throw ('a new shell finds ' + \$found[0].Source + ' first, not ' + \$want) }; "
+  script+="'found: ' + \$found[0].Source; "
+  script+="& aggrega version; "
+  script+="if (\$LASTEXITCODE -ne 0) { throw ('aggrega version exited ' + \$LASTEXITCODE) }"
+  MSYS_NO_PATHCONV=1 powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script"
+}
+
+check_installer() {
+  local log="$LOGS/installer" name installer built_from local_app native_folder folder run file report waited text
+  mkdir -p "$log"
+  name="$(smoke_target_installer "$TARGET")" || return 1
+  smoke_check_sums "$INSTALLER/$SUMS_NAME" "$INSTALLER" "$name" ||
+    { fail "the installer is not the one the SHA256SUMS beside it lists"; return 1; }
+  installer="$INSTALLER/$name"
+  # The installer carries the default binary as the release attaches it: signed,
+  # or on a run that signs nothing as the build wrote it. --binaries changes what
+  # the other steps run, not what the installer was built from.
+  if [ -n "$UNSIGNED" ]; then
+    built_from="$INPUTS/bin/${BINARY_NAMES[0]}"
+  else
+    built_from="$SIGNED/${BINARY_NAMES[0]}"
+  fi
+
+  # Where the installer puts aggrega: the folder Windows names as the user's local
+  # application data, which the installer asks Windows for rather than reading
+  # LOCALAPPDATA, under Programs\aggrega.
+  local_app="$(MSYS_NO_PATHCONV=1 powershell.exe -NoLogo -NoProfile -NonInteractive -Command "[Environment]::GetFolderPath('LocalApplicationData')")" ||
+    { fail "Windows PowerShell could not name the user's local application data folder"; return 1; }
+  local_app="${local_app%$'\r'}"
+  [ -n "$local_app" ] || { fail "Windows names no local application data folder for this user"; return 1; }
+  native_folder="$local_app\\Programs\\aggrega"
+  folder="$(cygpath -u "$native_folder")"
+  if [ -e "$folder" ]; then
+    fail "$native_folder exists before the installer runs, so what the installer leaves there could not be told from what was there"
+    return 1
+  fi
+  export SMOKE_INSTALL_FOLDER SMOKE_USER_PATH_SAVED SMOKE_VERSION
+  SMOKE_INSTALL_FOLDER="$native_folder"
+  SMOKE_USER_PATH_SAVED="$(smoke_native_path "$log/user-path.xml")"
+  SMOKE_VERSION="$VERSION"
+  user_path save || { fail "could not keep the user PATH before the installer runs"; return 1; }
+  INSTALL_PATH_KEPT=1
+  trap end_install EXIT
+
+  for run in install upgrade; do
+    printf -- '--- %s /S (%s)\n' "$name" "$run"
+    # MSYS_NO_PATHCONV keeps the Git for Windows shell from rewriting /S, which it
+    # could take for a path, on its way to the installer.
+    if ! smoke_run_captured "$log" "$run" env MSYS_NO_PATHCONV=1 timeout "$INSTALLER_SECONDS" "$installer" /S; then
+      fail "$name /S ($run) did not exit 0 within $INSTALLER_SECONDS seconds; a silent install that does not finish is one waiting at a window"
+      return 1
+    fi
+    smoke_check_only_entries "$folder" aggrega.exe uninstall.exe EnVar.dll ||
+      { fail "after $name /S ($run), $native_folder does not hold exactly aggrega.exe, uninstall.exe and EnVar.dll"; return 1; }
+    cmp -s "$built_from" "$folder/aggrega.exe" ||
+      { fail "the aggrega.exe installed ($run) is not byte for byte ${built_from#"$INPUTS/"}, the default binary the installer was built from"; return 1; }
+    echo "ok: aggrega.exe installed ($run) is byte for byte the default binary the installer was built from"
+    user_path holds || { fail "after $name /S ($run), the user PATH does not hold $native_folder once"; return 1; }
+    installed_app present || { fail "after $name /S ($run), the uninstall entry is not the one the installer writes"; return 1; }
+    if ! new_shell_version > "$log/$run-new-shell.out" 2> "$log/$run-new-shell.err"; then
+      cat "$log/$run-new-shell.out" "$log/$run-new-shell.err" >&2
+      fail "after $name /S ($run), a new shell does not run the installed aggrega by name"
+      return 1
+    fi
+    tr -d '\r' < "$log/$run-new-shell.out"
+    text="$(tr -d '\r' < "$log/$run-new-shell.out")"
+    case $'\n'"$text" in
+      *$'\n'"aggrega $VERSION ("*) echo "ok: a new shell runs the installed aggrega by name, and it reports $VERSION" ;;
+      *) fail "the aggrega a new shell runs ($run) does not report aggrega $VERSION"; return 1 ;;
+    esac
+  done
+
+  if [ -n "$UNSIGNED" ]; then
+    echo "not applicable: --unsigned: the installer and what it installed are unsigned on a run that signs nothing, so their signatures are not checked"
+  else
+    for file in "$installer" "$folder/aggrega.exe" "$folder/uninstall.exe" "$folder/EnVar.dll"; do
+      report="$log/$(basename "$file").signature.txt"
+      printf -- '--- %s: Get-AuthenticodeSignature\n' "${file##*/}"
+      authenticode_report "$file" "$report" ||
+        { fail "Windows PowerShell could not report the signature of ${file##*/}"; return 1; }
+      tr -d '\r' < "$report"
+      smoke_check_authenticode_report "$report" "$SIGNER_CN" ||
+        { fail "${file##*/} is not signed as $SIGNER_CN with a timestamp Windows reports Valid"; return 1; }
+    done
+  fi
+
+  printf -- '--- uninstall.exe /S\n'
+  if ! smoke_run_captured "$log" uninstall env MSYS_NO_PATHCONV=1 timeout "$INSTALLER_SECONDS" "$folder/uninstall.exe" /S; then
+    fail "uninstall.exe /S did not exit 0 within $INSTALLER_SECONDS seconds"
+    return 1
+  fi
+  # The uninstaller copies itself to a temporary folder and finishes from there,
+  # so that the copy in the install folder can be removed: the command above
+  # returns before the uninstall is done.
+  for ((waited = 0; waited < INSTALLER_SECONDS; waited++)); do
+    [ -e "$folder" ] || break
+    sleep 1
+  done
+  if [ -e "$folder" ]; then
+    ls -la "$folder" >&2 || true
+    fail "$native_folder is still there $INSTALLER_SECONDS seconds after uninstall.exe /S"
+    return 1
+  fi
+  echo "ok: uninstall.exe /S removed $native_folder within $waited second(s)"
+  installed_app absent || { fail "uninstall.exe /S left the uninstall entry"; return 1; }
+  user_path same-entries || { fail "uninstall.exe /S did not leave the user PATH holding the entries it held before the install"; return 1; }
+
+  echo "The checks that passed after the install must now refuse:"
+  if new_shell_version > "$log/uninstalled-new-shell.out" 2> "$log/uninstalled-new-shell.err"; then
+    fail "a new shell still runs an aggrega by name after the uninstall, so the check above proves nothing"
+    return 1
+  fi
+  if user_path holds; then
+    fail "the PATH check still finds $native_folder after the uninstall, so its pass above proves nothing"
+    return 1
+  fi
+  if installed_app present; then
+    fail "the uninstall entry check still passes after the uninstall, so its pass above proves nothing"
+    return 1
+  fi
+  echo "ok: after the uninstall no new shell finds aggrega, the PATH does not hold the folder, and there is no uninstall entry"
+  user_path restore || { fail "could not put the user PATH back as it was"; return 1; }
+  INSTALL_PATH_KEPT=""
+}
+
 # Each step runs in a subshell, so an environment it changes, and a process it
 # starts, end with it. The subshell is not the left side of || or &&: there the
 # shell would stop honouring set -e inside it, and a failing command would no
@@ -1122,6 +1347,7 @@ if [ "$GOOS_T" = windows ]; then
   else
     run_step "$SIGNATURE_STEP" check_signature
   fi
+  run_step "13. installer: $(smoke_target_installer "$TARGET") /S, an upgrade over it, and uninstall.exe /S" check_installer isolated
 fi
 
 if [ "${#FAILED[@]}" -gt 0 ]; then

@@ -22,7 +22,8 @@
 # smoke_check_sums. The SHA256SUMS a release attaches is written the same way, by
 # smoke_write_tree_sums over the directory holding exactly the files the release
 # attaches, and held to them by smoke_check_sums before the release is made; the
-# names the release gives its binaries are smoke_release_asset_name's. The
+# names the release gives its binaries and its Windows installer are
+# smoke_release_asset_name's. The
 # Homebrew formula and the Scoop manifest each release writes for its default
 # binaries take every digest from that list, through smoke_listed_digest, once
 # smoke_check_tree_sums has held the list to the files. The smoke
@@ -44,14 +45,31 @@
 #     darwin/arm64, darwin/amd64 and linux/arm64 alike. A target the smoke run
 #     does not cover is refused with exit 2, naming the targets it does cover.
 #
+#   smoke_target_installer <goos>/<goarch>
+#     Prints the file name of the installer the release carries for the target,
+#     as the build writes it: aggrega-windows-amd64-setup.exe for windows/amd64,
+#     the one target the release carries an installer for. Any other target is
+#     refused with exit 2, naming it.
+#
+#   smoke_target_installer_parts <goos>/<goarch>
+#     Prints, one per line, the program files the target's installer carries
+#     beside the default binary, under the names the build writes them for
+#     signing, which is done before the installer is built: uninstall.exe, the
+#     uninstaller, and EnVar.dll, the plug-in that edits the user PATH, which the
+#     installer runs and places beside aggrega.exe for the uninstaller to run.
+#     Refused with exit 2 as smoke_target_installer is.
+#
 #   smoke_release_asset_name <goos>/<goarch> <version> <name>
 #     Prints the name a release gives the binary the build wrote as <name> for the
 #     target: <variant>-<version>-<goos>-<goarch>, with .exe for windows, where
 #     <variant> is <name> without the target the build may have appended to it
 #     and without .exe — so aggrega, as the build machine's own build writes it,
 #     and aggrega-debug-darwin-arm64, as a --target build writes it, become
-#     aggrega-<version>-linux-amd64 and aggrega-debug-<version>-darwin-arm64.
-#     Returns 2, printing nothing, when an argument is empty.
+#     aggrega-<version>-linux-amd64 and aggrega-debug-<version>-darwin-arm64. An
+#     installer, written as <variant>-<goos>-<goarch>-setup.exe, keeps -setup
+#     after the target: aggrega-windows-amd64-setup.exe becomes
+#     aggrega-<version>-windows-amd64-setup.exe. Returns 2, printing nothing, when
+#     an argument is empty.
 #
 #   smoke_native_path <path>
 #     Prints <path> in the form a native program on this system reads: the Windows
@@ -230,14 +248,32 @@ smoke_target_binaries() {
   esac
 }
 
+smoke_target_installer() {
+  case "$1" in
+    windows/amd64) printf '%s\n' aggrega-windows-amd64-setup.exe ;;
+    *)
+      printf 'smoke: the release carries no installer for %s; it carries one for windows/amd64\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
+smoke_target_installer_parts() {
+  smoke_target_installer "$1" >/dev/null || return 2
+  printf '%s\n' uninstall.exe EnVar.dll
+}
+
 smoke_release_asset_name() {
-  local target="$1" version="$2" name="$3" goos goarch ext="" variant
+  local target="$1" version="$2" name="$3" goos goarch ext="" kind="" variant
   [ -n "$target" ] && [ -n "$version" ] && [ -n "$name" ] || return 2
   goos="${target%/*}" goarch="${target#*/}"
   [ "$goos" = windows ] && ext=.exe
   variant="${name%"$ext"}"
+  case "$variant" in
+    *"-$goos-$goarch-setup") kind=-setup variant="${variant%-setup}" ;;
+  esac
   variant="${variant%"-$goos-$goarch"}"
-  printf '%s-%s-%s-%s%s\n' "$variant" "$version" "$goos" "$goarch" "$ext"
+  printf '%s-%s-%s-%s%s%s\n' "$variant" "$version" "$goos" "$goarch" "$kind" "$ext"
 }
 
 smoke_native_path() {

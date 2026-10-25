@@ -46,9 +46,11 @@
 #      2), or names a secret anywhere. Such a job holds the run's own token,
 #      github.token, which it may name, and nothing else.
 #
-# The build and pack commands are npx, npm, pnpm, yarn, cargo, make, tinygo;
-# go build, go run, go test, go generate, go install, go get; and docker build,
-# docker buildx build, buildx build, docker image build, docker compose build. A
+# The build and pack commands are npx, npm, pnpm, yarn, cargo, make, tinygo,
+# makensis (which compiles the Windows installer from a script and the plug-ins
+# and stubs it fetches); go build, go run, go test, go generate, go install, go
+# get; and docker build, docker buildx build, buildx build, docker image build,
+# docker compose build. A
 # command counts wherever it stands on a line that is not a comment, inside a
 # string too: this reads text, so where a line merely names one it refuses
 # rather than guesses. A repository script is any token ending in .sh, with a
@@ -113,7 +115,7 @@ fi
 B='(^|[^A-Za-z0-9_.-])'
 E='([^A-Za-z0-9_-]|$)'
 COMMAND_RES=(
-  "${B}(npx|npm|pnpm|yarn|cargo|make|tinygo)${E}"
+  "${B}(npx|npm|pnpm|yarn|cargo|make|tinygo|makensis)${E}"
   "${B}(go[[:space:]]+(build|run|test|generate|install|get))${E}"
   "${B}(docker[[:space:]]+(buildx[[:space:]]+|image[[:space:]]+|compose[[:space:]]+)?build|buildx[[:space:]]+build)${E}"
 )
