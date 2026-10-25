@@ -303,7 +303,9 @@ func expandBoundaries(
 					}
 					feature, errs := expandBinding(key, value, binding, sideRelease, lookupFeature(catalogLookup, binding.Feature), cache, path, name, effective.sources[key])
 					if len(errs) > 0 {
-						return wrapAnnotationOpsError(path, name, key, "expansion", errors.Join(errs...))
+						return wrapAnnotationOpsError(path, name, key, "expansion",
+							rr.AnnotationProvenance[AnnotationProvenanceKey(path, name, key)].InjectedByPlugin,
+							errors.Join(errs...))
 					}
 					if _, already := comp.Features.Get(key); already {
 						continue
@@ -773,9 +775,20 @@ func aggregateCategory() cerrors.Category {
 // sentence, which is what lets the formatter compose the head once — and lets it
 // carry the short code of whichever registered condition the wrapped chain
 // names, which a hand-written prefix cannot supply.
-func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inner error) error {
-	return cerrors.Wrap(inner, releaseCategory(), cerrors.SourceLocation{},
-		fmt.Sprintf("annotation %s failed at boundary %q component %q key %q", stage, boundaryPath, componentName, key))
+//
+// injectedBy is the plugin that injected the annotation on this component, read
+// from the provenance the injecting role recorded, and empty for an annotation an
+// author wrote. Where it is set the scope says so, naming the plugin and the
+// governance role it is attached at: the coordinate reads as a key in the
+// Release, and an operator sent there would look for a value nobody wrote in that
+// file, when the value to correct is the one the plugin decided. An authored
+// annotation's scope is unchanged.
+func wrapAnnotationOpsError(boundaryPath, componentName, key, stage, injectedBy string, inner error) error {
+	scope := fmt.Sprintf("annotation %s failed at boundary %q component %q key %q", stage, boundaryPath, componentName, key)
+	if injectedBy != "" {
+		scope += ", " + injectionAttribution(injectedBy)
+	}
+	return cerrors.Wrap(inner, releaseCategory(), cerrors.SourceLocation{}, scope)
 }
 
 // wrapAggregateAnnotationError is the same wrap on the Aggregate side. The bad

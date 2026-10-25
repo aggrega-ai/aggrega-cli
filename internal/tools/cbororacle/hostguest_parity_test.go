@@ -173,11 +173,22 @@ func TestHostGuestWireParity_Mutator(t *testing.T) {
 func TestHostGuestWireParity_AnnotationTransform(t *testing.T) {
 	t.Parallel()
 
+	// A target's annotations in an order that is not sorted order at either level,
+	// holding every shape an annotation written on a component takes: a string, a
+	// structured value of subkeys, and the null an opt-out writes.
+	annotations := om[any](t,
+		"zzz", "3",
+		"a", func() any {
+			nested := om[any](t, "z", "last", "a", "first")
+			return &nested
+		}(),
+	)
+	annotations.Set("mm", nil)
 	in := pipeline.AnnotationTransformInput{
 		Targets: []pipeline.AnnotationTarget{{
 			BoundaryPath:  "app",
 			ComponentName: "web",
-			Annotations:   om[string](t, "zzz", "3", "a", "1", "mm", "2"),
+			Annotations:   annotations,
 		}},
 		BindingKeys: []string{"aggrega.ai/service-account"},
 	}
@@ -185,7 +196,36 @@ func TestHostGuestWireParity_AnnotationTransform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compiler-side encode: %v", err)
 	}
-	crossSide(t, "AnnotationTransformInput", got, &abi.AnnotationTransformInput{})
+	var guest abi.AnnotationTransformInput
+	crossSide(t, "AnnotationTransformInput", got, &guest)
+	// Each value reaches the plugin side as the verbatim JSON the compiler side
+	// wrote for it, in the order the compiler side held them.
+	ann := guest.Targets[0].Annotations
+	if keys := ann.Keys(); !sameKeys(keys, []string{"zzz", "a", "mm"}) {
+		t.Errorf("plugin-side annotation key order = %v, want the inserted order [zzz a mm]", keys)
+	}
+	for key, want := range map[string]string{"zzz": `"3"`, "a": `{"z":"last","a":"first"}`, "mm": `null`} {
+		if v, _ := ann.Get(key); string(v) != want {
+			t.Errorf("plugin-side annotation %q = %s, want %s", key, v, want)
+		}
+	}
+
+	// The output runs the other way in a build: the plugin writes it and the
+	// compiler reads it. A structured value crosses as the JSON the plugin wrote,
+	// subkey order and all, and a string as its quoted JSON.
+	out := abi.AnnotationTransformOutput{Injections: []abi.AnnotationInjection{
+		{BoundaryPath: "app", ComponentName: "web", AnnotationKey: "k", AnnotationValue: json.RawMessage(`{"z":"30s","a":"/metrics"}`)},
+		{BoundaryPath: "app", ComponentName: "web", AnnotationKey: "s", AnnotationValue: json.RawMessage(`"v"`)},
+	}}
+	ob, err := out.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("plugin-side output encode: %v", err)
+	}
+	var host pipeline.AnnotationTransformOutput
+	crossSide(t, "AnnotationTransformOutput", ob, &host)
+	if v := string(host.Injections[0].AnnotationValue); v != `{"z":"30s","a":"/metrics"}` {
+		t.Errorf("compiler-side structured value = %s, want the plugin's own bytes", v)
+	}
 }
 
 // TestHostGuestWireParity_Linter pins the linter payload's byte identity across

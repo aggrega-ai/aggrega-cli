@@ -745,8 +745,59 @@ annotations contains {
             output.injections[0].annotation_key,
             "backup.example.com/schedule"
         );
-        assert_eq!(output.injections[0].annotation_value, "nightly");
+        assert_eq!(output.injections[0].annotation_value.get(), "\"nightly\"");
         assert!(output.error.is_empty());
+    }
+
+    #[test]
+    fn the_annotation_role_reports_an_object_value_and_reads_a_structured_target() {
+        // A policy decides an object of subkeys, and reads a target's existing
+        // structured annotation to leave a component that already carries one alone.
+        const POLICY: &str = r#"
+package tagging
+
+import rego.v1
+
+annotations contains {
+    "boundary_path": target.boundary_path,
+    "component_name": target.component_name,
+    "annotation_key": "feature.aggrega.ai/monitoring",
+    "annotation_value": {"port": "metrics", "interval": "30s", "path": "/metrics"},
+} if {
+    some target in input.targets
+    not target.annotations["feature.aggrega.ai/monitoring"]
+}
+"#;
+        let mut targets: Vec<aggrega_abi::AnnotationTarget> = ["app", "db"]
+            .iter()
+            .map(|component| aggrega_abi::AnnotationTarget {
+                boundary_path: "main".to_string(),
+                component_name: (*component).to_string(),
+                ..Default::default()
+            })
+            .collect();
+        targets[1].annotations.insert(
+            "feature.aggrega.ai/monitoring".to_string(),
+            serde_json::value::to_raw_value(&serde_json::json!({"interval": "5s"}))
+                .expect("a raw value"),
+        );
+        let input = AnnotationTransformInput {
+            targets,
+            binding_keys: vec!["feature.aggrega.ai/monitoring".to_string()],
+            sources: vec![aggrega_abi::AnnotationSource {
+                path: "policy.rego".to_string(),
+                content: POLICY.to_string(),
+            }],
+            settings: None,
+        };
+        let output = annotation_injections(&input.encode_cbor().expect("the payload encodes"))
+            .expect("the policy evaluates");
+        assert_eq!(output.injections.len(), 1, "{:?}", output.injections);
+        assert_eq!(output.injections[0].component_name, "app");
+        assert_eq!(
+            output.injections[0].annotation_value.get(),
+            r#"{"interval":"30s","path":"/metrics","port":"metrics"}"#
+        );
     }
 
     #[test]

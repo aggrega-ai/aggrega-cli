@@ -309,6 +309,40 @@ impl CollectedDecision {
         }
     }
 
+    /// Reads a field a decision must name, of any shape the JSON model holds, as
+    /// the JSON it is carried as.
+    ///
+    /// It is for a field whose shape is judged downstream rather than here, so it
+    /// passes a string, a number, a boolean, a list or a map through as written.
+    /// Left out, or named as the null value, it is refused as [`Self::text`]
+    /// refuses it, because a field nobody wrote is not something a policy meant to
+    /// ask for. A value the JSON model cannot hold — bytes, a timestamp, a
+    /// duration, a type — is refused rather than coerced into one it can, so the
+    /// value that travels is the one the expression produced.
+    ///
+    /// A map's keys are written in sorted order at every depth: the evaluator holds
+    /// a map's entries in an order it does not fix, so sorting is what keeps
+    /// identical input producing an identical value.
+    pub fn json(&self, shape: &DecisionShape, field: &str) -> anyhow::Result<serde_json::Value> {
+        match self.fields.get(&KeyRef::String(field)) {
+            Some(Value::Null) | None => anyhow::bail!(
+                "policy source {:?} collected a decision under {:?} that names no {field:?}. {}",
+                self.path,
+                shape.key,
+                shape.summary
+            ),
+            Some(value) => json_of(value).map_err(|kind| {
+                anyhow::anyhow!(
+                    "policy source {:?} collected a decision under {:?} naming {field:?} with a \
+                     value of type {kind} inside it, which has no JSON form. {}",
+                    self.path,
+                    shape.key,
+                    shape.summary
+                )
+            }),
+        }
+    }
+
     /// Requires a decision to name only the fields its shape defines.
     ///
     /// The fields are walked here and nowhere else, and what is reported is sorted
@@ -349,6 +383,40 @@ impl CollectedDecision {
             kind = value.type_of()
         )
     }
+}
+
+/// Converts an evaluated value into the JSON model, or names the type of the
+/// first value inside it that has no JSON form.
+///
+/// A map is written with its keys sorted, whatever order the evaluator held them
+/// in, so the result depends on the value alone. Unlike the evaluator's own
+/// conversion, which writes bytes as base64 text and a timestamp as a date
+/// string, nothing here changes a value's type to give it a JSON form.
+fn json_of(value: &Value) -> Result<serde_json::Value, String> {
+    Ok(match value {
+        Value::Null => serde_json::Value::Null,
+        Value::Bool(flag) => serde_json::Value::Bool(*flag),
+        Value::Int(number) => serde_json::Value::from(*number),
+        Value::UInt(number) => serde_json::Value::from(*number),
+        Value::Float(number) => serde_json::Number::from_f64(*number)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| "double holding no finite number".to_string())?,
+        Value::String(text) => serde_json::Value::String(text.to_string()),
+        Value::List(items) => serde_json::Value::Array(
+            items.iter().map(json_of).collect::<Result<Vec<_>, _>>()?,
+        ),
+        Value::Map(map) => {
+            let mut entries: Vec<(String, &Value)> =
+                map.map.iter().map(|(key, entry)| (field_name(key), entry)).collect();
+            entries.sort_by(|left, right| left.0.cmp(&right.0));
+            let mut object = serde_json::Map::new();
+            for (key, entry) in entries {
+                object.insert(key, json_of(entry)?);
+            }
+            serde_json::Value::Object(object)
+        }
+        other => return Err(other.type_of().to_string()),
+    })
 }
 
 /// One decision field name, as an author wrote it.

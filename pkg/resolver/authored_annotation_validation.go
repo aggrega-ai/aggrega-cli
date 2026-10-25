@@ -32,8 +32,17 @@ import (
 // It runs the rules once per authoring document rather than once over both, and
 // the split is attribution rather than scope. A finding is reported against the
 // document its entry was written in, so an operator is sent to the Release
-// they wrote and a developer to the Aggregate — and the two passes together
-// reach every entry exactly once, because each entry belongs to one document.
+// they wrote and a developer to the Aggregate — and the passes together reach
+// every entry exactly once, because each entry belongs to one document.
+//
+// The Release is split once more, by who put the entry there. An annotation a
+// governance plugin injected sits on the Release component exactly as an
+// authored one does, so the rules judge it the same way; but its finding would
+// otherwise point the operator at a Release key nobody wrote. So the entries each
+// plugin injected are asked about in a pass of their own, and every finding that
+// pass raises names the plugin and the role it is attached at, in the words an
+// expansion refusal over the same annotation uses. One split serves every rule
+// asked here, so no rule carries the attribution itself.
 //
 // It reports EVERY offending entry rather than the first, which is the
 // framework's accumulation and not a property of how this is written: each rule
@@ -68,30 +77,29 @@ func ValidateAuthoredAnnotations(
 		manifestDocumentOf(result), result.Manifest, inner, catalogLookup)
 
 	var findings []*ResolverError
-	collect := func(entity string, objections []constraint.Objection, err error) error {
+	collect := func(entity, injectedBy string, objections []constraint.Objection, err error) error {
 		if err != nil {
 			return err
 		}
-		findings = append(findings, FindingsFromObjections(objections, entity)...)
+		found := FindingsFromObjections(objections, entity)
+		if injectedBy != "" {
+			for _, f := range found {
+				f.Message += ", " + injectionAttribution(injectedBy)
+			}
+		}
+		findings = append(findings, found...)
 		return nil
 	}
 	facts := constraint.NormalizedView(presented)
-	for _, side := range []struct {
-		document string
-		entity   string
-	}{
-		{
-			document: constraint.AuthoringDocumentRelease,
-			entity:   releaseDocumentName(result.Release),
-		},
-		{
-			document: constraint.AuthoringDocumentAggregate,
-			entity:   aggregateDocumentName(result.Aggregate),
-		},
-	} {
+	injectedBy := func(entry constraint.AuthoredAnnotationInstance) string {
+		return annotationInjectedBy(result, entry)
+	}
+	for _, side := range authoredAnnotationGroups(result, inner.annotations, injectedBy) {
 		entries := annotationsWrittenIn{
-			document: side.document,
-			entries:  inner.annotations,
+			document:   side.document,
+			entries:    inner.annotations,
+			injectedBy: side.injectedBy,
+			injector:   injectedBy,
 		}
 		// The entity is bound ahead of the calls rather than passed beside each,
 		// because a traversal returns two values and Go spreads a two-valued call
@@ -101,7 +109,7 @@ func ValidateAuthoredAnnotations(
 		// the rule it invokes underivable and leaves it indistinguishable from a
 		// rule nothing invokes at all.
 		rule := func(objections []constraint.Objection, err error) error {
-			return collect(side.entity, objections, err)
+			return collect(side.entity, side.injectedBy, objections, err)
 		}
 		// The side rule declares the narrower view, because its predicate reads only
 		// what a presented document carries. A later presentation contains an
@@ -131,30 +139,117 @@ func ValidateAuthoredAnnotations(
 }
 
 // annotationsWrittenIn narrows the presentation's annotation axis to the entries
-// one authoring document declares, preserving the order they were recorded in.
+// one authoring document declares — and, within the Release, to the entries one
+// governance plugin injected or to those nobody injected — preserving the order
+// they were recorded in.
 //
 // It is a narrowing of one recorded set rather than a second reading of the
 // documents, which is what keeps the coordinate a rule is invoked for and the
 // value it then reads coming from one walk. The narrowing exists so a finding can
-// be attributed to the document its entry was written in: the conversion at this
-// boundary names one document for a whole set of objections, and a rule spanning
-// both documents would otherwise send half its readers to a file they did not
-// write in.
+// be attributed to whoever put its entry there: the conversion at this boundary
+// names one document, and at most one injecting plugin, for a whole set of
+// objections, and a rule spanning both would otherwise send half its readers to a
+// file they did not write in or name a plugin that injected nothing.
 type annotationsWrittenIn struct {
 	document string
 	entries  []constraint.AuthoredAnnotationInstance
+
+	// injectedBy is the plugin whose injected entries this narrowing keeps, or
+	// the empty string for the entries no plugin injected.
+	injectedBy string
+
+	// injector answers which plugin injected an entry, the empty string for one
+	// an author wrote.
+	injector func(constraint.AuthoredAnnotationInstance) string
 }
 
-// AuthoredAnnotations returns the entries the named document declares, in the
-// order the presentation recorded them.
+// AuthoredAnnotations returns the entries the narrowing keeps, in the order the
+// presentation recorded them.
 func (a annotationsWrittenIn) AuthoredAnnotations() []constraint.AuthoredAnnotationInstance {
 	var out []constraint.AuthoredAnnotationInstance
 	for _, entry := range a.entries {
-		if entry.Document == a.document {
-			out = append(out, entry)
+		if entry.Document != a.document {
+			continue
 		}
+		if a.injector != nil && a.injector(entry) != a.injectedBy {
+			continue
+		}
+		out = append(out, entry)
 	}
 	return out
+}
+
+// authoredAnnotationGroup is one set of entries the rules are asked over and
+// whose findings are reported together: the document they sit in, the entity a
+// finding names, and the plugin that injected them, empty for authored entries.
+type authoredAnnotationGroup struct {
+	document   string
+	entity     string
+	injectedBy string
+}
+
+// authoredAnnotationGroups returns the groups the rules are asked over, in the
+// order their findings are reported: the Release's authored entries, then the
+// Release entries each governance plugin injected — one group per plugin, in the
+// order the presentation first meets one of its entries — then the Aggregate's.
+//
+// An injection lands only on a Release component, so the Aggregate is never
+// split. Every group is listed whether or not it holds entries, except a plugin
+// group, which exists only because an entry named it.
+func authoredAnnotationGroups(
+	result *ResolveResult,
+	entries []constraint.AuthoredAnnotationInstance,
+	injectedBy func(constraint.AuthoredAnnotationInstance) string,
+) []authoredAnnotationGroup {
+	release := releaseDocumentName(result.Release)
+	groups := []authoredAnnotationGroup{{document: constraint.AuthoringDocumentRelease, entity: release}}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		plugin := injectedBy(entry)
+		if plugin == "" || seen[plugin] {
+			continue
+		}
+		seen[plugin] = true
+		groups = append(groups, authoredAnnotationGroup{
+			document:   constraint.AuthoringDocumentRelease,
+			entity:     release,
+			injectedBy: plugin,
+		})
+	}
+	return append(groups, authoredAnnotationGroup{
+		document: constraint.AuthoringDocumentAggregate,
+		entity:   aggregateDocumentName(result.Aggregate),
+	})
+}
+
+// annotationInjectedBy returns the governance plugin that injected the value of
+// one presented annotation entry, read from the provenance the injecting role
+// recorded, or the empty string for an entry an author wrote.
+//
+// Only a Release entry written on a component the boundary names directly can
+// have been injected: an injection names a boundary and a component the boundary
+// itself declares, and lands on that component's own annotations. The provenance
+// is keyed by the path the injection named, which spells every boundary by its
+// name; the presentation spells the boundary the compiler synthesizes to hold the
+// Release's top-level components by no name at all, since the author wrote none,
+// so for an entry there the synthesized boundary's own name is what the key
+// carries. That boundary holds components and no boundaries, so the translation
+// is needed at the top level only.
+func annotationInjectedBy(result *ResolveResult, entry constraint.AuthoredAnnotationInstance) string {
+	if len(result.AnnotationProvenance) == 0 ||
+		entry.Document != constraint.AuthoringDocumentRelease || entry.Site.Component == "" {
+		return ""
+	}
+	path := entry.Site.ScopePath
+	if path == "" && result.Release != nil {
+		for name, boundary := range result.Release.Spec.Boundaries.All() {
+			if boundary.Synthesized {
+				path = name
+				break
+			}
+		}
+	}
+	return result.AnnotationProvenance[AnnotationProvenanceKey(path, entry.Site.Component, entry.Key)].InjectedByPlugin
 }
 
 // aggregateDocumentName renders the Aggregate document a finding names. A

@@ -377,6 +377,92 @@ spec:
 	}
 }
 
+// TestExpandAnnotations_RefusalNamesTheInjectingPlugin proves a refusal over an
+// annotation a governance plugin injected names that plugin and the role it is
+// attached at, read from the provenance the injecting role recorded — and that
+// the same refusal over an annotation the Release wrote names neither. The two
+// rows share one refused input, the scalar the two-path binding cannot route,
+// and differ only in the provenance, so each row fails on its own fault.
+func TestExpandAnnotations_RefusalNamesTheInjectingPlugin(t *testing.T) {
+	t.Parallel()
+	const manifestSrc = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/rewrite-host: rewrite-host-helm:1.0.0
+      annotations:
+        feature.myco/rewrite-host:
+          feature: core/rewrite-host:1.0.0
+          maps:
+            infra:
+              - upstream
+              - timeout
+`
+	const releaseSrc = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+  environment: testing
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      components:
+        api:
+          annotations:
+            feature.myco/rewrite-host: "30s"
+`
+	const plugin = "governance/proof:1.0.0"
+	cases := []struct {
+		name       string
+		injectedBy string
+		wantNamed  bool
+	}{
+		{name: "injected by a governance plugin", injectedBy: plugin, wantNamed: true},
+		{name: "written in the Release", injectedBy: "", wantNamed: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var m types.Manifest
+			if err := yaml.Unmarshal([]byte(manifestSrc), &m); err != nil {
+				t.Fatalf("manifest unmarshal: %v", err)
+			}
+			rr := &ResolveResult{Manifest: &m, Release: loadTestRelease(t, releaseSrc)}
+			if tc.injectedBy != "" {
+				rr.AnnotationProvenance = map[string]AnnotationProvenance{
+					AnnotationProvenanceKey("prod", "api", "feature.myco/rewrite-host"): {InjectedByPlugin: tc.injectedBy},
+				}
+			}
+			err := ExpandAnnotations(rr, CatalogLookup{})
+			if err == nil {
+				t.Fatalf("expected the scalar the two-path binding cannot route to be refused; got nil")
+			}
+			chain := cerrors.CauseChain(err)
+			if !strings.Contains(chain, "multiple subkey paths") {
+				t.Fatalf("refusal is not the routing refusal this row is about: %v", chain)
+			}
+			named := strings.Contains(chain, `plugin "`+plugin+`"`) &&
+				strings.Contains(chain, `governance role "annotation-transform"`)
+			if named != tc.wantNamed {
+				t.Errorf("refusal names the injecting plugin and role = %v, want %v: %v", named, tc.wantNamed, chain)
+			}
+			if !tc.wantNamed && strings.Contains(chain, "injected") {
+				t.Errorf("a refusal over an authored annotation must not speak of an injection: %v", chain)
+			}
+		})
+	}
+}
+
 func TestExpandAnnotations_NoBindings_NoOp(t *testing.T) {
 	t.Parallel()
 	manifestSrc := `

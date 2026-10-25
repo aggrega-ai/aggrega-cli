@@ -26,6 +26,14 @@
 //! annotation key and its value. The names a decision uses are the names it read
 //! its targets under, so the whole convention is learnable from the input.
 //!
+//! The value is what an author could write on that annotation: a string, or a
+//! map of subkeys, which feeds a binding that routes several subkeys at once —
+//! `"annotation_value": {"interval": "30s", "port": "metrics", "path": "/metrics"}`.
+//! It is carried to the build as the expression produced it, with a map's keys in
+//! sorted order, and the build is what judges its shape: it reads the value
+//! exactly as it reads the same value written in the Release, and refuses one of
+//! any other shape, naming the injection.
+//!
 //! One decision needs no list around it, and a file that names no `annotations`
 //! key decides no annotations — so one policy set can serve this role and a
 //! verdict role from the same files, each role reading only the key it is about.
@@ -34,7 +42,9 @@
 //!
 //! `input.targets` is every component the policy may annotate, each carrying its
 //! `.boundary_path`, its `.component_name` and the `.annotations` it already has —
-//! so a policy can decide what to add without displacing a value someone authored.
+//! each as the author wrote it, a string, a map of subkeys, or the null of an
+//! opt-out — so a policy can decide what to add without displacing a value someone
+//! authored.
 //! `input.binding_keys` is the annotation keys the Manifest has registered a
 //! meaning for: an annotation under one of those keys goes on to expand into an
 //! attached feature, so a policy reads the list to inject keys that will take
@@ -55,10 +65,11 @@
 //! would mean the same input rendering differently from one build to the next.
 //!
 //! Two decisions naming one component and one annotation key with different values
-//! are both reported, in ascending order of value. The build applies them in the
-//! order they are reported, so the last of them is the value the annotation ends up
-//! with — and because the order is the values' own, which value that is does not
-//! depend on how the policy was written out.
+//! are both reported, in ascending order of value, compared as the JSON each is
+//! carried as. The build applies them in the order they are reported, so the last
+//! of them is the value the annotation ends up with — and because the order is the
+//! values' own, which value that is does not depend on how the policy was written
+//! out.
 
 use aggrega_abi::AnnotationInjection;
 use governancecore::annotations::{check, DECISION_KEY};
@@ -106,26 +117,34 @@ pub fn injections(decisions: &[CollectedDecision]) -> anyhow::Result<Vec<Annotat
 /// empty key or an empty coordinate is not something a policy meant to ask for.
 /// The boundary a component sits under can legitimately be named by the empty
 /// string, so it is required to be written rather than required to be non-empty.
+///
+/// The value is carried as the JSON of what the expression produced, whatever its
+/// shape: the build reads it exactly as it reads the same value written in the
+/// Release, and is what refuses a shape no annotation takes, so judging it here
+/// would be a second statement of that rule.
 fn decision(collected: &CollectedDecision) -> anyhow::Result<AnnotationInjection> {
     collected.admit_fields(&SHAPE)?;
     let injection = AnnotationInjection {
         boundary_path: collected.text(&SHAPE, BOUNDARY_PATH)?,
         component_name: collected.text(&SHAPE, COMPONENT_NAME)?,
         annotation_key: collected.text(&SHAPE, ANNOTATION_KEY)?,
-        annotation_value: collected.text(&SHAPE, ANNOTATION_VALUE)?,
+        annotation_value: serde_json::value::to_raw_value(
+            &collected.json(&SHAPE, ANNOTATION_VALUE)?,
+        )?,
     };
     check(&injection)?;
     Ok(injection)
 }
 
 /// What one injection is ordered by: everything a decision can express, in the
-/// order a reader would compare them.
+/// order a reader would compare them. A value is compared by its JSON, whose map
+/// keys are already sorted, so two values compare the same way every build.
 fn order(injection: &AnnotationInjection) -> (&str, &str, &str, &str) {
     (
         injection.boundary_path.as_str(),
         injection.component_name.as_str(),
         injection.annotation_key.as_str(),
-        injection.annotation_value.as_str(),
+        injection.annotation_value.get(),
     )
 }
 
@@ -170,13 +189,17 @@ mod tests {
         payload
     }
 
+    /// Each injection as one line, its value written as the text it carries when
+    /// it is a string and as its JSON otherwise.
     fn coordinates(injected: &[AnnotationInjection]) -> Vec<String> {
         injected
             .iter()
             .map(|i| {
+                let value = serde_json::from_str::<String>(i.annotation_value.get())
+                    .unwrap_or_else(|_| i.annotation_value.get().to_string());
                 format!(
                     "{}|{}|{}|{}",
-                    i.boundary_path, i.component_name, i.annotation_key, i.annotation_value
+                    i.boundary_path, i.component_name, i.annotation_key, value
                 )
             })
             .collect()
@@ -318,14 +341,55 @@ mod tests {
     }
 
     #[test]
-    fn a_non_string_value_is_refused_rather_than_stringified() {
-        let err = injected(
+    fn a_map_value_is_carried_as_its_json_with_its_keys_sorted() {
+        let out = injected(
+            r#"{"annotations": [{"boundary_path": "main", "component_name": "app",
+                 "annotation_key": "feature.aggrega.ai/monitoring",
+                 "annotation_value": {"port": "metrics", "interval": "30s", "path": "/metrics",
+                                      "tls": {"z": true, "a": 1}}}]}"#,
+            &["app"],
+        )
+        .expect("a map value is read");
+        assert_eq!(
+            out[0].annotation_value.get(),
+            r#"{"interval":"30s","path":"/metrics","port":"metrics","tls":{"a":1,"z":true}}"#
+        );
+    }
+
+    #[test]
+    fn a_value_of_another_shape_is_passed_to_the_build_rather_than_stringified() {
+        // The build is what judges a value's shape, and it refuses a number naming
+        // the injection; here it must arrive as the number the expression produced,
+        // never as text the expression did not produce.
+        let out = injected(
             r#"{"annotations": [{"boundary_path": "main", "component_name": "app",
                  "annotation_key": "k", "annotation_value": 3}]}"#,
             &["app"],
         )
-        .expect_err("a value that is not text is refused");
-        assert!(err.to_string().contains("type int"), "{err}");
+        .expect("the decision is read");
+        assert_eq!(out[0].annotation_value.get(), "3");
+    }
+
+    #[test]
+    fn a_value_with_no_json_form_is_refused_rather_than_coerced() {
+        let err = injected(
+            r#"{"annotations": [{"boundary_path": "main", "component_name": "app",
+                 "annotation_key": "k", "annotation_value": {"at": b"raw"}}]}"#,
+            &["app"],
+        )
+        .expect_err("bytes have no JSON form");
+        assert!(err.to_string().contains("\"annotation_value\""), "{err}");
+    }
+
+    #[test]
+    fn a_decision_with_no_value_is_refused() {
+        let err = injected(
+            r#"{"annotations": [{"boundary_path": "main", "component_name": "app",
+                 "annotation_key": "k", "annotation_value": null}]}"#,
+            &["app"],
+        )
+        .expect_err("a value named as null is refused");
+        assert!(err.to_string().contains("\"annotation_value\""), "{err}");
     }
 
     #[test]

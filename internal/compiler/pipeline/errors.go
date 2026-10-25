@@ -26,10 +26,12 @@ var errPolicySettingsInvalid = cerrors.Register("policy-settings-invalid", cerro
 
 // ErrAnnotationInjectionRejected is the ABI-stable sentinel for an
 // annotation-transform plugin whose output the host refuses to apply: an
-// injection naming a component coordinate the host did not supply as a target.
-// The annotation-transform role is host-confined to adding string-valued
-// annotations onto existing component coordinates; the wire shape admits nothing
-// else, and an injection that reaches outside the supplied target set halts the
+// injection naming a component coordinate the host did not supply as a target,
+// or carrying a value that is not one an author could write on an annotation — a
+// string, or an object of subkeys. The annotation-transform role is host-confined
+// to adding annotations onto existing component coordinates; the wire shape
+// admits nothing else, and an injection that reaches outside the supplied target
+// set, or would remove or opt out of an annotation rather than add one, halts the
 // build loudly rather than being silently absorbed. It is the annotation-role
 // analogue of the label role's patch-confinement halt — the structural facet
 // guarantee for the annotation-transform role.
@@ -37,8 +39,9 @@ func ErrAnnotationInjectionRejected() error { return errAnnotationInjectionRejec
 
 var errAnnotationInjectionRejected = cerrors.Register("annotation-injection-rejected", cerrors.Meta{
 	ShortCode: "E0017",
-	Message:   "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply",
+	Message: "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply, " +
+		"or carries a value that is not a string or an object of subkeys",
 	RulePlace: cerrors.NotARule("A plugin returned an injection naming a component coordinate the host never supplied as a " +
-		"target. It reports a guest whose returned output does not conform to the shape the " +
-		"annotation-transform role admits; nothing an author wrote decides it."),
+		"target, or carrying a value no annotation takes. It reports a guest whose returned output does not conform to the " +
+		"shape the annotation-transform role admits; nothing an author wrote decides it."),
 })

@@ -28,12 +28,35 @@
 //! annotation key and its value. The names a decision uses are the names it read
 //! its targets under, so the whole convention is learnable from the input.
 //!
+//! The value is what an author could write on that annotation: a string, or an
+//! object of subkeys, which feeds a binding that routes several subkeys at once:
+//!
+//! ```rego
+//! annotations contains {
+//!     "boundary_path": target.boundary_path,
+//!     "component_name": target.component_name,
+//!     "annotation_key": "feature.aggrega.ai/monitoring",
+//!     "annotation_value": {"interval": "30s", "port": "metrics", "path": "/metrics"},
+//! } if {
+//!     some target in input.targets
+//!     not target.annotations["feature.aggrega.ai/monitoring"]
+//! }
+//! ```
+//!
+//! The value is carried to the build as the policy wrote it, and the build is
+//! what judges its shape: it reads the value exactly as it reads the same value
+//! written in the Release, and refuses one of any other shape, naming the
+//! injection. An object reaches the build with its keys in the order the
+//! evaluator holds them, which is sorted order, so identical input yields an
+//! identical value.
+//!
 //! # What a policy reads
 //!
 //! `input.targets` is every component the policy may annotate, each carrying its
 //! `.boundary_path`, its `.component_name` and the `.annotations` it already
-//! has — so a policy can decide what to add without displacing a value someone
-//! authored. `input.binding_keys` is the annotation keys the Manifest has
+//! has — each as the author wrote it, a string, an object of subkeys, or the null
+//! of an opt-out — so a policy can decide what to add without displacing a value
+//! someone authored. `input.binding_keys` is the annotation keys the Manifest has
 //! registered a meaning for: an annotation under one of those keys goes on to
 //! expand into an attached feature, so a policy reads the list to inject keys
 //! that will take effect. The attachment's own files are at `input.sources` and
@@ -118,7 +141,23 @@ mod tests {
         assert_eq!(out[0].boundary_path, "main");
         assert_eq!(out[0].component_name, "app");
         assert_eq!(out[0].annotation_key, "backup.example.com/schedule");
-        assert_eq!(out[0].annotation_value, "nightly");
+        assert_eq!(out[0].annotation_value.get(), "\"nightly\"");
+    }
+
+    #[test]
+    fn an_object_value_is_carried_as_its_json() {
+        let out = injections(&decisions(serde_json::json!([{
+            "boundary_path": "main",
+            "component_name": "app",
+            "annotation_key": "feature.aggrega.ai/monitoring",
+            "annotation_value": {"port": "metrics", "interval": "30s", "path": "/metrics"},
+        }])))
+        .expect("an object value is read");
+        assert_eq!(
+            out[0].annotation_value.get(),
+            r#"{"interval":"30s","path":"/metrics","port":"metrics"}"#,
+            "the object reaches the build whole, keys in the order the evaluator holds them"
+        );
     }
 
     #[test]
@@ -201,15 +240,29 @@ mod tests {
     }
 
     #[test]
-    fn a_non_string_annotation_value_is_refused_rather_than_stringified() {
-        let err = injections(&decisions(serde_json::json!([{
+    fn a_value_of_another_shape_is_passed_to_the_build_rather_than_stringified() {
+        // The build is what judges a value's shape, and it refuses a number naming
+        // the injection; here it must arrive as the number the policy wrote, never
+        // as a string the policy did not write.
+        let out = injections(&decisions(serde_json::json!([{
             "boundary_path": "main",
             "component_name": "app",
             "annotation_key": "k",
             "annotation_value": 3,
         }])))
-        .expect_err("a value that is not a string is refused");
-        assert!(err.to_string().contains("annotations"), "{err}");
+        .expect("the decision is read");
+        assert_eq!(out[0].annotation_value.get(), "3");
+    }
+
+    #[test]
+    fn a_decision_with_no_value_is_refused() {
+        let err = injections(&decisions(serde_json::json!([{
+            "boundary_path": "main",
+            "component_name": "app",
+            "annotation_key": "k",
+        }])))
+        .expect_err("a decision naming no value is refused");
+        assert!(err.to_string().contains("annotation_value"), "{err}");
     }
 
     #[test]

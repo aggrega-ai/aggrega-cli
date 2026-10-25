@@ -4,9 +4,11 @@
 package resolver
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -172,5 +174,79 @@ spec:
 	}
 	if len(got) != len(want) {
 		t.Errorf("the traversal enumerated %d site(s), want %d; got %v", len(got), len(want), got)
+	}
+}
+
+// TestAuthoredAnnotationRulesNameTheInjectingPlugin drives both rules over an
+// authored annotation through the entry point, each over a Release component
+// annotation one governance plugin injected and over the same annotation an
+// author wrote — the four cells of rule by origin. Each row carries one fault,
+// asserted against the condition that fault pins, so a row cannot pass on the
+// other rule's refusal; the injected rows must name the plugin and the role, and
+// the authored rows must name neither.
+func TestAuthoredAnnotationRulesNameTheInjectingPlugin(t *testing.T) {
+	t.Parallel()
+	const plugin = "governance/proof:1.0.0"
+	cases := []struct {
+		name     string
+		value    string
+		injected bool
+		want     error
+	}{
+		{
+			name:     "a nonconforming subvalue a plugin injected",
+			value:    "feature.myco/db-pool:\n  pool_size: \"many\"\n",
+			injected: true,
+			want:     ErrAnnotationSubkeyNotConforming(),
+		},
+		{
+			name:  "the same nonconforming subvalue an author wrote",
+			value: "feature.myco/db-pool:\n  pool_size: \"many\"\n",
+			want:  ErrAnnotationSubkeyNotConforming(),
+		},
+		{
+			name:     "a values-pillar subkey a plugin injected on the Release",
+			value:    "feature.myco/db-pool:\n  db_name: \"orders\"\n",
+			injected: true,
+			want:     ErrAnnotationSidePillarMismatch(),
+		},
+		{
+			name:  "the same values-pillar subkey an author wrote on the Release",
+			value: "feature.myco/db-pool:\n  db_name: \"orders\"\n",
+			want:  ErrAnnotationSidePillarMismatch(),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rr := &ResolveResult{
+				Manifest:    structuredManifest(t),
+				Release:     releaseAnnotating(t, tc.value),
+				ReleasePath: "release.yaml",
+			}
+			if tc.injected {
+				rr.AnnotationProvenance = map[string]AnnotationProvenance{
+					AnnotationProvenanceKey("prod", "api", "feature.myco/db-pool"): {InjectedByPlugin: plugin},
+				}
+			}
+			err := ValidateAuthoredAnnotations(nil, rr, structuredFeatureCatalog(t))
+			if err == nil {
+				t.Fatalf("expected the annotation to be refused; got nil")
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("refusal is not the condition this row pins (%v): %v", tc.want, err)
+			}
+			chain := cerrors.CauseChain(err)
+			attribution := injectionAttribution(plugin)
+			if tc.injected && !strings.Contains(chain, attribution) {
+				t.Errorf("a refusal over an injected annotation does not name the plugin and role %q: %s", attribution, chain)
+			}
+			if !tc.injected && strings.Contains(chain, "injected") {
+				t.Errorf("a refusal over an authored annotation speaks of an injection: %s", chain)
+			}
+			if !strings.Contains(chain, "Release test") {
+				t.Errorf("the refusal no longer names the Release document it sits in: %s", chain)
+			}
+		})
 	}
 }

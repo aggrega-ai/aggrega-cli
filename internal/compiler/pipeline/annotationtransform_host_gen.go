@@ -32,9 +32,9 @@ type AnnotationTransformInput struct {
 	Settings json.RawMessage `json:"settings,omitempty" yaml:"settings,omitempty" cbor:"settings,omitempty"`
 }
 
-// AnnotationTransformOutput The response shape the annotation-transform plugin emits: a list of annotation injections the host applies to the named targets. The host applies only annotation additions to existing target coordinates with string values; an injection naming a non-existent coordinate halts the build loudly.
+// AnnotationTransformOutput The response shape the annotation-transform plugin emits: a list of annotation injections the host applies to the named targets. The host applies only annotation additions to existing target coordinates, each carrying a value an author could write on that annotation — a string, or an object of subkeys; an injection naming a non-existent coordinate, or carrying a value of any other shape, halts the build loudly.
 type AnnotationTransformOutput struct {
-	// Injections Annotation injections to apply, in order. Each names an existing target coordinate and the annotation key and string value to add there.
+	// Injections Annotation injections to apply, in order. Each names an existing target coordinate and the annotation key and value to add there.
 	Injections []AnnotationInjection `json:"injections" yaml:"injections" cbor:"injections"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
@@ -46,11 +46,11 @@ type AnnotationTarget struct {
 	BoundaryPath string `json:"boundary_path" yaml:"boundary_path" cbor:"boundary_path"`
 	// ComponentName The component's name within its boundary.
 	ComponentName string `json:"component_name" yaml:"component_name" cbor:"component_name"`
-	// Annotations The component's current scalar annotation set, keyed by annotation key.
-	Annotations types.OrderedMap[string] `json:"annotations" yaml:"annotations" cbor:"annotations"`
+	// Annotations The annotations the Release writes on the component itself, keyed by annotation key in the order they are written. Each value is what the author wrote: a string, an object of subkeys in its own written order, or null where the component opts out of an annotation it would otherwise inherit. Every key is present whatever its value, so a plugin can tell an annotation the component already carries from one it does not and add only what is absent.
+	Annotations types.OrderedMap[any] `json:"annotations" yaml:"annotations" cbor:"annotations"`
 }
 
-// AnnotationInjection One annotation to inject onto a target: the target coordinate plus the annotation key and its string value.
+// AnnotationInjection One annotation to inject onto a target: the target coordinate plus the annotation key and its value.
 type AnnotationInjection struct {
 	// BoundaryPath The slash-separated boundary path of the target component. Must name a target the host supplied; an unknown coordinate halts the build.
 	BoundaryPath string `json:"boundary_path" yaml:"boundary_path" cbor:"boundary_path"`
@@ -58,8 +58,8 @@ type AnnotationInjection struct {
 	ComponentName string `json:"component_name" yaml:"component_name" cbor:"component_name"`
 	// AnnotationKey The annotation key to add on the target component.
 	AnnotationKey string `json:"annotation_key" yaml:"annotation_key" cbor:"annotation_key"`
-	// AnnotationValue The annotation's string value. Values are strings only; the host rejects any other shape.
-	AnnotationValue string `json:"annotation_value" yaml:"annotation_value" cbor:"annotation_value"`
+	// AnnotationValue The annotation's value, carried as its JSON: a string, or an object whose keys are subkeys and whose entries are what an author may write under a subkey of a structured annotation. The host reads it exactly as it reads the same value written on the component in the Release, keeping the object's key order, so an object can feed a binding that routes several subkeys at once while a string feeds a binding that routes one. Null, a list, a number, a boolean and an object with no subkeys are refused, naming the injection: an injection adds an annotation and never removes or opts out of one.
+	AnnotationValue json.RawMessage `json:"annotation_value" yaml:"annotation_value" cbor:"annotation_value"`
 }
 
 // AnnotationSource One definition file handed to the plugin: its base-name path and the file's content. Both are carried verbatim; the host does not parse the content.
@@ -460,7 +460,7 @@ func (t AnnotationInjection) MarshalJSON() ([]byte, error) {
 	}
 	first = false
 	buf.WriteString("\"annotation_value\":")
-	writeJSONString(&buf, t.AnnotationValue)
+	buf.Write(t.AnnotationValue)
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -498,10 +498,10 @@ func (t *AnnotationInjection) UnmarshalJSON(data []byte) error {
 				t.AnnotationKey = s
 			}
 		case "annotation_value":
-			if s, err := readString(dec); err != nil {
+			if raw, err := readRaw(dec, data); err != nil {
 				return err
 			} else {
-				t.AnnotationValue = s
+				t.AnnotationValue = raw
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -857,7 +857,11 @@ func (t AnnotationTarget) appendCBOR(dst []byte) ([]byte, error) {
 	for k, mv := range t.Annotations.All() {
 		dst = appendCBORHead(dst, 4, 2)
 		dst = appendCBORTextString(dst, k)
-		dst = appendCBORTextString(dst, mv)
+		if raw, mErr := json.Marshal(mv); mErr != nil {
+			return nil, mErr
+		} else {
+			dst = appendCBORByteString(dst, raw)
+		}
 	}
 	dst = appendCBORTextString(dst, "boundary_path")
 	dst = appendCBORTextString(dst, t.BoundaryPath)
@@ -902,7 +906,7 @@ func (t *AnnotationTarget) decodeCBOR(dec *cborDec) error {
 				if err != nil {
 					return err
 				}
-				var om types.OrderedMap[string]
+				var om types.OrderedMap[any]
 				for mi := 0; mi < mn; mi++ {
 					mk, err := dec.readEntryKey()
 					if err != nil {
@@ -911,11 +915,13 @@ func (t *AnnotationTarget) decodeCBOR(dec *cborDec) error {
 					if _, dup := om.Get(mk); dup {
 						return duplicateKeyError(mk)
 					}
-					var mv string
-					if s, err := dec.readTextString(); err != nil {
+					var mv any
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else if v, err := types.DecodeJSONValue(raw); err != nil {
 						return err
 					} else {
-						mv = s
+						mv = v
 					}
 					om.Set(mk, mv)
 				}
@@ -962,7 +968,7 @@ func (t AnnotationInjection) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, "component_name")
 	dst = appendCBORTextString(dst, t.ComponentName)
 	dst = appendCBORTextString(dst, "annotation_value")
-	dst = appendCBORTextString(dst, t.AnnotationValue)
+	dst = appendCBORByteString(dst, t.AnnotationValue)
 	return dst, nil
 }
 
@@ -1003,10 +1009,10 @@ func (t *AnnotationInjection) decodeCBOR(dec *cborDec) error {
 				t.AnnotationKey = s
 			}
 		case "annotation_value":
-			if s, err := dec.readTextString(); err != nil {
+			if v, err := dec.readByteString(); err != nil {
 				return err
 			} else {
-				t.AnnotationValue = s
+				t.AnnotationValue = json.RawMessage(v)
 			}
 		default:
 			if err := dec.skip(); err != nil {

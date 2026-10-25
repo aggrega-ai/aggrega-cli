@@ -3,6 +3,12 @@
 
 package resolver
 
+import (
+	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+)
+
 // AnnotationProvenance records how a synthetic Feature attachment was
 // produced by the annotation-driven expansion pass: the annotation key
 // that triggered the expansion and the source location where that
@@ -35,6 +41,21 @@ type AnnotationProvenance struct {
 	// author-written annotation — its absence is the "author-declared"
 	// signal, mirroring the side-table's explicit/synthetic asymmetry.
 	InjectedByPlugin string
+}
+
+// injectionAttribution is the clause a refusal over an annotation a governance
+// plugin injected carries to say so: which plugin injected the value, and the
+// governance role it is attached at. Every refusal raised over an injected
+// annotation — expansion's own and the rules asked over an authored annotation —
+// spells it through here, so an operator reads one wording whichever check
+// refused, and the role is named from its one declaration rather than restated.
+//
+// It exists because such a refusal is positioned at the Release key the value
+// was set under, which the operator did not write; without the clause the
+// operator is sent to correct a line that is not in the file, when the value to
+// correct is the one the plugin decided.
+func injectionAttribution(plugin string) string {
+	return fmt.Sprintf("whose value plugin %q injected at governance role %q", plugin, plugintype.RoleAnnotationTransform)
 }
 
 // annotationProvenanceKeySeparator is the NUL byte used to separate

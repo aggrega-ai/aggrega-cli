@@ -693,19 +693,28 @@ var mutatorHostVocabulary = map[string]string{
 	"OrderedMap[any]":         "types.OrderedMap[any]",
 }
 
-// annotationTransformGuestVocabulary is empty: the annotation-transform schema's
-// one container annotation already spells the guest package's own order-keeping
-// container, so a guest receives a target's annotations in the order the host
-// holds them, and the schema carries no cross-package opaque host type.
-var annotationTransformGuestVocabulary = map[string]string{}
+// annotationTransformGuestVocabulary maps the one annotation-transform annotation
+// whose host spelling a guest cannot hold: a target's annotations, an
+// order-preserving container of untyped values, become the guest package's own
+// order-keeping container of json.RawMessage, the same shape a node's values take
+// on the mutator socket. The guest receives the keys in the order the host holds
+// them and each value — a string, an object of subkeys, or null — as its verbatim
+// bytes. An injection's value already spells json.RawMessage, the neutral opaque
+// type both sides share, so it needs no entry.
+var annotationTransformGuestVocabulary = map[string]string{
+	"OrderedMap[any]": "OrderedMap[json.RawMessage]",
+}
 
 // annotationTransformHostVocabulary maps the annotation-transform schema's
 // container annotation to the host realization: the order-preserving
 // types.OrderedMap (qualified, since the codec lands in package pipeline), so the
 // host wire carries the order the host built the container in, which is the order
-// identical input always builds (the determinism contract).
+// identical input always builds (the determinism contract). Its values are the
+// recursively order-preserving types.OrderedMap[any] an authored structured
+// annotation decodes to, so a subkey order an author wrote reaches the guest
+// intact.
 var annotationTransformHostVocabulary = map[string]string{
-	"OrderedMap[string]": "types.OrderedMap[string]",
+	"OrderedMap[any]": "types.OrderedMap[any]",
 }
 
 // linterGuestVocabulary is empty: the container a Release's components ride in is

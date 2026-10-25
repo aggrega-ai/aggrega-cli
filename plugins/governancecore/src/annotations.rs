@@ -12,12 +12,15 @@
 //!
 //! # A decision may only add an annotation to a component that exists
 //!
-//! A decided annotation carries a coordinate, a key and a string value, and there
-//! is no other field it could carry — so a decision has no way to express any
-//! other change. A decision naming a component the payload does not carry is
-//! refused by the build, loudly, naming the coordinate and the annotation. An
-//! operator attaching a plugin to inject annotations has declared that injection
-//! and nothing further.
+//! A decided annotation carries a coordinate, a key and a value — a string, or an
+//! object of subkeys — and there is no other field it could carry, so a decision
+//! has no way to express any other change. A decision naming a component the
+//! payload does not carry, or carrying a value of any other shape, is refused by
+//! the build, loudly, naming the coordinate and the annotation. The value's shape
+//! is deliberately not checked here: the build reads it exactly as it reads the
+//! same value written in the Release, which is the one statement of what an
+//! annotation value may be. An operator attaching a plugin to inject annotations
+//! has declared that injection and nothing further.
 
 use aggrega_abi::AnnotationInjection;
 
@@ -63,7 +66,7 @@ mod tests {
             boundary_path: boundary.to_string(),
             component_name: component.to_string(),
             annotation_key: key.to_string(),
-            annotation_value: value.to_string(),
+            annotation_value: serde_json::value::to_raw_value(value).expect("a string encodes"),
         }
     }
 

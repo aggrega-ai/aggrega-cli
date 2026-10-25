@@ -230,7 +230,7 @@ func TestEncodeForExportConvertsTheGovernanceRoleInputs(t *testing.T) {
 		Artifacts: []analyzer.RenderedArtifact{{Path: "main.tf", Content: "a = 1\n", Tree: json.RawMessage(`{"a":1}`), Format: "hcl"}},
 		Settings:  map[string]any{"limit": json.Number("3")},
 	}
-	var annotations types.OrderedMap[string]
+	var annotations types.OrderedMap[any]
 	for _, k := range []string{"zz.example.com/last", "aa.example.com/first", "mm.example.com/mid"} {
 		annotations.Set(k, "v")
 	}

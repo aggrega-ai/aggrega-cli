@@ -877,7 +877,49 @@ mod tests {
             "{:?}",
             annotations.injections
         );
-        assert_eq!(annotations.injections[0].annotation_value, "gold");
+        assert_eq!(annotations.injections[0].annotation_value.get(), "\"gold\"");
+    }
+
+    #[test]
+    fn the_annotation_role_reports_a_map_value_and_reads_a_structured_target() {
+        // A policy decides a map of subkeys, and reads a target's existing
+        // structured annotation to leave a component that already carries one alone.
+        let mut input = AnnotationTransformInput {
+            binding_keys: vec!["feature.aggrega.ai/monitoring".to_string()],
+            ..Default::default()
+        };
+        for name in ["app", "db"] {
+            input.targets.push(aggrega_abi::AnnotationTarget {
+                boundary_path: "main".to_string(),
+                component_name: name.to_string(),
+                ..Default::default()
+            });
+        }
+        input.targets[1].annotations.insert(
+            "feature.aggrega.ai/monitoring".to_string(),
+            serde_json::value::to_raw_value(&serde_json::json!({"interval": "5s"}))
+                .expect("a raw value"),
+        );
+        input.sources.push(aggrega_abi::AnnotationSource {
+            path: "policy.cel".to_string(),
+            content: r#"{"annotations": input.targets
+                 .filter(t, !("feature.aggrega.ai/monitoring" in t.annotations))
+                 .map(t, {
+                   "boundary_path": t.boundary_path,
+                   "component_name": t.component_name,
+                   "annotation_key": "feature.aggrega.ai/monitoring",
+                   "annotation_value": {"port": "metrics", "interval": "30s", "path": "/metrics"},
+                 })}"#
+                .to_string(),
+        });
+        let output = annotation_injections(&input.encode_cbor().expect("the payload encodes"))
+            .expect("the decisions are read");
+        assert_eq!(output.injections.len(), 1, "{:?}", output.injections);
+        assert_eq!(output.injections[0].component_name, "app");
+        assert_eq!(
+            output.injections[0].annotation_value.get(),
+            r#"{"interval":"30s","path":"/metrics","port":"metrics"}"#
+        );
     }
 
     #[test]

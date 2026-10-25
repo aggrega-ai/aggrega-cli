@@ -4,10 +4,13 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -134,11 +137,11 @@ func annotationTargetKey(boundaryPath, componentName string) string {
 
 // annotationTargets projects the resolved Release's boundary components into the
 // injection targets the plugin sees, and the coordinate set the confinement
-// check reads. Each target carries the component's boundary path, name, and
-// current scalar annotation set (structured annotations are routing instructions
-// for expansion, not template substrate, so only scalars surface — the same
-// projection the render context uses). Targets emit in author order via the
-// boundary and component OrderedMaps, so the wire is deterministic.
+// check reads. Each target carries the component's boundary path, name, and the
+// annotations written on the component in every shape an author writes them —
+// see [annotationTargetValues] for why a structured or null value is carried
+// rather than left out. Targets emit in author order via the boundary and
+// component OrderedMaps, so the wire is deterministic.
 func annotationTargets(release *types.Release) ([]AnnotationTarget, map[string]bool) {
 	var targets []AnnotationTarget
 	set := map[string]bool{}
@@ -148,7 +151,7 @@ func annotationTargets(release *types.Release) ([]AnnotationTarget, map[string]b
 			targets = append(targets, AnnotationTarget{
 				BoundaryPath:  path,
 				ComponentName: compName,
-				Annotations:   types.ScalarOnly(comp.Annotations),
+				Annotations:   annotationTargetValues(comp.Annotations),
 			})
 			set[annotationTargetKey(path, compName)] = true
 		}
@@ -166,15 +169,94 @@ func annotationTargets(release *types.Release) ([]AnnotationTarget, map[string]b
 	return targets, set
 }
 
+// annotationTargetValues projects a component's own annotations into the values
+// a target carries: a string for a scalar, the author-ordered map of subkeys for
+// a structured value, and nil — null on the wire — for an explicit opt-out.
+//
+// Every key is carried, whatever its shape, because the plugin reads the set to
+// avoid clobbering an annotation the component already has, and the host applies
+// an injection by setting its key. A projection carrying only the scalars would
+// hide a structured value an author wrote, or a null an author wrote to opt out
+// of an inherited annotation, and an injection under that key would then replace
+// what the author wrote without the plugin having been able to see it.
+func annotationTargetValues(in types.OrderedMap[*types.AnnotationValue]) types.OrderedMap[any] {
+	out := types.OrderedMap[any]{}
+	for key, value := range in.All() {
+		switch {
+		case value.IsScalar():
+			out.Set(key, *value.Scalar)
+		case value.IsStructured():
+			out.Set(key, value.Structured)
+		default:
+			out.Set(key, nil)
+		}
+	}
+	return out
+}
+
+// injectedAnnotationValue reads an injection's value into the shape an authored
+// annotation value takes, refusing — naming the injection — a value no injection
+// may carry.
+//
+// The value is read by the decoder that reads an annotation an author writes in a
+// document, so an injection can carry exactly the shapes that decoder yields and
+// expansion meets an injected value exactly as it meets the same value authored:
+// a structured value keeps the order its subkeys were written in, at every depth.
+// What this adds is the narrowing to what an injection may do, which is add an
+// annotation. A string and an object of subkeys add one. Null, and an object with
+// no subkeys, read as the empty value an author writes to opt a component out of
+// an annotation it would inherit, which an injection may not do; and a list, a
+// number or a boolean is not a value an annotation takes on the wire.
+func injectedAnnotationValue(inj AnnotationInjection) (*types.AnnotationValue, error) {
+	refuse := func(reason string) error {
+		return fmt.Errorf("%w: injection for boundary %q component %q (annotation %q) %s; an injected annotation value is a string or an object of subkeys",
+			ErrAnnotationInjectionRejected(), inj.BoundaryPath, inj.ComponentName, inj.AnnotationKey, reason)
+	}
+	raw := bytes.TrimSpace(inj.AnnotationValue)
+	if len(raw) == 0 || !json.Valid(raw) {
+		return nil, refuse("carries a value that is not a JSON document")
+	}
+	switch raw[0] {
+	case '"', '{':
+	case 'n':
+		return nil, refuse("carries null")
+	case '[':
+		return nil, refuse("carries a list")
+	case 't', 'f':
+		return nil, refuse("carries a boolean")
+	default:
+		return nil, refuse("carries a number")
+	}
+	var value types.AnnotationValue
+	if err := yaml.Unmarshal(raw, &value); err != nil {
+		return nil, refuse(fmt.Sprintf("carries a value an annotation does not take: %v", err))
+	}
+	if value.IsEmpty() {
+		if raw[0] == '{' {
+			return nil, refuse("carries an object with no subkeys")
+		}
+		// The decoder reads a few strings — "null" and "~" — as the null an author
+		// writes to opt out, wherever they are written, so an injected one reads
+		// the same way and is refused for the reason null is.
+		return nil, refuse("carries a string an annotation reads as null")
+	}
+	return &value, nil
+}
+
 // applyAnnotationInjections applies an annotation-transform plugin's injections
 // to the resolved Release, in the order the plugin emitted them. It is the
-// annotation role's structural facet guarantee (LDD-3 analogue of the label
-// role's confinedLabels): the host adds only string-valued annotations onto
-// component coordinates it supplied as targets, and rejects — with
-// [ErrAnnotationInjectionRejected] — any injection naming a coordinate outside
-// the supplied set. The wire shape admits no other field, so a non-annotation
-// mutation or a non-string value is structurally impossible; the coordinate
-// check is the one remaining confinement the host enforces after apply.
+// annotation role's structural confinement, the counterpart of the label role's
+// patch confinement: the host adds only annotations, onto component coordinates
+// it supplied as targets, each carrying a value an author could write on that
+// annotation. It rejects — with [ErrAnnotationInjectionRejected] — any injection
+// naming a coordinate outside the supplied set, and any injection whose value is
+// not a string or an object of subkeys (see [injectedAnnotationValue]). The wire
+// shape admits no other field, so a non-annotation mutation is structurally
+// impossible; the coordinate and value checks are the confinement the host
+// enforces at apply.
+//
+// Every injection is checked before any is applied, so a refused output leaves
+// the Release exactly as the plugin found it.
 //
 // For each accepted injection the host also stamps the companion
 // aggrega.ai/injected-by annotation (the plugin's URI) on the same component and
@@ -186,23 +268,32 @@ func applyAnnotationInjections(rr *resolver.ResolveResult, out AnnotationTransfo
 	if len(out.Injections) == 0 {
 		return nil
 	}
-	if rr.AnnotationProvenance == nil {
-		rr.AnnotationProvenance = map[string]resolver.AnnotationProvenance{}
-	}
-	for _, inj := range out.Injections {
+	values := make([]*types.AnnotationValue, len(out.Injections))
+	for i, inj := range out.Injections {
 		if !targetSet[annotationTargetKey(inj.BoundaryPath, inj.ComponentName)] {
 			return fmt.Errorf("%w: injection targets boundary %q component %q (annotation %q)",
 				ErrAnnotationInjectionRejected(), inj.BoundaryPath, inj.ComponentName, inj.AnnotationKey)
 		}
+		value, err := injectedAnnotationValue(inj)
+		if err != nil {
+			return err
+		}
+		values[i] = value
+	}
+	if rr.AnnotationProvenance == nil {
+		rr.AnnotationProvenance = map[string]resolver.AnnotationProvenance{}
+	}
+	for i, inj := range out.Injections {
 		// Mutate the authoring tree so expansion (which reads fresh from the
 		// Release) sees the injected annotation, and update the renderer-facing
 		// per-component annotation projection so a downstream render-context read
 		// sees it too — an injected annotation is thereby indistinguishable from an
 		// authored one everywhere it flows.
-		setReleaseComponentAnnotation(rr.Release, inj.BoundaryPath, inj.ComponentName, inj.AnnotationKey, inj.AnnotationValue)
-		setReleaseComponentAnnotation(rr.Release, inj.BoundaryPath, inj.ComponentName, injectedByAnnotationKey, pluginURI)
-		setBoundaryInfraAnnotation(rr, inj.ComponentName, inj.AnnotationKey, inj.AnnotationValue)
-		setBoundaryInfraAnnotation(rr, inj.ComponentName, injectedByAnnotationKey, pluginURI)
+		pluginValue := pluginURI
+		setReleaseComponentAnnotation(rr.Release, inj.BoundaryPath, inj.ComponentName, inj.AnnotationKey, values[i])
+		setReleaseComponentAnnotation(rr.Release, inj.BoundaryPath, inj.ComponentName, injectedByAnnotationKey, &types.AnnotationValue{Scalar: &pluginValue})
+		setBoundaryInfraAnnotation(rr, inj.ComponentName, inj.AnnotationKey, values[i])
+		setBoundaryInfraAnnotation(rr, inj.ComponentName, injectedByAnnotationKey, &types.AnnotationValue{Scalar: &pluginValue})
 
 		// Pre-seed the provenance side-table with the injecting plugin's URI at the
 		// injection coordinate; expansion preserves it when it records the
@@ -216,12 +307,15 @@ func applyAnnotationInjections(rr *resolver.ResolveResult, out AnnotationTransfo
 	return nil
 }
 
-// setBoundaryInfraAnnotation adds one scalar annotation to a component's
+// setBoundaryInfraAnnotation reflects one injected annotation in a component's
 // renderer-facing annotation projection (resolver BoundaryInfra), so an injected
-// annotation reaches the render context the same way an authored one does. A
-// component with no BoundaryInfra entry is a no-op — the injection still lands on
-// the authoring tree, which is what expansion reads.
-func setBoundaryInfraAnnotation(rr *resolver.ResolveResult, componentName, key, value string) {
+// annotation reaches the render context the same way an authored one does. That
+// projection carries scalar values only, so a scalar is set and a structured
+// value removes the key — exactly as a structured value an author wrote on the
+// component leaves no scalar there to read. A component with no BoundaryInfra
+// entry is a no-op — the injection still lands on the authoring tree, which is
+// what expansion reads.
+func setBoundaryInfraAnnotation(rr *resolver.ResolveResult, componentName, key string, value *types.AnnotationValue) {
 	if rr.BoundaryInfra == nil {
 		return
 	}
@@ -229,10 +323,14 @@ func setBoundaryInfraAnnotation(rr *resolver.ResolveResult, componentName, key, 
 	if !ok || bi == nil {
 		return
 	}
-	bi.Annotations.Set(key, value)
+	if value.IsScalar() {
+		bi.Annotations.Set(key, *value.Scalar)
+		return
+	}
+	bi.Annotations.Delete(key)
 }
 
-// setReleaseComponentAnnotation sets one scalar annotation on a Release boundary
+// setReleaseComponentAnnotation sets one annotation on a Release boundary
 // component identified by its slash-separated boundary path and component name,
 // writing the mutated boundary chain back to the Release root. OrderedMap returns
 // values by copy, so the walk holds a local copy of each boundary and component;
@@ -240,7 +338,7 @@ func setBoundaryInfraAnnotation(rr *resolver.ResolveResult, componentName, key, 
 // back up so the mutation persists. A path or component the walk cannot resolve
 // is a no-op — the caller's confinement check has already rejected an unknown
 // coordinate before this runs.
-func setReleaseComponentAnnotation(release *types.Release, boundaryPath, compName, key, value string) {
+func setReleaseComponentAnnotation(release *types.Release, boundaryPath, compName, key string, value *types.AnnotationValue) {
 	segments := splitBoundaryPathSlash(boundaryPath)
 	if len(segments) == 0 {
 		return
@@ -263,8 +361,7 @@ func setReleaseComponentAnnotation(release *types.Release, boundaryPath, compNam
 	if !ok {
 		return
 	}
-	v := value
-	comp.Annotations.Set(key, &types.AnnotationValue{Scalar: &v})
+	comp.Annotations.Set(key, value)
 	leaf.Components.Set(compName, comp)
 	chain[len(segments)-1] = leaf
 	for i := len(segments) - 1; i > 0; i-- {

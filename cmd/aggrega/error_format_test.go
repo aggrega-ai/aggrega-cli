@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"strings"
@@ -502,7 +503,7 @@ func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 		plugin = "example/policy-guard:1.0.0"
 	)
 	payload, err := abi.AnnotationTransformOutput{
-		Injections: []abi.AnnotationInjection{{BoundaryPath: "main", ComponentName: "a", AnnotationKey: "k", AnnotationValue: "v"}},
+		Injections: []abi.AnnotationInjection{{BoundaryPath: "main", ComponentName: "a", AnnotationKey: "k", AnnotationValue: json.RawMessage(`"v"`)}},
 	}.EncodeCBOR()
 	if err != nil {
 		t.Fatalf("encode the misdirected envelope: %v", err)
