@@ -22,16 +22,30 @@
 #              carries is a signature of exactly the uninstaller this script
 #              generates. The release then signs the installer.
 #
-# NSIS is Debian's 3.08-3+deb12u1 build, the nsis package (makensis) and the
+# NSIS is Debian's 3.12-1 build, the nsis package (makensis) and the
 # nsis-common package (the installer stubs and the plug-ins), fetched from
 # snapshot.debian.org, which keeps every package it has archived at a fixed
 # address; the plug-in is EnVar, fetched from the NSIS wiki. Each is fetched at
 # one version and refused, before anything in it is unpacked or run, unless its
 # SHA-256 is the one written below; moving to another version changes both
-# lines. This makensis needs the GNU C library 2.34 or later, the GNU C++
-# library from GCC 11 or later (GLIBCXX_3.4.29) and zlib on the machine; ar and
-# xz unpack the packages and unzip the plug-in's archive. A machine missing one
-# is refused, naming it.
+# lines.
+#
+# The packages are unpacked, and makensis runs, in a container of the Debian
+# image written below, pinned by its digest: the Debian release those packages
+# were built for, so the C and C++ libraries makensis needs are the ones it was
+# built against, whatever the machine runs. The container has no network, a
+# read-only root and an empty /tmp, runs as the user running this script, and
+# sees four folders of this machine, each at its own path: this script's
+# folder and the folder holding the installer's script, read-only, and this
+# script's temporary directory and --output-dir, which it writes. Every other
+# file it reads is copied into the temporary directory first. So the machine
+# needs docker, able to pull that image and to mount this machine's own folders
+# into a container that writes them as the user it runs as — a daemon on this
+# machine, run as root — and curl, sha256sum and unzip, which fetch and check
+# the packages and take the plug-in out of its archive. A machine missing one is
+# refused, naming it. When the image is not in docker's image store already,
+# this script pulls it, and removes it again when it exits, a failure or a
+# refusal included; an image that was there already is left as it is.
 #
 # The installer is the same bytes whenever it is built from the same inputs:
 # the script has makensis record no file times, and makensis records no time of
@@ -52,18 +66,24 @@
 # EnVar.dll in --unsigned-parts must be the one this script fetches.
 #
 # Writes into --output-dir and a temporary directory of its own, which it
-# removes; writes nothing else. Exits 0 when it wrote what it was asked to, 1
+# removes, and into docker's image store the image it pulls, which it removes;
+# writes nothing else. Exits 0 when it wrote what it was asked to, 1
 # when it could not, and 2 for an argument it cannot use.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 CLI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-NSI="$CLI_ROOT/packaging/windows/aggrega.nsi"
+NSI_DIR="$CLI_ROOT/packaging/windows"
+NSI="$NSI_DIR/aggrega.nsi"
 
-NSIS_DEB_URL=https://snapshot.debian.org/archive/debian/20240617T204135Z/pool/main/n/nsis/nsis_3.08-3%2Bdeb12u1_amd64.deb
-NSIS_DEB_SHA256=b9ca8de84341753dd1c071a3f65453dc06bd7b6f2230140a36755d7e402827c2
-NSIS_COMMON_DEB_URL=https://snapshot.debian.org/archive/debian/20240617T204135Z/pool/main/n/nsis/nsis-common_3.08-3%2Bdeb12u1_all.deb
-NSIS_COMMON_DEB_SHA256=f1c9e63389c947442fddd5ca446e22966e8f03fc10663f998cf7df58642f9b52
+# The image makensis runs in: Debian forky, as Docker Hub's library/debian
+# tagged it forky-20261020-slim, named by the digest of its image index, of
+# which docker takes the linux/amd64 image.
+NSIS_IMAGE=docker.io/library/debian@sha256:4cee6ff3ebc49e32d55a857e25164ef8e5f8fecff2a186c6393f7e8bd8c23b53
+NSIS_DEB_URL=https://snapshot.debian.org/archive/debian/20260504T084255Z/pool/main/n/nsis/nsis_3.12-1_amd64.deb
+NSIS_DEB_SHA256=7df43fb0dee49146089c4c9cde11621305fe6c978e1654c061c19b7451ffa340
+NSIS_COMMON_DEB_URL=https://snapshot.debian.org/archive/debian/20260504T084255Z/pool/main/n/nsis/nsis-common_3.12-1_all.deb
+NSIS_COMMON_DEB_SHA256=03e1944ea80c1f8f833baafffde085c0c68ccd0dca7ada3a0274fa3d239b9274
 # The EnVar plug-in's archive, as the NSIS wiki serves it, and the plug-in the
 # installer runs, its build for x86-unicode, held to a digest of its own as well.
 ENVAR_ZIP_URL=https://nsis.sourceforge.io/mediawiki/images/7/7f/EnVar_plugin.zip
@@ -118,42 +138,89 @@ fetch() {
   say "$url, SHA-256 $got, the pinned digest"
 }
 
-# unpack_deb <deb> <root>: unpack the files a Debian package installs under
-# <root>, with ar and tar.
-unpack_deb() {
-  local deb="$1" root="$2" members member data=""
-  local dir
-  dir="$(mktemp -d "$WORK/deb.XXXXXX")"
-  (cd "$dir" && ar x "$deb") || refuse "ar could not read $deb"
-  for member in "$dir"/data.tar.*; do
-    [ -f "$member" ] && data="$member"
-  done
-  [ -n "$data" ] || refuse "$deb holds no data archive"
-  mkdir -p "$root"
-  tar -xf "$data" -C "$root" || refuse "tar could not unpack $data from $deb"
-  members="$(cd "$dir" && printf '%s ' *)"
-  rm -rf -- "$dir"
-  say "unpacked ${deb##*/} (${members% })"
+# pull_image: make NSIS_IMAGE's linux/amd64 image available to docker, pulling
+# it when the image store does not hold it, and noting that it did.
+pull_image() {
+  local platform
+  if docker image inspect "$NSIS_IMAGE" >/dev/null 2>&1; then
+    say "$NSIS_IMAGE is in docker's image store already, and is left there"
+  else
+    docker pull --quiet --platform linux/amd64 "$NSIS_IMAGE" >/dev/null ||
+      refuse "docker could not pull $NSIS_IMAGE, the image makensis runs in"
+    PULLED_IMAGE=1
+    say "pulled $NSIS_IMAGE"
+  fi
+  platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$NSIS_IMAGE")" ||
+    refuse "docker cannot read $NSIS_IMAGE after pulling it"
+  [ "$platform" = linux/amd64 ] || refuse "docker holds $NSIS_IMAGE as a $platform image, not linux/amd64"
 }
 
-# prepare_tools: fetch and unpack NSIS and the plug-in into WORK, setting
-# MAKENSIS, NSIS_DATA and PLUGIN (the plug-in DLL).
+# remove_image: remove the image pull_image pulled from docker's image store,
+# by its ID, since a pull by digest gives it no tag to remove it by. Where
+# docker refuses — the store keeps it under another name too — it says so and
+# leaves it.
+remove_image() {
+  local id
+  [ "$PULLED_IMAGE" = 1 ] || return 0
+  if id="$(docker image inspect --format '{{.Id}}' "$NSIS_IMAGE" 2>/dev/null)"; then
+    if docker image rm "$id" >/dev/null; then
+      say "removed $NSIS_IMAGE from docker's image store"
+    else
+      printf "build-windows-installer: could not remove %s (%s) from docker's image store\n" "$NSIS_IMAGE" "$id" >&2
+    fi
+  fi
+}
+
+clean_up() {
+  rm -rf -- "$WORK"
+  remove_image
+}
+
+# in_image <command> [<argument>...]: run a command in a container of
+# NSIS_IMAGE, as the header describes, handing it NSISDIR and the three
+# AGGREGA_UNINSTALLER_ variables finalize-uninstaller reads, where they are set.
+in_image() {
+  docker run --rm --platform linux/amd64 --pull never \
+    --network none --read-only --tmpfs /tmp \
+    --user "$(id -u):$(id -g)" --workdir "$WORK" \
+    --env "NSISDIR=$WORK/nsis/usr/share/nsis" \
+    --env AGGREGA_UNINSTALLER_EXPORT \
+    --env AGGREGA_UNINSTALLER_EXPECTED \
+    --env AGGREGA_UNINSTALLER_REPLACEMENT \
+    --mount "type=bind,source=$SCRIPT_DIR,target=$SCRIPT_DIR,readonly" \
+    --mount "type=bind,source=$NSI_DIR,target=$NSI_DIR,readonly" \
+    --mount "type=bind,source=$WORK,target=$WORK" \
+    --mount "type=bind,source=$OUTPUT_DIR,target=$OUTPUT_DIR" \
+    "$NSIS_IMAGE" "$@"
+}
+
+# unpack_deb <deb> <root>: unpack the files a Debian package installs under
+# <root>, with the image's dpkg-deb.
+unpack_deb() {
+  local deb="$1" root="$2"
+  mkdir -p "$root"
+  in_image dpkg-deb --extract "$deb" "$root" || refuse "dpkg-deb could not unpack $deb"
+  say "unpacked ${deb##*/}"
+}
+
+# prepare_tools: fetch NSIS and the plug-in into WORK, and unpack them, setting
+# MAKENSIS and PLUGIN (the plug-in DLL).
 prepare_tools() {
   local tool machine
   machine="$(uname -s)/$(uname -m)"
-  [ "$machine" = Linux/x86_64 ] || refuse "the makensis this script pins is built for x64 Linux, and this machine is $machine"
-  for tool in curl sha256sum ar tar xz unzip cmp; do
+  [ "$machine" = Linux/x86_64 ] || refuse "the image makensis runs in is taken for x64 Linux, and this machine is $machine"
+  for tool in docker curl sha256sum unzip; do
     command -v "$tool" >/dev/null 2>&1 || refuse "$tool is not on PATH, and building the installer needs it"
   done
+  pull_image
   fetch "$NSIS_DEB_URL" "$NSIS_DEB_SHA256" "$WORK/nsis.deb"
   fetch "$NSIS_COMMON_DEB_URL" "$NSIS_COMMON_DEB_SHA256" "$WORK/nsis-common.deb"
   fetch "$ENVAR_ZIP_URL" "$ENVAR_ZIP_SHA256" "$WORK/envar.zip"
   unpack_deb "$WORK/nsis.deb" "$WORK/nsis"
   unpack_deb "$WORK/nsis-common.deb" "$WORK/nsis"
   MAKENSIS="$WORK/nsis/usr/bin/makensis"
-  NSIS_DATA="$WORK/nsis/usr/share/nsis"
   [ -x "$MAKENSIS" ] || refuse "the nsis package holds no usr/bin/makensis"
-  [ -d "$NSIS_DATA/Stubs" ] || refuse "the nsis-common package holds no usr/share/nsis/Stubs"
+  [ -d "$WORK/nsis/usr/share/nsis/Stubs" ] || refuse "the nsis-common package holds no usr/share/nsis/Stubs"
   mkdir -p "$WORK/plugin"
   unzip -p "$WORK/envar.zip" "$ENVAR_DLL_MEMBER" > "$WORK/plugin/EnVar.dll" ||
     refuse "$ENVAR_ZIP_URL holds no $ENVAR_DLL_MEMBER"
@@ -161,17 +228,18 @@ prepare_tools() {
     refuse "$ENVAR_DLL_MEMBER in $ENVAR_ZIP_URL has SHA-256 $(sha256_of "$WORK/plugin/EnVar.dll"), not $ENVAR_DLL_SHA256"
   PLUGIN="$WORK/plugin/EnVar.dll"
   local version
-  if ! version="$(NSISDIR="$NSIS_DATA" "$MAKENSIS" -VERSION 2>&1)"; then
+  if ! version="$(in_image "$MAKENSIS" -VERSION 2>&1)"; then
     printf '%s\n' "$version" >&2
-    refuse "makensis does not run on this machine; it needs the GNU C library 2.34 or later, libstdc++ with GLIBCXX_3.4.29 and zlib (libz.so.1)"
+    refuse "makensis does not run in $NSIS_IMAGE"
   fi
-  say "makensis $version"
+  say "makensis $version, in $NSIS_IMAGE"
 }
 
-# compile <aggrega.exe> <plugin dir> <installer>: compile the script.
+# compile <aggrega.exe> <plugin dir> <installer>: compile the script, every
+# path given being one the container sees.
 compile() {
   local exe="$1" plugin_dir="$2" out="$3" log="$WORK/makensis.log" rc=0
-  NSISDIR="$NSIS_DATA" "$MAKENSIS" -V2 -WX -NOCONFIG \
+  in_image "$MAKENSIS" -V2 -WX -NOCONFIG \
     "-DVERSION=$VERSION" "-DVI_VERSION=$VI_VERSION" \
     "-DAGGREGA_EXE=$exe" "-DPLUGIN_DIR=$plugin_dir" \
     "-DFINALIZER=$SCRIPT_DIR/build-windows-installer.sh" \
@@ -235,9 +303,12 @@ fi
 if [ -e "$OUTPUT_DIR" ] && [ -n "$(find "$OUTPUT_DIR" -mindepth 1 -print -quit)" ]; then
   usage_error "--output-dir $OUTPUT_DIR is not empty"
 fi
-for path in "$SCRIPT_DIR" "$OUTPUT_DIR" "$AGGREGA_EXE" "$PARTS" "$UNSIGNED_PARTS"; do
+TEMP_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+# The folders the container sees are handed to docker in a comma-separated
+# list, and paths in them to makensis in quotes.
+for path in "$SCRIPT_DIR" "$NSI_DIR" "$OUTPUT_DIR" "$TEMP_ROOT"; do
   case "$path" in
-    *"'"* | *'"'*) usage_error "a path holding a quote cannot be handed to makensis: $path" ;;
+    *"'"* | *'"'* | *,*) usage_error "a path holding a quote or a comma cannot be handed to docker and makensis: $path" ;;
   esac
 done
 
@@ -252,13 +323,18 @@ AGGREGA_EXE="$(cd "$(dirname "$AGGREGA_EXE")" && pwd -P)/$(basename "$AGGREGA_EX
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd -P)"
 
-WORK="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/aggrega-installer.XXXXXX")"
-trap 'rm -rf -- "$WORK"' EXIT
+PULLED_IMAGE=0
+WORK="$(mktemp -d "$TEMP_ROOT/aggrega-installer.XXXXXX")"
+WORK="$(cd "$WORK" && pwd -P)"
+trap clean_up EXIT
 prepare_tools
 say "version $VERSION, version resource $VI_VERSION, aggrega.exe $AGGREGA_EXE, SHA-256 $(sha256_of "$AGGREGA_EXE")"
+# The binary goes into the temporary directory, which the container sees.
+mkdir -p "$WORK/input"
+cp -- "$AGGREGA_EXE" "$WORK/input/aggrega.exe"
 
 if [ "$MODE" = parts ]; then
-  AGGREGA_UNINSTALLER_EXPORT="$OUTPUT_DIR/uninstall.exe" compile "$AGGREGA_EXE" "$WORK/plugin" "$WORK/discarded-setup.exe"
+  AGGREGA_UNINSTALLER_EXPORT="$OUTPUT_DIR/uninstall.exe" compile "$WORK/input/aggrega.exe" "$WORK/plugin" "$WORK/discarded-setup.exe"
   [ -f "$OUTPUT_DIR/uninstall.exe" ] || refuse "makensis did not run the script's !uninstfinalize, so no uninstaller was kept"
   cp -- "$PLUGIN" "$OUTPUT_DIR/EnVar.dll"
   say "wrote, for signing:"
@@ -275,12 +351,15 @@ done
 PARTS="$(cd "$PARTS" && pwd -P)"
 UNSIGNED_PARTS="$(cd "$UNSIGNED_PARTS" && pwd -P)"
 # The plug-in the installer runs and places is the one given in --parts, from a
-# folder of its own, so that makensis finds it under its own name.
-mkdir -p "$WORK/given-plugin"
+# folder of its own, so that makensis finds it under its own name; it and both
+# uninstallers go into the temporary directory, which the container sees.
+mkdir -p "$WORK/given-plugin" "$WORK/given-parts" "$WORK/unsigned-parts"
 cp -- "$PARTS/EnVar.dll" "$WORK/given-plugin/EnVar.dll"
-AGGREGA_UNINSTALLER_EXPECTED="$UNSIGNED_PARTS/uninstall.exe" \
-  AGGREGA_UNINSTALLER_REPLACEMENT="$PARTS/uninstall.exe" \
-  compile "$AGGREGA_EXE" "$WORK/given-plugin" "$OUTPUT_DIR/$INSTALLER_NAME"
+cp -- "$PARTS/uninstall.exe" "$WORK/given-parts/uninstall.exe"
+cp -- "$UNSIGNED_PARTS/uninstall.exe" "$WORK/unsigned-parts/uninstall.exe"
+AGGREGA_UNINSTALLER_EXPECTED="$WORK/unsigned-parts/uninstall.exe" \
+  AGGREGA_UNINSTALLER_REPLACEMENT="$WORK/given-parts/uninstall.exe" \
+  compile "$WORK/input/aggrega.exe" "$WORK/given-plugin" "$OUTPUT_DIR/$INSTALLER_NAME"
 say "wrote $OUTPUT_DIR/$INSTALLER_NAME, SHA-256 $(sha256_of "$OUTPUT_DIR/$INSTALLER_NAME"), carrying:"
 (cd "$PARTS" && sha256sum -- "${PART_NAMES[@]}")
 printf '%s  aggrega.exe\n' "$(sha256_of "$AGGREGA_EXE")"

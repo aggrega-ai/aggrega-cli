@@ -61,8 +61,10 @@
 # The build and pack commands are npx, npm, pnpm, yarn, cargo, make, tinygo,
 # makensis (which compiles the Windows installer from a script and the plug-ins
 # and stubs it fetches); go build, go run, go test, go generate, go install, go
-# get; and docker build, docker buildx build, buildx build, docker image build,
-# docker compose build. A
+# get; docker build, docker buildx build, buildx build, docker image build,
+# docker compose build; and docker run and docker container run, which run a
+# container image's code as a container: or services: would (the Windows
+# installer's build runs makensis that way). A
 # command counts wherever it stands on a line that is not a comment, inside a
 # string too: this reads text, so where a line merely names one it refuses
 # rather than guesses. A repository script is any token ending in .sh, with a
@@ -130,6 +132,7 @@ COMMAND_RES=(
   "${B}(npx|npm|pnpm|yarn|cargo|make|tinygo|makensis)${E}"
   "${B}(go[[:space:]]+(build|run|test|generate|install|get))${E}"
   "${B}(docker[[:space:]]+(buildx[[:space:]]+|image[[:space:]]+|compose[[:space:]]+)?build|buildx[[:space:]]+build)${E}"
+  "${B}(docker[[:space:]]+(container[[:space:]]+)?run)${E}"
 )
 SCRIPT_RE='([A-Za-z0-9_./-]*[A-Za-z0-9_-]\.sh)([^A-Za-z0-9_.-]|$)'
 VAR_RE='\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
