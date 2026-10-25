@@ -132,7 +132,9 @@ name: Publish and sign core plugins
 #   sign-macos           Signs the six macOS binaries — the default, debug and
 #                        light ones for darwin/arm64 and darwin/amd64 — with
 #                        Cognitio S.r.l.'s Developer ID Application identity,
-#                        with the hardened runtime and a secure timestamp, has
+#                        with the hardened runtime and a secure timestamp,
+#                        claiming the entitlements
+#                        packaging/macos/aggrega.entitlements declares, has
 #                        Apple's notary service notarize them, and hands them on,
 #                        each target's three with a SHA-256 list of them, as
 #                        macos-binaries-signed-darwin-arm64 and
@@ -143,10 +145,11 @@ name: Publish and sign core plugins
 #                        security, ditto and openssl, and nothing else but the
 #                        shell's own utilities and the artifact download and
 #                        upload, pinned by commit: it checks nothing out and
-#                        runs no build. It takes the unsigned binaries from the
-#                        build's artifact once the list beside them has the
-#                        SHA-256 the build gave as its output and each binary
-#                        the digest the list gives it. The identity goes into a
+#                        runs no build. It takes the unsigned binaries and that
+#                        entitlements file from the build's artifact once the
+#                        list beside them has the SHA-256 the build gave as its
+#                        output and each file the digest the list gives it.
+#                        The identity goes into a
 #                        keychain of the job's own, in the runner's temporary
 #                        directory, deleted once the signing ends, whatever
 #                        ended it. It is the one job that names the Apple
@@ -336,7 +339,9 @@ name: Publish and sign core plugins
 # macos-smoke runs the binaries sign-macos signed, and last checks their
 # signatures: macOS's own codesign must accept each one and report
 # it signed with Cognitio S.r.l.'s Developer ID, with the hardened runtime and a
-# secure timestamp, Gatekeeper must accept a copy of each carrying the
+# secure timestamp, claiming exactly the entitlements the checkout's
+# packaging/macos/aggrega.entitlements declares and never get-task-allow,
+# Gatekeeper must accept a copy of each carrying the
 # quarantine mark a browser gives a download, as notarized Developer ID
 # software, and each must match sign-macos' SHA-256 list, while the unsigned
 # copies the build wrote are shown refused. On a manual dry run from a ref the signing identity
@@ -1848,14 +1853,17 @@ jobs:
         # linker's ad hoc signature on the arm64 ones, under the names they
         # wrote them, as the smoke library's smoke_target_binaries names them
         # for darwin/arm64 and darwin/amd64, into a directory of this run's
-        # own, with SHA256SUMS beside them, written by the smoke library's one
-        # writer of such lists after every step of this job that runs
-        # third-party code. sign-macos runs on a GitHub-hosted Mac and reads
-        # none of the hand-over folder, so they are uploaded for it below; the
-        # SHA-256 of the list itself is this job's macos_unsigned_sums output,
-        # which sign-macos, checking nothing out, holds the list to before it
-        # holds each binary to the list. A missing file fails the copy. No
-        # external side effect; a dry run collects them too.
+        # own, beside the property list declaring the entitlements each is
+        # signed with, the file smoke_macos_entitlements names in this
+        # checkout, under its own name, with SHA256SUMS over all seven, written
+        # by the smoke library's one writer of such lists after every step of
+        # this job that runs third-party code. sign-macos runs on a
+        # GitHub-hosted Mac and reads none of the hand-over folder, so they are
+        # uploaded for it below; the SHA-256 of the list itself is this job's
+        # macos_unsigned_sums output, which sign-macos, checking nothing out,
+        # holds the list to before it holds each file to the list. A missing
+        # file fails the copy. No external side effect; a dry run collects them
+        # too.
         id: macos-unsigned
         run: |
           set -euo pipefail
@@ -1869,13 +1877,15 @@ jobs:
               cp "aggrega-cli/$name" "$unsigned/$name"
             done <<<"$names"
           done
+          entitlements="$(smoke_macos_entitlements)"
+          cp "aggrega-cli/$entitlements" "$unsigned/${entitlements##*/}"
           smoke_write_tree_sums "$unsigned"
           cat "$unsigned/SHA256SUMS"
           sums="$(sha256sum < "$unsigned/SHA256SUMS")"
           printf 'sums=%s\n' "${sums%% *}" >> "$GITHUB_OUTPUT"
           echo "the list's own SHA-256: ${sums%% *}"
 
-      - name: Upload the unsigned macOS binaries and their list
+      - name: Upload the unsigned macOS binaries, their entitlements and their list
         # One workflow artifact, read only by sign-macos of this same run and
         # deleted by clean-up when the run ends (kept a day at most should
         # clean-up never run). An artifact keeps the bytes of each file, the
@@ -2398,13 +2408,22 @@ jobs:
     # can tell that nothing changed them since, and has Apple's notary service
     # notarize them, so that Gatekeeper lets a Mac run one downloaded with a
     # browser. Each is signed with the hardened runtime and a secure timestamp,
-    # both of which notarization requires, claims no entitlement, and carries the
-    # code-signing identifier CODESIGN_IDENTIFIER, as Apple asks of code that is
-    # not in a bundle. The six go to the notary service in one zip archive, made
-    # with ditto, as Apple's notary service takes a bare executable; a ticket
-    # cannot be stapled to a bare executable, so Gatekeeper finds it online,
-    # where Apple publishes it. A submission Apple does not accept fails the job,
-    # and Apple's log of it is printed whatever the outcome.
+    # both of which notarization requires, carries the code-signing identifier
+    # CODESIGN_IDENTIFIER, as Apple asks of code that is not in a bundle, and
+    # claims the entitlements the repository's
+    # packaging/macos/aggrega.entitlements declares, and no other: the one
+    # exception to the hardened runtime that the WebAssembly runtime the
+    # binaries embed needs to compile plugins,
+    # com.apple.security.cs.allow-unsigned-executable-memory, since it makes
+    # the memory it compiles into executable without mapping it with MAP_JIT,
+    # which the narrower com.apple.security.cs.allow-jit covers alone. That
+    # file arrives as the binaries do, in the build job's artifact and named in
+    # its list, since this job checks nothing out. The six go to the notary
+    # service in one zip archive, made with ditto, as Apple's notary service
+    # takes a bare executable; a ticket cannot be stapled to a bare executable,
+    # so Gatekeeper finds it online, where Apple publishes it. A submission
+    # Apple does not accept fails the job, and Apple's log of it is printed
+    # whatever the outcome.
     #
     # It runs on every trigger, a dry run's included, on the decision
     # registry-credential makes for the Windows signing and on no other: skipped
@@ -2420,10 +2439,11 @@ jobs:
     # path, and the shell's own utilities — and GitHub's artifact download and
     # upload, each pinned by its full commit with the release it is beside it. It
     # checks nothing out, runs no build, and is granted no permission: the run's
-    # token can read nothing here. The unsigned binaries arrive as the build
-    # job's artifact, used only once the list beside them has the SHA-256 the
-    # build job gave as its macos_unsigned_sums output and each binary the digest
-    # the list gives it, and the list names nothing else. This job writes its
+    # token can read nothing here. The unsigned binaries and the entitlements
+    # file arrive as the build job's artifact, used only once the list beside
+    # them has the SHA-256 the build job gave as its macos_unsigned_sums output
+    # and each file the digest the list gives it, and the list names nothing
+    # else. This job writes its
     # own checks of that, rather than running the smoke library's, because it
     # checks out nothing; the lists it hands on are in the form the library's
     # smoke_check_sums reads, and macos-smoke and sign-and-publish read them
@@ -2498,20 +2518,24 @@ jobs:
           name: macos-binaries-unsigned
           path: ${{ runner.temp }}/macos-signing/unsigned
 
-      - name: Hold the unsigned binaries to the build job's list
+      - name: Hold the unsigned binaries and the entitlements to the build job's list
         # The list beside the binaries must have the SHA-256 the build job gave
         # as its output, so it is the list the build wrote; each line of it must
-        # be "<SHA-256>  <name>", name a darwin/arm64 or darwin/amd64 binary
-        # once, and give that binary's digest; and the artifact must hold
-        # nothing the list does not name. Each binary is then copied into the
-        # directory of its target it is signed in. The digests printed are the
-        # unsigned bytes the build wrote.
+        # be "<SHA-256>  <name>", name a darwin/arm64 or darwin/amd64 binary, or
+        # the entitlements file — the one name ending .entitlements, the
+        # extension Apple gives such a property list — once, and give that
+        # file's digest; and the artifact must hold nothing the list does not
+        # name. Each binary is then copied into the directory of its target it
+        # is signed in, and the entitlements file to where the signing reads
+        # it, and printed. The digests printed are the unsigned bytes the build
+        # wrote.
         env:
           LISTED_SUMS: ${{ needs.build.outputs.macos_unsigned_sums }}
         run: |
           dir="$RUNNER_TEMP/macos-signing/unsigned"
           list="$dir/SHA256SUMS"
           signed="$RUNNER_TEMP/macos-signing/signed"
+          entitlements="$RUNNER_TEMP/macos-signing/entitlements.plist"
           re_digest='^[0-9a-f]{64}$'
           re_line='^([0-9a-f]{64}) [ *]([A-Za-z0-9._-]+)$'
           if [ ! -f "$list" ]; then
@@ -2544,8 +2568,9 @@ jobs:
             case "$name" in
               *-darwin-arm64) target=darwin-arm64 ;;
               *-darwin-amd64) target=darwin-amd64 ;;
+              *.entitlements) target=entitlements ;;
               *)
-                echo "sign-macos: SHA256SUMS lists $name, which is no darwin/arm64 or darwin/amd64 binary" >&2
+                echo "sign-macos: SHA256SUMS lists $name, which is no darwin/arm64 or darwin/amd64 binary and no entitlements file" >&2
                 bad=1
                 continue
                 ;;
@@ -2571,6 +2596,15 @@ jobs:
               continue
             fi
             echo "ok: $name has SHA-256 $got, as SHA256SUMS lists"
+            if [ "$target" = entitlements ]; then
+              if [ -e "$entitlements" ]; then
+                echo "sign-macos: SHA256SUMS lists a second entitlements file, $name" >&2
+                bad=1
+                continue
+              fi
+              /bin/cp "$dir/$name" "$entitlements"
+              continue
+            fi
             /bin/mkdir -p "$signed/$target"
             /bin/cp "$dir/$name" "$signed/$target/$name"
             count=$((count + 1))
@@ -2594,11 +2628,16 @@ jobs:
               bad=1
             fi
           done
+          if [ ! -f "$entitlements" ]; then
+            echo "sign-macos: SHA256SUMS lists no entitlements file that matches it" >&2
+            bad=1
+          fi
           if [ "$bad" != 0 ]; then
-            echo "sign-macos: the unsigned binaries are not the ones the build job listed, so none is signed" >&2
+            echo "sign-macos: the unsigned binaries and their entitlements are not the ones the build job listed, so none is signed" >&2
             exit 1
           fi
-          echo "ok: $count unsigned binaries, each the one the build job listed, to be signed"
+          echo "ok: $count unsigned binaries, each the one the build job listed, to be signed claiming the entitlements it listed:"
+          /bin/cat "$entitlements"
 
       - name: Sign the macOS binaries
         # The identity is unwrapped from its PKCS#12 file by Apple's openssl,
@@ -2610,8 +2649,10 @@ jobs:
         # step deletes when it ends, whatever ended it. The identity must be the
         # one valid Developer ID Application identity the file holds, and each
         # binary is signed with it by its SHA-1 hash, with the hardened runtime,
-        # a secure timestamp and the code-signing identifier, then verified as
-        # strictly as notarization verifies, and its signature printed.
+        # a secure timestamp, the code-signing identifier and the entitlements
+        # the step above held to the build job's list, then verified as
+        # strictly as notarization verifies, and its signature and the
+        # entitlements it claims printed.
         env:
           APPLE_DEVELOPER_ID_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
           APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
@@ -2619,6 +2660,7 @@ jobs:
           work="$RUNNER_TEMP/macos-signing"
           keychain="$work/signing.keychain-db"
           identity="$work/identity"
+          entitlements="$work/entitlements.plist"
           umask 077
           remove_identity() {
             /usr/bin/security delete-keychain "$keychain" >/dev/null 2>&1 || true
@@ -2680,9 +2722,10 @@ jobs:
           echo "sign-macos: signing as $signer ($hash)"
           for file in "$work"/signed/darwin-*/*; do
             /usr/bin/codesign --sign "$hash" --keychain "$keychain" --force --options runtime --timestamp \
-              --identifier "$CODESIGN_IDENTIFIER" "$file"
+              --identifier "$CODESIGN_IDENTIFIER" --entitlements "$entitlements" "$file"
             /usr/bin/codesign --verify --strict --verbose=2 "$file"
-            /usr/bin/codesign --display --verbose=2 "$file"
+            /usr/bin/codesign --display --verbose=2 --entitlements - --xml "$file"
+            echo
           done
 
       - name: Have Apple notarize the signed binaries
@@ -4223,15 +4266,17 @@ jobs:
     # an amd64 binary too, through Rosetta 2. It also proves that install.sh
     # installs the default binary there from a folder laid out as the release
     # is, and that macOS accepts each binary's signature, from the Developer ID
-    # of Cognitio S.r.l., with the hardened runtime and a secure timestamp, on
-    # the very bytes sign-macos' SHA-256 list names, and that Gatekeeper accepts
-    # a copy of each carrying the quarantine mark a browser gives a download as
-    # notarized Developer ID software. Everything it runs comes from the
-    # artifacts the build job staged and sign-macos signed for the target, but
-    # for the Python, curl and sh the runner image carries; it
+    # of Cognitio S.r.l., with the hardened runtime and a secure timestamp,
+    # claiming exactly the entitlements packaging/macos/aggrega.entitlements
+    # declares, on the very bytes sign-macos' SHA-256 list names, and that
+    # Gatekeeper accepts a copy of each carrying the quarantine mark a browser
+    # gives a download as notarized Developer ID software. Everything it runs
+    # comes from the artifacts the build job staged and sign-macos signed for
+    # the target, but for the Python, curl and sh the runner image carries; it
     # checks out this repository so that each test executable runs from its
-    # package directory, and for the install scripts the release attaches, at
-    # the commit the artifact records. It holds no secret and
+    # package directory, and for the install scripts the release attaches and
+    # the entitlements file the signature is held to, at the commit the
+    # artifact records. It holds no secret and
     # reads only this repository. sign-and-publish waits for both targets, so a
     # failure on either publishes nothing.
     #
@@ -4346,8 +4391,10 @@ jobs:
         # served binary refused with nothing installed; and last the
         # signatures: each binary must match sign-macos' SHA-256 list, macOS's
         # own codesign must accept it and report it signed with the Developer ID
-        # of Cognitio S.r.l., hardened and timestamped, and Gatekeeper must
-        # accept a quarantined copy of it as notarized Developer ID software,
+        # of Cognitio S.r.l., hardened and timestamped, claiming exactly the
+        # entitlements the checkout's entitlements file declares, and
+        # Gatekeeper must accept a quarantined copy of it as notarized
+        # Developer ID software,
         # with the unsigned copy the build wrote shown refused. On a run whose
         # decision is skip, the script is told the binaries are unsigned: it
         # runs the ones the build wrote, staged in its inputs, every check

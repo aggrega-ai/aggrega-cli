@@ -160,7 +160,10 @@
 #                 must report a first authority of "Developer ID Application:
 #                 Cognitio S.r.l. (<team>)", that team as its TeamIdentifier,
 #                 the hardened runtime among the code directory's flags, a
-#                 secure timestamp, and no get-task-allow entitlement. Then
+#                 secure timestamp, and exactly the entitlements this
+#                 checkout's packaging/macos/aggrega.entitlements declares,
+#                 the file the signing signed with — none beyond them, none of
+#                 them missing — and never get-task-allow. Then
 #                 Gatekeeper: a copy of each binary is given the quarantine
 #                 mark a browser gives a download, and `spctl --assess --type
 #                 execute -vvv` must report it accepted, its source Notarized
@@ -1108,6 +1111,11 @@ check_install() {
 # checks would accept whichever signer it found.
 SIGNER_CN="Cognitio S.r.l."
 
+# The entitlements every macOS binary must claim, and no other: the ones the
+# property list in this checkout declares, the file the signing job signed with,
+# since the checkout is at the commit the build that handed it over built.
+ENTITLEMENTS="$CLI_ROOT/$(smoke_macos_entitlements)"
+
 # authenticode_report <file> <report> — write to <report>, as key=value lines,
 # what Windows' own Get-AuthenticodeSignature, in Windows PowerShell, says about
 # <file>. The path reaches PowerShell through the environment rather than in the
@@ -1215,7 +1223,7 @@ check_macos_signature() {
       continue
     fi
     cat "$report"
-    smoke_check_codesign_report "$report" "$SIGNER_CN" || bad=1
+    smoke_check_codesign_report "$report" "$SIGNER_CN" "$ENTITLEMENTS" || bad=1
     copy="$log/quarantined/$name"
     quarantine_copy "$BIN_DIR/$name" "$copy" || { fail "could not make a quarantined copy of $name"; bad=1; continue; }
     report="$log/$name.gatekeeper.txt"
@@ -1230,7 +1238,7 @@ check_macos_signature() {
     smoke_check_gatekeeper_report "$report" || bad=1
   done
   if [ "$bad" != 0 ]; then
-    fail "the binaries are not the listed ones, each signed with the Developer ID of $SIGNER_CN, hardened, timestamped, and accepted by Gatekeeper as notarized"
+    fail "the binaries are not the listed ones, each signed with the Developer ID of $SIGNER_CN, hardened, timestamped, claiming the entitlements $(smoke_macos_entitlements) declares, and accepted by Gatekeeper as notarized"
     return 1
   fi
 
@@ -1238,7 +1246,7 @@ check_macos_signature() {
   report="$log/unsigned.codesign.txt"
   codesign_report "$INPUTS/bin/${BINARY_NAMES[0]}" "$report" || true
   cat "$report"
-  if smoke_check_codesign_report "$report" "$SIGNER_CN"; then
+  if smoke_check_codesign_report "$report" "$SIGNER_CN" "$ENTITLEMENTS"; then
     fail "the signature check accepted the unsigned ${BINARY_NAMES[0]}, so its passes above prove nothing"
     return 1
   fi

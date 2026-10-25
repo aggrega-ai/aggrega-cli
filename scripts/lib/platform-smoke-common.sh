@@ -227,7 +227,32 @@
 #     status, the signer and the timestamper when all hold. Other keys in the
 #     report are read by nobody here and only printed by the caller.
 #
-#   smoke_check_codesign_report <report> <publisher>
+#   smoke_macos_entitlements
+#     Prints the path, from the module root, of the property list that declares
+#     the entitlements every macOS binary the release carries is signed with:
+#     packaging/macos/aggrega.entitlements. It declares one,
+#     com.apple.security.cs.allow-unsigned-executable-memory, the hardened
+#     runtime's exception that lets the WebAssembly runtime the binaries embed
+#     make the memory it compiles plugins into executable. The build job hands
+#     that file to the macOS signing job beside the binaries, and the macOS
+#     smoke run holds what each signed binary claims to it.
+#
+#   smoke_plist_entitlements <file>
+#     Prints the entitlements the property list in <file> declares, one
+#     "<key>=true" or "<key>=false" line each, in bytewise order of their keys.
+#     It reads <file> with every space, tab, carriage return and line feed taken
+#     out, as one text, and from it what lies between the first "<plist …>" and
+#     the last "</plist>": a dictionary, "<dict/>" or "<dict>…</dict>", holding
+#     nothing but "<key>…</key>" entries each followed by "<true/>" or
+#     "<false/>", no key twice — the standard XML form an entitlements file is
+#     written in, and the form codesign prints the entitlements a signature
+#     claims in when given --xml. Returns 2, printing nothing, when <file> holds
+#     no property list, as codesign's report on a signature that claims no
+#     entitlement holds none; and 1, saying why, when what it holds is anything
+#     else, a value other than a boolean included, since an entitlement this
+#     reader cannot read is one it cannot hold to anything.
+#
+#   smoke_check_codesign_report <report> <publisher> <entitlements>
 #     Holds what macOS's codesign says about one file — `codesign --display
 #     --verbose=2 --entitlements - --xml <file>`, its standard output and its
 #     standard error together — to a Developer ID signature a Mac accepts for
@@ -237,10 +262,15 @@
 #     TeamIdentifier line names that same <team>; the CodeDirectory line's flags
 #     include runtime, the hardened runtime notarization requires; a Timestamp
 #     line is present, the secure timestamp notarization requires, where a
-#     signature without one carries "Signed Time" instead; and nothing in the
-#     report names the com.apple.security.get-task-allow entitlement, which
-#     notarization refuses. Returns 1, naming each that fails; prints the
-#     authority, the team and the timestamp when all hold.
+#     signature without one carries "Signed Time" instead; the entitlements the
+#     report claims are exactly the ones the property list <entitlements>
+#     declares, each with the same value, both read through
+#     smoke_plist_entitlements, so an entitlement claimed beyond them and one of
+#     them not claimed are each refused; and nothing in the report names the
+#     com.apple.security.get-task-allow entitlement, which notarization refuses,
+#     whatever <entitlements> declares. Returns 1, naming each that fails;
+#     prints the authority, the team, the timestamp and the entitlements when
+#     all hold.
 #
 #   smoke_check_gatekeeper_report <report>
 #     Holds what macOS's Gatekeeper assessment says about one file — `spctl
@@ -854,12 +884,62 @@ smoke_check_authenticode_report() {
   printf 'ok: Valid, signed by %s, timestamped by %s\n' "$subject" "$stamper"
 }
 
+smoke_macos_entitlements() {
+  printf '%s\n' packaging/macos/aggrega.entitlements
+}
+
+smoke_plist_entitlements() {
+  local LC_ALL=C file="$1" text rest key value
+  local plist_re='<plist[^>]*>(.*)</plist>'
+  local pair_re='^<key>([^<]+)</key><(true|false)/>(.*)$'
+  local -A seen=()
+  local -a declared_pairs=()
+  if [ ! -f "$file" ]; then
+    printf 'smoke: there is no file at %s to read entitlements from\n' "$file" >&2
+    return 1
+  fi
+  text="$(tr -d ' \t\r\n' < "$file")"
+  [[ $text =~ $plist_re ]] || return 2
+  rest="${BASH_REMATCH[1]}"
+  case "$rest" in
+    '<dict/>') return 0 ;;
+    '<dict>'*'</dict>')
+      rest="${rest#<dict>}"
+      rest="${rest%</dict>}"
+      ;;
+    *)
+      printf 'smoke: the property list in %s holds no dictionary of entitlements, but: %s\n' "$file" "$rest" >&2
+      return 1
+      ;;
+  esac
+  while [ -n "$rest" ]; do
+    if ! [[ $rest =~ $pair_re ]]; then
+      printf 'smoke: the entitlements in %s hold something other than a key and a boolean value: %s\n' "$file" "$rest" >&2
+      return 1
+    fi
+    key="${BASH_REMATCH[1]}" value="${BASH_REMATCH[2]}" rest="${BASH_REMATCH[3]}"
+    if [ -n "${seen[$key]+set}" ]; then
+      printf 'smoke: the entitlements in %s hold %s twice\n' "$file" "$key" >&2
+      return 1
+    fi
+    seen[$key]=1
+    declared_pairs+=("$key=$value")
+  done
+  [ "${#declared_pairs[@]}" -eq 0 ] || printf '%s\n' "${declared_pairs[@]}" | sort
+}
+
 smoke_check_codesign_report() {
-  local LC_ALL=C report="$1" publisher="$2" line authority="" team="" listed_team="" flags="" stamp="" bad=0
+  local LC_ALL=C report="$1" publisher="$2" entitlements="$3" line authority="" team="" listed_team="" flags="" stamp="" bad=0
+  local declared="" claimed="" rc entry
+  local -A declared_set=() claimed_set=()
   local flags_re='^CodeDirectory .*flags=0x[0-9a-fA-F]+\(([^)]*)\)'
   local team_re='^[A-Z0-9]{10}$'
   if [ -z "$publisher" ]; then
     printf 'smoke: no publisher was named to hold the signature to\n' >&2
+    return 1
+  fi
+  if [ -z "$entitlements" ]; then
+    printf 'smoke: no entitlements file was named to hold the signature'"'"'s entitlements to\n' >&2
     return 1
   fi
   if [ ! -f "$report" ]; then
@@ -914,8 +994,44 @@ smoke_check_codesign_report() {
     printf 'smoke: the signature carries no secure timestamp\n' >&2
     bad=1
   fi
+  if ! declared="$(smoke_plist_entitlements "$entitlements")"; then
+    printf 'smoke: %s is not a property list of entitlements this check can read, so the entitlements the signature claims are held to nothing\n' "$entitlements" >&2
+    bad=1
+  else
+    rc=0
+    claimed="$(smoke_plist_entitlements "$report")" || rc=$?
+    case "$rc" in
+      0 | 2)
+        while IFS= read -r entry; do
+          [ -z "$entry" ] || declared_set[$entry]=1
+        done <<<"$declared"
+        while IFS= read -r entry; do
+          [ -z "$entry" ] || claimed_set[$entry]=1
+        done <<<"$claimed"
+        # Each list is walked in its own sorted order, so what is refused is
+        # named in the same order on every run.
+        while IFS= read -r entry; do
+          if [ -n "$entry" ] && [ -z "${declared_set[$entry]+set}" ]; then
+            printf 'smoke: the signature claims the entitlement %s, which %s does not declare\n' "$entry" "$entitlements" >&2
+            bad=1
+          fi
+        done <<<"$claimed"
+        while IFS= read -r entry; do
+          if [ -n "$entry" ] && [ -z "${claimed_set[$entry]+set}" ]; then
+            printf 'smoke: the signature does not claim the entitlement %s, which %s declares\n' "$entry" "$entitlements" >&2
+            bad=1
+          fi
+        done <<<"$declared"
+        ;;
+      *)
+        printf 'smoke: the entitlements the signature claims cannot be read, so they cannot be held to %s\n' "$entitlements" >&2
+        bad=1
+        ;;
+    esac
+  fi
   [ "$bad" = 0 ] || return 1
-  printf 'ok: signed by %s, team %s, hardened runtime, timestamped %s\n' "$authority" "$team" "$stamp"
+  printf 'ok: signed by %s, team %s, hardened runtime, timestamped %s, claiming exactly the entitlements %s declares: %s\n' \
+    "$authority" "$team" "$stamp" "$entitlements" "$(printf '%s' "$claimed" | tr '\n' ' ')"
 }
 
 smoke_check_gatekeeper_report() {
