@@ -5,6 +5,9 @@ package serve
 
 import (
 	"context"
+	"slices"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 )
 
 // buildPreviewParams is the request shape for `aggrega/buildPreview`. The
@@ -24,6 +27,15 @@ type buildPreviewParams struct {
 	// told nothing and get a preview whose dependencies were never filled,
 	// which reads exactly like a preview whose dependencies were.
 	AutoPull bool `json:"autoPull,omitempty"`
+
+	// PolicyInput is the directory, relative to the workspace root, the payload
+	// each governance role hands a plugin attached there is written into, as on
+	// the writing build beside this one. It is the one write this request makes
+	// when it is sent: the command line's dry run takes --policy-input on the same
+	// terms, writing those files and leaving the output directory and the lockfile
+	// untouched. Absent, this request writes nothing. As on the writing build, a
+	// request that fails writes the files and its reply carries the refusal alone.
+	PolicyInput string `json:"policyInput,omitempty"`
 }
 
 // buildPreviewResult is the response shape for `aggrega/buildPreview`.
@@ -64,7 +76,8 @@ func (s *Server) dispatchBuildPreview(ctx context.Context, req *jsonRPCRequest) 
 }
 
 // handleBuildPreview reports what a build of params.Release would write, without
-// writing any of it.
+// writing any of it. The one write it makes is the governance payloads, and only
+// when the request names a directory for them.
 //
 // The render is the shared artifact-posture one — see
 // [Server.artifactPostureRender] for the gates it runs, the seam it renders
@@ -117,6 +130,11 @@ func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewPara
 		}
 	}
 
+	policyDir, policyErr := s.policyInputDir("buildPreview", params.PolicyInput)
+	if policyErr != nil {
+		return buildPreviewResult{}, policyErr
+	}
+
 	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
 		return buildPreviewResult{}, errEnvelope
 	}
@@ -126,14 +144,21 @@ func (s *Server) handleBuildPreview(ctx context.Context, params buildPreviewPara
 	// lockfile: one the render finds was on disk before the request. For the same
 	// reason there is no conserved render to present — a render is conserved by a
 	// fill, and no fill runs here — so this method always renders.
-	preview, errEnvelope := s.artifactPostureRender(ctx, params.Release, nil, false)
+	collector := newPolicyInputCollector(policyDir)
+	preview, errEnvelope := s.artifactPostureRender(ctx, params.Release, nil, false, pipeline.Options{PolicyInputs: collector})
+	// The governance payloads, where they were asked for, are written whatever the
+	// render's verdict: a render that stopped part way wrote the roles it reached.
+	policyNotices, writeErr := s.writePolicyInputs(policyDir, collector)
 	if errEnvelope != nil {
 		return buildPreviewResult{}, errEnvelope
+	}
+	if writeErr != nil {
+		return buildPreviewResult{}, writeErr
 	}
 	// The envelope above answered every refusal, so the finished payload is what
 	// names the artifact set this method reports and then drops.
 	return buildPreviewResult{
 		Files:   renderedArtifactNames(preview.PipelineOutcome().Completed()),
-		Notices: append(absent, buildNotices(preview)...),
+		Notices: slices.Concat(absent, buildNotices(preview), policyNotices),
 	}, nil
 }

@@ -263,6 +263,16 @@ type RunOptions struct {
 	// not hand back the document it was asked for has not done what was asked, and
 	// swallowing that would leave a truncated document behind a successful build.
 	IRGraph func(graph *types.IRGraph) error
+
+	// PolicyInputDir, when non-empty, is the directory the payload each
+	// governance role hands a policy is written to, one JSON file per role (or per
+	// attachment, where a role's attachments receive different payloads), by the
+	// names [pipeline.PolicyInputs.Files] composes. The files are written whether
+	// the run finished or stopped, so a run that stopped part way writes the roles
+	// it reached and names the ones it did not. Asking for them changes no artifact
+	// and no verdict, and it combines with DryRun: a dry run asked for them writes
+	// them and nothing else.
+	PolicyInputDir string
 }
 
 // Config is the build operation's input contract. A caller assembles it from
@@ -357,7 +367,7 @@ type Result struct {
 // A build writes its artifacts in one step, after the render has finished, so a
 // run that ends part way leaves the output directory exactly as it found it: no
 // half-written artifact set is presented as a finished one.
-func Run(ctx context.Context, cfg Config) (Result, error) {
+func Run(ctx context.Context, cfg Config) (res Result, err error) {
 	// Already asked to stop: do none of the work. The check is here rather than
 	// only at the steps that wait, because everything below this line reads the
 	// file system, and a run whose reader has already withdrawn it should not
@@ -416,6 +426,32 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, err
 	}
 	wsRoot := rw.Root()
+
+	// The governance payloads, when asked for. The collector rides on the render
+	// options assembled below, so whichever render this build presents — its own,
+	// or the one its dependency fill performed — records into it. They are written
+	// as the run returns, on every path from here: a run that stopped part way
+	// writes the roles it reached and names the ones it did not, which is the
+	// moment an author most needs to see what a policy would have been handed.
+	//
+	// A failed write fails a build that otherwise finished, because the files were
+	// asked for and are not there; on a build that already failed it is reported
+	// beside that failure rather than replacing it.
+	var policyInputs *pipeline.PolicyInputs
+	if run.PolicyInputDir != "" {
+		policyInputs = pipeline.NewPolicyInputs()
+		defer func() {
+			werr := writePolicyInputs(wsRoot, run.PolicyInputDir, policyInputs, diagOut)
+			if werr == nil {
+				return
+			}
+			if err == nil {
+				res, err = Result{}, werr
+				return
+			}
+			fmt.Fprintf(diagOut, "  policy input: %v\n", werr)
+		}()
+	}
 
 	// Workspace config drives the cache directory (the catalog walk skips it as
 	// a resolution artifact, not authored catalog) and is reused by the pipeline
@@ -546,6 +582,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			}
 		},
 		SuppressUnsupportedFieldWarnings: run.SuppressUnsupportedFieldWarnings,
+		PolicyInputs:                     policyInputs,
 	}
 
 	// Ensure the per-Release lockfile exists (filled when the pull step is asked
@@ -735,6 +772,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			return Result{}, fmt.Errorf("write output: %w", err)
 		}
 		summary = fmt.Sprintf("Dry run: %d files would be written to %s; nothing was written", len(result.Artifacts), outDir)
+		if run.PolicyInputDir != "" {
+			// The one write a dry run makes is the one it was asked for, and the
+			// summary says so rather than claiming nothing was written.
+			summary = fmt.Sprintf("Dry run: %d files would be written to %s; only the policy inputs were written", len(result.Artifacts), outDir)
+		}
 	} else {
 		// Write output. The boundaries subtree from a prior build of a different
 		// variant is cleared as part of the write, so GitOps consumers see exactly
@@ -771,6 +813,48 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// render was held to is the lockfile this operation leaves behind.
 
 	return Result{Summary: summary}, nil
+}
+
+// writePolicyInputs writes the governance payloads a run recorded into dir and
+// prints, on diagOut, the account [WritePolicyInputs] returns.
+func writePolicyInputs(wsRoot, dir string, collected *pipeline.PolicyInputs, diagOut io.Writer) error {
+	lines, err := WritePolicyInputs(wsRoot, dir, collected)
+	if err != nil {
+		return err
+	}
+	for _, line := range lines {
+		fmt.Fprintf(diagOut, "  %s\n", line)
+	}
+	return nil
+}
+
+// WritePolicyInputs writes the governance payloads a run recorded into dir and
+// returns its account of them, one line each: how many files were written and
+// where, then each role that wrote nothing or less than its attachments, with the
+// reason. It is the one write of those files and the one wording of that account,
+// so every surface that offers the payloads writes and reports them alike.
+//
+// The files replace an earlier export of the same naming and nothing else the
+// directory holds, so a role whose attachments changed between two runs leaves
+// no file of the earlier one behind. Where dir is held is the one answer every
+// composed write asks: inside the workspace at wsRoot it is held to that root,
+// and a directory named outside it is its own root. A relative dir is resolved
+// against the working directory.
+func WritePolicyInputs(wsRoot, dir string, collected *pipeline.PolicyInputs) ([]string, error) {
+	files := collected.Files()
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("write policy inputs: %w", err)
+	}
+	root := writescope.RootFor(wsRoot, filepath.Dir(abs))
+	if err := artifactout.ReplaceNamed(root, abs, files.Files, pipeline.IsPolicyInputFileName); err != nil {
+		return nil, fmt.Errorf("write policy inputs: %w", err)
+	}
+	lines := []string{fmt.Sprintf("policy input: %d file(s) written to %s", len(files.Files), abs)}
+	for _, gap := range files.Missing {
+		lines = append(lines, fmt.Sprintf("policy input: no file for %s: %s", gap.Role, gap.Reason))
+	}
+	return lines, nil
 }
 
 // requireWorkspace returns the workspace a caller threaded in from its own

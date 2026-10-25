@@ -149,7 +149,14 @@ const (
 // would put a second copy of a withdrawn-pin notice beside the one a validation
 // already publishes on the semantic layer, and two copies of one fact read as two
 // facts.
-func (s *Server) artifactPostureRender(ctx context.Context, release string, filled *compilerops.PreviewResult, lockfileFilled bool) (*compilerops.PreviewResult, *jsonRPCError) {
+//
+// # The options it renders under
+//
+// opts is the option set a render performed here runs under, which is how a
+// method asked for the governance payloads hands the render its collector. A
+// presented render was performed by the fill under the same set, because the
+// build hands the fill the set it hands here.
+func (s *Server) artifactPostureRender(ctx context.Context, release string, filled *compilerops.PreviewResult, lockfileFilled bool, opts pipeline.Options) (*compilerops.PreviewResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return nil, paramErr
@@ -220,7 +227,7 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 		preview, err = compilerops.PreviewForArtifact(
 			ctx,
 			s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam, lf != nil && !lockfileFilled),
-			pipeline.Options{},
+			opts,
 		)
 		declined = fetchSeam.Declined()
 	}

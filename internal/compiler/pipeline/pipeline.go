@@ -272,6 +272,11 @@ type Inputs struct {
 	// ordinary caller never assigns it. A caller driving a single phase directly
 	// leaves it nil, which records nothing and changes no display.
 	AdvisoryLog *AdvisoryLog
+
+	// policyInputs is where the governance sites record the payloads they
+	// dispatch, when the run was asked for them. Only the entry point sets it, from
+	// [Options.PolicyInputs], so a surface driving a single phase records nothing.
+	policyInputs *PolicyInputs
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -375,6 +380,13 @@ type Options struct {
 	// diagnostics carried out-of-band; it never re-renders and never changes the
 	// emitted bytes. Left false — the default — the class surfaces.
 	SuppressUnsupportedFieldWarnings bool
+
+	// PolicyInputs, when set, collects the payload each governance role hands a
+	// plugin attached there — and, for a role with nothing attached, the payload it
+	// would hand one — recorded at the site that dispatches it. Its presence is the
+	// request. It is reset when the run starts, the run writes nothing, and
+	// recording changes no artifact, verdict or outcome; see [PolicyInputs].
+	PolicyInputs *PolicyInputs
 }
 
 // emitsSomethingToApply reports whether this run produces something a person
@@ -1808,6 +1820,11 @@ func RunPipeline(
 	// accumulator, and the second run's Result would then carry the first run's
 	// advisories.
 	inputs.AdvisoryLog = &AdvisoryLog{}
+	// The payload collector, when one was asked for, starts empty for this run:
+	// an operation rendering more than once hands the same one to each render, and
+	// the payloads read afterwards are the last render's.
+	opts.PolicyInputs.reset()
+	inputs.policyInputs = opts.PolicyInputs
 	var result *Result
 	// Set where Step 5 begins, so a run that stops reports whether it stopped in
 	// its render or ahead of it — see Outcome.ReachedRender.

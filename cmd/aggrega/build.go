@@ -45,7 +45,20 @@ type buildFlags struct {
 	irGraph                 bool
 	unredacted              bool
 	assumeYes               bool
+	policyInput             string
 }
+
+// helpPolicyInput is the --policy-input flag's help. The file names it states
+// are the ones the collector composes (pipeline.PolicyInputs.Files).
+const helpPolicyInput = "Write, into this directory, the payload each governance role hands a plugin attached there, as one line of JSON: exactly what the build hands the plugin, every value the build withholds from it withheld. " +
+	"For annotation-transform, label-transform and ir-verdict the file is the `input` document a policy at that role reads. " +
+	"For render-verdict the policy engine reshapes the payload before a policy reads it — each artifact's `documents` are parsed from it — so a render-verdict policy is tested by running the engine itself, `aggrega plugin run-local --plugin <engine.wasm> --export verdict_render --with @<dir>/render-verdict.json`, which gives the build's decision. " +
+	"A role with nothing attached is written too, as the payload an attachment with no sources and no settings would receive, so a policy can be written before it is attached. " +
+	"Each role is written to `<role>.json` (annotation-transform, label-transform, ir-verdict, render-verdict); where the attachments at one role receive different payloads — one carries its own sources or settings, or a transform changes what the next one reads — each is written to `<role>.<position>.<plugin>.json` instead, position counting that role's attachments from 1 in the order the workspace configuration lists them and plugin being the last segment of the plugin's reference without its version, with any character a file name cannot hold escaped. " +
+	"Files of those names already in the directory are replaced and nothing else there is touched. " +
+	"The files are written whether the build finishes or stops, and a build that stops before a role runs names each role it wrote no file for. " +
+	"Asking for them changes no artifact and no verdict. " +
+	"Combines with --dry-run, which then writes these files and nothing else: the output directory and the lockfile are left untouched"
 
 // Every command that renders offers the unsupported-field warning filter, so the
 // flag's name and help text are declared once here and shared by each
@@ -115,7 +128,8 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().BoolVar(&opts.verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&opts.autoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build. It takes no target, so it cannot be narrowed to one dependency: to adopt or drop a single pin, run `aggrega pull --upgrade --release <release> <uri>` instead, which holds every other pin unchanged. Because it drops every recorded pin it asks for confirmation first; --yes answers in advance, and on a non-interactive stdin it refuses rather than waiting for an answer nobody can give")
-	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs behave exactly as they do in an ordinary build — pinned inputs are served from the content-addressed store (and refilled by digest when the blob is missing), and a render that requests an unpinned external URL halts naming it — so what a dry run shows is what a build would write. Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs behave exactly as they do in an ordinary build — pinned inputs are served from the content-addressed store (and refilled by digest when the blob is missing), and a render that requests an unpinned external URL halts naming it — so what a dry run shows is what a build would write. Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step. Combines with --policy-input, whose files are then the one thing it writes")
+	c.Flags().StringVar(&opts.policyInput, "policy-input", "", helpPolicyInput)
 	c.Flags().BoolVar(&opts.irGraph, flagIRGraph, false, helpIRGraph+". The artifacts are still written and the summary is still printed; the graph is written ahead of both")
 	c.Flags().BoolVar(&opts.unredacted, flagUnredacted, false, helpUnredacted+" Reaches the graph --"+flagIRGraph+" writes and nothing else, so it requires --"+flagIRGraph+"; the .trace/ files take --trace-unredacted instead")
 	c.Flags().BoolVar(&opts.assumeYes, "yes", false, "Answer the --upgrade confirmation in advance, for non-interactive use. It reaches that one prompt and nothing else: a build that does not refresh asks nothing, so passing it changes no behaviour there")
@@ -174,7 +188,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 // writer is the wiring under test, and a test that assembled the hand-back
 // itself would pass while the command ignored the flag.
 func buildRunOptions(opts *buildFlags, out io.Writer) buildops.RunOptions {
-	run := buildops.RunOptions{Detail: opts.detail, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}
+	run := buildops.RunOptions{Detail: opts.detail, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun, PolicyInputDir: opts.policyInput}
 	if opts.irGraph {
 		unredacted := opts.unredacted
 		run.IRGraph = func(graph *types.IRGraph) error {

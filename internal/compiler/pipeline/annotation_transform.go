@@ -41,35 +41,41 @@ const injectedByAnnotationKey = "aggrega.ai/injected-by"
 // them, and the output is read through the binary encoding's strict entry
 // point. An unconfigured socket
 // is a no-op (returns nil before any resolution), which keeps a build with no
-// annotation-transform attachment byte-identical to a build without the socket. A
+// annotation-transform attachment byte-identical to a build without the socket;
+// a run asked for the policy payloads still assembles the payload, to record it,
+// and dispatches nothing. A
 // resolution, load, or confinement failure halts the build loudly, as does an
 // output that is not this socket's shape — a dispatched export whose output
 // carries a field the annotation-transform shape does not declare is refused
 // rather than read as an empty injection list.
 func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, rr *resolver.ResolveResult) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleAnnotationTransform)
-	if len(refs) == 0 {
+	if len(refs) == 0 && !inputs.policyInputs.wanted() {
 		return nil
 	}
 	if rr == nil || rr.Release == nil {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierMutating)
 	bindingKeys := resolver.BuildAnnotationRegistry(rr.Manifest).Keys()
+	inputs.policyInputs.reach(plugintype.RoleAnnotationTransform, len(refs))
+	if len(refs) == 0 {
+		// Nothing is attached, and the payloads were asked for: the payload an
+		// attachment with no sources and no settings would be handed, from the same
+		// assembly, dispatched to nobody.
+		in, _ := annotationTransformInput(rr.Release, bindingKeys, workspaceconfig.PluginRef{})
+		inputs.policyInputs.record(plugintype.RoleAnnotationTransform, -1, workspaceconfig.PluginRef{}, in)
+		return nil
+	}
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierMutating)
 
-	for _, ref := range refs {
+	for i, ref := range refs {
 		export := wasm.AuthoredExportName(wasm.TransformAnnotationsExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("annotation-transform: resolve plugin %q: %w", ref.URI, err)
 		}
-		targets, targetSet := annotationTargets(rr.Release)
-		in := AnnotationTransformInput{
-			Targets:     targets,
-			BindingKeys: bindingKeys,
-			Sources:     annotationSources(ref),
-			Settings:    annotationSettings(ref),
-		}
+		in, targetSet := annotationTransformInput(rr.Release, bindingKeys, ref)
+		inputs.policyInputs.record(plugintype.RoleAnnotationTransform, i, ref, in)
 		payload, err := in.EncodeCBOR()
 		if err != nil {
 			return fmt.Errorf("annotation-transform: encode input for plugin %q: %w", ref.URI, err)
@@ -92,6 +98,32 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		}
 	}
 	return nil
+}
+
+// annotationTransformInput assembles the payload the annotation-transform role
+// hands the attachment ref — the injection targets as the resolved Release holds
+// them now, the binding keys, and the attachment's own sources and settings — and
+// the coordinate set its confinement check reads. It is the one assembly of that
+// payload: the dispatch encodes what it returns, and a run asked for the payloads
+// records the same value.
+func annotationTransformInput(release *types.Release, bindingKeys []string, ref workspaceconfig.PluginRef) (AnnotationTransformInput, map[string]bool) {
+	targets, targetSet := annotationTargets(release)
+	// The wire always carries both lists, empty where there is nothing to list,
+	// and a guest hands its policy empty lists. Held as empty lists rather than as
+	// none, the payload written out for an author reads the same way; the encoding
+	// the guest receives is the same either way.
+	if targets == nil {
+		targets = []AnnotationTarget{}
+	}
+	if bindingKeys == nil {
+		bindingKeys = []string{}
+	}
+	return AnnotationTransformInput{
+		Targets:     targets,
+		BindingKeys: bindingKeys,
+		Sources:     annotationSources(ref),
+		Settings:    annotationSettings(ref),
+	}, targetSet
 }
 
 // annotationSettings projects the attachment's free-form settings into the

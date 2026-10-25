@@ -25,7 +25,9 @@
 // [CheckBuildOutput] is its judgement alone, for a surface that reports a build
 // instead of writing it; [ReplaceAll] is the write for a set that is not a build's
 // output — the per-step intermediate files a traced build collects, which replace
-// whatever their own directory held; [WriteAll] is the bare write beneath them;
+// whatever their own directory held; [ReplaceNamed] is the write for a set that
+// shares a directory a caller named, replacing only the files of the set's own
+// naming; [WriteAll] is the bare write beneath them;
 // [WriteDryRunReport] prints what a write would have produced.
 //
 // # Every write is held to the workspace first
@@ -218,6 +220,55 @@ func ReplaceAll(root, dir string, files map[string][]byte) error {
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("clean %s: %w", dir, err)
+	}
+	return writeChecked(dir, files)
+}
+
+// ReplaceNamed makes dir hold files in place of an earlier set of the same
+// naming: every file directly in dir whose name owned reports as one of the
+// set's is removed, then files is written by the rules [WriteAll] states.
+// Anything else dir holds — another name, a subdirectory — is left as it is,
+// because the directory is one a caller named and may hold content this package
+// never produced. A set whose names vary from one run to the next therefore
+// leaves no file of an earlier run behind to be read as part of this one.
+//
+// dir is made a directory path first, and every file to write and every file to
+// remove is held to the workspace at root before anything is removed, so a path
+// leading out of the workspace through a link halts the write with nothing
+// removed and nothing written. A dir that does not exist yet is created.
+func ReplaceNamed(root, dir string, files map[string][]byte, owned func(name string) bool) error {
+	dir, err := pathscope.DirectoryPath(dir)
+	if err != nil {
+		return err
+	}
+	if err := writescope.CheckWrite(root, dir); err != nil {
+		return err
+	}
+	if err := checkAll(root, dir, files); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+	var stale []string
+	for _, entry := range entries {
+		if entry.IsDir() || !owned(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		if err := writescope.CheckDelete(root, path); err != nil {
+			return err
+		}
+		stale = append(stale, path)
+	}
+	for _, path := range stale {
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove %s: %w", path, err)
+		}
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %q: %w", dir, err)
 	}
 	return writeChecked(dir, files)
 }

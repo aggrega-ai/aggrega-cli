@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -86,6 +87,22 @@ type buildParams struct {
 	// render is a render of this Release under the posture a build renders in, so
 	// the build is answered from it rather than performing a second one.
 	AutoPull bool `json:"autoPull,omitempty"`
+
+	// PolicyInput is the directory, relative to the workspace root, the payload
+	// each governance role hands a plugin attached there is written into — the
+	// command line's --policy-input, read through the one collector and written
+	// through the one write (buildops.WritePolicyInputs), so the two surfaces
+	// write the same files for the same Release. Absent writes none.
+	//
+	// The account of what was written travels on the answer's notices. A request
+	// that fails writes the files all the same and its reply carries the refusal
+	// alone: the error object has no field for an account, and adding one is a
+	// change to the wire rather than to this method.
+	//
+	// It names the directory written INTO, as the command line's flag does. It is
+	// a destination, so it is confined to the workspace this session opened by the
+	// rule every destination here is judged by.
+	PolicyInput string `json:"policyInput,omitempty"`
 }
 
 // buildResult is the response shape for `aggrega/build`.
@@ -251,14 +268,38 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // surface where no fill runs, and among the fill's own lines where one does,
 // because the fill is the dependency resolution that writes that line itself.
 func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResult, *jsonRPCError) {
-	// The destination is resolved before anything else runs, so a request naming
-	// one this session may not write to is refused having rendered nothing and,
-	// where it asked for a fill, having written no lockfile for a build that was
-	// never going to land.
+	// Both destinations are resolved before anything else runs, so a request
+	// naming one this session may not write to is refused having rendered nothing
+	// and, where it asked for a fill, having written no lockfile for a build that
+	// was never going to land.
 	outRoot, destErr := s.buildOutputRoot(params.OutputParent)
 	if destErr != nil {
 		return buildResult{}, destErr
 	}
+	policyDir, policyErr := s.policyInputDir("build", params.PolicyInput)
+	if policyErr != nil {
+		return buildResult{}, policyErr
+	}
+	collector := newPolicyInputCollector(policyDir)
+	result, envelope := s.buildAndWrite(ctx, params, outRoot, pipeline.Options{PolicyInputs: collector})
+	notices, writeErr := s.writePolicyInputs(policyDir, collector)
+	if envelope != nil {
+		// The build's own refusal is the answer; the payloads it reached are on disk
+		// beside it, which is when an author most needs them.
+		return buildResult{}, envelope
+	}
+	if writeErr != nil {
+		return buildResult{}, writeErr
+	}
+	result.Notices = append(result.Notices, notices...)
+	return result, nil
+}
+
+// buildAndWrite is the build itself: the fill where one runs, the render under
+// opts, and the write of the artifacts to outRoot. It is handleBuild's body, split
+// out so the governance payloads can be written after it on every path it returns
+// by.
+func (s *Server) buildAndWrite(ctx context.Context, params buildParams, outRoot string, opts pipeline.Options) (buildResult, *jsonRPCError) {
 
 	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
 		return buildResult{}, errEnvelope
@@ -307,7 +348,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 		absent = s.absentCatalogDirNotices(params.Release)
 	}
 	if fill {
-		notices, report, render, errEnvelope := s.fillDependencies(ctx, params.Release)
+		notices, report, render, errEnvelope := s.fillDependencies(ctx, params.Release, opts)
 		if errEnvelope != nil {
 			return buildResult{}, errEnvelope
 		}
@@ -326,7 +367,7 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 		lockfileFilled = true
 	}
 
-	preview, errEnvelope := s.artifactPostureRender(ctx, params.Release, filled, lockfileFilled)
+	preview, errEnvelope := s.artifactPostureRender(ctx, params.Release, filled, lockfileFilled, opts)
 	if errEnvelope != nil {
 		return buildResult{}, errEnvelope
 	}
@@ -432,7 +473,11 @@ func (s *Server) handleBuild(ctx context.Context, params buildParams) (buildResu
 // did land are on disk and a reference it never reached is still unpinned, so
 // that render is held to what the fill actually wrote and halts naming what is
 // missing.
-func (s *Server) fillDependencies(ctx context.Context, release string) ([]string, *dependencyResolutionReport, *compilerops.PreviewResult, *jsonRPCError) {
+//
+// opts is the option set the discovery render runs under, handed over whole as
+// the command line's fill hands over its own, so a render this build presents was
+// performed under the options the build was asked for.
+func (s *Server) fillDependencies(ctx context.Context, release string, opts pipeline.Options) ([]string, *dependencyResolutionReport, *compilerops.PreviewResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return nil, nil, nil, paramErr
@@ -450,6 +495,7 @@ func (s *Server) fillDependencies(ctx context.Context, release string) ([]string
 		ReleasePath:     releasePath,
 		CompilerVersion: s.compilerVersion,
 		Toolchain:       s.toolchain,
+		RenderOptions:   opts,
 		DiagOut:         &notices,
 		// No prompt is supplied, on the same terms every operation here runs
 		// under: nobody is watching this stream, so a fork that would have been

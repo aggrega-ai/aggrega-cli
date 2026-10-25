@@ -217,19 +217,36 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 // between topology construction and IR build so the auto-tagged labels flow into
 // the IR. An unconfigured socket is a no-op (returns nil before any resolution),
 // which keeps a build with no mutator attachment byte-identical to a build
-// without the socket. A resolution, load, or patch-confinement failure halts the
+// without the socket; a run asked for the policy payloads still assembles the
+// payload, to record it, and dispatches nothing. A resolution, load, or patch-confinement failure halts the
 // build loudly, as does an output that is not this socket's shape — a dispatched
 // export whose output carries a field the label-transform shape does not declare
 // is refused rather than read as an empty patch list.
 func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, topo *topology.TopologyResult) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)
+	if len(refs) == 0 && !inputs.policyInputs.wanted() {
+		return nil
+	}
+	cc := mutatorCompilationContext(inputs.Release)
+	inputs.policyInputs.reach(plugintype.RoleLabelTransform, len(refs))
 	if len(refs) == 0 {
+		// Nothing is attached, and the payloads were asked for: the payload an
+		// attachment with no sources and no settings would be handed, from the same
+		// assembly, dispatched to nobody.
+		mi, err := topology.AssembleMutatorInput(topo, catalogLookup, cc, mutatorSources(workspaceconfig.PluginRef{}), attachmentSettings(workspaceconfig.PluginRef{}))
+		if err != nil {
+			// No plugin is attached here, so the build has nothing to halt on: the
+			// failure is the payload's alone, and it is reported where the payloads
+			// are written rather than changing the run.
+			inputs.policyInputs.fail(plugintype.RoleLabelTransform, err)
+			return nil
+		}
+		inputs.policyInputs.record(plugintype.RoleLabelTransform, -1, workspaceconfig.PluginRef{}, mi)
 		return nil
 	}
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierMutating)
-	cc := mutatorCompilationContext(inputs.Release)
 
-	for _, ref := range refs {
+	for i, ref := range refs {
 		export := wasm.AuthoredExportName(wasm.MutateExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
@@ -239,6 +256,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		if err != nil {
 			return fmt.Errorf("label-transform: assemble input for plugin %q: %w", ref.URI, err)
 		}
+		inputs.policyInputs.record(plugintype.RoleLabelTransform, i, ref, mi)
 		payload, err := mi.EncodeCBOR()
 		if err != nil {
 			return fmt.Errorf("label-transform: encode input for plugin %q: %w", ref.URI, err)
@@ -276,20 +294,21 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 // build-halting error, while the Tier-4 validation path surfaces them as
 // diagnostics — so a policy rejection halts a build without breaking daemon
 // responsiveness. Policy never mutates.
-// An unconfigured socket is a no-op. A resolution or load failure halts the build
+// An unconfigured socket is a no-op; a run asked for the policy payloads still
+// assembles the payload, to record it, and dispatches nothing. A resolution or
+// load failure halts the build
 // loudly (a misconfigured plugin is a build fault, not a policy verdict), and so
 // does an output that is not this socket's shape: an attachment whose entry
 // function names an export returning some other envelope is refused rather than
 // read as a verdict list that happens to be empty, which is a legitimate allow.
 func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, analysis *analyzer.AnalysisResult) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)
-	if len(refs) == 0 {
+	if len(refs) == 0 && !inputs.policyInputs.wanted() {
 		return nil
 	}
 	if analysis == nil || analysis.PolicyInput == nil {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 
 	// The graph a policy plugin receives is the one the printed graph shows:
 	// every leaf the graph's own sensitivity markings name — an attachment's
@@ -310,24 +329,31 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	// rendered artifacts.
 	withheld := redact.Graph(&analysis.PolicyInput.Graph)
 
-	for _, ref := range refs {
+	inputs.policyInputs.reach(plugintype.RoleIRVerdict, len(refs))
+	if len(refs) == 0 {
+		// Nothing is attached, and the payloads were asked for: the payload an
+		// attachment with no sources and no settings would be handed, from the same
+		// assembly, dispatched to nobody.
+		if in, err := irVerdictInput(analysis.PolicyInput, withheld, workspaceconfig.PluginRef{}); err == nil {
+			inputs.policyInputs.record(plugintype.RoleIRVerdict, -1, workspaceconfig.PluginRef{}, in)
+		} else {
+			inputs.policyInputs.fail(plugintype.RoleIRVerdict, err)
+		}
+		return nil
+	}
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
+
+	for i, ref := range refs {
 		export := wasm.AuthoredExportName(wasm.VerdictIRExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("ir-verdict: resolve plugin %q: %w", ref.URI, err)
 		}
-		sources, err := readPolicySources(ref)
+		in, err := irVerdictInput(analysis.PolicyInput, withheld, ref)
 		if err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
-		// Per-ref payload: the withheld graph and the shared paths plus this
-		// attachment's own sources and settings. The graph fields are shared
-		// references (a shallow copy), so per-ref encoding adds only this
-		// attachment's inputs.
-		in := *analysis.PolicyInput
-		in.Graph = *withheld
-		in.Sources = sources
-		in.Settings = attachmentSettings(ref)
+		inputs.policyInputs.record(plugintype.RoleIRVerdict, i, ref, in)
 		payload, err := in.EncodeCBOR()
 		if err != nil {
 			return fmt.Errorf("ir-verdict: encode input for plugin %q: %w", ref.URI, err)
@@ -373,6 +399,47 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	return nil
 }
 
+// irVerdictInput assembles the payload the ir-verdict role hands the attachment
+// ref: the analysis's assembled input with its graph replaced by the withheld
+// copy, plus the attachment's own sources and settings. It is the one assembly of
+// that payload: the dispatch encodes what it returns, and a run asked for the
+// payloads records the same value. The graph fields are shared references (a
+// shallow copy), so a per-attachment payload adds only that attachment's inputs.
+func irVerdictInput(base *analyzer.PolicyInput, withheld *types.IRGraph, ref workspaceconfig.PluginRef) (analyzer.PolicyInput, error) {
+	sources, err := readPolicySources(ref)
+	if err != nil {
+		return analyzer.PolicyInput{}, err
+	}
+	in := *base
+	in.Graph = *withheld
+	in.Sources = sources
+	in.Settings = attachmentSettings(ref)
+	// The wire always carries the path list, empty where there is no route, and a
+	// guest hands its policy an empty list. Held as an empty list rather than as
+	// none, the payload written out for an author reads the same way; the encoding
+	// the guest receives is the same either way.
+	if in.PrecalculatedPaths == nil {
+		in.PrecalculatedPaths = []analyzer.PrecalculatedPath{}
+	}
+	return in, nil
+}
+
+// renderVerdictInput assembles the payload the render-verdict role hands the
+// attachment ref: the rendered artifacts, sorted by path, plus the attachment's
+// own sources and settings. It is the one assembly of that payload, for the
+// reason irVerdictInput is.
+func renderVerdictInput(artifacts []analyzer.RenderedArtifact, ref workspaceconfig.PluginRef) (analyzer.RenderPolicyInput, error) {
+	sources, err := readPolicySources(ref)
+	if err != nil {
+		return analyzer.RenderPolicyInput{}, err
+	}
+	return analyzer.RenderPolicyInput{
+		Artifacts: artifacts,
+		Sources:   sources,
+		Settings:  attachmentSettings(ref),
+	}, nil
+}
+
 // runRenderPolicySocket runs the render-verdict governance socket after
 // RenderAll: for each governance attachment the operator authored at the
 // render-verdict role,
@@ -386,39 +453,55 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // proceeds. Which attachments run here is fixed by the authored role, never by
 // anything the guest self-reports: an attachment authored at the ir-verdict role
 // is dispatched at static analysis instead, and a guest serving both is attached
-// once per role. An unconfigured socket is a no-op. A resolution, load or source-read
+// once per role. An unconfigured socket is a no-op; a run asked for the policy
+// payloads still assembles the payload, to record it, and dispatches nothing. A
+// resolution, load or source-read
 // failure halts the build loudly (a misconfigured attachment is a build fault,
 // not a policy verdict), and so does an output that is not this socket's shape —
 // refused rather than read as an empty verdict list, which is a legitimate
 // allow.
 func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string]renderer.AssembledFile) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleRenderVerdict)
-	if len(refs) == 0 {
+	if len(refs) == 0 && !inputs.policyInputs.wanted() {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
+	inputs.policyInputs.reach(plugintype.RoleRenderVerdict, len(refs))
 	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files)
+	if len(refs) == 0 {
+		// Nothing is attached, and the payloads were asked for: the payload an
+		// attachment with no sources and no settings would be handed, from the same
+		// assembly, dispatched to nobody. With no plugin to hand it to, a failure to
+		// assemble it is the payload's alone and changes nothing about the build.
+		if err != nil {
+			inputs.policyInputs.fail(plugintype.RoleRenderVerdict, err)
+			return nil
+		}
+		if in, ierr := renderVerdictInput(artifacts, workspaceconfig.PluginRef{}); ierr == nil {
+			inputs.policyInputs.record(plugintype.RoleRenderVerdict, -1, workspaceconfig.PluginRef{}, in)
+		} else {
+			inputs.policyInputs.fail(plugintype.RoleRenderVerdict, ierr)
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("render-verdict: %w", err)
 	}
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 
 	var haltErrs []analyzer.AnalysisError
-	for _, ref := range refs {
+	for i, ref := range refs {
 		export := wasm.AuthoredExportName(wasm.VerdictRenderExport, ref.Function)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("render-verdict: resolve plugin %q: %w", ref.URI, err)
 		}
-		sources, err := readPolicySources(ref)
+		in, err := renderVerdictInput(artifacts, ref)
 		if err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
-		settings := attachmentSettings(ref)
-		payload, err := analyzer.RenderPolicyInput{
-			Artifacts: artifacts,
-			Sources:   sources,
-			Settings:  settings,
-		}.EncodeCBOR()
+		inputs.policyInputs.record(plugintype.RoleRenderVerdict, i, ref, in)
+		settings := in.Settings
+		payload, err := in.EncodeCBOR()
 		if err != nil {
 			return fmt.Errorf("render-verdict: encode input for plugin %q: %w", ref.URI, err)
 		}
