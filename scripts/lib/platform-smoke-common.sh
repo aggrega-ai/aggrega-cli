@@ -13,9 +13,11 @@
 # each can be run on its own over a captured output or a planted fault.
 #
 # The release workflow's jobs on its self-hosted runner source it as well. The
-# publishing job attaches the signed Windows binaries only once they match the
-# SHA-256 list the Windows smoke run held them to, through the same function,
-# smoke_check_sums, so the two checks cannot read the list differently. And the
+# publishing job attaches the signed Windows and macOS binaries only once they
+# match the SHA-256 lists the Windows and macOS smoke runs held them to, through
+# the same function, smoke_check_sums, so the two checks cannot read a list
+# differently. The macOS signing job, which checks nothing out, writes its lists
+# in the form that function reads, with shasum -a 256. And the
 # folder in which those jobs hand files to each other is listed where files enter
 # it by smoke_write_tree_sums, in the form smoke_check_sums reads, and held to
 # that list where they leave by smoke_check_tree_sums, which reads it through
@@ -165,8 +167,9 @@
 #     must be in <dir> with the digest the list gives it. Prints each file's
 #     verdict; returns 1, naming every name missing from the list, every line that
 #     names something else or is not in that form, every file missing from <dir>
-#     and every digest that differs. Needs sha256sum, which the Git for Windows
-#     shell and Linux both carry.
+#     and every digest that differs. Digests with sha256sum, which the Git for
+#     Windows shell and Linux both carry, or with shasum -a 256 where sha256sum is
+#     absent, as on macOS.
 #
 #   smoke_listed_digest <list> <name>
 #     Prints the SHA-256 digest <list>, a list in the form smoke_check_sums
@@ -223,6 +226,28 @@
 #     when its certificate expires. Returns 1, naming each that fails; prints the
 #     status, the signer and the timestamper when all hold. Other keys in the
 #     report are read by nobody here and only printed by the caller.
+#
+#   smoke_check_codesign_report <report> <publisher>
+#     Holds what macOS's codesign says about one file — `codesign --display
+#     --verbose=2 --entitlements - --xml <file>`, its standard output and its
+#     standard error together — to a Developer ID signature a Mac accepts for
+#     distribution from <publisher>: the first Authority line is exactly
+#     "Developer ID Application: <publisher> (<team>)", <team> being ten letters
+#     or digits, so a longer name that merely starts the same way is refused; the
+#     TeamIdentifier line names that same <team>; the CodeDirectory line's flags
+#     include runtime, the hardened runtime notarization requires; a Timestamp
+#     line is present, the secure timestamp notarization requires, where a
+#     signature without one carries "Signed Time" instead; and nothing in the
+#     report names the com.apple.security.get-task-allow entitlement, which
+#     notarization refuses. Returns 1, naming each that fails; prints the
+#     authority, the team and the timestamp when all hold.
+#
+#   smoke_check_gatekeeper_report <report>
+#     Holds what macOS's Gatekeeper assessment says about one file — `spctl
+#     --assess --type execute -vvv <file>`, its standard output and its standard
+#     error together — to an acceptance of notarized Developer ID software: a
+#     line ending ": accepted" and a line "source=Notarized Developer ID".
+#     Returns 1, printing what was found instead, otherwise.
 
 smoke_require_bash() {
   if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 3 ]; }; then
@@ -580,10 +605,8 @@ smoke_check_sums() {
     printf 'smoke: there is no SHA-256 list at %s\n' "$list" >&2
     return 1
   fi
-  if ! command -v sha256sum >/dev/null 2>&1; then
-    printf 'smoke: sha256sum not found on PATH\n' >&2
-    return 1
-  fi
+  local -a digest_command=()
+  smoke_sha256_command digest_command || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     [ -n "$line" ] || continue
@@ -616,7 +639,7 @@ smoke_check_sums() {
       continue
     fi
     # Read from standard input, so the output carries no file name to unescape.
-    actual="$(sha256sum < "$dir/$name")" || { printf 'smoke: could not read %s\n' "$dir/$name" >&2; bad=1; continue; }
+    actual="$("${digest_command[@]}" < "$dir/$name")" || { printf 'smoke: could not read %s\n' "$dir/$name" >&2; bad=1; continue; }
     actual="${actual%% *}"
     if [ "$actual" != "${listed[$name]}" ]; then
       printf 'smoke: %s has SHA-256 %s, but %s lists %s\n' "$name" "$actual" "${list##*/}" "${listed[$name]}" >&2
@@ -627,6 +650,25 @@ smoke_check_sums() {
   done
   [ "$bad" = 0 ] || return 1
   printf 'ok: %s lists exactly the %d file(s), and each in %s matches it\n' "${list##*/}" "$#" "$dir"
+}
+
+# smoke_sha256_command <array-name> — fill the indexed array named <array-name>
+# with the command that digests SHA-256 on this machine: sha256sum, or shasum -a
+# 256 where sha256sum is absent, as on macOS. Both write the lines a SHA-256 list
+# holds, "<digest>  <name>", and both read standard input when given no file.
+# Returns 1, saying so, when neither is on PATH. The one choice of the command,
+# which smoke_check_sums and smoke_write_tree_sums both make through it.
+# shellcheck disable=SC2034 # command_into is a name reference: its writes fill the caller's array.
+smoke_sha256_command() {
+  local -n command_into="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    command_into=(sha256sum)
+  elif command -v shasum >/dev/null 2>&1; then
+    command_into=(shasum -a 256)
+  else
+    printf 'smoke: neither sha256sum nor shasum is on PATH, so no SHA-256 can be computed\n' >&2
+    return 1
+  fi
 }
 
 # smoke_sums_line <line> — returns 0 when <line> is a line of a SHA-256 list in
@@ -710,15 +752,7 @@ smoke_write_tree_sums() {
     printf 'smoke: %s holds no file\n' "$dir" >&2
     return 1
   fi
-  # shasum -a 256 writes the lines sha256sum writes, "<digest>  <name>".
-  if command -v sha256sum >/dev/null 2>&1; then
-    digest=(sha256sum)
-  elif command -v shasum >/dev/null 2>&1; then
-    digest=(shasum -a 256)
-  else
-    printf 'smoke: neither sha256sum nor shasum is on PATH, so no SHA-256 list of %s can be written\n' "$dir" >&2
-    return 1
-  fi
+  smoke_sha256_command digest || return 1
   if ! (cd "$dir" && "${digest[@]}" -- "${files[@]}" > SHA256SUMS.partial && mv SHA256SUMS.partial SHA256SUMS); then
     rm -f -- "$dir/SHA256SUMS.partial"
     printf 'smoke: could not write the SHA-256 list of %s\n' "$dir" >&2
@@ -818,4 +852,90 @@ smoke_check_authenticode_report() {
   fi
   [ "$bad" = 0 ] || return 1
   printf 'ok: Valid, signed by %s, timestamped by %s\n' "$subject" "$stamper"
+}
+
+smoke_check_codesign_report() {
+  local LC_ALL=C report="$1" publisher="$2" line authority="" team="" listed_team="" flags="" stamp="" bad=0
+  local flags_re='^CodeDirectory .*flags=0x[0-9a-fA-F]+\(([^)]*)\)'
+  local team_re='^[A-Z0-9]{10}$'
+  if [ -z "$publisher" ]; then
+    printf 'smoke: no publisher was named to hold the signature to\n' >&2
+    return 1
+  fi
+  if [ ! -f "$report" ]; then
+    printf 'smoke: there is no signature report at %s\n' "$report" >&2
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      Authority=*) [ -n "$authority" ] || authority="${line#Authority=}" ;;
+      TeamIdentifier=*) listed_team="${line#TeamIdentifier=}" ;;
+      Timestamp=*) stamp="${line#Timestamp=}" ;;
+    esac
+    if [[ $line =~ $flags_re ]]; then
+      flags="${BASH_REMATCH[1]}"
+    fi
+    case "$line" in
+      *com.apple.security.get-task-allow*)
+        printf 'smoke: the signature claims the com.apple.security.get-task-allow entitlement, which notarization refuses: %s\n' "$line" >&2
+        bad=1
+        ;;
+    esac
+  done < "$report"
+  case "$authority" in
+    "Developer ID Application: $publisher ("*")")
+      team="${authority#"Developer ID Application: $publisher ("}"
+      team="${team%)}"
+      if ! [[ $team =~ $team_re ]]; then
+        printf 'smoke: the signing certificate is %s, whose team %s is not ten letters or digits\n' "$authority" "$team" >&2
+        bad=1
+      fi
+      ;;
+    *)
+      printf 'smoke: the signing certificate is %s, not a Developer ID Application certificate of %s\n' \
+        "${authority:-absent}" "$publisher" >&2
+      bad=1
+      ;;
+  esac
+  if [ -z "$listed_team" ] || [ "$listed_team" != "$team" ]; then
+    printf 'smoke: the signature names the team %s, not %s, the team its certificate names\n' \
+      "${listed_team:-nothing}" "${team:-unknown}" >&2
+    bad=1
+  fi
+  case ",$flags," in
+    *,runtime,*) ;;
+    *)
+      printf 'smoke: the code directory'"'"'s flags are %s, without runtime: the hardened runtime is not on\n' "${flags:-absent}" >&2
+      bad=1
+      ;;
+  esac
+  if [ -z "$stamp" ]; then
+    printf 'smoke: the signature carries no secure timestamp\n' >&2
+    bad=1
+  fi
+  [ "$bad" = 0 ] || return 1
+  printf 'ok: signed by %s, team %s, hardened runtime, timestamped %s\n' "$authority" "$team" "$stamp"
+}
+
+smoke_check_gatekeeper_report() {
+  local report="$1" line accepted=0 notarized=0
+  if [ ! -f "$report" ]; then
+    printf 'smoke: there is no assessment report at %s\n' "$report" >&2
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      *": accepted") accepted=1 ;;
+      "source=Notarized Developer ID") notarized=1 ;;
+    esac
+  done < "$report"
+  if [ "$accepted" = 1 ] && [ "$notarized" = 1 ]; then
+    printf 'ok: Gatekeeper accepts it as notarized Developer ID software\n'
+    return 0
+  fi
+  [ "$accepted" = 1 ] || printf 'smoke: Gatekeeper does not report it accepted\n' >&2
+  [ "$notarized" = 1 ] || printf 'smoke: Gatekeeper does not report its source as Notarized Developer ID\n' >&2
+  return 1
 }

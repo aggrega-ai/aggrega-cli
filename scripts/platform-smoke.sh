@@ -7,16 +7,17 @@
 # (--inputs) and runs from a checkout of this repository at the commit that
 # directory names: under the Git for Windows shell on Windows, under bash on macOS
 # and on Linux.
-# For windows/amd64 it also reads the directory the release's signing wrote
-# (--signed): the Windows binaries with their Authenticode signatures, and
-# SHA256SUMS, the SHA-256 list of them. The signed binaries are the ones every
-# step runs, because they are the ones the release attaches; the unsigned copies
-# the build wrote, staged in bin/, run in no step, and step 12 holds them as what
-# its checks must refuse. On a run that signs nothing, --unsigned takes the place
-# of --signed: every step runs the unsigned copies in bin/, and step 12, with no
-# signature to check, is not applicable. The macOS and Linux binaries are not
-# signed by the release, so a darwin or linux target runs the staged ones and
-# takes neither.
+# For windows/amd64, darwin/arm64 and darwin/amd64 it also reads the directory
+# the release's signing wrote (--signed): the binaries with their signatures —
+# Authenticode for Windows, a Developer ID signature Apple has notarized for
+# macOS — and SHA256SUMS, the SHA-256 list of them. The signed binaries are the
+# ones every step runs, because they are the ones the release attaches; the
+# unsigned copies the build wrote, staged in bin/, run in no step, and step 12
+# holds them as what its checks must refuse. On a run that signs nothing,
+# --unsigned takes the place of --signed: every step runs the unsigned copies in
+# bin/, and step 12, with no signature to check, is not applicable. The Linux
+# binaries are not signed by the release, so a linux target runs the staged ones
+# and takes neither.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
 # registry or server but the ones it starts on this machine; it does need bash 4.3
 # or later, which macOS does not ship, and Python 3.7 or later, as python3 or
@@ -27,8 +28,8 @@
 #     exactly the binaries scripts/lib/platform-smoke-common.sh lists for it: the
 #     default binary, without its debug information, and the debug and light
 #     ones, for windows/amd64, darwin/arm64, darwin/amd64 and linux/arm64 alike.
-#     For windows/amd64 the --signed directory holds exactly those binaries too,
-#     and SHA256SUMS beside them
+#     For windows/amd64 and the darwin targets the --signed directory holds
+#     exactly those binaries too, and SHA256SUMS beside them
 #   - on macOS and Linux, the machine is the target's: uname -m reports arm64 for
 #     darwin/arm64, x86_64 for darwin/amd64 and aarch64 for linux/arm64. A Mac
 #     with Apple silicon also runs an amd64 binary, through Rosetta 2, and that
@@ -135,7 +136,8 @@
 #                 same way into a fresh directory, must refuse it with the sentence
 #                 naming the checksum it computed and the one SHA256SUMS lists,
 #                 install nothing, and on Windows leave the user PATH as it was
-#  12. signature  windows/amd64 only. Each binary the steps above ran must have
+#  12. signature  windows/amd64, darwin/arm64 and darwin/amd64; on windows/amd64:
+#                 each binary the steps above ran must have
 #                 the SHA-256 that SHA256SUMS lists for it, the list naming exactly
 #                 those binaries; and Windows' own Get-AuthenticodeSignature, run
 #                 through Windows PowerShell on each, must report Status Valid, a
@@ -148,7 +150,23 @@
 #                 and the same list check over bin/, must refuse them. Given
 #                 --unsigned it checks nothing: it prints that it is not
 #                 applicable, and the run's last lines list it so, never as
-#                 passed
+#                 passed.
+#                 darwin/arm64 and darwin/amd64 hold the same list check, and
+#                 macOS's own `codesign --verify --strict` must accept each
+#                 binary, while `codesign --display --verbose=2 --entitlements -`
+#                 must report a first authority of "Developer ID Application:
+#                 Cognitio S.r.l. (<team>)", that team as its TeamIdentifier,
+#                 the hardened runtime among the code directory's flags, a
+#                 secure timestamp, and no get-task-allow entitlement. Then
+#                 Gatekeeper: a copy of each binary is given the quarantine
+#                 mark a browser gives a download, and `spctl --assess --type
+#                 execute -vvv` must report it accepted, its source Notarized
+#                 Developer ID — the ticket a bare executable cannot carry
+#                 stapled, which Gatekeeper finds online. Each report is
+#                 printed. Then the same codesign and Gatekeeper checks over a
+#                 quarantined copy of the unsigned default binary staged in
+#                 bin/, and the same list check over bin/, must refuse them.
+#                 Given --unsigned it is not applicable, as for Windows
 #  13. installer  windows/amd64 only. The installer in the --installer directory
 #                 must have the SHA-256 the SHA256SUMS beside it lists. Run as
 #                 `<installer> /S`, it must exit 0 within five minutes — a silent
@@ -197,18 +215,18 @@
 #   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned] [--installer <dir>] [--binaries <dir>]
 #   scripts/platform-smoke.sh --help
 #
-# --signed <dir> names the directory holding the signed Windows binaries and
-# SHA256SUMS. It is required for windows/amd64, unless --unsigned is given, and
-# refused for a darwin or linux target.
+# --signed <dir> names the directory holding the signed binaries and SHA256SUMS.
+# It is required for windows/amd64, darwin/arm64 and darwin/amd64, unless
+# --unsigned is given, and refused for a linux target.
 #
 # --installer <dir> names the directory holding the Windows installer, under the
 # name the build writes it, and SHA256SUMS: the signed installer, or with
 # --unsigned the one built from the unsigned binary. It is required for
 # windows/amd64 and refused for a darwin or linux target.
 #
-# --unsigned runs the windows/amd64 binaries staged in bin/, unsigned as the
-# build wrote them: the way to run the checks on a run that signs nothing. It is
-# refused with --signed and for a darwin or linux target. Each step then runs whatever an
+# --unsigned runs the windows/amd64 or darwin binaries staged in bin/, unsigned as
+# the build wrote them: the way to run the checks on a run that signs nothing. It
+# is refused with --signed and for a linux target. Each step then runs whatever an
 # earlier one reported; step 12 checks nothing and is reported not applicable,
 # never passed; step 13 checks no signature, saying so; and the run ends naming
 # every step that failed and the step that was not applicable. It exits 1 when a step failed and 3 when none did — never
@@ -216,7 +234,7 @@
 #
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
 # them, in place of the ones it would run otherwise (the --signed ones for
-# windows/amd64, the staged ones for macOS, Linux and with --unsigned): the way to show
+# windows/amd64 and macOS, the staged ones for Linux and with --unsigned): the way to show
 # which checks the binaries of another release fail. Each step then runs whatever
 # an earlier one reported, and the run ends naming every step that failed. It
 # exits 1 when one did and 3 when none did — never 0, since what passed is
@@ -287,20 +305,26 @@ mapfile -t BINARY_NAMES <<<"$names"
 GOOS_T="${TARGET%/*}" GOARCH_T="${TARGET#*/}"
 EXE_SUFFIX=""
 [ "$GOOS_T" = windows ] && EXE_SUFFIX=".exe"
-# The release signs the Windows binaries and no others, so the signed directory is
-# what a Windows run must be handed and what a macOS or Linux run must not be. A
-# Windows run that signs nothing says so with --unsigned in its place, and a macOS
-# or Linux run takes neither.
+# The release signs the Windows and macOS binaries and no others, so the signed
+# directory is what a Windows or macOS run must be handed and what a Linux run must
+# not be. A run that signs nothing says so with --unsigned in its place, and a
+# Linux run takes neither.
 [ -z "$SIGNED" ] || [ -z "$UNSIGNED" ] ||
   { fail "--signed and --unsigned cannot both be given: --signed runs the signed binaries in its directory, --unsigned the unsigned ones in bin/"; exit 2; }
 case "$GOOS_T" in
-  windows)
+  windows | darwin)
     [ -n "$SIGNED" ] || [ -n "$UNSIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones; on a run that signs nothing, give --unsigned instead"; exit 2; }
+    ;;
+  *)
+    [ -z "$SIGNED" ] || { fail "--signed applies to windows/amd64, darwin/arm64 and darwin/amd64; the release does not sign the $TARGET binaries"; exit 2; }
+    [ -z "$UNSIGNED" ] || { fail "--unsigned applies to windows/amd64, darwin/arm64 and darwin/amd64; the release does not sign the $TARGET binaries, so every run of them runs them as staged"; exit 2; }
+    ;;
+esac
+case "$GOOS_T" in
+  windows)
     [ -n "$INSTALLER" ] || { fail "--installer <dir> is required for $TARGET: the release attaches an installer for it"; exit 2; }
     ;;
   *)
-    [ -z "$SIGNED" ] || { fail "--signed applies to windows/amd64 alone; the release does not sign the $TARGET binaries"; exit 2; }
-    [ -z "$UNSIGNED" ] || { fail "--unsigned applies to windows/amd64 alone; the release does not sign the $TARGET binaries, so every run of them runs them as staged"; exit 2; }
     [ -z "$INSTALLER" ] || { fail "--installer applies to windows/amd64 alone; the release carries no installer for $TARGET"; exit 2; }
     ;;
 esac
@@ -328,7 +352,7 @@ WORK="$INPUTS/run"
 [ ! -e "$WORK" ] || { fail "$WORK already exists; give a freshly staged directory"; exit 2; }
 
 TOOLS=(cat cmp cp dd find git head sleep sort tr uname)
-[ "$GOOS_T" = darwin ] && TOOLS+=(chmod curl sh xattr)
+[ "$GOOS_T" = darwin ] && TOOLS+=(chmod codesign curl date sh spctl uuidgen xattr)
 [ "$GOOS_T" = linux ] && TOOLS+=(chmod curl sh)
 [ "$GOOS_T" = windows ] && TOOLS+=(cygpath powershell.exe pwsh sha256sum timeout)
 for tool in "${TOOLS[@]}"; do
@@ -1044,7 +1068,7 @@ check_install() {
   done
 }
 
-# The publisher every Windows binary must be signed as. It is stated here rather
+# The publisher every Windows and macOS binary must be signed as. It is stated here rather
 # than read from anything the check looks at, and deliberately so, as step 5
 # states its locations: a check that took the expected name from the signature it
 # checks would accept whichever signer it found.
@@ -1110,6 +1134,97 @@ check_signature() {
     return 1
   fi
   echo "ok: the signature check refuses an unsigned binary, and the list check the unsigned binaries"
+}
+
+# codesign_report <file> <report> — write to <report> what macOS's own codesign
+# says about the signature of <file> and the entitlements it claims, its standard
+# output and its standard error together, as smoke_check_codesign_report reads it.
+codesign_report() {
+  codesign --display --verbose=2 --entitlements - --xml "$1" > "$2" 2>&1
+}
+
+# quarantine_copy <file> <copy> — copy <file> to <copy>, executable, carrying the
+# quarantine mark a browser gives what it downloads, which is what makes
+# Gatekeeper assess a program before it first runs.
+quarantine_copy() {
+  cp "$1" "$2"
+  chmod 0755 "$2"
+  xattr -w com.apple.quarantine "0081;$(printf '%08x' "$(date +%s)");Safari;$(uuidgen)" "$2"
+}
+
+# gatekeeper_report <file> <report> — write to <report> Gatekeeper's assessment
+# of <file> as a program to run, its standard output and its standard error
+# together, and return spctl's exit status.
+gatekeeper_report() {
+  local rc=0
+  spctl --assess --type execute -vvv "$1" > "$2" 2>&1 || rc=$?
+  return "$rc"
+}
+
+check_macos_signature() {
+  local log="$LOGS/signature" name report copy rc bad=0
+  mkdir -p "$log/quarantined"
+  smoke_check_sums "$SIGNED/$SUMS_NAME" "$BIN_DIR" "${BINARY_NAMES[@]}" || bad=1
+  echo "Gatekeeper on this machine: $(spctl --status 2>&1)"
+  for name in "${BINARY_NAMES[@]}"; do
+    printf -- '--- %s: codesign --verify --strict\n' "$name"
+    if ! codesign --verify --strict --verbose=2 "$BIN_DIR/$name"; then
+      fail "codesign does not accept the signature of $name"
+      bad=1
+    fi
+    report="$log/$name.codesign.txt"
+    printf -- '--- %s: codesign --display\n' "$name"
+    if ! codesign_report "$BIN_DIR/$name" "$report"; then
+      cat "$report"
+      fail "codesign could not display the signature of $name"
+      bad=1
+      continue
+    fi
+    cat "$report"
+    smoke_check_codesign_report "$report" "$SIGNER_CN" || bad=1
+    copy="$log/quarantined/$name"
+    quarantine_copy "$BIN_DIR/$name" "$copy" || { fail "could not make a quarantined copy of $name"; bad=1; continue; }
+    report="$log/$name.gatekeeper.txt"
+    printf -- '--- %s, quarantined: spctl --assess --type execute\n' "$name"
+    rc=0
+    gatekeeper_report "$copy" "$report" || rc=$?
+    cat "$report"
+    if [ "$rc" != 0 ]; then
+      fail "Gatekeeper refused the quarantined $name (spctl exited $rc)"
+      bad=1
+    fi
+    smoke_check_gatekeeper_report "$report" || bad=1
+  done
+  if [ "$bad" != 0 ]; then
+    fail "the binaries are not the listed ones, each signed with the Developer ID of $SIGNER_CN, hardened, timestamped, and accepted by Gatekeeper as notarized"
+    return 1
+  fi
+
+  echo "The same checks over a quarantined copy of the unsigned ${BINARY_NAMES[0]} staged in bin/ must refuse it:"
+  report="$log/unsigned.codesign.txt"
+  codesign_report "$INPUTS/bin/${BINARY_NAMES[0]}" "$report" || true
+  cat "$report"
+  if smoke_check_codesign_report "$report" "$SIGNER_CN"; then
+    fail "the signature check accepted the unsigned ${BINARY_NAMES[0]}, so its passes above prove nothing"
+    return 1
+  fi
+  copy="$log/quarantined/unsigned-${BINARY_NAMES[0]}"
+  quarantine_copy "$INPUTS/bin/${BINARY_NAMES[0]}" "$copy" ||
+    { fail "could not make a quarantined copy of the unsigned ${BINARY_NAMES[0]}"; return 1; }
+  report="$log/unsigned.gatekeeper.txt"
+  rc=0
+  gatekeeper_report "$copy" "$report" || rc=$?
+  cat "$report"
+  if [ "$rc" = 0 ] || smoke_check_gatekeeper_report "$report"; then
+    fail "Gatekeeper accepted the quarantined unsigned ${BINARY_NAMES[0]}, so its acceptances above prove nothing"
+    return 1
+  fi
+  echo "The same list check over the unsigned binaries in bin/ must refuse them:"
+  if smoke_check_sums "$SIGNED/$SUMS_NAME" "$INPUTS/bin" "${BINARY_NAMES[@]}"; then
+    fail "the list check accepted the unsigned binaries, so its pass above proves nothing"
+    return 1
+  fi
+  echo "ok: the signature and Gatekeeper checks refuse an unsigned binary, and the list check the unsigned binaries"
 }
 
 # How long step 13 gives the installer, and the uninstaller, to finish.
@@ -1339,14 +1454,22 @@ if [ "$GOOS_T" = windows ]; then
 else
   run_step "11. install: curl -fsSL <url>/install.sh | sh, from a release folder on this machine" check_install isolated
 fi
-if [ "$GOOS_T" = windows ]; then
-  SIGNATURE_STEP="12. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists"
+if [ "$GOOS_T" = windows ] || [ "$GOOS_T" = darwin ]; then
+  if [ "$GOOS_T" = windows ]; then
+    SIGNATURE_STEP="12. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists"
+    SIGNATURE_CHECK=check_signature
+  else
+    SIGNATURE_STEP="12. signature: each binary signed with the Developer ID of $SIGNER_CN, hardened, timestamped, accepted by Gatekeeper as notarized, and the one SHA256SUMS lists"
+    SIGNATURE_CHECK=check_macos_signature
+  fi
   if [ -n "$UNSIGNED" ]; then
     not_applicable "$SIGNATURE_STEP" \
       "--unsigned: this run signs nothing, so there is no signature and no SHA256SUMS to hold the binaries to; this step neither passed nor failed"
   else
-    run_step "$SIGNATURE_STEP" check_signature
+    run_step "$SIGNATURE_STEP" "$SIGNATURE_CHECK"
   fi
+fi
+if [ "$GOOS_T" = windows ]; then
   run_step "13. installer: $(smoke_target_installer "$TARGET") /S, an upgrade over it, and uninstall.exe /S" check_installer isolated
 fi
 

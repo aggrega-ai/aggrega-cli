@@ -44,7 +44,19 @@
 #      any action at all, calls a reusable workflow, declares a container: or
 #      services:, has a step that runs a build or pack command (read as in rule
 #      2), or names a secret anywhere. Such a job holds the run's own token,
-#      github.token, which it may name, and nothing else.
+#      github.token, which it may name, and nothing else;
+#   6. a secret whose name begins APPLE_ — the identity that signs the macOS
+#      binaries and the key that has them notarized — is named in any job but
+#      sign-macos, or in the file-level env:; or sign-macos has a step that
+#      runs actions/checkout, a build or pack command (read as in rule 2) or a
+#      repository script, runs any action but actions/download-artifact and
+#      actions/upload-artifact, or one of those not pinned by a full 40-digit
+#      commit; or sign-macos calls a reusable workflow, declares a container:
+#      or services:, is granted any permission, names a secret not beginning
+#      APPLE_ or github.token, or runs-on anything but a literal label of a
+#      GitHub-hosted macOS image (macos-…), which no variable can turn into the
+#      machine the build ran on. So the Apple secrets share a job with Apple's
+#      own programs, the shell's utilities and GitHub's artifact actions alone.
 #
 # The build and pack commands are npx, npm, pnpm, yarn, cargo, make, tinygo,
 # makensis (which compiles the Windows installer from a script and the plug-ins
@@ -428,6 +440,91 @@ for job in "${JOBS[@]}"; do
   done < <(yq -r "$NAMED_AT" "$WORKFLOW")
 done
 
+# Pass 3: the Apple secrets and the one job that may name them. Every
+# secrets.APPLE_ reference, wherever it stands, outside that job is refused, and
+# that job is held to what rule 6 lets it run.
+APPLE_JOB=sign-macos
+APPLE_SECRET_RE='secrets\.APPLE_[A-Za-z0-9_]*'
+SHA_PIN_RE='^actions/(download-artifact|upload-artifact)@[0-9a-f]{40}$'
+apple_jobs=()
+while IFS= read -r ref; do
+  [[ $ref =~ ^$APPLE_SECRET_RE$ ]] || continue
+  violate "file level: env: names $ref, which every job sees; the Apple secrets are named in $APPLE_JOB alone"
+done < <(secrets_in "$TOP_ENV" | sort -u)
+for job in "${JOBS[@]}"; do
+  export J="$job"
+  [ "$job" = "$APPLE_JOB" ] && continue
+  while IFS=$'\t' read -r at ref; do
+    [ -n "$ref" ] || continue
+    [[ $ref =~ ^$APPLE_SECRET_RE$ ]] || continue
+    violate "job $job, $(where_in_job "$at"): names $ref; the Apple secrets are named in $APPLE_JOB alone"
+  done < <(yq -r "$NAMED_AT" "$WORKFLOW")
+done
+if [ "$(J="$APPLE_JOB" yq -r '.jobs | has(strenv(J))' "$WORKFLOW")" = true ]; then
+  export J="$APPLE_JOB"
+  apple_jobs+=("$APPLE_JOB")
+  apple_steps=0
+  for key in container services uses; do
+    if [ "$(KEY="$key" yq -r '.jobs[strenv(J)] | has(strenv(KEY))' "$WORKFLOW")" = true ]; then
+      violate "job $APPLE_JOB: declares $key:, which runs what this check cannot read beside the Apple secrets"
+    fi
+  done
+  case "$(yq -r '.jobs[strenv(J)] | has("permissions")' "$WORKFLOW")" in
+    true)
+      while IFS= read -r grant; do
+        [ -n "$grant" ] && violate "job $APPLE_JOB: is granted $grant; the job that holds the Apple secrets is granted nothing (permissions: {})"
+      done < <(yq -r '.jobs[strenv(J)].permissions | select(tag == "!!map") | to_entries | .[] | .key + ": " + (.value | tostring)' "$WORKFLOW")
+      if [ "$(yq -r '.jobs[strenv(J)].permissions | tag' "$WORKFLOW")" != '!!map' ]; then
+        violate "job $APPLE_JOB: is granted $(yq -r '.jobs[strenv(J)].permissions' "$WORKFLOW"); the job that holds the Apple secrets is granted nothing (permissions: {})"
+      fi
+      ;;
+    *) violate "job $APPLE_JOB: declares no permissions of its own, so it takes the file level's; the job that holds the Apple secrets is granted nothing (permissions: {})" ;;
+  esac
+  runs_on="$(yq -r '.jobs[strenv(J)]."runs-on" | select(tag == "!!str")' "$WORKFLOW")"
+  if ! [[ $runs_on =~ ^macos-[0-9A-Za-z.-]+$ ]]; then
+    violate "job $APPLE_JOB: runs on $(yq -o=json -I=0 '.jobs[strenv(J)]."runs-on"' "$WORKFLOW"); the job that holds the Apple secrets runs on a GitHub-hosted macOS image it names by a literal label (macos-…)"
+  fi
+  while IFS=$'\t' read -r at ref; do
+    [ -n "$ref" ] || continue
+    [[ $ref =~ ^$APPLE_SECRET_RE$ ]] && continue
+    violate "job $APPLE_JOB, $(where_in_job "$at"): names $ref; the job that holds the Apple secrets names no other secret and not the run's token"
+  done < <(yq -r "$NAMED_AT" "$WORKFLOW")
+  nsteps="$(yq -r '.jobs[strenv(J)].steps | length' "$WORKFLOW")"
+  case "$nsteps" in ''|null) nsteps=0 ;; esac
+  for ((i = 0; i < nsteps; i++)); do
+    export I="$i"
+    apple_steps=$((apple_steps + 1))
+    name="$(yq -r '.jobs[strenv(J)].steps[env(I)] | .name // .id // ""' "$WORKFLOW")"
+    [ -n "$name" ] || name="step $((i + 1))"
+    where="job $APPLE_JOB, step \"$name\""
+    uses="$(yq -r '.jobs[strenv(J)].steps[env(I)].uses // ""' "$WORKFLOW")"
+    run="$(yq -r '.jobs[strenv(J)].steps[env(I)].run // ""' "$WORKFLOW")"
+    if [ -n "$uses" ]; then
+      case "$uses" in
+        actions/checkout@*|actions/checkout)
+          violate "$where: checks out a repository beside the Apple secrets; $APPLE_JOB checks nothing out"
+          ;;
+        actions/download-artifact@*|actions/upload-artifact@*)
+          [[ $uses =~ $SHA_PIN_RE ]] ||
+            violate "$where: uses $uses, not pinned by its full commit; beside the Apple secrets every action is pinned by commit"
+          ;;
+        *)
+          violate "$where: uses $uses beside the Apple secrets; only actions/download-artifact and actions/upload-artifact run there"
+          ;;
+      esac
+    fi
+    if [ -n "$run" ]; then
+      scan_step_run "$run"
+      for hit in ${HITS[@]+"${HITS[@]}"}; do
+        violate "$where: $hit, beside the Apple secrets"
+      done
+      for s in ${READ_SCRIPTS[@]+"${READ_SCRIPTS[@]}"}; do
+        violate "$where: runs the repository script $s beside the Apple secrets; $APPLE_JOB checks nothing out and runs none"
+      done
+    fi
+  done
+fi
+
 if [ "${#violations[@]}" -gt 0 ]; then
   for v in "${violations[@]}"; do
     printf 'VIOLATION  %s\n' "$v"
@@ -456,5 +553,11 @@ printf '  may delete the run'"'"'s artifacts: %s — %d step(s), granted actions
 printf '  actions/checkout steps: %d, each with persist-credentials: false\n' "$checkouts"
 printf '  jobs running third-party code, each naming no secret and no github.token: %s\n' "${TP_REPORT[*]:-none}"
 printf '  jobs naming a secret, none of them running third-party code: %s\n' "${NAMING_REPORT[*]:-none}"
+if [ "${#apple_jobs[@]}" -gt 0 ]; then
+  printf '  the Apple secrets: named in %s alone — %d step(s), no checkout, no build or pack step and no repository script, no action but download-artifact and upload-artifact pinned by commit, no permission, no other secret, on a GitHub-hosted macOS image\n' \
+    "$APPLE_JOB" "$apple_steps"
+else
+  printf '  the Apple secrets: no job named %s, and no job names one\n' "$APPLE_JOB"
+fi
 RC=0
 exit $RC
