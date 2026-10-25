@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"sort"
+	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -60,6 +63,110 @@ type CoreSubChart struct {
 	// than beneath the position its identity names is at a directory no identity
 	// spells.
 	OutputDirectory string
+
+	// NameBasis is the identity this contributor is addressed by inside the
+	// umbrella where that is not InstanceID itself — empty for an ordinary
+	// component. It is read only for a contributor whose render placed no manifest:
+	// one that placed a manifest is addressed by the name that manifest declares.
+	// For a contributor reaching the umbrella under a dispatch identity the
+	// compiler built, which no chart-name alphabet accepts, it carries the identity
+	// that contributor's own resources are labelled with, so the chart written for
+	// it is named exactly as a chart that contributor vendored would be.
+	NameBasis string
+
+	// RenderedFiles is the path of each file this contributor's render placed,
+	// relative to its own directory, in the order the render emitted them. It is
+	// read only for a contributor whose render placed no manifest: those files are
+	// finished manifests another provider rendered, sitting where Helm renders
+	// nothing, and the chart written for them emits each one by this name.
+	RenderedFiles []string
+}
+
+// generatedTemplateFileName is the one template a chart written for a
+// contributor whose render placed no manifest carries, relative to that chart.
+const generatedTemplateFileName = "templates/rendered.yaml"
+
+// contributorChart writes the chart for a contributor whose render placed no
+// manifest of its own: a minimal manifest, and one template emitting each file the
+// render placed. It returns the files, keyed by their path relative to the
+// umbrella, and the manifest, which the dependency entry is then read from exactly
+// as it is from a manifest a render placed — so the entry and the chart it points
+// at are one statement of the name rather than two derivations.
+//
+// Such a contributor is a Feature attachment whose FeatureRecipe rendered through
+// another provider: its files are finished Kubernetes manifests, placed at the
+// root of its own directory under charts/. Helm loads nothing there without a
+// manifest, and renders only what sits under templates/, so without this chart the
+// umbrella refuses to load — and with a manifest alone it loads and installs none
+// of those resources.
+//
+// The template emits each file through .Files.Get rather than the files being
+// moved under templates/, because they are rendered output and not template
+// source: a manifest carrying a literal "{{" — an alerting rule's label reference,
+// a dashboard's query — would be evaluated a second time by Helm's template engine
+// and either fail or change. .Files.Get returns a file's bytes as they are, so what
+// installs is exactly what the other provider rendered.
+//
+// The manifest is named for the contributor's own identity, through the one
+// encoding every placed chart's name goes through, and carries the version the
+// sub-chart projection names, or the version the umbrella's own manifest carries
+// where it names none.
+func contributorChart(sc CoreSubChart, indent int) (map[string][]byte, []byte, error) {
+	version := sc.Version
+	if version == "" {
+		version = defaultChartVersion
+	}
+	manifest, err := rendercore.MarshalYAMLIndent(&umbrellaChart{
+		APIVersion: helmChartAPIVersion,
+		Name:       helmNameEncoding.Segment(rendercore.ContributorNameBasis(sc.InstanceID, sc.NameBasis)),
+		Version:    version,
+	}, indent)
+	if err != nil {
+		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: sc.OutputDirectory},
+			fmt.Sprintf("helmchart umbrella: marshal the manifest for sub-chart %q", sc.InstanceID))
+	}
+	files := map[string][]byte{path.Join(sc.OutputDirectory, chartMetadataFileName): manifest}
+	if tmpl := renderedFilesTemplate(sc.RenderedFiles); tmpl != nil {
+		files[path.Join(sc.OutputDirectory, generatedTemplateFileName)] = tmpl
+	}
+	return files, manifest, nil
+}
+
+// renderedFilesTemplate is the template emitting each rendered manifest by its
+// explicit name, in the order given, or nil where none of the files is one Helm
+// hands to a template as a plain file. Each name is written as a quoted string
+// literal, so a name carrying a quote or a backslash is read back as written.
+func renderedFilesTemplate(paths []string) []byte {
+	var b strings.Builder
+	for _, p := range paths {
+		if !emittedAsPlainFile(p) {
+			continue
+		}
+		b.WriteString("---\n{{ .Files.Get ")
+		b.WriteString(strconv.Quote(p))
+		b.WriteString(" }}\n")
+	}
+	if b.Len() == 0 {
+		return nil
+	}
+	return []byte(b.String())
+}
+
+// emittedAsPlainFile reports whether a rendered file is one the generated template
+// emits: a YAML document Helm exposes to a template through .Files. Helm reads a
+// chart's values.yaml and requirements.yaml as values and dependencies, renders
+// what sits under templates/ itself, and loads what sits under charts/ as further
+// charts, so none of those is a plain file and .Files returns nothing for it.
+func emittedAsPlainFile(p string) bool {
+	switch {
+	case !strings.HasSuffix(p, ".yaml") && !strings.HasSuffix(p, ".yml"):
+		return false
+	case p == "values.yaml", p == "requirements.yaml", p == chartMetadataFileName:
+		return false
+	case strings.HasPrefix(p, "templates/"), strings.HasPrefix(p, "charts/"):
+		return false
+	}
+	return true
 }
 
 // ReadChartMetaBytes parses a chart's Chart.yaml bytes and returns its `name` and
@@ -162,22 +269,43 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 
 	deps := make([]umbrellaChartDependency, 0, len(subs))
 	values := make(map[string]any, len(subs))
+	written := make(map[string][]byte)
 	for _, sc := range subs {
+		if sc.OutputDirectory == "" {
+			return nil, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{File: boundaryName},
+				fmt.Sprintf("helmchart umbrella: sub-chart %q carries no output directory, so the dependency has no directory to point at", sc.InstanceID), nil, nil)
+		}
+		// A contributor whose render placed no manifest, and whose source the host
+		// read none from, is given a chart here, and from then on is read exactly as
+		// a contributor whose render placed one: the manifest written for it is the
+		// manifest the dependency entry is read from.
+		placed := sc.PlacedChartYAML
+		if len(placed) == 0 && len(sc.ChartYAML) == 0 {
+			files, manifest, err := contributorChart(sc, indent)
+			if err != nil {
+				return nil, err
+			}
+			for p, body := range files {
+				written[p] = body
+			}
+			placed = manifest
+		}
+
 		// The alias is the name the PLACED chart declares, read from that chart's
 		// own manifest rather than derived a second time from the instance id.
 		// A dependency binds to a sub-chart by the name the sub-chart declares, so
 		// this is the one value that can be right — and for a contributor whose
 		// placed name is not derived from its instance id, a second derivation from
-		// the instance id would name a chart that is not there. A generative
-		// sub-chart declares no manifest, so there the instance id is all there is
-		// and the alias is derived from it.
+		// the instance id would name a chart that is not there. Only a sub-chart
+		// whose pristine manifest was projected without a placed one reaches the
+		// instance id below; every other carries a placed manifest by now.
 		alias := helmNameEncoding.Segment(sc.InstanceID)
 		version := sc.Version
 		if version == "" {
 			version = defaultChartVersion
 		}
-		if len(sc.PlacedChartYAML) > 0 {
-			placedName, placedVersion, err := ReadChartMetaBytes(sc.PlacedChartYAML, sc.InstanceID)
+		if len(placed) > 0 {
+			placedName, placedVersion, err := ReadChartMetaBytes(placed, sc.InstanceID)
 			if err != nil {
 				return nil, err
 			}
@@ -215,11 +343,8 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 		// The alias is never it: the alias is a name and this is a location, and
 		// they are different strings by design. Pointing the repository at the
 		// alias is accepted by a render and refused by dependency resolution, so
-		// the mistake survives the tools an author reaches for first.
-		if sc.OutputDirectory == "" {
-			return nil, cerrors.Unidentified(cerrors.OpsError, cerrors.SourceLocation{File: boundaryName},
-				fmt.Sprintf("helmchart umbrella: sub-chart %q carries no output directory, so the dependency has no directory to point at", sc.InstanceID), nil, nil)
-		}
+		// the mistake survives the tools an author reaches for first. A sub-chart
+		// carrying no position was refused at the top of this loop.
 		deps = append(deps, umbrellaChartDependency{
 			Name:       alias,
 			Version:    version,
@@ -251,8 +376,10 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: boundaryName}, "helmchart umbrella: marshal values.yaml")
 	}
 
-	return map[string][]byte{
-		"Chart.yaml":  chartYAML,
-		"values.yaml": valuesYAML,
-	}, nil
+	// The files written for contributors sit under each contributor's own
+	// directory, which is never the umbrella's root, so none of them can meet the
+	// umbrella's own two files.
+	written[chartMetadataFileName] = chartYAML
+	written["values.yaml"] = valuesYAML
+	return written, nil
 }

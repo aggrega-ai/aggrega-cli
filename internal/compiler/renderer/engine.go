@@ -625,10 +625,12 @@ type BoundaryInfo struct {
 	// An entry is present only where that identity is not the node id itself, which
 	// is the case for every contributor that is not one of the graph's nodes: an
 	// attached Feature reaches its group under a dispatch identity the compiler
-	// built, and no target's name alphabet accepts it. Both attachment scopes do,
-	// and each carries the identity its own render derived names from — a
-	// boundary-scope one the composed identity settled for it, a component-scope one
-	// the host component it renders against.
+	// built, and no target's name alphabet accepts it. Both attachment scopes do. A
+	// boundary-scope one carries the composed identity settled for it. A
+	// component-scope one carries the host component it renders against where its
+	// output is folded into the host's document, and its own composed identity where
+	// the group places it at a position of its own, beside its host — there it is a
+	// child unit the assembled artifact addresses apart from the host.
 	//
 	// It travels to the assembler because the alternative is an assembler deriving
 	// its names from the dispatch identity while the render that produced the content

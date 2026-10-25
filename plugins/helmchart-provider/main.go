@@ -27,7 +27,10 @@
 // per-instance values, and the pristine bytes of the vendored chart's Chart.yaml
 // the host read at compile time), and assembles the umbrella Chart.yaml +
 // values.yaml through the same core, signalling that per-node files nest under a
-// per-node sub-directory. The host writes all returned bytes verbatim and runs no
+// per-node sub-directory. A contributor whose render placed no chart manifest — a
+// Feature attachment rendered through another provider — is given a minimal one
+// and a template emitting each file it rendered, returned beside the umbrella's
+// own files. The host writes all returned bytes verbatim and runs no
 // serializer, so the guest's serialization is the on-disk output.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o helmchart-provider.wasm ./plugins/helmchart-provider
@@ -295,8 +298,9 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 
 // assembleBoundaryFromInput reconstructs the umbrella assemble core's inputs from
 // the wire AssembleBoundaryInput and runs the shared filesystem-free assembly
-// core, returning the umbrella Chart.yaml + values.yaml as RenderedFiles. Each
-// sub-chart carries its instance identity, its
+// core, returning the umbrella Chart.yaml + values.yaml as RenderedFiles, beside
+// the chart files the core writes for a contributor whose render placed no
+// manifest. Each sub-chart carries its instance identity, its
 // per-instance values (flattened from the wire's ordered map), and, for a
 // sub-chart vendored from a chart source, the pristine bytes of that chart's
 // Chart.yaml the host read at compile time; the core draws the dependency's name
@@ -333,6 +337,10 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 			// author wrote.
 			PlacedChartYAML: placedChartManifest(node),
 			OutputDirectory: node.OutputDirectory,
+			// What a contributor that placed no manifest is given a chart from:
+			// the identity it is addressed by, and the files its render placed.
+			NameBasis:     node.DerivedNameBasis,
+			RenderedFiles: renderedFilePaths(node),
 		})
 	}
 
@@ -355,8 +363,8 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 // because the two carry different documents: the render rewrote the manifest's
 // name to the identity the placed chart is addressed by, and the dependency has
 // to bind to that name rather than to the one the chart's author wrote. A
-// contributor that placed no manifest is a generative one, for which there is no
-// declared name to read and the identity is all there is.
+// contributor that placed no manifest rendered through another provider, and the
+// assembly writes a chart for it, named for the identity it is addressed by.
 func placedChartManifest(node rendercore.RenderedNode) []byte {
 	for i := range node.Rendered.Files {
 		if node.Rendered.Files[i].Path == helmchartcore.ChartMetadataFileName {
@@ -364,6 +372,17 @@ func placedChartManifest(node rendercore.RenderedNode) []byte {
 		}
 	}
 	return nil
+}
+
+// renderedFilePaths returns the path of each file a contributor's render placed,
+// in the order the render emitted them, which is the order a chart written for
+// that contributor emits them in.
+func renderedFilePaths(node rendercore.RenderedNode) []string {
+	paths := make([]string, 0, len(node.Rendered.Files))
+	for i := range node.Rendered.Files {
+		paths = append(paths, node.Rendered.Files[i].Path)
+	}
+	return paths
 }
 
 // assembledFileFormat reports the honest output syntax of an assembled umbrella

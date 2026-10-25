@@ -1186,9 +1186,25 @@ func (p *attachmentPass) render(
 	// would ask each rendered file a question only the pair of providers answers.
 	var fragments []EmittedFile
 	var ownFiles []EmittedFile
+	// The identity the group's assembler addresses this attachment's content by.
+	// Folded into the host's document, that is the identity its render derived
+	// names from — the host component's, since an attachment's source renders
+	// against its host — so a name the render declared and the name the merged
+	// document carries come from one identity.
+	nameBasis := TargetNameBasis(frNodeCtx)
 	if attachmentJoinsHostAssembly {
 		fragments = frFiles
 	} else if hostNestsContributors {
+		// Placed at a position of its own, the attachment is a contributor the
+		// assembled artifact addresses APART from its host — a child unit beside
+		// the host's own — so it is addressed by its own composed identity, the
+		// same value its emitted resources are labelled with and its placed chart
+		// is named for. The host's identity here would address two contributors by
+		// one name. An attachment that settled no identity of its own keeps the
+		// host's.
+		if frComponentID != "" {
+			nameBasis = frComponentID
+		}
 		// A host whose group places each contributor at a position of its own
 		// places this attachment at one too — BESIDE the host rather than
 		// inside it. So the files are carried out under their own names and
@@ -1217,14 +1233,11 @@ func (p *attachmentPass) render(
 		// The coordinates travel with the fragments rather than being recovered
 		// downstream: the dispatch identity joins its parts with characters either
 		// part may contain, so cutting it apart cannot return what went in. The
-		// basis is the identity this attachment's render derived its own names
-		// from, read through the one home of that fallback — so the name declared
-		// while rendering and the name the assembled artifact addresses that
-		// content by come from one identity rather than two that happen to agree.
+		// basis is the one settled above for the arm this output took.
 		out.contributions = append(out.contributions, attachmentContribution{
 			nodeID:    item.Identity.dispatchNodeID(),
 			producer:  attachmentProducer,
-			nameBasis: TargetNameBasis(frNodeCtx),
+			nameBasis: nameBasis,
 			fragments: fragments,
 			files:     ownFiles,
 			values:    frValues.Resolved,
@@ -1248,9 +1261,12 @@ func (p *attachmentPass) render(
 // composition of a routing key is the drift the key's own home exists to remove.
 //
 // nameBasis is the identity the assembled artifact addresses this contribution's
-// content by. It is present rather than optional because nodeID is a marker no
-// target's name alphabet accepts, so a contributor arriving without it would have
-// its names derived from the marker.
+// content by: the host component's for fragments folded into the host's document,
+// and the attachment's own composed identity for files placed at a position of
+// their own, where the attachment is a child unit addressed apart from its host.
+// It is present rather than optional because nodeID is a marker no target's name
+// alphabet accepts, so a contributor arriving without it would have its names
+// derived from the marker.
 //
 // A contribution carries EITHER fragments or files, never both, and which one is
 // the disposition the render settled. fragments are the output handed to the
@@ -1271,10 +1287,11 @@ func (p *attachmentPass) render(
 // values is what this attachment's own valuesMapping resolved to, carried out for
 // a group whose assembler supplies each contributor's values from the assembled
 // artifact rather than from the contributor's own files. It travels because the
-// files this attachment placed are the ones its author shipped, vendored in
+// files a sourced attachment placed are the ones its author shipped, vendored in
 // verbatim: nothing wrote the resolved values into them, so a group that does not
 // carry them here has no other way to reach them and the placed content renders
-// its own defaults instead.
+// its own defaults instead. Files an attachment's render produced already carry
+// the values resolved into them, so for those the carried values reach nothing.
 //
 // valuesReachAssembly says those same values also travel as this contributor's
 // own values to the group's assembler, marked as a mapping's output — set where

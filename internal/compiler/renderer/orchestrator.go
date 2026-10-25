@@ -1651,14 +1651,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				// It carries the values this attachment's own valuesMapping resolved
 				// to, which is what the address the entry establishes exists to
 				// deliver. An umbrella reads them from this entry and from nothing
-				// else: an attachment on a group that places its contributors is one
-				// whose files were vendored in verbatim from what its author shipped,
-				// so nothing wrote the
-				// resolved values into them and the assembled artifact is the only
-				// surface left that can supply them. Without them the placed content
-				// renders whatever defaults its author shipped and reports success,
-				// which is the same reading-nothing outcome as files at a position no
-				// entry names — one level further in.
+				// else: an attachment whose files were vendored in verbatim from what
+				// its author shipped has nothing writing the resolved values into
+				// them, so the assembled artifact is the only surface left that can
+				// supply them. Without them the placed content renders whatever
+				// defaults its author shipped and reports success, which is the same
+				// reading-nothing outcome as files at a position no entry names — one
+				// level further in. An attachment whose files a render produced
+				// already carries its values inside them, and for it the entry's
+				// values reach nothing.
 				dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
 					InstanceID: contrib.nodeID,
 					Values:     contrib.values,

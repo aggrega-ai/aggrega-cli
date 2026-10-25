@@ -440,6 +440,25 @@ func TestHeldAttachment_IsPlacedExactlyAsInItsHostsTurn(t *testing.T) {
 			if tc.assembly != "" && len(inTurnProv.assembled) == 0 {
 				t.Fatal("no group assembled, so the contributor routing was compared over nothing")
 			}
+			// The identity the group hands its assembler for the attachment. Folded
+			// into its host's document it is the host's, the identity its render ran
+			// against; placed at a position of its own it is the attachment's own
+			// composed identity, so the assembled artifact addresses it apart from
+			// its host. The comparison above holds either way, so this is the half
+			// that pins which one each kind of group receives.
+			if tc.assembly != "" {
+				wantBasis := "api"
+				if tc.assembly == "nest" {
+					wantBasis = guard
+				}
+				dispatchID := attachmentIdentity{host: "api", instance: "guard"}.dispatchNodeID()
+				want := fmt.Sprintf("contributor %q basis=%q ", dispatchID, wantBasis)
+				for _, summary := range inTurnProv.assembled {
+					if !strings.Contains(summary, want) {
+						t.Errorf("the group handed its assembler the attachment under another identity; want %q in\n%s", want, summary)
+					}
+				}
+			}
 			wantHostFacts := `host_facts: {"emitted_by":["api"]}`
 			hostFactsSeen := false
 			for _, key := range heldPassFileKeys(held.Files) {

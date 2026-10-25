@@ -168,6 +168,158 @@ func renderComponentScopeAttachmentOnChartHost(t *testing.T) map[string]renderer
 	return result.Files
 }
 
+// helmAttachmentLiteralBraces is a value an attachment's rendered manifest carries
+// that a chart's template engine would evaluate were the file read as template
+// source: a reference an alerting rule hands its own engine, written literally.
+const helmAttachmentLiteralBraces = "{{ $labels.instance }} is down"
+
+// renderHelmAttachmentOnChartHost drives RenderAll over one chart-nesting host
+// carrying one component-scope attachment whose FeatureRecipe renders through the
+// helm capability rather than the host's — finished manifests rather than a
+// chart — through the shipped provider guests, and returns the emitted file map.
+// Its one artifact carries attachmentMarker and helmAttachmentLiteralBraces, the
+// braces written through the helm capability's own template delimiters so the
+// rendered manifest carries them literally.
+func renderHelmAttachmentOnChartHost(t *testing.T) map[string]renderer.AssembledFile {
+	t.Helper()
+
+	const (
+		boundary   = "cluster"
+		component  = "api"
+		frInstance = "guardrail"
+		featType   = "core/aux:1.0.0"
+	)
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set(component, types.IRNode{Component: "core/api", BoundaryPath: boundary})
+
+	clusterBoundary := types.Boundary{
+		Directory:  "dist/cluster",
+		Features:   types.OrderedMap[types.BoundaryFeature]{},
+		Components: types.OrderedMap[types.BoundaryComponent]{},
+		Boundaries: types.OrderedMap[types.Boundary]{},
+	}
+	clusterBoundary.Components.Set(component, types.BoundaryComponent{})
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set(boundary, clusterBoundary)
+
+	apiFV := types.OrderedMap[types.IRFeatureEntry]{}
+	apiFV.Set(frInstance, types.IRFeatureEntry{Type: featType})
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set(component, apiFV)
+
+	input := renderer.RendererInput{
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "attachment-render-app"},
+			Spec: types.IRSpec{
+				Nodes:                nodes,
+				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
+				InfraMapping:         types.OrderedMap[json.RawMessage]{},
+				FeatureValuesMapping: fvm,
+				Provenance:           types.IRProvenance{CompilerVersion: "test"},
+			},
+		},
+		FeatureOrder: ir.FeatureOrder{component: []string{frInstance}},
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "attachment-render-app"}},
+			Release:   &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{
+				component: {BoundaryPath: boundary, Directory: "dist/cluster"},
+			},
+		},
+	}
+
+	componentRecipe := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
+		Spec: types.RecipeSpec{
+			Capability: "helm-chart", Implements: "core/api",
+			Source: attachmentRenderChart(t, "api", "api-config", hostChartMarker),
+		},
+	}
+	artifacts := types.OrderedMap[types.ArtifactEntry]{}
+	artifacts.Set("guardrail-config.yaml", types.ArtifactEntry{Inline: "apiVersion: v1\nkind: ConfigMap\n" +
+		"metadata:\n  name: guardrail-config\ndata:\n  marker: \"" + attachmentMarker + "\"\n" +
+		"  alert: \"{{ \"{{\" }} $labels.instance {{ \"}}\" }} is down\"\n"})
+	frRecipe := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "aux-fr", Version: "1.0.0"},
+		Spec: types.FeatureRecipeSpec{
+			Capability: "helm",
+			Implements: featType,
+			Artifacts:  artifacts,
+		},
+	}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType == "core/api" {
+				return componentRecipe, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if strings.HasPrefix(featureType, "core/aux") {
+				return frRecipe, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	return result.Files
+}
+
+// TestHelmAttachmentOnChartHostInstallsItsRenderedManifestsVerbatim is the proof
+// that a FeatureRecipe of the helm capability attached to a component on the
+// helm-chart target installs with the umbrella, read from what the chart tool
+// PRODUCED rather than from where the files landed.
+//
+// Such an attachment renders finished manifests, not a chart, so its directory
+// under charts/ needs a manifest for the umbrella to load at all, and its files —
+// sitting where the tool renders nothing — need a template emitting them. Both
+// halves are asserted on the rendered output: the attachment's own resource
+// appears, and the literal braces in it arrive exactly as rendered, which a file
+// read as template source could not do. The host's resource is the positive
+// control for the render itself.
+func TestHelmAttachmentOnChartHostInstallsItsRenderedManifestsVerbatim(t *testing.T) {
+	t.Parallel()
+
+	files := renderHelmAttachmentOnChartHost(t)
+	umbrella := umbrellaRootOf(t, files)
+	attachRoot := path.Join(umbrella, "charts", "api--guardrail")
+
+	manifest, ok := files[path.Join(attachRoot, "Chart.yaml")]
+	if !ok {
+		t.Fatalf("no manifest at %q, so the umbrella refuses to load; keys %v", attachRoot, sortedKeys(files))
+	}
+	// Named for the attachment's own identity, as a chart the same attachment
+	// vendored is — never for the routing marker, which no chart name admits.
+	if got, want := declaredChartName(t, manifest.Content), "cfr-zh-api-zh-guardrail"; got != want {
+		t.Errorf("the attachment's chart declares %q, want %q:\n%s", got, want, manifest.Content)
+	}
+	if _, ok := files[path.Join(attachRoot, "templates", "rendered.yaml")]; !ok {
+		t.Fatalf("no template emitting the attachment's rendered files; keys %v", sortedKeys(files))
+	}
+
+	chartDir := materializeWithAttachmentAt(t, files, attachRoot, attachRoot, umbrella, false)
+	rendered, err := charttest.RenderThroughDependencyPipeline(chartDir)
+	if err != nil {
+		t.Fatalf("the umbrella must render: %v", err)
+	}
+	if !strings.Contains(rendered, hostChartMarker) {
+		t.Fatalf("the host chart's own resource did not render, so this measures nothing:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, attachmentMarker) {
+		t.Errorf("the attachment's own resource is absent from what the tool produced:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, helmAttachmentLiteralBraces) {
+		t.Errorf("the literal braces in the attachment's rendered manifest did not arrive as rendered; want %q in\n%s",
+			helmAttachmentLiteralBraces, rendered)
+	}
+}
+
 // chartRootCarrying returns the emitted directory of the nearest chart manifest
 // at or above the single file whose body carries marker — the chart that would
 // render that marker. It is derived from the emitted map rather than pinned, so
