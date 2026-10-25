@@ -181,6 +181,11 @@ func ValidateWorkloadForm(w *types.Workload, nodeID string) error {
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload declares a schedule but is not form: scheduled; declare form: scheduled or remove the schedule",
 			nil)
+	case form != WorkloadFormScheduled && w.Suspend:
+		return cerrors.Raise(errSuspendRequiresScheduledForm,
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			"workload declares suspend but is not form: scheduled; declare form: scheduled with a schedule or remove suspend",
+			nil)
 	case form == WorkloadFormScheduled && !isValidCronSchedule(w.Schedule):
 		return cerrors.Raise(errInvalidCronSchedule,
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
