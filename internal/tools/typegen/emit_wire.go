@@ -262,7 +262,7 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 			}
 			outputPkgPath, err := w.outputPackage(t)
 			if err != nil {
-				return nil, fmt.Errorf("typegen: codec target %q has a wireExports entry for %q whose output %w",
+				return nil, fmt.Errorf("codec target %q has a wireExports entry for %q whose output %w",
 					base, w.inputDef, err)
 			}
 			if !slices.Contains(servedBy[pluginType], base) {
