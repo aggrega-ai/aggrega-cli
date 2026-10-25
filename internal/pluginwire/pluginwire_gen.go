@@ -16,39 +16,41 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // entries binds each plugin export a socket calls with a payload in the
-// canonical binary encoding to the payload shape that export receives.
+// canonical binary encoding to the payload shape that export receives and the
+// shape it answers with.
 //
-// Which shape an export receives is a fact nothing else can supply: it is not
-// derivable from the export's name — a name is a symbol in the guest's export
-// section and carries no shape with it. It is read from the payload-codec
-// registrations, so the table and the codecs it names are generated from one
-// source. An export absent from the table is one no socket calls with a payload
-// in that encoding by default.
+// Which shapes an export receives and answers with is a fact nothing else can
+// supply: it is not derivable from the export's name — a name is a symbol in the
+// guest's export section and carries no shape with it. It is read from the
+// payload-codec registrations, so the table and the codecs it names are generated
+// from one source. An export absent from the table is one no socket calls with a
+// payload in that encoding by default.
 //
 // Sorted by export name and then payload shape.
 var entries = []entry{
-	{export: "assemble_boundary", shape: "AssembleBoundaryInput", encode: encodeAssembleBoundaryInput},
-	{export: "boundary_env_overrides", shape: "BoundaryEnvOverridesInput", encode: encodeBoundaryEnvOverridesInput},
-	{export: "carve", shape: "CarveInput", encode: encodeCarveInput},
-	{export: "import", shape: "ImportInput", encode: encodeImportInput},
-	{export: "link_publish", shape: "LinkPublishInput", encode: encodeLinkPublishInput},
-	{export: "link_resolve", shape: "LinkResolveInput", encode: encodeLinkResolveInput},
-	{export: "lint_rules", shape: "LinterInput", encode: encodeLinterInput},
-	{export: "mutate", shape: "MutatorInput", encode: encodeMutatorInput},
-	{export: "name_bound", shape: "NameBoundInput", encode: encodeNameBoundInput},
-	{export: "parse", shape: "ParseInput", encode: encodeParseInput},
-	{export: "reassemble", shape: "ReassembleInput", encode: encodeReassembleInput},
-	{export: "render_node", shape: "RenderNodeInput", encode: encodeRenderNodeInput},
-	{export: "rendered_name", shape: "RenderedNameInput", encode: encodeRenderedNameInput},
-	{export: "step", shape: "FRPStepInput", encode: encodeFRPStepInput},
-	{export: "transform_annotations", shape: "AnnotationTransformInput", encode: encodeAnnotationTransformInput},
-	{export: "validate_node_input", shape: "RenderNodeInput", encode: encodeRenderNodeInput},
-	{export: "verdict_ir", shape: "PolicyInput", encode: encodePolicyInput},
-	{export: "verdict_render", shape: "RenderPolicyInput", encode: encodeRenderPolicyInput},
+	{export: "assemble_boundary", shape: "AssembleBoundaryInput", encode: encodeAssembleBoundaryInput, output: "AssembleBoundaryOutput", newOutput: newAssembleBoundaryOutput},
+	{export: "boundary_env_overrides", shape: "BoundaryEnvOverridesInput", encode: encodeBoundaryEnvOverridesInput, output: "BoundaryEnvOverridesOutput", newOutput: newBoundaryEnvOverridesOutput},
+	{export: "carve", shape: "CarveInput", encode: encodeCarveInput, output: "CarveOutput", newOutput: newCarveOutput},
+	{export: "import", shape: "ImportInput", encode: encodeImportInput, output: "ImportOutput", newOutput: newImportOutput},
+	{export: "link_publish", shape: "LinkPublishInput", encode: encodeLinkPublishInput, output: "LinkPublishOutput", newOutput: newLinkPublishOutput},
+	{export: "link_resolve", shape: "LinkResolveInput", encode: encodeLinkResolveInput, output: "LinkResolveOutput", newOutput: newLinkResolveOutput},
+	{export: "lint_rules", shape: "LinterInput", encode: encodeLinterInput, output: "LinterOutput", newOutput: newLinterOutput},
+	{export: "mutate", shape: "MutatorInput", encode: encodeMutatorInput, output: "MutatorOutput", newOutput: newMutatorOutput},
+	{export: "name_bound", shape: "NameBoundInput", encode: encodeNameBoundInput, output: "NameBoundOutput", newOutput: newNameBoundOutput},
+	{export: "parse", shape: "ParseInput", encode: encodeParseInput, output: "ParseOutput", newOutput: newParseOutput},
+	{export: "reassemble", shape: "ReassembleInput", encode: encodeReassembleInput, output: "ReassembleOutput", newOutput: newReassembleOutput},
+	{export: "render_node", shape: "RenderNodeInput", encode: encodeRenderNodeInput, output: "RenderNodeOutput", newOutput: newRenderNodeOutput},
+	{export: "rendered_name", shape: "RenderedNameInput", encode: encodeRenderedNameInput, output: "RenderedNameOutput", newOutput: newRenderedNameOutput},
+	{export: "step", shape: "FRPStepInput", encode: encodeFRPStepInput, output: "FRPStepOutput", newOutput: newFRPStepOutput},
+	{export: "transform_annotations", shape: "AnnotationTransformInput", encode: encodeAnnotationTransformInput, output: "AnnotationTransformOutput", newOutput: newAnnotationTransformOutput},
+	{export: "validate_node_input", shape: "RenderNodeInput", encode: encodeRenderNodeInput, output: "ValidateNodeOutput", newOutput: newValidateNodeOutput},
+	{export: "verdict_ir", shape: "PolicyInput", encode: encodePolicyInput, output: "PolicyOutput", newOutput: newPolicyOutput},
+	{export: "verdict_render", shape: "RenderPolicyInput", encode: encodeRenderPolicyInput, output: "PolicyOutput", newOutput: newPolicyOutput},
 }
 
 // encodeAssembleBoundaryInput reads an authored text payload into that shape and
@@ -220,3 +222,75 @@ func encodeRenderPolicyInput(text []byte) ([]byte, error) {
 	}
 	return v.EncodeCBOR()
 }
+
+// newAssembleBoundaryOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newAssembleBoundaryOutput() wasm.GuestOutputCBOR { return new(rendercore.AssembleBoundaryOutput) }
+
+// newBoundaryEnvOverridesOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newBoundaryEnvOverridesOutput() wasm.GuestOutputCBOR {
+	return new(rendercore.BoundaryEnvOverridesOutput)
+}
+
+// newCarveOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newCarveOutput() wasm.GuestOutputCBOR { return new(rendercore.CarveOutput) }
+
+// newImportOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newImportOutput() wasm.GuestOutputCBOR { return new(abi.ImportOutput) }
+
+// newLinkPublishOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newLinkPublishOutput() wasm.GuestOutputCBOR { return new(rendercore.LinkPublishOutput) }
+
+// newLinkResolveOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newLinkResolveOutput() wasm.GuestOutputCBOR { return new(rendercore.LinkResolveOutput) }
+
+// newLinterOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newLinterOutput() wasm.GuestOutputCBOR { return new(validator.LinterOutput) }
+
+// newMutatorOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newMutatorOutput() wasm.GuestOutputCBOR { return new(topology.MutatorOutput) }
+
+// newNameBoundOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newNameBoundOutput() wasm.GuestOutputCBOR { return new(rendercore.NameBoundOutput) }
+
+// newParseOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newParseOutput() wasm.GuestOutputCBOR { return new(abi.ParseOutput) }
+
+// newReassembleOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newReassembleOutput() wasm.GuestOutputCBOR { return new(rendercore.ReassembleOutput) }
+
+// newRenderNodeOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newRenderNodeOutput() wasm.GuestOutputCBOR { return new(rendercore.RenderNodeOutput) }
+
+// newRenderedNameOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newRenderedNameOutput() wasm.GuestOutputCBOR { return new(rendercore.RenderedNameOutput) }
+
+// newFRPStepOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newFRPStepOutput() wasm.GuestOutputCBOR { return new(frp.FRPStepOutput) }
+
+// newAnnotationTransformOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newAnnotationTransformOutput() wasm.GuestOutputCBOR {
+	return new(pipeline.AnnotationTransformOutput)
+}
+
+// newValidateNodeOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newValidateNodeOutput() wasm.GuestOutputCBOR { return new(rendercore.ValidateNodeOutput) }
+
+// newPolicyOutput returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func newPolicyOutput() wasm.GuestOutputCBOR { return new(abi.PolicyOutput) }

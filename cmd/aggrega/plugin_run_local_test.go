@@ -83,20 +83,32 @@ spec:
     - name: parse
 `
 
+// wantAnswer is the text the command prints for a socket export's answer: the
+// answer value written as JSON indented by two spaces, markup characters as
+// written, one object followed by a newline. It is built from the expected value
+// itself — an independent statement of what the guest answered — rather than
+// from the command's own output read back.
+func wantAnswer(t *testing.T, answer any) string {
+	t.Helper()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(answer); err != nil {
+		t.Fatalf("write the expected answer: %v", err)
+	}
+	return buf.String()
+}
+
 // wantParseResponse is the parse-go guest's response for the input payload
 // {"format":"demo","bytes":"aGVsbG8="}: the guest echoes the source ("hello")
 // back inside a small structured tree. The parser socket carries canonical CBOR
 // in both directions, so the command converts the authored JSON into that
-// encoding before the guest runs, and the guest answers in it. The expected bytes
-// are what the response shape encodes to — an independent statement of them —
-// rather than the command's output decoded back.
+// encoding before the guest runs, the guest answers in it, and the command
+// prints that answer as JSON.
 func wantParseResponse(t *testing.T) string {
 	t.Helper()
-	want, err := abi.ParseOutput{Tree: json.RawMessage(`{"format":"demo","source":"hello"}`)}.EncodeCBOR()
-	if err != nil {
-		t.Fatalf("encode the expected parse response: %v", err)
-	}
-	return string(want)
+	return wantAnswer(t, abi.ParseOutput{Tree: json.RawMessage(`{"format":"demo","source":"hello"}`)})
 }
 
 // parsePayload is the input the parse-go guest echoes; "aGVsbG8=" is base64 for
@@ -224,14 +236,10 @@ func TestRunLocal_PayloadVariants(t *testing.T) {
 		if err != nil {
 			t.Fatalf("default-{} run against a guest that returns bytes on {} failed: %v", err)
 		}
-		// The verdict roles answer in canonical CBOR, so the expected bytes are what
-		// the empty verdict list encodes to — an independent statement of them.
-		want, err := abi.PolicyOutput{Results: []abi.Diagnostic{}}.EncodeCBOR()
-		if err != nil {
-			t.Fatalf("encode the expected empty verdict list: %v", err)
-		}
-		if out != string(want) {
-			t.Fatalf("guest bytes = %x; want the empty-results verdict %x", out, want)
+		// The verdict roles answer in canonical CBOR, and the command prints the
+		// answer as JSON: here the empty verdict list.
+		if want := wantAnswer(t, abi.PolicyOutput{Results: []abi.Diagnostic{}}); out != want {
+			t.Fatalf("printed answer =\n%s\nwant the empty-results verdict\n%s", out, want)
 		}
 	})
 }
@@ -352,16 +360,11 @@ func TestRunLocal_BinaryWireExport(t *testing.T) {
 		t.Fatal("the guest wrote no response bytes")
 	}
 
-	// The guest's response is its own encoding, written through verbatim. Decoding
-	// it back would test this command against its own conversion; comparing it to
-	// what the response shape encodes to is an independent statement of the bytes.
-	var neutral topology.MutatorOutput
-	want, err := neutral.EncodeCBOR()
-	if err != nil {
-		t.Fatalf("encode the neutral response shape: %v", err)
-	}
-	if out != string(want) {
-		t.Fatalf("guest response = %x; want the neutral result %x", out, want)
+	// The guest answers in its socket's encoding and the command prints that
+	// answer as JSON. The expectation is the neutral answer value written out,
+	// an independent statement of it rather than the command's output read back.
+	if want := wantAnswer(t, topology.MutatorOutput{}); out != want {
+		t.Fatalf("printed answer =\n%s\nwant the neutral result\n%s", out, want)
 	}
 }
 
@@ -392,15 +395,12 @@ func TestRunLocal_ImporterExport(t *testing.T) {
 	}
 
 	body := "kind: Component\nmetadata:\n  name: acme-demo\n"
-	want, err := abi.ImportOutput{
+	want := wantAnswer(t, abi.ImportOutput{
 		Entities: []abi.EmittedEntity{{Kind: "Component", Name: "acme-demo", Mode: "draft", Body: body}},
 		Files:    []abi.ScaffoldFile{{Path: "acme-demo.yaml", Content: body}},
-	}.EncodeCBOR()
-	if err != nil {
-		t.Fatalf("encode the expected response: %v", err)
-	}
-	if out != string(want) {
-		t.Fatalf("guest response = %x; want the drafted entity and file %x", out, want)
+	})
+	if out != want {
+		t.Fatalf("printed answer =\n%s\nwant the drafted entity and file\n%s", out, want)
 	}
 }
 
@@ -428,7 +428,7 @@ func TestRunLocal_StepExport(t *testing.T) {
 		t.Fatalf("an authored JSON payload should reach the step's binary-wire export; got %v", err)
 	}
 
-	want, err := abi.FRPStepOutput{
+	want := wantAnswer(t, abi.FRPStepOutput{
 		Patches: []abi.JSONPatchOp{{
 			Scope: "own", Key: "deploy.yaml", Op: "add",
 			Path: "/metadata/annotations/aggrega.ai~1pipeline-patched", Value: "true",
@@ -440,12 +440,9 @@ func TestRunLocal_StepExport(t *testing.T) {
 				Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: pipeline-emitted\ndata:\n  source: frp-step-go\n",
 			},
 		}},
-	}.EncodeCBOR()
-	if err != nil {
-		t.Fatalf("encode the expected response: %v", err)
-	}
-	if out != string(want) {
-		t.Fatalf("guest response = %x; want the patch and the emitted file %x", out, want)
+	})
+	if out != want {
+		t.Fatalf("printed answer =\n%s\nwant the patch and the emitted file\n%s", out, want)
 	}
 }
 

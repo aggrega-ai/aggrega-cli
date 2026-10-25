@@ -464,11 +464,11 @@ type codecTarget struct {
 	// lookup cannot, catching an entry naming a def the schema no longer declares.
 	skipDefs []string
 	// wireExports binds a guest export to the $def carrying that export's INPUT
-	// payload, for every export this target's types serve. The plugin-wire
-	// registry is emitted from it: each entry is an export a socket calls with a
-	// payload in the canonical binary encoding, which every socket whose output the
-	// host decodes carries in both directions, so a target declares its exports
-	// here and nothing else about its wire.
+	// payload and the $def carrying its OUTPUT, for every export this target's
+	// types serve. The plugin-wire registry is emitted from it: each entry is an
+	// export a socket calls with a payload in the canonical binary encoding, which
+	// every socket whose output the host decodes carries in both directions, so a
+	// target declares its exports here and nothing else about its wire.
 	//
 	// The export name is never spelled here: an entry names either the attachment
 	// ROLE whose default the export is, or the plugin TYPE whose host export it is —
@@ -502,7 +502,8 @@ type codecTarget struct {
 	pkgPath string
 }
 
-// wireExport binds one guest export to the $def carrying its input payload.
+// wireExport binds one guest export to the $def carrying its input payload and
+// the $def carrying its answer.
 //
 // The export is named by exactly one of role and pluginType, and generation
 // refuses an entry naming both or neither. Naming the key rather than spelling
@@ -529,6 +530,19 @@ type wireExport struct {
 	export string
 	// inputDef is the $def name of the type carrying that export's input payload.
 	inputDef string
+	// outputDef is the $def name of the type carrying that export's answer — the
+	// shape the host's socket call site decodes the guest's output into. Every
+	// export registered here has one, because the host decodes every one of them
+	// through its socket-output decode entry point, so generation refuses an entry
+	// that leaves it empty.
+	outputDef string
+	// outputPkgPath is the Go import path of the package declaring the output type,
+	// set only where that is not this target's own package: a target that skips the
+	// output def because the host reads it through a published declaration names
+	// that declaration's package here. Generation refuses it set for a def the
+	// target emits itself, and refuses it empty for a def the target skips, so the
+	// row names the type the call site actually decodes into either way.
+	outputPkgPath string
 }
 
 // exportName resolves the export this entry names, and the plugin type whose
@@ -1008,7 +1022,7 @@ var codecTargets = map[string]codecTarget{
 		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline",
 		wireExports: []wireExport{
-			{pluginType: plugintype.PipelineStep, export: exportname.Step, inputDef: "FRPStepInput"},
+			{pluginType: plugintype.PipelineStep, export: exportname.Step, inputDef: "FRPStepInput", outputDef: "FRPStepOutput"},
 		},
 	},
 
@@ -1141,7 +1155,7 @@ var codecTargets = map[string]codecTarget{
 		// host's socket-output decode entry point, and every guest it speaks to
 		// reads and writes the same encoding.
 		wireExports: []wireExport{
-			{role: plugintype.RoleLabelTransform, inputDef: "MutatorInput"},
+			{role: plugintype.RoleLabelTransform, inputDef: "MutatorInput", outputDef: "MutatorOutput"},
 		},
 	},
 
@@ -1181,7 +1195,7 @@ var codecTargets = map[string]codecTarget{
 		// host's socket-output decode entry point, and every guest it speaks to
 		// reads and writes the same encoding.
 		wireExports: []wireExport{
-			{role: plugintype.RoleAnnotationTransform, inputDef: "AnnotationTransformInput"},
+			{role: plugintype.RoleAnnotationTransform, inputDef: "AnnotationTransformInput", outputDef: "AnnotationTransformOutput"},
 		},
 	},
 
@@ -1232,7 +1246,7 @@ var codecTargets = map[string]codecTarget{
 		crossPackageDefTypes: []string{"abi.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/pkg/validator",
 		wireExports: []wireExport{
-			{pluginType: plugintype.Linter, export: exportname.LintRules, inputDef: "LinterInput"},
+			{pluginType: plugintype.Linter, export: exportname.LintRules, inputDef: "LinterInput", outputDef: "LinterOutput"},
 		},
 	},
 
@@ -1361,10 +1375,12 @@ var codecTargets = map[string]codecTarget{
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer",
 		// Each call site encodes with the generated encoder and decodes the verdict
 		// list through the host's socket-output decode entry point, and every guest
-		// serving either role reads and writes the same encoding.
+		// serving either role reads and writes the same encoding. The verdict
+		// envelope both roles answer with is the published type skipped above, so
+		// each entry names the package declaring it.
 		wireExports: []wireExport{
-			{role: plugintype.RoleIRVerdict, inputDef: "PolicyInput"},
-			{role: plugintype.RoleRenderVerdict, inputDef: "RenderPolicyInput"},
+			{role: plugintype.RoleIRVerdict, inputDef: "PolicyInput", outputDef: "PolicyOutput", outputPkgPath: knownImports["abi"]},
+			{role: plugintype.RoleRenderVerdict, inputDef: "RenderPolicyInput", outputDef: "PolicyOutput", outputPkgPath: knownImports["abi"]},
 		},
 	},
 
@@ -1426,16 +1442,16 @@ var codecTargets = map[string]codecTarget{
 		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore",
 		wireExports: []wireExport{
-			{pluginType: plugintype.Provider, export: exportname.RenderNode, inputDef: "RenderNodeInput"},
-			{pluginType: plugintype.Provider, export: exportname.ValidateNodeInput, inputDef: "RenderNodeInput"},
-			{pluginType: plugintype.Provider, export: exportname.AssembleBoundary, inputDef: "AssembleBoundaryInput"},
-			{pluginType: plugintype.Provider, export: exportname.Carve, inputDef: "CarveInput"},
-			{pluginType: plugintype.Provider, export: exportname.Reassemble, inputDef: "ReassembleInput"},
-			{pluginType: plugintype.Provider, export: exportname.NameBound, inputDef: "NameBoundInput"},
-			{pluginType: plugintype.Provider, export: exportname.RenderedName, inputDef: "RenderedNameInput"},
-			{pluginType: plugintype.Provider, export: exportname.BoundaryEnvOverrides, inputDef: "BoundaryEnvOverridesInput"},
-			{pluginType: plugintype.Provider, export: exportname.LinkPublish, inputDef: "LinkPublishInput"},
-			{pluginType: plugintype.Provider, export: exportname.LinkResolve, inputDef: "LinkResolveInput"},
+			{pluginType: plugintype.Provider, export: exportname.RenderNode, inputDef: "RenderNodeInput", outputDef: "RenderNodeOutput"},
+			{pluginType: plugintype.Provider, export: exportname.ValidateNodeInput, inputDef: "RenderNodeInput", outputDef: "ValidateNodeOutput"},
+			{pluginType: plugintype.Provider, export: exportname.AssembleBoundary, inputDef: "AssembleBoundaryInput", outputDef: "AssembleBoundaryOutput"},
+			{pluginType: plugintype.Provider, export: exportname.Carve, inputDef: "CarveInput", outputDef: "CarveOutput"},
+			{pluginType: plugintype.Provider, export: exportname.Reassemble, inputDef: "ReassembleInput", outputDef: "ReassembleOutput"},
+			{pluginType: plugintype.Provider, export: exportname.NameBound, inputDef: "NameBoundInput", outputDef: "NameBoundOutput"},
+			{pluginType: plugintype.Provider, export: exportname.RenderedName, inputDef: "RenderedNameInput", outputDef: "RenderedNameOutput"},
+			{pluginType: plugintype.Provider, export: exportname.BoundaryEnvOverrides, inputDef: "BoundaryEnvOverridesInput", outputDef: "BoundaryEnvOverridesOutput"},
+			{pluginType: plugintype.Provider, export: exportname.LinkPublish, inputDef: "LinkPublishInput", outputDef: "LinkPublishOutput"},
+			{pluginType: plugintype.Provider, export: exportname.LinkResolve, inputDef: "LinkResolveInput", outputDef: "LinkResolveOutput"},
 		},
 	},
 
@@ -1462,7 +1478,7 @@ var codecTargets = map[string]codecTarget{
 		externalDefTypes: []string{"Diagnostic"},
 		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
 		wireExports: []wireExport{
-			{pluginType: plugintype.Parser, export: exportname.Parse, inputDef: "ParseInput"},
+			{pluginType: plugintype.Parser, export: exportname.Parse, inputDef: "ParseInput", outputDef: "ParseOutput"},
 		},
 	},
 	"parse_gen.rs": {
@@ -1507,7 +1523,7 @@ var codecTargets = map[string]codecTarget{
 		externalDefTypes: []string{"Diagnostic"},
 		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
 		wireExports: []wireExport{
-			{pluginType: plugintype.Importer, export: exportname.Import, inputDef: "ImportInput"},
+			{pluginType: plugintype.Importer, export: exportname.Import, inputDef: "ImportInput", outputDef: "ImportOutput"},
 		},
 	},
 	"import_gen.rs": {

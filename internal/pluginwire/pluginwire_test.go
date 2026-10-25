@@ -6,6 +6,8 @@ package pluginwire
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,6 +17,7 @@ import (
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -322,6 +325,241 @@ func failEncode(t *testing.T) func([]byte) ([]byte, error) {
 	return func([]byte) ([]byte, error) {
 		t.Error("an ambiguous export must refuse before any encoder runs")
 		return nil, nil
+	}
+}
+
+// TestDecodeForExportPrintsTheGovernanceRoleAnswers drives the answer side of
+// every governance role: a role's answer, written in the canonical binary
+// encoding as a guest serving that role writes it, comes back as the JSON text of
+// the same value. The expected text is the value's own JSON, written the way the
+// conversion writes it, so this pins that the conversion decoded the answer into
+// the role's output shape rather than producing some text.
+//
+// A message carrying markup characters is part of the verdict, because a policy
+// message is prose a person reads and the text must carry it as written.
+//
+// The export names are read from the role registry rather than spelled here.
+func TestDecodeForExportPrintsTheGovernanceRoleAnswers(t *testing.T) {
+	t.Parallel()
+
+	verdicts := abi.PolicyOutput{Results: []abi.Diagnostic{
+		{Severity: abi.SeverityHalt, Code: "example-rule", Message: "the <web> component must carry an owner label"},
+	}}
+	mutation := topology.MutatorOutput{Patches: []json.RawMessage{
+		json.RawMessage(`{"op":"add","path":"/spec/nodes/web/labels/team","value":"payments"}`),
+	}}
+
+	cases := []struct {
+		role  plugintype.Role
+		value interface{ EncodeCBOR() ([]byte, error) }
+	}{
+		{plugintype.RoleIRVerdict, verdicts},
+		{plugintype.RoleRenderVerdict, verdicts},
+		{plugintype.RoleLabelTransform, mutation},
+		{plugintype.RoleAnnotationTransform, pipeline.AnnotationTransformOutput{}},
+	}
+	for _, tc := range cases {
+		export, ok := plugintype.GovernanceRoleExport(tc.role)
+		if !ok {
+			t.Fatalf("the %s role has no default export", tc.role)
+		}
+		t.Run(export, func(t *testing.T) {
+			t.Parallel()
+			answer, err := tc.value.EncodeCBOR()
+			if err != nil {
+				t.Fatalf("encode the %s answer: %v", tc.role, err)
+			}
+			var want bytes.Buffer
+			enc := json.NewEncoder(&want)
+			enc.SetEscapeHTML(false)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(tc.value); err != nil {
+				t.Fatalf("write the expected text: %v", err)
+			}
+			got, err := DecodeForExport(export, answer)
+			if err != nil {
+				t.Fatalf("decoding the %s role's answer should succeed; got %v", tc.role, err)
+			}
+			if string(got) != want.String() {
+				t.Fatalf("printed answer =\n%s\nwant\n%s", got, want.String())
+			}
+		})
+	}
+}
+
+// TestDecodeForExportRefusesAnAnswerThatIsNotTheShape hands a listed export an
+// answer that is not its output shape — JSON text where the binary encoding is
+// read — and requires the refusal the host's own socket call raises, naming the
+// export, rather than a printed half-read answer.
+func TestDecodeForExportRefusesAnAnswerThatIsNotTheShape(t *testing.T) {
+	t.Parallel()
+
+	export, ok := plugintype.GovernanceRoleExport(plugintype.RoleIRVerdict)
+	if !ok {
+		t.Fatal("the ir-verdict role has no default export")
+	}
+	got, err := DecodeForExport(export, []byte(`{"results":[]}`))
+	if err == nil {
+		t.Fatalf("an answer that is not the export's shape was printed as %q instead of refused", got)
+	}
+	if !errors.Is(err, wasm.ErrWasmOutputShape()) {
+		t.Errorf("the refusal is not the output-shape condition: %v", err)
+	}
+	if !strings.Contains(err.Error(), strconv.Quote(export)) {
+		t.Errorf("the refusal does not name the export %q: %v", export, err)
+	}
+}
+
+// TestDecodeForExportPassesAnUnlistedExportThrough is the mirror of the encode
+// side's pass-through: an export the table does not list gets its answer back as
+// the guest wrote it.
+func TestDecodeForExportPassesAnUnlistedExportThrough(t *testing.T) {
+	t.Parallel()
+
+	const answer = "an answer in whatever form this entry function writes\n"
+	got, err := DecodeForExport("an_entry_function_of_the_plugins_own", []byte(answer))
+	if err != nil {
+		t.Fatalf("an unlisted export's answer should pass through; got %v", err)
+	}
+	if string(got) != answer {
+		t.Fatalf("answer = %q; want it unchanged", got)
+	}
+}
+
+// TestDecodeForExportRefusesAnAmbiguousBinaryExport drives the arm the generated
+// table cannot reach, as the encode side's refusal test does, and requires that
+// no output constructor runs before the refusal.
+func TestDecodeForExportRefusesAnAmbiguousBinaryExport(t *testing.T) {
+	t.Parallel()
+
+	newOutput := func() wasm.GuestOutputCBOR {
+		t.Error("an ambiguous export must refuse before any answer is decoded")
+		return new(abi.PolicyOutput)
+	}
+	table := []entry{
+		{export: "verdict_ir", shape: "PolicyInput", output: "PolicyOutput", newOutput: newOutput},
+		{export: "verdict_ir", shape: "RenderPolicyInput", output: "PolicyOutput", newOutput: newOutput},
+	}
+	if _, err := decodeForExport(table, "verdict_ir", nil); err == nil {
+		t.Fatal("an export naming two payload shapes should refuse rather than guess")
+	}
+}
+
+// TestEveryRegisteredOutputDecodes exercises every row's output side, for the
+// reason TestEveryRegisteredEncoderRuns exercises every encoder. The answer is
+// the row's own shape left empty, written in the canonical binary encoding — an
+// answer a guest can return, since the decode reads which keys an answer holds
+// and not whether a required one is filled.
+//
+// Most shapes print such an answer as a JSON object. A shape that carries a
+// required JSON document cannot: the empty document is not JSON, so the answer is
+// refused, naming the export, the shape and the field. Which rows are which is
+// read from the standard library's own verdict on the empty value rather than
+// listed here, so a shape added later is asserted on its own terms; the test then
+// requires at least one row of each kind, because a run in which every row took
+// one branch would not show the other branch firing.
+func TestEveryRegisteredOutputDecodes(t *testing.T) {
+	t.Parallel()
+
+	if len(entries) == 0 {
+		t.Fatal("the generated registry is empty, so this test asserts nothing")
+	}
+	var printed, refused int
+	for _, e := range entries {
+		if e.newOutput == nil {
+			t.Fatalf("row %s carries no output constructor", e.export)
+		}
+		empty := e.newOutput()
+		encoder, ok := empty.(interface{ EncodeCBOR() ([]byte, error) })
+		if !ok {
+			t.Fatalf("row %s's output shape %s carries no encoder to write an answer with", e.export, e.output)
+		}
+		answer, err := encoder.EncodeCBOR()
+		if err != nil {
+			t.Fatalf("encode an empty %s: %v", e.output, err)
+		}
+		_, marshalErr := json.Marshal(empty)
+		got, err := DecodeForExport(e.export, answer)
+		if marshalErr == nil {
+			printed++
+			if err != nil {
+				t.Errorf("%s: decoding an empty %s answer should print; got %v", e.export, e.output, err)
+				continue
+			}
+			if !json.Valid(got) || !bytes.HasPrefix(got, []byte("{")) {
+				t.Errorf("%s: printed answer is not a JSON object: %q", e.export, got)
+			}
+			continue
+		}
+		refused++
+		if err == nil {
+			t.Errorf("%s: an empty %s cannot be written as JSON, yet it printed as %q", e.export, e.output, got)
+			continue
+		}
+		for _, want := range []string{e.export, e.output, "cannot be printed as JSON"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: the refusal does not name %q: %v", e.export, want, err)
+			}
+		}
+	}
+	if printed == 0 || refused == 0 {
+		t.Fatalf("%d row(s) printed and %d were refused; each branch needs a row for this test to show it firing",
+			printed, refused)
+	}
+}
+
+// TestDecodeForExportRefusesAParseAnswerWithoutATree drives the case a parser
+// guest can actually produce: an answer whose tree, the one field a parse answer
+// requires, is missing or empty. The strict decode accepts both, because it reads
+// which keys are present and not whether a required one is filled — so the
+// refusal has to come from the printing, and it has to say what is wrong in the
+// author's terms: the export, the shape, the field, and that it is empty. The
+// control beside it is the same shape with a tree, which prints.
+func TestDecodeForExportRefusesAParseAnswerWithoutATree(t *testing.T) {
+	t.Parallel()
+
+	parser, ok := plugintype.Lookup(plugintype.Parser)
+	if !ok || len(parser.HostExports) != 1 {
+		t.Fatal("the parser type lists no single host export")
+	}
+	export := parser.HostExports[0]
+
+	emptyTree, err := abi.ParseOutput{}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode a parse answer with an empty tree: %v", err)
+	}
+	cases := map[string][]byte{
+		"tree key absent": {0xa0},
+		"tree empty":      emptyTree,
+	}
+	for name, answer := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := DecodeForExport(export, answer)
+			if err == nil {
+				t.Fatalf("a parse answer with no tree printed as %q instead of being refused", got)
+			}
+			if errors.Is(err, wasm.ErrWasmOutputShape()) {
+				t.Errorf("the refusal reads as a wrong-shape answer, which this is not: %v", err)
+			}
+			for _, want := range []string{"the " + export + " export", "ParseOutput", `"tree"`, "is empty", "cannot be printed as JSON"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not name %s: %v", want, err)
+				}
+			}
+		})
+	}
+
+	withTree, err := abi.ParseOutput{Tree: json.RawMessage(`{"a":1}`)}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode a parse answer with a tree: %v", err)
+	}
+	got, err := DecodeForExport(export, withTree)
+	if err != nil {
+		t.Fatalf("a parse answer carrying its tree should print; got %v", err)
+	}
+	if !bytes.Contains(got, []byte(`"a": 1`)) {
+		t.Fatalf("the printed answer does not carry the tree: %q", got)
 	}
 }
 

@@ -396,6 +396,13 @@ type exportNaming struct {
 // Test files are excluded: a test drives a decode entry point directly with a
 // literal export name and no attachment role, so including them would report a
 // hole at every such test rather than at a real call site.
+//
+// This package is excluded too. Its one decode call is the registry reading back
+// an answer for whichever export its caller names, through the rows of the table
+// itself, so it is not a socket call site: counting it would either report a hole
+// — its export arrives as a parameter — or, were it made legible here, satisfy
+// direction one for every listed export at once and leave that direction proving
+// nothing about the sockets.
 func socketDecodeSites(t *testing.T, root string) []decodeSite {
 	t.Helper()
 	roleValues := governanceRoleIdents(t, root)
@@ -403,6 +410,7 @@ func socketDecodeSites(t *testing.T, root string) []decodeSite {
 		roles:   roleValues,
 		exports: exportNameIdents(t, root, roleValues, pluginTypeIdents(t, root)),
 	}
+	registryDir := filepath.Join(root, "internal", "pluginwire")
 
 	var sites []decodeSite
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -412,6 +420,9 @@ func socketDecodeSites(t *testing.T, root string) []decodeSite {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "testdata", "vendor", "node_modules":
+				return fs.SkipDir
+			}
+			if path == registryDir {
 				return fs.SkipDir
 			}
 			return nil

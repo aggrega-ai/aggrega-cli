@@ -23,9 +23,11 @@ import (
 
 // newPluginRunLocalCmd builds the `plugin run-local` subcommand, which loads a
 // .wasm guest from a filesystem path, calls one of its declared exports, and
-// writes the guest's response bytes to stdout. It is the direct-invocation path
-// for iterating on a plugin during development: the guest is addressed by its
-// --plugin path, not resolved through the workspace plugin cascade.
+// writes the guest's answer to stdout — as JSON for an export a socket calls,
+// whose answer crosses in a binary encoding, and as written for any other. It is
+// the direct-invocation path for iterating on a plugin during development: the
+// guest is addressed by its --plugin path, not resolved through the workspace
+// plugin cascade.
 //
 // It has two forms. The artifact form takes no positional argument: the guest
 // is loaded bare, and an optional --type imposes a type expectation the guest's
@@ -51,8 +53,7 @@ func newPluginRunLocalCmd() *cobra.Command {
 		Use:   "run-local [plugin.yaml]",
 		Short: "Load a local .wasm guest and call one of its exports",
 		Long: `Load a .wasm guest from a filesystem path, call one of its declared
-exports with an optional payload, and write the guest's response bytes to
-stdout.
+exports with an optional payload, and write the guest's answer to stdout.
 
 The guest is addressed directly by --plugin path; it is not resolved through
 the workspace plugin cascade. The export named by --export must be one the
@@ -82,6 +83,14 @@ shape from the export's name, so it covers each export a socket calls by
 default; an entry function an attachment or a pipeline step names under a name
 of its own receives the payload as written. The authored payload stays JSON
 either way.
+
+The answer is converted the same way in reverse. An export a socket calls
+answers in that binary encoding, so its answer is read as the export's output
+shape and written to stdout as indented JSON; an answer that is not that shape
+is reported as an error naming the export rather than printed. A cli_run
+export's answer, and an entry function under a name of its own, are written to
+stdout exactly as the guest wrote them. When the guest exits non-zero, what it
+wrote is passed through unchanged.
 
 In the artifact form, --type optionally names a plugin type the guest's
 describe() self-report must agree with, or the load is rejected before the
@@ -153,12 +162,26 @@ inside the plugin is distinguishable from a failure of aggrega itself.`,
 				return err
 			}
 
-			if _, err := cmd.OutOrStdout().Write(out); err != nil {
-				return err
+			if exitCode != 0 {
+				// A guest that exits non-zero has failed, and what it wrote is not
+				// an answer of its export's shape, so it is written as it came and
+				// the guest's own status stays this command's.
+				if _, err := cmd.OutOrStdout().Write(out); err != nil {
+					return err
+				}
+				return exitCodeError{code: int(exitCode)}
 			}
 
-			if exitCode != 0 {
-				return exitCodeError{code: int(exitCode)}
+			// The mirror of the payload conversion above: an export a socket
+			// calls answers in the encoding the socket reads, which nobody reads
+			// by hand, so its answer is written out as JSON; any other export's
+			// answer is written as the guest wrote it.
+			out, err = pluginwire.DecodeForExport(export, out)
+			if err != nil {
+				return err
+			}
+			if _, err := cmd.OutOrStdout().Write(out); err != nil {
+				return err
 			}
 			return nil
 		},

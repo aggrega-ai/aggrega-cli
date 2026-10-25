@@ -14,8 +14,10 @@ import (
 
 // generateWireRegistry emits the plugin-wire registry: the table binding each
 // guest export a socket calls with a payload in the canonical binary encoding to
-// the payload shape that export receives, and a function that turns an authored
-// text payload into those wire bytes.
+// the payload shape that export receives and the shape it answers with, a
+// function that turns an authored text payload into those wire bytes, and one
+// that supplies an empty answer of the export's shape for a guest's answer to be
+// decoded into.
 //
 // It is derived rather than declared. There is no schema behind this target and
 // no table beside it: the emitter walks the codec targets, reads each one's
@@ -44,17 +46,18 @@ func generateWireRegistry(t codecTarget) ([]byte, error) {
 // do not carry.
 //
 // Several exports may serve one payload shape — two provider exports read the
-// same render input — so each shape's encoder is emitted once however many rows
-// name it. Two shapes of one name declared in different packages would need two
-// encoders of one name, and the second declaration would not compile, so that is
-// refused here instead, naming both packages.
+// same render input, two verdict roles answer with one verdict envelope — so each
+// shape's encoder or constructor is emitted once however many rows name it. Two
+// shapes of one name declared in different packages would need two functions of
+// one name, and the second declaration would not compile, so that is refused
+// here instead, naming both packages.
 func emitWireRegistry(t codecTarget, entries []wireEntry) ([]byte, error) {
 	var body strings.Builder
 	body.WriteString(wireRegistryTableDoc)
 	body.WriteString("var entries = []entry{\n")
 	for _, e := range entries {
-		fmt.Fprintf(&body, "\t{export: %q, shape: %q, encode: %s},\n",
-			e.export, e.shape, e.encodeFunc())
+		fmt.Fprintf(&body, "\t{export: %q, shape: %q, encode: %s, output: %q, newOutput: %s},\n",
+			e.export, e.shape, e.encodeFunc(), e.output, e.newOutputFunc())
 	}
 	body.WriteString("}\n\n")
 
@@ -68,17 +71,33 @@ func emitWireRegistry(t codecTarget, entries []wireEntry) ([]byte, error) {
 			continue
 		}
 		emitted[e.encodeFunc()] = e.pkgPath
-		fmt.Fprintf(&body, wireEncodeFuncTemplate, e.shape, e.encodeFunc(), e.selector(), e.shape)
+		fmt.Fprintf(&body, wireEncodeFuncTemplate, e.shape, e.encodeFunc(), selectorFor(e.pkgPath), e.shape)
+	}
+	for _, e := range entries {
+		if pkgPath, done := emitted[e.newOutputFunc()]; done {
+			if pkgPath != e.outputPkgPath {
+				return nil, fmt.Errorf("output shape %q is declared in both %s and %s, so its constructor "+
+					"would be declared twice under one name", e.output, pkgPath, e.outputPkgPath)
+			}
+			continue
+		}
+		emitted[e.newOutputFunc()] = e.outputPkgPath
+		fmt.Fprintf(&body, wireNewOutputFuncTemplate, e.newOutputFunc(), e.newOutputFunc(), selectorFor(e.outputPkgPath), e.output)
 	}
 
 	imports := []string{"encoding/json"}
+	if len(entries) > 0 {
+		imports = append(imports, wasmPkgPath)
+	}
 	seen := map[string]bool{}
 	for _, e := range entries {
-		if seen[e.pkgPath] {
-			continue
+		for _, p := range []string{e.pkgPath, e.outputPkgPath} {
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+			imports = append(imports, p)
 		}
-		seen[e.pkgPath] = true
-		imports = append(imports, e.pkgPath)
 	}
 
 	head := genHeaderImports("package "+t.pkg,
@@ -93,14 +112,15 @@ func emitWireRegistry(t codecTarget, entries []wireEntry) ([]byte, error) {
 // here rather than in the destination package because the table is generated:
 // the reason an entry exists belongs beside the entry a reader finds.
 const wireRegistryTableDoc = `// entries binds each plugin export a socket calls with a payload in the
-// canonical binary encoding to the payload shape that export receives.
+// canonical binary encoding to the payload shape that export receives and the
+// shape it answers with.
 //
-// Which shape an export receives is a fact nothing else can supply: it is not
-// derivable from the export's name — a name is a symbol in the guest's export
-// section and carries no shape with it. It is read from the payload-codec
-// registrations, so the table and the codecs it names are generated from one
-// source. An export absent from the table is one no socket calls with a payload
-// in that encoding by default.
+// Which shapes an export receives and answers with is a fact nothing else can
+// supply: it is not derivable from the export's name — a name is a symbol in the
+// guest's export section and carries no shape with it. It is read from the
+// payload-codec registrations, so the table and the codecs it names are generated
+// from one source. An export absent from the table is one no socket calls with a
+// payload in that encoding by default.
 //
 // Sorted by export name and then payload shape.
 `
@@ -127,41 +147,67 @@ func %s(text []byte) ([]byte, error) {
 
 `
 
+// wireNewOutputFuncTemplate is the per-output-shape constructor: it returns an
+// empty value of the shape an export answers with, typed as what the host's
+// socket-output decode entry point decodes into, so the caller decodes a guest's
+// answer through that one entry point rather than through a reader of its own.
+const wireNewOutputFuncTemplate = `// %s returns an empty value of that shape for a guest's answer
+// to be decoded into.
+func %s() wasm.GuestOutputCBOR { return new(%s.%s) }
+
+`
+
+// wasmPkgPath is the import path of the package declaring the host's
+// socket-output decode entry point, whose destination type the emitted
+// constructors return.
+const wasmPkgPath = "github.com/aggrega-ai/aggrega-cli/internal/wasm"
+
 // wireEntry is one emitted registry row: an export, the payload shape it
-// receives, and where that shape is declared.
+// receives and where that shape is declared, and the shape it answers with and
+// where that one is declared.
 type wireEntry struct {
-	export  string
-	shape   string
-	pkgPath string
+	export        string
+	shape         string
+	pkgPath       string
+	output        string
+	outputPkgPath string
 }
 
-// selector is the package selector the emitted body qualifies the shape with.
-func (e wireEntry) selector() string {
-	if alias, ok := importAliases[e.pkgPath]; ok {
+// selectorFor is the package selector the emitted body qualifies a shape
+// declared at pkgPath with.
+func selectorFor(pkgPath string) string {
+	if alias, ok := importAliases[pkgPath]; ok {
 		return alias
 	}
-	return e.pkgPath[strings.LastIndex(e.pkgPath, "/")+1:]
+	return pkgPath[strings.LastIndex(pkgPath, "/")+1:]
 }
 
 // encodeFunc is the name of the per-shape encoder emitted for this entry.
 func (e wireEntry) encodeFunc() string { return "encode" + e.shape }
+
+// newOutputFunc is the name of the per-output-shape constructor emitted for this
+// entry.
+func (e wireEntry) newOutputFunc() string { return "new" + e.output }
 
 // collectWireEntries walks the given codec targets and returns one row per
 // wireExports entry, in a sorted order so the emitted file is byte-identical run
 // to run. It takes the targets as a parameter so each refusal can be driven over
 // a registration built to trip it.
 //
-// It refuses rather than skipping in four cases, because each one would emit a
+// It refuses rather than skipping in five cases, because each one would emit a
 // registry that reads as complete and is not: a target carrying wireExports with
 // no destination import path has no way to name its shape; an entry whose role
 // or plugin type does not resolve to exactly one listed export — or that names an
 // export its type's list does not hold — would contribute no export or a wrong
 // one, and a socket whose plugin type lists nothing is refused here too; an entry
 // whose shape the target does not emit a codec for would name a method that is
-// not there; and a plugin type a registration serves whose host-export list holds
-// an export no entry declares would leave that export out of the table, so a
-// caller converting an authored payload for it would hand the guest text it
-// cannot read.
+// not there; an entry whose output shape is missing, or is named in a package
+// other than the one declaring it (see [wireExport.outputPackage]), would leave a
+// caller printing a guest's answer with no type to decode it into, or the wrong
+// one; and a plugin type a registration serves whose host-export list holds an
+// export no entry declares would leave that export out of the table, so a caller
+// converting an authored payload for it would hand the guest text it cannot
+// read.
 //
 // The last refusal is what makes the host-export list and this table agree for
 // every socket a registration serves: adding an export to such a type's list
@@ -214,14 +260,21 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 				return nil, fmt.Errorf("typegen: codec target %q names %q in wireExports, "+
 					"which that target emits no codec for", base, w.inputDef)
 			}
+			outputPkgPath, err := w.outputPackage(t)
+			if err != nil {
+				return nil, fmt.Errorf("typegen: codec target %q has a wireExports entry for %q whose output %w",
+					base, w.inputDef, err)
+			}
 			if !slices.Contains(servedBy[pluginType], base) {
 				servedBy[pluginType] = append(servedBy[pluginType], base)
 			}
 			declared[export] = true
 			out = append(out, wireEntry{
-				export:  export,
-				shape:   w.inputDef,
-				pkgPath: t.pkgPath,
+				export:        export,
+				shape:         w.inputDef,
+				pkgPath:       t.pkgPath,
+				output:        w.outputDef,
+				outputPkgPath: outputPkgPath,
 			})
 		}
 	}
@@ -251,4 +304,31 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 		return out[i].shape < out[j].shape
 	})
 	return out, nil
+}
+
+// outputPackage resolves the import path of the package declaring the entry's
+// output shape on target t, refusing an entry that names no output shape at all
+// and one whose package naming disagrees with what the target emits.
+//
+// A def the target emits is declared in the target's own package, so naming a
+// package for it is a second answer that can only disagree with the first. A def
+// the target skips is declared elsewhere — the host reads it through a published
+// declaration — so the entry has to name that package, or the row would point at a
+// type the target's own package does not hold.
+func (w wireExport) outputPackage(t codecTarget) (string, error) {
+	switch {
+	case w.outputDef == "":
+		return "", fmt.Errorf("shape is not named: every export the registry lists is answered in the " +
+			"canonical binary encoding, so its entry names the shape the answer decodes into")
+	case t.emitsDef(w.outputDef) && w.outputPkgPath != "":
+		return "", fmt.Errorf("%q is emitted by this target, so it is declared in this target's own package "+
+			"and naming %s for it as well is a second answer that can disagree", w.outputDef, w.outputPkgPath)
+	case t.emitsDef(w.outputDef):
+		return t.pkgPath, nil
+	case w.outputPkgPath == "":
+		return "", fmt.Errorf("%q is skipped by this target, so it is declared in another package, and the "+
+			"entry names none", w.outputDef)
+	default:
+		return w.outputPkgPath, nil
+	}
 }

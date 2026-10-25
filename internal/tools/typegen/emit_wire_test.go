@@ -14,18 +14,20 @@ import (
 )
 
 // TestWireRegistryEmitsOneEncoderPerSharedShape hands the emitter two exports
-// that read one payload shape, as two of the provider's exports do, and requires
-// the shape's encoder to be declared exactly once — a second declaration of one
-// name leaves the generated file uncompilable while generation itself succeeds —
-// with a table row kept for each export. It then requires a shape name declared
-// in two packages to be refused, since one encoder name cannot serve both.
+// that read one payload shape and answer with one output shape, as two of the
+// provider's exports read one input and the two verdict roles answer with one
+// envelope, and requires each shape's function to be declared exactly once — a
+// second declaration of one name leaves the generated file uncompilable while
+// generation itself succeeds — with a table row kept for each export. It then
+// requires a shape name declared in two packages to be refused, on either side,
+// since one function name cannot serve both.
 func TestWireRegistryEmitsOneEncoderPerSharedShape(t *testing.T) {
 	t.Parallel()
 
 	target := codecTarget{pkg: "pluginwire"}
 	shared := []wireEntry{
-		{export: "first_export", shape: "SharedInput", pkgPath: "example.com/socket"},
-		{export: "second_export", shape: "SharedInput", pkgPath: "example.com/socket"},
+		{export: "first_export", shape: "SharedInput", pkgPath: "example.com/socket", output: "SharedOutput", outputPkgPath: "example.com/published"},
+		{export: "second_export", shape: "SharedInput", pkgPath: "example.com/socket", output: "SharedOutput", outputPkgPath: "example.com/published"},
 	}
 	src, err := emitWireRegistry(target, shared)
 	if err != nil {
@@ -34,24 +36,108 @@ func TestWireRegistryEmitsOneEncoderPerSharedShape(t *testing.T) {
 	if got := strings.Count(string(src), "func encodeSharedInput("); got != 1 {
 		t.Fatalf("the shared shape's encoder is declared %d times; want once:\n%s", got, src)
 	}
+	if got := strings.Count(string(src), "func newSharedOutput("); got != 1 {
+		t.Fatalf("the shared output shape's constructor is declared %d times; want once:\n%s", got, src)
+	}
+	if !strings.Contains(string(src), "return new(published.SharedOutput)") {
+		t.Errorf("the constructor does not build the output shape from the package declaring it:\n%s", src)
+	}
 	for _, e := range shared {
-		if !strings.Contains(string(src), fmt.Sprintf("{export: %q, shape: %q", e.export, e.shape)) {
+		row := fmt.Sprintf("{export: %q, shape: %q, encode: encodeSharedInput, output: %q, newOutput: newSharedOutput}",
+			e.export, e.shape, e.output)
+		if !strings.Contains(string(src), row) {
 			t.Errorf("the table lost the row for %q:\n%s", e.export, src)
 		}
 	}
 
-	clash := []wireEntry{
-		{export: "first_export", shape: "SharedInput", pkgPath: "example.com/socket"},
-		{export: "second_export", shape: "SharedInput", pkgPath: "example.com/other"},
+	clashes := []struct {
+		name    string
+		entries []wireEntry
+		want    []string
+	}{
+		{
+			name: "an input shape",
+			entries: []wireEntry{
+				{export: "first_export", shape: "SharedInput", pkgPath: "example.com/socket", output: "FirstOutput", outputPkgPath: "example.com/socket"},
+				{export: "second_export", shape: "SharedInput", pkgPath: "example.com/other", output: "SecondOutput", outputPkgPath: "example.com/other"},
+			},
+			want: []string{"SharedInput", "example.com/socket", "example.com/other"},
+		},
+		{
+			name: "an output shape",
+			entries: []wireEntry{
+				{export: "first_export", shape: "FirstInput", pkgPath: "example.com/socket", output: "SharedOutput", outputPkgPath: "example.com/socket"},
+				{export: "second_export", shape: "SecondInput", pkgPath: "example.com/socket", output: "SharedOutput", outputPkgPath: "example.com/other"},
+			},
+			want: []string{"SharedOutput", "example.com/socket", "example.com/other"},
+		},
 	}
-	_, err = emitWireRegistry(target, clash)
-	if err == nil {
-		t.Fatal("one shape name from two packages was emitted, so the generated file would declare its encoder twice")
+	for _, tc := range clashes {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := emitWireRegistry(target, tc.entries)
+			if err == nil {
+				t.Fatal("one shape name from two packages was emitted, so the generated file would declare its function twice")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not name %q: %v", want, err)
+				}
+			}
+		})
 	}
-	for _, want := range []string{"SharedInput", "example.com/socket", "example.com/other"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not name %q: %v", want, err)
-		}
+}
+
+// TestWireRegistryRefusesAnOutputItCannotPlace covers each way an entry's
+// output shape can fail to name the type the host decodes an answer into, beside
+// the two ways it names one: a def the target emits, read from the target's own
+// package, and a def the target skips, read from the package the entry names.
+func TestWireRegistryRefusesAnOutputItCannotPlace(t *testing.T) {
+	t.Parallel()
+
+	importer, ok := plugintype.Lookup(plugintype.Importer)
+	if !ok || len(importer.HostExports) != 1 {
+		t.Fatal("the importer type lists no single host export, so the rows have no export to register")
+	}
+	entry := func(outputDef, outputPkgPath string) wireExport {
+		return wireExport{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "ExampleInput",
+			outputDef: outputDef, outputPkgPath: outputPkgPath}
+	}
+
+	cases := []struct {
+		name        string
+		entry       wireExport
+		skipDefs    []string
+		wantPkgPath string
+		wantSub     string
+	}{
+		{name: "an output the target emits is read from the target's package", entry: entry("ExampleOutput", ""), wantPkgPath: "example.com/socket"},
+		{name: "an output the target skips is read from the named package", entry: entry("ExampleOutput", "example.com/published"), skipDefs: []string{"ExampleOutput"}, wantPkgPath: "example.com/published"},
+		{name: "no output shape", entry: entry("", ""), wantSub: "is not named"},
+		{name: "a package named for an output the target emits", entry: entry("ExampleOutput", "example.com/published"), wantSub: "second answer"},
+		{name: "no package named for an output the target skips", entry: entry("ExampleOutput", ""), skipDefs: []string{"ExampleOutput"}, wantSub: "names none"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			target := codecTarget{pkgPath: "example.com/socket", skipDefs: tc.skipDefs, wireExports: []wireExport{tc.entry}}
+			got, err := collectWireEntries(map[string]codecTarget{"example_gen.go": target})
+			if tc.wantSub == "" {
+				if err != nil {
+					t.Fatalf("the output should resolve; got %v", err)
+				}
+				if len(got) != 1 || got[0].output != tc.entry.outputDef || got[0].outputPkgPath != tc.wantPkgPath {
+					t.Fatalf("rows = %+v; want one row answering with %q from %q", got, tc.entry.outputDef, tc.wantPkgPath)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("the entry generated rows %+v instead of being refused", got)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) || !strings.Contains(err.Error(), "example_gen.go") {
+				t.Errorf("the refusal does not name the target and %q: %v", tc.wantSub, err)
+			}
+		})
 	}
 }
 
@@ -103,19 +189,19 @@ func TestWireRegistryRefusesAnEntryItCannotResolve(t *testing.T) {
 		wantExport string
 		wantSub    string
 	}{
-		{name: "a role resolves to its default export", entry: wireExport{role: plugintype.RoleLabelTransform, inputDef: "X"}, rest: declaringTheRest(t, plugintype.Governance, roleExport), wantExport: roleExport},
-		{name: "a plugin type resolves to its one host export", entry: wireExport{pluginType: plugintype.Importer, inputDef: "X"}, wantExport: importer.HostExports[0]},
-		{name: "a plugin type whose load rule is a prefix resolves through its host-export list", entry: wireExport{pluginType: plugintype.Linter, inputDef: "X"}, wantExport: linter.HostExports[0]},
-		{name: "a plugin type and its one listed export resolve to that export", entry: wireExport{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "X"}, wantExport: importer.HostExports[0]},
-		{name: "a plugin type and one of its several listed exports resolve to that export", entry: wireExport{pluginType: plugintype.Provider, export: oneOfSeveral, inputDef: "X"}, rest: declaringTheRest(t, plugintype.Provider, oneOfSeveral), wantExport: oneOfSeveral},
-		{name: "both keys", entry: wireExport{role: plugintype.RoleLabelTransform, pluginType: plugintype.Importer, inputDef: "X"}, wantSub: "both"},
-		{name: "a role and an export", entry: wireExport{role: plugintype.RoleLabelTransform, export: roleExport, inputDef: "X"}, wantSub: "both"},
-		{name: "neither key", entry: wireExport{inputDef: "X"}, wantSub: "neither"},
-		{name: "an export without its plugin type", entry: wireExport{export: importer.HostExports[0], inputDef: "X"}, wantSub: "without its plugin type"},
-		{name: "an unknown role", entry: wireExport{role: "no-such-role", inputDef: "X"}, wantSub: "no-such-role"},
-		{name: "an unknown plugin type", entry: wireExport{pluginType: "no-such-type", inputDef: "X"}, wantSub: "no-such-type"},
-		{name: "a plugin type alone listing several host exports", entry: wireExport{pluginType: plugintype.Governance, inputDef: "X"}, wantSub: "no single export"},
-		{name: "an export its plugin type's list does not hold", entry: wireExport{pluginType: plugintype.Provider, export: linter.HostExports[0], inputDef: "X"}, wantSub: linter.HostExports[0]},
+		{name: "a role resolves to its default export", entry: wireExport{role: plugintype.RoleLabelTransform, inputDef: "X", outputDef: "XOutput"}, rest: declaringTheRest(t, plugintype.Governance, roleExport), wantExport: roleExport},
+		{name: "a plugin type resolves to its one host export", entry: wireExport{pluginType: plugintype.Importer, inputDef: "X", outputDef: "XOutput"}, wantExport: importer.HostExports[0]},
+		{name: "a plugin type whose load rule is a prefix resolves through its host-export list", entry: wireExport{pluginType: plugintype.Linter, inputDef: "X", outputDef: "XOutput"}, wantExport: linter.HostExports[0]},
+		{name: "a plugin type and its one listed export resolve to that export", entry: wireExport{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "X", outputDef: "XOutput"}, wantExport: importer.HostExports[0]},
+		{name: "a plugin type and one of its several listed exports resolve to that export", entry: wireExport{pluginType: plugintype.Provider, export: oneOfSeveral, inputDef: "X", outputDef: "XOutput"}, rest: declaringTheRest(t, plugintype.Provider, oneOfSeveral), wantExport: oneOfSeveral},
+		{name: "both keys", entry: wireExport{role: plugintype.RoleLabelTransform, pluginType: plugintype.Importer, inputDef: "X", outputDef: "XOutput"}, wantSub: "both"},
+		{name: "a role and an export", entry: wireExport{role: plugintype.RoleLabelTransform, export: roleExport, inputDef: "X", outputDef: "XOutput"}, wantSub: "both"},
+		{name: "neither key", entry: wireExport{inputDef: "X", outputDef: "XOutput"}, wantSub: "neither"},
+		{name: "an export without its plugin type", entry: wireExport{export: importer.HostExports[0], inputDef: "X", outputDef: "XOutput"}, wantSub: "without its plugin type"},
+		{name: "an unknown role", entry: wireExport{role: "no-such-role", inputDef: "X", outputDef: "XOutput"}, wantSub: "no-such-role"},
+		{name: "an unknown plugin type", entry: wireExport{pluginType: "no-such-type", inputDef: "X", outputDef: "XOutput"}, wantSub: "no-such-type"},
+		{name: "a plugin type alone listing several host exports", entry: wireExport{pluginType: plugintype.Governance, inputDef: "X", outputDef: "XOutput"}, wantSub: "no single export"},
+		{name: "an export its plugin type's list does not hold", entry: wireExport{pluginType: plugintype.Provider, export: linter.HostExports[0], inputDef: "X", outputDef: "XOutput"}, wantSub: linter.HostExports[0]},
 	}
 
 	for _, tc := range cases {
@@ -162,7 +248,7 @@ func declaringTheRest(t *testing.T, pt plugintype.Type, except string) []wireExp
 	var out []wireExport
 	for _, export := range entry.HostExports {
 		if export != except {
-			out = append(out, wireExport{pluginType: pt, export: export, inputDef: "Rest"})
+			out = append(out, wireExport{pluginType: pt, export: export, inputDef: "Rest", outputDef: "RestOutput"})
 		}
 	}
 	return out
@@ -174,7 +260,7 @@ func declaringTheRest(t *testing.T, pt plugintype.Type, except string) []wireExp
 func everyRole(inputDef string) []wireExport {
 	var out []wireExport
 	for _, role := range plugintype.GovernanceRoles() {
-		out = append(out, wireExport{role: role, inputDef: inputDef})
+		out = append(out, wireExport{role: role, inputDef: inputDef, outputDef: inputDef + "Output"})
 	}
 	return out
 }
@@ -222,7 +308,7 @@ func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 	var everyProviderExport []wireExport
 	for _, export := range provider.HostExports {
 		everyProviderExport = append(everyProviderExport,
-			wireExport{pluginType: plugintype.Provider, export: export, inputDef: "ExampleInput"})
+			wireExport{pluginType: plugintype.Provider, export: export, inputDef: "ExampleInput", outputDef: "ExampleOutput"})
 	}
 	renderVerdict, ok := plugintype.GovernanceRoleExport(plugintype.RoleRenderVerdict)
 	if !ok {
@@ -245,7 +331,7 @@ func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 		{
 			name: "a socket whose plugin type lists no export",
 			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
-				wireExports: []wireExport{{pluginType: plugintype.Linter, inputDef: "ExampleInput"}}},
+				wireExports: []wireExport{{pluginType: plugintype.Linter, inputDef: "ExampleInput", outputDef: "ExampleOutput"}}},
 			registry: withHostExports(plugintype.Linter, nil),
 			wantSubs: []string{"example_gen.go", string(plugintype.Linter), "host-export list is empty"},
 		},
@@ -259,7 +345,7 @@ func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 		{
 			name: "a served plugin type listing an export no entry declares",
 			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
-				wireExports: []wireExport{{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "ExampleInput"}}},
+				wireExports: []wireExport{{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "ExampleInput", outputDef: "ExampleOutput"}}},
 			registry: withHostExports(plugintype.Importer, append(append([]string(nil), importer.HostExports...), unregistered)),
 			wantSubs: []string{"example_gen.go", string(plugintype.Importer), unregistered},
 		},

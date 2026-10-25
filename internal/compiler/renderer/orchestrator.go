@@ -1625,10 +1625,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				// what a contributor rendered, its declared name among it, would
 				// derive it from an empty set and fall back to the routing key.
 				nodeFileMap := make(map[string][]byte, len(contrib.files))
+				nodeFormatMap := map[string]string{}
 				for _, f := range contrib.files {
 					nodeFileMap[f.Name] = f.Body
+					if f.Format != "" {
+						nodeFormatMap[f.Name] = f.Format
+					}
 				}
 				dispatch[key].files[contrib.nodeID] = nodeFileMap
+				dispatch[key].formats[contrib.nodeID] = nodeFormatMap
 				dispatch[key].placed[contrib.nodeID] = append(dispatch[key].placed[contrib.nodeID], contrib.files...)
 				// And named among the group's children, so an assembled artifact
 				// that addresses its children by name addresses this one. Placing
@@ -2940,6 +2945,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		frGroupNests := boundaryNestingOf(frEngineForPlacement).PerNode
 		intermediates := []EmittedFile{}
 		nodeFiles := map[string][]byte{}
+		// Each placed file's producer-declared format, keyed identically to
+		// nodeFiles, so the group's flush carries it beside the bytes as it does for
+		// a component's own files.
+		nodeFormats := map[string]string{}
 		// This feature's own placements, in emission order, for a group that gives
 		// each contributor a position of its own — the half such a group's assembler
 		// reads as what this contributor rendered.
@@ -2999,6 +3008,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// which is the case where a boundary-scope feature's content is genuinely
 			// merged rather than placed.
 			nodeFiles[featureOutputPrefix+f.Name] = f.Body
+			if f.Format != "" {
+				nodeFormats[featureOutputPrefix+f.Name] = f.Format
+			}
 			if frGroupNests {
 				placedOwn = append(placedOwn, f)
 			}
@@ -3023,6 +3035,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		if len(nodeFiles) > 0 {
 			dispatch[dKey].files[syntheticNodeID] = nodeFiles
+			dispatch[dKey].formats[syntheticNodeID] = nodeFormats
 		}
 		// This boundary-scope feature's derived-name declarations join the same
 		// per-group check its files do, under the same authoring-level producer name
@@ -3310,8 +3323,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// The segment is resolved once per dispatch group rather than once per
 			// node, so an out-of-bound segment is refused even for a group that
 			// placed no per-node files at all.
-			// These per-node fragments carry no producer format at this nesting
-			// position, so their records leave Format empty.
+			// Each file keeps the format its producer declared for it, exactly as
+			// the flat placement below does: moving a file under its contributor's
+			// directory changes where it is written, not what it is, so a render
+			// policy reads the same format for a contributor's file at either
+			// position.
 			//
 			// The position comes from the one home of that composition, which the
 			// assembler was already told each contributor's position from — so the
@@ -3323,8 +3339,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 					nodeRel = pd.nodeRelFor(nestPrefix, nodeID)
 				}
 				producer := nodeProducerLabel(pd.producerOf(nodeID))
+				nodeFormats := pd.formats[nodeID]
 				for p, c := range nodeFiles {
-					groupFiles.put(nodeRel+p, AssembledFile{Content: c}, producer)
+					groupFiles.put(nodeRel+p, AssembledFile{Content: c, Format: nodeFormats[p]}, producer)
 				}
 			}
 		} else {
