@@ -3239,7 +3239,8 @@ jobs:
         # entities; the release carries only the runnable binaries, the Windows
         # installer, the extension package, the install scripts and the list, and GitHub
         # attaches the source archives on its own. The step refuses to release
-        # when any of those files is missing.
+        # when any of those files is missing, and refuses to re-publish a
+        # release that already carries the Windows installer (below).
         #
         # SHA256SUMS is written here, from the very files the release attaches,
         # once this run's release directory holds exactly them, by the smoke
@@ -3373,8 +3374,26 @@ jobs:
 
           # Idempotent on re-run (a manual re-publish of a tag whose release
           # already exists): create the release the first time, otherwise
-          # re-upload the assets over the existing ones.
+          # re-upload the assets over the existing ones — unless the release
+          # already carries the Windows installer. A signed installer differs
+          # from one signing to the next, and the Microsoft Store and an
+          # accepted winget manifest pin its versioned address and its bytes,
+          # so an installer once attached is never replaced: the re-publish is
+          # refused before anything is uploaded, naming the asset, and a
+          # changed installer ships under a new release version. The release's
+          # assets are read with the GitHub CLI; a release whose assets cannot
+          # be read is refused the same way.
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if ! attached="$(gh release view "$TAG" --json assets --jq '.assets[].name')"; then
+              echo "publish-plugins: could not read which assets release '$TAG' on $GH_REPO carries, so whether it already carries the Windows installer $WINDOWS_SETUP is unknown; nothing was uploaded" >&2
+              exit 1
+            fi
+            while IFS= read -r name; do
+              if [ "$name" = "$WINDOWS_SETUP" ]; then
+                echo "publish-plugins: release '$TAG' on $GH_REPO already carries the Windows installer $WINDOWS_SETUP, and an installer once attached is never replaced: a newly signed copy has other bytes, while the Microsoft Store and an accepted winget manifest pin that address and its bytes. Nothing was uploaded. Ship a changed installer under a new release version." >&2
+                exit 1
+              fi
+            done <<<"$attached"
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
             gh release create "$TAG" "${ASSETS[@]}" \
