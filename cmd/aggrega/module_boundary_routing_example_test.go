@@ -66,12 +66,21 @@ var moduleRoutingPlacement = map[string]string{
 //
 // An attachment a connection carries is an attachment of the consuming
 // component, named by the connection's alias and the slot it fills, so the store
-// gateway's credential on its `s3` connection to the object store composes from
-// `s3.credential` on the gateway.
+// gateway's key pair on its `s3` connection to the object store composes from
+// `s3.credential` and `s3.credential_id` on the gateway, while the object store's
+// own pair composes from its `access_key_id` and `secret_access_key` slots.
+//
+// One identity here is shortened: written out in full, the object store's
+// `secret_access_key` attachment would yield a Helm release name longer than the
+// 53 characters Helm accepts, so its identity keeps the beginning of each part and
+// ends in a digest of the full identity. The shortening is deterministic, so the
+// identity is pinned exactly as emitted.
 var moduleRoutingAttachmentPlacement = map[string]string{
-	"cfr--metrics-zdquery--scrape":             "observability",
-	"cfr--metrics-zdobjstore--root-zupassword": "observability",
-	"cfr--metrics-zdstore--s3-zdcredential":    "observability",
+	"cfr--metrics-zdquery--scrape":               "observability",
+	"cfr--metrics-zdobjstore--access-zukey-zuid": "observability",
+	"cfr--metri--secret-zuacc---ze88a7bc614c":    "observability",
+	"cfr--metrics-zdstore--s3-zdcredential":      "observability",
+	"cfr--metrics-zdstore--s3-zdcredential-zuid": "observability",
 }
 
 // The well-known labels and annotations the assertions read. Each is emitted on
@@ -117,10 +126,11 @@ func parseRenderedResource(t *testing.T, path string, raw []byte) renderedResour
 // per-component infra and Feature attachment the routing entry declares reach the
 // one component it names, and that each resource an attached Feature emits
 // carries that same namespace: the ServiceMonitor of the scrape Feature the
-// routing entry attaches, and the Secret each of the metrics module's two
-// credential attachments emits. A resource emitted inside a scope belongs to that
-// scope whoever emitted it, so a Feature's artifact must not be left to land
-// wherever the applying tool defaults to.
+// routing entry attaches, and the Secret each of the metrics module's four
+// credential attachments emits — the object store's key pair and the key pair
+// the store gateway's connection to it carries. A resource emitted inside a scope
+// belongs to that scope whoever emitted it, so a Feature's artifact must not be
+// left to land wherever the applying tool defaults to.
 func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	t.Parallel()
 	catalogRoot := siblingCatalogRootForExamples(t)
@@ -226,17 +236,18 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 		t.Errorf("%s: the attached Feature's artifact carries namespace %q; the component it describes is routed into boundary %q, whose namespace it must share:\n%s", monitorPath, got, want, monitor)
 	}
 
-	// The metrics module attaches its credential Feature to the object store's
-	// credential slot and to the credential the store gateway's connection to the
-	// object store carries, and each attachment emits one Secret carrying the
-	// attachment's own composed identity. Each is asserted positively, exactly as
-	// the ServiceMonitor is, against the boundary its host component is routed
-	// into: a Secret outside that namespace is one the workload beside it cannot
-	// read, and neither earlier check would notice a Secret that carried no
-	// namespace at all.
+	// The metrics module attaches its credential Feature to the object store's two
+	// key slots and to the two the store gateway's connection to the object store
+	// carries, and each attachment emits one Secret carrying the attachment's own
+	// composed identity. Each is asserted positively, exactly as the ServiceMonitor
+	// is, against the boundary its host component is routed into: a Secret outside
+	// that namespace is one the workload beside it cannot read, and neither earlier
+	// check would notice a Secret that carried no namespace at all.
 	for _, credential := range []struct{ id, host string }{
-		{id: "cfr--metrics-zdobjstore--root-zupassword", host: "metrics-zdobjstore"},
+		{id: "cfr--metrics-zdobjstore--access-zukey-zuid", host: "metrics-zdobjstore"},
+		{id: "cfr--metri--secret-zuacc---ze88a7bc614c", host: "metrics-zdobjstore"},
 		{id: "cfr--metrics-zdstore--s3-zdcredential", host: "metrics-zdstore"},
+		{id: "cfr--metrics-zdstore--s3-zdcredential-zuid", host: "metrics-zdstore"},
 	} {
 		secret, secretPath := resourceOfKind(t, run1, "Secret", credential.id)
 		secretRes := parseRenderedResource(t, secretPath, secret)
