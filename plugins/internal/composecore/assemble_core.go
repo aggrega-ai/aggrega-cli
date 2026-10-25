@@ -83,8 +83,6 @@ import (
 	"sort"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -423,7 +421,9 @@ func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []rend
 }
 
 // parseNodeFragment locates Intermediate fragments in a node's intermediate-
-// file list and parses them as ComposeFile, merging into one struct.
+// file list and decodes them as ComposeFile through decodeFragment, merging into
+// one struct. A fragment writing a key ComposeFile does not carry halts the
+// merge there, naming the key, its path and the fragment.
 // Returns (nil, nil) when no fragments are present (defensive — should not
 // occur for compose nodes since SynthesizeWorkload always emits exactly
 // one).
@@ -443,9 +443,9 @@ func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*
 		Models:   map[string]Model{},
 	}
 	for _, f := range intermediates {
-		var frag ComposeFile
-		if err := yaml.Unmarshal(f.Body, &frag); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q fragment %q: parse", nodeID, f.Name))
+		frag, err := decodeFragment(f.Body, nodeID, fmt.Sprintf("fragment %q", f.Name))
+		if err != nil {
+			return nil, err
 		}
 		for k, v := range frag.Services {
 			out.Services[k] = v

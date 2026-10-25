@@ -15,6 +15,12 @@
 //     out of the merged document (see leaveOut), which an overlay alone cannot
 //     do: an overlay value replaces, it never deletes.
 //
+// The fragment carries every key the source and the values write, the ones the
+// assembled file cannot hold included: the omit entries' reference check reads
+// the whole of the Compose Specification's surface, and the merge is the one
+// place a fragment is decoded into the types, where decodeFragment refuses a
+// key they do not carry.
+//
 // The merged compose document is emitted as one Intermediate=true
 // EmittedFile (`<nodeID>.compose-fragment.yaml`) so it joins the Release-
 // level merge alongside synthesized-mode fragments.

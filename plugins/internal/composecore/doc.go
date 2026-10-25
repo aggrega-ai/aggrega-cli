@@ -40,6 +40,16 @@
 // self-contained: it round-trips through YAML unmarshalling cleanly, which is
 // what lets the merge parse it back.
 //
+// # Every key is carried or refused
+//
+// The merge reads every fragment — these two, and a fragment a Recipe's
+// artifacts: input writes — into the types this package declares, and the
+// assembled file can hold only what those types carry. So each fragment is
+// decoded through decodeFragment, which refuses one writing a key no type here
+// declares, naming the key, its path in the fragment and the fragment, rather
+// than letting the assembled file leave it out. That decode is the only one into
+// those types, so the refusal is raised in one place for all three inputs.
+//
 // # Fragments are intermediates, never output
 //
 // The fragments exist only to be folded together. They accumulate in memory,

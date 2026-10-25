@@ -5,6 +5,7 @@ package composecore
 
 import (
 	"fmt"
+	"reflect"
 
 	"go.yaml.in/yaml/v3"
 
@@ -31,9 +32,16 @@ type ComposeFile struct {
 // Service is one compose service definition. Fields populated only as needed
 // — omitempty on every field so per-node fragments stay minimal.
 //
-// The set of fields here is the currently synthesisable surface, and it grows
-// as needed: deploy is synthesized today, while a service-level secrets block
-// is not yet part of it.
+// The set of fields here is the surface the assembled file carries, and it
+// grows as needed: deploy is carried today, while a service-level secrets block
+// is not yet part of it. It is also the whole set of service keys a fragment may
+// write — a sourced compose file or an artifacts: body — because decodeFragment
+// refuses a fragment writing a key no field here declares rather than letting
+// the assembled file leave it out.
+//
+// Profiles is carried as the fragment lists it, in that order, and never
+// written by the synthesizer: Compose starts a service gated behind a profile
+// only when that profile is enabled or the service is named on the command line.
 type Service struct {
 	Image           string                   `yaml:"image,omitempty"`
 	PullPolicy      string                   `yaml:"pull_policy,omitempty"`
@@ -63,6 +71,7 @@ type Service struct {
 	DNS             []string                 `yaml:"dns,omitempty"`
 	DNSSearch       []string                 `yaml:"dns_search,omitempty"`
 	ExtraHosts      []string                 `yaml:"extra_hosts,omitempty"`
+	Profiles        []string                 `yaml:"profiles,omitempty"`
 }
 
 // Compose `depends_on` conditions, as the Compose Specification defines them.
@@ -210,9 +219,7 @@ func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 			if err := node.Content[i].Decode(&service); err != nil {
 				return fmt.Errorf("depends_on: decoding key at line %d: %w", node.Content[i].Line, err)
 			}
-			var body struct {
-				Condition string `yaml:"condition"`
-			}
+			var body dependsOnBody
 			if err := node.Content[i+1].Decode(&body); err != nil {
 				return fmt.Errorf("depends_on: decoding entry %q at line %d: %w", service, node.Content[i+1].Line, err)
 			}
@@ -221,6 +228,25 @@ func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	default:
 		return fmt.Errorf("depends_on: expected a sequence or a mapping, got kind %d at line %d", node.Kind, node.Line)
+	}
+}
+
+// dependsOnBody is the body of one long-form depends_on entry as the field
+// carries it: the condition alone. It is the one declaration both the decode
+// above and the fragment key walk read, so a member Compose defines for the
+// entry and this body does not declare is refused rather than dropped.
+type dependsOnBody struct {
+	Condition string `yaml:"condition"`
+}
+
+// walkFragmentKeys reports every key a long-form entry writes that its body does
+// not carry. The short form lists names and writes no key.
+func (DependsOn) walkFragmentKeys(w *fragmentKeyWalk, node *yaml.Node, path string) {
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+	for _, kv := range fragmentPairs(node) {
+		w.walk(kv.value, reflect.TypeOf(dependsOnBody{}), joinFragmentPath(path, kv.key))
 	}
 }
 
@@ -416,6 +442,20 @@ func (m *ServiceModels) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	default:
 		return fmt.Errorf("models: expected a sequence or a mapping, got kind %d at line %d", node.Kind, node.Line)
+	}
+}
+
+// walkFragmentKeys reports every key a long-form entry writes that its binding
+// does not carry. The binding carries every member it does not name in Other, so
+// in practice a long-form entry reports none; the walk reads that from the
+// binding's own declaration rather than assuming it. The short form lists names
+// and writes no key.
+func (ServiceModels) walkFragmentKeys(w *fragmentKeyWalk, node *yaml.Node, path string) {
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+	for _, kv := range fragmentPairs(node) {
+		w.walk(kv.value, reflect.TypeOf(ServiceModelBinding{}), joinFragmentPath(path, kv.key))
 	}
 }
 
