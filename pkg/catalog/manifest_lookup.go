@@ -197,6 +197,25 @@ var errNoRecipeResolved = cerrors.Register("no-recipe-resolved", cerrors.Meta{
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrNameMappingMatchedNothing fires when a key in a Manifest's
+// mappings.components.name or mappings.features.name tier names no component
+// instance, or no attachment, in the build. The name tier is matched by exact
+// string against the instance a lookup asks about — a component instance's name,
+// or an attachment's own name (`<alias>.<slot>` for one written on a connection),
+// never the name of the component an attachment sits on — so an entry keyed by
+// anything else is never consulted: every instance it was meant for resolves
+// through the type tier, and without this halt the build would say nothing about
+// the entry it ignored. The diagnostic names the key, the Manifest, the names of
+// that kind the build does declare, and the one the author probably meant where
+// one is a single edit away or the key is the name of the component carrying it.
+func ErrNameMappingMatchedNothing() error { return errNameMappingMatchedNothing }
+
+var errNameMappingMatchedNothing = cerrors.Register("name-mapping-matched-nothing", cerrors.Meta{
+	ShortCode: "E0357",
+	Message:   "a Manifest name mapping's key names no component instance or attachment in this build, so the entry binds nothing",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // RecipeMappingURI composes the bare "name:version" URI form that Manifest
 // mapping values and the closure walker use. A versionless entity keys on its
 // bare name. It is the single home for this URI form, so a caller synthesizing
@@ -1321,8 +1340,11 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 // IR, on both attachment axes, and returns one error per instance that does NOT
 // resolve through an explicit Manifest mapping (unmapped — naming the
 // implementing feature recipes as pin candidates — or mapped to a feature recipe
-// absent from the catalog). The slice is in IR author order; an empty slice means
-// every instance it covers resolves cleanly. Both surfaces consume this single
+// absent from the catalog). It then reports, as ErrNameMappingMatchedNothing,
+// every name-tier key of the Manifest that names no instance in the IR, since
+// such an entry is consulted by no lookup. The slice is in IR author order, the
+// name-tier findings last in the Manifest's own order; an empty slice means
+// every instance it covers resolves cleanly and every name-tier key binds one. Both surfaces consume this single
 // routine so they cannot drift: the CLI build joins the slice into a loud halt
 // (VerifyRecipeResolution); the serve daemon maps each finding to a resilient
 // diagnostic. The mapping-only cascade matches the renderer's — the catalog
@@ -1364,7 +1386,188 @@ func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGr
 			}
 		}
 	}
+	return append(errs, c.nameMappingFindings(manifest, graph)...)
+}
+
+// buildAttachment is one attachment the graph declares, as a name-tier key is
+// matched against it: its own name, the Feature type it attaches, and the
+// component it sits on — empty for one attached at boundary scope, which sits on
+// no component.
+type buildAttachment struct {
+	name, featureType, host string
+}
+
+// nameMappingFindings reports every name-tier key the Manifest writes that names
+// nothing in graph: a components.name key no component instance is named, and a
+// features.name key no attachment is named, on either attachment axis. Keys are
+// walked in the order the Manifest writes them.
+//
+// What a key is compared against is what the render's lookup is asked about,
+// which is why these are the sets: a component instance is looked up by its node
+// id, and an attachment by the name it is keyed under beneath its node or its
+// boundary. A key outside those sets is one no lookup in this build consults, so
+// the entry binds nothing, and the instance it was meant for resolves through the
+// type tier or halts unmapped.
+func (c *Catalog) nameMappingFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
+	if manifest == nil || graph == nil {
+		return nil
+	}
+	var attachments []buildAttachment
+	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
+		for name, entry := range feats.All() {
+			attachments = append(attachments, buildAttachment{name: name, featureType: entry.Type, host: nodeID})
+		}
+	}
+	for _, feats := range graph.Spec.BoundaryFeatures.All() {
+		for name, bf := range feats.All() {
+			attachments = append(attachments, buildAttachment{name: name, featureType: bf.Type})
+		}
+	}
+
+	// The tiers are read through Tiers, the one statement of which tier is keyed
+	// by instance name, so this reads the same entries the lookup does.
+	var errs []error
+	for _, t := range manifest.Spec.Mappings.Components.Tiers() {
+		if !t.ByInstanceName {
+			continue
+		}
+		for key, uri := range t.Entries.All() {
+			if _, ok := graph.Spec.Nodes.Get(key); ok {
+				continue
+			}
+			errs = append(errs, c.unmatchedComponentNameKey(manifest.Metadata.Name, key, uri, graph, attachments))
+		}
+	}
+	for _, t := range manifest.Spec.Mappings.Features.Tiers() {
+		if !t.ByInstanceName {
+			continue
+		}
+		for key, uri := range t.Entries.All() {
+			if slices.ContainsFunc(attachments, func(a buildAttachment) bool { return a.name == key }) {
+				continue
+			}
+			errs = append(errs, c.unmatchedFeatureNameKey(manifest.Metadata.Name, key, uri, graph, attachments))
+		}
+	}
 	return errs
+}
+
+// unmatchedComponentNameKey is the finding for a components.name key that names
+// no component instance. It lists the instances the key could have named — those
+// of the type the mapped Recipe implements, or every instance where the Recipe is
+// not in the catalog or no instance is of its type — and offers the one the
+// author probably meant: the component carrying an attachment the key names, or
+// an instance one edit away.
+func (c *Catalog) unmatchedComponentNameKey(manifestName, key, uri string, graph *types.IRGraph, attachments []buildAttachment) error {
+	var componentType string
+	if r, ok := c.RecipeByURI(uri); ok {
+		componentType = stripVersion(r.Spec.Implements)
+	}
+	var candidates, typed []string
+	for nodeID, node := range graph.Spec.Nodes.All() {
+		candidates = append(candidates, nodeID)
+		if componentType != "" && stripVersion(node.Component) == componentType {
+			typed = append(typed, nodeID)
+		}
+	}
+	listed := "component instances in this build"
+	if len(typed) > 0 {
+		listed = fmt.Sprintf("component instances of type %q in this build", componentType)
+		candidates = typed
+	}
+
+	var hosts []string
+	for _, a := range attachments {
+		if a.name == key && a.host != "" {
+			hosts = append(hosts, a.host)
+		}
+	}
+	var hint string
+	switch {
+	case len(hosts) > 0:
+		hint = fmt.Sprintf("; %q is the name of an attachment, which a features.name key names — did you mean the component carrying it, %s?", key, sortedQuotedList(hosts))
+	default:
+		if near := resolver.NearMissCandidates(key, graph.Spec.Nodes.Keys()); len(near) > 0 {
+			hint = fmt.Sprintf("; did you mean %s?", sortedQuotedList(near))
+		}
+	}
+	return fmt.Errorf("%w: Manifest %q, key %q under mappings.components.name: no component instance in this build is named %q; a components.name key names a component instance exactly as the Aggregate writes it; %s: %s%s",
+		ErrNameMappingMatchedNothing(), manifestName, key, key, listed, sortedQuotedList(candidates), hint)
+}
+
+// unmatchedFeatureNameKey is the finding for a features.name key that names no
+// attachment. It lists the attachments the key could have named — those of the
+// Feature type the mapped FeatureRecipe implements, or every attachment where the
+// FeatureRecipe is not in the catalog or no attachment is of its type — and
+// offers the one the author probably meant: where the key is the name of a
+// component, the attachments of that type the component carries, and otherwise
+// an attachment one edit away.
+func (c *Catalog) unmatchedFeatureNameKey(manifestName, key, uri string, graph *types.IRGraph, attachments []buildAttachment) error {
+	var featureType string
+	if fr, ok := c.FeatureRecipeByURI(uri); ok {
+		featureType = stripVersion(fr.Spec.Implements)
+	}
+	ofType := func(a buildAttachment) bool {
+		return featureType != "" && stripVersion(a.featureType) == featureType
+	}
+	var all, typed []string
+	for _, a := range attachments {
+		all = append(all, a.name)
+		if ofType(a) {
+			typed = append(typed, a.name)
+		}
+	}
+	listed := "attachments in this build"
+	candidates := all
+	if len(typed) > 0 {
+		listed = fmt.Sprintf("attachments of type %q in this build", featureType)
+		candidates = typed
+	}
+
+	var hint string
+	if _, isComponent := graph.Spec.Nodes.Get(key); isComponent {
+		var carried, carriedOfType []string
+		for _, a := range attachments {
+			if a.host != key {
+				continue
+			}
+			carried = append(carried, a.name)
+			if ofType(a) {
+				carriedOfType = append(carriedOfType, a.name)
+			}
+		}
+		if len(carriedOfType) > 0 {
+			carried = carriedOfType
+		}
+		if len(carried) > 0 {
+			hint = fmt.Sprintf("; %q is a component, and a features.name key names the attachment rather than the component it is attached to — did you mean %s?", key, sortedQuotedList(carried))
+		}
+	}
+	if hint == "" {
+		if near := resolver.NearMissCandidates(key, uniqueSorted(all)); len(near) > 0 {
+			hint = fmt.Sprintf("; did you mean %s?", sortedQuotedList(near))
+		}
+	}
+	return fmt.Errorf("%w: Manifest %q, key %q under mappings.features.name: no attachment in this build is named %q; a features.name key names an attachment by its own name — the key it is written under in a component's features, or <alias>.<slot> for one written on a connection — never the component it is attached to; %s: %s%s",
+		ErrNameMappingMatchedNothing(), manifestName, key, key, listed, sortedQuotedList(candidates), hint)
+}
+
+// sortedQuotedList renders names through quotedList de-duplicated and sorted,
+// so a finding listing them reads the same on every run, and reads "none" for an
+// empty list so a finding never ends on a bare colon.
+func sortedQuotedList(names []string) string {
+	if len(names) == 0 {
+		return "none"
+	}
+	return quotedList(uniqueSorted(names))
+}
+
+// uniqueSorted returns names sorted with duplicates removed; two components may
+// each carry an attachment of one name.
+func uniqueSorted(names []string) []string {
+	out := slices.Clone(names)
+	sort.Strings(out)
+	return slices.Compact(out)
 }
 
 // VerifyRecipeResolution is the CLI build's pre-render resolution-completeness
