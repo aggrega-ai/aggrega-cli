@@ -179,10 +179,12 @@ name: Publish and sign core plugins
 #                        command), gh and curl. On a real publish it hands the plugin
 #                        publish's own output on, as its plugin_push_output, to
 #                        record-published. Once the release step has run, a dry
-#                        run's included, it renders the Homebrew formula and the
-#                        Scoop manifest from the files it attached and their
-#                        SHA256SUMS, and hands both on to
-#                        publish-package-channels.
+#                        run's included, it renders the Homebrew formula, the
+#                        Scoop manifest and the winget manifest from the files it
+#                        attached and their SHA256SUMS, hands the first two on to
+#                        publish-package-channels, and prints the winget
+#                        manifest's three files for the pull request a person
+#                        opens on the winget community repository.
 #   record-published     After a real publish only — on a dry run it is skipped —
 #                        records what sign-and-publish published on aggrega-hub's
 #                        published branch: each plugin's reference, version and
@@ -329,8 +331,10 @@ name: Publish and sign core plugins
 # sign-windows-installer signed, silently, runs it by name from a new shell,
 # installs over that install, checks the installer's and the installed files'
 # signatures the same way, and uninstalls silently, leaving neither the folder
-# nor its PATH entry. macos-smoke runs the binaries sign-macos signed, and last
-# checks their signatures: macOS's own codesign must accept each one and report
+# nor its PATH entry; and it renders the winget manifest from a folder of those
+# files, as the release renders it, and holds it to winget validate.
+# macos-smoke runs the binaries sign-macos signed, and last checks their
+# signatures: macOS's own codesign must accept each one and report
 # it signed with Cognitio S.r.l.'s Developer ID, with the hardened runtime and a
 # secure timestamp, Gatekeeper must accept a copy of each carrying the
 # quarantine mark a browser gives a download, as notarized Developer ID
@@ -343,8 +347,9 @@ name: Publish and sign core plugins
 # waits for sign-windows and sign-macos, is skipped with them, so such a run prints no publish
 # plan. They need nothing the build needs — no
 # sibling repository, no toolchain, no secret, no network beyond their own
-# loopback address — because the build job stages everything each runs as one
-# workflow artifact per target. They publish nothing, and sign-and-publish
+# loopback address, save the Windows run's download of a pinned WinGet CLI from
+# GitHub when its image carries no winget — because the build job stages
+# everything each runs as one workflow artifact per target. They publish nothing, and sign-and-publish
 # waits for all of them: it starts only when the Windows run, both macOS runs
 # and the ARM Linux run have passed, on a release tag and on a dispatch, a dry
 # run's included.
@@ -2015,14 +2020,15 @@ jobs:
         # folder, on this machine — the three binaries smoke_target_binaries
         # names and the installer's two program files
         # smoke_target_installer_parts names — are signed only once every file
-        # the folder's list names still has the SHA-256 the list gives it and
-        # the list names all five; and exactly the five, nothing beside them,
-        # are copied to the directories of this job's own they are signed in,
-        # the binaries to one and the installer's files to another. The list is
-        # read by sha256sum itself, which holds every file it names; a folder
-        # that is not here means the build ran on another machine or in another
-        # attempt, and is refused. The digests printed are the unsigned bytes
-        # the build wrote.
+        # in the folder is one its list names, each once, with the SHA-256 the
+        # list gives it, and the list names nothing else, held by the smoke
+        # library's one reader of such lists, smoke_check_tree_sums, as
+        # windows-installer and sign-and-publish hold it; and exactly the five,
+        # nothing beside them in windows-unsigned/, are copied to the
+        # directories of this job's own they are signed in, the binaries to one
+        # and the installer's files to another. A folder that is not here means
+        # the build ran on another machine or in another attempt, and is
+        # refused. The digests printed are the unsigned bytes the build wrote.
         run: |
           set -euo pipefail
           [ -n "$RELEASE_HANDOVER" ] || { echo "sign-windows: RELEASE_HANDOVER is empty" >&2; exit 1; }
@@ -2039,21 +2045,10 @@ jobs:
             echo "sign-windows: this run's hand-over folder $handover, with its list, is not on this machine: the build job of this run attempt left none here. sources, build, sign-windows, windows-installer, sign-windows-installer, sign-and-publish, record-published and clean-up run on the one machine AGGREGA_RUNNER names, in one attempt; re-run every job, not only the failed ones" >&2
             exit 1
           fi
-          if ! verified="$(cd "$handover" && sha256sum --check --strict SHA256SUMS 2>&1)"; then
-            printf '%s\n' "$verified" >&2
+          if ! smoke_check_tree_sums "$handover"; then
             echo "sign-windows: the hand-over folder $handover no longer matches the list the build job wrote" >&2
             exit 1
           fi
-          printf '%s\n' "$verified"
-          for name in "${names[@]}"; do
-            case $'\n'"$verified"$'\n' in
-              *$'\n'"windows-unsigned/$name: OK"$'\n'*) ;;
-              *)
-                echo "sign-windows: the hand-over folder's list does not name windows-unsigned/$name" >&2
-                exit 1
-                ;;
-            esac
-          done
           shopt -s nullglob dotglob
           found=("$unsigned"/*)
           shopt -u nullglob dotglob
@@ -2917,8 +2912,8 @@ jobs:
         # installer in another, WINDOWS_INSTALLER, the signed macOS binaries in
         # a third, MACOS_SIGNED, one directory per target beneath it, the
         # release assets are assembled in a fourth, RELEASE_DIR, and the
-        # Homebrew formula and the Scoop manifest are rendered into a fifth,
-        # CHANNELS_DIR, all made empty
+        # Homebrew formula, the Scoop manifest and the winget manifest are
+        # rendered into a fifth, CHANNELS_DIR, all made empty
         # here; the steps below read them from the environment, and the last
         # steps remove them.
         # The release inputs are read where the build job left them, in this
@@ -3287,7 +3282,8 @@ jobs:
           BIN_VERSION="$("$AGGREGA_BIN" version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           # The version the asset names carry, for the step that renders the
-          # Homebrew formula and the Scoop manifest from these assets.
+          # Homebrew formula, the Scoop manifest and the winget manifest from
+          # these assets.
           printf 'RELEASE_VERSION=%s\n' "$BIN_VERSION" >> "$GITHUB_ENV"
 
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
@@ -3386,23 +3382,31 @@ jobs:
               --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files are signed with the Developer ID of Cognitio S.r.l. and notarized by Apple): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $WINDOWS_SETUP is the Windows installer, signed as the Windows files are: it installs the default aggrega for the current user, with no administrator rights, into %LOCALAPPDATA%\Programs\aggrega, adds that folder to the user PATH and registers an uninstaller in the list of installed apps; run it with /S to install without a window, and uninstall.exe /S in that folder to uninstall the same way. $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
           fi
 
-      - name: Render the Homebrew formula and the Scoop manifest
+      - name: Render the Homebrew formula, the Scoop manifest and the winget manifest
         # After the release step, a dry run's included, from the files that
         # step attached, in RELEASE_DIR, and the SHA256SUMS it attached with
         # them, through scripts/render-package-channels.sh at the commit the
         # build job built. The script holds every file there to the list before
-        # it reads a digest from it, so the formula and the manifest carry the
+        # it reads a digest from it, so the formula and the manifests carry the
         # digests of the bytes the release attached and no other; it computes
-        # none of its own, and names each binary as the release step does. On a
-        # real publish the release exists by now, so the addresses the two files
-        # name resolve by the time publish-package-channels commits them. Both
-        # files, and the version, are handed on as this job's outputs, each file
-        # under a delimiter drawn at random for this run.
+        # none of its own, and names each file as the release step does. On a
+        # real publish the release exists by now, so the addresses the files
+        # name resolve by the time publish-package-channels commits them. The
+        # formula and the Scoop manifest, and the version, are handed on as this
+        # job's outputs, each file under a delimiter drawn at random for this
+        # run. The winget manifest's three files are printed here, under the
+        # folder the winget community repository keeps them in, for the pull
+        # request a person opens there; nothing here sends them anywhere.
         id: package-channels
         run: |
           set -euo pipefail
           [ -n "${RELEASE_VERSION:-}" ] || { echo "sign-and-publish: the release step recorded no version" >&2; exit 1; }
           aggrega-cli/scripts/render-package-channels.sh "$RELEASE_DIR" "$RELEASE_VERSION" "$CHANNELS_DIR"
+          echo "sign-and-publish: the winget manifest for aggrega $RELEASE_VERSION, three files for manifests/c/Cognitio/Aggrega/$RELEASE_VERSION/ in https://github.com/microsoft/winget-pkgs:"
+          for file in "$CHANNELS_DIR"/winget/*; do
+            echo "--- ${file##*/}"
+            cat "$file"
+          done
           delimiter="package-channels-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
           {
             printf 'version=%s\n' "$RELEASE_VERSION"
@@ -4018,12 +4022,17 @@ jobs:
     # silently for the user into %LOCALAPPDATA%\Programs\aggrega and onto the
     # user PATH, so a new shell runs it by name, installs over that install,
     # carries and installs only signed files, and uninstalls silently, leaving
-    # neither the folder nor the PATH entry.
+    # neither the folder nor the PATH entry; and that winget accepts the winget
+    # manifest the release renders, rendered here by the same script from a
+    # folder laid out as the release is.
     # Everything it runs comes from the artifacts the build job staged — a
     # registry program among them, which serves on this machine's loopback
     # address alone — sign-windows signed, and sign-windows-installer signed,
-    # but for the Python and the two
-    # PowerShells the runner image carries; it
+    # but for the Python and the two PowerShells the runner image carries, and
+    # winget: the image's own, or, where it carries none, the WinGet CLI
+    # release scripts/platform-smoke.sh pins, which it fetches from GitHub,
+    # holds to the SHA-256 it pins for each file, and installs for the runner's
+    # user; it
     # checks out this repository so that each test executable runs from its
     # package directory, and for the install scripts the release attaches, at
     # the commit the artifact records. It holds no secret
@@ -4152,7 +4161,10 @@ jobs:
         # shown refused; then the installer, run with /S, run again over its own
         # install, its files' signatures checked the same way, and the
         # uninstaller run with /S, each install and the uninstall checked and
-        # the user PATH put back after them. On a dry run naming smoke_binaries_from, the binaries
+        # the user PATH put back after them; then the winget manifest, rendered
+        # by scripts/render-package-channels.sh from a release folder laid out
+        # on this machine, which winget validate must accept with neither an
+        # error nor a warning, and refuse with a planted installer type. On a dry run naming smoke_binaries_from, the binaries
         # downloaded above run instead, the signature check among the checks
         # reporting on them, and the step fails whatever they do. On a run whose
         # decision is skip, the script is told the binaries are unsigned: it runs

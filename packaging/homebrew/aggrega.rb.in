@@ -2,7 +2,7 @@
 # https://github.com/aggrega-ai/aggrega-cli; a change made here is replaced by
 # the next release.
 class Aggrega < Formula
-  desc "Deterministic ahead-of-time compiler for deployment artifacts"
+  desc "@DESCRIPTION@"
   homepage "https://aggrega.ai"
   license "Apache-2.0"
 

@@ -19,10 +19,12 @@
 # binaries are not signed by the release, so a linux target runs the staged ones
 # and takes neither.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
-# registry or server but the ones it starts on this machine; it does need bash 4.3
+# registry or server but the ones it starts on this machine — save GitHub, for
+# step 14 on a Windows machine that carries no winget; it does need bash 4.3
 # or later, which macOS does not ship, and Python 3.7 or later, as python3 or
-# python, which step 11 serves a release folder with. Before the checks it holds
-# the inputs and the machine to the target:
+# python, which step 11 serves a release folder with; on Windows, step 14 needs
+# winget, or else curl and GitHub, from which it installs the WinGet CLI it pins.
+# Before the checks it holds the inputs and the machine to the target:
 #
 #   - the staged inputs name the target given with --target, and bin/ holds
 #     exactly the binaries scripts/lib/platform-smoke-common.sh lists for it: the
@@ -116,8 +118,9 @@
 #  11. install    the install scripts this checkout carries, packaging/install/,
 #                 install the default binary from a folder laid out as a release
 #                 is: the binaries this run runs, under the names the release
-#                 gives them, the two scripts, and SHA256SUMS over them, written by
-#                 the functions the release step writes its own with. The folder
+#                 gives them, on Windows the installer step 13 runs as well, the
+#                 two scripts, and SHA256SUMS over them, written by the functions
+#                 the release step writes its own with. The folder
 #                 is served on this machine's loopback address by
 #                 scripts/lib/serve-release-folder.py, which answers
 #                 latest/download/ with a redirect to the release, as GitHub does,
@@ -193,12 +196,31 @@
 #                 PATH does not hold the folder, there is no uninstall entry. The
 #                 folder must not exist before the step, and the user PATH is put
 #                 back as it was when the step ends, whatever ended it
+#  14. winget     windows/amd64 only. In a fresh folder laid out as step 11's is,
+#                 the installer among its files, scripts/render-package-channels.sh
+#                 --channel winget renders the winget manifest the release renders
+#                 from its own files: three files, Cognitio.Aggrega.yaml,
+#                 Cognitio.Aggrega.installer.yaml and
+#                 Cognitio.Aggrega.locale.en-US.yaml, and nothing else. The
+#                 winget is the one a new Windows PowerShell finds, by name or
+#                 where Windows places it for the user; when it finds none, the
+#                 step installs, for the current user, the WinGet CLI release
+#                 this script pins — its App Installer bundle and the x64
+#                 packages it depends on, fetched from that release on GitHub,
+#                 each refused unless it has the SHA-256 pinned for it —
+#                 through Add-AppxPackage, and uses that one; the step says
+#                 which ran. Then `winget validate --manifest <folder>
+#                 --disable-interactivity`, run through Windows PowerShell,
+#                 must exit 0, which it does only when the manifest has neither
+#                 an error nor a warning. Then the same validation over a copy
+#                 of the manifest whose installer type is one winget does not
+#                 know must refuse it
 #
 # Each binary started in steps 1-8, 11 and 13 has every AGGREGA_ setting of the
 # machine unset, the global configuration pointed at an empty directory
 # (XDG_CONFIG_HOME and APPDATA both name it), and the offline posture on, so it
-# reads no configuration of the machine and reaches no network; steps 4, 9 and 12
-# start none. Step 5 replaces that configuration directory with its own, and step
+# reads no configuration of the machine and reaches no network; steps 4, 9, 12
+# and 14 start none. Step 5 replaces that configuration directory with its own, and step
 # 6 turns the posture off for its push and its
 # pull alone, with the proxy settings naming a closed port on the loopback
 # address: a request to the registry it started, on that address, goes direct,
@@ -207,7 +229,7 @@
 # curl and PowerShell 7 reach the folder it serves and nothing else; Windows
 # PowerShell reads the system's proxy settings rather than these. The tests run
 # in the environment the shell was given; their own setup isolates what they
-# read. Every PowerShell steps 11, 12 and 13 start, Windows PowerShell and
+# read. Every PowerShell steps 11 to 14 start, Windows PowerShell and
 # PowerShell 7 alike, runs with -NoProfile, so no profile of the machine shapes
 # what it does.
 #
@@ -946,25 +968,37 @@ install_run() {
   esac
 }
 
-check_install() {
-  local log="$LOGS/install" base="$ODD/install" tag="v$VERSION" sources="$CLI_ROOT/packaging/install"
-  local folder name asset="" listed_sum="" sum line port="" url i run shell label home dir installed text
-  local -a shells=()
-  folder="$base/release/download/$tag"
+# lay_out_release_folder <folder> — make <folder> and lay it out as the release
+# attaches its files for this target: the binaries this run runs, under the names
+# the release gives them; on Windows the installer --installer names, under its
+# own; and the two install scripts this checkout carries, under theirs. Then
+# SHA256SUMS over them, by the writer the release step writes its own with. Steps
+# 11 and 14 read folders it lays out.
+lay_out_release_folder() {
+  local folder="$1" sources="$CLI_ROOT/packaging/install" name
   for name in install.sh install.ps1; do
     [ -f "$sources/$name" ] || { fail "this checkout holds no packaging/install/$name"; return 1; }
   done
-  mkdir -p "$log" "$folder"
-
-  # The release folder: the binaries this run runs, under the names the release
-  # gives them, and the two install scripts, under theirs, listed by the writer
-  # the release step writes its SHA256SUMS with.
+  mkdir -p "$folder"
   for name in "${BINARY_NAMES[@]}"; do
-    asset="$(smoke_release_asset_name "$TARGET" "$VERSION" "$name")"
-    cp "$BIN_DIR/$name" "$folder/$asset"
+    cp "$BIN_DIR/$name" "$folder/$(smoke_release_asset_name "$TARGET" "$VERSION" "$name")"
   done
+  if [ -n "$INSTALLER" ]; then
+    name="$(smoke_target_installer "$TARGET")" || return 1
+    cp "$INSTALLER/$name" "$folder/$(smoke_release_asset_name "$TARGET" "$VERSION" "$name")"
+  fi
   cp "$sources/install.sh" "$sources/install.ps1" "$folder/"
-  smoke_write_tree_sums "$folder" || return 1
+  smoke_write_tree_sums "$folder"
+}
+
+check_install() {
+  local log="$LOGS/install" base="$ODD/install" tag="v$VERSION"
+  local folder asset="" listed_sum="" sum line port="" url i run shell label home dir installed text
+  local -a shells=()
+  folder="$base/release/download/$tag"
+  mkdir -p "$log"
+
+  lay_out_release_folder "$folder" || return 1
   cat "$folder/SHA256SUMS"
   asset="$(smoke_release_asset_name "$TARGET" "$VERSION" "${BINARY_NAMES[0]}")"
   while read -r sum line; do
@@ -1398,6 +1432,143 @@ check_installer() {
   INSTALL_PATH_KEPT=""
 }
 
+# The files of the winget manifest the release renders, as the winget community
+# repository names them.
+WINGET_FILES=(Cognitio.Aggrega.yaml Cognitio.Aggrega.installer.yaml Cognitio.Aggrega.locale.en-US.yaml)
+
+# The WinGet CLI step 14 installs for the current user when this machine carries
+# none: release v1.29.380 of microsoft/winget-cli, its App Installer bundle and
+# the archive of the packages that bundle depends on, each held to the SHA-256 the
+# release publishes beside it (in its .txt file of the same name, and as GitHub's
+# digest of the asset), and the three x64 packages that archive holds, which its
+# DesktopAppInstaller_Dependencies.json names, each held to a SHA-256 of its own.
+# Moving to another release changes every line below together.
+WINGET_RELEASE_URL=https://github.com/microsoft/winget-cli/releases/download/v1.29.380
+WINGET_BUNDLE=Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle
+WINGET_BUNDLE_SHA256=65dea9c01ce08ee7b763366b27c0e651f97db857c11ca9b9c301826c10092f2e
+WINGET_DEPENDENCIES=DesktopAppInstaller_Dependencies.zip
+WINGET_DEPENDENCIES_SHA256=ba875afe9d190f61218985ac0292a99d1db710bf93e13c68944ca9d89f0d82d1
+WINGET_DEPENDENCIES_X64=(
+  "9c17b521f9d690a1f504da5108ed6eec5669eb3a8fd1331eef43e40d84e74283  Microsoft.VCLibs.140.00_14.0.33519.0_x64.appx"
+  "077a3d1a5d0622bd3004dca85f5e192d6e98ec79b83d4aa06766759ea6c09c3d  Microsoft.VCLibs.140.00.UWPDesktop_14.0.33728.0_x64.appx"
+  "a31595cc4b5aebc18466ec24e8d4b566fe0fcafb52d833b6d139b8691d0e5177  Microsoft.WindowsAppRuntime.1.8_8000.616.304.0_x64.appx"
+)
+
+# winget_find — print the path of the winget this machine carries, and return 0;
+# return 1, printing nothing, when it carries none. A new Windows PowerShell looks
+# it up by name first, then where Windows places the command for the current user,
+# %LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe, which a PATH may leave out.
+winget_find() {
+  local script found
+  script="\$found = @(Get-Command winget -CommandType Application -ErrorAction SilentlyContinue); "
+  script+="if (\$found.Count -gt 0) { \$found[0].Source; exit 0 }; "
+  script+="\$alias = Join-Path \$env:LOCALAPPDATA 'Microsoft\\WindowsApps\\winget.exe'; "
+  script+="if (Test-Path -LiteralPath \$alias) { \$alias; exit 0 }; "
+  script+="exit 1"
+  found="$(MSYS_NO_PATHCONV=1 powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script")" || return 1
+  found="${found%$'\r'}"
+  [ -n "$found" ] || return 1
+  printf '%s\n' "$found"
+}
+
+# winget_install <dir> — install the WinGet CLI pinned above for the current user:
+# fetch the bundle and the archive into <dir>, hold each to its pinned SHA-256
+# through the smoke library's one reader of SHA-256 lists, take the archive's x64
+# packages out with Windows PowerShell's Expand-Archive and hold them to theirs the
+# same way, and register the bundle with those packages as its dependencies through
+# Add-AppxPackage. Refuses, before anything is installed, a download whose digest
+# is not the pinned one.
+winget_install() {
+  local dir="$1" pair script file
+  command -v curl >/dev/null 2>&1 || { fail "curl not found on PATH, which fetches the pinned WinGet CLI"; return 1; }
+  mkdir -p "$dir/x64"
+  for file in "$WINGET_BUNDLE" "$WINGET_DEPENDENCIES"; do
+    curl -sSfL --retry 3 -o "$dir/$file" "$WINGET_RELEASE_URL/$file" || { fail "could not download $WINGET_RELEASE_URL/$file"; return 1; }
+  done
+  printf '%s  %s\n' "$WINGET_BUNDLE_SHA256" "$WINGET_BUNDLE" "$WINGET_DEPENDENCIES_SHA256" "$WINGET_DEPENDENCIES" > "$dir/pinned.sums"
+  smoke_check_sums "$dir/pinned.sums" "$dir" "$WINGET_BUNDLE" "$WINGET_DEPENDENCIES" ||
+    { fail "the WinGet CLI downloaded is not the release this script pins"; return 1; }
+  script="\$ErrorActionPreference = 'Stop'; \$ProgressPreference = 'SilentlyContinue'; "
+  script+="Expand-Archive -LiteralPath \$env:SMOKE_WINGET_ARCHIVE -DestinationPath \$env:SMOKE_WINGET_EXPANDED"
+  SMOKE_WINGET_ARCHIVE="$(smoke_native_path "$dir/$WINGET_DEPENDENCIES")" SMOKE_WINGET_EXPANDED="$(smoke_native_path "$dir/expanded")" \
+    MSYS_NO_PATHCONV=1 powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script" ||
+    { fail "Windows PowerShell could not expand $WINGET_DEPENDENCIES"; return 1; }
+  : > "$dir/x64.sums"
+  for pair in "${WINGET_DEPENDENCIES_X64[@]}"; do
+    printf '%s\n' "$pair" >> "$dir/x64.sums"
+  done
+  smoke_check_sums "$dir/x64.sums" "$dir/expanded/x64" "${WINGET_DEPENDENCIES_X64[@]#*  }" ||
+    { fail "the x64 packages in $WINGET_DEPENDENCIES are not the ones this script pins"; return 1; }
+  script="\$ErrorActionPreference = 'Stop'; \$ProgressPreference = 'SilentlyContinue'; "
+  script+="\$dependencies = @(Get-ChildItem -LiteralPath \$env:SMOKE_WINGET_DEPENDENCIES -Filter *.appx | ForEach-Object { \$_.FullName }); "
+  script+="Add-AppxPackage -Path \$env:SMOKE_WINGET_BUNDLE -DependencyPath \$dependencies; "
+  script+="'registered: ' + (Get-AppxPackage -Name Microsoft.DesktopAppInstaller | ForEach-Object { \$_.PackageFullName })"
+  SMOKE_WINGET_BUNDLE="$(smoke_native_path "$dir/$WINGET_BUNDLE")" SMOKE_WINGET_DEPENDENCIES="$(smoke_native_path "$dir/expanded/x64")" \
+    MSYS_NO_PATHCONV=1 powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script"
+}
+
+# winget_validate <manifest folder> — run `winget validate` over <manifest
+# folder> in Windows PowerShell, with the winget at SMOKE_WINGET, print the exit
+# code winget gave, and return 0 when it is 0 — which winget gives only when the
+# manifest has neither an error nor a warning — and 1 otherwise. winget's other
+# codes are 32-bit values whose low byte, all this shell would see of them, could
+# be 0. The folder and the winget reach PowerShell through the environment, as
+# authenticode_report's file does.
+winget_validate() {
+  local script
+  script="\$ErrorActionPreference = 'Continue'; "
+  script+="'winget: ' + \$env:SMOKE_WINGET; "
+  script+="& \$env:SMOKE_WINGET --version; "
+  script+="& \$env:SMOKE_WINGET validate --manifest \$env:SMOKE_WINGET_MANIFEST --disable-interactivity; "
+  script+="\$code = \$LASTEXITCODE; "
+  script+="'winget validate exited ' + \$code + ' (0x' + ('{0:X8}' -f \$code) + ')'; "
+  script+="if (\$code -eq 0) { exit 0 } else { exit 1 }"
+  SMOKE_WINGET_MANIFEST="$(smoke_native_path "$1")" MSYS_NO_PATHCONV=1 \
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script"
+}
+
+check_winget() {
+  local log="$LOGS/winget" base="$WORK/winget" folder manifest planted text file
+  folder="$base/release" manifest="$base/channels/winget" planted="$base/planted"
+  mkdir -p "$log" "$base/channels" "$planted"
+  # The winget the machine carries, or else the pinned one, installed here.
+  export SMOKE_WINGET
+  if SMOKE_WINGET="$(winget_find)"; then
+    echo "winget: the one this machine carries, $SMOKE_WINGET"
+  else
+    echo "winget: this machine carries none, so the pinned WinGet CLI from $WINGET_RELEASE_URL is installed for this user"
+    smoke_run_captured "$log" winget-install winget_install "$base/winget-cli" ||
+      { fail "the pinned WinGet CLI could not be installed"; return 1; }
+    SMOKE_WINGET="$(winget_find)" ||
+      { fail "the pinned WinGet CLI was installed, but no new Windows PowerShell finds winget"; return 1; }
+    echo "winget: the pinned WinGet CLI this step installed, $SMOKE_WINGET"
+  fi
+  lay_out_release_folder "$folder" || return 1
+  smoke_run_captured "$log" render bash "$CLI_ROOT/scripts/render-package-channels.sh" --channel winget "$folder" "$VERSION" "$base/channels" ||
+    { fail "scripts/render-package-channels.sh --channel winget did not render the winget manifest from the release folder"; return 1; }
+  smoke_check_only_entries "$manifest" "${WINGET_FILES[@]}" ||
+    { fail "the winget manifest rendered is not the three files the winget community repository takes"; return 1; }
+  for file in "${WINGET_FILES[@]}"; do
+    printf -- '--- %s\n' "$file"
+    cat "$manifest/$file"
+  done
+  smoke_run_captured "$log" validate winget_validate "$manifest" ||
+    { fail "winget validate does not accept the winget manifest rendered from the release folder"; return 1; }
+  echo "ok: winget validate accepts the winget manifest rendered from the release folder, with neither an error nor a warning"
+
+  echo "The same validation over a copy whose installer type is one winget does not know must refuse it:"
+  cp "$manifest"/* "$planted/"
+  text="$(cat "$planted/Cognitio.Aggrega.installer.yaml")"
+  [[ "$text" == *"InstallerType: nullsoft"* ]] ||
+    { fail "the installer manifest carries no 'InstallerType: nullsoft' to plant over"; return 1; }
+  printf '%s\n' "${text/InstallerType: nullsoft/InstallerType: planted-unknown}" > "$planted/Cognitio.Aggrega.installer.yaml"
+  if smoke_run_captured "$log" validate-planted winget_validate "$planted"; then
+    fail "winget validate accepted an installer type it does not know, so its acceptance above proves nothing"
+    return 1
+  fi
+  echo "ok: winget validate refuses the manifest with an installer type it does not know"
+}
+
 # Each step runs in a subshell, so an environment it changes, and a process it
 # starts, end with it. The subshell is not the left side of || or &&: there the
 # shell would stop honouring set -e inside it, and a failing command would no
@@ -1471,6 +1642,7 @@ if [ "$GOOS_T" = windows ] || [ "$GOOS_T" = darwin ]; then
 fi
 if [ "$GOOS_T" = windows ]; then
   run_step "13. installer: $(smoke_target_installer "$TARGET") /S, an upgrade over it, and uninstall.exe /S" check_installer isolated
+  run_step "14. winget: the winget manifest rendered from a release folder on this machine, and winget validate over it" check_winget
 fi
 
 if [ "${#FAILED[@]}" -gt 0 ]; then

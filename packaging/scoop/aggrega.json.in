@@ -1,7 +1,7 @@
 {
     "##": "Written by every Aggrega release from packaging/scoop/aggrega.json.in in https://github.com/aggrega-ai/aggrega-cli; a change made here is replaced by the next release.",
     "version": "@VERSION@",
-    "description": "Deterministic ahead-of-time compiler for deployment artifacts",
+    "description": "@DESCRIPTION@",
     "homepage": "https://aggrega.ai",
     "license": "Apache-2.0",
     "architecture": {
