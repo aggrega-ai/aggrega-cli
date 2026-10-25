@@ -10,19 +10,36 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // AssembleMutatorInput builds the [MutatorInput] payload the Step-2 mutator
-// socket hands its guest: the release-level compilation context, a labels-only
-// projection of the flattened topology graph, and the attachment's own inputs —
-// the pinned source files and the free-form settings object. Each node projects
-// its underlying Component, the resolved Component version (read from the
-// catalog, the same source the IR builder stamps onto a node), and its label
-// set. Edges, values, and feature payloads are deliberately withheld — the
+// socket hands its guest: the release-level compilation context, a projection
+// of the flattened topology graph, and the attachment's own inputs — the pinned
+// source files and the free-form settings object. Each node projects its
+// underlying Component, the resolved Component version (read from the catalog,
+// the same source the IR builder stamps onto a node), its label set, and the
+// values its instance declares — the Aggregate's values for that instance, with
+// the Aggregate's templates already evaluated against its parameters, and
+// nothing a Component schema default, a Recipe or a Feature contributes later.
+// The values are handed over to be read, so a developer's configuration can
+// decide a label; [ApplyMutatorPatches] applies patches to the labels alone, so
+// the guest cannot change them. Edges and feature payloads are withheld — the
 // mutator's sanctioned job is labelling, not topology reshaping. Nodes project
-// in author order via the graph's OrderedMap so the payload is deterministic.
+// in author order via the graph's OrderedMap, and each node's values keep the
+// author's key order, so the payload is deterministic.
+//
+// A value the node's Component declares sensitive reaches the guest as the
+// declared withheld marker, never in the clear — the same leaves, read from the
+// same declarations through [redact.WithholdDeclaredValues], that the
+// governance socket's verdict over the graph withholds. A governance plugin
+// therefore reads a declared-sensitive value as withheld at either role that
+// hands it the graph's values, while a sibling value no declaration reaches
+// arrives verbatim.
+// The node's own values are not touched: the withholding is a copy made for the
+// guest, and the graph built from the topology carries the authored data.
 //
 // It is the single home that builds the mutator input; the caller supplies the
 // attachment inputs already projected — sources as the ordered source entries
@@ -31,6 +48,7 @@ import (
 // its verbatim JSON form (deterministic sorted keys); an attachment with no
 // sources and no settings yields a payload byte-identical to one with neither.
 func AssembleMutatorInput(topo *TopologyResult, catalogLookup resolver.CatalogLookup, cc CompilationContext, sources []MutatorSource, settings map[string]any) (MutatorInput, error) {
+	declared := DeclaredComponentLeaves(catalogLookup)
 	nodes := types.NewOrderedMap[MutatorNode]()
 	for nodeID, node := range topo.Nodes.All() {
 		var version string
@@ -39,10 +57,15 @@ func AssembleMutatorInput(topo *TopologyResult, catalogLookup resolver.CatalogLo
 				version = catComp.Metadata.Version
 			}
 		}
+		values := node.Values
+		if values.Len() > 0 {
+			values = redact.WithholdDeclaredValues(values, declared(node.ComponentType).Covers)
+		}
 		nodes.Set(nodeID, MutatorNode{
 			Component:       node.ComponentType,
 			ResolvedVersion: version,
 			Labels:          node.Labels,
+			Values:          values,
 		})
 	}
 	mi := MutatorInput{
@@ -58,6 +81,37 @@ func AssembleMutatorInput(topo *TopologyResult, catalogLookup resolver.CatalogLo
 		mi.Settings = raw
 	}
 	return mi, nil
+}
+
+// DeclaredComponentLeaves returns a reader of the leaves a Component type's
+// schema declares sensitive, memoised per Component type for as long as the
+// returned function lives. A caller makes one per build and asks it once per
+// node: the schema compile is uncached and every node of one type reads the same
+// answer, and a fresh reader per build means a catalog edit between builds is
+// never carried over.
+//
+// It is the one home for that reading. The label-transform input withholds a
+// node's values against it and the IR builder marks a node's sensitive leaves
+// against it, so the two cannot come to different answers about what one
+// Component declared. A lookup with no Component accessor (a catalog-less
+// build), an empty type, or a Component whose schema does not resolve or compile
+// declares nothing.
+func DeclaredComponentLeaves(catalogLookup resolver.CatalogLookup) func(componentType string) resolver.SensitiveLeaves {
+	cache := map[string]resolver.SensitiveLeaves{}
+	return func(componentType string) resolver.SensitiveLeaves {
+		if catalogLookup.Component == nil || componentType == "" {
+			return resolver.SensitiveLeaves{}
+		}
+		if d, cached := cache[componentType]; cached {
+			return d
+		}
+		var declared resolver.SensitiveLeaves
+		if compiled, ok := resolver.CompileComponentSchema(catalogLookup, componentType); ok {
+			declared = resolver.DeclaredSensitiveLeaves(compiled)
+		}
+		cache[componentType] = declared
+		return declared
+	}
 }
 
 // mutatorLabelsNode is the per-node shape of the labels-only document the host

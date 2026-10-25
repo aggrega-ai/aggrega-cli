@@ -207,10 +207,11 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 }
 
 // runMutatorSocket runs the Step-2 mutator socket: for each configured mutator
-// plugin, in order, it assembles the labels-only MutatorInput from the topology
-// result, encodes it as canonical CBOR, dispatches the plugin's mutate export (or
-// a per-attachment override), and applies the returned JSON Patches to the
-// node-label surface. This socket carries canonical CBOR in both directions; the
+// plugin, in order, it assembles the MutatorInput — each node's labels and
+// declared values — from the topology result, encodes it as canonical CBOR,
+// dispatches the plugin's mutate export (or a per-attachment override), and
+// applies the returned JSON Patches to the node-label surface. This socket
+// carries canonical CBOR in both directions; the
 // patch documents it returns stay opaque and are still JSON, because the socket
 // carries them verbatim rather than reading into them. It runs
 // between topology construction and IR build so the auto-tagged labels flow into

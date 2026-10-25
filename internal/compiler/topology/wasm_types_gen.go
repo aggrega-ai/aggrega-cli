@@ -20,7 +20,7 @@ import (
 	"unicode/utf8"
 )
 
-// MutatorInput The payload the host hands the mutator plugin on each invocation: release-level compilation context plus a labels-only projection of the topology graph.
+// MutatorInput The payload the host hands the mutator plugin on each invocation: release-level compilation context plus a projection of the topology graph carrying each node's labels and the values its instance declares.
 type MutatorInput struct {
 	CompilationContext CompilationContext `json:"compilation_context" yaml:"compilation_context" cbor:"compilation_context"`
 	Graph              MutatorGraph       `json:"graph" yaml:"graph" cbor:"graph"`
@@ -46,13 +46,13 @@ type CompilationContext struct {
 	Environment string `json:"environment" yaml:"environment" cbor:"environment"`
 }
 
-// MutatorGraph The labels-only projection of the topology graph exposed to the mutator plugin. Intentionally narrower than the full topology result: edges, values, and feature payloads are not exposed because the mutator's job is labelling, not topology reshaping.
+// MutatorGraph The projection of the topology graph exposed to the mutator plugin: each node's Component, its resolved version, its labels and the values its instance declares. Intentionally narrower than the full topology result: edges and feature payloads are not exposed because the mutator's job is labelling, not topology reshaping. The values are there to be read, so a configuration the developer declared can decide a label; a patch reaches labels and nothing else, so the plugin cannot change them.
 type MutatorGraph struct {
 	// Nodes Nodes keyed by absolute node ID.
 	Nodes types.OrderedMap[MutatorNode] `json:"nodes" yaml:"nodes" cbor:"nodes"`
 }
 
-// MutatorNode The minimum per-node projection the mutator plugin needs to evaluate compliance rules: which Component the node implements, which version of that Component resolved, and which labels the node carries.
+// MutatorNode The per-node projection the mutator plugin evaluates its rules against: which Component the node implements, which version of that Component resolved, which labels the node carries, and which values its instance declares.
 type MutatorNode struct {
 	// Component The name of the underlying Component the node instantiates.
 	Component string `json:"component" yaml:"component" cbor:"component"`
@@ -60,6 +60,8 @@ type MutatorNode struct {
 	ResolvedVersion string `json:"resolved_version" yaml:"resolved_version" cbor:"resolved_version"`
 	// Labels The node's duck-typing and ontology labels.
 	Labels types.OrderedMap[string] `json:"labels" yaml:"labels" cbor:"labels"`
+	// Values The values the node's component instance declares in the Aggregate, keyed as the author wrote them and in the author's order. Every template in the Aggregate has already been evaluated against its parameters, so a value hoisted into a parameter arrives as the value the Release supplied, or as the parameter's default. Only the instance's own values are here: a default the Component's schema declares, and anything a Recipe or a Feature contributes, are not. A value the Component declares sensitive arrives withheld, exactly as the governance verdict over the whole graph receives it: in its place sits the same single-key withheld-marker object that verdict carries, naming the reason declared, and a sibling value no declaration reaches arrives as written. A plugin reads them to decide which labels to add; a patch cannot reach them. Absent when the instance declares no values.
+	Values types.OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty" cbor:"values,omitempty"`
 }
 
 // MutatorSource One definition file handed to the plugin: its base-name path and the file's content. Both are carried verbatim; the host does not parse the content.
@@ -470,6 +472,18 @@ func (t MutatorNode) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if !t.Values.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"values\":")
+		if enc, err := t.Values.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -508,6 +522,14 @@ func (t *MutatorNode) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "values":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				if err := t.Values.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -527,7 +549,7 @@ func (t *MutatorNode) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *MutatorNode) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "component", "resolved_version", "labels"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "component", "resolved_version", "labels", "values"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -982,6 +1004,9 @@ func (t MutatorNode) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t MutatorNode) appendCBOR(dst []byte) ([]byte, error) {
 	n := 3
+	if !t.Values.IsZero() {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	dst = appendCBORTextString(dst, "labels")
 	dst = appendCBORHead(dst, 4, uint64(t.Labels.Len()))
@@ -989,6 +1014,19 @@ func (t MutatorNode) appendCBOR(dst []byte) ([]byte, error) {
 		dst = appendCBORHead(dst, 4, 2)
 		dst = appendCBORTextString(dst, k)
 		dst = appendCBORTextString(dst, mv)
+	}
+	if !t.Values.IsZero() {
+		dst = appendCBORTextString(dst, "values")
+		dst = appendCBORHead(dst, 4, uint64(t.Values.Len()))
+		for k, mv := range t.Values.All() {
+			dst = appendCBORHead(dst, 4, 2)
+			dst = appendCBORTextString(dst, k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
 	}
 	dst = appendCBORTextString(dst, "component")
 	dst = appendCBORTextString(dst, t.Component)
@@ -1052,6 +1090,33 @@ func (t *MutatorNode) decodeCBOR(dec *cborDec) error {
 				}
 				t.Labels = om
 			}
+		case "values":
+			{
+				mn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[any]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readEntryKey()
+					if err != nil {
+						return err
+					}
+					if _, dup := om.Get(mk); dup {
+						return duplicateKeyError(mk)
+					}
+					var mv any
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else if v, err := types.DecodeJSONValue(raw); err != nil {
+						return err
+					} else {
+						mv = v
+					}
+					om.Set(mk, mv)
+				}
+				t.Values = om
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -1068,7 +1133,7 @@ func (t *MutatorNode) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *MutatorNode) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "component", "resolved_version", "labels"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "component", "resolved_version", "labels", "values"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

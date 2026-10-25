@@ -87,6 +87,17 @@ func TestHostGuestWireParity_Mutator(t *testing.T) {
 					Component:       "core/web-service",
 					ResolvedVersion: "1.2.3",
 					Labels:          om[string](t, "tier", "web", "a", "1"),
+					// Declared values in an order that is not sorted order at either
+					// level, holding the shapes an Aggregate's values decode into: an
+					// integer, a list, and a nested ordered map.
+					Values: om[any](t,
+						"replicas", 2,
+						"extensions", []any{"vector"},
+						"tuning", func() any {
+							nested := om[any](t, "z", "last", "a", "first")
+							return &nested
+						}(),
+					),
 				},
 				"alpha/db", topology.MutatorNode{
 					Component:       "core/database",
@@ -136,6 +147,19 @@ func TestHostGuestWireParity_Mutator(t *testing.T) {
 	}
 	if keys := guest.Graph.Nodes.Keys(); !sameKeys(keys, []string{"zeta/web", "alpha/db", "mid"}) {
 		t.Errorf("plugin-side decoded node key order = %v, want the inserted order [zeta/web alpha/db mid]", keys)
+	}
+	// A node's declared values reach the plugin side in the order the compiler
+	// side held them, each as the verbatim JSON of its value, and a node that
+	// declares none reaches it with none.
+	guestWeb, _ := guest.Graph.Nodes.Get("zeta/web")
+	if keys := guestWeb.Values.Keys(); !sameKeys(keys, []string{"replicas", "extensions", "tuning"}) {
+		t.Errorf("plugin-side decoded values key order = %v, want the inserted order [replicas extensions tuning]", keys)
+	}
+	if tuning, _ := guestWeb.Values.Get("tuning"); string(tuning) != `{"z":"last","a":"first"}` {
+		t.Errorf("plugin-side nested value = %s, want the compiler side's own order {\"z\":\"last\",\"a\":\"first\"}", tuning)
+	}
+	if guestDB, _ := guest.Graph.Nodes.Get("alpha/db"); guestDB.Values.Len() != 0 {
+		t.Errorf("plugin side decoded %d values for a node that declares none", guestDB.Values.Len())
 	}
 
 	out := topology.MutatorOutput{Patches: []json.RawMessage{json.RawMessage(`[{"op":"add"}]`)}}

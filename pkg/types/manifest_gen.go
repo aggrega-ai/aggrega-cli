@@ -41,6 +41,6 @@ type ManifestMetadata struct {
 type ManifestSpec struct {
 	// Extends URI of a base Manifest to inherit mappings from. Child mappings safely overwrite the base to support frictionless local dev loops.
 	Extends string `json:"extends,omitempty" yaml:"extends,omitempty"`
-	// Mappings Maps abstract interfaces to concrete implementations. Declare mappings under the top-level keys 'components' and 'features', each mapping component-type / feature-type URIs directly to Recipe / FeatureRecipe URIs. These two keys are the whole surface; no other key is accepted here. The mapping is capability-agnostic at the Manifest layer — capability determination flows from each resolved Recipe's spec.capability at orchestrator-time.
+	// Mappings Maps abstract interfaces to concrete implementations. Declare mappings under the top-level keys 'components' and 'features', each mapping component-type / feature-type URIs directly to Recipe / FeatureRecipe URIs. These two keys are the whole surface; no other key is accepted here. The mapping is capability-agnostic at the Manifest layer — capability determination flows from each resolved Recipe's spec.capability when Aggrega builds the Release.
 	Mappings ManifestMappings `json:"mappings" yaml:"mappings"`
 }

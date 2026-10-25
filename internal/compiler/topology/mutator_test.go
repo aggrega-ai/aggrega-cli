@@ -4,29 +4,108 @@
 package topology_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // twoNodeTopology builds a minimal TopologyResult with two labelled nodes for
-// the mutator confinement tests: "web" carrying tier=frontend and "db"
-// carrying tier=backend, both in author order.
+// the mutator confinement tests: "web" carrying tier=frontend and the values
+// webValues builds, and "db" carrying tier=backend and no values, both in
+// author order.
 func twoNodeTopology() *topology.TopologyResult {
 	nodes := types.NewOrderedMap[*topology.TopologyNode]()
 
 	webLabels := types.NewOrderedMap[string]()
 	webLabels.Set("tier", "frontend")
-	nodes.Set("web", &topology.TopologyNode{InstanceID: "web", ComponentType: "core/web", Labels: *webLabels})
+	nodes.Set("web", &topology.TopologyNode{InstanceID: "web", ComponentType: "core/web", Labels: *webLabels, Values: webValues()})
 
 	dbLabels := types.NewOrderedMap[string]()
 	dbLabels.Set("tier", "backend")
 	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/db", Labels: *dbLabels})
 
 	return &topology.TopologyResult{Nodes: *nodes}
+}
+
+// webValues is the "web" node's declared values, set in an order that is not
+// sorted order — replicas before extensions before a nested object whose own
+// keys run z before a — so a projection that sorted any level is observable.
+// The nested object is held as a pointer and the list as []any, the shapes an
+// Aggregate's YAML decodes a nested mapping and a sequence into.
+func webValues() types.OrderedMap[any] {
+	nested := types.NewOrderedMap[any]()
+	nested.Set("z", "last")
+	nested.Set("a", "first")
+	values := types.NewOrderedMap[any]()
+	values.Set("replicas", 2)
+	values.Set("extensions", []any{"vector"})
+	values.Set("tuning", nested)
+	return *values
+}
+
+// TestAssembleMutatorInput_CarriesInstanceValues proves the projection hands a
+// guest each node's declared values: a node declaring values carries them in
+// the author's key order at every level, and a node declaring none carries no
+// values key on the wire at all, so an attachment over a graph without values
+// sees the payload it saw before values were projected.
+func TestAssembleMutatorInput_CarriesInstanceValues(t *testing.T) {
+	topo := twoNodeTopology()
+	mi, err := topology.AssembleMutatorInput(topo, resolver.CatalogLookup{},
+		topology.CompilationContext{ReleaseName: "rel", Environment: "prod"}, nil, nil)
+	if err != nil {
+		t.Fatalf("AssembleMutatorInput: %v", err)
+	}
+
+	web, ok := mi.Graph.Nodes.Get("web")
+	if !ok {
+		t.Fatal("web node missing from the projection")
+	}
+	if got, want := web.Values.Keys(), []string{"replicas", "extensions", "tuning"}; !slices.Equal(got, want) {
+		t.Errorf("web values key order = %v, want %v", got, want)
+	}
+	webJSON, err := json.Marshal(web)
+	if err != nil {
+		t.Fatalf("marshal web node: %v", err)
+	}
+	const wantWeb = `{"component":"core/web","resolved_version":"","labels":{"tier":"frontend"},` +
+		`"values":{"replicas":2,"extensions":["vector"],"tuning":{"z":"last","a":"first"}}}`
+	if string(webJSON) != wantWeb {
+		t.Errorf("web node on the JSON wire:\n got: %s\nwant: %s", webJSON, wantWeb)
+	}
+
+	db, _ := mi.Graph.Nodes.Get("db")
+	dbJSON, err := json.Marshal(db)
+	if err != nil {
+		t.Fatalf("marshal db node: %v", err)
+	}
+	const wantDB = `{"component":"core/db","resolved_version":"","labels":{"tier":"backend"}}`
+	if string(dbJSON) != wantDB {
+		t.Errorf("db node on the JSON wire:\n got: %s\nwant: %s", dbJSON, wantDB)
+	}
+
+	// Identical input yields identical bytes on the wire the socket carries.
+	first, err := mi.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("EncodeCBOR: %v", err)
+	}
+	again, err := topology.AssembleMutatorInput(twoNodeTopology(), resolver.CatalogLookup{},
+		topology.CompilationContext{ReleaseName: "rel", Environment: "prod"}, nil, nil)
+	if err != nil {
+		t.Fatalf("AssembleMutatorInput (second): %v", err)
+	}
+	second, err := again.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("EncodeCBOR (second): %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("two projections of identical input encode differently:\n first: %x\nsecond: %x", first, second)
+	}
 }
 
 func labelOf(t *testing.T, topo *topology.TopologyResult, nodeID, key string) (string, bool) {
@@ -94,6 +173,14 @@ func TestApplyMutatorPatches_RejectsOutOfBounds(t *testing.T) {
 		"add top-level key":            json.RawMessage(`[{"op":"add","path":"/injected","value":"ghost"}]`),
 		"non-string label value":       json.RawMessage(`[{"op":"add","path":"/nodes/web/labels/nested","value":{"deep":"x"}}]`),
 		"remove a node":                json.RawMessage(`[{"op":"remove","path":"/nodes/db"}]`),
+		// The guest is handed each node's values, and none of these may change
+		// them: the patch surface carries labels alone, so a path into the values
+		// a guest read either addresses nothing or adds a field beside labels.
+		"replace a declared value":     json.RawMessage(`[{"op":"replace","path":"/nodes/web/values/replicas","value":9}]`),
+		"add under the values":         json.RawMessage(`[{"op":"add","path":"/nodes/web/values/extensions","value":["none"]}]`),
+		"remove a declared value":      json.RawMessage(`[{"op":"remove","path":"/nodes/web/values/tuning"}]`),
+		"add a values field":           json.RawMessage(`[{"op":"add","path":"/nodes/db/values","value":{"replicas":9}}]`),
+		"replace the values wholesale": json.RawMessage(`[{"op":"replace","path":"/nodes/web/values","value":{}}]`),
 	}
 	for name, patch := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -108,6 +195,18 @@ func TestApplyMutatorPatches_RejectsOutOfBounds(t *testing.T) {
 			// The rejected mutation must not have leaked into the graph.
 			if _, hacked := labelOf(t, topo, "web", "component"); hacked {
 				t.Errorf("rejected patch leaked a component label onto the graph")
+			}
+			// Nor into any node's values.
+			web, _ := topo.Nodes.Get("web")
+			got, err := json.Marshal(web.Values)
+			if err != nil {
+				t.Fatalf("marshal web values: %v", err)
+			}
+			if want := `{"replicas":2,"extensions":["vector"],"tuning":{"z":"last","a":"first"}}`; string(got) != want {
+				t.Errorf("web values after a rejected patch = %s, want %s", got, want)
+			}
+			if db, _ := topo.Nodes.Get("db"); !db.Values.IsZero() {
+				t.Errorf("db gained values after a rejected patch: %d keys", db.Values.Len())
 			}
 		})
 	}

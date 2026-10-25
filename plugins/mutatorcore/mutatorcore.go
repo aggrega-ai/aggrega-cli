@@ -2,10 +2,11 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package mutatorcore holds the pure label-patch computations the embedded
-// mutator guests run. A mutator reads a labels-only projection of the topology
-// graph plus its own attachment inputs — a free-form settings object and a set
-// of definition files — and returns JSON Patch documents that add or overwrite
-// node labels and nothing else.
+// mutator guests run. A mutator reads a projection of the topology graph —
+// each node's Component, version, labels and declared values — plus its own
+// attachment inputs — a free-form settings object and a set of definition
+// files — and returns JSON Patch documents that add or overwrite node labels and
+// nothing else. The two guests here decide on labels and Components alone.
 //
 // The computations live here, outside the guest main packages, so they compile
 // and run on the host toolchain and are exercised directly in tests — the guest

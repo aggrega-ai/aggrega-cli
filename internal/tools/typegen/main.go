@@ -667,21 +667,30 @@ var frpHostVocabulary = map[string]string{
 	"DocumentScope":    "string",
 }
 
-// mutatorGuestVocabulary is empty: the mutator schema's annotations already spell
-// the guest realization. Its two order-preserving containers resolve to the
-// guest package's own order-keeping container, so a guest receives the graph's
-// nodes and each node's labels in the order the host holds them, and the
-// mutator carries no cross-package opaque host type.
-var mutatorGuestVocabulary = map[string]string{}
+// mutatorGuestVocabulary maps the one mutator annotation whose host spelling a
+// guest cannot hold: a node's values, an order-preserving container of untyped
+// values, become the guest package's own order-keeping container of
+// json.RawMessage, the same shape a node's values take on the provider socket.
+// The guest receives the keys in the order the host holds them and each value as
+// its verbatim bytes, which it decodes as far as its rule needs. Every other
+// annotation already spells the guest realization: the graph's nodes and each
+// node's labels resolve to the guest package's own order-keeping container, and
+// the mutator carries no cross-package opaque host type.
+var mutatorGuestVocabulary = map[string]string{
+	"OrderedMap[any]": "OrderedMap[json.RawMessage]",
+}
 
 // mutatorHostVocabulary maps the mutator schema's container annotations to the
 // host realization: the order-preserving types.OrderedMap (qualified, since the
 // codec lands in package topology), so the host wire carries the order the host
 // built each container in, which is the order identical input always builds
-// (the determinism contract).
+// (the determinism contract). A node's values are the recursively
+// order-preserving types.OrderedMap[any] the topology node already holds, so the
+// author's key order reaches the guest intact.
 var mutatorHostVocabulary = map[string]string{
 	"OrderedMap[MutatorNode]": "types.OrderedMap[MutatorNode]",
 	"OrderedMap[string]":      "types.OrderedMap[string]",
+	"OrderedMap[any]":         "types.OrderedMap[any]",
 }
 
 // annotationTransformGuestVocabulary is empty: the annotation-transform schema's

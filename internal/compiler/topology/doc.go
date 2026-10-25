@@ -104,8 +104,9 @@
 // Mutator-plugin contract. The MutatorInput / MutatorOutput /
 // CompilationContext / MutatorGraph / MutatorNode types in
 // wasm_types_gen.go are the ABI shape of the Step-2 mutator socket.
-// AssembleMutatorInput (mutator.go) builds the labels-only payload the
-// pipeline marshals to a configured mutator plugin, and ApplyMutatorPatches
+// AssembleMutatorInput (mutator.go) builds the payload — each node's labels
+// and the values its instance declares, read-only — the pipeline marshals to
+// a configured mutator plugin, and ApplyMutatorPatches
 // applies the plugin's returned JSON Patches to the node-label surface —
 // the narrow auto-tagging exception — halting on any patch that reaches
 // outside node labels.

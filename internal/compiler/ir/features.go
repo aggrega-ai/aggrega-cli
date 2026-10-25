@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -359,26 +360,6 @@ type scopeKey struct {
 const (
 	pillarValues = "values"
 	pillarInfra  = "infra"
-)
-
-// The coordinate prefix each authoring pillar contributes to a marked leaf's
-// path, so one list can carry leaves from both without a bare path being
-// ambiguous: a Feature may declare `password` in values and again in infra and
-// mean different data.
-//
-// The prefix is read from the shared leaf-coordinate primitives rather than
-// spelled here, because the coordinate it builds is the one a display prints
-// and a consumer parses back, and a writer holding its own copy of the prefix
-// would agree with the reader on the day it was written. That shared home is
-// the same package this one already depends on for the leaf paths themselves,
-// so reaching it costs no dependency.
-//
-// The render side keeps a declared-slot root of its own, and that one is NOT a
-// duplicate: it names a schema block rather than a pillar, so it has no
-// counterpart here and nothing to share.
-const (
-	sensitiveLeafRootValues = types.PillarRootValues
-	sensitiveLeafRootInfra  = types.PillarRootInfra
 )
 
 // attachmentScope is the authoring scope one attachment contribution came
@@ -1749,66 +1730,19 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 // block it was built from, so a leaf standing at a schema-declared default is
 // named alongside one an author wrote.
 //
-// It is the ONE home for the per-leaf marking, and its three subjects are the
-// three places the graph carries pillar data: a merged attachment's own values
-// and infra, a node's values and infra against its Component's declarations,
-// and a boundary attachment's infra against its Feature's. Each caller supplies
-// the payloads and the declarations; the rule joining them lives only here, so
-// a surface added later cannot come to mark on a different reading from the
-// surfaces already marked.
-//
-// The join asks [resolver.SensitiveLeaves.Covers], which is the one home for
-// "does this entity's declarations reach this datum" and is the same question
-// every withholding surface asks of the same declarations. A declaration COVERS
-// a leaf when it names that leaf or names an object containing it, so a leaf
-// beneath an object an author declared sensitive is named by that declaration
-// and marking it claims nothing the author did not write. Matching is
-// segment-wise, so a declaration at "db" reaches "db.password" and not a
-// sibling "dbPassword".
-//
-// The direction the covering rule is NOT allowed to slip into is worth naming
-// where the join is made. Marking may not claim more than an author declared,
-// because a marking becomes a refusal or a concealment downstream and there is
-// no cheap undo for calling public data secret. Covering a subtree an author
-// declared is not that: the over-claim would be marking a leaf no declaration
-// reaches, which this join cannot do because every input is a declaration.
-// Nothing reads a path's own text and no value is inspected — whether the author
-// wrote the material itself at a marked leaf or a pointer to it is not knowable
-// here and is not what the marking claims.
-//
-// Each payload is FLATTENED rather than read at its top level, which is
-// load-bearing. A pillar is a tree: a nested leaf lives inside a nested map, so
-// the pillar's own top-level keys name only the shallowest leaves. Walking those
-// keys alone would name a top-level leaf and silently miss every nested one, and
-// silence is the wrong direction to fail in for this axis.
-//
-// The two pillars are collected in declaration order, values before infra, and
-// each pillar's leaves arrive in the order the payload holds them. That is the
-// payload's own order throughout — the payloads are order-preserving
-// containers, so no sort is needed and none is applied. Sorting would replace
-// an order a consumer can act on with one it cannot.
+// Its three subjects are the three places the graph carries pillar data: a
+// merged attachment's own values and infra, a node's values and infra against
+// its Component's declarations, and a boundary attachment's infra against its
+// Feature's. The rule joining payload and declarations is
+// [redact.DeclaredLeaves], asked through [resolver.SensitiveLeaves.Covers] — the
+// same rule the label-transform input withholds a node's values by — so this
+// function only adapts the declarations to it and decides nothing itself.
 //
 // Returns nil when the entity declares no sensitive leaf in either pillar, when
 // it resolves to no schema at all, or when the payload carries nothing at the
-// leaves it does declare. That is the honest answer rather than an empty list:
-// there is no marked leaf to name. A caller with only one pillar to offer
-// passes the zero value for the other, which names nothing.
+// leaves it does declare.
 func derivePayloadSensitiveLeaves(values, infra types.OrderedMap[any], declared resolver.SensitiveLeaves) []string {
-	var out []string
-	collect := func(pillar types.OrderedMap[any], root string) {
-		if pillar.Len() == 0 {
-			return
-		}
-		for _, leaf := range types.FlattenLeaves(pillar) {
-			coordinate := root + leaf.Path
-			if declared.Covers(coordinate) {
-				out = append(out, coordinate)
-			}
-		}
-	}
-	collect(values, sensitiveLeafRootValues)
-	collect(infra, sensitiveLeafRootInfra)
-	return out
+	return redact.DeclaredLeaves(values, infra, declared.Covers)
 }
 
 // namedFeature pairs an instance name with a FeatureInstance for ordered

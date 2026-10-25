@@ -302,27 +302,12 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	}
 
 	// Declared-sensitive leaves per Component type, memoised across the node walk
-	// for the reason the Feature compile above is: the schema compile is uncached
-	// and every node of one type reads the same answer. The memo's lifetime is
-	// this build, so a catalog edit between builds is never carried over. A
-	// catalog-less build supplies a lookup whose accessors are nil, and nothing
-	// is declared in that world, so the question is answered here rather than
-	// asked of a reader with no catalog to read.
-	declaredComponentCache := map[string]resolver.SensitiveLeaves{}
-	declaredComponentLeaves := func(componentType string) resolver.SensitiveLeaves {
-		if cfg.CatalogLookup.Component == nil || componentType == "" {
-			return resolver.SensitiveLeaves{}
-		}
-		if d, cached := declaredComponentCache[componentType]; cached {
-			return d
-		}
-		var declared resolver.SensitiveLeaves
-		if compiled, ok := resolver.CompileComponentSchema(cfg.CatalogLookup, componentType); ok {
-			declared = resolver.DeclaredSensitiveLeaves(compiled)
-		}
-		declaredComponentCache[componentType] = declared
-		return declared
-	}
+	// for the reason the Feature compile above is. The reader is made here, once
+	// per build, so the memo's lifetime is this build and a catalog edit between
+	// builds is never carried over. It is the same reader the label-transform
+	// input withholds a node's values against, so the two cannot disagree about
+	// what one Component declared; a catalog-less build declares nothing.
+	declaredComponentLeaves := topology.DeclaredComponentLeaves(cfg.CatalogLookup)
 	var attachmentErrs []*resolver.ResolverError
 	var attachmentParams map[string]any
 	attachmentEntity := "Aggregate"
