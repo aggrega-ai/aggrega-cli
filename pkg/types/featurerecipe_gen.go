@@ -8,7 +8,7 @@
 
 package types
 
-// FeatureRecipe Ops-authored definitions mapping Dev abstract features to concrete, versioned Go plugin pipelines. Strictly 1:1 with a physical provider and catalog feature.
+// FeatureRecipe Ops-authored definitions mapping an abstract catalog Feature to a concrete, versioned implementation for one provider capability. Strictly 1:1 with a physical provider and catalog feature.
 type FeatureRecipe struct {
 	APIVersion string                `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string                `json:"kind" yaml:"kind"`
@@ -19,9 +19,9 @@ type FeatureRecipe struct {
 
 type FeatureRecipeMetadata struct {
 	Name string `json:"name" yaml:"name"`
-	// Version Strict Semantic Versioning of the feature plugin pipeline (e.g., 1.2.5).
+	// Version Strict Semantic Versioning of the FeatureRecipe (e.g., 1.2.5).
 	Version string `json:"version" yaml:"version"`
-	// Description What this entity is and what it is for, written for someone deciding whether to use it. Open with a sentence naming the thing, then add what a reader needs in order to choose it and use it correctly — what it expects from a deployment, and anything surprising about how it behaves. A short paragraph is the usual length.
+	// Description What this entity is and what it is for, written for someone deciding whether to use it. Open with a sentence naming the thing, then add what a reader needs in order to choose it and use it correctly — what it expects from the Release that deploys it, and anything surprising about how it behaves. A short paragraph is the usual length.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Maintainers List of maintainers who own this entity.
 	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
@@ -45,7 +45,7 @@ type FeatureRecipeSpec struct {
 	Locals OrderedMap[string] `json:"locals,omitempty,omitzero" yaml:"locals,omitempty"`
 	// Provides The Public Developer API. Contractual output variables available for downstream Caller inject resolution.
 	Provides OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	// Source Optional path to infrastructure code. Accepts a Universal URI string or an open structured object. If provided alongside valuesMapping, the compiler renders it and appends the objects to the base AST before Wasm plugins execute.
+	// Source Optional path to infrastructure code. Accepts a URI string or an open structured object. If provided alongside valuesMapping, the compiler renders it, and the rendered documents join the FeatureRecipe's output before its pipeline steps run.
 	Source any `json:"source,omitempty" yaml:"source,omitempty"`
 	// ValuesMapping Values mapping content with three authoring modes via content-shape dispatch. Mode 1 (inline): a Go template string scalar producing the provider's expected values format. Mode 2 (file import): a YAML map of exactly one key, `$import: ./relative/path.tmpl`, pointing at a local Go-template file. Mode 3 (library import): a YAML map of exactly one key, `$import: <Library>#/mappings/<entry>`, referencing a MappingLibrary entry by bare-name identity (the version is supplied by the per-Release lockfile; no registry host appears in the reference).
 	ValuesMapping ValuesMapping `json:"valuesMapping,omitempty,omitzero" yaml:"valuesMapping,omitempty"`
@@ -57,14 +57,14 @@ type FeatureRecipeSpec struct {
 	Omits []OmitEntry `json:"omits,omitempty" yaml:"omits,omitempty"`
 	// InjectMapping Optional inline Go template evaluated during the Pre-Render Interception phase. Outputs a JSON/YAML dictionary that the Go compiler natively deep-merges over the Caller's '.context.inject' memory pipe. Used for Wasm-free Caller-Side mutation of environment variables and delivery contracts.
 	InjectMapping string `json:"injectMapping,omitempty" yaml:"injectMapping,omitempty"`
-	// Pipeline Sequential list of Wasm plugins to execute for stateful AST mutation.
+	// Pipeline Sequential list of Wasm pipeline steps run after render over the rendered document set, each returning RFC 6902 patches and side effects.
 	Pipeline []PipelineStep `json:"pipeline,omitempty" yaml:"pipeline,omitempty"`
-	// ExecutionScope Whether this FeatureRecipe's Resource Generation runs per-component (default, today's behavior) or once per boundary attachment. Boundary-scope FeatureRecipes deduplicate by (boundary_path, FR-instance) and receive a different TemplateContext shape (.boundary.* pillars instead of per-component .context.* pillars). The injectMapping continues to fan per-consumer regardless of executionScope.
+	// ExecutionScope Whether this FeatureRecipe's Resource Generation runs per-component (the default) or once per boundary attachment. Boundary-scope FeatureRecipes deduplicate by (boundary_path, FeatureRecipe instance) and receive a different TemplateContext shape (.boundary.* pillars instead of per-component .context.* pillars). The injectMapping continues to fan per-consumer regardless of executionScope.
 	ExecutionScope string `json:"executionScope,omitempty" yaml:"executionScope,omitempty"`
 	// ReadsCallerRenderFacts Declares that this FeatureRecipe's templates read what the Components connecting to the one it is attached to rendered: the render facts each of those callers' providers reports about its own output. Where it is true and the FeatureRecipe renders per component, each attachment of it renders after every Component in the build has rendered, instead of right after the Component it is attached to, so each caller's render is complete before the attachment is evaluated. Where it is false or absent, no caller's entry on '.context.used_by' carries render facts, the attachment renders right after its Component unless readsTargetRenderFacts is true, and the build halts on a template written inline in this FeatureRecipe that reads a caller's render facts beneath '.context.used_by'.
 	ReadsCallerRenderFacts bool `json:"readsCallerRenderFacts,omitempty" yaml:"readsCallerRenderFacts,omitempty"`
 	// ReadsTargetRenderFacts Declares that this FeatureRecipe's templates read what the Components that the one it is attached to is wired to rendered: the render facts each of those targets' providers reports about its own output, on each entry of '.context.uses'. Where it is true and the FeatureRecipe renders per component, each attachment of it renders after every Component in the build has rendered, instead of right after the Component it is attached to, so each target's render is complete before the attachment is evaluated. This is the same later render readsCallerRenderFacts causes, so setting either key, or both, makes the attachment render then. Where it is false or absent, no entry on '.context.uses' carries render facts, the attachment renders right after its Component unless readsCallerRenderFacts is true, and the build halts on a template written inline in this FeatureRecipe that reads a target's render facts beneath '.context.uses'.
 	ReadsTargetRenderFacts bool `json:"readsTargetRenderFacts,omitempty" yaml:"readsTargetRenderFacts,omitempty"`
-	// Assertions Build-time cross-field validation. Each entry is a named assertion: the key is a stable rule identifier surfaced in error messages; the value is a Go template string with `{{ fail "message" }}` halt semantics. Multiple named assertions per entity evaluate per-instance in author-declared order; the first failing assertion halts the build. FeatureRecipe assertions evaluate after recipe binding (post-binding, post-allProvides-evaluation, pre-render) and express implementation invariants of the specific chart or module the FeatureRecipe sources. Template context: .values / .infra / .uses / .features / .metadata plus .provides / .locals / .recipe. The evaluator uses missingkey=error: references to undefined keys halt with a no-such-key diagnostic. Because the bare reference halts before any fallback can run, a plain `default` does not supply an optional-field fallback on this surface — gate the reference with `hasKey`, or use the `optional` helper, which performs the presence check directly. Reading the key through `index` does not supply one either: `index` halts on a map key the map does not hold, naming the key.
+	// Assertions Build-time cross-field validation. Each entry is a named assertion: the key is a stable rule identifier surfaced in error messages; the value is a Go template string with `{{ fail "message" }}` halt semantics. Multiple named assertions per entity evaluate per-instance in author-declared order; the first failing assertion halts the build. FeatureRecipe assertions evaluate after recipe binding and after the provides are evaluated, before render, and express implementation invariants of the specific chart or module the FeatureRecipe sources. Template context: .values / .infra / .uses / .features / .metadata plus .provides / .locals / .recipe. The evaluator uses missingkey=error: references to undefined keys halt with a no-such-key diagnostic. Because the bare reference halts before any fallback can run, a plain `default` does not supply an optional-field fallback on this surface — gate the reference with `hasKey`, or use the `optional` helper, which performs the presence check directly. Reading the key through `index` does not supply one either: `index` halts on a map key the map does not hold, naming the key.
 	Assertions OrderedMap[string] `json:"assertions,omitempty,omitzero" yaml:"assertions,omitempty"`
 }

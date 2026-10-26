@@ -8,12 +8,12 @@
 
 package types
 
-// MappingLibrary A reusable collection of Go template fragments that Recipes and FeatureRecipes consume at render time via `valuesMapping: { $import: ... }`. Tier 3 — opt-in for catalogs that need cross-Recipe mapping reuse. Single authoring mode: Go templates only; no parallel `mappingsJsonnet:` field.
+// MappingLibrary A reusable collection of Go template fragments that Recipes and FeatureRecipes consume at render time via `valuesMapping: { $import: ... }`. Tier 3 — opt-in for catalogs that need cross-Recipe mapping reuse. Single authoring mode: Go templates only.
 type MappingLibrary struct {
 	APIVersion string                 `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string                 `json:"kind" yaml:"kind"`
 	Metadata   MappingLibraryMetadata `json:"metadata" yaml:"metadata"`
-	// Spec The MappingLibrary's content. spec.mappings is required and must declare at least one entry. spec carries additionalProperties: false — no parallel authoring modes (e.g., `mappingsJsonnet:`) are accepted at the envelope level. The single-authoring-mode posture keeps Recipe rendering uniform (Go template throughout) and avoids forcing authors to switch evaluation models mid-render when consuming imported fragments.
+	// Spec The MappingLibrary's content. spec.mappings is required and must declare at least one entry. spec carries additionalProperties: false — no parallel authoring modes are accepted at the envelope level. The single-authoring-mode posture keeps Recipe rendering uniform (Go template throughout) and avoids forcing authors to switch evaluation models mid-render when consuming imported fragments.
 	Spec MappingLibrarySpec `json:"spec" yaml:"spec"`
 }
 
@@ -30,7 +30,7 @@ type MappingLibraryMetadata struct {
 	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 }
 
-// MappingLibrarySpec The MappingLibrary's content. spec.mappings is required and must declare at least one entry. spec carries additionalProperties: false — no parallel authoring modes (e.g., `mappingsJsonnet:`) are accepted at the envelope level. The single-authoring-mode posture keeps Recipe rendering uniform (Go template throughout) and avoids forcing authors to switch evaluation models mid-render when consuming imported fragments.
+// MappingLibrarySpec The MappingLibrary's content. spec.mappings is required and must declare at least one entry. spec carries additionalProperties: false — no parallel authoring modes are accepted at the envelope level. The single-authoring-mode posture keeps Recipe rendering uniform (Go template throughout) and avoids forcing authors to switch evaluation models mid-render when consuming imported fragments.
 type MappingLibrarySpec struct {
 	// Mappings Named map of reusable Go template fragments. Each entry's body is opaque to the envelope validation — content semantics are handled by the Go template parser at consumption time.
 	Mappings OrderedMap[MappingEntry] `json:"mappings" yaml:"mappings"`

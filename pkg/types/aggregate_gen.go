@@ -8,7 +8,7 @@
 
 package types
 
-// Aggregate The recursive, parameterized AI architecture. Acts as both the root application and reusable module.
+// Aggregate The recursive, parameterized AI architecture. Acts as both the root of a build and a reusable module.
 type Aggregate struct {
 	APIVersion string            `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string            `json:"kind" yaml:"kind"`
@@ -40,7 +40,7 @@ type AggregateMetadata struct {
 
 // AggregateSpec The Developer Intent surface: the global parameter contract, nested aggregate imports, the exported-component public API, subsystem groupings, and the component instances that make up the module.
 type AggregateSpec struct {
-	// Parameters Global environment contract. Each entry is a typed-contract object authoring the compact-form vocabulary subset (type, description, default, enum, min/max, minLength/maxLength, pattern, format, validate, validateMessage, required, items, valuesType, properties). Nested structure is expressed via the typed-form properties: sub-field. Release fulfillment may be inline (parameters: {...}) or single-source file import (parameters: {$import: <path>}); the parameter-contract layer validates the merged map against this contract before parameter interpolation. See aggrega-docs/language-reference/entities/aggregate.md for the full vocabulary.
+	// Parameters Global environment contract. Each entry is a typed-contract object authoring the compact-form vocabulary subset (type, description, default, enum, min/max, minLength/maxLength, pattern, format, validate, validateMessage, required, items, valuesType, properties). Nested structure is expressed via the typed-form properties: sub-field. Release fulfillment may be inline (parameters: {...}) or single-source file import (parameters: {$import: <path>}); the parameter-contract layer validates the merged map against this contract before parameter interpolation. The Aggregate page of the language reference teaches the full vocabulary.
 	Parameters OrderedMap[any] `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 	// Aggregates Nested aggregates acting as imported modules.
 	Aggregates OrderedMap[SubAggregate] `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
@@ -48,6 +48,6 @@ type AggregateSpec struct {
 	ExportedComponents OrderedMap[string] `json:"exportedComponents,omitempty,omitzero" yaml:"exportedComponents,omitempty"`
 	// Subsystems Named logical groupings of an Aggregate's components into subsystems. Mutually exclusive with top-level components — declaring both is rejected. A subsystem the author names default is an ordinary declared subsystem, distinct from the synthesized default the compiler creates for a components-only Aggregate.
 	Subsystems OrderedMap[Subsystem] `json:"subsystems,omitempty,omitzero" yaml:"subsystems,omitempty"`
-	// Components The map of logical atomic components that make up this Aggregate, authored directly at the top level. Top-level components and subsystems are mutually exclusive — declaring both is rejected. When components are authored here (without subsystems), the compiler folds them into a synthesized default subsystem at load, so every downstream pass sees a uniform subsystem-bearing structure; the synthesized default is marked as such in the IR.
+	// Components The map of logical atomic components that make up this Aggregate, authored directly at the top level. Top-level components and subsystems are mutually exclusive — declaring both is rejected. When components are authored here (without subsystems), the compiler folds them into a synthesized default subsystem at load, and the IR marks that subsystem as synthesized.
 	Components OrderedMap[ComponentInstance] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 }

@@ -8,7 +8,7 @@
 
 package types
 
-// Workload Platform-owned abstract workload specification. A Recipe using synthesized mode declares exactly one Workload via the workload: keyword (inline block scalar or workload: { $import: <path> } per the unified file-import vocabulary). The target provider translates the Workload into provider-native manifests (K8s Deployment/StatefulSet/Services/PVCs for helm; compose services + volumes + networks for compose; etc.). A Workload carries no metadata of its own — no name, no labels, no annotations. Identity and labelling come from the component instance that declares it: the target provider derives each rendered resource's name from that instance and stamps the resource with the aggrega.ai/* provenance keys for that node. The Workload kind is NOT a catalog entity — this published file is the canonical Workload JSON Schema, which the aggrega-cli binary consumes directly (rebound in its pkg/schemas/jsonschema package) for in-binary Workload validation; there is no separate embedded copy.
+// Workload Platform-owned abstract workload specification. A Recipe using synthesized mode declares exactly one Workload via the workload: keyword (inline block scalar or workload: { $import: <path> } per the unified file-import vocabulary). The target provider translates the Workload into provider-native manifests (K8s Deployment/StatefulSet/Services/PVCs for helm; compose services + volumes + networks for compose; etc.). A Workload carries no metadata of its own — no name, no labels, no annotations. Identity and labelling come from the component instance that declares it: the target provider derives each rendered resource's name from that instance and stamps the resource with the aggrega.ai/* provenance keys for that node. The Workload kind is NOT a catalog entity — this published file is the canonical Workload JSON Schema, and the compiler validates a Workload against it.
 type Workload struct {
 	APIVersion string `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string `json:"kind" yaml:"kind"`
@@ -26,7 +26,7 @@ type Workload struct {
 	Replicas *int `json:"replicas,omitempty" yaml:"replicas,omitempty"`
 	// InitContainers Ordered list of containers that run to completion before the main containers start.
 	InitContainers []ContainerSpec `json:"initContainers,omitempty" yaml:"initContainers,omitempty"`
-	// Containers Ordered map of container name → container spec. At least one entry required. YAML author order is preserved by the Go parser.
+	// Containers Ordered map of container name → container spec. At least one entry required. Author order is preserved.
 	Containers OrderedMap[ContainerSpec] `json:"containers,omitempty,omitzero" yaml:"containers,omitempty"`
 	// Volumes Ordered map of volume name → volume spec. Each volume spec declares exactly one of: ephemeral, configmap, secret, persistent, persistentTemplate.
 	Volumes OrderedMap[VolumeSpec] `json:"volumes,omitempty,omitzero" yaml:"volumes,omitempty"`

@@ -8,7 +8,7 @@
 
 package types
 
-// Manifest A single, global lockfile that maps abstract Developer Interfaces to concrete Ops Implementations via O(1) dictionary lookups based strictly on Instance Names.
+// Manifest A single, global lockfile that maps abstract component and Feature types to concrete Recipe and FeatureRecipe implementations, by type, with a per-instance override by name.
 type Manifest struct {
 	APIVersion string           `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string           `json:"kind" yaml:"kind"`
@@ -23,7 +23,7 @@ type ManifestMetadata struct {
 	Name string `json:"name" yaml:"name"`
 	// Version Strict Semantic Versioning of the manifest lockfile (e.g., 1.0.0).
 	Version string `json:"version" yaml:"version"`
-	// Description What this entity is and what it is for, written for someone deciding whether to use it. Open with a sentence naming the thing, then add what a reader needs in order to choose it and use it correctly — what it expects from a deployment, and anything surprising about how it behaves. A short paragraph is the usual length.
+	// Description What this entity is and what it is for, written for someone deciding whether to use it. Open with a sentence naming the thing, then add what a reader needs in order to choose it and use it correctly — what it expects from the Release that uses it, and anything surprising about how it behaves. A short paragraph is the usual length.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Maintainers List of maintainers who own this entity.
 	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
@@ -39,7 +39,7 @@ type ManifestMetadata struct {
 
 // ManifestSpec The Manifest's mapping declarations plus optional base inheritance: mappings connects abstract component and feature types to concrete Recipe and FeatureRecipe implementations; extends inherits mappings from a base Manifest.
 type ManifestSpec struct {
-	// Extends URI of a base Manifest to inherit mappings from. Child mappings safely overwrite the base to support frictionless local dev loops.
+	// Extends URI of a base Manifest to inherit mappings from. A child's mapping replaces the base's for the same key.
 	Extends string `json:"extends,omitempty" yaml:"extends,omitempty"`
 	// Mappings Maps abstract interfaces to concrete implementations. Declare mappings under the top-level keys 'components' and 'features', each mapping component-type / feature-type URIs directly to Recipe / FeatureRecipe URIs. These two keys are the whole surface; no other key is accepted here. The mapping is capability-agnostic at the Manifest layer — capability determination flows from each resolved Recipe's spec.capability when Aggrega builds the Release.
 	Mappings ManifestMappings `json:"mappings" yaml:"mappings"`
