@@ -151,59 +151,55 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 	return resolver.ResolveVerdictPluginFromCache(sources, inputs.VerdictPluginTrust, catalogLookup.PluginFromCache, entityURI)
 }
 
-// invokeSocketPlugin loads a plugin through the shared describe() gate, invokes
-// the attachment's export against payload, and returns the guest's output bytes.
-// The export is the entry function the attachment names, or roleDefault — the
-// role's listed default — when it names none. It mirrors the publishing-linter
-// dispatch: a per-invocation loader, describe() validation at load, and a Close
-// that fires as the call unwinds so a socket leaks no Wazero instance. The
-// describe() gate refuses a plugin that lacks the export or declares a
-// descriptor the host rejects.
+// invokeSocketPlugin is the one dispatch every governance role shares — the two
+// verdict roles and the two transform roles alike. It loads the attached plugin
+// through the shared describe() gate, checks the attachment's settings against
+// the settings schema the plugin declares, invokes the attachment's export against
+// payload, and returns the guest's output bytes. A per-invocation loader,
+// describe() validation at load, and a Close that fires as the call unwinds keep a
+// socket from leaking a Wazero instance; the describe() gate refuses a plugin that
+// lacks the export or declares a descriptor the host rejects.
 //
-// When the caller declares an expected plugin type on spec.PluginType, the
-// loaded descriptor's self-reported plugin_type must match it; a mismatch — a
-// mutator plugin attached at the policy socket, or the reverse — fails loudly
-// with a legible message rather than through the cryptic missing-export error
-// the wrong export name would otherwise raise. A caller that leaves
-// spec.PluginType empty declares no expectation and skips the check.
-func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, roleDefault wasm.HostExport, function string, payload []byte) ([]byte, error) {
-	var out []byte
-	err := withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
-		o, cerr := wasm.InvokeAuthoredExport(ctx, plugin, desc, roleDefault, function, payload)
-		if cerr != nil {
-			return fmt.Errorf("call %q: %w", wasm.AuthoredExportName(roleDefault, function), cerr)
-		}
-		out = o
-		return nil
-	})
-	return out, err
-}
-
-// withSocketPlugin loads a plugin through the shared describe() gate, applies
-// the plugin-type guard, invokes fn with the live plugin and its validated
-// descriptor, and closes the plugin as the call unwinds. It is the single
-// load+describe+guard+Close core the sockets share: invokeSocketPlugin builds on
-// it to dispatch one export, and the verdict runners build on it to validate the
-// attachment's settings against the same descriptor before dispatching — so a
-// settings check and an export dispatch never double-load a guest within one
-// pass, and no runner duplicates the loader machinery.
+// Settings. A plugin that declares a settings schema has its attachment's
+// with.settings checked against it, and settings that do not conform halt the
+// build loudly, wrapping ErrPolicySettingsInvalid, before the guest is invoked; a
+// plugin that declares no schema accepts any settings (free-form pass-through).
+// The check belongs to the dispatch rather than to a role because every role hands
+// the guest the same attachment settings: a check made at some roles and not at
+// others would let the same misconfiguration halt one build and run in the next,
+// depending only on where the plugin was attached.
+//
+// The export is the entry function the attachment names, or roleDefault — the
+// role's listed default — when it names none. The caller supplies that default
+// because each role has one export, and a shared accessor cannot tell which role it
+// is being asked about. What becomes of the output is the caller's: a verdict
+// runner reads an accept-or-reject and has no code path that would apply a change
+// from it, so a verdict role stays non-mutating whatever the guest emits.
 //
 // The loader carries the process-wide shared compilation cache (honoring the ctx
 // persistent-cache dial), so a socket guest compiles once and every later socket
-// call and concurrent request reuses the machine code. A typed socket sets
-// spec.PluginType to the kind it expects, so the shared load gate rejects a guest
-// of the wrong kind loudly before fn ever sees the descriptor. The governance
-// socket sets the governance type, which every governance guest reports; what a
-// governance plugin may emit is fixed by the role the runner dispatches it at, not
-// by this type check.
-func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.Plugin, wasm.PluginDescriptor) error) error {
+// call and concurrent request reuses the machine code. When the caller declares an
+// expected plugin type on spec.PluginType, the loaded descriptor's self-reported
+// plugin_type must match it; a mismatch fails loudly with a legible message rather
+// than through the cryptic missing-export error the wrong export name would
+// otherwise raise. The governance runners set the governance type, which every
+// governance guest reports; what a governance plugin may emit is fixed by the role
+// the runner dispatches it at, not by this type check.
+func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, roleDefault wasm.HostExport, function string, payload []byte, settings map[string]any) ([]byte, error) {
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
-		return fmt.Errorf("load: %w", err)
+		return nil, fmt.Errorf("load: %w", err)
 	}
 	defer plugin.Close(ctx)
-	return fn(plugin, desc)
+	if serr := desc.ValidateSettings(settings); serr != nil {
+		return nil, fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid())
+	}
+	out, err := wasm.InvokeAuthoredExport(ctx, plugin, desc, roleDefault, function, payload)
+	if err != nil {
+		return nil, fmt.Errorf("call %q: %w", wasm.AuthoredExportName(roleDefault, function), err)
+	}
+	return out, nil
 }
 
 // runMutatorSocket runs the Step-2 mutator socket: for each configured mutator
@@ -218,7 +214,7 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 // the IR. An unconfigured socket is a no-op (returns nil before any resolution),
 // which keeps a build with no mutator attachment byte-identical to a build
 // without the socket; a run asked for the policy payloads still assembles the
-// payload, to record it, and dispatches nothing. A resolution, load, or patch-confinement failure halts the
+// payload, to record it, and dispatches nothing. A resolution, load, settings, or patch-confinement failure halts the
 // build loudly, as does an output that is not this socket's shape — a dispatched
 // export whose output carries a field the label-transform shape does not declare
 // is refused rather than read as an empty patch list.
@@ -263,7 +259,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeSocketPlugin(ctx, spec, wasm.MutateExport, ref.Function, payload)
+		out, err := invokeSocketPlugin(ctx, spec, wasm.MutateExport, ref.Function, payload, attachmentSettings(ref))
 		if err != nil {
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
@@ -360,7 +356,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeVerdictPlugin(ctx, spec, wasm.VerdictIRExport, ref.Function, payload, in.Settings)
+		out, err := invokeSocketPlugin(ctx, spec, wasm.VerdictIRExport, ref.Function, payload, in.Settings)
 		if err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
@@ -507,7 +503,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeVerdictPlugin(ctx, spec, wasm.VerdictRenderExport, ref.Function, payload, settings)
+		out, err := invokeSocketPlugin(ctx, spec, wasm.VerdictRenderExport, ref.Function, payload, settings)
 		if err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
@@ -547,44 +543,12 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 	return stderrors.Join(errs...)
 }
 
-// invokeVerdictPlugin loads a verdict-role governance plugin through the shared
-// describe() gate, validates the attachment's settings against the plugin's
-// declared settings schema, and dispatches the export. A plugin that declares a
-// schema has its attachment's with.settings checked, and settings that do not
-// conform halt the build loudly (wrapping ErrPolicySettingsInvalid) before the
-// guest is invoked; a plugin that declares no schema accepts any settings
-// (free-form pass-through). Which stage a verdict runs at is fixed by the
-// attachment role — an ir-verdict runner dispatches at Step 4, a render-verdict
-// runner at Step 5 — so there is no guest-declared stage to consult and the
-// dispatch is unconditional. It reads a verdict and applies nothing: the host has
-// no code path here that would honor a patch in the guest's output, so a verdict
-// role is structurally non-mutating regardless of what the guest emits. Sharing
-// withSocketPlugin means the settings check and the export dispatch read one
-// loaded guest — no double-load within the pass, no duplicated loader machinery.
-//
-// The export is the entry function the attachment names, or roleDefault when it
-// names none. The caller supplies that default because the two verdict roles have
-// one export each, and a shared accessor cannot tell which of them it is being
-// asked about.
-func invokeVerdictPlugin(ctx context.Context, spec wasm.PluginSpec, roleDefault wasm.HostExport, function string, payload []byte, settings map[string]any) (out []byte, err error) {
-	err = withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
-		if serr := desc.ValidateSettings(settings); serr != nil {
-			return fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid())
-		}
-		o, cerr := wasm.InvokeAuthoredExport(ctx, plugin, desc, roleDefault, function, payload)
-		if cerr != nil {
-			return fmt.Errorf("call %q: %w", wasm.AuthoredExportName(roleDefault, function), cerr)
-		}
-		out = o
-		return nil
-	})
-	return out, err
-}
-
 // attachmentSettings returns the free-form settings object the attachment
 // declared, handed to the plugin verbatim, or nil when the attachment declares
-// none. The host does not parse or act on it. The accessor is socket-agnostic —
-// the policy and mutator sockets share this one settings projection.
+// none. The host acts on none of its content; the one thing it does with it is
+// check it against the settings schema the plugin declares, at dispatch
+// ([invokeSocketPlugin]). The accessor is role-agnostic — every governance role
+// reads an attachment's settings through it.
 func attachmentSettings(ref workspaceconfig.PluginRef) map[string]any {
 	if ref.With == nil {
 		return nil

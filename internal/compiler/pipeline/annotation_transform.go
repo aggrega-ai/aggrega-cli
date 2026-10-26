@@ -44,7 +44,7 @@ const injectedByAnnotationKey = "aggrega.ai/injected-by"
 // annotation-transform attachment byte-identical to a build without the socket;
 // a run asked for the policy payloads still assembles the payload, to record it,
 // and dispatches nothing. A
-// resolution, load, or confinement failure halts the build loudly, as does an
+// resolution, load, settings, or confinement failure halts the build loudly, as does an
 // output that is not this socket's shape — a dispatched export whose output
 // carries a field the annotation-transform shape does not declare is refused
 // rather than read as an empty injection list.
@@ -82,7 +82,7 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
-		out, err := invokeSocketPlugin(ctx, spec, wasm.TransformAnnotationsExport, ref.Function, payload)
+		out, err := invokeSocketPlugin(ctx, spec, wasm.TransformAnnotationsExport, ref.Function, payload, attachmentSettings(ref))
 		if err != nil {
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
@@ -128,7 +128,8 @@ func annotationTransformInput(release *types.Release, bindingKeys []string, ref 
 
 // annotationSettings projects the attachment's free-form settings into the
 // verbatim JSON the socket hands the plugin, or nil when the attachment declares
-// none. The host does not parse or act on the content.
+// none. The host acts on none of its content; the dispatch checks the attachment's
+// settings against the settings schema the plugin declares.
 func annotationSettings(ref workspaceconfig.PluginRef) json.RawMessage {
 	settings := attachmentSettings(ref)
 	if len(settings) == 0 {

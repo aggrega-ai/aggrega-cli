@@ -144,11 +144,38 @@ plugins:
 // error so a proof can assert on a halt.
 func pullThen(t *testing.T, root, releasePath string, catDirs []string, config, outDir string) error {
 	t.Helper()
+	pullErr, buildErr := pullAndBuild(t, root, releasePath, catDirs, config, outDir)
+	if pullErr != nil {
+		t.Fatalf("pull: %v", pullErr)
+	}
+	return buildErr
+}
+
+// pullOrBuildError pulls the workspace and, when the pull succeeds, builds it
+// into outDir, returning the first of the two errors. It is for a proof whose
+// subject can fail at either step: a guest attached at a transform role runs
+// during the pull as well as during the build, so a fault in it may stop the
+// pull, which pullThen reads as a harness failure.
+func pullOrBuildError(t *testing.T, root, releasePath string, catDirs []string, config, outDir string) error {
+	t.Helper()
+	pullErr, buildErr := pullAndBuild(t, root, releasePath, catDirs, config, outDir)
+	if pullErr != nil {
+		return pullErr
+	}
+	return buildErr
+}
+
+// pullAndBuild is the one pull-then-build sequence pullThen and pullOrBuildError
+// share: it pulls the workspace and, only when the pull succeeds, builds it into
+// outDir, returning each step's error. The two callers differ only in what a pull
+// error means to them.
+func pullAndBuild(t *testing.T, root, releasePath string, catDirs []string, config, outDir string) (pullErr, buildErr error) {
+	t.Helper()
 	rw := resolveWorkspaceWithConfig(t, root, config)
 	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
-		t.Fatalf("pull: %v", err)
+		return err, nil
 	}
-	return dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, outDir)}, os.Stderr, os.Stderr)
+	return nil, dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, outDir)}, os.Stderr, os.Stderr)
 }
 
 // pullOnly pulls the workspace and returns the pull's own error, for a proof
@@ -974,6 +1001,66 @@ func TestRegoEmbedded_MalformedTranslationSettingsHaltBeforeDispatch(t *testing.
 	}
 	if !errors.Is(err, pipeline.ErrPolicySettingsInvalid()) {
 		t.Fatalf("want ErrPolicySettingsInvalid, got: %v", err)
+	}
+}
+
+// TestRegoEmbedded_SettingsAreCheckedAtEveryRole proves an attachment's settings
+// are held to the settings schema the guest declares at every role it can be
+// attached at, the two transform roles as much as the two verdict roles: a
+// severity outside the declared set halts the build as a settings fault naming
+// the offending path, and a conforming mapping at the same role builds. The
+// policy reaches no decision at any role, so a halt can only have come from the
+// settings check, and the conforming row shows the check is not refusing the
+// role itself.
+//
+// The settings fault may surface from the pull, which runs a transform role's
+// guest while it discovers what the Release reads, or from the build; the first
+// of the two to fail is the one asserted on.
+func TestRegoEmbedded_SettingsAreCheckedAtEveryRole(t *testing.T) {
+	nonInteractive(t)
+
+	const policy = "package proof\n\nimport rego.v1\n"
+	settings := func(severity string) string {
+		return `        settings:
+          translation:
+            - key: blocked
+              severity: ` + severity + `
+`
+	}
+
+	for _, role := range []string{"ir-verdict", "render-verdict", "label-transform", "annotation-transform"} {
+		t.Run(role+": a severity outside the declared set halts", func(t *testing.T) {
+			root, catalogDir := regoWorkspace(t)
+			writeFixture(t, filepath.Join(root, "policy.rego"), policy)
+			err := pullOrBuildError(t, root, filepath.Join(root, "release.yaml"),
+				[]string{catalogDir, standardCatalogDir(t)},
+				regoAttachment(role, "policy.rego", settings("reject")), "out")
+			if err == nil {
+				t.Fatalf("settings the guest's schema refuses must halt the build at %s", role)
+			}
+			if !errors.Is(err, pipeline.ErrPolicySettingsInvalid()) {
+				t.Fatalf("want ErrPolicySettingsInvalid at %s, got: %v", role, err)
+			}
+			for _, want := range []string{
+				"with.settings does not satisfy the plugin's declared settings schema",
+				"/translation/0/severity",
+				role + ":",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("the settings fault at %s must carry %q, got: %v", role, want, err)
+				}
+			}
+		})
+
+		t.Run(role+": a conforming mapping builds", func(t *testing.T) {
+			root, catalogDir := regoWorkspace(t)
+			writeFixture(t, filepath.Join(root, "policy.rego"), policy)
+			if err := pullOrBuildError(t, root, filepath.Join(root, "release.yaml"),
+				[]string{catalogDir, standardCatalogDir(t)},
+				regoAttachment(role, "policy.rego", settings("halt")), "out"); err != nil {
+				t.Fatalf("settings the guest's schema admits must not halt the build at %s: %v", role, err)
+			}
+		})
 	}
 }
 
