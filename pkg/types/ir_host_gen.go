@@ -1691,7 +1691,7 @@ func (t IRProvenance) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t IRProvenance) appendCBOR(dst []byte) ([]byte, error) {
-	n := 6
+	n := 5
 	dst = appendCBORHead(dst, 5, uint64(n))
 	dst = appendCBORTextString(dst, "schema_version")
 	dst = appendCBORTextString(dst, t.SchemaVersion)
@@ -1703,12 +1703,6 @@ func (t IRProvenance) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.ManifestVersion)
 	dst = appendCBORTextString(dst, "aggregate_version")
 	dst = appendCBORTextString(dst, t.AggregateVersion)
-	dst = appendCBORTextString(dst, "source_identifiers")
-	dst = appendCBORHead(dst, 4, uint64(len(t.SourceIdentifiers)))
-	for i := range t.SourceIdentifiers {
-		ev := t.SourceIdentifiers[i]
-		dst = appendCBORTextString(dst, ev)
-	}
 	return dst, nil
 }
 
@@ -1760,24 +1754,6 @@ func (t *IRProvenance) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.ReleaseVersion = s
 			}
-		case "source_identifiers":
-			{
-				sn, err := dec.readArrayHeader()
-				if err != nil {
-					return err
-				}
-				s := make([]string, 0, sn)
-				for si := 0; si < sn; si++ {
-					var ev string
-					if s, err := dec.readTextString(); err != nil {
-						return err
-					} else {
-						ev = s
-					}
-					s = append(s, ev)
-				}
-				t.SourceIdentifiers = s
-			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -1794,7 +1770,7 @@ func (t *IRProvenance) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IRProvenance) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "schema_version", "compiler_version", "aggregate_version", "manifest_version", "release_version", "source_identifiers"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "schema_version", "compiler_version", "aggregate_version", "manifest_version", "release_version"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

@@ -377,14 +377,14 @@ func handBuiltWithholdingGraph() *types.IRGraph {
 	byBoundary := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
 	byBoundary.Set("cluster", boundary)
 
-	// The two lists the graph always carries are present and empty, as the graph
-	// build writes them when there is nothing to list. A nil slice would marshal
+	// The edge list the graph always carries is present and empty, as the graph
+	// build writes it when there is nothing to list. A nil slice would marshal
 	// as null, which no build emits and which a plugin decoding the payload's
 	// declared shape refuses before any policy runs — so the row would fail on a
 	// payload that cannot occur rather than on anything the withholding did.
 	g := &types.IRGraph{APIVersion: types.IRAPIVersion, Kind: types.IRKind}
 	g.Spec.Edges = []types.IREdge{}
-	g.Spec.Provenance = types.IRProvenance{SchemaVersion: types.IRAPIVersion, SourceIdentifiers: []string{}}
+	g.Spec.Provenance = types.IRProvenance{SchemaVersion: types.IRAPIVersion}
 	g.Spec.Nodes = nodes
 	g.Spec.ValuesMapping = values
 	g.Spec.InfraMapping = infra

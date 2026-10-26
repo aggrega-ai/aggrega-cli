@@ -264,12 +264,11 @@ func irZeroScaffold() *types.IRGraph {
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
 			Provenance: types.IRProvenance{
-				SchemaVersion:     "v1alpha1",
-				CompilerVersion:   "scaffold",
-				AggregateVersion:  "1.0.0",
-				ManifestVersion:   "1.0.0",
-				ReleaseVersion:    "1.0.0",
-				SourceIdentifiers: []string{"scaffold"},
+				SchemaVersion:    "v1alpha1",
+				CompilerVersion:  "scaffold",
+				AggregateVersion: "1.0.0",
+				ManifestVersion:  "1.0.0",
+				ReleaseVersion:   "1.0.0",
 			},
 		},
 	}

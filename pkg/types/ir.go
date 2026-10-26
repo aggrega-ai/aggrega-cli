@@ -676,10 +676,9 @@ type FieldProvenance struct {
 // IRProvenance records compiler and source traceability for an IR build.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/provenance
 type IRProvenance struct {
-	SchemaVersion     string   `json:"schema_version"`
-	CompilerVersion   string   `json:"compiler_version"`
-	AggregateVersion  string   `json:"aggregate_version"`
-	ManifestVersion   string   `json:"manifest_version"`
-	ReleaseVersion    string   `json:"release_version"`
-	SourceIdentifiers []string `json:"source_identifiers"`
+	SchemaVersion    string `json:"schema_version"`
+	CompilerVersion  string `json:"compiler_version"`
+	AggregateVersion string `json:"aggregate_version"`
+	ManifestVersion  string `json:"manifest_version"`
+	ReleaseVersion   string `json:"release_version"`
 }

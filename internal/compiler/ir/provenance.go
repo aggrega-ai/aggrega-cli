@@ -26,8 +26,8 @@ import (
 //     entity in ResolveResult leaves its version field at the zero value.
 //     This lets partial pipelines (a build with no Manifest, an inspect
 //     against an Aggregate alone) emit valid provenance without
-//     fabricating absent fields, and the IR JSON tags carry omitempty so
-//     missing fields collapse out of the emitted IR entirely.
+//     fabricating absent versions: the key is still emitted, carrying the
+//     empty string.
 //
 // The function never returns an error; provenance generation is a flat
 // metadata copy with no failure modes.
@@ -35,11 +35,6 @@ func buildProvenance(res *resolver.ResolveResult, compilerVersion string) types.
 	prov := types.IRProvenance{
 		SchemaVersion:   types.IRAPIVersion,
 		CompilerVersion: compilerVersion,
-		// source_identifiers is a schema-required array; emit a present
-		// empty array rather than a nil slice (which marshals as null and
-		// violates the IR schema) so the provenance record is iterable by
-		// GitOps consumers even when no source artifacts contributed.
-		SourceIdentifiers: []string{},
 	}
 	if res.Aggregate != nil {
 		prov.AggregateVersion = res.Aggregate.Metadata.Version
