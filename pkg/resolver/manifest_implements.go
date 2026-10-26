@@ -200,29 +200,8 @@ func manifestMappingRefused(
 		return refusedMapping{}, false
 	}
 	key := s.MappingKey()
-	if manifestMappingConsistent(implements, key) {
+	if !mappingRefusesRequest(implements, key, s.MappingTier(), mappedAncestry) {
 		return refusedMapping{}, false
-	}
-	// Feature mappings are judged on the direct comparison alone. A Feature's
-	// extends composes its pillars rather than inheriting them, so whether a
-	// FeatureRecipe written against a base serves an extending Feature is a
-	// separate question this rule does not answer — and resolving an ancestry in
-	// order to accept a mapping on it would be answering it.
-	if s.MappingTier() != constraint.MappingTierFeatures {
-		// Ancestry is read only after the direct comparison has failed, so a
-		// mapping that matches outright costs no catalog walk at all.
-		bases, walkable := mappedAncestry(key)
-		// A chain that did not walk leaves the mapping unjudged rather than
-		// refused: the entry may be perfectly well authored, and reporting it as
-		// the fault would send the author to the wrong file. The walk's own fault
-		// is reported by whatever holds the resolution, once, so raising here as
-		// well would report one defect twice.
-		if !walkable {
-			return refusedMapping{}, false
-		}
-		if manifestMappingSatisfiedByAncestry(implements, bases) {
-			return refusedMapping{}, false
-		}
 	}
 	return refusedMapping{
 		key:        key,
@@ -230,6 +209,51 @@ func manifestMappingRefused(
 		implements: implements,
 		tier:       s.MappingTier(),
 	}, true
+}
+
+// mappingRefusesRequest reports whether the mapping-consistency rule refuses a
+// recipe declaring implements for request, the type the recipe has to serve,
+// under the tier the mapping is written in. It is false where the rule finds the
+// two consistent, directly or through a base request extends, and false where it
+// cannot judge them.
+//
+// It is the judgement itself, asked with whichever request the reading holds:
+// the rule over a mapping entry asks it with the entry's key, and the rule over a
+// component instance asks it with the instance's own type at the version the
+// build compiles it as, where the key that reached the instance names no
+// version. One judgement answering both is what keeps them from disagreeing about
+// what satisfies what; the two differ only in which request they ask about.
+//
+// It takes the ancestry as the view's own accessor, for the reason
+// manifestMappingRefused does: the fact stays named on the view at each check's
+// call.
+func mappingRefusesRequest(
+	implements, request, tier string,
+	mappedAncestry func(componentType string) ([]string, bool),
+) bool {
+	if manifestMappingConsistent(implements, request) {
+		return false
+	}
+	// Feature mappings are judged on the direct comparison alone. A Feature's
+	// extends composes its pillars rather than inheriting them, so whether a
+	// FeatureRecipe written against a base serves an extending Feature is a
+	// separate question this rule does not answer — and resolving an ancestry in
+	// order to accept a mapping on it would be answering it.
+	if tier == constraint.MappingTierFeatures {
+		return true
+	}
+	// Ancestry is read only after the direct comparison has failed, so a
+	// mapping that matches outright costs no catalog walk at all.
+	bases, walkable := mappedAncestry(request)
+	// A chain that did not walk leaves the mapping unjudged rather than
+	// refused: the entry may be perfectly well authored, and reporting it as
+	// the fault would send the author to the wrong file. The walk's own fault
+	// is reported by whatever holds the resolution, once, so raising here as
+	// well would report one defect twice.
+	if !walkable {
+		return false
+	}
+	return !manifestMappingSatisfiedByAncestry(implements, bases)
 }
 
 // mappedRecipeImplements resolves a Manifest mapping value against the catalog

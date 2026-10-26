@@ -3524,6 +3524,51 @@ type TopologyView interface {
 	// Keyed by node; read from resolver.NodeRecipeResolution.PinCandidates.
 	NodeRecipePinCandidates(node string) []string
 
+	// NodeRecipeMappingTypeKey is the type-axis key of the Manifest's mapping
+	// table that resolved a node's Recipe, verbatim as the table declares it,
+	// and whether a type-axis key resolved the node at all.
+	//
+	// The key is not recoverable from the reference it maps to: several keys
+	// may name one reference, and a type matched by its base reaches a key
+	// that differs from the type the node carries. Only the lookup knows which
+	// key it settled on, so this projects that answer rather than reaching for
+	// the Manifest.
+	//
+	// The second result is false for a node a name-axis entry reached, a node
+	// nothing mapped, and a lookup that refused. A name-axis key names an
+	// instance and says nothing about a type, so a rule judging what a type
+	// key admits has nothing to judge there.
+	//
+	// It lands where the flattened node set is complete for the reason the
+	// reference fact beside it does: a node a sub-aggregate contributed is
+	// resolved under the qualified identity the composition gave it, and that
+	// identity exists only here.
+	//
+	// Keyed by node; read from resolver.NodeRecipeResolution.TypeKey.
+	NodeRecipeMappingTypeKey(node string) (string, bool)
+
+	// NodeResolvedComponentType is the component type a node carries, at the
+	// version the build compiles it as: the type as written where it pins a
+	// version, the version the catalog's own version selection resolves a bare
+	// type to otherwise, and the type as written where the catalog holds no
+	// Component of it.
+	//
+	// It is a separate fact from the type the node carries, which is what the
+	// author wrote. The two differ exactly where the author named no version,
+	// and a rule asking which version of a type a Recipe has to serve needs
+	// the version the build compiled rather than the absence of one.
+	//
+	// The version is the one the pin candidates beside it are enumerated at,
+	// resolved once by the same resolution, so a rule reading this and a
+	// diagnostic listing candidates cannot disagree about which version a bare
+	// type stands for.
+	//
+	// A node whose Recipe resolution was never performed — a build whose
+	// catalog holds no recipe index — answers with the empty string.
+	//
+	// Keyed by node; read from resolver.NodeRecipeResolution.ResolvedType.
+	NodeResolvedComponentType(node string) string
+
 	// ResolvedParameter is the value one named parameter resolved to for a
 	// node, and whether the node resolved that name at all.
 	//

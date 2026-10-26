@@ -2431,6 +2431,20 @@ func (GraphViewBase) NodeRecipePinCandidates(node string) []string {
 	panic("this view does not carry node-recipe-pin-candidates, which is read from resolver.NodeRecipeResolution.PinCandidates")
 }
 
+// NodeRecipeMappingTypeKey panics. This view does not carry
+// node-recipe-mapping-type-key, which is read from
+// resolver.NodeRecipeResolution.TypeKey.
+func (GraphViewBase) NodeRecipeMappingTypeKey(node string) (string, bool) {
+	panic("this view does not carry node-recipe-mapping-type-key, which is read from resolver.NodeRecipeResolution.TypeKey")
+}
+
+// NodeResolvedComponentType panics. This view does not carry
+// node-resolved-component-type, which is read from
+// resolver.NodeRecipeResolution.ResolvedType.
+func (GraphViewBase) NodeResolvedComponentType(node string) string {
+	panic("this view does not carry node-resolved-component-type, which is read from resolver.NodeRecipeResolution.ResolvedType")
+}
+
 // ResolvedParameter panics. This view does not carry resolved-parameter,
 // which is read from topology.TopologyNode.ResolvedParameters.
 func (GraphViewBase) ResolvedParameter(node string, name string) (any, bool) {
@@ -3592,6 +3606,8 @@ type TopologyStageFacts interface {
 	NodeRecipeMappingAmbiguousKeys(node string) []string
 	NodeMappedRecipePresent(node string) bool
 	NodeRecipePinCandidates(node string) []string
+	NodeRecipeMappingTypeKey(node string) (string, bool)
+	NodeResolvedComponentType(node string) string
 	ResolvedParameter(node string, name string) (any, bool)
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
 	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]

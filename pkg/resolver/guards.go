@@ -223,6 +223,33 @@ type NodeRecipeResolution struct {
 	// needs one — an instance the Manifest already maps is offered none, because
 	// scanning the recipe index for it would pay for a set nothing reads.
 	PinCandidates []string
+
+	// TypeKey is the type-axis mapping key the lookup settled on for this
+	// instance, verbatim as the Manifest declares it. Empty when MappedByType is
+	// false.
+	//
+	// It travels because a key written without a version says nothing about
+	// which version of the type the Recipe serves. The mapping-consistency rule
+	// judges such a key's Recipe against the instance's own version instead, and
+	// only the lookup knows which key it settled on: the reference alone cannot
+	// be traced back to a key, since several keys may name one reference.
+	TypeKey string
+
+	// MappedByType reports whether a type-axis key reached this instance. It is
+	// false for an instance a name-axis entry reached, which keys an instance and
+	// says nothing about a type, and false whenever Mapped is false.
+	MappedByType bool
+
+	// ResolvedType is this instance's component type at the version the build
+	// compiles it as: the type as written where it pins a version, the version
+	// the catalog's own version selection resolves a bare type to otherwise, and
+	// the type as written where the catalog holds no Component of it.
+	//
+	// It is the request the mapped Recipe's implements is judged against when an
+	// unversioned key reached the instance, and it is resolved by the one
+	// resolution the pin-candidate enumeration asks with, so the two cannot
+	// disagree about which version a bare type stands for.
+	ResolvedType string
 }
 
 // RunGuards evaluates the rules that can be asked of the two authoring documents

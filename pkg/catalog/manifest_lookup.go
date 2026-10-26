@@ -300,9 +300,15 @@ func entityIndexKey(name, version string) string {
 // (`core/x:^1.0.0`) base-matches like any other; a single base match resolves; a
 // base shared by multiple version-distinct keys is ambiguous and returns
 // ErrAmbiguousTypeMapping (a Loud Guardrail), never a silent first-wins.
-func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string) (string, bool, error) {
+//
+// It returns the key that matched beside the recipe URI it maps to. The key is
+// what the mapping-consistency rule judges a node's Recipe against: a key naming
+// no version says nothing about which version of the type the Recipe serves, so
+// the instance's own version is judged instead, and only the lookup knows which
+// key it settled on.
+func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string) (string, string, bool, error) {
 	if uri, ok := typeMap.Get(lookupType); ok {
-		return uri, true, nil
+		return lookupType, uri, true, nil
 	}
 	base := stripVersion(lookupType)
 	var matchURI string
@@ -315,11 +321,11 @@ func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string)
 	}
 	switch len(matchedKeys) {
 	case 0:
-		return "", false, nil
+		return "", "", false, nil
 	case 1:
-		return matchURI, true, nil
+		return matchedKeys[0], matchURI, true, nil
 	default:
-		return "", false, &ambiguousTypeMapping{lookupType: lookupType, keys: matchedKeys}
+		return "", "", false, &ambiguousTypeMapping{lookupType: lookupType, keys: matchedKeys}
 	}
 }
 
@@ -383,21 +389,48 @@ func ambiguousMappingKeys(err error) ([]string, bool) {
 // keeps every reference this lookup can return among the pinned ones: walk and
 // lookup cannot come to read different tiers.
 func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (string, bool, error) {
+	match, ok, err := nameThenTypeEntry(tier, instanceName, lookupType)
+	return match.reference, ok, err
+}
+
+// mappingMatch is the entry a mapping lookup settled on: the reference it names,
+// and, where a type-axis key reached the instance rather than its name, that key.
+type mappingMatch struct {
+	// reference is the mapping value, verbatim as the author wrote it.
+	reference string
+
+	// typeKey is the type-axis key that matched. Empty when the name axis
+	// reached the instance, which keys an instance and says nothing about a type.
+	typeKey string
+
+	// byType reports whether the type axis reached the instance at all.
+	byType bool
+}
+
+// nameThenTypeEntry is the lookup nameThenType states, answering with the entry
+// it settled on rather than with the reference alone. It is the one body of that
+// lookup: nameThenType projects the reference out of it, so a caller reading the
+// key and a caller reading the reference read one resolution.
+func nameThenTypeEntry(tier *types.MappingTier, instanceName, lookupType string) (mappingMatch, bool, error) {
 	for _, t := range tier.Tiers() {
 		if t.ByInstanceName {
 			if instanceName == "" {
 				continue
 			}
 			if uri, ok := t.Entries.Get(instanceName); ok {
-				return uri, true, nil
+				return mappingMatch{reference: uri}, true, nil
 			}
 			continue
 		}
-		if uri, ok, err := versionTolerantTypeGet(t.Entries, lookupType); err != nil || ok {
-			return uri, ok, err
+		key, uri, ok, err := versionTolerantTypeGet(t.Entries, lookupType)
+		if err != nil {
+			return mappingMatch{}, false, err
+		}
+		if ok {
+			return mappingMatch{reference: uri, typeKey: key, byType: true}, true, nil
 		}
 	}
-	return "", false, nil
+	return mappingMatch{}, false, nil
 }
 
 // RecipeLookupWithManifest returns a renderer.RecipeLookup whose Recipe
@@ -1187,9 +1220,8 @@ func implementsRequest(componentType string, component componentResolver) string
 // so the pin-candidate list and the import's draft Manifest read one set in one
 // order.
 //
-// The type is resolved here, through implementsRequest, and it must be resolved
-// nowhere else, so the two readers ask with the same version for the same bare
-// type: a reader
+// The type is resolved through implementsRequest and through nothing else, so
+// every reader asks with the same version for the same bare type: a reader
 // resolving it on its own would be a second resolution free to disagree, and the
 // disagreement would be a drafted Manifest naming a Recipe the halt does not
 // offer, or the reverse.
@@ -1533,10 +1565,18 @@ func (c *Catalog) AssertManifestImplementsConsistency(manifest *types.Manifest, 
 // is name-wins-over-type: a `name:` override on instanceName takes precedence
 // over the (version-tolerant) `type:` match on componentType.
 func componentMappingURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
+	match, ok, err := componentMappingEntry(manifest, instanceName, componentType)
+	return match.reference, ok, err
+}
+
+// componentMappingEntry is componentMappingURI answering with the entry the
+// lookup settled on, so a reader that also needs the type-axis key reads the
+// same resolution the reference came from.
+func componentMappingEntry(manifest *types.Manifest, instanceName, componentType string) (mappingMatch, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Components == nil {
-		return "", false, nil
+		return mappingMatch{}, false, nil
 	}
-	return nameThenType(manifest.Spec.Mappings.Components, instanceName, componentType)
+	return nameThenTypeEntry(manifest.Spec.Mappings.Components, instanceName, componentType)
 }
 
 // featureMappingURI is the Feature analogue of componentMappingURI:

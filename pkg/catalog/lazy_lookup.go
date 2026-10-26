@@ -240,6 +240,12 @@ func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.Catalo
 		Recipe:               l.RecipeByURI,
 		FeatureRecipe:        l.FeatureRecipeByURI,
 		NodeRecipeResolution: l.NodeRecipeResolution,
+		// The extends ancestry of a component type, over the same local copies the
+		// mapping-consistency gate walks, so a rule asked at a stage of the
+		// compilation judges a Recipe written against a base exactly as that gate
+		// does. The recipe shell holds no Component index, so this view supplies
+		// the resolver rather than the shell.
+		ComponentAncestry: l.lockedComponentAncestry,
 		// The local source a build compares with its recorded pins, read through the
 		// declared set a publication packs and the pin step pins. It reads the
 		// document at the path it is handed and holds no state of the lookup's, so
@@ -2564,6 +2570,17 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 // under the lock.
 func (l *LazyLookup) componentAncestry(componentType string) ([]string, error) {
 	return componentAncestryOver(componentType, l.localComponent, l.localComponentVersion)
+}
+
+// lockedComponentAncestry is componentAncestry for a reader that does not hold
+// l.mu: the resolver AsCatalogLookupContext hands to a compilation, whose rules
+// ask it long after the view was taken and outside every entry that locks. It
+// takes the lock and walks the same chain, so the gate and those rules read one
+// walk.
+func (l *LazyLookup) lockedComponentAncestry(componentType string) ([]string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.componentAncestry(componentType)
 }
 
 // localComponentVersion is the version select over this view's catalog-directory

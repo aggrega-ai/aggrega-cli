@@ -342,6 +342,29 @@ func runTopologyStageRules(
 		return nil, err
 	}
 
+	// No component instance reached through a mapping key that names no version
+	// renders through a Recipe whose spec.implements its own type version does not
+	// satisfy. Such a key matches every version of its type, so the rule over the
+	// mapping entry can only judge the Recipe against the type; which version it
+	// has to serve is the instance's, and the key the lookup settled on for the
+	// instance is known only here, where the instance set is complete. It halts
+	// at the severity the rule over the entry declares, and is recorded under the
+	// Manifest because the remedy is a mapping entry.
+	versionObjections, err := constraint.RunOnNodes(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		resolver.NodeMappedRecipeImplementsTheNodeVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := found.record(
+		resolver.NodeMappedRecipeImplementsTheNodeVersion.Severity, topologyStageMappingEntity, versionObjections,
+	); err != nil {
+		return nil, err
+	}
+
 	// One halt carrying every halting rule's findings, rule by rule. A document
 	// offending against more than one is reported for all of them rather than for
 	// whichever rule ran first: they are asked at one stage, so there is no later

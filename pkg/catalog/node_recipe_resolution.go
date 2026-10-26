@@ -40,15 +40,24 @@ import (
 // another backing does not hold and is therefore handed. It is the enumeration
 // the import's draft Manifest reads, resolved the same way, so a drafted
 // Manifest and this halt name the same Recipes.
+//
+// The instance's type at the version the build compiles it as is resolved
+// through that same resolution, whatever the outcome, and travels with the
+// answer: it is what the mapped Recipe's implements is judged against when the
+// key that reached the instance names no version, and asking the one resolution
+// keeps that judgement and the pin candidates agreeing about which version a
+// bare type stands for. The type-axis key the lookup settled on travels too,
+// because it is the lookup alone that knows it.
 func (c *Catalog) nodeRecipeResolution(
 	manifest *types.Manifest,
 	instanceName string,
 	componentType string,
 	component componentResolver,
 ) resolver.NodeRecipeResolution {
-	uri, mapped, err := ComponentRecipeURI(manifest, instanceName, componentType)
+	resolved := implementsRequest(componentType, component)
+	match, mapped, err := componentMappingEntry(manifest, instanceName, componentType)
 	if keys, refused := ambiguousMappingKeys(err); refused {
-		return resolver.NodeRecipeResolution{AmbiguousKeys: keys}
+		return resolver.NodeRecipeResolution{AmbiguousKeys: keys, ResolvedType: resolved}
 	}
 	if err != nil {
 		// No other refusal shape exists today, and one added later is reported as
@@ -56,13 +65,21 @@ func (c *Catalog) nodeRecipeResolution(
 		// projection of a lookup it does not own, so inventing an outcome for a
 		// failure it cannot classify would state something about the mapping table
 		// that the lookup never said.
-		return resolver.NodeRecipeResolution{}
+		return resolver.NodeRecipeResolution{ResolvedType: resolved}
 	}
 	if mapped {
-		_, present := c.RecipeByURI(uri)
-		return resolver.NodeRecipeResolution{Reference: uri, Mapped: true, Present: present}
+		_, present := c.RecipeByURI(match.reference)
+		return resolver.NodeRecipeResolution{
+			Reference:    match.reference,
+			Mapped:       true,
+			Present:      present,
+			TypeKey:      match.typeKey,
+			MappedByType: match.byType,
+			ResolvedType: resolved,
+		}
 	}
 	return resolver.NodeRecipeResolution{
 		PinCandidates: recipesImplementing(c.Recipes, componentType, component),
+		ResolvedType:  resolved,
 	}
 }

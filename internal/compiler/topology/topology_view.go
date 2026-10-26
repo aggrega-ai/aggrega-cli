@@ -112,12 +112,12 @@ type topologyView struct {
 	// recipeResolutions is what each node's Recipe resolution came to, joined
 	// once when this value was built.
 	//
-	// It is folded here rather than resolved per read because four facts project
-	// it and a rule asked about a node reads all four: resolving per read would
-	// perform the same join four times per node, and the join scans the recipe
-	// index for a node nothing maps. Folding also keeps the four answers about
-	// one node consistent with each other, which per-read resolution could not
-	// promise if the index moved between them.
+	// It is folded here rather than resolved per read because several facts
+	// project it and a rule asked about a node reads them together: resolving per
+	// read would perform the same join once per fact per node, and the join scans
+	// the recipe index for a node nothing maps. Folding also keeps the answers
+	// about one node consistent with each other, which per-read resolution could
+	// not promise if the index moved between them.
 	//
 	// A node absent from the map resolved to nothing, which is the same answer a
 	// node the mapping does not reach gives. The two are not separated here
@@ -256,6 +256,19 @@ func (v *topologyView) NodeMappedRecipePresent(node string) bool {
 // did.
 func (v *topologyView) NodeRecipePinCandidates(node string) []string {
 	return v.recipeResolutions[node].PinCandidates
+}
+
+// NodeRecipeMappingTypeKey returns the type-axis mapping key that resolved a
+// node's Recipe, and whether a type-axis key resolved the node at all.
+func (v *topologyView) NodeRecipeMappingTypeKey(node string) (string, bool) {
+	resolution := v.recipeResolutions[node]
+	return resolution.TypeKey, resolution.MappedByType
+}
+
+// NodeResolvedComponentType returns the component type a node carries at the
+// version the build compiles it as.
+func (v *topologyView) NodeResolvedComponentType(node string) string {
+	return v.recipeResolutions[node].ResolvedType
 }
 
 // ComponentDeactivated returns whether the composition removed a component
