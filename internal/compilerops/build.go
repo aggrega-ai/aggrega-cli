@@ -57,6 +57,12 @@ type BuildInputs struct {
 	// a verdict role is held at its load to the signature this run records, as the
 	// check of recorded signatures before the render held it.
 	composedTrust *pluginstrust.Trust
+
+	// resolutionAdvisoriesShown is handed to the pipeline as
+	// pipeline.Inputs.ResolutionAdvisoriesShown: the preview that builds this set
+	// it where its caller's operation has already shown the resolution's
+	// advisories, so the build's resolution records them without showing them.
+	resolutionAdvisoriesShown bool
 }
 
 // BuildToBuffer runs the full compiler pipeline for the resolved Release and
@@ -127,6 +133,7 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		RecordedPins:                     view.RecordedPins(),
 		CompilerVersion:                  in.CompilerVersion,
 		TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,
+		ResolutionAdvisoriesShown:        in.resolutionAdvisoriesShown,
 	}
 	// The governance attachment list and the digests recorded as trusted for the
 	// verdict attachments arrive through the one composition every build surface

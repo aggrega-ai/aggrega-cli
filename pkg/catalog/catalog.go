@@ -2424,8 +2424,9 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 
 // PluginColocatedDirs maps each indexed Plugin entity's bare-identity artifact
 // reference to the directory its plugin.yaml was loaded from — the directory a
-// co-located .wasm sits in beside the entity — and to the root a read there is
-// held to, the one the catalog directory it was folded from picks (pluginRoots).
+// co-located .wasm sits in beside the entity — to the root a read there is held
+// to, the one the catalog directory it was folded from picks (pluginRoots), and
+// to the version that entity is at.
 // The build-time plugin cascade's co-located tier consults it, so a binary with
 // no embedded core guests resolves them from beside their catalog entities.
 // Returns nil when no Plugin entity was indexed. Keys are built through the single
@@ -2449,8 +2450,9 @@ func (c *Catalog) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 			continue
 		}
 		dirs[p.ArtifactReference()] = pluginpath.ColocatedDir{
-			Dir:  filepath.Dir(c.pluginSources[wkey]),
-			Root: c.pluginRoots[wkey],
+			Dir:     filepath.Dir(c.pluginSources[wkey]),
+			Root:    c.pluginRoots[wkey],
+			Version: p.Metadata.Version,
 		}
 	}
 	if len(dirs) == 0 {

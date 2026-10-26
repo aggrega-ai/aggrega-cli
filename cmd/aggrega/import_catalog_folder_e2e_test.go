@@ -417,8 +417,9 @@ func assertImportCommandDraftsTheSharedResult(t *testing.T, root, external, form
 // an importer entity authored in a catalog folder with no module beside it.
 //
 // The halt is the one the reference documents for a plugin no source holds: its
-// short code, and the sentence naming the reference and the sources consulted,
-// read off the process error stream the root reports a failure on. Nothing is
+// short code, and the sentence naming the importer, the version its entity is at
+// and the file its module is read from beside that entity, read off the process
+// error stream the root reports a failure on. Nothing is
 // drafted and the workspace is left exactly as it was.
 //
 // The positive control is the case above, over the same folder with its modules:
@@ -457,8 +458,9 @@ func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing
 	if !ok {
 		t.Fatal("the condition for a plugin no source holds carries no registered sentence")
 	}
-	documented := fmt.Sprintf("plugin %q not resolvable through any tier (embed, colocated, local, cache): %s",
-		importer.Reference, message)
+	documented := fmt.Sprintf("plugin %q at version %s is not on this machine; place its module, named %s, beside its "+
+		"Plugin entity in %s: %s", importer.Reference, importer.Version, filepath.Base(importer.Module), importer.EntityDir,
+		message)
 	if !strings.Contains(process, "["+short+"]") {
 		t.Errorf("the halt does not open with %s:\n%s", short, process)
 	}

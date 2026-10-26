@@ -6,7 +6,6 @@ package pluginpath
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -35,13 +34,13 @@ func TestAPluginResolutionWhoseContextHasAlreadyEndedConsultsNoTier(t *testing.T
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("a withdrawn caller got %v; want an error wrapping context.Canceled", err)
 	}
-	if strings.Contains(errString(err), "not resolvable") {
+	if errors.Is(err, ErrPluginArtifactNotFound()) {
 		t.Errorf("a withdrawn caller was answered by the cascade (%v); the withdrawal should "+
 			"have been reported before any tier was consulted", err)
 	}
 
 	_, liveErr := r.ResolveContext(context.Background(), unresolvableURI)
-	if !strings.Contains(errString(liveErr), "not resolvable") {
+	if !errors.Is(liveErr, ErrPluginArtifactNotFound()) {
 		t.Fatalf("the live-context control got %v; want the tier-exhaustion refusal — without a "+
 			"control that fails differently, the assertion above proves nothing", liveErr)
 	}
@@ -56,22 +55,14 @@ func TestTheSeamFacingResolveStillWalksTheCascade(t *testing.T) {
 	r := NewResolver(ResolutionContext{}, PinPostureNone, PinMaps{})
 
 	_, err := r.Resolve(unresolvableURI)
-	if !strings.Contains(errString(err), "not resolvable") {
+	if !errors.Is(err, ErrPluginArtifactNotFound()) {
 		t.Errorf("Resolve(%q) returned %v; want the tier-exhaustion refusal", unresolvableURI, err)
 	}
 
 	// A Resolver bound as a Lookup is the seam every socket uses; it must still
 	// satisfy the type and still resolve.
 	var seam Lookup = r.Resolve
-	if _, seamErr := seam(unresolvableURI); !strings.Contains(errString(seamErr), "not resolvable") {
+	if _, seamErr := seam(unresolvableURI); !errors.Is(seamErr, ErrPluginArtifactNotFound()) {
 		t.Errorf("the seam-bound method value returned %v; want the tier-exhaustion refusal", seamErr)
 	}
-}
-
-// errString renders an error for substring matching without tripping over a nil.
-func errString(err error) string {
-	if err == nil {
-		return "<nil>"
-	}
-	return err.Error()
 }

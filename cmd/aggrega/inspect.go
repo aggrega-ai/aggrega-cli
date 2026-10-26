@@ -216,7 +216,7 @@ they are from the readable layouts. Pass --unredacted to print them instead.`,
 	c.Flags().BoolVar(&unredactedFlag, flagUnredacted, false, helpUnredacted)
 	c.Flags().BoolVar(&irGraphFlag, flagIRGraph, false, helpIRGraph+". Applies to a Release, the one kind that resolves to a graph; any other kind refuses the request rather than silently dropping it")
 	c.Flags().BoolVar(&closureFlag, flagClosure, false, helpClosure+".")
-	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports, before `aggrega plugin sync` records them in a Plugin entity. Takes no identifier argument.")
+	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw `<file.wasm>` artifact; derives and prints the host functions it imports, before aggrega plugin sync records them in a Plugin entity. Takes no identifier argument.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")

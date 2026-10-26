@@ -63,8 +63,13 @@ clear   wipes every cache, including the compiled-module store.`,
 // though the workspace kept none, and the link the refusal names would go unsaid.
 // Any other failure to resolve a workspace is not fatal: the command still
 // operates on the machine-wide caches, which exist whatever the reader is
-// standing in.
-func resolveCacheLocations(ctx context.Context) (cacheops.Locations, error) {
+// standing in. It is not silent either. Where errOut is given, one line on it
+// names the root that could not be used and why, in the resolution's own words
+// — the ones every command refusing that root prints — and says that only the
+// machine-wide caches are acted on, so a reader who named a workspace does not
+// take a listing or a removal for one that covered it. A command that refuses
+// to run without a workspace passes no errOut, since it acts on nothing.
+func resolveCacheLocations(ctx context.Context, errOut io.Writer) (cacheops.Locations, error) {
 	var root, cacheDir string
 	ws, err := workspaceFromContext(ctx)
 	switch {
@@ -73,6 +78,8 @@ func resolveCacheLocations(ctx context.Context) (cacheops.Locations, error) {
 		cacheDir = ws.Config().ResolvedArtifactCacheDir()
 	case errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()):
 		return cacheops.Locations{}, err
+	case errOut != nil:
+		fmt.Fprintf(errOut, "note: %s; only the machine-wide caches are acted on\n", err)
 	}
 	return cacheops.ResolveLocations(ctx, root, cacheDir), nil
 }
@@ -86,7 +93,7 @@ summary line of the form "N elements, <human size>". The listing is
 deterministic: identical cache state produces byte-identical output.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			loc, err := resolveCacheLocations(cmd.Context())
+			loc, err := resolveCacheLocations(cmd.Context(), cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -216,7 +223,8 @@ remainder is reclaimed by "aggrega cache evict" or "aggrega cache clear".
 Prune needs a pulled workspace: it fails when no lockfile is present.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			loc, err := resolveCacheLocations(cmd.Context())
+			// No notice: a prune with no workspace refuses rather than falling back.
+			loc, err := resolveCacheLocations(cmd.Context(), nil)
 			if err != nil {
 				return err
 			}
@@ -308,7 +316,7 @@ no-op and removes nothing.`,
 			if capBytes <= 0 {
 				return fmt.Errorf("cache evict: --max-size must be greater than zero, got %q", maxSize)
 			}
-			loc, err := resolveCacheLocations(cmd.Context())
+			loc, err := resolveCacheLocations(cmd.Context(), cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -407,7 +415,7 @@ can answer.`,
 			// The locations are resolved before the reader is asked, so a
 			// workspace the wipe cannot proceed in is refused before anyone is
 			// asked to consent to it.
-			loc, err := resolveCacheLocations(cmd.Context())
+			loc, err := resolveCacheLocations(cmd.Context(), cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}

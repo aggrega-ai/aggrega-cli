@@ -277,9 +277,6 @@ func TestAnExhaustedCascadeReportsAnAbsentArtifact(t *testing.T) {
 			if code, ok := cerrors.ShortCodeOf(err); !ok || code != "E0306" {
 				t.Errorf("short code = %q (reported %v); want E0306", code, ok)
 			}
-			if !strings.Contains(err.Error(), "not resolvable") {
-				t.Errorf("error should say not resolvable; got %v", err)
-			}
 		})
 	}
 }

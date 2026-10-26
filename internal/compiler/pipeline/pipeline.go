@@ -273,6 +273,20 @@ type Inputs struct {
 	// leaves it nil, which records nothing and changes no display.
 	AdvisoryLog *AdvisoryLog
 
+	// ResolutionAdvisoriesShown reports that the operation this run is part of has
+	// already shown the reader the advisories the resolution raises, through an
+	// earlier resolution of the same Release, so this run's resolution records them
+	// on AdvisoryLog and writes none of them to the terminal. An operation that
+	// resolves one Release twice — a pull draws the graph it pins and then renders
+	// the Release to discover its external inputs — would otherwise show every such
+	// advisory once per resolution.
+	//
+	// It reaches the resolution's display and nothing else: the advisories are
+	// computed and recorded exactly as without it, so a surface reading them
+	// structurally sees the same list. Left false — every run that is the only
+	// resolution its operation makes — the advisories are shown as they are raised.
+	ResolutionAdvisoriesShown bool
+
 	// policyInputs is where the governance sites record the payloads they
 	// dispatch, when the run was asked for them. Only the entry point sets it, from
 	// [Options.PolicyInputs], so a surface driving a single phase records nothing.
@@ -955,8 +969,15 @@ func ResolveAndValidate(
 		// draws the finding on its authoring key does not spell the same path twice.
 		// Both renderings come from one composer in the resolver, so a condition
 		// keeps one wording however many surfaces report it.
+		//
+		// A run whose operation has already shown these advisories through an
+		// earlier resolution of the same Release records them and shows none
+		// (Inputs.ResolutionAdvisoriesShown), so each is shown once per operation
+		// rather than once per resolution.
 		for _, a := range resolveResult.LintAdvisories {
-			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
+			if !inputs.ResolutionAdvisoriesShown {
+				fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
+			}
 			inputs.AdvisoryLog.record(advisoryFromResolverFinding(a, abi.SeverityWarn))
 		}
 

@@ -20,6 +20,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
+// rawHostFunctionsHeading heads the host functions inspect derives from a raw
+// .wasm. It names the command that records the list in the Plugin entity an
+// author keeps beside the module, because that is the step the reader runs next:
+// a publish checks the recorded list against the binary rather than recording it.
+const rawHostFunctionsHeading = "hostFunctions (derived from binary, not yet recorded by aggrega plugin sync):"
+
 // inspectRawPlugin prints the pre-publish authoring view of a raw .wasm artifact
 // not yet published or stamped into a Plugin entity: the per-export input/output
 // contract the guest declares in its describe() self-report, and the host
@@ -79,10 +85,10 @@ func inspectRawPlugin(ctx context.Context, out io.Writer, wasmPath string) error
 	}
 
 	if len(derived) == 0 {
-		fmt.Fprintln(out, "hostFunctions (derived from binary, not yet stamped): (none)")
+		fmt.Fprintln(out, rawHostFunctionsHeading+" (none)")
 		return nil
 	}
-	fmt.Fprintln(out, "hostFunctions (derived from binary, not yet stamped):")
+	fmt.Fprintln(out, rawHostFunctionsHeading)
 	for _, fn := range derived {
 		fmt.Fprintf(out, "  - %s\n", fn)
 	}

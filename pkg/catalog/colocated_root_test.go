@@ -52,9 +52,9 @@ func TestTheColocatedMapCarriesTheRootTheEntitysCatalogDirectoryPicks(t *testing
 	stack := []string{listed, conventional}
 
 	want := map[string]pluginpath.ColocatedDir{
-		"governance/inside": {Dir: filepath.Join(conventional, "plugin", "governance", "inside", "1.0.0"), Root: ws},
-		"governance/within": {Dir: filepath.Join(listed, "plugin", "governance", "within", "1.0.0"), Root: listed},
-		"governance/beyond": {Dir: filepath.Join(listed, "plugin", "governance", "beyond", "1.0.0"), Root: listed},
+		"governance/inside": {Dir: filepath.Join(conventional, "plugin", "governance", "inside", "1.0.0"), Root: ws, Version: "1.0.0"},
+		"governance/within": {Dir: filepath.Join(listed, "plugin", "governance", "within", "1.0.0"), Root: listed, Version: "1.0.0"},
+		"governance/beyond": {Dir: filepath.Join(listed, "plugin", "governance", "beyond", "1.0.0"), Root: listed, Version: "1.0.0"},
 	}
 	lazy := NewLazyLookup(ws, "", stack, nil, named...).PluginColocatedDirs()
 	eager, err := LoadAllWithNamedDirs(ws, "", named, stack...)

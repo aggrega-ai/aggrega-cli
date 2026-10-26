@@ -78,9 +78,15 @@ type ResolutionContext struct {
 // than read. The root comes from whoever found the entity, because only the walk
 // that found it knows which catalog directory it was found in; the tier never
 // decides one. An empty Root holds nothing.
+//
+// Version is the version of the Plugin entity authored in Dir, which a refusal of
+// a module that is not there names beside the plugin. It decides nothing about
+// what is read: the file is named from the reference alone. Empty names no
+// version.
 type ColocatedDir struct {
-	Dir  string
-	Root string
+	Dir     string
+	Root    string
+	Version string
 }
 
 // PinMaps groups the already-derived per-URI pin maps a pinned construction site

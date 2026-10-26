@@ -148,6 +148,12 @@ func discoverExternalInputs(
 			// signature fact this run verified, and this run writes the record only
 			// after the render.
 			compilerops.WithComposedTrustRecord(trust),
+			// The pass that drew the graph this run pins resolved the same Release
+			// before this render and showed the reader every advisory that
+			// resolution raises, so the render's own resolution records them and
+			// shows none again. The render still records them on its result, so a
+			// surface reading that result reads the same list it would without this.
+			compilerops.WithResolutionAdvisoriesShown(),
 		),
 		cfg.RenderOptions,
 	)

@@ -285,7 +285,8 @@ func (l *LazyLookup) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 // the directory a co-located .wasm sits in beside the entity — and to the root a
 // read there is held to: the one the catalog directory whose walk placed the
 // identity picks ([workspaceconfig.CatalogDirRoot]), which is the root that walk
-// read the entity's own document under. It mirrors the eager catalog's
+// read the entity's own document under — and to the version that entity is at.
+// It mirrors the eager catalog's
 // PluginColocatedDirs over the lazily-walked local set, reading each entity's
 // authored document from the one record of where it came from and its catalog
 // directory from the record of which directory claimed the identity; an entity
@@ -316,8 +317,9 @@ func (l *LazyLookup) pluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 		}
 		p := l.plugins[key]
 		dirs[p.ArtifactReference()] = pluginpath.ColocatedDir{
-			Dir:  filepath.Dir(src),
-			Root: workspaceconfig.CatalogDirRoot(l.workspaceRoot, l.catalogDirs[position], l.namedDirs),
+			Dir:     filepath.Dir(src),
+			Root:    workspaceconfig.CatalogDirRoot(l.workspaceRoot, l.catalogDirs[position], l.namedDirs),
+			Version: p.Metadata.Version,
 		}
 	}
 	if len(dirs) == 0 {

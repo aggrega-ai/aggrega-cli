@@ -64,7 +64,7 @@ func TestEveryTrustConditionPrintsAHead(t *testing.T) {
 // envelope's message already holds every frame's contribution.
 func TestTrustHeadDoesNotRepeatTheMessage(t *testing.T) {
 	t.Parallel()
-	inner := fmt.Errorf("signing: %w: the held key is RSA, not ECDSA P-256", signing.ErrUnsupportedKey())
+	inner := fmt.Errorf("%w: the held key is RSA, not ECDSA P-256", signing.ErrUnsupportedKey())
 	err := fmt.Errorf("construct signer: %w", inner)
 	got := formatCompilerError(err)
 	if strings.Contains(got, "caused by") {
@@ -88,7 +88,7 @@ func TestTrustHeadDoesNotRepeatTheMessage(t *testing.T) {
 // rather than with plain text.
 func TestATwoVerbTrustWrapRendersEachConditionOnItsOwn(t *testing.T) {
 	t.Parallel()
-	specific := fmt.Errorf("signing: %w: held key is *rsa.PrivateKey, want ECDSA P-256", signing.ErrUnsupportedKey())
+	specific := fmt.Errorf("%w: held key is *rsa.PrivateKey, want ECDSA P-256", signing.ErrUnsupportedKey())
 	err := fmt.Errorf("construct signer: %w: %w", specific, signing.ErrUnsignedPushRefused())
 
 	firstShort, ok := cerrors.ShortCodeOf(signing.ErrUnsupportedKey())

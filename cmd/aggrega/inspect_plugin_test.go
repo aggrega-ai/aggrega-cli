@@ -15,10 +15,10 @@ import (
 
 // TestInspectRawPlugin_DerivesFromBinary proves the pre-publish authoring view:
 // inspect --plugin <path> reads a raw .wasm and prints the host functions it
-// imports via the single derivation primitive, labelled as derived-from-binary
-// and not-yet-stamped. The frp-step-go fixture imports no custom host functions,
-// so the not-yet-stamped view reports none — exercising the derive path against
-// a real toolchain-built binary.
+// imports via the single derivation primitive, labelled as derived from the
+// binary and not yet recorded, naming the command that records it. The
+// frp-step-go fixture imports no custom host functions, so the view reports none
+// — exercising the derive path against a real toolchain-built binary.
 func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
 	t.Parallel()
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
@@ -30,11 +30,9 @@ func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
 		t.Fatalf("inspectRawPlugin: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "derived from binary, not yet stamped") {
-		t.Errorf("output should label the set as derived-from-binary and not-yet-stamped; got:\n%s", out)
-	}
-	if !strings.Contains(out, "(none)") {
-		t.Errorf("the frp-step-go fixture imports no custom host functions; expected (none); got:\n%s", out)
+	const want = "\nhostFunctions (derived from binary, not yet recorded by aggrega plugin sync): (none)\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("the frp-step-go fixture imports no custom host functions, so the view should print the whole line %q; got:\n%s", want, out)
 	}
 }
 
@@ -132,7 +130,7 @@ func TestInspectRawPlugin_DescribeBestEffort(t *testing.T) {
 		if !strings.Contains(out, "Exports: (unavailable") {
 			t.Errorf("an absent describe() should report the export contract unavailable; got:\n%s", out)
 		}
-		if !strings.Contains(out, "derived from binary, not yet stamped") {
+		if !strings.Contains(out, "\nhostFunctions (derived from binary, not yet recorded by aggrega plugin sync):\n") {
 			t.Errorf("host functions must still be shown when describe() is absent; got:\n%s", out)
 		}
 		if !strings.Contains(out, "aggrega_fetch_external_input") {

@@ -89,7 +89,7 @@ func verifyKeyedWithLibrary(bundleBytes, pubPEM []byte, artifactDigest string) e
 	}
 	ecPub, ok := pub.(*ecdsa.PublicKey)
 	if !ok {
-		return fmt.Errorf("signing: %w: pinned key is %T, want ECDSA P-256", ErrUnsupportedKey(), pub)
+		return fmt.Errorf("%w: pinned key is %T, want ECDSA P-256", ErrUnsupportedKey(), pub)
 	}
 	verifier, err := signature.LoadECDSAVerifier(ecPub, crypto.SHA256)
 	if err != nil {
@@ -115,7 +115,7 @@ func verifyKeyedWithLibrary(bundleBytes, pubPEM []byte, artifactDigest string) e
 		verify.WithKey(),
 	)
 	if _, err := sev.Verify(b, policy); err != nil {
-		return fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed(), err)
+		return fmt.Errorf("%w: %v", ErrSignatureVerificationFailed(), err)
 	}
 	return nil
 }
@@ -218,11 +218,11 @@ func verifyKeylessWithLibrary(bundleBytes []byte, trustedMaterial root.TrustedMa
 func holdToTheArtifactVerified(bundleBytes []byte, artifactDigest string) error {
 	signed, recognised := oci.SignedArtifactOf(bundleBytes)
 	if !recognised {
-		return fmt.Errorf("signing: %w: its cryptographic check holds, but it is in a form from which the artifact it "+
+		return fmt.Errorf("%w: its cryptographic check holds, but it is in a form from which the artifact it "+
 			"was made for cannot be read", ErrSignatureVerificationFailed())
 	}
 	if !signed.MadeFor(artifactDigest) {
-		return fmt.Errorf("signing: %w: its cryptographic check holds, but it does not name %s as the artifact it "+
+		return fmt.Errorf("%w: its cryptographic check holds, but it does not name %s as the artifact it "+
 			"was made for", ErrSignatureVerificationFailed(), artifactDigest)
 	}
 	return nil
@@ -281,11 +281,11 @@ func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.Truste
 			// rejected it. Name both when they can be read from the leaf
 			// certificate; fall back to the library detail alone otherwise.
 			if issuer, san, ok := mismatchCertIdentity(entity); ok {
-				return KeylessIdentity{}, fmt.Errorf("signing: %w: %v; signer presented issuer %q with identity %q, but no trusted identity permits that issuer", ErrUntrustedIdentity(), err, issuer, san)
+				return KeylessIdentity{}, fmt.Errorf("%w: %v; signer presented issuer %q with identity %q, but no trusted identity permits that issuer", ErrUntrustedIdentity(), err, issuer, san)
 			}
-			return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrUntrustedIdentity(), err)
+			return KeylessIdentity{}, fmt.Errorf("%w: %v", ErrUntrustedIdentity(), err)
 		}
-		return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed(), err)
+		return KeylessIdentity{}, fmt.Errorf("%w: %v", ErrSignatureVerificationFailed(), err)
 	}
 	return matchedKeylessIdentity(result), nil
 }

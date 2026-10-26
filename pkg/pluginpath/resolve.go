@@ -53,7 +53,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -85,20 +84,6 @@ const (
 	// cascade never yields it: every tier the cascade reads is on the machine.
 	TierRegistry Tier = "registry"
 )
-
-// resolutionCascade lists the sources the cascade consults, in precedence order.
-// The diagnostic that reports exhaustion renders this slice rather than repeating
-// the names, so the message cannot claim a cascade the resolver does not walk.
-var resolutionCascade = []Tier{TierEmbed, TierColocated, TierLocal, TierCache}
-
-// cascadeNames renders the consulted sources for the exhaustion diagnostic.
-func cascadeNames() string {
-	names := make([]string, len(resolutionCascade))
-	for i, t := range resolutionCascade {
-		names[i] = string(t)
-	}
-	return strings.Join(names, ", ")
-}
 
 // Source maps this resolver's source tag to the word user-facing output prints
 // for it, drawn from the shared provenance vocabulary so that a plugin's
@@ -480,7 +465,7 @@ const unsetMsg = "no plugin path configured. Either:\n" +
 //
 // Precedence is embed (0a) → colocated (0b) → local (1) → cache (2); the first
 // tier that produces bytes wins, and a reference no tier answers halts with a
-// wrapped ErrPluginArtifactNotFound naming the tiers consulted. An explicit
+// wrapped ErrPluginArtifactNotFound composed by notOnMachine. An explicit
 // Override short-circuits the cascade. When the URI carries a digest pin, the
 // winning tier's bytes are verified against it; a mismatch halts with a wrapped
 // oci.ErrFetchIntegrity.
@@ -584,7 +569,59 @@ func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugi
 	if workspaceconfig.LooksLikeOCIURI(uri) {
 		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociReferenceHint, ErrPluginArtifactNotFound())
 	}
-	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (%s): %w", uri, cascadeNames(), ErrPluginArtifactNotFound())
+	return ResolvedPlugin{}, r.notOnMachine(uri)
+}
+
+// notOnMachine is the refusal of uri, a plugin no source the cascade reads holds:
+// the plugin-artifact-not-found condition, naming the plugin and, where the
+// catalog folder holding its Plugin entity says, the version that entity is at
+// and the file its module is read from there. It is the one composition of that
+// sentence, so every surface that loads a plugin through the cascade — an import,
+// a lint, a build — prints the same one.
+//
+// It names the places a module is read from in the words the reference teaches
+// rather than by the cascade's own labels for them. Where the plugin's entity sits
+// in a catalog folder, the module is read from beside it, and that is the one
+// place left to put it: the cascade never fetches the module of such an entity.
+// Otherwise the sentence says which of the places a module is read from this
+// resolution looked in, and that none of them holds it. It names only the places
+// this Resolver was given — the binary always; the catalog folders and the content
+// cache a pull fetches into where the construction supplied them — so a surface
+// that consults fewer, such as a lint reading only the binary, does not claim to
+// have looked where it did not.
+func (r Resolver) notOnMachine(uri string) error {
+	at := r.colocatedDirs[uri]
+	if at.Dir == "" {
+		absent := []string{"the binary does not carry its module"}
+		if len(r.colocatedDirs) > 0 {
+			absent = append(absent, "no catalog folder holds its Plugin entity")
+		}
+		if r.workspaceRoot != "" || r.cacheDir != "" {
+			absent = append(absent, "the content cache a pull fetches into does not hold it")
+		}
+		return fmt.Errorf("plugin %q is not on this machine: %s: %w", uri, inWords(absent), ErrPluginArtifactNotFound())
+	}
+	subject := fmt.Sprintf("plugin %q", uri)
+	if at.Version != "" {
+		subject += " at version " + at.Version
+	}
+	return fmt.Errorf("%s is not on this machine; place its module, named %s, beside its Plugin entity in %s: %w",
+		subject, pluginLeaf(uri), at.Dir, ErrPluginArtifactNotFound())
+}
+
+// inWords joins clauses as a sentence lists them: "a", "a and b", "a, b and c".
+func inWords(clauses []string) string {
+	switch len(clauses) {
+	case 0:
+		return ""
+	case 1:
+		return clauses[0]
+	}
+	out := clauses[0]
+	for _, c := range clauses[1 : len(clauses)-1] {
+		out += ", " + c
+	}
+	return out + " and " + clauses[len(clauses)-1]
 }
 
 // ResolveCatalogArtifact resolves, through the cascade, the artifact a Plugin entity

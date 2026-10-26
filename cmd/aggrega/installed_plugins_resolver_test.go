@@ -8,12 +8,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -45,7 +45,7 @@ func resolveCachedPluginWorkspace(t *testing.T, uri string, bytes []byte) *works
 // resolution symmetry: a runtime runner built from a workspace whose content
 // cache holds the installed artifact resolves a bare CLI-plugin URI, whereas the
 // bare cascade (a runner with no workspace, the pre-fix empty resolver) fails at
-// resolution with "not resolvable through any tier". This is the exact asymmetry
+// resolution with the plugin-artifact-not-found refusal. This is the exact asymmetry
 // that let `plugin install moo` succeed while `aggrega moo` failed.
 func TestInstalledPluginRunner_ResolvesCachedURI(t *testing.T) {
 	const uri = "moo"
@@ -66,7 +66,7 @@ func TestInstalledPluginRunner_ResolvesCachedURI(t *testing.T) {
 	if string(resolved.Bytes) != string(cachedBytes) {
 		t.Fatalf("resolved bytes = %q; want the cached artifact bytes", resolved.Bytes)
 	}
-	if _, err := workspacePluginResolver(nil)(uri); err == nil || !strings.Contains(err.Error(), "not resolvable") {
+	if _, err := workspacePluginResolver(nil)(uri); !errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) {
 		t.Fatalf("bare cascade should fail to resolve %q; got %v", uri, err)
 	}
 
@@ -80,7 +80,7 @@ func TestInstalledPluginRunner_ResolvesCachedURI(t *testing.T) {
 	if runErr == nil {
 		t.Fatalf("running non-guest cached bytes should fail at load, not succeed")
 	}
-	if errors.Is(runErr, cliplugin.ErrNoResolver()) || strings.Contains(runErr.Error(), "not resolvable") {
+	if errors.Is(runErr, cliplugin.ErrNoResolver()) || errors.Is(runErr, pluginpath.ErrPluginArtifactNotFound()) {
 		t.Fatalf("workspace runner must resolve the cached URI, not fail resolution; got %v", runErr)
 	}
 	// Resolution succeeds before the load fails, so the workspace runner returns
@@ -90,7 +90,7 @@ func TestInstalledPluginRunner_ResolvesCachedURI(t *testing.T) {
 	}
 
 	_, _, emptyErr := installedPluginRunnerFor(nil).Run(ctx, uri, uri, nil)
-	if emptyErr == nil || !strings.Contains(emptyErr.Error(), "not resolvable") {
+	if !errors.Is(emptyErr, pluginpath.ErrPluginArtifactNotFound()) {
 		t.Fatalf("no-workspace runner should fail resolution with the pre-fix error; got %v", emptyErr)
 	}
 }

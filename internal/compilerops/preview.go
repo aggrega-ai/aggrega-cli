@@ -130,6 +130,11 @@ type PreviewInputs struct {
 	// before the render, and by the load of each plugin attached at a verdict role.
 	composedTrust *pluginstrust.Trust
 
+	// resolutionAdvisoriesShown reports that the caller's operation has already
+	// shown the reader the advisories this Release's resolution raises, so the
+	// render's own resolution records them without showing them again.
+	resolutionAdvisoriesShown bool
+
 	// catalogWarnings are advisories the caller's own catalog load produced.
 	// They are handed in rather than re-derived because only a caller that
 	// eagerly loaded a catalog has them, and emitting them here keeps the whole
@@ -193,6 +198,16 @@ func WithComposedLockfile(lf *lockfile.Lockfile) PreviewOption {
 // every other surface does.
 func WithComposedTrustRecord(trust *pluginstrust.Trust) PreviewOption {
 	return func(in *PreviewInputs) { in.composedTrust = trust }
+}
+
+// WithResolutionAdvisoriesShown declares that the caller's operation has already
+// shown the reader the advisories the Release's resolution raises, through a
+// resolution of its own made before this preview, so the preview's resolution
+// records them on the result as usual and shows none of them a second time. A
+// pull is that caller: it resolves the Release to draw the graph it pins, then
+// renders the same Release here to discover its external inputs.
+func WithResolutionAdvisoriesShown() PreviewOption {
+	return func(in *PreviewInputs) { in.resolutionAdvisoriesShown = true }
 }
 
 // WithCatalogWarnings supplies the advisories the caller's own catalog load
@@ -914,6 +929,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 		CompilerVersion:                  in.compilerVersion,
 		TolerateCatalogViewInconsistency: pol.tolerateCatalogViewInconsistency,
 		composedTrust:                    in.composedTrust,
+		resolutionAdvisoriesShown:        in.resolutionAdvisoriesShown,
 	}, opts)
 	// Assigned BEFORE the verdict is read, and that ordering is the whole point
 	// rather than a tidying. Assigned after the error check, the outcome would
