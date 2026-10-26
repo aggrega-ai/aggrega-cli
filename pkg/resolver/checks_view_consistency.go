@@ -20,14 +20,14 @@ import (
 // the copies would answer differently the moment either moved.
 //
 // Two conditions make the finding, and reading one without the other reports the
-// wrong thing in a way nothing catches. Absence alone is not a fault: a type
-// addressed as a path beside the authoring document has no catalog entry to find,
-// so its absence is the expected outcome. Absence of a type addressed as an
-// identity is a divergence between what the build resolved and what the rules can
-// see, because a genuinely unresolvable reference halts before any of this is
-// asked. The two facts are independent — one is a property of the reference as
-// authored, the other of what the catalog holds — which is why both are read
-// here and neither is inferred from the other.
+// wrong thing in a way nothing catches. Absence alone is not a fault: a type with
+// a ./ or ../ prefix names no catalog entity, so this rule passes over it; pull,
+// build, and validate or lint over a Release refuse it in dependency resolution
+// as a reference no catalog holds, and inspect, which skips that, shows it. Absence
+// of a type addressed as an identity is a divergence between what the build
+// resolved and what the rules can see, because a genuinely unresolvable reference
+// halts before any of this is asked. The two facts are independent — one is of
+// the reference as authored, the other of what the catalog holds — so both are read.
 //
 // It is keyed by the component rather than by the type, so one absent entry is
 // reported once per component that names it. The component is the site an author

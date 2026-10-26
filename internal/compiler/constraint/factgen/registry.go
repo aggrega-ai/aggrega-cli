@@ -2525,10 +2525,10 @@ var facts = []factDecl{
 			"back absent for either of those and for a contract that failed to " +
 			"resolve. So a rule taking one of those emptinesses for an answer about " +
 			"the catalog reports on a type it never found.\n\nFalse is not on its " +
-			"own a finding, and a rule that halts on it alone refuses authoring the " +
-			"product accepts. A type addressed as a local path has no catalog entry " +
-			"to find, so what a false answer MEANS depends on how the reference " +
-			"addresses its entity — which is a separate fact, because the two are " +
+			"own a finding. A type written with a ./ or ../ prefix names no catalog " +
+			"entity, since a type is never read as a file, and dependency resolution " +
+			"refuses it as a reference no catalog holds; so what a false answer MEANS depends on how " +
+			"the reference is written — which is a separate fact, because the two are " +
 			"independent: one is a property of the reference as authored and the " +
 			"other of what the catalog holds.\n\nIt answers presence in the catalog " +
 			"and nothing about whether there is a catalog to consult. A build that " +
@@ -2577,22 +2577,22 @@ var facts = []factDecl{
 		Params:      []paramDecl{{Name: "componentType", Type: "string"}},
 		Returns:     "bool",
 		Doc: "ComponentTypeIsLocalPath reports whether a component type reference " +
-			"addresses a file beside the authoring document rather than an entity a " +
-			"catalog holds — the explicit relative-path prefix entity resolution " +
-			"treats as a local path.\n\nIt is that discriminator and not a test " +
-			"over the reference's content. The prefix is what separates a local " +
-			"path from an identity, and a rule inspecting the string for anything " +
-			"else would put a second, differently-behaving version of the rule " +
-			"beside the one resolution applies.\n\nIt is what makes a missing " +
-			"catalog entry readable. A type addressed as a local path has no entry " +
-			"to find, so its absence is the expected outcome and a rule correctly " +
-			"passes over it; a type addressed as an identity that no entry was " +
-			"found for is a divergence between what the build resolved and what a " +
-			"rule can see, which is a finding. A rule reading presence without this " +
-			"fact cannot tell those apart, and reports whichever one it assumed.\n" +
-			"\nIt is a property of the reference as authored and says nothing about " +
-			"whether the file it addresses exists. Whether an entry was found is " +
-			"the separate fact that answers that, and the two are asked together.",
+			"is written with the explicit relative-path prefix (./ or ../) — the " +
+			"prefix entity resolution reads as a file path on the documents a " +
+			"Release reaches, and never on a type.\n\nIt is that discriminator and " +
+			"not a test over the reference's content. The prefix is what separates " +
+			"a path-shaped string from an identity, and a rule inspecting the string " +
+			"for anything else would put a second, differently-behaving version of " +
+			"the rule beside the one resolution applies.\n\nIt is what makes a " +
+			"missing catalog entry readable. A type written with the prefix names no " +
+			"catalog entity, which dependency resolution refuses as a reference no " +
+			"catalog holds, so a rule passes over its absence; a type addressed as an identity that no " +
+			"entry was found for is a divergence between what the build resolved and " +
+			"what a rule can see, which is a finding. A rule reading presence without " +
+			"this fact cannot tell those apart, and reports whichever one it assumed.\n" +
+			"\nIt is a property of the reference as authored: no file is read for " +
+			"it. Whether an entry was found is the separate fact, and the two are " +
+			"asked together.",
 	},
 	{
 		Name:        "release-per-edge-target",

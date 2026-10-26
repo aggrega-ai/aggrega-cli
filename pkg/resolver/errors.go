@@ -436,12 +436,12 @@ var errUnreadParameter = cerrors.Register("unread-parameter", cerrors.Meta{
 
 // ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
 // guard needs a catalog entity for a type that resolution resolved AS A
-// CATALOG REFERENCE (a bare-token identity, not a Tier-1 relative-path file),
-// yet the entity is absent from the guard's catalog view. A genuinely
-// unresolvable reference halts earlier at resolution; reaching a guard with
-// the entity missing means the build's resolved set and the guard's view have
-// diverged — a loud halt, never a silent skip. (Tier-1 relative-path types,
-// which legitimately have no catalog entity, are not this error.)
+// CATALOG REFERENCE (a bare-token identity), yet the entity is absent from the
+// guard's catalog view. A genuinely unresolvable reference halts earlier at
+// resolution; reaching a guard with the entity missing means the build's
+// resolved set and the guard's view have diverged — a loud halt, never a
+// silent skip. (A type written with a ./ or ../ prefix is not this error: a
+// type is never read as a file, so such a value names no catalog entity.)
 func ErrGuardEntityViewInconsistency() error { return errGuardEntityViewInconsistency }
 
 var errGuardEntityViewInconsistency = cerrors.Register("internal-catalog-view-disagreement", cerrors.Meta{

@@ -57,14 +57,13 @@ func catalogEntryAbsentMessage(typeRef string) string {
 //
 // At a guard, a missing catalog entity is never a dangling user reference — a
 // genuinely unresolvable reference halts at resolution (NotFound) before the
-// guards run. So a miss is one of two things, told apart by resolution's own
-// Tier-1 discriminator [isRelativePathRef] (the three-tier entity-resolution
-// rule: `./…`/`../…` is a local-path file, a bare token is a catalog identity),
-// NOT by an ad-hoc string check:
+// guards run. So a miss is one of two things, told apart by the relative-path
+// prefix test [isRelativePathRef] (the one resolution applies to the documents a
+// Release reaches; a type is never read as a file), NOT by an ad-hoc string check:
 //
-//   - a Tier-1 relative-path type (`./…` / `../…`): a genuinely non-catalog
-//     local file with no catalog entity — the caller's existing skip is correct,
-//     so this returns nil;
+//   - a type written with a `./` or `../` prefix: it names no catalog entity, and
+//     dependency resolution refuses it as a reference no catalog holds — this
+//     returns nil, passing over it;
 //   - a bare-token catalog reference resolution resolved but that is absent from
 //     the guard's view: an internal inconsistency between the build's resolved
 //     set and the guard's catalog view — this returns an
@@ -116,9 +115,9 @@ func guardEntityViewInconsistency(typeRef string) *ResolverError {
 // view-inconsistency classifier, for callers outside this package — the topology
 // sub-aggregate conformance guard, which validates flattened sub-aggregate nodes
 // that the resolution guards do not reach. Same classification as the in-package
-// guards: a Tier-1 relative-path type is a legitimate skip (nil); a bare catalog
-// reference absent from the guard's view is the loud
-// [ErrGuardEntityViewInconsistency] halt.
+// guards: a type written with a ./ or ../ prefix names no catalog entity and is
+// passed over (nil); a bare catalog reference absent from the guard's view is the
+// loud [ErrGuardEntityViewInconsistency] halt.
 //
 // It takes the type alone. A caller holding the document it was walking and the
 // node it was at has nothing to pass them to, which is deliberate: the finding

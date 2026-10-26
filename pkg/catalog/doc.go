@@ -41,11 +41,11 @@
 // authoring path the in-tree fixture testdata and the aggrega-hub catalog
 // repo both rely on.
 //
-// Status. The package ships filesystem-only resolution. Aggrega's
-// reference-resolution model has three tiers — explicit local path,
-// workspace+cache, remote OCI registry — and this package implements the
-// first tier only; the workspace+cache and remote-OCI tiers land when the
-// registry-side wiring is taken off the deferral list.
+// Resolution tiers. A catalog entity reference — a type, a Manifest mapping,
+// an implements, a pipeline plugin — resolves through the catalog directories
+// this package walks, then the artifact cache, then the registry ([LazyLookup],
+// [Catalog.ClosureLookup]); it is never read as a file path. Only the documents
+// a Release reaches take a ./ or ../ path, and package resolver loads those.
 //
 // Determinism. Iteration over loaded entities is sorted by name where
 // ordering is observable (ResolveAllExtends, DeprecationWarnings); load

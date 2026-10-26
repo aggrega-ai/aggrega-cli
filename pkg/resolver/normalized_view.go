@@ -1215,8 +1215,8 @@ func (v *normalizedView) MappedTypeExtendsAncestry(componentType string) ([]stri
 	return bases, true
 }
 
-// ComponentTypeIsLocalPath reports whether a component type is addressed as a
-// path beside the authoring document rather than as a catalog identity.
+// ComponentTypeIsLocalPath reports whether a component type is written with a
+// ./ or ../ prefix rather than as a catalog identity.
 func (v *normalizedView) ComponentTypeIsLocalPath(componentType string) bool {
 	return IsRelativePathRef(componentType)
 }

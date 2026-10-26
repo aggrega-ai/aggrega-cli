@@ -1017,9 +1017,9 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// raise — classify ONCE here, before any conformance pass. This subsumes
 		// the value, per-edge-value, and per-edge-infra conformance below (all gated
 		// on the same component lookup that previously skipped silently on a miss),
-		// so a no-uses node's miss is loud too, not silently skipped. A Tier-1
-		// relative-path type (a local file with no catalog entity) is a legitimate
-		// skip (classifier returns nil). A resilient-inspection caller (serve)
+		// so a no-uses node's miss is loud too, not silently skipped. A type with
+		// a ./ or ../ prefix names no catalog entity and is passed over (the
+		// classifier returns nil). A resilient-inspection caller (serve)
 		// tolerates the finding via the Step-1 sentinel filter; the build halts.
 		catComp, found := catalog.Component(node.ComponentType)
 		if !found {
