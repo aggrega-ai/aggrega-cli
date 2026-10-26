@@ -9,5 +9,10 @@ spec:
       type: core/datastore/postgres
       values:
         database_name: app_production
+  # The database is published under two names: `public_db`, and its own name, so
+  # an importing document may reach it as `data.main-db` as well as through the
+  # alias. A name absent from this list is one an importing document cannot reach
+  # the component by.
   exportedComponents:
     public_db: main-db
+    main-db: main-db

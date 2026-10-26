@@ -2290,6 +2290,13 @@ func (GraphViewBase) PerEdgeAuthoredTarget(node string, socket string, alias str
 	panic("this view does not carry per-edge-authored-target, which is read from topology.NormalizedEdge.AuthoredTarget")
 }
 
+// PerEdgeAddressedTarget panics. This view does not carry
+// per-edge-addressed-target, which is read from
+// topology.NormalizedEdge.AddressedTarget.
+func (GraphViewBase) PerEdgeAddressedTarget(node string, socket string, alias string) string {
+	panic("this view does not carry per-edge-addressed-target, which is read from topology.NormalizedEdge.AddressedTarget")
+}
+
 // PerEdgeConnectionDrawn panics. This view does not carry
 // per-edge-connection-drawn, which is read from
 // topology.TopologyResult.Edges.
@@ -2323,6 +2330,13 @@ func (GraphViewBase) NodeDeclaringSubsystems(node string) []string {
 // topology.TopologyNode.SourceAggregate.
 func (GraphViewBase) ModuleContributedNodes(module string) []string {
 	panic("this view does not carry module-contributed-nodes, which is read from topology.TopologyNode.SourceAggregate")
+}
+
+// ModuleExportedAliases panics. This view does not carry
+// module-exported-aliases, which is read from
+// topology.ModuleDeclaration.Exports.
+func (GraphViewBase) ModuleExportedAliases(module string) ([]string, bool) {
+	panic("this view does not carry module-exported-aliases, which is read from topology.ModuleDeclaration.Exports")
 }
 
 // ComponentDeactivated panics. This view does not carry
@@ -3405,11 +3419,13 @@ type TopologyStageFacts interface {
 	FlattenedConnectionAttachmentNames(node string) types.OrderedMap[types.OrderedMap[[]string]]
 	FlattenedConnectionAttachmentType(node string, socket string, alias string, attachment string) (string, bool)
 	PerEdgeAuthoredTarget(node string, socket string, alias string) string
+	PerEdgeAddressedTarget(node string, socket string, alias string) string
 	PerEdgeConnectionDrawn(node string, socket string, alias string) bool
 	ReleaseAuthoredEdgeConfigurations() []ReleaseEdgeConfiguration
 	NodeBoundaryPlacement(node string) (string, bool)
 	NodeDeclaringSubsystems(node string) []string
 	ModuleContributedNodes(module string) []string
+	ModuleExportedAliases(module string) ([]string, bool)
 	ComponentDeactivated(node string) bool
 	BoundaryDeclaredComponentReferences() []string
 	BoundaryAttachmentReachedNodes(boundary string, attachment string) []string

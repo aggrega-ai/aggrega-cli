@@ -248,10 +248,24 @@ type NormalizedEdge struct {
 	// invertible: several aliases may publish one component, so the id names no
 	// single alias to recover.
 	AuthoredTarget string
-	Socket         string
-	Alias          string
-	Inject         *types.InjectBlock
-	OriginFeature  string // non-empty if edge came from a Feature's uses
+	// AddressedTarget is the name the edge's target was looked up by in the
+	// flattened composition: the authored target qualified with the prefix of the
+	// module whose document drew the edge, before an export alias is resolved.
+	//
+	// It is the authored target placed in the composition. A document names
+	// components relative to itself — a module's own components by their local
+	// names, and a component inside a module it imports as that module's name and
+	// an alias the module exports — so the same authored target names different
+	// things in different documents, and this is the one spelling that says which.
+	// The Release names every component by the id it carries in the composition,
+	// so an edge it draws addresses exactly what it authored. It differs from
+	// Target where an export alias was resolved, which is the difference a rule
+	// about how a connection reached its target reads.
+	AddressedTarget string
+	Socket          string
+	Alias           string
+	Inject          *types.InjectBlock
+	OriginFeature   string // non-empty if edge came from a Feature's uses
 	// OriginFeatureInstance is the per-attachment instance name of the
 	// Feature whose uses block produced this edge (empty for Component-own
 	// edges). It disambiguates two attachments of the same Feature type on
@@ -729,7 +743,10 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// module's internal component ID. Each exported alias maps to an already-resolved
 	// internal node ID. An edge that names a real node directly keeps that target —
 	// a direct reference wins over the alias table — so this pass only rewrites a
-	// target that is not itself a node but is a known alias. Applies uniformly to
+	// target that is not itself a node but is a known alias. Whether a direct
+	// reference into a module was allowed to name that node is not this pass's
+	// question: the rule over the finalised graph refuses one that passes into a
+	// module by a name the module does not export. Applies uniformly to
 	// every edge origin (the edges slice already aggregates developer, Feature, and
 	// Release-wired edges) and walks in author order so the rewrite is deterministic.
 	// Runs after pruned aliases are dropped, so a target that resolves to neither
@@ -740,8 +757,11 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// The rewrite replaces the resolved target alone and leaves the authored one
 	// standing beside it, because the resolution is not invertible — several
 	// aliases may publish one component — and a rule comparing what one document
-	// wrote against what another wrote needs the typed string on both sides.
+	// wrote against what another wrote needs the typed string on both sides. The
+	// name the target was looked up by is recorded beside both before it is
+	// replaced, for a rule asking how the connection reached its target.
 	for i := range edges {
+		edges[i].AddressedTarget = edges[i].Target
 		if _, isNode := flat.Nodes.Get(edges[i].Target); isNode {
 			continue
 		}

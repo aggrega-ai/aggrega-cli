@@ -189,6 +189,100 @@ func TestManifestRecipeReferenceFault_FeatureTierNamesItsOwnReferenceKind(t *tes
 	}
 }
 
+// TestManifestRecipeReferenceFaults_RefusesAVersionPinInTheCapabilitySegment
+// drives the grammar's second fault: a pin belongs on the `capability` a recipe
+// declares and is no part of the name a reference uses, so a mapping value
+// spelling it into the capability segment is refused as mis-shaped — on both
+// axes of both tiers, exact and caret alike. Each refused value carries that one
+// fault; the controls beside them are well-shaped references a version colon
+// appears in elsewhere, and a value at fault both ways is reported once, as its
+// segment count.
+func TestManifestRecipeReferenceFaults_RefusesAVersionPinInTheCapabilitySegment(t *testing.T) {
+	t.Parallel()
+	m := &types.Manifest{}
+	m.Spec.Mappings.Components = mappingTierWith(
+		map[string]string{
+			"acme/a": "compose:1.2.3/svc:1.0.0",
+			"acme/b": "compose/svc:1.0.0",
+			"acme/c": "svc:1.0.0",
+			"acme/d": "compose:1.2.3/x/y",
+		},
+		map[string]string{"web": "compose:^1.0.0/svc"},
+		[]string{"acme/a", "acme/b", "acme/c", "acme/d", "web"},
+	)
+	m.Spec.Mappings.Features = mappingTierWith(
+		map[string]string{"core/dns": "helm:2.0.0/dns-fr:1.0.0"}, nil, []string{"core/dns"},
+	)
+
+	faults := ManifestRecipeReferenceFaults(m)
+	if len(faults) != 4 {
+		t.Fatalf("reported %d fault(s), want 4 (three pinned values and one over the segment ceiling): %v",
+			len(faults), faults)
+	}
+	for i, want := range []string{
+		`spec.mappings.components.type.acme/a maps to "compose:1.2.3/svc:1.0.0", which carries a version pin in its capability segment "compose:1.2.3"`,
+		`spec.mappings.components.type.acme/d maps to "compose:1.2.3/x/y", which carries 3 slash-separated segments`,
+		`spec.mappings.components.name.web maps to "compose:^1.0.0/svc", which carries a version pin in its capability segment "compose:^1.0.0"`,
+		`spec.mappings.features.type.core/dns maps to "helm:2.0.0/dns-fr:1.0.0", which carries a version pin in its capability segment "helm:2.0.0"; a pin belongs on the ` + "`capability`" + ` the recipe declares, and a feature recipe reference names the recipe by its bare capability`,
+	} {
+		if !errors.Is(faults[i], ErrMalformedRecipeReference()) {
+			t.Errorf("fault %d does not wrap the shape condition: %v", i, faults[i])
+		}
+		if !strings.Contains(faults[i].Error(), want) {
+			t.Errorf("fault %d, in the order the Manifest declares its entries, does not read %q:\n%s",
+				i, want, faults[i])
+		}
+	}
+}
+
+// TestPinnedCapabilityReferenceFault_ReadsAsThePublishedReference pins the whole
+// sentence, for the reason the segment sentence's own test gives.
+func TestPinnedCapabilityReferenceFault_ReadsAsThePublishedReference(t *testing.T) {
+	t.Parallel()
+	m := &types.Manifest{}
+	m.Spec.Mappings.Components = mappingTierWith(
+		map[string]string{"acme/svc": "compose:1.2.3/svc:1.0.0"}, nil, []string{"acme/svc"},
+	)
+	faults := ManifestRecipeReferenceFaults(m)
+	if len(faults) != 1 {
+		t.Fatalf("want exactly one fault, got %d: %v", len(faults), faults)
+	}
+	want := "malformed recipe reference in a Manifest mapping value: " +
+		`spec.mappings.components.type.acme/svc maps to "compose:1.2.3/svc:1.0.0", which carries ` +
+		`a version pin in its capability segment "compose:1.2.3"; a pin belongs on the ` + "`capability`" +
+		` the recipe declares, and a recipe reference names the recipe by its bare capability, as "name", ` +
+		`"name:version", "capability/name" or "capability/name:version"; correct the mapping value in the Manifest`
+	if got := faults[0].Error(); got != want {
+		t.Errorf("published sentence changed.\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestRecipeReferenceCapabilityPin pins the predicate every reader of a
+// reference's shape shares: only a version colon in the segment before the first
+// slash is a pinned capability.
+func TestRecipeReferenceCapabilityPin(t *testing.T) {
+	t.Parallel()
+	for _, r := range []struct {
+		uri     string
+		segment string
+		pinned  bool
+	}{
+		{"compose:1.2.3/svc:1.0.0", "compose:1.2.3", true},
+		{"compose:^1.0.0/svc", "compose:^1.0.0", true},
+		{"compose/svc:1.0.0", "compose", false},
+		{"svc:1.0.0", "", false},
+		{"svc", "", false},
+	} {
+		segment, pinned := RecipeReferenceCapabilityPin(r.uri)
+		if pinned != r.pinned || (pinned && segment != r.segment) {
+			t.Errorf("RecipeReferenceCapabilityPin(%q) = (%q, %v); want (%q, %v)", r.uri, segment, pinned, r.segment, r.pinned)
+		}
+		if got := RecipeReferenceMisShaped(r.uri); got != r.pinned {
+			t.Errorf("RecipeReferenceMisShaped(%q) = %v; want %v", r.uri, got, r.pinned)
+		}
+	}
+}
+
 // TestManifestRecipeReferenceShapeRule_PositionsAtTheAuthoredEntry asserts the
 // framework supplied the position, which the composed sentence cannot show.
 //

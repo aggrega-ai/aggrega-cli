@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/stringformat"
 )
@@ -33,6 +34,11 @@ import (
 // pass unjudged. Every name is therefore held to the supported set at every depth;
 // at a parameter's own declaration that repeats what the envelope already refused,
 // and is reached only by a contract that did not come through the envelope.
+//
+// A `min` or `max` on a declaration whose type gives the pair no meaning — a
+// boolean or an object — is refused here as well, for the reason a pattern is: the
+// schema accepts the key on every declaration and cannot say that a type gives
+// it nothing to bound.
 //
 // A declaration that does not decode is passed over rather than refused here. The
 // value check owns that refusal and reports it naming the level it was decoding —
@@ -84,6 +90,7 @@ func appendParameterShapeRefusals(verrs []*ResolverError, path string, entry any
 			})
 		}
 	}
+	verrs = appendBoundWithNoMeaningRefusals(verrs, path, pc)
 	for _, child := range pc.Properties.Keys() {
 		sub, _ := pc.Properties.Get(child)
 		verrs = appendParameterShapeRefusals(verrs, path+".properties."+child, sub)
@@ -93,6 +100,47 @@ func appendParameterShapeRefusals(verrs []*ResolverError, path string, entry any
 	}
 	if pc.ValuesType != nil {
 		verrs = appendParameterShapeRefusals(verrs, path+".valuesType", pc.ValuesType)
+	}
+	return verrs
+}
+
+// appendBoundWithNoMeaningRefusals refuses `min` or `max` on a declaration whose
+// type gives the pair no meaning: a boolean or an object.
+//
+// Which types the pair bounds, and what it bounds on each, is the compact form's
+// one statement of it, read here rather than restated — a number's value, a
+// string's length, a list's item count. On any other declared type the compact
+// form refuses the pair when it compiles a schema, so a parameter declaring it
+// would otherwise carry a bound that bounds nothing: an author reading `min: 1`
+// on a boolean expects a check, and none would run. The schema accepts the key on
+// every declaration, which is why the refusal is here.
+//
+// A declaration naming no type is passed over: it applies no constraint at all,
+// the escape hatch for a value whose shape the Aggregate does not pin.
+func appendBoundWithNoMeaningRefusals(verrs []*ResolverError, path string, pc types.ParameterContract) []*ResolverError {
+	if pc.Type == "" {
+		return verrs
+	}
+	for _, b := range []struct {
+		key   string
+		isMin bool
+		limit any
+	}{{"min", true, pc.Min}, {"max", false, pc.Max}} {
+		if b.limit == nil {
+			continue
+		}
+		if _, applies := compactform.MinMaxKeyword(pc.Type, b.isMin); applies {
+			continue
+		}
+		verrs = append(verrs, &ResolverError{
+			Entity: "Aggregate",
+			Field:  fmt.Sprintf(".spec.parameters.%s.%s", path, b.key),
+			Message: fmt.Sprintf(
+				"parameter %q of type %s declares `%s`, which bounds nothing on that type; `min` and `max` bound "+
+					"a number's value, a string's length or a list's item count",
+				path, pc.Type, b.key),
+			Err: ErrParameterContractViolation(),
+		})
 	}
 	return verrs
 }

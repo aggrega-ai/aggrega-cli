@@ -73,7 +73,7 @@ const (
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 4 declared facts.
 	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
 
-	// SubjectEdge is the subject kind edge, keyed by 15 declared facts.
+	// SubjectEdge is the subject kind edge, keyed by 16 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
 	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 28 declared facts.
@@ -109,7 +109,7 @@ const (
 	// SubjectReleaseEdgeConfiguration is the subject kind release-edge-configuration, keyed by 1 declared fact.
 	SubjectReleaseEdgeConfiguration SubjectKind = "release-edge-configuration"
 
-	// SubjectModule is the subject kind module, keyed by 1 declared fact.
+	// SubjectModule is the subject kind module, keyed by 2 declared facts.
 	SubjectModule SubjectKind = "module"
 
 	// SubjectBoundaryComponentReference is the subject kind boundary-component-reference, keyed by 1 declared fact.

@@ -179,6 +179,39 @@ var errDanglingUsesTarget = cerrors.Register("dangling-uses-target", cerrors.Met
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrUsesTargetNotExported fires when a `uses` connection reaches a component
+// inside a sub-module by a name that module does not export.
+//
+// A module publishes its interface under `exportedComponents`: each alias there
+// is a name an importing document may reach one of the module's components by,
+// and the components it lists nowhere are its own to rename, split or remove. A
+// document therefore names a component of a module it imports as the module's
+// name followed by one of those aliases. Naming one by its id inside the module
+// instead — or reaching through the module into a module nested inside it —
+// binds the connection to something the module's author never offered, and the
+// build would otherwise draw it without a word, so it halts instead.
+//
+// Every surface that draws a connection is held to it, the Release included. The
+// boundaries a connection crosses are read from where its consumer sits: a
+// module's own components are its own to wire, so a connection between two
+// components of one module crosses nothing, whichever document drew it, while a
+// connection from outside a module reaches into it only through the module's
+// aliases — for the Release exactly as for the root Aggregate.
+//
+// It is raised by [ConnectionTargetIsExported], the rule declared over the
+// finalised graph, and by nothing else. The diagnostic names the target as
+// written, the module it passes into and the aliases that module exports, and is
+// positioned by the framework at the authored entry. A target that answers to no
+// component is [ErrDanglingUsesTarget]'s to report, so one mistyped name is
+// reported once.
+func ErrUsesTargetNotExported() error { return errUsesTargetNotExported }
+
+var errUsesTargetNotExported = cerrors.Register("uses-target-not-exported", cerrors.Meta{
+	ShortCode: "E0358",
+	Message:   "uses edge target names a component its module does not export",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrDuplicateConnectionAlias fires when two connections of one component are
 // wired under one alias, whatever the sockets they are wired into, whatever
 // surfaces drew them and whatever their targets.

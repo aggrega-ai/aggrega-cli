@@ -48,18 +48,77 @@ func RecipeReferenceSegments(uri string) (int, bool) {
 	return n, n > recipeReferenceMaxSegments
 }
 
+// RecipeReferenceCapabilityPin reports the capability segment a Recipe /
+// FeatureRecipe reference names and whether that segment carries a version pin.
+//
+// A pin is no part of a recipe's name. It is written on the `capability` the
+// recipe itself declares, where it selects which version of the plugin serving
+// the capability renders the recipe, and a reference names the recipe by the
+// capability alone — so a reference whose capability segment carries one names
+// no recipe whatever the catalog holds, and is a shape fault rather than an
+// absent recipe. It is judged here, beside the segment ceiling, so every reader
+// of a reference's shape asks the same question.
+//
+// It reads the reference string only, as [RecipeReferenceSegments] does, and the
+// pin is found by the one split every versioned reference goes through. A
+// reference naming no capability segment reports false.
+func RecipeReferenceCapabilityPin(uri string) (segment string, pinned bool) {
+	segment, _, qualified := strings.Cut(uri, "/")
+	if !qualified {
+		return "", false
+	}
+	_, _, pinned = types.SplitVersionedURI(segment)
+	return segment, pinned
+}
+
+// RecipeReferenceMisShaped reports whether a Recipe / FeatureRecipe reference is
+// one its grammar cannot express: more segments than the ceiling, or a version
+// pin in its capability segment. It is the one question a reader asks that only
+// needs to know whether the reference is at fault and not which way.
+func RecipeReferenceMisShaped(uri string) bool {
+	if _, tooMany := RecipeReferenceSegments(uri); tooMany {
+		return true
+	}
+	_, pinned := RecipeReferenceCapabilityPin(uri)
+	return pinned
+}
+
+// PinnedCapabilityReferenceFault composes the refusal of a reference whose
+// capability segment carries a version pin, naming the condition every
+// mis-shaped reference reports.
+//
+// where says where the reader meets the reference, ending in the words that
+// introduce it — a mapping entry's coordinate and "maps to", or the instance a
+// mapping resolved for and "the Manifest maps it to" — so every reading that
+// reports the fault composes one sentence. subject is the reference kind: a
+// recipe reference or a feature recipe reference.
+func PinnedCapabilityReferenceFault(where, reference, segment, subject string) error {
+	return fmt.Errorf(
+		"%w: %s %q, which carries a version pin in its capability segment %q; a pin belongs on the "+
+			"`capability` the recipe declares, and a %s names the recipe by its bare capability, as %s; "+
+			"correct the mapping value in the Manifest",
+		ErrMalformedRecipeReference(), where, reference, segment, subject, AcceptedRecipeReferenceShapes)
+}
+
 // ManifestRecipeReferenceFaults reports every mapping value in a composed
 // Manifest whose shape a Recipe or FeatureRecipe reference cannot express, one
 // fault per value, in the order the Manifest declares them.
 //
-// The verdict is purely syntactic: it counts the separators in a string and
-// needs no catalog at all. That is what lets it run before anything resolves —
-// and running it there is the point. A mapping value carrying more segments than
-// a reference accepts can never match a catalog entity, so whatever gate looks
-// the value up first will report it as an entity the catalog does not hold, which
-// sends the author looking for a missing recipe that is in fact present and
+// A value is mis-shaped two ways, each a rule of its own with its own sentence:
+// it carries more slash-separated segments than a reference accepts, or its
+// capability segment carries a version pin, which belongs on the `capability` a
+// recipe declares and is no part of the name a reference uses.
+//
+// The verdict is purely syntactic: it reads the separators and the capability
+// segment of a string and needs no catalog at all. That is what lets it run
+// before anything resolves — and running it there is the point. A mis-shaped
+// value can never match a catalog entity, so whatever gate looks the value up
+// first will report it as an entity the catalog does not hold — or, for a pinned
+// capability, look it up in a registry under the bare name it does not spell —
+// which sends the author looking for a missing recipe that is in fact present and
 // correctly named. Judging the shape first means the shape fault is reported as
-// a shape fault, and every absent-entity report that follows is true.
+// a shape fault, before anything is fetched, and every absent-entity report that
+// follows is true.
 //
 // It is scoped to Recipe and FeatureRecipe references — the Manifest's mapping
 // values — and nothing else. A Component, Feature or Aggregate reference is the
@@ -88,18 +147,21 @@ func ManifestRecipeReferenceFaults(manifest *types.Manifest) []error {
 		return nil
 	}
 	var presented constraint.DocumentView = newManifestDocumentView(composedManifestHasNoFile, manifest)
-	objections := constraint.RunOnDocumentMappingEntries(
-		composedManifestHasNoFile,
-		presented.ManifestRecipeMappingEntries(composedManifestHasNoFile),
-		presented,
-		manifestRecipeReferenceIsWellShaped,
-	)
-	if len(objections) == 0 {
-		return nil
-	}
-	faults := make([]error, 0, len(objections))
-	for _, o := range objections {
-		faults = append(faults, recipeReferenceFaultFrom(o))
+	// The two rules are asked of each entry in turn, the segment ceiling first, so
+	// the faults arrive in the order the Manifest declares its entries whichever
+	// rule raised each; the pin rule ends silent on a value the ceiling refuses, so
+	// one value is reported once.
+	var faults []error
+	for _, entry := range presented.ManifestRecipeMappingEntries(composedManifestHasNoFile) {
+		one := []constraint.ManifestRecipeMapping{entry}
+		for _, o := range constraint.RunOnDocumentMappingEntries(
+			composedManifestHasNoFile, one, presented, manifestRecipeReferenceIsWellShaped) {
+			faults = append(faults, recipeReferenceFaultFrom(o))
+		}
+		for _, o := range constraint.RunOnDocumentMappingEntries(
+			composedManifestHasNoFile, one, presented, manifestRecipeReferenceNamesABareCapability) {
+			faults = append(faults, pinnedReferenceFaultFrom(o))
+		}
 	}
 	return faults
 }
@@ -166,6 +228,37 @@ const (
 	recipeReferenceDetailSegments
 	recipeReferenceDetailSubject
 	recipeReferenceDetailCount
+)
+
+// pinnedReferenceFaultFrom renders one objection of the pinned-capability rule,
+// the sibling of [recipeReferenceFaultFrom] for the rule's other fault. Its
+// sentence is composed by [PinnedCapabilityReferenceFault], the one composer
+// every reading of that fault shares, and its values are read in the order
+// [manifestRecipeReferenceNamesABareCapability] supplies them, asserted for the
+// reason the sibling asserts its own.
+func pinnedReferenceFaultFrom(o constraint.Objection) error {
+	detail := o.Detail()
+	if len(detail) != pinnedReferenceDetailCount {
+		panic(fmt.Sprintf(
+			"resolver: the pinned-capability reference rule supplied %d value(s) and this conversion "+
+				"composes its sentence from %d; the rule and its conversion are two halves of one "+
+				"sentence, so change them together",
+			len(detail), pinnedReferenceDetailCount))
+	}
+	return PinnedCapabilityReferenceFault(
+		strings.TrimPrefix(o.Locator(), recipeReferenceLocatorRoot)+" maps to",
+		detail[pinnedReferenceDetailValue],
+		detail[pinnedReferenceDetailSegment],
+		detail[pinnedReferenceDetailSubject],
+	)
+}
+
+// The order the pinned-capability reference rule supplies its values in.
+const (
+	pinnedReferenceDetailValue = iota
+	pinnedReferenceDetailSegment
+	pinnedReferenceDetailSubject
+	pinnedReferenceDetailCount
 )
 
 // recipeReferenceLocatorRoot is the separator a locator opens with, which the

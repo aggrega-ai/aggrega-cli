@@ -357,6 +357,17 @@ func (v *topologyView) PerEdgeAuthoredTarget(node string, socket string, alias s
 	return e.AuthoredTarget
 }
 
+// PerEdgeAddressedTarget returns the name one connection's target was looked up
+// by in the flattened composition, before an export alias is resolved, empty
+// when the composition drew no connection there.
+func (v *topologyView) PerEdgeAddressedTarget(node string, socket string, alias string) string {
+	e, drawn := v.connectionAt(node, socket, alias)
+	if !drawn {
+		return ""
+	}
+	return e.AddressedTarget
+}
+
 // PerEdgeConnectionDrawn returns whether the composition drew a connection at one
 // coordinate, whichever surface drew it.
 func (v *topologyView) PerEdgeConnectionDrawn(node string, socket string, alias string) bool {
@@ -405,6 +416,18 @@ func (v *topologyView) NodeBoundaryPlacement(node string) (string, bool) {
 // nodes contributed by the modules nested inside it.
 func (v *topologyView) ModuleContributedNodes(module string) []string {
 	return v.contributed[module]
+}
+
+// ModuleExportedAliases returns the aliases a sub-module's own document lists
+// under exportedComponents, in the order it lists them, and whether the
+// composition brought in a module at that prefix at all.
+func (v *topologyView) ModuleExportedAliases(module string) ([]string, bool) {
+	for _, m := range v.modules {
+		if m.Path == module {
+			return m.Exports, true
+		}
+	}
+	return nil, false
 }
 
 // BoundaryDeclaredComponentReferences returns the components the Release's

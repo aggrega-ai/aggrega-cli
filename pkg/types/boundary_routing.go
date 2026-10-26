@@ -45,6 +45,33 @@ func JoinQualifiedID(prefix, name string) string {
 	return prefix + "." + name
 }
 
+// CutQualifiedID splits a dotted id at its first separator into the name of the
+// outermost sub-module it passes into and the rest of the id inside that module:
+// "data.store" gives "data" and "store", "data.inner.store" gives "data" and
+// "inner.store". It reports false for an id naming no module — a component's own
+// local name — which is returned whole as the first result.
+//
+// It is the inverse of [JoinQualifiedID] one level at a time, and it lives beside
+// it so the separator the two agree on is spelled in one file.
+func CutQualifiedID(id string) (module, rest string, ok bool) {
+	return strings.Cut(id, ".")
+}
+
+// QualifiedIDModule returns the prefix of the sub-module a dotted id sits in —
+// everything before its last separator — and the empty prefix for an id naming
+// a component of the root: "data.inner.store" gives "data.inner", "store" gives
+// "". A local name carries no separator, so the last one always closes the
+// module's prefix.
+//
+// It is the inverse of [JoinQualifiedID] from the other end, kept beside it for
+// the reason [CutQualifiedID] is.
+func QualifiedIDModule(id string) string {
+	if i := strings.LastIndex(id, "."); i >= 0 {
+		return id[:i]
+	}
+	return ""
+}
+
 // IsUnderModulePrefix reports whether id names something inside the sub-module
 // at prefix — the module itself, or anything nested below it.
 //

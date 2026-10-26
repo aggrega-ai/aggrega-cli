@@ -191,6 +191,13 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 // independent of the key format and serves both a fully-keyed catalog and a
 // value-populated shell whose keys are bare.
 //
+// The capability an entity is scoped by is the one its identity carries: the
+// capability meta reports with any version pin removed, read through
+// [types.BareCapability] exactly as the identity key reads it. A pin selects the
+// plugin that renders the entity and is no part of its name, so a reference
+// naming the capability bare reaches a pinned entity, and a reference naming
+// the capability with a pin reaches none.
+//
 // Determinism: capabilities are visited in sorted order and selectEntityVersion
 // sorts its own candidates by key, so no outcome depends on map-iteration order.
 func selectCapabilityScopedVersion[V any](index map[string]V, uri string, meta func(V) (capability, name, version string)) (string, bool, error) {
@@ -202,11 +209,15 @@ func selectCapabilityScopedVersion[V any](index map[string]V, uri string, meta f
 		_, name, version := meta(v)
 		return name, version
 	}
+	scopeOf := func(v V) string {
+		c, _, _ := meta(v)
+		return types.BareCapability(c)
+	}
 
 	if capability, rest, qualified := strings.Cut(uri, "/"); qualified {
 		scoped := map[string]V{}
 		for k, v := range index {
-			if c, _, _ := meta(v); c == capability {
+			if scopeOf(v) == capability {
 				scoped[k] = v
 			}
 		}
@@ -224,7 +235,7 @@ func selectCapabilityScopedVersion[V any](index map[string]V, uri string, meta f
 
 	byCapability := map[string]map[string]V{}
 	for k, v := range index {
-		c, _, _ := meta(v)
+		c := scopeOf(v)
 		if byCapability[c] == nil {
 			byCapability[c] = map[string]V{}
 		}

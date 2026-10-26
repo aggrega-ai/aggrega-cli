@@ -195,10 +195,9 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	named := namedDocumentDirs(abs)
 	view := catalog.NewLazyLookup(root, cacheDir, named, nil, named...)
 
-	uri := catalog.RecipeMappingURI(header.Metadata.Name, header.Metadata.Version)
-	if header.Spec.Capability != "" {
-		uri = header.Spec.Capability + "/" + uri
-	}
+	// The entity is named by the identity the catalog indexes it under, so a
+	// capability written with a version pin names it by the capability alone.
+	uri := catalog.RecipeIdentityURI(header.Spec.Capability, header.Metadata.Name, header.Metadata.Version)
 	// The step is reached from several surfaces, each of which names itself in
 	// its own frame, so this one names none.
 	if err := ctx.Err(); err != nil {

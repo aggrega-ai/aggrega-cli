@@ -237,19 +237,43 @@ func recipeURIKey(name, version string) string {
 
 // recipeIdentityKey is the catalog's identity key for a recipe or feature
 // recipe: "provider/name:version". The provider segment is the entity's
-// spec.capability. Identity is provider-scoped because the catalog tree
-// (recipe/{provider}/{name}/) and the registry identity
-// (recipe/{provider}/{name}:{version}) both are: two providers may each
-// ship a recipe of the same name and version, and the naming convention
+// spec.capability with any version pin removed. Identity is provider-scoped
+// because the catalog tree (recipe/{provider}/{name}/) and the registry
+// identity (recipe/{provider}/{name}:{version}) both are: two providers may
+// each ship a recipe of the same name and version, and the naming convention
 // keeps the provider out of metadata.name. An entity with an empty
 // provider keys on the flat "name:version" form, so a
 // malformed-but-loading entity keeps a stable identity rather than
 // gaining a leading slash.
+//
+// The pin is removed because it is not part of the capability's name: it
+// selects which version of the plugin serving the capability renders the
+// document, and nothing else. So a Manifest maps a pinned Recipe by the same
+// "capability/name:version" it maps an unpinned one by, changing the pin never
+// renames the Recipe, and a pinned and an unpinned declaration of one name and
+// version are one identity, which the catalog holds once. The projection is
+// [types.BareCapability], the one every other reading of which capability a
+// binding names goes through.
 func recipeIdentityKey(provider, name, version string) string {
+	provider = types.BareCapability(provider)
 	if provider == "" {
 		return recipeURIKey(name, version)
 	}
 	return provider + "/" + recipeURIKey(name, version)
+}
+
+// RecipeIdentityURI composes the capability-qualified reference a Recipe or
+// FeatureRecipe is identified by in the catalog — "capability/name:version",
+// the capability's version pin removed — from the capability its spec binds and
+// its metadata name and version. It is the exported face of the catalog's own
+// identity key, so a caller naming an entity it holds the document of resolves
+// it under exactly the identity the catalog indexed it by rather than composing
+// the reference by hand.
+//
+// An empty version yields "capability/name", the version-independent identity
+// a registry location is derived from.
+func RecipeIdentityURI(capability, name, version string) string {
+	return recipeIdentityKey(capability, name, version)
 }
 
 // entityIndexKey is the catalog index key for a by-name entity (Component,
@@ -556,8 +580,8 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 //     map get on the identity key.
 //  2. Capability-qualified ("terraform/mariadb-rds:^1.0.0",
 //     "terraform/mariadb-rds") — the segment before the first "/" is matched
-//     against each Recipe's Spec.Capability, and the version is selected among
-//     that capability's recipes of that name.
+//     against each Recipe's Spec.Capability with any version pin removed, and
+//     the version is selected among that capability's recipes of that name.
 //  3. Bare ("mariadb-rds:1.0.0" or "mariadb-rds") — a scan across every
 //     capability, with the version selected within each one.
 //
@@ -1266,11 +1290,15 @@ func (c *Catalog) componentRecipeReferenceShapeForVerify(manifest *types.Manifes
 	if _, found := c.RecipeByURI(uri); found {
 		return nil
 	}
-	n, tooMany := resolver.RecipeReferenceSegments(uri)
-	if !tooMany {
-		return nil
+	if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
+		return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
 	}
-	return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, componentType, uri, n, resolver.AcceptedRecipeReferenceShapes)
+	if segment, pinned := resolver.RecipeReferenceCapabilityPin(uri); pinned {
+		return resolver.PinnedCapabilityReferenceFault(
+			fmt.Sprintf("component %q (type %q): the Manifest maps it to", instanceName, componentType),
+			uri, segment, "recipe reference")
+	}
+	return nil
 }
 
 // mappedRecipePinFault reports a Manifest mapping value that resolved to no
@@ -1321,6 +1349,11 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 			// either way.
 			if n, tooMany := resolver.RecipeReferenceSegments(uri); tooMany {
 				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", resolver.ErrMalformedRecipeReference(), instanceName, featureType, uri, n, resolver.AcceptedRecipeReferenceShapes)
+			}
+			if segment, pinned := resolver.RecipeReferenceCapabilityPin(uri); pinned {
+				return resolver.PinnedCapabilityReferenceFault(
+					fmt.Sprintf("feature %q (type %q): the Manifest maps it to", instanceName, featureType),
+					uri, segment, "feature recipe reference")
 			}
 			if fault := mappedRecipePinFault(uri, instanceName, featureType); fault != nil {
 				return fault

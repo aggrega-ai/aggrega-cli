@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/stringformat"
 )
@@ -57,8 +58,9 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 // declaration carries, the type of each, a non-negative minLength and maxLength
 // and a supported format name on each parameter's own declaration. Then
 // [refuseMalformedParameterContract] compiles every pattern the contract
-// declares and holds every format name to the supported set, at every nesting,
-// and refuses a fault with ErrParameterContractViolation.
+// declares, holds every format name to the supported set and refuses a `min` or
+// `max` on a boolean or object declaration, at every nesting, and refuses a fault
+// with ErrParameterContractViolation.
 //
 // sourcePath is used only for ResolverError.Field provenance — it identifies
 // where the bytes came from for error display, but the function performs no
@@ -445,6 +447,8 @@ func checkStringConstraints(path string, pc types.ParameterContract, s string) [
 			Err:     ErrParameterContractViolation(),
 		})
 	}
+	// `min` and `max` on a string are its length, the same length measured above.
+	errs = append(errs, checkMeasuredBounds(path, pc, len(s))...)
 	if pc.Pattern != "" {
 		// The contract load compiled this pattern and refused it had it not
 		// compiled, so this is handed the expression compiled there. The error arm
@@ -622,32 +626,94 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 	return errs
 }
 
-// checkArrayConstraints validates each element of a Release-supplied array
-// against the contract's declared Items sub-contract. Element paths use
-// dot notation (parent.0, parent.1, ...) consistent with the Properties
-// recursion convention; no enforcement runs if Items is unset (a contract
-// declaring type: array without items: accepts any element).
+// checkArrayConstraints validates a Release-supplied array against the
+// contract: its item count against the contract's `min` and `max`, then each
+// element against the declared Items sub-contract. Element paths use dot
+// notation (parent.0, parent.1, ...) consistent with the Properties recursion
+// convention; no element check runs if Items is unset (a contract declaring
+// type: array without items: accepts any element).
 func checkArrayConstraints(path string, pc types.ParameterContract, v any) []*ResolverError {
-	if pc.Items == nil {
-		return nil
-	}
 	arr, ok := v.([]any)
 	if !ok {
 		return nil
 	}
+	errs := checkMeasuredBounds(path, pc, len(arr))
+	if pc.Items == nil {
+		return errs
+	}
 	itemsPC, derr := types.DecodeParameterContract(pc.Items)
 	if derr != nil {
-		return []*ResolverError{{
+		return append(errs, &ResolverError{
 			Entity:  "Aggregate",
 			Field:   fmt.Sprintf(".spec.parameters.%s", path),
 			Message: fmt.Sprintf("failed to decode items contract: %v", derr),
 			Err:     ErrParameterContractViolation(),
-		}}
+		})
 	}
-	var errs []*ResolverError
 	for i, elem := range arr {
 		elemPath := fmt.Sprintf("%s.%d", path, i)
 		errs = append(errs, validateEntry(elemPath, itemsPC, elem)...)
+	}
+	return errs
+}
+
+// checkMeasuredBounds holds a measured size of a Release-supplied value — the
+// number of items in a list, the length of a string — to the contract's `min`
+// and `max`.
+//
+// What `min` and `max` bound is read from the compact form's own statement of
+// the pair rather than restated here: on an array they are the item count and on
+// a string its length, as they are in every schema the compact form compiles, so
+// a parameter declared `min: 1` refuses an empty list or an empty string exactly
+// as a component's schema does. A string's length is measured as the
+// `minLength` and `maxLength` checks measure it, by the caller passing the same
+// length. A numeric parameter's bound is its value, which [checkNumericConstraints]
+// holds; this ends silent for it. A bound written as anything other than a number
+// bounds nothing here, as it bounds nothing for a numeric parameter.
+func checkMeasuredBounds(path string, pc types.ParameterContract, size int) []*ResolverError {
+	var errs []*ResolverError
+	bounds := []struct {
+		isMin bool
+		limit any
+	}{{true, pc.Min}, {false, pc.Max}}
+	for _, b := range bounds {
+		if b.limit == nil {
+			continue
+		}
+		keyword, applies := compactform.MinMaxKeyword(pc.Type, b.isMin)
+		if !applies {
+			continue
+		}
+		var measured string
+		switch keyword {
+		case "minItems", "maxItems":
+			measured = fmt.Sprintf("holds %d item(s)", size)
+		case "minLength", "maxLength":
+			measured = fmt.Sprintf("length %d", size)
+		default:
+			continue
+		}
+		limit, numeric := toFloat(b.limit)
+		if !numeric {
+			continue
+		}
+		n := float64(size)
+		switch {
+		case b.isMin && n < limit:
+			errs = append(errs, &ResolverError{
+				Entity:  "Aggregate",
+				Field:   fmt.Sprintf(".spec.parameters.%s", path),
+				Message: fmt.Sprintf("parameter %q %s, below min %v", path, measured, b.limit),
+				Err:     ErrParameterContractViolation(),
+			})
+		case !b.isMin && n > limit:
+			errs = append(errs, &ResolverError{
+				Entity:  "Aggregate",
+				Field:   fmt.Sprintf(".spec.parameters.%s", path),
+				Message: fmt.Sprintf("parameter %q %s, above max %v", path, measured, b.limit),
+				Err:     ErrParameterContractViolation(),
+			})
+		}
 	}
 	return errs
 }

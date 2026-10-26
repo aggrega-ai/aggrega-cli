@@ -94,6 +94,12 @@ type ModuleDeclaration struct {
 	// imported the module. Empty when the caller supplied no path for that
 	// document, exactly as [TopologyNode.SourceFile] is.
 	DeclaredIn string
+	// Exports are the aliases the module's own document lists under
+	// `exportedComponents`, in the order it lists them: the names a document
+	// importing the module may reach its components by. It is what the module
+	// declared, whether or not the component an alias names survived its
+	// activation toggle.
+	Exports []string
 }
 
 // evalActive interprets a component's or module's `active` toggle.
@@ -263,10 +269,14 @@ func flattenAggregate(
 			// nested inside it — the same outer-before-inner order the Release's
 			// routed-module report uses, so the two read against each other
 			// without either being re-sorted.
-			result.Modules = append(result.Modules, ModuleDeclaration{
+			declaration := ModuleDeclaration{
 				Path:       childPrefix,
 				DeclaredIn: sourceFile,
-			})
+			}
+			if childAgg != nil {
+				declaration.Exports = childAgg.Spec.ExportedComponents.Keys()
+			}
+			result.Modules = append(result.Modules, declaration)
 
 			childVisited := copyVisited(visited)
 			childVisited[subAgg.Type] = true
@@ -326,6 +336,19 @@ func flattenAggregate(
 					}
 					result.ExportedComponents.Set(qualifiedID(childPrefix, exportAlias), resolved)
 				}
+			}
+			// The aliases the modules nested inside the child export travel up with
+			// the child's nodes. A module's own document reaches a module it imports
+			// through that module's aliases, and the connection it draws is resolved
+			// against the table the whole composition ends with — so a table holding
+			// only the aliases of the modules one level down would leave such a
+			// connection naming nothing. Every key is already qualified with the
+			// prefix of the module that exports it, so the tables of different levels
+			// cannot collide. Which document may reach which alias is not decided by
+			// the table: a rule over the finished composition reads each connection
+			// against the export list of the module it passes into.
+			for alias, resolved := range childResult.ExportedComponents.All() {
+				result.ExportedComponents.Set(alias, resolved)
 			}
 		}
 	}

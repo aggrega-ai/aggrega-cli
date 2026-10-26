@@ -251,6 +251,39 @@ func injectWhenWrapper(out Schema) {
 	out["if"] = true
 }
 
+// MinMaxKeyword names the JSON Schema keyword a compact-form `min` (isMin) or
+// `max` means on a field of the single declared type typ, and reports whether
+// the pair applies to that type at all.
+//
+// It is the one statement of what the pair means: a bound on the value for
+// `integer` and `number` (minimum / maximum), on the length for `string`
+// (minLength / maxLength), and on the item count for `array` (minItems /
+// maxItems). Any other type, and an unresolved one, reports false. A reader
+// applying `min` or `max` outside a compiled schema — an Aggregate parameter's
+// contract is checked against a supplied value directly — asks this rather
+// than restating the table, so the two readings cannot come to mean different
+// things by the same keyword.
+func MinMaxKeyword(typ string, isMin bool) (string, bool) {
+	switch typ {
+	case "integer", "number":
+		if isMin {
+			return "minimum", true
+		}
+		return "maximum", true
+	case "string":
+		if isMin {
+			return "minLength", true
+		}
+		return "maxLength", true
+	case "array":
+		if isMin {
+			return "minItems", true
+		}
+		return "maxItems", true
+	}
+	return "", false
+}
+
 // minMaxKeyForType resolves the JSON Schema keyword to emit for a
 // compact-form `min` / `max` based on the field's declared `type:`.
 // Numeric -> minimum / maximum; string -> minLength / maxLength;
@@ -264,22 +297,10 @@ func injectWhenWrapper(out Schema) {
 // loud halt names the union origin so the author can either narrow the
 // `type:` to a single value or remove the `min:`/`max:` constraint.
 func minMaxKeyForType(typ string, isMin bool, path, keyword string, line int) (string, error) {
+	if kw, ok := MinMaxKeyword(typ, isMin); ok {
+		return kw, nil
+	}
 	switch typ {
-	case "integer", "number":
-		if isMin {
-			return "minimum", nil
-		}
-		return "maximum", nil
-	case "string":
-		if isMin {
-			return "minLength", nil
-		}
-		return "maxLength", nil
-	case "array":
-		if isMin {
-			return "minItems", nil
-		}
-		return "maxItems", nil
 	case "":
 		return "", &CompileError{
 			Path:    path,

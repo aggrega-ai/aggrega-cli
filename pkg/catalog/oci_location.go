@@ -3,7 +3,11 @@
 
 package catalog
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // OCILocation is the single rule mapping an entity identity to its OCI
 // repository LOCATION: `<kindSegment>/<lower(identityPath)>`. A location is a
@@ -26,13 +30,21 @@ import "strings"
 // publishes an entity at `<prefix>/<OCILocation>` and a registry-backed pull
 // binds a bare identity to the same path, both through RegistryReference, so
 // push-location == pull-location holds by construction.
+//
+// A recipe's scope segment is the capability its identity carries, so a
+// capability binding written with a version pin is located under the capability
+// without the pin, exactly as the catalog identifies it: the pin chooses the
+// plugin that renders the entity and is no part of where it is published.
 func OCILocation(kind, provider, name string) string {
 	seg := KindPathSegment(kind)
 	switch kind {
-	case "Recipe", "FeatureRecipe", "Plugin", "Wasm":
-		// provider is a required non-empty scope segment (a recipe's provider or a
-		// plugin's pluginType); the caller (entityReference) rejects an empty scope
-		// before reaching here.
+	case "Recipe", "FeatureRecipe":
+		// provider is a required non-empty scope segment; the caller
+		// (entityReference) rejects an empty scope before reaching here.
+		return seg + "/" + strings.ToLower(types.BareCapability(provider)) + "/" + strings.ToLower(name)
+	case "Plugin", "Wasm":
+		// provider is the plugin's pluginType, a required non-empty scope segment;
+		// the caller (entityReference) rejects an empty scope before reaching here.
 		return seg + "/" + strings.ToLower(provider) + "/" + strings.ToLower(name)
 	default:
 		return seg + "/" + strings.ToLower(name)

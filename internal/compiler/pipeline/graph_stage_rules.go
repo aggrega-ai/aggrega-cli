@@ -123,6 +123,24 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// Each connection that reaches a component a sub-module contributes does so
+	// through a name the module exports, evaluated once per connection. It is
+	// asked beside the two rules above because it shares their subject — the
+	// component a connection resolved to — and ends silent where they speak, so a
+	// target nothing answers to is reported by them alone. It is asked over the
+	// whole connection set, so a connection an attachment projected or the
+	// Release wired reaches into a module on the same terms as a component's own.
+	violations, err = constraint.RunOnEdges(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		topology.ConnectionTargetIsExported,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// One alias names one connection of a component, evaluated once per
 	// connection the composition drew together with the surface that drew it.
 	// The alias is what a component's Recipe and its assertions read a

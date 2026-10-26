@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // SoleRefusalFor returns the refused catalog file whose own declared identity
@@ -88,7 +89,9 @@ func SoleRefusalFor(skipped []SkippedEntity, uri, kindHint string) (SkippedEntit
 		if hasVersion && s.Version != version {
 			continue
 		}
-		if provider != "" && s.Capability != provider {
+		// The capability a recipe's identity carries is its binding with any
+		// version pin removed, which is how the catalog keys it.
+		if provider != "" && types.BareCapability(s.Capability) != provider {
 			continue
 		}
 		candidates++

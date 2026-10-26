@@ -198,10 +198,10 @@ func VerifyNoOCILocationCollision(cat *catalog.Catalog) error {
 	byLoc := map[string]map[string]struct{}{}
 	add := func(kind, provider, name string) {
 		loc := catalog.OCILocation(kind, provider, name)
-		ident := name
-		if provider != "" {
-			ident = provider + "/" + name
-		}
+		// The version-independent identity, composed by the catalog's own identity
+		// formula: a recipe's capability with any version pin removed, then its
+		// name; the bare name for every other kind.
+		ident := catalog.RecipeIdentityURI(provider, name, "")
 		if byLoc[loc] == nil {
 			byLoc[loc] = map[string]struct{}{}
 		}

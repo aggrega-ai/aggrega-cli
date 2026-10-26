@@ -303,7 +303,7 @@ func nodeRecipeOutcomeOf(
 	if mappedPresent(node) {
 		return nodeRecipeResolved, reference
 	}
-	if _, malformed := resolver.RecipeReferenceSegments(reference); malformed {
+	if resolver.RecipeReferenceMisShaped(reference) {
 		return nodeRecipeReferenceShapeFault, reference
 	}
 	if types.ParseVersionPin(reference).Fault() != nil {

@@ -3735,6 +3735,37 @@ var facts = []factDecl{
 	},
 
 	{
+		Name:        "per-edge-addressed-target",
+		Stage:       "topology",
+		SourceField: "topology.NormalizedEdge.AddressedTarget",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "PerEdgeAddressedTarget is the name one connection's target was " +
+			"looked up by in the flattened composition, before a module's export " +
+			"alias is resolved — empty when the composition drew no connection " +
+			"there.\n\nIt is the authored target placed in the composition. A " +
+			"document names components relative to itself: its own by their " +
+			"local names, and one inside a module it imports as that module's " +
+			"name followed by a name the module exports. So one authored target " +
+			"written in two documents names two different things, and this is " +
+			"the one spelling that says which: the authored target qualified " +
+			"with the prefix of the module whose document drew the connection. " +
+			"The Release names every component by the id it carries in the " +
+			"composition, so a connection it wires addresses what it " +
+			"authored.\n\nIt sits between the two target facts and replaces " +
+			"neither. The authored target is what a document typed and cannot " +
+			"say which module it meant; the resolved target is the component " +
+			"reached and cannot say by which name it was reached. A rule asking " +
+			"how a connection passed into a module — through an alias the module " +
+			"exports, or past its export list — reads this.",
+	},
+
+	{
 		Name:        "per-edge-connection-drawn",
 		Stage:       "topology",
 		SourceField: "topology.TopologyResult.Edges",
@@ -3904,6 +3935,33 @@ var facts = []factDecl{
 			"rule over placement passes it rather than reporting it, and a " +
 			"module a false activation toggle removed contributes nothing here " +
 			"because it was never composed.",
+	},
+
+	{
+		Name:        "module-exported-aliases",
+		Stage:       "topology",
+		SourceField: "topology.ModuleDeclaration.Exports",
+		Subject:     []string{"module"},
+		Params:      []paramDecl{{Name: "module", Type: "string"}},
+		Returns:     "([]string, bool)",
+		Doc: "ModuleExportedAliases are the aliases a sub-module's own document " +
+			"lists under exportedComponents, in the order it lists them, and " +
+			"whether the composition brought in a module at that prefix at " +
+			"all.\n\nThe aliases are the module's declared interface: the names " +
+			"a document importing the module reaches its components by. They are " +
+			"taken from the module's document as it is loaded during flattening, " +
+			"which is the first point the composition holds it, so the fact is " +
+			"complete here and nowhere earlier.\n\nIt reports what the module " +
+			"DECLARED and not which aliases still name a component: an alias " +
+			"whose component a false activation toggle removed is still listed. " +
+			"Whether a connection naming such an alias reaches anything is the " +
+			"question the facts over the connection's resolved target answer, " +
+			"and keeping the two apart is what lets a rule about the interface " +
+			"stay silent where a rule about the target speaks.\n\nThe second " +
+			"result is false for a prefix the composition brought no module in " +
+			"at — one never imported, or one a false activation toggle removed, " +
+			"which was never loaded and declares nothing. An empty list with true " +
+			"is a module that exports nothing.",
 	},
 
 	{
