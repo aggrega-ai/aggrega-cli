@@ -69,6 +69,22 @@ deny contains msg if {
 	msg := sprintf("service %v is missing an image", [name])
 }
 `
+
+	// regorusRenderHTTPSendPolicy calls http.send, which can never return a
+	// response inside a plugin, which has no network. The engine is built
+	// without it, so the call fails evaluation naming the function rather than
+	// evaluating to nothing and leaving this deny silently unfired. The address
+	// is one nothing listens on.
+	regorusRenderHTTPSendPolicy = `package aggrega.render
+
+import rego.v1
+
+deny contains msg if {
+	some artifact in input.artifacts
+	response := http.send({"method": "get", "url": "http://127.0.0.1:9/unreachable"})
+	msg := sprintf("artifact %v: status %v", [artifact.path, response.status_code])
+}
+`
 )
 
 // loadComposeExampleForSockets loads the catalog-only compose example against
@@ -211,6 +227,25 @@ func TestRegorusRenderPolicyCompliantProceedsE2E(t *testing.T) {
 		t.Fatalf("compliant compose render (second build): %v", err)
 	}
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
+}
+
+// TestRegorusRenderPolicyHTTPSendFaultsNamingItE2E proves a render-stage policy
+// calling http.send halts the build as a fault naming the function — not as a
+// deny verdict, and not as a silent pass with the deny rule never firing.
+func TestRegorusRenderPolicyHTTPSendFaultsNamingItE2E(t *testing.T) {
+	res, err := runRegorusRenderPolicy(t, regorusRenderHTTPSendPolicy)
+	if err == nil {
+		t.Fatalf("http.send render policy: expected a halt, got nil (the deny rule silently not firing is the exact failure this guards)")
+	}
+	if errors.Is(err, analyzer.ErrPolicyViolation()) {
+		t.Fatalf("http.send halt was routed as a policy verdict (ErrPolicyViolation); it must be a build fault:\n%v", err)
+	}
+	if !strings.Contains(err.Error(), "http.send") {
+		t.Errorf("http.send halt does not name the function:\n%v", err)
+	}
+	if res != nil && len(res.Artifacts) > 0 {
+		t.Errorf("http.send render policy produced artifacts; the build must have halted")
+	}
 }
 
 // artifactPaths returns the artifact paths for a diagnostic message.

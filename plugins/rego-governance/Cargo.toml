@@ -61,6 +61,11 @@ anyhow = "1"
 # `full-opa` spelled out minus `http`. A feature a later engine release adds to
 # its defaults is not picked up here until it is listed; the builtins it would
 # have registered fail loudly in the meantime rather than allowing.
+#
+# The same list appears in the plugin kit's two Rego example guests. That is
+# deliberate: each of the three is a workspace root of its own, in its own
+# repository, so no shared dependency table can hold the list for all of them.
+# Change the three together.
 regorus = { version = "0.10.1", default-features = false, features = [
     "arc",
     "base64",

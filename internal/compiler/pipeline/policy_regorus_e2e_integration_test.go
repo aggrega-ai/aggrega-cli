@@ -63,6 +63,20 @@ deny contains msg if {
 }
 `
 
+	// http.send can never return a response inside a plugin, which has no
+	// network. The engine is built without it, so the call fails evaluation
+	// naming the function rather than evaluating to nothing and leaving this
+	// deny silently unfired. The address is one nothing listens on.
+	regorusHTTPSendPolicy = `package aggrega.policy
+
+import rego.v1
+
+deny contains msg if {
+	response := http.send({"method": "get", "url": "http://127.0.0.1:9/unreachable"})
+	msg := sprintf("status %v", [response.status_code])
+}
+`
+
 	// The attachment's settings object is the Rego data document, so this deny
 	// fires only when the operator sets forbidden=true in settings.
 	regorusSettingsPolicy = `package aggrega.policy
@@ -164,6 +178,28 @@ func TestRegorusPolicyUnsupportedBuiltinFaultsE2E(t *testing.T) {
 	}
 	if res != nil && len(res.Artifacts) > 0 {
 		t.Errorf("unsupported-builtin policy produced artifacts; the build must have halted")
+	}
+}
+
+// TestRegorusPolicyHTTPSendFaultsNamingItE2E proves a policy calling http.send
+// halts the build as a fault naming the function — not as a deny verdict, and
+// not as a silent pass with the deny rule never firing.
+func TestRegorusPolicyHTTPSendFaultsNamingItE2E(t *testing.T) {
+	res, err := runRegorusPolicy(t, regorusHTTPSendPolicy, nil)
+	if err == nil {
+		t.Fatalf("http.send policy: expected a halt, got nil (the deny rule silently not firing is the exact failure this guards)")
+	}
+	if errors.Is(err, analyzer.ErrPolicyViolation()) {
+		t.Fatalf("http.send halt was routed as a policy verdict (ErrPolicyViolation); it must be a build fault:\n%v", err)
+	}
+	if !strings.Contains(err.Error(), `call "verdict_ir"`) {
+		t.Errorf("http.send halt is not the verdict_ir-invocation fault path:\n%v", err)
+	}
+	if !strings.Contains(err.Error(), "http.send") {
+		t.Errorf("http.send halt does not name the function:\n%v", err)
+	}
+	if res != nil && len(res.Artifacts) > 0 {
+		t.Errorf("http.send policy produced artifacts; the build must have halted")
 	}
 }
 
