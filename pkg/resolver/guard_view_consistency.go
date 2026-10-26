@@ -51,46 +51,32 @@ func catalogEntryAbsentMessage(typeRef string) string {
 	return fmt.Sprintf("%s %q", catalogEntryAbsentCaption, typeRef)
 }
 
-// guardEntityViewInconsistency classifies a guard's catalog-entity miss
-// (`found == false` for a component type) and returns the loud halt for the
-// inconsistent case, or nil for the legitimate skip.
+// guardEntityViewInconsistency builds the loud halt a guard reports when the
+// catalog entity behind a component's type is absent from its view
+// (`found == false` for a component type).
 //
-// At a guard, a missing catalog entity is never a dangling user reference on a
-// command that compiles a Release — a genuinely unresolvable reference halts at
-// dependency resolution (NotFound) before the guards run. So a miss is one of two
-// things, told apart by the relative-path prefix test [isRelativePathRef] (the one
-// resolution applies to the documents a Release reaches; a type is never read as a
-// file), NOT by an ad-hoc string check:
-//
-//   - a type written with a `./` or `../` prefix: it names no catalog entity, and
-//     dependency resolution refuses it as a reference no catalog holds — this
-//     returns nil, passing over it;
-//   - a bare-token catalog reference resolution resolved but that is absent from
-//     the guard's view: an internal inconsistency between the build's resolved
-//     set and the guard's catalog view — this returns an
-//     [ErrGuardEntityViewInconsistency] ResolverError for the caller to append.
-//
-// The pass-over is reached, and that is why it stays. The assistant server's
-// tools that answer a question about a node on a Release's graph compile a
-// Release that has no lockfile after resolving only the references its own
-// Aggregate makes, so a module's component type reaches the sub-aggregate guard
-// unresolved there: written as a path it is passed over here and the graph build
-// refuses the node later, for want of a Recipe; written as a catalog identity no
-// catalog holds, it is reported there as the disagreement below although nothing
-// diverged.
+// At a guard, a missing catalog entity is never a dangling user reference: every
+// surface that compiles a Release resolves the references it reaches first — the
+// ones the Release's own Aggregate makes and the ones every module makes — and
+// refuses one no catalog holds there, as the author's reference to nothing. That
+// holds however the type is written. A type written with a `./` or `../` prefix
+// names no catalog entity, because a type is never read as a file, and that
+// resolution refuses it like any other reference nothing holds. So a miss here is
+// an internal inconsistency between the build's resolved set and the guard's
+// catalog view, whatever the type's spelling, and this returns an
+// [ErrGuardEntityViewInconsistency] ResolverError for the caller to append.
 //
 // Every guard that would otherwise skip silently on a missing catalog entity
-// routes its miss through this one helper, so the classification and the
-// diagnostic are identical across them, and stay identical when the lookup
-// backing changes underneath. The callers are the statement of how many there
-// are; a number written here beside them would be a second copy that reads as
-// current while lagging the set it counts.
+// routes its miss through this one helper, so the diagnostic is identical across
+// them, and stays identical when the lookup backing changes underneath. The
+// callers are the statement of how many there are; a number written here beside
+// them would be a second copy that reads as current while lagging the set it
+// counts.
 //
 // The rule asked once per component — componentTypeResolvesToACatalogEntry —
 // reaches the same condition without reaching this function, because it is
 // expressed as a declared check and raises an objection rather than composing a
-// message. It shares what matters: the relative-path discriminator through the
-// fact the view publishes for it, and the wording through
+// message. It shares what matters, the wording, through
 // [catalogEntryAbsentCaption]. A parity test holds the two renderings byte-equal,
 // which is what keeps a shared wording from becoming two wordings that merely
 // agree today.
@@ -112,9 +98,6 @@ func catalogEntryAbsentMessage(typeRef string) string {
 // to correct in the Aggregate, the Release or the catalog, and asks for a
 // report instead.
 func guardEntityViewInconsistency(typeRef string) *ResolverError {
-	if isRelativePathRef(typeRef) {
-		return nil
-	}
 	return &ResolverError{
 		Message: catalogEntryAbsentMessage(typeRef),
 		Err:     ErrGuardEntityViewInconsistency(),
@@ -122,12 +105,11 @@ func guardEntityViewInconsistency(typeRef string) *ResolverError {
 }
 
 // GuardEntityViewInconsistency is the exported entry point to the catalog-entity
-// view-inconsistency classifier, for callers outside this package — the topology
+// view-inconsistency halt, for callers outside this package — the topology
 // sub-aggregate conformance guard, which validates flattened sub-aggregate nodes
-// that the resolution guards do not reach. Same classification as the in-package
-// guards: a type written with a ./ or ../ prefix names no catalog entity and is
-// passed over (nil); a bare catalog reference absent from the guard's view is the
-// loud [ErrGuardEntityViewInconsistency] halt.
+// that the resolution guards do not reach. It builds the loud
+// [ErrGuardEntityViewInconsistency] halt the in-package guards report for a
+// component type absent from the guard's view, whatever the type's spelling.
 //
 // It takes the type alone. A caller holding the document it was walking and the
 // node it was at has nothing to pass them to, which is deliberate: the finding

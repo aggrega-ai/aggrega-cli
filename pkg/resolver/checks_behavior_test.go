@@ -98,17 +98,18 @@ func TestTheCatalogEntryRuleReportsEachComponentAddressedAsAnAbsentIdentity(t *t
 		raised []string
 	}{
 		{
-			// One component of each kind, so the two skips are exercised by the
-			// absence of those components from the expectation rather than by
-			// a row that reports nothing at all.
-			name:    "a catalog identity with no entry is reported; a local path and a held type are not",
+			// One component of each kind, so the skip is exercised by the absence
+			// of the held type's component from the expectation rather than by a
+			// row that reports nothing at all, and a path-spelled type is reported
+			// beside the absent identity: it names no catalog entity either.
+			name:    "a catalog identity with no entry and a path-spelled type are reported; a held type is not",
 			catalog: presentCatalog(knownType),
 			components: []namedType{
 				{"web", absentType},
 				{"cache", knownType},
 				{"sidecar", localType},
 			},
-			raised: []string{".spec.components.web"},
+			raised: []string{".spec.components.sidecar", ".spec.components.web"},
 		},
 		{
 			// Two reports, authored against their alphabetical order. With a

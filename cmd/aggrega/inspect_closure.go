@@ -87,6 +87,14 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		Lockfile:        lf,
 		Augment:         true,
 	})
+	// The walk above resolves the references the Release's own Aggregate makes; the
+	// references its modules make are resolved by the resolution a validation runs,
+	// so a Release one of whose modules names a type no catalog holds is refused here
+	// as it is everywhere else, rather than listed as though it depended on nothing
+	// missing. It widens nothing: the listing below is the closure the walk computed.
+	if cerr == nil {
+		cerr = compilerops.ResolveModuleReferences(ctx, resolved)
+	}
 	if cerr != nil {
 		// A file the catalog read refused makes its entity unresolvable, and the
 		// failure on its own can only name the reference, never the file behind it.

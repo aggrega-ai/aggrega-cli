@@ -2053,13 +2053,6 @@ func (TopologyViewBase) CatalogComponentPresent(componentType string) bool {
 	panic("this view does not carry catalog-component-present, which is read from resolver.CatalogLookup.Component(componentType)")
 }
 
-// ComponentTypeIsLocalPath panics. This view does not carry
-// component-type-is-local-path, which is read from
-// resolver.IsRelativePathRef(componentType).
-func (TopologyViewBase) ComponentTypeIsLocalPath(componentType string) bool {
-	panic("this view does not carry component-type-is-local-path, which is read from resolver.IsRelativePathRef(componentType)")
-}
-
 // ReleasePerEdgeTarget panics. This view does not carry
 // release-per-edge-target, which is read from
 // types.ReleaseUsesEntry.Target.
@@ -3372,7 +3365,6 @@ type NormalizedStageFacts interface {
 	AttachmentDeclaredSocketNames(featureType string) []string
 	DeclaredSlotNames(componentType string) []string
 	CatalogComponentPresent(componentType string) bool
-	ComponentTypeIsLocalPath(componentType string) bool
 	ReleasePerEdgeTarget(node string, socket string, alias string) string
 	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
 	ReleasePerEdgeAttachmentNames(node string, socket string, alias string) []string

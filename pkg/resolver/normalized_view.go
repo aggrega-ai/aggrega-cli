@@ -1215,12 +1215,6 @@ func (v *normalizedView) MappedTypeExtendsAncestry(componentType string) ([]stri
 	return bases, true
 }
 
-// ComponentTypeIsLocalPath reports whether a component type is written with a
-// ./ or ../ prefix rather than as a catalog identity.
-func (v *normalizedView) ComponentTypeIsLocalPath(componentType string) bool {
-	return IsRelativePathRef(componentType)
-}
-
 // DeclaredSocketNames returns the dependency sockets a component type declares,
 // in author order.
 func (v *normalizedView) DeclaredSocketNames(componentType string) []string {

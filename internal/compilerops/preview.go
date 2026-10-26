@@ -799,11 +799,22 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 
 	// Reconstruct the axes ComputeClosure leaves empty, hermetically and from the
 	// lockfile, so the drift comparison below is like-for-like.
+	//
+	// The reconstruction is also what resolves the references the Release's modules
+	// make, so a run that has no lockfile to reconstruct from resolves them through
+	// the resolution a validation runs instead, at the same point. Without it a type
+	// a module names and no catalog holds would reach the checks that compile the
+	// Release unresolved, and be reported there as a disagreement inside the compiler
+	// rather than as the author's reference to nothing; ResolveModuleReferences says
+	// why.
 	if pol.reconstructClosureAxes && in.lockfile != nil {
 		if err := reconstructPreviewClosureAxes(ctx, in, resolved); err != nil {
 			out.FailedGate = GateAxisReconstruction
 			return out, &resolutionFailure{err: err}
 		}
+	} else if cerr := ResolveModuleReferences(ctx, resolved); cerr != nil {
+		out.FailedGate = GateClosureResolution
+		return out, &resolutionFailure{err: cerr}
 	}
 
 	// Drift verification against the freshly-computed closure, for a lockfile that

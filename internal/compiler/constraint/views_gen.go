@@ -2464,13 +2464,11 @@ type NormalizedView interface {
 	// taking one of those emptinesses for an answer about the catalog reports
 	// on a type it never found.
 	//
-	// False is not on its own a finding. A type written with a ./ or ../
-	// prefix names no catalog entity, since a type is never read as a file,
-	// and dependency resolution refuses it as a reference no catalog holds; so
-	// what a false answer MEANS depends on how the reference is written —
-	// which is a separate fact, because the two are independent: one is a
-	// property of the reference as authored and the other of what the catalog
-	// holds.
+	// A false answer at a rule is a divergence between what the build resolved
+	// and what the rule can see, whatever the type's spelling: the dependency
+	// resolution every surface runs before compiling refuses a type no catalog
+	// holds, a type written with a ./ or ../ prefix among them, since a type
+	// is never read as a file and such a value names no catalog entity.
 	//
 	// It answers presence in the catalog and nothing about whether there is a
 	// catalog to consult. A build that resolves against none has no entry set
@@ -2480,32 +2478,6 @@ type NormalizedView interface {
 	// Keyed by node; read from
 	// resolver.CatalogLookup.Component(componentType).
 	CatalogComponentPresent(componentType string) bool
-
-	// ComponentTypeIsLocalPath reports whether a component type reference is
-	// written with the explicit relative-path prefix (./ or ../) — the
-	// prefix entity resolution reads as a file path on the documents a Release
-	// reaches, and never on a type.
-	//
-	// It is that discriminator and not a test over the reference's content.
-	// The prefix is what separates a path-shaped string from an identity, and
-	// a rule inspecting the string for anything else would put a second,
-	// differently-behaving version of the rule beside the one resolution
-	// applies.
-	//
-	// It is what makes a missing catalog entry readable. A type written with
-	// the prefix names no catalog entity, which dependency resolution refuses
-	// as a reference no catalog holds, so a rule passes over its absence; a
-	// type addressed as an identity that no entry was found for is a
-	// divergence between what the build resolved and what a rule can see,
-	// which is a finding. A rule reading presence without this fact cannot
-	// tell those apart, and reports whichever one it assumed.
-	//
-	// It is a property of the reference as authored: no file is read for it.
-	// Whether an entry was found is the separate fact, and the two are asked
-	// together.
-	//
-	// Keyed by node; read from resolver.IsRelativePathRef(componentType).
-	ComponentTypeIsLocalPath(componentType string) bool
 
 	// ReleasePerEdgeTarget is the target a Release's per-edge entry names for
 	// one connection, as authored — empty when the Release named none.

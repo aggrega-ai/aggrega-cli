@@ -374,11 +374,30 @@ func TestBuild_BoundaryPath(t *testing.T) {
 // block (the value/infra-conformance case the uses-path alone did not cover). A
 // resilient-inspection caller tolerates the same finding via the Step-1 sentinel
 // filter; here, the build (no tolerance) halts.
+//
+// A type written with a ./ or ../ prefix halts the same way: it names no catalog
+// entity, and the dependency resolution every surface runs before compiling
+// refuses it, so one reaching the guard is the same divergence rather than a
+// type the guard may pass over.
 func TestGuardSubAggregateNodes_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 	t.Parallel()
+	// A bare catalog reference, and a type spelled as a path; neither carries a
+	// uses block.
+	for _, typeRef := range []string{"core/absent:1.0.0", "./local-variant.yaml"} {
+		t.Run(typeRef, func(t *testing.T) {
+			t.Parallel()
+			guardSubAggregateAbsentHalts(t, typeRef)
+		})
+	}
+}
+
+// guardSubAggregateAbsentHalts builds a root importing one module whose single
+// component names typeRef, against a catalog that holds nothing, and asserts the
+// build halts with the catalog-view disagreement.
+func guardSubAggregateAbsentHalts(t *testing.T, typeRef string) {
+	t.Helper()
 	childComps := types.OrderedMap[types.ComponentInstance]{}
-	// A bare catalog reference (not a Tier-1 ./ path), no uses block.
-	childComps.Set("svc", types.ComponentInstance{Type: "core/absent:1.0.0"})
+	childComps.Set("svc", types.ComponentInstance{Type: typeRef})
 	childAgg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "data-mod"},
 		Spec:     types.AggregateSpec{Components: childComps},

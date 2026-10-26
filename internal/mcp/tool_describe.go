@@ -514,6 +514,13 @@ func (s *server) describeRelease(
 		Lockfile:        lf,
 		Augment:         true,
 	})
+	// The references the Release's modules make are resolved by the resolution a
+	// validation runs, as `aggrega inspect --closure` resolves them, so the two
+	// listings refuse one Release on one ground; the listing below is still the
+	// closure the walk computed.
+	if cerr == nil {
+		cerr = compilerops.ResolveModuleReferences(ctx, resolved)
+	}
 	if cerr != nil {
 		return tw.answer(errorResult(explainToolError(
 			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage))))

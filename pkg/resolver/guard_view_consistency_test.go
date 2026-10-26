@@ -41,20 +41,24 @@ func oneBareComponent(typeRef string, inject *types.InjectBlock) *types.Aggregat
 	return &types.Aggregate{Metadata: types.AggregateMetadata{Name: "demo"}, Spec: types.AggregateSpec{Components: comps}}
 }
 
-// TestGuardEntityViewInconsistency_Classifies pins the shared classifier: a
-// relative-path type is a legitimate skip (nil); a bare catalog reference
-// absent from the view is the loud halt.
-func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
+// TestGuardEntityViewInconsistency_HaltsWhateverTheSpelling pins the shared
+// halt: a type absent from the guard's view is the loud halt whether it is
+// written as a catalog identity or with a ./ or ../ prefix. Dependency
+// resolution refuses a type no catalog holds before any guard runs, the
+// prefixed spellings included, so none of them reaching a guard is a legitimate
+// skip.
+func TestGuardEntityViewInconsistency_HaltsWhateverTheSpelling(t *testing.T) {
 	t.Parallel()
-	if verr := guardEntityViewInconsistency("./local-variant"); verr != nil {
-		t.Errorf("relative-path type must classify as a legitimate skip (nil); got %v", verr)
-	}
-	if verr := guardEntityViewInconsistency("../sibling"); verr != nil {
-		t.Errorf("parent-relative-path type must classify as a legitimate skip (nil); got %v", verr)
-	}
-	verr := guardEntityViewInconsistency("core/absent:1.0.0")
-	if verr == nil || !errors.Is(verr, ErrGuardEntityViewInconsistency()) {
-		t.Fatalf("bare catalog ref must halt with ErrGuardEntityViewInconsistency; got %v", verr)
+	for _, typeRef := range []string{"core/absent:1.0.0", "./local-variant", "../sibling"} {
+		verr := guardEntityViewInconsistency(typeRef)
+		if verr == nil || !errors.Is(verr, ErrGuardEntityViewInconsistency()) {
+			t.Errorf("a type absent from the view must halt with ErrGuardEntityViewInconsistency for %q; got %v",
+				typeRef, verr)
+			continue
+		}
+		if !strings.Contains(verr.Message, typeRef) {
+			t.Errorf("the halt for %q does not name the type: %q", typeRef, verr.Message)
+		}
 	}
 }
 
@@ -234,24 +238,31 @@ func TestNeitherSurfaceSendsAReaderToAnAuthoredCoordinate(t *testing.T) {
 	}
 }
 
-// TestTheRuleStaysSilentOnALocalPathType is the negative control for the pair
-// above: the same rule, the same empty catalog, a type addressed as a file
-// beside the authoring document. Nothing is raised, because such a type has no
-// catalog entity to be missing.
+// TestTheRuleReportsAPathSpelledTypeAsAbsent is the rule's half of the halt
+// above: the same rule, the same empty catalog, a type written as though it
+// named a file beside the authoring document. It is reported exactly as an
+// absent catalog identity is, because a type is never read as a file and the
+// dependency resolution every surface runs refuses such a type before any rule
+// is asked — so one reaching the rule is the same divergence, not a skip.
 //
-// It sits here rather than beside the classifier's own relative-path case
-// because the two are separate claims: that the classifier reads a relative path
-// as a skip, and that the rule reaches the same verdict through the fact the view
-// publishes for it. A green on the first would not establish the second.
-func TestTheRuleStaysSilentOnALocalPathType(t *testing.T) {
+// It sits here rather than beside the composing guard's own case because the two
+// are separate claims: that the guard halts on a path-spelled type, and that the
+// rule raises on one. A green on the first would not establish the second.
+func TestTheRuleReportsAPathSpelledTypeAsAbsent(t *testing.T) {
 	t.Parallel()
 
 	for _, typeRef := range []string{"./local-variant.yaml", "../sibling/component.yaml"} {
-		if objections := raiseOverOneBareComponent(t, typeRef); len(objections) != 0 {
-			t.Errorf("the rule raised %d objection(s) for %q; want none.\n"+
-				"INVARIANT: a type addressed as a local path has no catalog entity to be absent.\n"+
-				"CONSEQUENCE: a legitimate local-file type halts a build that should proceed.",
+		objections := raiseOverOneBareComponent(t, typeRef)
+		if len(objections) != 1 {
+			t.Errorf("the rule raised %d objection(s) for %q; want 1.\n"+
+				"INVARIANT: a type the catalog holds no entry for is reported whatever its spelling.\n"+
+				"CONSEQUENCE: a path-spelled type that reached the rules unresolved passes unexamined.",
 				len(objections), typeRef)
+			continue
+		}
+		if !errors.Is(objections[0].Sentinel(), ErrGuardEntityViewInconsistency()) {
+			t.Errorf("the objection for %q carries %v; want the catalog-entry rule's own sentinel",
+				typeRef, objections[0].Sentinel())
 		}
 	}
 }

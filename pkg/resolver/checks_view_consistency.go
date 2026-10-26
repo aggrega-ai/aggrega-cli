@@ -7,9 +7,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
-// componentTypeResolvesToACatalogEntry reports each component whose type was
-// resolved as a catalog identity and which the catalog this build consults holds
-// no entry for.
+// componentTypeResolvesToACatalogEntry reports each component whose type the
+// catalog this build consults holds no entry for.
 //
 // It is a rule in its own right rather than a condition inside the rules that
 // meet it, and expressing it once is what lets every other rule over what a
@@ -19,15 +18,13 @@ import (
 // carrying its own classification would be stating this one a second time and
 // the copies would answer differently the moment either moved.
 //
-// Two conditions make the finding, and reading one without the other reports the
-// wrong thing in a way nothing catches. Absence alone is not a fault: a type with
-// a ./ or ../ prefix names no catalog entity, so this rule passes over it; pull,
-// build, inspect, and validate or lint over a Release refuse it in dependency
-// resolution as a reference no catalog holds. Absence of a type addressed as an
-// identity is a divergence between what the build resolved and what the rules can
-// see, because a genuinely unresolvable reference halts before any of this is
-// asked. The two facts are independent — one is of
-// the reference as authored, the other of what the catalog holds — so both are read.
+// An absent entry here is a divergence between what the build resolved and what
+// the rules can see, never the author's reference to nothing: every surface that
+// compiles a Release resolves the references it reaches first and refuses there a
+// type no catalog holds — a catalog identity nothing answers, and equally a type
+// written with a ./ or ../ prefix, which names no catalog entity because a type is
+// never read as a file. So the rule reads presence alone, whatever the type's
+// spelling.
 //
 // It is keyed by the component rather than by the type, so one absent entry is
 // reported once per component that names it. The component is the site an author
@@ -56,9 +53,6 @@ var componentTypeResolvesToACatalogEntry = constraint.Check[
 			return nil
 		}
 		if v.CatalogComponentPresent(componentType) {
-			return nil
-		}
-		if v.ComponentTypeIsLocalPath(componentType) {
 			return nil
 		}
 		return []constraint.Objection{

@@ -435,16 +435,16 @@ var errUnreadParameter = cerrors.Register("unread-parameter", cerrors.Meta{
 })
 
 // ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
-// guard needs a catalog entity for a type that resolution resolved AS A
-// CATALOG REFERENCE (a bare-token identity), yet the entity is absent from the
-// guard's catalog view. Every command that builds, pulls, validates or inspects
-// a Release resolves its dependencies before compiling it and refuses there a
-// reference no catalog holds, as the author's unresolvable reference; reaching a
+// guard needs the catalog entity behind a component's type, yet the entity is
+// absent from the guard's catalog view. Every surface that compiles a Release —
+// the commands that build, pull, validate or inspect one, the assistant
+// server's tools and the editor daemon — resolves the references the Release
+// and its modules make before compiling it, and refuses there a reference no
+// catalog holds, as the author's unresolvable reference: a catalog identity
+// nothing answers, and equally a type written with a ./ or ../ prefix, which
+// names no catalog entity because a type is never read as a file. So reaching a
 // guard with the entity missing means the build's resolved set and the guard's
-// view have diverged — a loud halt, never a silent skip. (A type written with a
-// ./ or ../ prefix is not this error: a type is never read as a file, so such a
-// value names no catalog entity, and that resolution refuses it as a reference
-// no catalog holds.)
+// view have diverged — a loud halt, never a silent skip.
 func ErrGuardEntityViewInconsistency() error { return errGuardEntityViewInconsistency }
 
 var errGuardEntityViewInconsistency = cerrors.Register("internal-catalog-view-disagreement", cerrors.Meta{

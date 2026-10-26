@@ -45,16 +45,13 @@ type ValidationClosureInputs struct {
 // closure-resolution error, changing the verb's diagnostic surface.
 //
 // The references the modules make are resolved here too, through
-// resolveModuleReferences, so a type a module names and no catalog holds is
+// ResolveModuleReferences, so a type a module names and no catalog holds is
 // refused as the author's fault before anything is compiled; that function says
 // why the resolution cannot be left to the checks that follow.
 //
 // Only the construction is shared. The *ClosureError is handed back exactly as
 // ResolveClosure produced it, stage included, because a front door annotates a
-// resolution failure in its own terms and those surfaces legitimately differ. A
-// module reference that does not resolve is reported at the closure-compute stage,
-// because it is the same failure the closure walk reports for a reference the
-// Release's own Aggregate makes, found one module further in.
+// resolution failure in its own terms and those surfaces legitimately differ.
 func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (*ResolvedClosure, *ClosureError) {
 	resolved, cerr := ResolveClosure(ctx, ClosureInputs{
 		View:            in.View,
@@ -67,26 +64,35 @@ func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (
 	if cerr != nil {
 		return nil, cerr
 	}
-	if err := resolveModuleReferences(ctx, resolved); err != nil {
-		return nil, &ClosureError{Stage: ClosureStageComputeClosure, msg: err.Error(), err: err}
+	if cerr := ResolveModuleReferences(ctx, resolved); cerr != nil {
+		return nil, cerr
 	}
 	return resolved, nil
 }
 
-// resolveModuleReferences resolves every reference the modules a Release reaches
+// ResolveModuleReferences resolves every reference the modules a Release reaches
 // make — each Aggregate its Aggregate imports, and each one those import in turn —
-// and returns the first that does not resolve, as a build refuses it.
+// over a closure ResolveClosure computed, and refuses the first that does not
+// resolve, as a build refuses it. It is the one resolution of a module's
+// references that runs without a lockfile, and every surface that needs them
+// resolved without one asks it: a validation of the Release, a preview with no
+// lockfile to reconstruct the module axis from, and a listing of the Release's
+// dependencies.
 //
-// # Why validation resolves them before anything is compiled
+// A reference that does not resolve is reported at the closure-compute stage,
+// because it is the same failure the closure walk reports for a reference the
+// Release's own Aggregate makes, found one module further in.
+//
+// # Why the references are resolved before anything is compiled
 //
 // The closure walk resolves the references the Release's own Aggregate makes and
 // stops at the modules it imports: a module's body is walked by the sub-aggregate
-// descent, which a build and a graph request run before they compile anything.
-// Without it here nothing resolves a module's references ahead of the checks that
+// descent, which a build with a lockfile runs as it reconstructs what the lockfile
+// pins. Without it nothing resolves a module's references ahead of the checks that
 // compile the Release, and the first of those to meet a type a module names and no
 // catalog holds is the sub-aggregate conformance check. That check is right to read
 // a miss as a disagreement between the compiler's own views of the catalog, because
-// it is entitled to assume every reference resolved before it ran — and on this
+// it is entitled to assume every reference resolved before it ran — and on such a
 // path that assumption would be false, so a fault the author can fix would be
 // reported as a fault in the compiler. Resolving the references here keeps the
 // assumption true: a reference nothing resolves is refused as the author's fault,
@@ -94,22 +100,35 @@ func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (
 // uses; a type that resolves here and is then absent from the view the checks read
 // is still the disagreement that check reports.
 //
+// A listing of a Release's dependencies compiles nothing, and asks for the same
+// reason: it reports what a Release is built from, and a Release one of whose
+// modules names nothing the catalog holds is not built from anything.
+//
 // # Why it is the build's descent, and why it descends over a copy
 //
 // It is the pinned-axis descent the build runs, handed the loader of the modules'
 // bodies and no loader for either plugin pass, which makes both plugin passes do
-// nothing: the plugin axes are what pinning records, and a validation holds no
-// lockfile to them. Reusing the descent rather than walking the modules again is
-// what keeps a module's references resolved by one rule and refused in one wording
-// on every surface.
+// nothing: the plugin axes are what pinning records, and a caller with no lockfile
+// holds nothing to hold them to. Reusing the descent rather than walking the
+// modules again is what keeps a module's references resolved by one rule and
+// refused in one wording on every surface.
 //
-// It descends over a copy of the entity set, and the copy is discarded. The
-// closure-scoped checks that follow cover the closure the walk computed, and
-// widening that closure to the modules' entities would change what those checks
-// report for every Release that imports a module; this resolves what the modules
-// reference and reports what does not resolve, and changes nothing else. Each
-// entity's referencing sites are copied with it, because the descent merges into
-// and sorts that list in place.
+// It descends over a copy of the entity set, and the copy is discarded. What
+// follows covers the closure the walk computed — the closure-scoped checks, the
+// pins, the listing — and widening that closure to the modules' entities would
+// change what each of them reports for every Release that imports a module; this
+// resolves what the modules reference and reports what does not resolve, and
+// changes nothing else. Each entity's referencing sites are copied with it,
+// because the descent merges into and sorts that list in place.
+func ResolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) *ClosureError {
+	if err := resolveModuleReferences(ctx, resolved); err != nil {
+		return &ClosureError{Stage: ClosureStageComputeClosure, msg: err.Error(), err: err}
+	}
+	return nil
+}
+
+// resolveModuleReferences is ResolveModuleReferences without the stage the
+// failure is reported at.
 func resolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) error {
 	loader, err := closure.RequireAggregateLoader(resolved.Lookup)
 	if err != nil {

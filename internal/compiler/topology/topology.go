@@ -1038,17 +1038,17 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// the value, per-edge-value, and per-edge-infra conformance below (all gated
 		// on the same component lookup that previously skipped silently on a miss),
 		// so a no-uses node's miss is loud too, not silently skipped. A type with
-		// a ./ or ../ prefix names no catalog entity and is passed over (the
-		// classifier returns nil). A resilient-inspection caller (serve)
-		// tolerates the finding via the Step-1 sentinel filter; the build halts.
+		// a ./ or ../ prefix is no exception: it names no catalog entity, and the
+		// dependency resolution every surface runs before compiling refuses it, so
+		// reaching here with one is the same divergence. A resilient-inspection
+		// caller (serve) tolerates the finding via the Step-1 sentinel filter; the
+		// build halts.
 		catComp, found := catalog.Component(node.ComponentType)
 		if !found {
-			// The classifier takes the type alone: the finding it builds names no
-			// document and no node, because a divergence between the build's
-			// resolved set and this view is not something a node's author wrote.
-			if verr := resolver.GuardEntityViewInconsistency(node.ComponentType); verr != nil {
-				errs = append(errs, verr)
-			}
+			// The halt takes the type alone: the finding it builds names no document
+			// and no node, because a divergence between the build's resolved set and
+			// this view is not something a node's author wrote.
+			errs = append(errs, resolver.GuardEntityViewInconsistency(node.ComponentType))
 			continue
 		}
 
