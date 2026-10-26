@@ -388,24 +388,20 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 	// reach of the three early returns that follow: a Manifest fault is never
 	// hidden by a later gate refusing first. In the concise form they fold into the
 	// summary count with the other verdict-affecting classes.
-	var mappingDiags []string
-	for _, f := range consistencyFindings {
-		mappingDiags = append(mappingDiags, cerrors.CauseChain(f))
-	}
 	if detailed {
-		for _, d := range mappingDiags {
-			fmt.Fprintf(diagOut, "  mapping: %s\n", d)
+		for _, f := range consistencyFindings {
+			fmt.Fprint(diagOut, releaseFinding("mapping", f))
 		}
 	}
 
 	if len(vr.ClosureExtendsErrors) > 0 {
 		if detailed {
 			for _, e := range vr.ClosureExtendsErrors {
-				fmt.Fprintf(diagOut, "  extends: %s\n", cerrors.CauseChain(e))
+				fmt.Fprint(diagOut, releaseFinding("extends", e))
 			}
 		} else {
 			fmt.Fprintf(diagOut, "release dependency validation: %d extends diagnostic(s); first: %s\n",
-				len(vr.ClosureExtendsErrors), cerrors.CauseChain(vr.ClosureExtendsErrors[0]))
+				len(vr.ClosureExtendsErrors), releaseFindingOneLine(vr.ClosureExtendsErrors[0]))
 		}
 		return fmt.Errorf("release dependency validation failed: %d extends resolution error(s)", len(vr.ClosureExtendsErrors))
 	}
@@ -428,12 +424,11 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 		return vr.RunErr
 	}
 
-	// Every diagnostic here is composed as ONE line, so each is flattened with
-	// CauseChain rather than Error: a categorised envelope renders a single frame,
-	// which names the phase that failed and drops the frame beneath it carrying the
-	// actual fault — the offending entity, the assertion, and an assertion's own
-	// author-written message, which is the only actionable part it has.
-	var pipelineDiags []string
+	// Every diagnostic here is rendered by releaseFinding, which prints it as a
+	// build or a pull prints a failure: its bracketed head and short code, then the
+	// frames beneath it — the offending entity, the assertion, and an assertion's
+	// own author-written message, which is the only actionable part it has.
+	var pipelineDiags []error
 	// The resolver-class findings are taken once into a local, so the phase-error
 	// guard below asks its question of the same slice this loop published.
 	var perViolation []*resolver.ResolverError
@@ -441,11 +436,14 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 		perViolation = vr.Tier4.ResolveDiagnostics
 	}
 	for _, ve := range perViolation {
-		pipelineDiags = append(pipelineDiags, cerrors.CauseChain(ve))
+		pipelineDiags = append(pipelineDiags, ve)
 	}
+	// An analysis violation is converted as every reporting boundary converts it,
+	// which is what puts its category, its authoring position and the condition it
+	// names on the diagnostic; the bare value carries the sentence alone.
 	if vr.Tier4 != nil && vr.Tier4.Analysis != nil {
 		for _, ae := range vr.Tier4.Analysis.Errors {
-			pipelineDiags = append(pipelineDiags, cerrors.CauseChain(ae))
+			pipelineDiags = append(pipelineDiags, ae.ToCompilerError())
 		}
 	}
 	// A non-resolver pre-analyzer phase error carries no per-violation structure;
@@ -457,19 +455,16 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 	// raises for an emitting run alone, which reach a surface like this one on a run
 	// whose failure is elsewhere and on a run that did not fail at all — so reading
 	// its length would take such a finding as evidence about the phase error and drop
-	// the only line describing it — the flattened cause chain that carries the
-	// offending entity, the assertion, and the assertion's own author-written
-	// message.
+	// the only diagnostic describing it — the one that carries the offending
+	// entity, the assertion, and the assertion's own author-written message.
 	if vr.RunErr != nil && !runErrPublishedPerViolation(vr.RunErr, perViolation) {
-		pipelineDiags = append(pipelineDiags, cerrors.CauseChain(vr.RunErr))
+		pipelineDiags = append(pipelineDiags, vr.RunErr)
 	}
-	for _, f := range vr.ResolutionFindings {
-		pipelineDiags = append(pipelineDiags, cerrors.CauseChain(f))
-	}
+	pipelineDiags = append(pipelineDiags, vr.ResolutionFindings...)
 
 	if detailed {
 		for _, d := range pipelineDiags {
-			fmt.Fprintf(diagOut, "  %s\n", d)
+			fmt.Fprint(diagOut, releaseFinding("", d))
 		}
 
 		// Schema-pillar overlap + narrowing-on-extend advisories — informational,
@@ -482,22 +477,22 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 		}
 
 		for _, e := range vr.InputKindErrors {
-			fmt.Fprintf(diagOut, "  input-kind: %s\n", cerrors.CauseChain(e))
+			fmt.Fprint(diagOut, releaseFinding("input-kind", e))
 		}
 	} else {
 		// The concise form collapses the verdict-affecting diagnostics — the mapping
 		// findings, then the pipeline diagnostics, then the input-kind errors, in the
 		// order they were decided — into a count and the first, and emits no advisory
 		// lines.
-		if total := len(mappingDiags) + len(pipelineDiags) + len(vr.InputKindErrors); total > 0 {
+		if total := len(consistencyFindings) + len(pipelineDiags) + len(vr.InputKindErrors); total > 0 {
 			first := ""
 			switch {
-			case len(mappingDiags) > 0:
-				first = "mapping: " + mappingDiags[0]
+			case len(consistencyFindings) > 0:
+				first = "mapping: " + releaseFindingOneLine(consistencyFindings[0])
 			case len(pipelineDiags) > 0:
-				first = pipelineDiags[0]
+				first = releaseFindingOneLine(pipelineDiags[0])
 			default:
-				first = "input-kind: " + cerrors.CauseChain(vr.InputKindErrors[0])
+				first = "input-kind: " + releaseFindingOneLine(vr.InputKindErrors[0])
 			}
 			fmt.Fprintf(diagOut, "release dependency validation: %d diagnostic(s); first: %s\n", total, first)
 		}
@@ -507,8 +502,8 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 	// earliest-decided class rather than whichever check happens to be tested
 	// first. A mapping finding is advisory in POSITION only — it never truncates
 	// the report — and never in verdict: the mapping is wrong whoever asked.
-	if len(mappingDiags) > 0 {
-		return fmt.Errorf("release dependency validation failed: %d manifest mapping diagnostic(s)", len(mappingDiags))
+	if len(consistencyFindings) > 0 {
+		return fmt.Errorf("release dependency validation failed: %d manifest mapping diagnostic(s)", len(consistencyFindings))
 	}
 	if len(pipelineDiags) > 0 {
 		return fmt.Errorf("release dependency validation failed: %d diagnostic(s)", len(pipelineDiags))
@@ -523,6 +518,43 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 		fmt.Fprintf(out, "release dependency validation passed: %s\n", releasePath)
 	}
 	return nil
+}
+
+// releaseFinding renders one finding of a Release validation in the detailed
+// form: the diagnostic formatCompilerError composes for it — the formatter build
+// and pull print a failure through, so the finding opens with its bracketed head
+// and the short code `aggrega explain` resolves — laid out as an indented block
+// ending in a newline. label, where it is not empty, names the class of finding
+// ahead of the head, as in "mapping: [CATALOG_ERROR E0123] …".
+//
+// It renders through that one formatter rather than composing a line of its own,
+// so a finding reads the same here as it does where a build or a pull halts on it.
+func releaseFinding(label string, err error) string {
+	var b strings.Builder
+	for i, line := range strings.Split(formatCompilerError(err), "\n") {
+		b.WriteString("  ")
+		if i == 0 && label != "" {
+			b.WriteString(label)
+			b.WriteString(": ")
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// releaseFindingOneLine is the same diagnostic releaseFinding renders, laid on
+// one line for the concise form's summary: each of its lines, trimmed of the
+// indentation that lays the block out, joined by a single space. The head, the
+// short code and every frame stay; only the layout goes.
+func releaseFindingOneLine(err error) string {
+	var parts []string
+	for _, line := range strings.Split(formatCompilerError(err), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // runErrPublishedPerViolation reports whether the pre-render run error has

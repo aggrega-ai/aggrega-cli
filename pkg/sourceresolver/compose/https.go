@@ -7,9 +7,10 @@
 // computes the content digest, populates the cache slot, and returns a
 // ResolvedSource for the lockfile writer.
 //
-// Auth: the fetch carries no credentials. The adapter sends a plain GET
-// through the client it is handed, and a 401 or 403 answer is reported
-// as an unauthorized fetch.
+// Auth: the fetch carries no credential of its own. The adapter sends a
+// plain GET for the URL as written through the client it is handed, so
+// only a user and password written into the URL itself are sent, and a
+// 401 or 403 answer is reported as an unauthorized fetch.
 package compose
 
 import (

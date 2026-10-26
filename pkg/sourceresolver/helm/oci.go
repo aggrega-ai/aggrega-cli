@@ -7,13 +7,15 @@
 // machinery, with index.yaml resolution when the URL is a repo
 // root).
 //
-// Both adapters consume Helm's native auth surfaces — the OCI
-// adapter delegates credential lookup to oras-go's credential store
-// (which reads ~/.docker/config.json, $XDG_RUNTIME_DIR/containers/
-// auth.json, and ~/.config/helm/registry/config.json, including
-// credential helpers); the HTTPS adapter constructs a minimal
-// programmatic cli.EnvSettings to keep the helm getter from reading
-// ambient environment variables.
+// Neither adapter reads Helm's own credential files. The OCI adapter
+// authenticates from the Docker credential store — the Docker
+// configuration file (DOCKER_CONFIG's config.json, else
+// ~/.docker/config.json), credential helpers included — where
+// `aggrega login` and `docker login` write. The HTTPS adapter fetches
+// through Helm's built-in getters with no Helm settings, so neither
+// repositories.yaml nor the Helm registry configuration is read: the
+// chart is fetched with no credential of its own, and only a user and
+// password written into the URL itself are sent.
 //
 // The OCI adapter pins the upstream archive verbatim (no
 // normalisation) and catches drift via ErrFetchIntegrity on the

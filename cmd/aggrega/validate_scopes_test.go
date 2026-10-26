@@ -78,7 +78,7 @@ func TestRenderReleaseValidation_VerdictInvariantAcrossVerbosity(t *testing.T) {
 // Error alone reports the phase that failed ("Component/Feature assertions") and
 // drops the frame beneath it — the entity, the assertion name, and the
 // author-written fix instruction, which is the only actionable part an assertion
-// carries. This test fails a regression that reverts the flattening to Error.
+// carries. This test fails a regression that reverts the rendering to Error.
 //
 // The chain shape mirrors what the assertion evaluator actually produces: a
 // phase-context envelope wrapping the per-entity attribution wrapping the

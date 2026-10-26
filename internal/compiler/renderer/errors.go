@@ -179,7 +179,7 @@ func ErrProvidesContractUnfulfilled() error { return errProvidesContractUnfulfil
 
 var errProvidesContractUnfulfilled = cerrors.Register("provides-contract-unfulfilled", cerrors.Meta{
 	ShortCode: "E0055",
-	Message:   "realizer does not publish a provides key its abstract entity's schema.provides contract declares",
+	Message:   "Recipe or FeatureRecipe does not publish a provides key its abstract entity's schema.provides contract declares",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

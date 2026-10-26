@@ -38,10 +38,13 @@
 // one it pinned halts the next pull instead of being adopted;
 // "aggrega pull --upgrade --release <release>" adopts it.
 //
-// Auth: go-git's default transports honour SSH keys, ~/.netrc, and
-// gitconfig credential helpers. The adapter passes spec.URL through
-// to git.CloneContext unchanged, so any URL shape go-git accepts
-// works (https://, ssh://, git+ssh://, git://).
+// Auth: the clone is given no credential of its own, so go-git's
+// default transports decide: over SSH they authenticate through the
+// SSH agent, and over HTTPS they send only a user and password
+// written into the URL itself. Neither ~/.netrc nor a gitconfig
+// credential helper is read. The adapter passes spec.URL through to
+// git.CloneContext unchanged, so any URL shape go-git accepts works
+// (https://, ssh://, git+ssh://, git://).
 package gitrepo
 
 import (

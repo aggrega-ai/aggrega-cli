@@ -316,11 +316,12 @@ func Resolve(ctx context.Context, target oras.ReadOnlyTarget, tag string) (diges
 
 // NewRemoteRepository constructs an authenticated remote.Repository
 // for the given full repository reference (e.g.
-// "hub.aggrega.ai/component/core/api-server"). Authentication
-// delegates to oras-go/v2's standard credential mechanisms: Docker,
-// containers-storage, and Helm registry configs are consulted in
-// priority order, with credential-helper delegation via credsStore
-// and credHelpers honoured.
+// "hub.aggrega.ai/component/core/api-server"). Authentication reads
+// the Docker credential store — the Docker configuration file
+// (DOCKER_CONFIG's config.json, else ~/.docker/config.json), with
+// credential-helper delegation via its credsStore and credHelpers
+// honoured — which is where `aggrega login` and `docker login` write.
+// No other tool's credential store is read.
 //
 // The returned repository targets the full reference path; the
 // `tag` argument to Pull / Push selects the specific version within
@@ -381,9 +382,9 @@ func NewRemoteRegistry(host string, httpClient *http.Client) (*remote.Registry, 
 // remoteClient builds the loopback plain-HTTP decision and the
 // Docker-credential-backed auth client that both NewRemoteRepository and
 // NewRemoteRegistry apply to their remote target. The registry host drives the
-// loopback decision; authentication delegates to oras-go/v2's standard
-// credential mechanisms (Docker, containers-storage, and Helm registry configs
-// in priority order, with credential-helper delegation honoured). The wiring
+// loopback decision; authentication reads the Docker credential store — the
+// Docker configuration file, with credential-helper delegation honoured — where
+// `aggrega login` and `docker login` write, and no other tool's store. The wiring
 // lives here once so the repository and registry clients cannot diverge.
 func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client *auth.Client, err error) {
 	if httpClient == nil {

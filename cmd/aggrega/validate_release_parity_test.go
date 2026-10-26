@@ -19,14 +19,12 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -511,10 +509,10 @@ spec:
 // directions, and a rule satisfying only one is wrong in the other:
 //
 //   - a phase error must still reach the operator when per-violation findings were
-//     published alongside it but do not describe it — and this verb flattens each
-//     diagnostic with its cause chain precisely because that frame carries the
-//     offending entity, the assertion, and the assertion's own author-written
-//     message, so dropping the line drops all of it;
+//     published alongside it but do not describe it — and this verb prints each
+//     diagnostic with every frame beneath its head precisely because those frames
+//     carry the offending entity, the assertion, and the assertion's own
+//     author-written message, so dropping the diagnostic drops all of it;
 //   - a run error that WAS published finding by finding must not also be published
 //     as a closure-level line, which would report one failure twice.
 //
@@ -589,27 +587,28 @@ func TestRenderReleaseValidationPublishesPhaseErrorBesidePerViolationFindings(t 
 				t.Fatalf("the fixture validated clean, so neither direction is exercised\n diagOut:\n%s", diag.String())
 			}
 
-			fallback := cerrors.CauseChain(vr.RunErr)
-			wantLine := fmt.Sprintf("  %s\n", fallback)
+			// The fall-back is the run error rendered as every finding is rendered,
+			// so the block is derived from the run error rather than transcribed.
+			wantLine := releaseFinding("", vr.RunErr)
 
 			// Occurrences the other streams already contribute, so the count below
-			// measures the fall-back alone even where a stream happens to flatten to
+			// measures the fall-back alone even where a stream happens to render to
 			// the same text — which is what a single-violation run does.
 			base := 0
 			for _, ve := range tier4ResolveDiagnostics(vr) {
-				if cerrors.CauseChain(ve) == fallback {
+				if releaseFinding("", ve) == wantLine {
 					base++
 				}
 			}
 			if vr.Tier4 != nil && vr.Tier4.Analysis != nil {
 				for _, ae := range vr.Tier4.Analysis.Errors {
-					if cerrors.CauseChain(ae) == fallback {
+					if releaseFinding("", ae.ToCompilerError()) == wantLine {
 						base++
 					}
 				}
 			}
 			for _, f := range vr.ResolutionFindings {
-				if cerrors.CauseChain(f) == fallback {
+				if releaseFinding("", f) == wantLine {
 					base++
 				}
 			}

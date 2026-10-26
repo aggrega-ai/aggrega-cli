@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 )
 
 // newCacheCmd builds the `aggrega cache` command family: inspect, reclaim, and
@@ -51,16 +53,28 @@ clear   wipes every cache, including the compiled-module store.`,
 	mustAttach(c, newCacheClearCmd(), "cache-clear")
 }
 
-// resolveCacheLocations resolves the workspace (best-effort) and hands it to the
-// shared layer, which fills the machine-wide roots. A workspace-resolution
-// failure is not fatal: the caller still operates on the machine-wide caches.
-func resolveCacheLocations(ctx context.Context) cacheops.Locations {
+// resolveCacheLocations resolves the workspace and hands it to the shared layer,
+// which fills the machine-wide roots.
+//
+// A workspace whose configuration is a link leading out of it stops the command
+// with the resolution's own refusal, as every command reading that configuration
+// stops. Where the workspace's cache sits is what the configuration decides, so a
+// command that went on without it would report, prune or wipe the caches as
+// though the workspace kept none, and the link the refusal names would go unsaid.
+// Any other failure to resolve a workspace is not fatal: the command still
+// operates on the machine-wide caches, which exist whatever the reader is
+// standing in.
+func resolveCacheLocations(ctx context.Context) (cacheops.Locations, error) {
 	var root, cacheDir string
-	if ws, err := workspaceFromContext(ctx); err == nil {
+	ws, err := workspaceFromContext(ctx)
+	switch {
+	case err == nil:
 		root = ws.Root()
 		cacheDir = ws.Config().ResolvedArtifactCacheDir()
+	case errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()):
+		return cacheops.Locations{}, err
 	}
-	return cacheops.ResolveLocations(ctx, root, cacheDir)
+	return cacheops.ResolveLocations(ctx, root, cacheDir), nil
 }
 
 func newCacheStatusCmd() *cobra.Command {
@@ -72,7 +86,11 @@ summary line of the form "N elements, <human size>". The listing is
 deterministic: identical cache state produces byte-identical output.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCacheStatus(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+			loc, err := resolveCacheLocations(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return runCacheStatus(cmd.Context(), cmd.OutOrStdout(), loc)
 		},
 	}
 }
@@ -198,7 +216,11 @@ remainder is reclaimed by "aggrega cache evict" or "aggrega cache clear".
 Prune needs a pulled workspace: it fails when no lockfile is present.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCachePrune(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+			loc, err := resolveCacheLocations(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return runCachePrune(cmd.Context(), cmd.OutOrStdout(), loc)
 		},
 	}
 }
@@ -286,7 +308,11 @@ no-op and removes nothing.`,
 			if capBytes <= 0 {
 				return fmt.Errorf("cache evict: --max-size must be greater than zero, got %q", maxSize)
 			}
-			return runCacheEvict(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()), capBytes)
+			loc, err := resolveCacheLocations(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return runCacheEvict(cmd.Context(), cmd.OutOrStdout(), loc, capBytes)
 		},
 	}
 	c.Flags().StringVar(&maxSize, "max-size", "", "size cap for the compiled-module cache (e.g. 5GiB, 512MiB, or a byte count); required")
@@ -378,10 +404,17 @@ on a non-interactive stdin it refuses rather than blocking on a prompt no one
 can answer.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The locations are resolved before the reader is asked, so a
+			// workspace the wipe cannot proceed in is refused before anyone is
+			// asked to consent to it.
+			loc, err := resolveCacheLocations(cmd.Context())
+			if err != nil {
+				return err
+			}
 			if err := confirmCacheClear(cmd.OutOrStdout(), cmd.InOrStdin(), assumeYes); err != nil {
 				return err
 			}
-			return runCacheClear(cmd.Context(), cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+			return runCacheClear(cmd.Context(), cmd.OutOrStdout(), loc)
 		},
 	}
 	c.Flags().BoolVar(&assumeYes, "yes", false, "skip the confirmation prompt (for non-interactive/CI use)")
