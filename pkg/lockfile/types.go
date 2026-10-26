@@ -614,10 +614,10 @@ type ProviderBinding struct {
 // emission, matching the Lockfile-wide discipline.
 type ToolchainStamp struct {
 	// CompilerVersion is the version of the compiler that wrote the lockfile, in
-	// the v-less form every surface reports (1.2.0, not v1.2.0). A tagged release
-	// build records its tag; a build from source records the "(devel)" marker, so
-	// a lockfile produced by an unreleased compiler is not mistaken for release
-	// output.
+	// the v-less form every surface reports (1.2.0, not v1.2.0). A build stamped
+	// with a version records that version — a tagged release build its tag — and
+	// a build carrying no version stamp records the "(devel)" marker, so a
+	// lockfile produced by an unstamped compiler is not mistaken for release output.
 	CompilerVersion string `yaml:"compiler_version"`
 	// CorePlugins carries one entry per core plugin the compiler carries, ordered
 	// by plugin coordinate. Empty for a build that carries no core plugins.
