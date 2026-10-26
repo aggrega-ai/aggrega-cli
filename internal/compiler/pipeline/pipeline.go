@@ -1394,7 +1394,8 @@ func buildGraphCollectingFindings(
 				// severity that refuses only an emitting run, carried forward
 				// unchanged. It is filled here rather than accumulated below because
 				// it was produced one stage earlier, and the scope is the first thing
-				// a consumer of either stage holds.
+				// a consumer of either stage holds; the rules asked over the graph
+				// below append what they raise at that severity after it.
 				EmissionViolations: carried,
 			}
 
@@ -1860,14 +1861,16 @@ func RunPipeline(
 		// Recipe authored before any mapping can name it, but the reader still
 		// acts on the Manifest first, and a category names one document.
 		//
-		// The gate has two producers and one switch. The rules declared over the
+		// The gate has several producers and one switch. The rules declared over the
 		// flattened composition answered for every component instance, including
 		// the ones a sub-aggregate contributed — which is the whole set only that
 		// stage holds — and their findings arrived here rather than halting at the
-		// stage that raised them. The verifier answers for the attachment axes no
-		// node-keyed rule covers. Both are the same gate the caller asked for, so
-		// both are read under the one declaration, and the declared rules are read
-		// first because their findings are positioned per instance.
+		// stage that raised them. The rules over the Manifest's name-tier entries,
+		// asked once the graph is final, add theirs to the same findings, each
+		// positioned at the entry it is about. The verifier answers for the
+		// attachment axes no node-keyed rule covers. All of them are the same gate
+		// the caller asked for, so they are read under the one declaration, and the
+		// declared rules are read first because their findings are positioned.
 		if opts.emitsSomethingToApply() {
 			if err := emissionRefusal(stepsOut.EmissionViolations); err != nil {
 				return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, "recipe resolution")

@@ -61,9 +61,11 @@ func TestANameMappingKeyThatNamesNothingHaltsTheBuild(t *testing.T) {
 			componentKey: "greeter-special",
 			featureKey:   "greeter-special",
 			want: []string{
-				`Manifest "greeters-manifest", key "greeter-special" under mappings.features.name`,
-				`attachments of type "example/banner" in this build: "banner", "loud-banner"`,
-				`did you mean "loud-banner"?`,
+				`.spec.mappings.features.name.greeter-special`,
+				`Manifest greeters-manifest`,
+				`"greeter-special"`,
+				`attachments of that type in this build "banner, loud-banner"`,
+				`did you mean "loud-banner"`,
 			},
 		},
 		{
@@ -71,8 +73,10 @@ func TestANameMappingKeyThatNamesNothingHaltsTheBuild(t *testing.T) {
 			componentKey: "greeter-specail",
 			featureKey:   "loud-banner",
 			want: []string{
-				`Manifest "greeters-manifest", key "greeter-specail" under mappings.components.name`,
-				`did you mean "greeter-special"?`,
+				`.spec.mappings.components.name.greeter-specail`,
+				`Manifest greeters-manifest`,
+				`"greeter-specail"`,
+				`did you mean "greeter-special"`,
 			},
 		},
 	} {

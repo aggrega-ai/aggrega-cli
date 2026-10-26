@@ -2222,6 +2222,12 @@ func (GraphViewBase) FlattenedNodeComponentType(node string) (string, bool) {
 	panic("this view does not carry flattened-node-component-type, which is read from topology.TopologyNode.ComponentType")
 }
 
+// FlattenedNodes panics. This view does not carry flattened-nodes, which
+// is read from topology.TopologyResult.Nodes.
+func (GraphViewBase) FlattenedNodes() []string {
+	panic("this view does not carry flattened-nodes, which is read from topology.TopologyResult.Nodes")
+}
+
 // NodeMappedRecipeReference panics. This view does not carry
 // node-mapped-recipe-reference, which is read from
 // resolver.NodeRecipeResolution.Reference.
@@ -2408,6 +2414,13 @@ func (DescribedViewBase) AttachmentResolvedType(node string, attachment string) 
 // types.IRSpec.FeatureValuesMapping.
 func (DescribedViewBase) MergedAttachmentNames(node string) []string {
 	panic("this view does not carry merged-attachment-names, which is read from types.IRSpec.FeatureValuesMapping")
+}
+
+// BoundaryAttachmentTypes panics. This view does not carry
+// boundary-attachment-types, which is read from
+// types.IRSpec.BoundaryFeatures.
+func (DescribedViewBase) BoundaryAttachmentTypes() []BoundaryAttachmentType {
+	panic("this view does not carry boundary-attachment-types, which is read from types.IRSpec.BoundaryFeatures")
 }
 
 // AttachmentContributions panics. This view does not carry
@@ -3382,6 +3395,7 @@ type NormalizedStageFacts interface {
 // and a second copy would be the one that drifts.
 type TopologyStageFacts interface {
 	FlattenedNodeComponentType(node string) (string, bool)
+	FlattenedNodes() []string
 	NodeMappedRecipeReference(node string) (string, bool)
 	NodeRecipeMappingAmbiguousKeys(node string) []string
 	NodeMappedRecipePresent(node string) bool
@@ -3422,6 +3436,7 @@ type GraphStageFacts interface {
 	PerEdgeResolvedTarget(node string, socket string, alias string) string
 	AttachmentResolvedType(node string, attachment string) string
 	MergedAttachmentNames(node string) []string
+	BoundaryAttachmentTypes() []BoundaryAttachmentType
 	AttachmentContributions(node string, attachment string) []AttachmentContribution
 	AttachmentConnection(node string, attachment string) (AttachmentConnection, bool)
 	UsesInjectDeliverySockets(node string, mechanism string, key string) []string

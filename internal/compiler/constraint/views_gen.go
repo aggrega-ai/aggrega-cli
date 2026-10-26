@@ -692,6 +692,31 @@ type ReleaseEdgeConfiguration struct {
 	Alias string
 }
 
+// BoundaryAttachmentType is one attachment a Release boundary carries at
+// its own scope, as the finalised graph holds it: the boundary, the
+// attachment's own name, and the Feature type it attaches.
+//
+// It is one fact rather than three because no part of it answers anything
+// alone. An attachment name is unique within one boundary and not across
+// boundaries, so a name without its boundary names no attachment; and a
+// type without the name it was written under is a type and not an
+// attachment. A reader handed the parts as separate lists would have to
+// re-pair them by position, which is the re-derivation a declared fact
+// exists to close.
+type BoundaryAttachmentType struct {
+	// Boundary is the boundary path the attachment is keyed under in the
+	// graph.
+	Boundary string
+
+	// Attachment is the attachment's own name, the key it is written under on
+	// the boundary.
+	Attachment string
+
+	// FeatureType is the Feature type the attachment names, as the graph
+	// carries it.
+	FeatureType string
+}
+
 // View is the base every stage's view embeds. It declares no fact of its
 // own; it carries the contract every view shares.
 //
@@ -3317,6 +3342,28 @@ type TopologyView interface {
 	// Keyed by node; read from topology.TopologyNode.ComponentType.
 	FlattenedNodeComponentType(node string) (string, bool)
 
+	// FlattenedNodes are the identities of every node in the flattened set, in
+	// the order the composition produced them.
+	//
+	// The identity is the one every keyed fact takes, and it is also the name
+	// a Manifest's components.name key is matched against when a node's Recipe
+	// is looked up: a component the Aggregate declares carries its own name,
+	// and a component a sub-aggregate contributes carries the qualified name
+	// the composition gave it. That second form exists only once the
+	// composition is flattened, so the set is complete here and nowhere
+	// earlier.
+	//
+	// It is the set itself rather than a membership test, because the rule
+	// that reads it reports what a key could have named: a reader asking
+	// whether one name is in the set asks the fact naming a flattened node's
+	// type, whose second result is that answer.
+	//
+	// A component a false activation toggle removed is absent, as it is from
+	// every fact over the flattened set.
+	//
+	// Keyed by node; read from topology.TopologyResult.Nodes.
+	FlattenedNodes() []string
+
 	// NodeMappedRecipeReference is the Recipe reference the Manifest's mapping
 	// table names for a node, verbatim as the author wrote it, and whether the
 	// mapping reached that node at all.
@@ -3987,6 +4034,26 @@ type GraphView interface {
 	// Keyed by (node, attachment); read from
 	// types.IRSpec.FeatureValuesMapping.
 	MergedAttachmentNames(node string) []string
+
+	// BoundaryAttachmentTypes are the attachments every Release boundary
+	// carries at its own scope, each with the Feature type it attaches, in the
+	// order the graph holds them: boundary by boundary, and within a boundary
+	// in author order.
+	//
+	// They are the attachments a FeatureRecipe is bound to once per boundary
+	// rather than once per component, and the name each is keyed under is the
+	// name a Manifest's features.name key is matched against for one. The
+	// attachments a node carries are a separate axis with facts of their own,
+	// keyed by the node, so a rule asking about every attachment the build
+	// holds reads both.
+	//
+	// The set is read with no key because it is what a rule over it walks: a
+	// rule reporting what a mapping key could have named needs every name the
+	// build holds, and no coordinate it is invoked for would select them.
+	//
+	// Keyed by (boundary, attachment); read from
+	// types.IRSpec.BoundaryFeatures.
+	BoundaryAttachmentTypes() []BoundaryAttachmentType
 
 	// AttachmentContributions are the places one attachment a node carries was
 	// contributed from, in the order the attachment cascade folded them: the

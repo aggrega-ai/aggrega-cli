@@ -60,6 +60,11 @@ type graphView struct {
 	// and then by the attachment's own name, as the cascade folded them.
 	attachments types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]
 
+	// boundaryAttachments is each boundary's own attachment set, by the
+	// boundary's path and then by the attachment's own name, as the graph holds
+	// them.
+	boundaryAttachments types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]
+
 	// edges is every edge the graph holds, in the order it holds them. The edge
 	// facts are keyed rather than enumerated, so this is walked per read instead
 	// of folded once: an edge set is small beside the node set, and folding it
@@ -115,12 +120,13 @@ func NewGraphView(
 		return nil
 	}
 	return &graphView{
-		TopologyView: earlier,
-		nodes:        graph.Spec.Nodes,
-		attachments:  graph.Spec.FeatureValuesMapping,
-		edges:        graph.Spec.Edges,
-		sites:        sites,
-		connections:  connections,
+		TopologyView:        earlier,
+		nodes:               graph.Spec.Nodes,
+		attachments:         graph.Spec.FeatureValuesMapping,
+		boundaryAttachments: graph.Spec.BoundaryFeatures,
+		edges:               graph.Spec.Edges,
+		sites:               sites,
+		connections:         connections,
 	}
 }
 
@@ -142,6 +148,23 @@ func (v *graphView) MergedAttachmentNames(node string) []string {
 		return nil
 	}
 	return merged.Keys()
+}
+
+// BoundaryAttachmentTypes returns the attachments every boundary carries at its
+// own scope, each with the Feature type it attaches, boundary by boundary in the
+// order the graph holds them and within a boundary in author order.
+func (v *graphView) BoundaryAttachmentTypes() []constraint.BoundaryAttachmentType {
+	var out []constraint.BoundaryAttachmentType
+	for boundary, attachments := range v.boundaryAttachments.All() {
+		for name, attachment := range attachments.All() {
+			out = append(out, constraint.BoundaryAttachmentType{
+				Boundary:    boundary,
+				Attachment:  name,
+				FeatureType: attachment.Type,
+			})
+		}
+	}
+	return out
 }
 
 // AttachmentContributions returns the places one attachment a node carries was

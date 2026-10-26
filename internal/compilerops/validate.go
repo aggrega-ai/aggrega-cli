@@ -214,7 +214,10 @@ type ValidateInputs struct {
 // complete; each such finding travels out of the pipeline on
 // Tier4.ResolveDiagnostics, the same channel the resolver-class violations
 // arrive on, and a caller reading only ResolutionFindings for that axis would
-// find it empty over a workspace that has one.
+// find it empty over a workspace that has one. A Manifest name-tier key that
+// names nothing in the build is not among them either: it is decided once the
+// graph is final, over the Manifest's own mapping entries, and travels on the
+// same channel.
 //
 // InputKindErrors is an additional error class computed after the pipeline gates
 // (only when the extends and pillar gates both passed): each entry names a

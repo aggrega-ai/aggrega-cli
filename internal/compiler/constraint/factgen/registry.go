@@ -641,6 +641,25 @@ var records = []recordDecl{
 			{Name: "Alias", Type: "string", Doc: "Alias names the entry within its socket, which is the key the author wrote."},
 		},
 	},
+	{
+		Name: "BoundaryAttachmentType",
+		Doc: "BoundaryAttachmentType is one attachment a Release boundary " +
+			"carries at its own scope, as the finalised graph holds it: the " +
+			"boundary, the attachment's own name, and the Feature type it " +
+			"attaches.\n\nIt is one fact rather than three because no part of " +
+			"it answers anything alone. An attachment name is unique within " +
+			"one boundary and not across boundaries, so a name without its " +
+			"boundary names no attachment; and a type without the name it was " +
+			"written under is a type and not an attachment. A reader handed " +
+			"the parts as separate lists would have to re-pair them by " +
+			"position, which is the re-derivation a declared fact exists to " +
+			"close.",
+		Fields: []recordField{
+			{Name: "Boundary", Type: "string", Doc: "Boundary is the boundary path the attachment is keyed under in the graph."},
+			{Name: "Attachment", Type: "string", Doc: "Attachment is the attachment's own name, the key it is written under on the boundary."},
+			{Name: "FeatureType", Type: "string", Doc: "FeatureType is the Feature type the attachment names, as the graph carries it."},
+		},
+	},
 }
 
 // declarationCompelsImplementation is the paragraph a fact carries when its
@@ -3407,6 +3426,27 @@ var facts = []factDecl{
 			"a rule needing both asks both.",
 	},
 	{
+		Name:        "flattened-nodes",
+		Stage:       "topology",
+		SourceField: "topology.TopologyResult.Nodes",
+		Subject:     []string{"node"},
+		Returns:     "[]string",
+		Doc: "FlattenedNodes are the identities of every node in the flattened " +
+			"set, in the order the composition produced them.\n\nThe identity " +
+			"is the one every keyed fact takes, and it is also the name a " +
+			"Manifest's components.name key is matched against when a node's " +
+			"Recipe is looked up: a component the Aggregate declares carries its " +
+			"own name, and a component a sub-aggregate contributes carries the " +
+			"qualified name the composition gave it. That second form exists " +
+			"only once the composition is flattened, so the set is complete here " +
+			"and nowhere earlier.\n\nIt is the set itself rather than a " +
+			"membership test, because the rule that reads it reports what a key " +
+			"could have named: a reader asking whether one name is in the set " +
+			"asks the fact naming a flattened node's type, whose second result " +
+			"is that answer.\n\nA component a false activation toggle removed is " +
+			"absent, as it is from every fact over the flattened set.",
+	},
+	{
 		Name:        "node-mapped-recipe-reference",
 		Stage:       "topology",
 		SourceField: "resolver.NodeRecipeResolution.Reference",
@@ -4136,6 +4176,26 @@ var facts = []factDecl{
 			"framework already exposes as a fact of its own, so a rule could " +
 			"re-derive a declared fact from this one — which is the shape every " +
 			"return here exists to keep closed.",
+	},
+	{
+		Name:        "boundary-attachment-types",
+		Stage:       "graph",
+		SourceField: "types.IRSpec.BoundaryFeatures",
+		Subject:     []string{"boundary", "attachment"},
+		Returns:     "[]BoundaryAttachmentType",
+		Doc: "BoundaryAttachmentTypes are the attachments every Release boundary " +
+			"carries at its own scope, each with the Feature type it attaches, " +
+			"in the order the graph holds them: boundary by boundary, and within " +
+			"a boundary in author order.\n\nThey are the attachments a " +
+			"FeatureRecipe is bound to once per boundary rather than once per " +
+			"component, and the name each is keyed under is the name a " +
+			"Manifest's features.name key is matched against for one. The " +
+			"attachments a node carries are a separate axis with facts of their " +
+			"own, keyed by the node, so a rule asking about every attachment the " +
+			"build holds reads both.\n\nThe set is read with no key because it " +
+			"is what a rule over it walks: a rule reporting what a mapping key " +
+			"could have named needs every name the build holds, and no " +
+			"coordinate it is invoked for would select them.",
 	},
 	{
 		Name:        "attachment-contributions",

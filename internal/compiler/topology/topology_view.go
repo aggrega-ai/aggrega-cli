@@ -225,6 +225,12 @@ func (v *topologyView) FlattenedNodeComponentType(node string) (string, bool) {
 	return n.ComponentType, true
 }
 
+// FlattenedNodes returns the identity of every node in the flattened set, in the
+// order the composition produced them.
+func (v *topologyView) FlattenedNodes() []string {
+	return v.nodes.Keys()
+}
+
 // NodeMappedRecipeReference returns the Recipe reference the Manifest's mapping
 // names for a node, and whether the mapping reached that node at all.
 func (v *topologyView) NodeMappedRecipeReference(node string) (string, bool) {

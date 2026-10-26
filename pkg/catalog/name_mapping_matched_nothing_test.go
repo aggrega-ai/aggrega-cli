@@ -8,16 +8,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The proofs in this file cover a Manifest name-tier key that names nothing in the
 // build. The name tier is matched by exact string against the instance a lookup
-// asks about, so such a key is consulted by no lookup; the resolution findings
-// report it, naming the key, the Manifest, the names of that kind the build
-// declares, and the one the author probably meant. Every row carries one such key
-// against a graph whose every instance otherwise resolves, so a finding is about
-// that key and nothing else. The condition is matched through its accessor.
+// asks about, so such a key is consulted by no lookup; the two rules over the
+// Manifest's mapping entries report it, naming the key, the Manifest, the names of
+// that kind the build declares, and the one the author probably meant. Every row
+// carries one such key against a graph whose every instance otherwise resolves, so
+// a finding is about that key and nothing else. The condition is matched through
+// its accessor.
+//
+// The rules are invoked the way the build invokes them: once per entry of the
+// Manifest, presented beside the graph by the presentation the build uses, and
+// converted by the conversion the build uses. What stands in for the build is the
+// graph's own presentation, answered here from the graph fixture below; the build
+// and its describing and emitting postures are driven for real by the pipeline's
+// and the command's own tests.
 
 // nameMappingFixture loads a catalog through the real loader and returns it with a
 // graph holding two greeters, an attachment of one Feature type on each, a second
@@ -52,6 +63,73 @@ func nameMappingFixture(t *testing.T) (*Catalog, *types.IRGraph) {
 	return c, graph
 }
 
+// nameMappingGraphView answers the graph-stage facts the two rules read from the
+// fixture graph and the fixture catalog, and leaves every other fact to the
+// embedded nil view, so a rule reaching for a fact it does not declare reading
+// panics rather than reading an empty answer.
+type nameMappingGraphView struct {
+	constraint.GraphView
+	graph   *types.IRGraph
+	catalog *Catalog
+}
+
+func (v nameMappingGraphView) FlattenedNodes() []string { return v.graph.Spec.Nodes.Keys() }
+
+func (v nameMappingGraphView) FlattenedNodeComponentType(node string) (string, bool) {
+	n, ok := v.graph.Spec.Nodes.Get(node)
+	return n.Component, ok
+}
+
+func (v nameMappingGraphView) MergedAttachmentNames(node string) []string {
+	merged, ok := v.graph.Spec.FeatureValuesMapping.Get(node)
+	if !ok {
+		return nil
+	}
+	return merged.Keys()
+}
+
+func (v nameMappingGraphView) AttachmentResolvedType(node, attachment string) string {
+	merged, _ := v.graph.Spec.FeatureValuesMapping.Get(node)
+	entry, _ := merged.Get(attachment)
+	return entry.Type
+}
+
+func (v nameMappingGraphView) BoundaryAttachmentTypes() []constraint.BoundaryAttachmentType {
+	var out []constraint.BoundaryAttachmentType
+	for boundary, attachments := range v.graph.Spec.BoundaryFeatures.All() {
+		for name, a := range attachments.All() {
+			out = append(out, constraint.BoundaryAttachmentType{Boundary: boundary, Attachment: name, FeatureType: a.Type})
+		}
+	}
+	return out
+}
+
+func (v nameMappingGraphView) MappedRecipeImplements(tier, reference string) (string, bool) {
+	switch tier {
+	case constraint.MappingTierComponents:
+		if r, ok := v.catalog.RecipeByURI(reference); ok {
+			return r.Spec.Implements, true
+		}
+	case constraint.MappingTierFeatures:
+		if fr, ok := v.catalog.FeatureRecipeByURI(reference); ok {
+			return fr.Spec.Implements, true
+		}
+	}
+	return "", false
+}
+
+// nameMappingRuleFindings invokes the two rules over every entry of the Manifest, the
+// components rule before the features rule, and converts what they raise.
+func nameMappingRuleFindings(c *Catalog, m *types.Manifest, graph *types.IRGraph) []*resolver.ResolverError {
+	presented := resolver.PresentManifestBesideGraph(m, nameMappingGraphView{graph: graph, catalog: c})
+	document := resolver.ComposedManifestDocument
+	entries := presented.ManifestRecipeMappingEntries(document)
+	objections := constraint.RunOnDocumentMappingEntries(document, entries, presented, ComponentNameMappingNamesAComponent)
+	objections = append(objections,
+		constraint.RunOnDocumentMappingEntries(document, entries, presented, FeatureNameMappingNamesAnAttachment)...)
+	return resolver.FindingsFromObjections(objections, "Manifest "+m.Metadata.Name)
+}
+
 // nameMappingManifest maps every type the fixture's graph holds through the type
 // tier and writes the given name-tier entries, so the only finding a row can
 // produce is about a name-tier key.
@@ -74,9 +152,9 @@ func nameMappingManifest(components, features [][2]string) *types.Manifest {
 }
 
 // TestANameMappingKeyThatNamesNothingIsReported drives one name-tier key per row
-// through the resolution findings, with a control whose every key names an
-// instance the graph holds — on the component axis, the attachment axis keyed by
-// a node, and the attachment axis keyed by a boundary.
+// through the two rules, with a control whose every key names an instance the
+// graph holds — on the component axis, the attachment axis keyed by a node, and
+// the attachment axis keyed by a boundary.
 func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 	t.Parallel()
 	c, graph := nameMappingFixture(t)
@@ -87,11 +165,11 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 			[][2]string{{"greeter-special", "eval/greeter-green:1.0.0"}},
 			[][2]string{{"loud-banner", "eval/banner-loud:1.0.0"}, {"firewall", "eval/waf:1.0.0"}},
 		)
-		if findings := c.ResolutionFindings(m, graph); len(findings) != 0 {
+		if findings := nameMappingRuleFindings(c, m, graph); len(findings) != 0 {
 			t.Fatalf("a Manifest whose every name-tier key names an instance must produce no finding; got %d: %v", len(findings), findings)
 		}
-		if err := c.VerifyRecipeResolution(m, graph); err != nil {
-			t.Fatalf("the build's halt must stay silent on the control: %v", err)
+		if findings := c.ResolutionFindings(m, graph); len(findings) != 0 {
+			t.Fatalf("the resolution findings must stay silent on the control: %v", findings)
 		}
 	})
 
@@ -99,68 +177,77 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 		name       string
 		components [][2]string
 		features   [][2]string
+		locator    string
 		want       []string
 		wantNot    []string
 	}{
 		{
 			name:     "a features.name key written as the name of the component the attachment sits on",
 			features: [][2]string{{"greeter-special", "eval/banner-loud:1.0.0"}},
+			locator:  ".spec.mappings.features.name.greeter-special",
 			want: []string{
-				`Manifest "greeters-manifest", key "greeter-special" under mappings.features.name`,
-				`no attachment in this build is named "greeter-special"`,
-				`attachments of type "sec/banner" in this build: "banner", "loud-banner"`,
-				`"greeter-special" is a component`,
-				`did you mean "loud-banner"?`,
+				`(Manifest greeters-manifest, at .spec.mappings.features.name.greeter-special, "greeter-special"`,
+				`mapped to a feature recipe implementing "sec/banner"`,
+				`attachments of that type in this build "banner, loud-banner"`,
+				`did you mean "loud-banner")`,
+				`the key is a component`,
 			},
-			wantNot: []string{`"access-logs"`},
+			wantNot: []string{"access-logs"},
 		},
 		{
 			name:     "a features.name key one edit from an attachment's name",
 			features: [][2]string{{"loud-baner", "eval/banner-loud:1.0.0"}},
+			locator:  ".spec.mappings.features.name.loud-baner",
 			want: []string{
-				`key "loud-baner" under mappings.features.name`,
-				`did you mean "loud-banner"?`,
+				`"loud-baner"`,
+				`did you mean "loud-banner")`,
+				`correct the key, or remove the entry`,
 			},
 		},
 		{
 			name:     "a features.name key near no attachment's name",
 			features: [][2]string{{"unrelated-key", "eval/banner-loud:1.0.0"}},
+			locator:  ".spec.mappings.features.name.unrelated-key",
 			want: []string{
-				`key "unrelated-key" under mappings.features.name`,
-				`attachments of type "sec/banner" in this build: "banner", "loud-banner"`,
+				`attachments of that type in this build "banner, loud-banner"`,
 			},
 			wantNot: []string{"did you mean"},
 		},
 		{
 			name:     "a features.name key mapped to a feature recipe the catalog does not hold",
 			features: [][2]string{{"unrelated-key", "eval/absent:1.0.0"}},
+			locator:  ".spec.mappings.features.name.unrelated-key",
 			want: []string{
-				`attachments in this build: "access-logs", "banner", "firewall", "loud-banner"`,
+				`attachments in this build "access-logs, banner, firewall, loud-banner"`,
 			},
+			wantNot: []string{"implementing"},
 		},
 		{
 			name:       "a components.name key one edit from an instance's name",
 			components: [][2]string{{"greeter-specail", "eval/greeter-green:1.0.0"}},
+			locator:    ".spec.mappings.components.name.greeter-specail",
 			want: []string{
-				`Manifest "greeters-manifest", key "greeter-specail" under mappings.components.name`,
-				`no component instance in this build is named "greeter-specail"`,
-				`component instances of type "app/greeter" in this build: "greeter-default", "greeter-special"`,
-				`did you mean "greeter-special"?`,
+				`(Manifest greeters-manifest, at .spec.mappings.components.name.greeter-specail, "greeter-specail"`,
+				`mapped to a recipe implementing "app/greeter"`,
+				`component instances of that type in this build "greeter-default, greeter-special"`,
+				`did you mean "greeter-special")`,
+				`a components.name key names a component instance exactly as the Aggregate writes it`,
 			},
 		},
 		{
 			name:       "a components.name key written as the name of an attachment",
 			components: [][2]string{{"loud-banner", "eval/greeter-green:1.0.0"}},
+			locator:    ".spec.mappings.components.name.loud-banner",
 			want: []string{
-				`key "loud-banner" under mappings.components.name`,
-				`"loud-banner" is the name of an attachment`,
-				`did you mean the component carrying it, "greeter-special"?`,
+				`did you mean "greeter-special")`,
+				`the key is the name of an attachment, which a features.name key names`,
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			findings := c.ResolutionFindings(nameMappingManifest(tc.components, tc.features), graph)
+			m := nameMappingManifest(tc.components, tc.features)
+			findings := nameMappingRuleFindings(c, m, graph)
 			if len(findings) != 1 {
 				t.Fatalf("want exactly the name-tier finding, got %d: %v", len(findings), findings)
 			}
@@ -170,6 +257,17 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 			}
 			if errors.Is(f, ErrNoRecipeResolved()) {
 				t.Errorf("a key that names nothing is not an instance that resolved to no recipe: %v", f)
+			}
+			if short, ok := cerrors.ShortCodeOf(f.Err); !ok || short != "E0357" {
+				t.Errorf("short code = %q (present %t), want %q", short, ok, "E0357")
+			}
+			if f.Field != tc.locator {
+				t.Errorf("locator = %q, want %q", f.Field, tc.locator)
+			}
+			// The remedy is an edit to the Manifest's own mapping table, so the
+			// category has to send the reader to the operator's document.
+			if got := f.ToCompilerError().Category(); got != cerrors.OpsError {
+				t.Errorf("category = %v, want %v", got, cerrors.OpsError)
 			}
 			for _, w := range tc.want {
 				if !strings.Contains(f.Error(), w) {
@@ -181,8 +279,12 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 					t.Errorf("finding carries %q, which it must not:\n%s", w, f.Error())
 				}
 			}
-			if err := c.VerifyRecipeResolution(nameMappingManifest(tc.components, tc.features), graph); !errors.Is(err, ErrNameMappingMatchedNothing()) {
-				t.Errorf("the build's halt does not carry the condition: %v", err)
+			// The finding has one home: the resolution findings, which every surface
+			// reads beside these rules, no longer raise it.
+			for _, other := range c.ResolutionFindings(m, graph) {
+				if errors.Is(other, ErrNameMappingMatchedNothing()) {
+					t.Errorf("the resolution findings raise the condition a second time: %v", other)
+				}
 			}
 		})
 	}
@@ -193,16 +295,16 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 			[][2]string{{"zz-absent", "eval/greeter-green:1.0.0"}},
 			[][2]string{{"zz-second", "eval/banner-loud:1.0.0"}, {"aa-third", "eval/banner-loud:1.0.0"}},
 		)
-		first := c.ResolutionFindings(m, graph)
+		first := nameMappingRuleFindings(c, m, graph)
 		if len(first) != 3 {
 			t.Fatalf("want one finding per key that names nothing, got %d: %v", len(first), first)
 		}
 		for i, key := range []string{"zz-absent", "zz-second", "aa-third"} {
-			if !strings.Contains(first[i].Error(), `key "`+key+`"`) {
-				t.Errorf("finding %d = %q; want it about key %q", i, first[i].Error(), key)
+			if !strings.HasSuffix(first[i].Field, "."+key) {
+				t.Errorf("finding %d is at %q; want it about key %q", i, first[i].Field, key)
 			}
 		}
-		second := c.ResolutionFindings(m, graph)
+		second := nameMappingRuleFindings(c, m, graph)
 		for i := range first {
 			if first[i].Error() != second[i].Error() {
 				t.Errorf("finding %d differs between two runs over one input:\n%s\n%s", i, first[i], second[i])

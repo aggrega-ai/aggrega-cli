@@ -64,7 +64,7 @@ const (
 	// SubjectBoundaryPlacement is the subject kind boundary-placement, keyed by 1 declared fact.
 	SubjectBoundaryPlacement SubjectKind = "boundary-placement"
 
-	// SubjectNode is the subject kind node, keyed by 36 declared facts.
+	// SubjectNode is the subject kind node, keyed by 37 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 14 declared facts.
@@ -100,7 +100,7 @@ const (
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodePillarLeaf SubjectKind = "(node, pillar, leaf)"
 
-	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 10 declared facts.
+	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 11 declared facts.
 	SubjectBoundaryAttachment SubjectKind = "(boundary, attachment)"
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.

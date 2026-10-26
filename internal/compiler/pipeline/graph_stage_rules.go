@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -448,6 +449,97 @@ func runGraphStageRules(
 		return err
 	}
 	out.Advisories = append(out.Advisories, advisories...)
+
+	return runManifestNameMappingRules(out)
+}
+
+// graphStageMappingEntity is the entity a finding about one of the Manifest's
+// mapping entries is reported against: the Manifest, named as an entity
+// reference names one, because the remedy is an edit to its mapping table. The
+// kind decides the fault category a caller routes on, so it is the kind the
+// author of that table owns.
+const graphStageMappingEntity = "Manifest"
+
+// runManifestNameMappingRules invokes the rules declared over the Manifest's own
+// mapping entries that read the finalised graph: a name-tier key has to name a
+// component instance or an attachment the build holds.
+//
+// They are invoked once per entry of the Manifest the build was compiled with,
+// against a presentation putting that Manifest beside the graph's: the entry is a
+// fact of the one document, and what it could name is complete only once the
+// graph is final. A build holding no resolve result holds no Manifest to ask
+// about, and nothing is asked.
+//
+// Both rules declare the severity that refuses only a run emitting something a
+// person will apply, so what they raise is converted at this site — where the
+// document the findings are about is known — and joins the slice the entries
+// that decide their own posture read. Which stream a finding lands on is read
+// from the rule's own declaration rather than chosen here.
+//
+// The components tier is asked before the features tier, so the findings arrive
+// in the order the Manifest's mapping table is read.
+func runManifestNameMappingRules(out *GraphScope) error {
+	if out.ResolveResult == nil {
+		return nil
+	}
+	manifest := out.ResolveResult.Manifest
+	presented := resolver.PresentManifestBesideGraph(manifest, out.GraphView)
+	if presented == nil {
+		return fmt.Errorf(
+			"graph-stage rules: the compilation produced no view of the finalised graph to present the Manifest beside")
+	}
+	entity := graphStageMappingEntity
+	if manifest != nil && manifest.Metadata.Name != "" {
+		entity += " " + manifest.Metadata.Name
+	}
+	document := resolver.ComposedManifestDocument
+	entries := presented.ManifestRecipeMappingEntries(document)
+
+	componentObjections := constraint.RunOnDocumentMappingEntries(
+		document, entries, presented, catalog.ComponentNameMappingNamesAComponent)
+	if err := recordByDeclaredSeverity(
+		out, catalog.ComponentNameMappingNamesAComponent.Severity, entity, componentObjections,
+	); err != nil {
+		return err
+	}
+
+	featureObjections := constraint.RunOnDocumentMappingEntries(
+		document, entries, presented, catalog.FeatureNameMappingNamesAnAttachment)
+	return recordByDeclaredSeverity(
+		out, catalog.FeatureNameMappingNamesAnAttachment.Severity, entity, featureObjections)
+}
+
+// recordByDeclaredSeverity appends what one rule raised to the stream its
+// declared severity names: a violation to the slice a build gates on, an advisory
+// to the warning stream, and a finding that refuses only an emitting run to the
+// slice the entries deciding their own posture read, converted there under the
+// entity the rule's findings are attributed to.
+//
+// An unknown severity is refused rather than defaulted, for the reason the stage
+// before this one refuses one: a default would pick a stream for a value none of
+// them names, which is a consequence nobody declared.
+func recordByDeclaredSeverity(
+	out *GraphScope,
+	severity constraint.Severity,
+	entity string,
+	objections []constraint.Objection,
+) error {
+	if len(objections) == 0 {
+		return nil
+	}
+	switch severity {
+	case constraint.SeverityFatal:
+		out.Violations = append(out.Violations, objections...)
+	case constraint.SeverityWarning:
+		out.Advisories = append(out.Advisories, objections...)
+	case constraint.SeverityEmissionFatal:
+		out.EmissionViolations = append(out.EmissionViolations,
+			resolver.FindingsFromObjections(objections, entity)...)
+	default:
+		return fmt.Errorf(
+			"graph-stage rules: a rule raised %d finding(s) at severity %q, which this site carries no stream for",
+			len(objections), severity)
+	}
 	return nil
 }
 
