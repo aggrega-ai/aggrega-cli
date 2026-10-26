@@ -186,47 +186,19 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	}
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
-	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
-
-	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogFlagDirs)...)
-	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
-	if err != nil {
-		return err
-	}
-	if lf != nil {
-		lazyView.SetPins(catalog.PinsFromLockfile(lf))
-	}
 
 	// Route onto the shared full-Tier-4 semantic-validation core — the same core
 	// the other front doors validate a Release with — so every front door runs one
-	// implementation. ResolveValidationClosure loads the Manifest and Aggregate
+	// implementation. The dependency resolution loads the Manifest and Aggregate
 	// siblings and walks the closure over the pinned view; Validate runs the closure-scoped
 	// extends and schema-pillar gates, the Steps 1-4 pipeline, the
 	// resolution-completeness findings, the input-kind capability check, and the
 	// advisory lines.
-	// The resolution below runs under the caller's context and carries it into
-	// every registry step it takes, so a reader who stops the run stops the
-	// resolution — and the daemon, which holds a per-request context, gets the
-	// same behaviour over the same code.
-	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
-		View:            lazyView,
-		ReleasePath:     releasePath,
-		WorkspaceRoot:   wsRoot,
-		WorkspaceConfig: wsCfg,
-		Lockfile:        lf,
-	})
-	if cerr != nil {
-		// A file the catalog read refused makes its entity unresolvable, and an
-		// unresolvable entity is all this failure can say on its own — it names
-		// the reference, never the file behind it. Replaying the refusals the
-		// view recorded turns that into the constraint the author has to fix.
-		// This is the same annotation the build applies, over the same record,
-		// through the same renderer. Where no refusal explains it, the reference
-		// may name an entity sitting in a directory this workspace does not read,
-		// so the workspace's own account of where it reads travels too.
-		return compilerops.AnnotateSkipContext(cerr, lazyView.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
+	deps, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogFlagDirs)
+	if err != nil {
+		return err
 	}
+	lazyView, lf, resolved := deps.view, deps.lockfile, deps.resolved
 
 	// The record loaded above is threaded into the validation, not just into the
 	// closure resolution. The pipeline this verb runs dispatches the same
@@ -286,6 +258,74 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		notices = append(notices, f.Notice())
 	}
 	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, notices, releasePath, verbosity, diagOut, out)
+}
+
+// releaseDependencies is what resolving a Release's dependencies the way a
+// validation of it does leaves behind: the request-scoped view the resolution read
+// through, the record of pinned versions that view was seeded with (nil where the
+// workspace holds none), and the resolution itself.
+type releaseDependencies struct {
+	view     *catalog.LazyLookup
+	lockfile *lockfile.Lockfile
+	resolved *compilerops.ResolvedClosure
+}
+
+// resolveReleaseDependencies resolves the dependencies of the Release at
+// releasePath exactly as a validation of that Release resolves them, and refuses
+// the Release where one does not resolve.
+//
+// Two commands ask it, and both ask it here rather than each building the view
+// for itself: the release-scoped validation, which reads everything this returns,
+// and the inspection of a Release, which reads only whether it refused. So a
+// reference no catalog holds — named by the Release's own Aggregate or by a module
+// it imports, as a catalog identity or as a ./ or ../ path — is reported by both
+// in the same words, rather than reaching the graph build, whose checks are
+// entitled to assume every reference resolved.
+//
+// The view is built with no registry client, so the resolution is a local read: a
+// reference the catalog directories and the cache do not hold is refused as
+// unresolvable, never fetched. The record of pinned versions seeds the view where
+// the workspace has one, so what resolves is what this Release is pinned to.
+//
+// catalogFlagDirs is the repeatable --catalog flag, prepended to the directories
+// the workspace configuration gives this Release.
+//
+// The resolution runs under the caller's context and carries it into every step
+// it takes, so a reader who stops the run stops the resolution — the behaviour
+// the daemon gets from the same validation resolution under its per-request
+// context.
+func resolveReleaseDependencies(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string) (releaseDependencies, error) {
+	wsRoot := rw.Root()
+	wsCfg := rw.Config()
+	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
+
+	view := catalog.NewLazyLookup(wsRoot, wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs(releasePath, catalogFlagDirs)...)
+	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
+	if err != nil {
+		return releaseDependencies{}, err
+	}
+	if lf != nil {
+		view.SetPins(catalog.PinsFromLockfile(lf))
+	}
+	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
+		View:            view,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   wsRoot,
+		WorkspaceConfig: wsCfg,
+		Lockfile:        lf,
+	})
+	if cerr != nil {
+		// A file the catalog read refused makes its entity unresolvable, and an
+		// unresolvable entity is all this failure can say on its own — it names
+		// the reference, never the file behind it. Replaying the refusals the
+		// view recorded turns that into the constraint the author has to fix.
+		// This is the same annotation the build applies, over the same record,
+		// through the same renderer. Where no refusal explains it, the reference
+		// may name an entity sitting in a directory this workspace does not read,
+		// so the workspace's own account of where it reads travels too.
+		return releaseDependencies{}, compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
+	}
+	return releaseDependencies{view: view, lockfile: lf, resolved: resolved}, nil
 }
 
 // renderReleaseValidation writes a release-scoped validation result's diagnostics

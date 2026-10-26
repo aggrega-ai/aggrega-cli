@@ -55,11 +55,12 @@ func catalogEntryAbsentMessage(typeRef string) string {
 // (`found == false` for a component type) and returns the loud halt for the
 // inconsistent case, or nil for the legitimate skip.
 //
-// At a guard, a missing catalog entity is never a dangling user reference — a
-// genuinely unresolvable reference halts at resolution (NotFound) before the
-// guards run. So a miss is one of two things, told apart by the relative-path
-// prefix test [isRelativePathRef] (the one resolution applies to the documents a
-// Release reaches; a type is never read as a file), NOT by an ad-hoc string check:
+// At a guard, a missing catalog entity is never a dangling user reference on a
+// command that compiles a Release — a genuinely unresolvable reference halts at
+// dependency resolution (NotFound) before the guards run. So a miss is one of two
+// things, told apart by the relative-path prefix test [isRelativePathRef] (the one
+// resolution applies to the documents a Release reaches; a type is never read as a
+// file), NOT by an ad-hoc string check:
 //
 //   - a type written with a `./` or `../` prefix: it names no catalog entity, and
 //     dependency resolution refuses it as a reference no catalog holds — this
@@ -68,6 +69,15 @@ func catalogEntryAbsentMessage(typeRef string) string {
 //     the guard's view: an internal inconsistency between the build's resolved
 //     set and the guard's catalog view — this returns an
 //     [ErrGuardEntityViewInconsistency] ResolverError for the caller to append.
+//
+// The pass-over is reached, and that is why it stays. The assistant server's
+// tools that answer a question about a node on a Release's graph compile a
+// Release that has no lockfile after resolving only the references its own
+// Aggregate makes, so a module's component type reaches the sub-aggregate guard
+// unresolved there: written as a path it is passed over here and the graph build
+// refuses the node later, for want of a Recipe; written as a catalog identity no
+// catalog holds, it is reported there as the disagreement below although nothing
+// diverged.
 //
 // Every guard that would otherwise skip silently on a missing catalog entity
 // routes its miss through this one helper, so the classification and the

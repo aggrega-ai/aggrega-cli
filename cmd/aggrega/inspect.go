@@ -837,6 +837,16 @@ func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspa
 // The catalog directory comes from the --catalog flag (default `.`),
 // mirroring `aggrega build`'s catalog discovery.
 //
+// Every form that builds the graph first resolves the Release's dependencies as
+// a validation of the same Release does, and halts with that resolution's
+// refusal where a reference does not resolve — a component type no catalog
+// holds, at the Aggregate's root or inside a module it imports, whether written
+// as a catalog identity or as a ./ or ../ path. The resolution reads only local
+// catalogs and the cache, and what the command writes to standard output for a
+// Release whose references all resolve does not depend on it; where the catalog
+// directories declare one identity twice, the first-win notices the resolution
+// raises reach standard error, as they do on a validation.
+//
 // Release is a resolved instance kind, and two independent choices shape what
 // this writes:
 //
@@ -941,6 +951,19 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// FeatureRecipe it binds, so the layout prints the realization a build of the
 	// same documents renders by reading the graph rather than asking again.
 	recipeLookup := cat.RecipeLookupWithManifest(manifest)
+
+	// The Release's dependencies are resolved before anything is drawn, by the
+	// resolution a validation of the same Release runs, and a reference that does
+	// not resolve halts here in that resolution's words. The graph build below
+	// compiles the Release, and its checks are entitled to assume every reference
+	// already resolved: a type no catalog holds would otherwise reach them and be
+	// reported as a disagreement inside the compiler — or, written as a ./ path,
+	// be drawn as though it named something. Nothing it returns is read beyond its
+	// verdict, so the picture below is drawn from the documents loaded above
+	// exactly as it was before the question was asked.
+	if _, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogDirs); err != nil {
+		return err
+	}
 
 	// Build the graph through the one entry that produces one, so what this
 	// command draws is the graph a build would render rather than one assembled
