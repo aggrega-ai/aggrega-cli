@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
@@ -22,8 +23,9 @@ import (
 	repo "helm.sh/helm/v4/pkg/repo/v1"
 )
 
-// KindHTTPS names the helm-https-chart source kind.
-const KindHTTPS = "helm-https-chart"
+// KindHTTPS names the helm-https-chart source kind, whose one declaration is
+// [sourcekind.HelmHTTPSChart].
+const KindHTTPS = sourcekind.HelmHTTPSChart
 
 // indexResolver is the seam between production index-file
 // resolution (fetch index.yaml from the repo root, parse with

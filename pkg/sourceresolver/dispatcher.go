@@ -57,7 +57,7 @@ func (d *Dispatcher) Register(adapter Adapter) error {
 
 // Resolve routes spec to the registered adapter for spec.Kind and
 // returns the adapter's ResolvedSource (or its error). Returns a
-// wrapped ErrUnknownKind when no adapter is registered for the
+// wrapped ErrNoAdapterRegistered when no adapter is registered for the
 // requested kind.
 //
 // ctx belongs to the caller and reaches the adapter's fetch: ending it
@@ -73,7 +73,7 @@ func (d *Dispatcher) Resolve(ctx context.Context, spec SourceSpec) (*ResolvedSou
 	adapter, ok := d.adapters[spec.Kind]
 	d.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("sourceresolver: kind=%s: %w", spec.Kind, ErrUnknownKind())
+		return nil, fmt.Errorf("kind %q: %w", spec.Kind, ErrNoAdapterRegistered())
 	}
 	return adapter.Resolve(ctx, spec)
 }

@@ -461,6 +461,14 @@ type Resolution struct {
 	ManifestDigest string
 	ResolutionPath string
 	NotFound       bool
+	// UnsatisfiedPin, set only beside NotFound, is the condition a lookup met
+	// when it holds the reference's entity under the name the reference gives and
+	// no version it holds satisfies the reference's version pin. The walk reports
+	// that condition in place of the not-found one, because the name is right and
+	// only the version is not, so "no entity matches" would send the author
+	// looking for a misspelt name. Nil wherever the lookup holds nothing under
+	// the name.
+	UnsatisfiedPin error
 }
 
 // LibraryResolution extends Resolution with the library's entry

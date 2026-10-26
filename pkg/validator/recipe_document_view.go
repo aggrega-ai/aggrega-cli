@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -65,6 +66,11 @@ type recipeDocumentView struct {
 
 	// capability is the capability the document declares, as authored.
 	capability string
+
+	// sourceKind is the kind the document's structured source names, and
+	// sourceKindWritten whether it names one.
+	sourceKind        string
+	sourceKindWritten bool
 
 	// outputLabelKeys are the keys the literal output-label block declares, in
 	// sorted order.
@@ -124,6 +130,7 @@ func authoredOutputComponentLabelKeys(block []string) []string {
 // eval Recipe" would be presenting one rule's predicate as though it were a
 // property of the file.
 func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
+	kind, written := authoredSourceKind(r.Spec.Source)
 	return recipeDocumentView{
 		path:                     path,
 		valuesMapping:            !r.Spec.ValuesMapping.IsEmpty(),
@@ -131,9 +138,39 @@ func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 		workload:                 !r.Spec.Workload.IsEmpty(),
 		artifacts:                r.Spec.Artifacts.Len() > 0,
 		capability:               r.Spec.Capability,
+		sourceKind:               kind,
+		sourceKindWritten:        written,
 		outputLabelKeys:          authoredOutputLabelKeys(r.Spec.OutputLabels),
 		outputComponentLabelKeys: authoredOutputComponentLabelKeys(r.Spec.OutputComponentLabels),
 	}
+}
+
+// authoredSourceKind reads the kind a structured source names under its `kind:`
+// key, and whether it names one. It is the one reader of that word for both
+// authored kinds that write a source.
+//
+// A source written as a single URI names no kind here: its kind is read from the
+// URI's own shape where the source is resolved, so there is no authored word to
+// present. Nor does a structured source whose `kind:` is absent or empty, because
+// that is how an author asks for the same reading of the URL. A value that is not a
+// string is presented as its text, so a rule is handed what the author typed.
+func authoredSourceKind(src any) (string, bool) {
+	structured, ok := src.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	value, present := structured["kind"]
+	if !present || value == nil {
+		return "", false
+	}
+	kind, isString := value.(string)
+	if !isString {
+		kind = fmt.Sprint(value)
+	}
+	if kind == "" {
+		return "", false
+	}
+	return kind, true
 }
 
 // RecipeValuesMappingDeclared reports whether the presented Recipe declares a
@@ -169,6 +206,19 @@ func (v recipeDocumentView) RecipeArtifactsDeclared(document string) bool {
 func (v recipeDocumentView) RecipeDeclaredCapability(document string) string {
 	v.refuseOtherDocument(document, "RecipeDeclaredCapability")
 	return v.capability
+}
+
+// RecipeAuthoredSourceKind is the kind the presented Recipe's structured source
+// names, as authored, and whether it names one.
+func (v recipeDocumentView) RecipeAuthoredSourceKind(document string) (string, bool) {
+	v.refuseOtherDocument(document, "RecipeAuthoredSourceKind")
+	return v.sourceKind, v.sourceKindWritten
+}
+
+// RecipeSourceKindServed reports whether this program serves kind, read from the
+// served set's one declaration.
+func (v recipeDocumentView) RecipeSourceKindServed(kind string) bool {
+	return sourcekind.Served(kind)
 }
 
 // RecipeOutputLabelKeys returns the keys the presented Recipe's literal

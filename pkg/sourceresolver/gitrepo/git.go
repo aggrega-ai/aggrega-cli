@@ -57,6 +57,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
@@ -67,8 +68,9 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
-// Kind names the git-repository source kind.
-const Kind = "git-repository"
+// Kind names the git-repository source kind, whose one declaration is
+// [sourcekind.GitRepository].
+const Kind = sourcekind.GitRepository
 
 // MediatypeTarGz is the canonical media-type recorded for the archives
 // this adapter builds. Generic application/gzip is correct precisely

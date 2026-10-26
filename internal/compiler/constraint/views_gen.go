@@ -1218,6 +1218,43 @@ type DocumentView interface {
 	// Keyed by document; read from types.RecipeSpec.Capability.
 	RecipeDeclaredCapability(document string) string
 
+	// RecipeAuthoredSourceKind is the source kind the presented Recipe's
+	// structured source names under its `kind:` key, as the author wrote it,
+	// and whether the source names one at all.
+	//
+	// It shares its source field with the fact asking whether a source is
+	// declared, and the two answer different questions about it: that one asks
+	// whether the key holds anything, and this one reads the one word inside a
+	// structured source that selects how the artifact is fetched. The kind
+	// belongs to the host rather than to the engine that renders the Recipe
+	// — it chooses the adapter that acquires the artifact — so reading it
+	// here moves no engine's contract into the core, and nothing else inside
+	// the source is read.
+	//
+	// The second result is false for a Recipe declaring no source, for a
+	// source written as a single URI, whose kind the URI's own shape decides
+	// where the source is resolved, and for a structured source that writes no
+	// `kind:`. A kind written as anything but a string answers with its text,
+	// so a rule comparing it is handed what the author typed.
+	//
+	// Keyed by document; read from types.RecipeSpec.Source.
+	RecipeAuthoredSourceKind(document string) (string, bool)
+
+	// RecipeSourceKindServed reports whether this program serves a source
+	// kind: whether an adapter ships that fetches a source of that kind.
+	//
+	// The answer is the program's rather than the document's, and it is
+	// complete before any document is read — the set is fixed when the
+	// program is assembled — so it is presented at the earliest stage,
+	// beside the kind a Recipe names, where a rule refusing a kind nothing
+	// serves can be asked as the document arrives and before anything is
+	// fetched. It is keyed by the presented document because that is the
+	// subject such a rule is invoked once per, while the answer follows from
+	// the kind alone.
+	//
+	// Keyed by document; read from sourcekind.Served(kind).
+	RecipeSourceKindServed(kind string) bool
+
 	// RecipeOutputLabelKeys are the keys the presented Recipe's literal
 	// output-label block declares, in sorted order.
 	//
@@ -1374,6 +1411,31 @@ type DocumentView interface {
 	//
 	// Keyed by document; read from types.FeatureRecipeSpec.Capability.
 	FeatureRecipeDeclaredCapability(document string) string
+
+	// FeatureRecipeAuthoredSourceKind is the source kind the presented
+	// FeatureRecipe's structured source names under its `kind:` key, as the
+	// author wrote it, and whether the source names one at all.
+	//
+	// It is the Recipe's fact for the other authored kind that writes a
+	// source, and the plurality is forced rather than chosen: a fact is filed
+	// under exactly one document kind, so one fact over both would refuse one
+	// of them at the point a rule read it. What it reads, and when its second
+	// result is false, is what the Recipe's own fact states; it is not
+	// restated here, because a fact's documentation has one home.
+	//
+	// Keyed by document; read from types.FeatureRecipeSpec.Source.
+	FeatureRecipeAuthoredSourceKind(document string) (string, bool)
+
+	// FeatureRecipeSourceKindServed reports whether this program serves a
+	// source kind, presented beside the kind a FeatureRecipe names.
+	//
+	// It is the Recipe's fact for the other authored kind, declared twice for
+	// the reason the authored kind is: a fact is filed under one document
+	// kind. Both read the one declaration of the served set, so the two cannot
+	// answer differently about a kind.
+	//
+	// Keyed by document; read from sourcekind.Served(kind).
+	FeatureRecipeSourceKindServed(kind string) bool
 
 	// ReleaseBoundaryPlacements is everything the presented Release's
 	// boundaries place, in the order the document declares it — a boundary's

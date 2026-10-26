@@ -601,7 +601,7 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		}
 		if res.NotFound {
 			return unresolvedEntity(uri, pending.kindHint,
-				entityNotFound(uri, referencedFromPreview(pending.referencedFrom)))
+				entityNotFound(uri, referencedFromPreview(pending.referencedFrom), res.UnsatisfiedPin))
 		}
 		pending.resolution = &res
 	}
@@ -616,9 +616,17 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 // catalog could hold what it asks for, and "no entity matches" would send the
 // author looking for an entity when the fault is the pin's text. It is asked
 // only after the lookup missed, so it changes no reference that resolves.
-func entityNotFound(uri, referencedFrom string) error {
+//
+// unsatisfiedPin is the condition the lookup reported for a reference whose
+// entity it holds at other versions only (see [Resolution.UnsatisfiedPin]), and
+// it is reported in place of the not-found condition, in the same words around
+// it, for the same reason: the name is right and only the version is not.
+func entityNotFound(uri, referencedFrom string, unsatisfiedPin error) error {
 	if pe, malformed := types.ParseVersionPin(uri).Malformed(); malformed {
 		return pe.At("referenced from " + referencedFrom)
+	}
+	if unsatisfiedPin != nil {
+		return fmt.Errorf("%w: entity %q (referenced from %s)", unsatisfiedPin, uri, referencedFrom)
 	}
 	return fmt.Errorf("%w: entity %q (referenced from %s)", ErrUnresolvableURI(), uri, referencedFrom)
 }

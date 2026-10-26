@@ -30,6 +30,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
@@ -2560,7 +2561,23 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 // assert form reaches the cascade only through it, so both entries arrive here
 // under the lock.
 func (l *LazyLookup) componentAncestry(componentType string) ([]string, error) {
-	return componentAncestryOver(componentType, l.localComponent)
+	return componentAncestryOver(componentType, l.localComponent, l.localComponentVersion)
+}
+
+// localComponentVersion is the version select over this view's catalog-directory
+// Component index, the index localComponent reads first. It answers why a
+// reference that index holds under its name did not resolve, for the ancestry
+// walk's report; it resolves nothing itself.
+func (l *LazyLookup) localComponentVersion(uri string) (string, bool, error) {
+	l.buildComponentIndex()
+	return selectEntityVersion(l.componentIndex, uri, indexedDocumentMeta)
+}
+
+// localFeatureVersion is localComponentVersion over this view's catalog-directory
+// Feature index.
+func (l *LazyLookup) localFeatureVersion(uri string) (string, bool, error) {
+	l.buildFeatureIndex()
+	return selectEntityVersion(l.featureIndex, uri, indexedDocumentMeta)
 }
 
 // VerifyRecipeResolution exposes the build-side resolution-completeness halt (the
@@ -3150,6 +3167,9 @@ func (l *LazyLookup) ClosureNarrowingWarnings() []string {
 // counterpart to the CLI build's closure-scoped extends. An out-of-closure
 // entity's extends is never resolved, so a broken out-of-closure parent never
 // produces a diagnostic. Deterministic: closure entity names are deduped + sorted.
+// A link whose parent this view's catalog-directory index holds at other versions
+// only is reported as the version no entry satisfies, as the eager pass reports
+// it (recordExtendsRefusal).
 //
 // Every read runs under ctx. A closure entity is asked of a registry only as a
 // kind the walk collected one of its references as, for the reason
@@ -3247,8 +3267,10 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 			// Component authors no pillar content, so there is nothing to compose
 			// afterwards and no second view to store — every Component-schema
 			// consumer reads the authored node.
-			if _, vErrs := validator.ResolveComponentExtends(comp, compLookup); len(vErrs) > 0 {
-				for _, ve := range vErrs {
+			lookup, refusal := recordExtendsRefusal(compLookup, l.localComponentVersion)
+			if _, vErrs := validator.ResolveComponentExtends(comp, lookup); len(vErrs) > 0 {
+				name := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
+				for _, ve := range refusal.refine(envelope.KindComponent, name, vErrs) {
 					errs = append(errs, ve)
 				}
 				continue
@@ -3259,8 +3281,10 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 			if feat.Spec.Extends == "" {
 				continue
 			}
-			if _, vErrs := validator.ResolveFeatureExtends(feat, featLookup); len(vErrs) > 0 {
-				for _, ve := range vErrs {
+			lookup, refusal := recordExtendsRefusal(featLookup, l.localFeatureVersion)
+			if _, vErrs := validator.ResolveFeatureExtends(feat, lookup); len(vErrs) > 0 {
+				name := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
+				for _, ve := range refusal.refine(envelope.KindFeature, name, vErrs) {
 					errs = append(errs, ve)
 				}
 				continue
@@ -3379,7 +3403,32 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindH
 			return res, err
 		}
 	}
-	return x.base.ResolveCatalogEntity(ctx, uri, kindHint)
+	res, err := x.base.ResolveCatalogEntity(ctx, uri, kindHint)
+	if err == nil && res.NotFound && res.UnsatisfiedPin == nil {
+		res.UnsatisfiedPin = x.l.localVersionRefusal(uri, kindHint)
+	}
+	return res, err
+}
+
+// localVersionRefusal is the Component and Feature half of the reason a reference
+// every tier missed did not resolve, which the recipe shell behind this view
+// cannot give because its Component and Feature indexes are empty by construction:
+// the version select's unsatisfiable-version refusal when this view's
+// catalog-directory index holds the entity under the name uri gives and no version
+// it holds satisfies uri's pin, and nil otherwise. It reads the indexes the local
+// probes above read, under the same kind routing.
+func (l *LazyLookup) localVersionRefusal(uri, kindHint string) error {
+	if kindHint != "feature" {
+		if _, _, err := l.localComponentVersion(uri); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+			return err
+		}
+	}
+	if kindHint != "component" {
+		if _, _, err := l.localFeatureVersion(uri); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (x *lazyClosureLookup) ResolveAggregate(ctx context.Context, uri string) (closure.Resolution, error) {

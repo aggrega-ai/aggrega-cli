@@ -67,7 +67,10 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 // or malformed fails loudly. Each child's full chain is re-resolved from the
 // child via the catalog lookup, so an out-of-closure (unresolved) parent in the
 // chain is still merged correctly. Names are deduped (cl.Entities may list one
-// entity under several version-suffixed URIs) so no chain is double-merged.
+// entity under several version-suffixed URIs) so no chain is double-merged. A
+// link whose parent the catalog holds at other versions only is reported as the
+// version no catalog entry satisfies, as the whole-catalog pass reports it,
+// rather than as a parent no catalog entity provides.
 func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.ValidationError {
 	compLookup := func(uri string) (types.Component, bool) {
 		key, ok, _ := c.resolveComponentKey(uri)
@@ -111,9 +114,10 @@ func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.Validat
 		if comp.Spec.Extends == "" {
 			continue
 		}
-		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
+		lookup, refusal := recordExtendsRefusal(compLookup, c.resolveComponentKey)
+		resolved, vErrs := validator.ResolveComponentExtends(comp, lookup)
 		if len(vErrs) > 0 {
-			errs = append(errs, vErrs...)
+			errs = append(errs, refusal.refine(envelope.KindComponent, name, vErrs)...)
 			continue
 		}
 		c.Components[name] = resolved
@@ -123,9 +127,10 @@ func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.Validat
 		if feat.Spec.Extends == "" {
 			continue
 		}
-		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)
+		lookup, refusal := recordExtendsRefusal(featLookup, c.resolveFeatureKey)
+		resolved, vErrs := validator.ResolveFeatureExtends(feat, lookup)
 		if len(vErrs) > 0 {
-			errs = append(errs, vErrs...)
+			errs = append(errs, refusal.refine(envelope.KindFeature, name, vErrs)...)
 			continue
 		}
 		c.Features[name] = resolved
@@ -430,7 +435,47 @@ func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint 
 	if err := l.pinHeldNowhere(uri, fetchURI, res); err != nil {
 		return closure.Resolution{}, err
 	}
+	if res.NotFound {
+		res.UnsatisfiedPin = l.tier1UnsatisfiedPin(uri)
+	}
 	return l.honorPinDigest(uri, res)
+}
+
+// tier1UnsatisfiedPin reports why the local catalog did not answer uri when the
+// reason is the version: an index holds the entity under the name uri gives, and
+// no version it holds satisfies uri's pin. It returns the version select's own
+// refusal then, and nil otherwise — a name the catalog does not hold, or a pin
+// whose text is malformed, which the walk reports as that malformation.
+//
+// It is asked only once every tier has missed, so it changes no reference that
+// resolves: a registry that serves the pinned version still answers it, and the
+// local catalog holding the entity at other versions does not shadow that.
+//
+// It reads the indexes tier1CatalogEntry reads, in the same order and through
+// the same selects, so the reason it gives is about the lookup that just missed
+// rather than a second reading of the catalog.
+func (l *catalogLookup) tier1UnsatisfiedPin(uri string) error {
+	c := l.catalog
+	selects := []func() error{
+		func() error { _, _, err := c.resolveComponentKey(uri); return err },
+		func() error { _, _, err := c.resolveFeatureKey(uri); return err },
+		func() error {
+			_, _, err := selectCapabilityScopedVersion(c.Recipes, uri, recipeVersionMeta)
+			return err
+		},
+		func() error {
+			_, _, err := selectCapabilityScopedVersion(c.FeatureRecipes, uri, featureRecipeVersionMeta)
+			return err
+		},
+		func() error { _, _, err := c.resolvePluginKey(uri); return err },
+		func() error { _, _, err := c.resolveAggregateKey(uri); return err },
+	}
+	for _, sel := range selects {
+		if err := sel(); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+			return err
+		}
+	}
+	return nil
 }
 
 // pinnedFetchURI returns the URI to resolve for an entity that carries a prior

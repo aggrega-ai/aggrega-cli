@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 )
 
@@ -96,15 +99,37 @@ func TestDispatcherRegisterAndResolve(t *testing.T) {
 	}
 }
 
-func TestDispatcherResolveUnknownKindReturnsErrUnknownKind(t *testing.T) {
+// TestDispatcherResolveUnregisteredKindReturnsErrNoAdapterRegistered holds the
+// dispatcher's own refusal: a kind no adapter is registered for is refused under
+// the program-assembly condition, naming the kind, and not under the authored-kind
+// rule — which is a check over the document and is raised by it alone. A
+// registered kind beside it is the control.
+func TestDispatcherResolveUnregisteredKindReturnsErrNoAdapterRegistered(t *testing.T) {
 	t.Parallel()
 	d := sourceresolver.NewDispatcher()
+	registered := &fakeAdapter{kind: "registered-kind", result: &sourceresolver.ResolvedSource{URL: "u"}}
+	if err := d.Register(registered); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := d.Resolve(context.Background(), sourceresolver.SourceSpec{Kind: "registered-kind"}); err != nil {
+		t.Fatalf("control: a registered kind was refused: %v", err)
+	}
+
 	_, err := d.Resolve(context.Background(), sourceresolver.SourceSpec{Kind: "no-such-kind"})
 	if err == nil {
-		t.Fatal("expected ErrUnknownKind; got nil")
+		t.Fatal("expected ErrNoAdapterRegistered; got nil")
 	}
-	if !errors.Is(err, sourceresolver.ErrUnknownKind()) {
-		t.Errorf("error should wrap ErrUnknownKind; got %v", err)
+	if !errors.Is(err, sourceresolver.ErrNoAdapterRegistered()) {
+		t.Errorf("error should wrap ErrNoAdapterRegistered; got %v", err)
+	}
+	if errors.Is(err, sourcekind.ErrUnknownKind()) {
+		t.Errorf("the dispatcher raised the authored-kind condition, which only its check raises: %v", err)
+	}
+	if code, _ := cerrors.ShortCodeOf(err); code == "" {
+		t.Errorf("the refusal carries no short code: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"no-such-kind"`) {
+		t.Errorf("the refusal does not name the kind: %v", err)
 	}
 }
 

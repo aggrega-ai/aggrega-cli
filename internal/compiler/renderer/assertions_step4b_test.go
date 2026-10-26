@@ -227,8 +227,8 @@ func TestStep4b_ReferenceToStep5bFieldProducesMissingKeyError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing-key error; got nil")
 	}
-	if errors.Is(err, ErrAssertionFailed()) {
-		t.Errorf("did not expect ErrAssertionFailed; this is a missing-key surface, got %v", err)
+	if !errors.Is(err, ErrAssertionFailed()) || AssertionCalledFail(err) {
+		t.Errorf("want a missing-key stop under ErrAssertionFailed that is not a fail call; got %v", err)
 	}
 }
 
@@ -312,7 +312,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing-key error on .uses.<socket>.<alias>.<provides_key>; got nil")
 	}
-	if errors.Is(err, ErrAssertionFailed()) {
-		t.Errorf("did not expect ErrAssertionFailed; expected missing-key, got %v", err)
+	if !errors.Is(err, ErrAssertionFailed()) || AssertionCalledFail(err) {
+		t.Errorf("want a missing-key stop under ErrAssertionFailed that is not a fail call; got %v", err)
 	}
 }

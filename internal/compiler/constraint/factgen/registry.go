@@ -1216,6 +1216,50 @@ var facts = []factDecl{
 			"declaring no capability answers with the empty string, which is " +
 			"the authored state rather than a convenience over a missing one.",
 	},
+	{
+		Name:        "recipe-authored-source-kind",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Source",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "RecipeAuthoredSourceKind is the source kind the presented Recipe's " +
+			"structured source names under its `kind:` key, as the author wrote " +
+			"it, and whether the source names one at all.\n\nIt shares its " +
+			"source field with the fact asking whether a source is declared, " +
+			"and the two answer different questions about it: that one asks " +
+			"whether the key holds anything, and this one reads the one word " +
+			"inside a structured source that selects how the artifact is " +
+			"fetched. The kind belongs to the host rather than to the engine " +
+			"that renders the Recipe — it chooses the adapter that acquires the " +
+			"artifact — so reading it here moves no engine's contract into the " +
+			"core, and nothing else inside the source is read.\n\nThe second " +
+			"result is false for a Recipe declaring no source, for a source " +
+			"written as a single URI, whose kind the URI's own shape decides " +
+			"where the source is resolved, and for a structured source " +
+			"that writes no `kind:`. A kind written as anything but a string " +
+			"answers with its text, so a rule comparing it is handed what the " +
+			"author typed.",
+	},
+	{
+		Name:         "recipe-source-kind-served",
+		Stage:        "document",
+		SourceField:  "sourcekind.Served(kind)",
+		DocumentKind: "Recipe",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "kind", Type: "string"}},
+		Returns:      "bool",
+		Doc: "RecipeSourceKindServed reports whether this program serves a " +
+			"source kind: whether an adapter ships that fetches a source of " +
+			"that kind.\n\nThe answer is the program's rather than the " +
+			"document's, and it is complete before any document is read — the " +
+			"set is fixed when the program is assembled — so it is presented " +
+			"at the earliest stage, beside the kind a Recipe names, where a " +
+			"rule refusing a kind nothing serves can be asked as the document " +
+			"arrives and before anything is fetched. It is keyed by the " +
+			"presented document because that is the subject such a rule is " +
+			"invoked once per, while the answer follows from the kind alone.",
+	},
 
 	{
 		Name:        "recipe-output-label-keys",
@@ -1474,6 +1518,39 @@ var facts = []factDecl{
 			"name that promises an answer about the document.\n\nA FeatureRecipe " +
 			"declaring no capability answers with the empty string, which is the " +
 			"authored state rather than a convenience over a missing one.",
+	},
+	{
+		Name:        "feature-recipe-authored-source-kind",
+		Stage:       "document",
+		SourceField: "types.FeatureRecipeSpec.Source",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "FeatureRecipeAuthoredSourceKind is the source kind the presented " +
+			"FeatureRecipe's structured source names under its `kind:` key, as " +
+			"the author wrote it, and whether the source names one at all.\n\n" +
+			"It is the Recipe's fact for the other authored kind that writes a " +
+			"source, and the plurality is forced rather than chosen: a fact is " +
+			"filed under exactly one document kind, so one fact over both would " +
+			"refuse one of them at the point a rule read it. What it reads, and " +
+			"when its second result is false, is what the Recipe's own fact " +
+			"states; it is not restated here, because a fact's documentation has " +
+			"one home.",
+	},
+	{
+		Name:         "feature-recipe-source-kind-served",
+		Stage:        "document",
+		SourceField:  "sourcekind.Served(kind)",
+		DocumentKind: "FeatureRecipe",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "kind", Type: "string"}},
+		Returns:      "bool",
+		Doc: "FeatureRecipeSourceKindServed reports whether this program serves a " +
+			"source kind, presented beside the kind a FeatureRecipe names.\n\nIt " +
+			"is the Recipe's fact for the other authored kind, declared twice " +
+			"for the reason the authored kind is: a fact is filed under one " +
+			"document kind. Both read the one declaration of the served set, so " +
+			"the two cannot answer differently about a kind.",
 	},
 	{
 		Name:        "release-boundary-placements",

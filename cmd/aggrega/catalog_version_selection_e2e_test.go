@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -357,7 +359,9 @@ func TestPullAndBuildSelectOneVersionFromAMultiVersionCatalog(t *testing.T) {
 // TestValidateReportsAnUnsatisfiablePinAsThePullDoes is the single-version case: a
 // pin no version on disk satisfies is refused by the pull, and a validate over the
 // same Release — which resolves through the build's view — refuses it with the same
-// sentence rather than resolving the pin to the name's other file.
+// condition and sentence rather than resolving the pin to the name's other file.
+// Both report the version as unsatisfiable rather than the entity as missing,
+// because the catalog holds the name at another version.
 func TestValidateReportsAnUnsatisfiablePinAsThePullDoes(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
@@ -458,13 +462,22 @@ spec:
 	if validateErr == nil {
 		t.Fatalf("validate accepted test/svc:2.0.0 with only 1.0.0 on disk; the pull refused it:\n%v", pullErr)
 	}
-	const sentence = `no entity in the catalog matches this URI: entity "test/svc:2.0.0"`
+	const sentence = `no catalog version satisfies the referenced version constraint: entity "test/svc:2.0.0"`
 	for _, got := range []struct {
-		surface, text string
+		surface string
+		err     error
+		text    string
 	}{
-		{"pull", pullErr.Error()},
-		{"validate", validateErr.Error() + "\n" + diag.String()},
+		{"pull", pullErr, pullErr.Error()},
+		{"validate", validateErr, validateErr.Error() + "\n" + diag.String()},
 	} {
+		if !errors.Is(got.err, catalog.ErrUnsatisfiableEntityVersion()) {
+			t.Errorf("the %s refusal does not carry the unsatisfiable-version condition:\n%s", got.surface, got.text)
+		}
+		if errors.Is(got.err, closure.ErrUnresolvableURI()) {
+			t.Errorf("the %s refusal reports the entity as missing, though the catalog holds it at another version:\n%s",
+				got.surface, got.text)
+		}
 		if !strings.Contains(got.text, sentence) {
 			t.Errorf("the %s refusal does not say %q:\n%s", got.surface, sentence, got.text)
 		}

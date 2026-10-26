@@ -23,24 +23,27 @@ import (
 //
 // Every kind reaches it through the same selection, so an unsatisfiable version
 // pin behaves alike wherever it is written: a version typo on a Manifest recipe
-// mapping halts exactly as the same typo on a component type does. The accessors
-// whose shape carries no error channel report it as a miss, and which stage turns
-// that miss into the loud halt depends on the surface: the resolution-completeness
-// pass where the catalog was loaded eagerly, and the Release's dependency-closure
-// resolution — naming the URI no catalog entity matches — on a surface that
-// resolves that closure first, which stops before the pass runs.
+// mapping halts exactly as the same typo on a component type does. Where a
+// Release's dependency closure is resolved, the walk reports it for a reference
+// every tier missed whose name the local catalog holds at other versions only, and
+// an extends link whose parent the catalog holds at other versions only reports
+// it too, both in the extends resolution over the closure and in the ancestry
+// reading the mapping-consistency gate performs. The accessors whose shape
+// carries no error channel report it as a miss, and where the catalog was loaded
+// eagerly the resolution-completeness pass turns that miss into the loud halt.
 func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersion }
 
 var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-version", cerrors.Meta{
 	ShortCode: "E0103",
 	Message:   "no catalog version satisfies the referenced version constraint",
-	RulePlace: cerrors.RuleNoStageReaches("Resolving a catalog entity's extends parent evaluates the rule, as it matches " +
-		"that parent reference's version constraint against the versions the freshly loaded catalog holds " +
-		"under the referenced name. The resolution runs over the whole catalog at the load, ahead of the " +
-		"build that later resolves references against it, so no declared stage of a compilation holds the " +
-		"version candidates the constraint is matched against. The version select hands the condition to " +
-		"every caller that asks it to resolve a reference, and the extends resolution is the one that " +
-		"reports it: the rest either drop it for a not-found or translate it into a condition of their own."),
+	RulePlace: cerrors.RuleNoStageReaches("The version select evaluates the rule, as it matches a reference's version " +
+		"constraint against the versions a loaded catalog holds under the referenced name. It is reported " +
+		"where references are resolved against that catalog ahead of any compilation: the extends resolution " +
+		"over the whole catalog at the load, and, for a Release, the walk over its dependency closure, the " +
+		"extends resolution over that closure and the extends ancestry the mapping-consistency gate reads. " +
+		"None of those moments is a declared stage of a compilation, so no declared stage holds the version " +
+		"candidates the constraint is matched against. Every other caller of the select either drops the " +
+		"condition for a not-found or translates it into a condition of its own."),
 })
 
 // selectEntityVersion resolves a caller's catalog-entity reference (callerURI,

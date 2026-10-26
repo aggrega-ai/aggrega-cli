@@ -509,6 +509,57 @@ func TestUnresolvableEntityWithAMalformedPinHaltsAsTheMalformation(t *testing.T)
 	}
 }
 
+// TestUnresolvableEntityWithAnUnsatisfiedPinHaltsAsThatCondition covers the walk
+// reporting the condition a lookup gave for a reference whose name it holds at
+// other versions only. One row carries the lookup's condition and one does not, so
+// each is attributable to that difference alone.
+//
+// INVARIANT: a not-found answer carrying an unsatisfied-pin condition halts with
+// that condition, naming the reference and where it was referenced from; one
+// carrying none halts as an unresolvable URI.
+// CONSEQUENCE: were the condition dropped, the author whose version is wrong would
+// be told no entity matches the name.
+func TestUnresolvableEntityWithAnUnsatisfiedPinHaltsAsThatCondition(t *testing.T) {
+	t.Parallel()
+	const authored = "type: hub.aggrega.ai/component/core/api-server\n"
+	const ref = "hub.aggrega.ai/component/core/api-server:9.9.9"
+	planted := errors.New("planted unsatisfied-pin condition")
+	for _, tc := range []struct {
+		name string
+		res  closure.Resolution
+		want error
+	}{
+		{"the lookup names the version as the fault", closure.Resolution{NotFound: true, UnsatisfiedPin: planted}, planted},
+		{"the lookup names no reason (control)", closure.Resolution{NotFound: true}, closure.ErrUnresolvableURI()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rel := loadRelease(t, fullFixtureRelease)
+			man := loadManifest(t, fullFixtureManifest)
+			agg := loadAggregate(t, strings.Replace(fullFixtureAggregate, authored, "type: "+ref+"\n", 1))
+			lookup := newBaseLookup()
+			lookup.entities[ref] = tc.res
+
+			_, err := closure.ComputeClosure(context.Background(), rel, man, types.Normalize(agg), workspaceconfig.Default(), lookup)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("want %v; got %v", tc.want, err)
+			}
+			if tc.want == planted && errors.Is(err, closure.ErrUnresolvableURI()) {
+				t.Errorf("an unsatisfied pin also reported as an unresolvable URI: %v", err)
+			}
+			var unresolved *closure.UnresolvedEntityError
+			if !errors.As(err, &unresolved) || unresolved.URI != ref {
+				t.Errorf("the halt must carry the reference it could not resolve, %q; got %v", ref, err)
+			}
+			for _, want := range []string{`entity "` + ref + `"`, "referenced from "} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("halt %q does not carry %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestDeterministicURIOrdering(t *testing.T) {
 	t.Parallel()
 	rel := loadRelease(t, fullFixtureRelease)

@@ -173,6 +173,18 @@ func (AggregateDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
 // RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeOutputLabelKeys(document string) []string {
@@ -229,6 +241,20 @@ func (AggregateDocumentBase) FeatureRecipeArtifactsDeclared(document string) boo
 // carries.
 func (AggregateDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
 }
 
 // ReleaseBoundaryPlacements panics. This view does not carry
@@ -382,6 +408,18 @@ func (ComponentDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
 // RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeOutputLabelKeys(document string) []string {
@@ -438,6 +476,20 @@ func (ComponentDocumentBase) FeatureRecipeArtifactsDeclared(document string) boo
 // carries.
 func (ComponentDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
 }
 
 // ReleaseBoundaryPlacements panics. This view does not carry
@@ -603,6 +655,18 @@ func (FeatureDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
 // RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeOutputLabelKeys(document string) []string {
@@ -659,6 +723,20 @@ func (FeatureDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool 
 // carries.
 func (FeatureDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
 }
 
 // ReleaseBoundaryPlacements panics. This view does not carry
@@ -806,6 +884,18 @@ func (ManifestDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
 // RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeOutputLabelKeys(document string) []string {
@@ -850,6 +940,20 @@ func (ManifestDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool
 // carries.
 func (ManifestDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
 }
 
 // ReleaseBoundaryPlacements panics. This view does not carry
@@ -1000,6 +1104,18 @@ func (ReleaseDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
 // RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeOutputLabelKeys(document string) []string {
@@ -1056,6 +1172,20 @@ func (ReleaseDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool 
 // carries.
 func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
 }
 
 // RecipeDocumentBase is a base for an implementation of DocumentView that
@@ -1249,6 +1379,20 @@ func (RecipeDocumentBase) FeatureRecipeDeclaredCapability(document string) strin
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
 // ReleaseBoundaryPlacements panics. This view does not carry
 // release-boundary-placements, which a Release document carries.
 func (RecipeDocumentBase) ReleaseBoundaryPlacements() []BoundaryPlacement {
@@ -1429,6 +1573,18 @@ func (FeatureRecipeDocumentBase) RecipeArtifactsDeclared(document string) bool {
 // recipe-declared-capability, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
+}
+
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
 // RecipeOutputLabelKeys panics. This view does not carry
@@ -1639,6 +1795,18 @@ func (CatalogViewBase) RecipeDeclaredCapability(document string) string {
 	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceKind panics. This view does not carry
+// recipe-authored-source-kind, which a Recipe document carries.
+func (CatalogViewBase) RecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-kind, which a Recipe document carries")
+}
+
+// RecipeSourceKindServed panics. This view does not carry
+// recipe-source-kind-served, which a Recipe document carries.
+func (CatalogViewBase) RecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
 // RecipeOutputLabelKeys panics. This view does not carry
 // recipe-output-label-keys, which a Recipe document carries.
 func (CatalogViewBase) RecipeOutputLabelKeys(document string) []string {
@@ -1695,6 +1863,20 @@ func (CatalogViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
 // carries.
 func (CatalogViewBase) FeatureRecipeDeclaredCapability(document string) string {
 	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceKind panics. This view does not carry
+// feature-recipe-authored-source-kind, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-kind, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindServed panics. This view does not carry
+// feature-recipe-source-kind-served, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeSourceKindServed(kind string) bool {
+	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
 }
 
 // ReleaseBoundaryPlacements panics. This view does not carry
@@ -3265,6 +3447,8 @@ type RecipeDocumentFacts interface {
 	RecipeWorkloadDeclared(document string) bool
 	RecipeArtifactsDeclared(document string) bool
 	RecipeDeclaredCapability(document string) string
+	RecipeAuthoredSourceKind(document string) (string, bool)
+	RecipeSourceKindServed(kind string) bool
 	RecipeOutputLabelKeys(document string) []string
 	RecipeOutputComponentLabelKeys(document string) []string
 }
@@ -3288,6 +3472,8 @@ type FeatureRecipeDocumentFacts interface {
 	FeatureRecipeWorkloadDeclared(document string) bool
 	FeatureRecipeArtifactsDeclared(document string) bool
 	FeatureRecipeDeclaredCapability(document string) string
+	FeatureRecipeAuthoredSourceKind(document string) (string, bool)
+	FeatureRecipeSourceKindServed(kind string) bool
 }
 
 // CatalogStageFacts are the facts the catalog stage declares itself, and

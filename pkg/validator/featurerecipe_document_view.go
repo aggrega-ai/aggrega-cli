@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -71,6 +72,11 @@ type featureRecipeDocumentView struct {
 
 	// capability is the capability the document declares, as authored.
 	capability string
+
+	// sourceKind is the kind the document's structured source names, and
+	// sourceKindWritten whether it names one.
+	sourceKind        string
+	sourceKindWritten bool
 }
 
 // newFeatureRecipeDocumentView presents the FeatureRecipe a load is holding: the
@@ -87,13 +93,16 @@ type featureRecipeDocumentView struct {
 // eval FeatureRecipe" would be presenting one rule's predicate as though it were a
 // property of the file.
 func newFeatureRecipeDocumentView(path string, fr *types.FeatureRecipe) featureRecipeDocumentView {
+	kind, written := authoredSourceKind(fr.Spec.Source)
 	return featureRecipeDocumentView{
-		path:          path,
-		source:        !sourceIsEmpty(fr.Spec.Source),
-		valuesMapping: !fr.Spec.ValuesMapping.IsEmpty(),
-		workload:      !fr.Spec.Workload.IsEmpty(),
-		artifacts:     fr.Spec.Artifacts.Len() > 0,
-		capability:    fr.Spec.Capability,
+		path:              path,
+		source:            !sourceIsEmpty(fr.Spec.Source),
+		valuesMapping:     !fr.Spec.ValuesMapping.IsEmpty(),
+		workload:          !fr.Spec.Workload.IsEmpty(),
+		artifacts:         fr.Spec.Artifacts.Len() > 0,
+		capability:        fr.Spec.Capability,
+		sourceKind:        kind,
+		sourceKindWritten: written,
 	}
 }
 
@@ -130,6 +139,19 @@ func (v featureRecipeDocumentView) FeatureRecipeArtifactsDeclared(document strin
 func (v featureRecipeDocumentView) FeatureRecipeDeclaredCapability(document string) string {
 	v.refuseOtherDocument(document, "FeatureRecipeDeclaredCapability")
 	return v.capability
+}
+
+// FeatureRecipeAuthoredSourceKind is the kind the presented FeatureRecipe's
+// structured source names, as authored, and whether it names one.
+func (v featureRecipeDocumentView) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceKind")
+	return v.sourceKind, v.sourceKindWritten
+}
+
+// FeatureRecipeSourceKindServed reports whether this program serves kind, read
+// from the served set's one declaration.
+func (v featureRecipeDocumentView) FeatureRecipeSourceKindServed(kind string) bool {
+	return sourcekind.Served(kind)
 }
 
 // refuseOtherDocument refuses an accessor call naming a document this value was

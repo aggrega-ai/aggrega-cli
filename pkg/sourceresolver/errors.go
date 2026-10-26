@@ -38,18 +38,24 @@ func ErrFetchNetworkUnreachable() error { return oci.ErrFetchNetworkUnreachable(
 // ErrFetchIntegrity re-exports the canonical integrity-failure fetch identity.
 func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 
-// ErrUnknownKind is returned by Dispatcher.Resolve when no adapter
-// is registered for spec.Kind. Distinct from the fetch sentinels;
-// names a dispatch-side failure rather than a transport-time
-// failure.
-func ErrUnknownKind() error { return errUnknownKind }
+// ErrNoAdapterRegistered is returned by Dispatcher.Resolve when no adapter is
+// registered for spec.Kind. Distinct from the fetch sentinels; it names a
+// dispatch-side failure rather than a transport-time one.
+//
+// An author does not reach it by writing a kind nothing serves: that is refused
+// as the Recipe or FeatureRecipe is read (sourcekind.ErrUnknownKind), before any
+// resolution dispatches. What is left is a kind this program declares it serves
+// with no adapter registered for it, or a caller dispatching a kind it assembled
+// itself — a fault in how the program was put together.
+func ErrNoAdapterRegistered() error { return errNoAdapterRegistered }
 
-var errUnknownKind = cerrors.Register("unknown-source-kind", cerrors.Meta{
-	ShortCode: "E0186",
-	Message:   "sourceresolver: no adapter registered for source kind",
-	RulePlace: cerrors.NotARule("No adapter is registered for the source kind a resolution dispatched on. It reports a " +
-		"dispatch that found no handler — how this program is assembled — rather than a rule over " +
-		"anything an author wrote."),
+var errNoAdapterRegistered = cerrors.Register("source-adapter-not-registered", cerrors.Meta{
+	ShortCode: "E0359",
+	Message:   "no source adapter is registered in this program for the source kind",
+	RulePlace: cerrors.NotARule("A resolution dispatched on a source kind no adapter is registered for. An authored " +
+		"kind no adapter serves is refused as its document is read, so what reaches this is how the program " +
+		"was assembled — a served kind whose adapter was not linked, or a caller dispatching a kind of its " +
+		"own — rather than a rule over anything an author wrote."),
 })
 
 // Wrap returns an error that satisfies errors.Is(returned, sentinel)

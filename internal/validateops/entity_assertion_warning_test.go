@@ -195,6 +195,59 @@ func TestValidateReportsAFailedAssertionAsAWarning(t *testing.T) {
 	}
 }
 
+// TestValidateHaltsOnAnAssertionReadingAMissingKey holds the line between the two
+// stops an assertion has, both of which carry the assertion condition: one that
+// calls fail is a warning, because the check cannot supply what a Release sets,
+// and one that stops on a key it reads but does not find is the check's failure,
+// because that is a fault in the assertion's own text. One fault per row; the
+// fail row is the control showing the same fixture otherwise reports a warning.
+//
+// INVARIANT: a missing-key stop fails the check under the assertion condition,
+// and a fail call is a warning.
+// CONSEQUENCE: were the missing-key stop reported as a warning, a misspelt key in
+// an assertion would pass the check it exists to catch.
+func TestValidateHaltsOnAnAssertionReadingAMissingKey(t *testing.T) {
+	const rendersImage = "{{ .infra.image }}:{{ .infra.tag }}"
+	for _, tc := range []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"an assertion calling fail is a warning (control)", `{{ fail "set infra.note in the Release" }}`, false},
+		{"an assertion reading a key nothing supplies fails the check", `{{ if .infra.nosuchkey }}{{ end }}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, recipe := writeAssertionCatalog(t, probeComponent,
+				withAssertion(probeRecipe(rendersImage, ""), "probe", tc.body))
+			root := filepath.Dir(dir)
+			res, err := ValidateEntity(context.Background(), root, filepath.Join(root, "cache"),
+				[]string{dir}, nil, recipe, false)
+			if !tc.wantErr {
+				if err != nil || len(res.Warnings) != 1 {
+					t.Fatalf("want one warning and no failure; got err %v, warnings %q", err, res.Warnings)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("the check passed an assertion reading a key nothing supplies; warnings %q", res.Warnings)
+			}
+			if !errors.Is(err, renderer.ErrAssertionFailed()) {
+				t.Errorf("the failure does not carry the assertion condition: %v", err)
+			}
+			if renderer.AssertionCalledFail(err) {
+				t.Errorf("a missing-key stop was read as a fail call: %v", err)
+			}
+			if len(res.Warnings) != 0 || res.Valid {
+				t.Errorf("a missing-key stop was reported as a warning: valid %v, warnings %q", res.Valid, res.Warnings)
+			}
+			if !strings.Contains(err.Error(), `map has no entry for key "nosuchkey"`) &&
+				!strings.Contains(cerrors.CauseChain(err), `map has no entry for key "nosuchkey"`) {
+				t.Errorf("the failure does not name the key: %v", cerrors.CauseChain(err))
+			}
+		})
+	}
+}
+
 // TestAssertionWarningClosesTheStopsSentence reads the one piece of composition
 // the warning's text carries: the stop's own text is closed as a sentence, then
 // the sentence saying a Release must satisfy the assertion follows, whether or not

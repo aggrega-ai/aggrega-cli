@@ -147,7 +147,7 @@ func TestAssertions_EverySurfaceSeesEveryConnectionOnASocket(t *testing.T) {
 						t.Errorf("%s assertion: want the halt to read %q, got %q", surface, tc.want, err.Error())
 					}
 				case haltsOnMissingKey:
-					if err == nil || errors.Is(err, ErrAssertionFailed()) {
+					if err == nil || AssertionCalledFail(err) {
 						t.Fatalf("%s assertion: want a missing-key halt, got %v", surface, err)
 					}
 					if !strings.Contains(err.Error(), tc.want) {

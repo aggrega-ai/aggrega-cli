@@ -198,14 +198,14 @@ func TestAResolutionWhoseContextHasAlreadyEndedRoutesNowhere(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("a withdrawn caller got %v; want an error wrapping context.Canceled", err)
 	}
-	if errors.Is(err, sourceresolver.ErrUnknownKind()) {
+	if errors.Is(err, sourceresolver.ErrNoAdapterRegistered()) {
 		t.Errorf("a withdrawn caller was answered by the routing table (%v); the withdrawal "+
 			"should have been reported before any routing", err)
 	}
 
 	_, liveErr := d.Resolve(context.Background(), sourceresolver.SourceSpec{Kind: "no-such-kind"})
-	if !errors.Is(liveErr, sourceresolver.ErrUnknownKind()) {
-		t.Fatalf("the live-context control got %v; want ErrUnknownKind — without a control that "+
+	if !errors.Is(liveErr, sourceresolver.ErrNoAdapterRegistered()) {
+		t.Fatalf("the live-context control got %v; want ErrNoAdapterRegistered — without a control that "+
 			"fails differently, the assertion above proves nothing", liveErr)
 	}
 }

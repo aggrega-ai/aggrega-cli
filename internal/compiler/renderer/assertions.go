@@ -4,9 +4,11 @@
 package renderer
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // AssertionContext is the template data bound to one assertion-evaluation
@@ -68,9 +70,12 @@ type AssertionRecipeContext struct {
 //
 // Returns nil on pass (template renders to empty/whitespace and no fail
 // call). Returns a non-nil error wrapping ErrAssertionFailed on
-// {{ fail "..." }} invocation. Returns a non-nil error wrapping the
-// template-engine error on parse/execute failures (e.g., missingkey=error
-// halts surface here).
+// {{ fail "..." }} invocation. An execution that stops for any other reason
+// carrying no condition of its own — a missingkey=error halt above all — is
+// the assertion stopping too, so it wraps ErrAssertionFailed as well, its text
+// carrying the template engine's; [AssertionCalledFail] tells the two apart. An
+// execution failure that names a condition of its own keeps it, and a parse
+// failure wraps the template engine's error alone.
 //
 // withheld names what of ctx an author declared sensitive. An assertion whose
 // body reads such a value and fails reports its own sentence with the
@@ -96,8 +101,49 @@ func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.
 			if stage == stageParse {
 				return fmt.Errorf("assertion %q parse: %w", name, err)
 			}
+			if _, coded := cerrors.ShortCodeOf(err); !coded {
+				err = &assertionTextStop{err: err}
+			}
 			return fmt.Errorf("assertion %q: %w", name, err)
 		},
 	}.run()
 	return err
+}
+
+// assertionTextStop is an assertion that stopped while it was evaluated rather
+// than by calling fail: a key it reads that the context does not hold, or any
+// other execution failure that names no condition of its own.
+//
+// It carries the assertion condition, because the stop is the assertion halting
+// the build and a reader holding it looks it up under that condition like any
+// other. Its text is the condition's sentence followed by the template engine's
+// own, which names the key and the position — the shape a fail call's text takes,
+// the condition's sentence followed by what the author wrote. The engine's error
+// is kept as text rather than as a second branch of the chain, so the stop reads
+// as one chain from the build's head down, as a fail call does; it carries no
+// condition of its own, which is when this wraps it. It stays distinguishable
+// from a fail call because the two are judged differently where an entity is
+// checked on its own — see [AssertionCalledFail].
+type assertionTextStop struct {
+	err error
+}
+
+func (s *assertionTextStop) Error() string {
+	return ErrAssertionFailed().Error() + ": " + s.err.Error()
+}
+
+// Unwrap yields the assertion condition, so it is the identity a reader of the
+// chain finds.
+func (s *assertionTextStop) Unwrap() error { return ErrAssertionFailed() }
+
+// AssertionCalledFail reports whether err stopped on an assertion that called
+// fail, as opposed to one that stopped on its own text — a key it reads that the
+// context does not hold. Both carry the assertion condition; only the first is
+// a verdict the assertion's author wrote.
+func AssertionCalledFail(err error) bool {
+	if !errors.Is(err, ErrAssertionFailed()) {
+		return false
+	}
+	var stop *assertionTextStop
+	return !errors.As(err, &stop)
 }

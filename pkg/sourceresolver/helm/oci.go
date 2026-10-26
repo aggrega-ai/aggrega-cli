@@ -33,16 +33,17 @@ import (
 	"strings"
 
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"oras.land/oras-go/v2"
 )
 
-// KindOCI names the helm-oci-chart source kind. The constant is the
-// canonical wire value; adapters must not duplicate the literal in
+// KindOCI names the helm-oci-chart source kind, whose one declaration is
+// [sourcekind.HelmOCIChart]; adapters must not duplicate the literal in
 // their Resolve implementations.
-const KindOCI = "helm-oci-chart"
+const KindOCI = sourcekind.HelmOCIChart
 
 // MediatypeHelmChart is the canonical OCI mediatype for Helm chart
 // artifacts. Recorded on every cache slot's metadata.yaml so cache

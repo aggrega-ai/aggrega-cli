@@ -1202,11 +1202,11 @@ const assertionAwaitsRelease = "A Release must satisfy this assertion before a b
 // reports every failed assertion as a warning and leaves the verdict to a build,
 // which always has a Release and halts on the assertion as it always has.
 //
-// Only the condition fail raises counts. An assertion that stops on a key it
-// reads but does not find names none: that is a fault in the assertion's own text,
-// and is decided like any other stop.
+// Only a stop fail raises counts. An assertion that stops on a key it reads but
+// does not find carries the same condition, and is not counted: that is a fault in
+// the assertion's own text, and is decided like any other stop.
 func failedAssertion(err error) bool {
-	return errors.Is(err, renderer.ErrAssertionFailed())
+	return renderer.AssertionCalledFail(err)
 }
 
 // warnFailedAssertion records a run that stopped on a failed assertion: the

@@ -23,8 +23,8 @@ import (
 // a property of what each names rather than a list to keep here — a rule about
 // the document as a whole has only the file to give.
 //
-// Rules enforced here: values-mapping and input-kinds, plus the eval-provider
-// constraint. The workload-requires-provider-workloadSchema constraint is
+// Rules enforced here: values-mapping, input-kinds and source-kind, plus the
+// eval-provider constraint. The workload-requires-provider-workloadSchema constraint is
 // enforced at render time by the central input-kind gate (a synthesized Recipe
 // bound to a provider that does not implement workload synthesis halts loudly
 // there). The filename-collision rule (a collision across input-kind origins)
@@ -37,8 +37,11 @@ import (
 //  2. Exempt eval Recipes from the input-kinds rule (a Recipe declaring only
 //     `provides:` is legitimate eval-mode authoring).
 //
-// What is deliberately NOT checked: the contents of `source:`. Whether a source
-// is present is a shape question and is answered here; what its keys mean is
+// What is deliberately NOT checked: the contents of `source:`, with one key
+// excepted. Whether a source is present is a shape question and is answered here,
+// and so is whether a structured source's `kind:` names a kind a source adapter
+// serves — that word selects the adapter the host fetches the artifact with, so it
+// is the host's contract rather than an engine's. What every other key means is
 // not. A structured `source:` is an open dictionary, and the keys inside it —
 // `registry`, `chart`, `appVersion`, `workspace`, or anything else a provider
 // defines — are carried through uninterpreted, exposed to the Recipe's templates
@@ -73,7 +76,40 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeInputKinds(r, sourcePath); err != nil {
 		return err
 	}
+	if err := validateRecipeSourceKind(r, sourcePath); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateRecipeSourceKind enforces the source-kind rule: a structured source
+// names a kind a source adapter serves.
+//
+// The rule itself is declared rather than written out here: see
+// recipeSourceKindHasAnAdapter, which names the facts it reads and is invoked once
+// per presented document. What this function does is present the document the
+// load is holding and render whatever came back into the failure shape this
+// package's callers read. It runs after the eval rule, which refuses any source on
+// an eval Recipe, so a source reaching it is one the document may carry.
+func validateRecipeSourceKind(r *types.Recipe, sourcePath string) error {
+	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			recipeSourceKindHasAnAdapter,
+		),
+		ruleSubject{
+			Kind:    envelope.KindRecipe,
+			Name:    r.Metadata.Name,
+			Version: r.Metadata.Version,
+			Rule:    "source-kind",
+		},
+	)
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures[0]
 }
 
 // validateRecipeEvalProvider enforces the eval-provider constraint: a Recipe

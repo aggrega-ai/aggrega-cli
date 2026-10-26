@@ -215,8 +215,9 @@ func unknownSchemaPillarFailure(entityKind, entityName, filePath string, mapping
 	)
 }
 
-// UnusableContract is one declared schema contract whose body compiles and then
-// builds no validator, so nothing can be measured against it.
+// UnusableContract is one declared schema contract nothing can be measured
+// against: a socket contract whose body does not compile, or any contract whose
+// body compiles and then builds no validator.
 //
 // It carries no condition identity. The condition this reading feeds is declared
 // where the conformance rules live, which this package sits beneath, so the
@@ -239,9 +240,10 @@ type UnusableContract struct {
 }
 
 // UnusableSchemaContracts reports every schema contract a Component or Feature
-// declares whose body compiles cleanly and then builds no validator — a body
-// readable as compact form that is not a schema anything can validate against,
-// such as a bare scalar where a property's schema belongs.
+// declares that nothing can be measured against: a body readable as compact form
+// that is not a schema anything can validate against, such as a bare scalar
+// where a property's schema belongs, and a socket contract whose body does not
+// compile at all.
 //
 // Both places an entity declares one are read: the entity's own spec.schema
 // pillars, and the per-edge valueSchema / infraSchema of each socket in
@@ -252,16 +254,20 @@ type UnusableContract struct {
 //
 // It is separate from [ValidateSchemaPillars] because it answers a different
 // question, and because the two faults are refused under different conditions:
-// an unreadable body is a catalog-shape fault, while a readable body that yields
-// no validator is the declared-contract-does-not-compile condition the
-// conformance rules already raise. This returns findings rather than an error so
-// the caller can attach that condition, which is declared above this package and
-// therefore not nameable here.
+// an entity pillar that does not compile is refused there, under the compact-form
+// condition its compile raised, while a readable body that yields no validator —
+// and a socket body that does not compile, which nothing reads before this — is
+// the declared-contract-does-not-compile condition the conformance rules already
+// raise. This returns findings rather than an error so the caller can attach that
+// condition, which is declared above this package and therefore not nameable
+// here.
 //
-// A body that does not compile yields no finding: an entity pillar has already
-// been refused by [ValidateSchemaPillars] and a socket body is refused at
-// resolution, and reporting either twice would name one fault under two
-// conditions. A schema-less entity, and an extending entity carrying the
+// An entity pillar that does not compile yields no finding, because
+// [ValidateSchemaPillars] has already refused it and reporting it twice would
+// name one fault under two conditions. A socket body that does not compile is a
+// finding, so the catalog read refuses it where the entity that declared it is
+// known, rather than leaving it to the first Release whose resolution reaches
+// the socket. A schema-less entity, and an extending entity carrying the
 // inherited marker, yield none for the same reason they pass there — there is no
 // authored body to read.
 //
@@ -284,7 +290,7 @@ func UnusableSchemaContracts(
 			}
 			if u, bad := unusableContractAt(
 				fmt.Sprintf("spec.usesSchema.%s.%s", socket, pillar.field),
-				pillar.pillar, filePath, node, libraries,
+				pillar.pillar, filePath, node, libraries, true,
 			); bad {
 				out = append(out, u)
 			}
@@ -331,7 +337,7 @@ func unusableEntityPillars(
 			continue
 		}
 		if u, bad := unusableContractAt(
-			"spec.schema."+keyNode.Value, keyNode.Value, filePath, valueNode, libraries,
+			"spec.schema."+keyNode.Value, keyNode.Value, filePath, valueNode, libraries, false,
 		); bad {
 			out = append(out, u)
 		}
@@ -348,10 +354,15 @@ func unusableEntityPillars(
 // body here asks the same question the conformance read asks later, of the same
 // bytes. Were the two shapes to differ, this refusal would either pass what that
 // read drops or refuse what it accepts.
+//
+// refuseCompileFailure says whether a body that does not compile is a finding
+// here. It is for a socket contract, which no earlier reading compiles; an entity
+// pillar's compile failure is [ValidateSchemaPillars]'s to report.
 func unusableContractAt(
 	field, pillar, filePath string,
 	body *yaml.Node,
 	libraries map[string]types.SchemaLibrary,
+	refuseCompileFailure bool,
 ) (UnusableContract, bool) {
 	opts := []compactform.CompileOption{compactform.WithConsumerFile(filePath)}
 	if libraries != nil {
@@ -359,7 +370,15 @@ func unusableContractAt(
 	}
 	compiled, err := compactform.Compile(body, opts...)
 	if err != nil {
-		return UnusableContract{}, false
+		if !refuseCompileFailure {
+			return UnusableContract{}, false
+		}
+		return UnusableContract{
+			Field:  field,
+			Pillar: pillar,
+			Line:   body.Line,
+			Err:    err,
+		}, true
 	}
 	if _, err := jsonvalidator.NewUnderProperty(pillar, compiled, nil); err != nil {
 		return UnusableContract{

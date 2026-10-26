@@ -50,7 +50,7 @@ var errFeatureRecipeEvalProviderConstraint = cerrors.Register("feature-recipe-ev
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// Both rules here report through NewShapeRuleError, so a FeatureRecipe failure
+// Every rule here reports through NewShapeRuleError, so a FeatureRecipe failure
 // is a *ValidationError carrying the FeatureRecipe kind — the same shape a
 // Recipe failure takes, so the two read identically to the operator.
 
@@ -58,9 +58,9 @@ var errFeatureRecipeEvalProviderConstraint = cerrors.Register("feature-recipe-ev
 // Called from catalog loading immediately after yaml.Unmarshal succeeds.
 // Returns a *ValidationError against the FeatureRecipe kind (or nil on pass).
 //
-// Two rules: the eval-provider carve-out (reject render input-kind fields —
-// eval has no rendering surface) and values-mapping (valuesMapping requires
-// source).
+// Three rules: the eval-provider carve-out (reject render input-kind fields —
+// eval has no rendering surface), values-mapping (valuesMapping requires
+// source) and source-kind (a structured source names a kind an adapter serves).
 // There is deliberately no at-least-one-input-kind rule: a FeatureRecipe may
 // be pure-wiring (provider + implements only) or inject-only.
 //
@@ -83,7 +83,41 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if err := validateFeatureRecipeValuesMapping(fr, sourcePath); err != nil {
 		return err
 	}
+	if err := validateFeatureRecipeSourceKind(fr, sourcePath); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateFeatureRecipeSourceKind enforces the source-kind rule: a structured
+// source names a kind a source adapter serves.
+//
+// The rule itself is declared rather than written out here: see
+// featureRecipeSourceKindHasAnAdapter, which names the facts it reads and is
+// invoked once per presented document. What this function does is present the
+// document the load is holding and render whatever came back into the failure
+// shape this package's callers read. It runs after the eval rule, which refuses
+// any source on an eval FeatureRecipe, so a source reaching it is one the
+// document may carry.
+func validateFeatureRecipeSourceKind(fr *types.FeatureRecipe, sourcePath string) error {
+	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			featureRecipeSourceKindHasAnAdapter,
+		),
+		ruleSubject{
+			Kind:    envelope.KindFeatureRecipe,
+			Name:    fr.Metadata.Name,
+			Version: fr.Metadata.Version,
+			Rule:    "source-kind",
+		},
+	)
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures[0]
 }
 
 // validateFeatureRecipeValuesMapping enforces the values-mapping rule:

@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // ErrManifestImplementsMismatch fires when a Manifest mapping entry's
@@ -599,8 +600,8 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 // one that loaded the catalog eagerly reports it at the resolution-completeness
 // pass, naming the mapping value, exactly as it does for a component type pinned
 // at an absent version; one that resolved the Release's dependency closure first
-// stopped in that resolution before the pass ran, naming the URI no catalog
-// entity matches and the mapping entry that referenced it.
+// stopped in that resolution before the pass ran, naming the reference no catalog
+// version satisfies and the mapping entry that referenced it.
 //
 // Ambiguity across CAPABILITIES is a miss, never a silent pick: a bare reference
 // two capabilities can both answer carries nothing that selects either, so it
@@ -615,10 +616,9 @@ func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 	// halt belongs to whichever stage the caller reaches first — the
 	// resolution-completeness pass, naming the mapping value, where the catalog
 	// was loaded eagerly; the Release's dependency-closure resolution, naming
-	// the unmatched URI, where the caller resolved that closure first.
-	key, ok, _ := selectCapabilityScopedVersion(c.Recipes, uri, func(r types.Recipe) (string, string, string) {
-		return r.Spec.Capability, r.Metadata.Name, r.Metadata.Version
-	})
+	// the reference no version satisfies, where the caller resolved that closure
+	// first.
+	key, ok, _ := selectCapabilityScopedVersion(c.Recipes, uri, recipeVersionMeta)
 	if !ok {
 		return types.Recipe{}, false
 	}
@@ -629,13 +629,24 @@ func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 // resolution ladder, the version rule and the capability-ambiguity refusal are
 // identical, over the FeatureRecipe index.
 func (c *Catalog) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
-	key, ok, _ := selectCapabilityScopedVersion(c.FeatureRecipes, uri, func(fr types.FeatureRecipe) (string, string, string) {
-		return fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version
-	})
+	key, ok, _ := selectCapabilityScopedVersion(c.FeatureRecipes, uri, featureRecipeVersionMeta)
 	if !ok {
 		return types.FeatureRecipe{}, false
 	}
 	return c.FeatureRecipes[key], true
+}
+
+// recipeVersionMeta and featureRecipeVersionMeta report the capability, name and
+// version a capability-scoped version select reads off a Recipe or a
+// FeatureRecipe. Each is written once, so the accessor that resolves a reference
+// and the lookup that explains why one did not resolve read an entity's identity
+// the same way.
+func recipeVersionMeta(r types.Recipe) (string, string, string) {
+	return r.Spec.Capability, r.Metadata.Name, r.Metadata.Version
+}
+
+func featureRecipeVersionMeta(fr types.FeatureRecipe) (string, string, string) {
+	return fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version
 }
 
 // PluginByURI returns the Plugin entity whose identity matches uri, plus
@@ -1070,14 +1081,21 @@ type ComponentAncestryResolver func(componentType string) ([]string, error)
 // rendered as the mapping key an author would write for that base type so the
 // satisfaction matcher receives ancestry in exactly the form it receives the
 // mapped key itself.
-func componentAncestryOver(componentType string, lookup validator.ComponentLookup) ([]string, error) {
+//
+// sel is the version select over the index lookup reads. A chain link naming a
+// parent that index holds at other versions only is reported as the version no
+// entry satisfies rather than as a parent nothing provides — see
+// [recordExtendsRefusal].
+func componentAncestryOver(componentType string, lookup validator.ComponentLookup, sel func(string) (string, bool, error)) ([]string, error) {
 	comp, ok := lookup(componentType)
 	if !ok {
 		return nil, nil
 	}
-	chain, vErrs := validator.ComponentAncestry(comp, lookup)
+	recording, refusal := recordExtendsRefusal(lookup, sel)
+	chain, vErrs := validator.ComponentAncestry(comp, recording)
 	if len(vErrs) > 0 {
-		return nil, vErrs[0]
+		return nil, refusal.refine(envelope.KindComponent,
+			entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), vErrs)[0]
 	}
 	keys := make([]string, 0, len(chain))
 	for _, anc := range chain {
@@ -1098,7 +1116,7 @@ func componentAncestryOver(componentType string, lookup validator.ComponentLooku
 // then refuses every mapping that relies on it, which is why the resolver is an
 // argument of the gate rather than a field read off the receiver.
 func (c *Catalog) ComponentAncestry(componentType string) ([]string, error) {
-	return componentAncestryOver(componentType, c.componentOfType)
+	return componentAncestryOver(componentType, c.componentOfType, c.resolveComponentKey)
 }
 
 // recipesImplementing returns the sorted, provider-qualified identity keys of

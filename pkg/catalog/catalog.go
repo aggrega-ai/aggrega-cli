@@ -816,11 +816,11 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // the ambiguity halts at the point of use (pull resolution / build render) when no
 // plugins.providers entry selects one.
 // UnusablePillarContractErrors refuses each declared pillar of a Component or
-// Feature whose contract compiles and then builds no validator, under the same
-// condition the conformance rules raise for a contract that does not compile at
-// all.
+// Feature whose contract compiles and then builds no validator, and each socket
+// contract that does not compile at all, under the condition the conformance
+// rules raise for a contract that does not compile.
 //
-// One condition covers both because they are one fault with two spellings: a
+// One condition covers them because they are one fault with several spellings: a
 // subject declaring a contract nothing can be measured against. The reading
 // itself carries no condition, because it is performed a layer below the one
 // that declares it; attaching it here is what makes the refusal matchable, and
@@ -2264,6 +2264,56 @@ func extendsParentVersionRefusal(parent string, verr error) (validator.Validatio
 		}, true
 	}
 	return validator.ValidationDetail{}, false
+}
+
+// extendsRefusal is what an extends chain walk's lookup learned about the one
+// link it could not serve: the link, and the version select's refusal of it
+// where the catalog holds the parent under that name at other versions only.
+type extendsRefusal struct {
+	link string
+	err  error
+}
+
+// recordExtendsRefusal wraps lookup so that a link it cannot serve is asked once
+// more of sel, the version select over the same index, and the select's
+// unsatisfiable-version refusal is kept for [extendsRefusal.refine].
+//
+// It exists because the chain walk reads a lookup that answers found or not
+// found, and reports every link it cannot serve as a parent no catalog entity
+// provides. That is the wrong report for a parent the catalog holds at another
+// version: the name is right and only the pin is not, so it sends the author
+// looking for a misspelt name. The lookup is the one place that knows why it
+// missed, so it records that, and the caller reads it back once the walk has
+// stopped. Only a miss is asked again, so no chain that resolves reads the
+// select twice.
+func recordExtendsRefusal[T any](lookup func(string) (T, bool), sel func(string) (string, bool, error)) (func(string) (T, bool), *extendsRefusal) {
+	r := &extendsRefusal{}
+	return func(uri string) (T, bool) {
+		v, ok := lookup(uri)
+		if !ok && r.err == nil {
+			if _, _, err := sel(uri); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+				r.link, r.err = uri, err
+			}
+		}
+		return v, ok
+	}, r
+}
+
+// refine returns errs with the chain walk's missing-parent failure replaced by
+// the unsatisfiable-version refusal recorded for the link it could not serve,
+// rendered as the whole-catalog extends pass renders it
+// ([extendsParentVersionRefusal]) and reported against kind and name. Every
+// other outcome — no refusal recorded, or a failure of another kind — is
+// returned as it is.
+func (r *extendsRefusal) refine(kind envelope.Kind, name string, errs []*validator.ValidationError) []*validator.ValidationError {
+	if r.err == nil || len(errs) != 1 || !errors.Is(errs[0], validator.ErrInheritanceMerge()) {
+		return errs
+	}
+	detail, refused := extendsParentVersionRefusal(r.link, r.err)
+	if !refused {
+		return errs
+	}
+	return []*validator.ValidationError{validator.NewValidationError(kind, name, detail)}
 }
 
 // CatalogLookup returns a resolver.CatalogLookup whose Component and Feature

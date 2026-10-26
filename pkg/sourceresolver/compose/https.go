@@ -24,13 +24,15 @@ import (
 	"path"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 )
 
-// Kind names the compose-https-fragment source kind.
-const Kind = "compose-https-fragment"
+// Kind names the compose-https-fragment source kind, whose one declaration is
+// [sourcekind.ComposeHTTPSFragment].
+const Kind = sourcekind.ComposeHTTPSFragment
 
 // MediatypeYAML is the canonical media-type recorded for compose
 // fragments. Per IANA, application/x-yaml is the de-facto type for

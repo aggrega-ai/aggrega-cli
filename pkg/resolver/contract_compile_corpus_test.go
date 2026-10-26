@@ -17,6 +17,7 @@
 package resolver_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -193,23 +195,29 @@ func TestContractCorpus_BaseBuildsClean(t *testing.T) {
 }
 
 // TestContractCorpus_ABrokenSocketContractRefusesTheBuild is the claim itself: a
-// real build over a real workspace refuses a per-edge contract it cannot compile.
+// real build over a real workspace refuses a per-edge contract it cannot compile,
+// and it does so as the catalog is read rather than at resolution.
 //
 // The two rows are the two pillars a socket declares separately, and each is a
 // distinct authored field with its own reading site — so a row covering one says
 // nothing about the other.
 //
-// The locator is read off the structured per-violation slice rather than out of the
-// rendered group text. A group renders as a header and a count, so a substring
-// assertion over it would pass on a refusal that named the wrong field entirely;
-// the slice is also the documented way a caller consumes these, so asserting there
-// asserts what a consumer sees.
+// Where the refusal arrives is asserted as well as that it arrives. The catalog
+// read knows the entity that declared the contract, its file and its line, which
+// resolution does not; a socket contract left to resolution was refused only by a
+// Release whose resolution reached the socket, so checking the Component on its
+// own passed it. A resolution group on the chain would mean the catalog read had
+// passed the contract over again. The field and the planted keyword are read off
+// the flattened chain, as the unusable-contract rows below read theirs, because
+// the catalog read carries which field was at fault in its finding's text alone.
 //
-// INVARIANT: a build refuses a declared per-edge contract that does not compile, and
-// the refusal names the authored field it was declared in.
+// INVARIANT: a build refuses a declared per-edge contract that does not compile, as
+// the catalog is read, and the refusal names the authored field it was declared in
+// and the keyword at fault.
 // CONSEQUENCE: were a row to stop refusing, the per-edge configuration that contract
 // covers would go unvalidated with a green build reporting success — the silence this
-// condition exists to end.
+// condition exists to end; were it to refuse at resolution again, checking the
+// Component on its own would pass a contract every build reaching it refuses.
 func TestContractCorpus_ABrokenSocketContractRefusesTheBuild(t *testing.T) {
 	t.Parallel()
 
@@ -222,18 +230,18 @@ func TestContractCorpus_ABrokenSocketContractRefusesTheBuild(t *testing.T) {
 		name string
 		// component is the Component document the row authors.
 		component string
-		// wantField is the authored field a violation must name.
+		// wantField is the authored field the finding must name.
 		wantField string
 	}{
 		{
 			name:      "socket developer contract",
 			component: contractCorpusComponent(broken, "", ""),
-			wantField: ".spec.usesSchema.peer.valueSchema",
+			wantField: "spec.usesSchema.peer.valueSchema declares a schema",
 		},
 		{
 			name:      "socket operator contract",
 			component: contractCorpusComponent("", broken, ""),
-			wantField: ".spec.usesSchema.peer.infraSchema",
+			wantField: "spec.usesSchema.peer.infraSchema declares a schema",
 		},
 	}
 
@@ -252,38 +260,100 @@ func TestContractCorpus_ABrokenSocketContractRefusesTheBuild(t *testing.T) {
 				t.Fatalf("the build refused with %v; want the compile-failure condition.\n"+
 					"INVARIANT: the refusal carries the identity of the condition it met.\n"+
 					"CONSEQUENCE: a caller matching on the condition stops seeing this refusal, "+
-					"and the row passes on an unrelated fault.", err)
+					"and the row passes on an unrelated fault.", cerrors.CauseChain(err))
 			}
-
 			var group *resolver.MultiResolverError
-			if !errors.As(err, &group) {
-				t.Fatalf("the refusal carries no per-violation slice: %v\n"+
-					"INVARIANT: a resolution refusal carries its findings structurally.\n"+
-					"CONSEQUENCE: a consumer reading locators from the group has nothing to "+
-					"read, and the field assertion below cannot run.", err)
+			if errors.As(err, &group) {
+				t.Errorf("the refusal arrived from resolution: %v\n"+
+					"INVARIANT: the catalog read refuses a socket contract that does not compile, "+
+					"before resolution.\n"+
+					"CONSEQUENCE: checking the Component on its own passes a contract every build "+
+					"reaching it refuses.", cerrors.CauseChain(err))
 			}
-			found := false
-			for _, v := range group.Violations {
-				if !errors.Is(v, resolver.ErrSchemaContractCompileFailure()) {
-					continue
-				}
-				if v.Field == tc.wantField {
-					found = true
-				}
-				if !strings.Contains(v.Message, "timeout") {
-					t.Errorf("the violation names no authored key: %s\n"+
-						"INVARIANT: the diagnostic carries the key inside the contract that "+
-						"failed.\n"+
+			chain := cerrors.CauseChain(err)
+			for _, want := range []string{tc.wantField, "minimun", "timeout"} {
+				if !strings.Contains(chain, want) {
+					t.Errorf("the refusal does not carry %q: %v\n"+
+						"INVARIANT: the finding names the authored field, the key inside the "+
+						"contract and the keyword at fault.\n"+
 						"CONSEQUENCE: an author is told a contract is unreadable and not which "+
-						"fragment of it to correct.", v.Message)
+						"fragment of it to correct.", want, chain)
 				}
 			}
-			if !found {
-				t.Errorf("no violation names %q; the slice holds %v.\n"+
-					"INVARIANT: the refusal locates the contract at the authored field it was "+
-					"declared in.\n"+
-					"CONSEQUENCE: an author is sent to the wrong one of the three fields a "+
-					"contract can be declared in.", tc.wantField, group.Violations)
+		})
+	}
+}
+
+// TestContractCorpus_ABrokenSocketContractIsRefusedByTheComponentCheck drives the
+// single-entity check — the one `aggrega validate <component>` runs — over a
+// Component file alone, with one fault per row and a positive control.
+//
+// It is the surface the catalog-read refusal exists for: a Component checked on
+// its own has no Release and so no resolution, which is why a socket contract
+// that does not compile used to pass it while every build reaching the socket
+// refused. The entity-contract row pins that the compact-form condition its own
+// compile raises stays the one that reports it there, so the two faults keep the
+// conditions they carry rather than being folded into one.
+//
+// INVARIANT: the Component check refuses a socket contract that does not compile
+// under the compile-failure condition, refuses an entity contract that does not
+// compile under the compact-form condition, and passes a Component whose contracts
+// compile.
+// CONSEQUENCE: were the socket rows to pass, the Component check would report a
+// contract valid that every build reaching it refuses.
+func TestContractCorpus_ABrokenSocketContractIsRefusedByTheComponentCheck(t *testing.T) {
+	t.Parallel()
+
+	const broken = "timeout: { type: integer, minimun: 1 }"
+	const sound = "timeout: { type: integer, minimum: 1 }"
+
+	cases := []struct {
+		name      string
+		component string
+		// want is the condition the refusal must carry; nil for the control.
+		want error
+		// not is a condition the refusal must not carry.
+		not error
+	}{
+		{"a socket contract that compiles (control)", contractCorpusComponent(sound, sound, ""), nil, nil},
+		{"socket developer contract", contractCorpusComponent(broken, "", ""),
+			resolver.ErrSchemaContractCompileFailure(), compactform.ErrUnknownKeyword()},
+		{"socket operator contract", contractCorpusComponent("", broken, ""),
+			resolver.ErrSchemaContractCompileFailure(), compactform.ErrUnknownKeyword()},
+		{"entity contract", contractCorpusComponent("", "", broken),
+			compactform.ErrUnknownKeyword(), resolver.ErrSchemaContractCompileFailure()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := contractCorpusWorkspace(t, tc.component)
+			entity := filepath.Join(in.CatalogPaths[0], "components", "server.yaml")
+			res, err := validateops.ValidateEntity(context.Background(),
+				filepath.Dir(in.ReleasePath), t.TempDir(), in.CatalogPaths, nil, entity, false)
+			if tc.want == nil {
+				if err != nil {
+					t.Fatalf("the control was refused: %v\n"+
+						"INVARIANT: a Component whose contracts compile passes the check.\n"+
+						"CONSEQUENCE: every row below may be refusing for a reason that is not its "+
+						"fault.", cerrors.CauseChain(err))
+				}
+				if !res.Valid {
+					t.Fatalf("the control is not reported valid: %+v", res)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("the Component check accepted a contract that does not compile.\n" +
+					"INVARIANT: the check refuses it.\n" +
+					"CONSEQUENCE: the check reports valid what every build reaching it refuses.")
+			}
+			if !errors.Is(err, tc.want) {
+				t.Errorf("the refusal carries %v; want %v", cerrors.CauseChain(err), tc.want)
+			}
+			if errors.Is(err, tc.not) {
+				t.Errorf("the refusal also carries %v, the other fault's condition: %v",
+					tc.not, cerrors.CauseChain(err))
 			}
 		})
 	}

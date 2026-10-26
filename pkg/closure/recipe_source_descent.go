@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -1091,18 +1092,18 @@ func classifyEntityKind(uri string) (string, bool) {
 func classifyKindFromScheme(url, recipeURI string) (string, error) {
 	switch {
 	case strings.HasPrefix(url, "oci://"):
-		return "helm-oci-chart", nil
+		return sourcekind.HelmOCIChart, nil
 	case strings.HasPrefix(url, "https://") && strings.HasSuffix(strings.ToLower(url), ".tgz"):
-		return "helm-https-chart", nil
+		return sourcekind.HelmHTTPSChart, nil
 	case strings.HasPrefix(url, "https://") && strings.HasSuffix(strings.ToLower(url), ".yaml"):
-		return "compose-https-fragment", nil
+		return sourcekind.ComposeHTTPSFragment, nil
 	case strings.HasPrefix(url, "https://") && strings.HasSuffix(strings.ToLower(url), ".yml"):
-		return "compose-https-fragment", nil
+		return sourcekind.ComposeHTTPSFragment, nil
 	case strings.HasPrefix(url, "git+ssh://"),
 		strings.HasPrefix(url, "git://"),
 		strings.HasPrefix(url, "ssh://"),
 		strings.HasSuffix(url, ".git"):
-		return "git-repository", nil
+		return sourcekind.GitRepository, nil
 	default:
 		return "", fmt.Errorf(
 			"resolve: %s spec.source URL %q is ambiguous — "+
@@ -1111,16 +1112,17 @@ func classifyKindFromScheme(url, recipeURI string) (string, error) {
 	}
 }
 
-// isKnownKind returns true when kind names one of the five
-// canonical source-kind values (four shipped + one reserved).
+// isKnownKind reports whether kind is one this program serves, read from the one
+// declaration of that set ([sourcekind.Served]).
+//
+// An authored kind no adapter serves is refused as its Recipe or FeatureRecipe is
+// read, so a document admitted through a loader never reaches the refusal this
+// answers for. It is the lock-time backstop for a source that reached this
+// reading without that load — one a caller assembled in memory — and it reports
+// under the lock-time umbrella condition rather than the authored-kind rule's,
+// which is a check and is raised by the check alone.
 func isKnownKind(kind string) bool {
-	switch kind {
-	case "helm-oci-chart", "helm-https-chart", "compose-https-fragment",
-		"git-repository", "terraform-module-oci":
-		return true
-	default:
-		return false
-	}
+	return sourcekind.Served(kind)
 }
 
 // identityKey returns the dedupe key for a SourceArtifact:

@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // TestEvaluateAssertion_PassesOnEmptyTemplate pins the happy path: a
@@ -55,9 +56,10 @@ func TestEvaluateAssertion_PreservesErrAssertionFailedChain(t *testing.T) {
 	}
 }
 
-// TestEvaluateAssertion_MissingKeyProducesError pins the new strict-policy
+// TestEvaluateAssertion_MissingKeyProducesError pins the strict-policy
 // behavior. A reference to .values.typo against a context without that key
-// halts with a no-such-key diagnostic from template execution.
+// halts with a no-such-key diagnostic from template execution, under the
+// assertion condition, as a stop the assertion did not call fail for.
 func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
@@ -65,12 +67,67 @@ func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing-key error; got nil")
 	}
-	// missing-key errors are not ErrAssertionFailed — they're template-engine errors.
-	if errors.Is(err, ErrAssertionFailed()) {
-		t.Errorf("did not expect ErrAssertionFailed for missing-key; got %v", err)
+	if !errors.Is(err, ErrAssertionFailed()) {
+		t.Errorf("want the missing-key stop under ErrAssertionFailed; got %v", err)
 	}
-	if !strings.Contains(err.Error(), "typo") {
+	if AssertionCalledFail(err) {
+		t.Errorf("a missing-key stop was reported as a fail call: %v", err)
+	}
+	if !strings.Contains(err.Error(), `map has no entry for key "typo"`) {
 		t.Errorf("expected missing-key error to name the bad reference; got %q", err.Error())
+	}
+}
+
+// TestEvaluateAssertion_EveryStopCarriesAShortCode pins the head an assertion
+// stop is printed under: the short code the formatter reads off the chain. One
+// fault per row, with a passing assertion as the control.
+//
+// A fail call and a missing key both carry the assertion condition; only the
+// fail call is reported as one by AssertionCalledFail, which is what keeps a
+// check of an entity on its own reporting the first as a warning and halting on
+// the second. A stop whose own error already names a condition keeps that
+// condition, so the assertion condition does not displace a more specific one.
+//
+// INVARIANT: every stop an assertion evaluation returns carries a short code, and
+// a missing key is filed under the assertion condition without reading as a fail
+// call.
+// CONSEQUENCE: were a row to lose its code, the halt would print a head with no
+// short code for `aggrega explain` to resolve.
+func TestEvaluateAssertion_EveryStopCarriesAShortCode(t *testing.T) {
+	t.Parallel()
+	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
+	assertionCode, _ := cerrors.ShortCodeOf(ErrAssertionFailed())
+	indexCode, _ := cerrors.ShortCodeOf(gotmpl.ErrIndexOfAbsentMapKey())
+	for _, tc := range []struct {
+		name       string
+		body       string
+		wantCode   string
+		calledFail bool
+	}{
+		{"a passing assertion (control)", `{{ if .values.port }}{{ end }}`, "", false},
+		{"a fail call", `{{ fail "boom" }}`, assertionCode, true},
+		{"a key the context does not hold", `{{ if .values.nosuchkey }}{{ end }}`, assertionCode, false},
+		{"an index of a key the map does not hold", `{{ if index .values "nosuchkey" }}{{ end }}`, indexCode, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := EvaluateAssertion("rule", tc.body, ctx, redact.Keys{})
+			if tc.wantCode == "" {
+				if err != nil {
+					t.Fatalf("the control stopped: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("%s passed; want a stop", tc.body)
+			}
+			if got, _ := cerrors.ShortCodeOf(err); got != tc.wantCode {
+				t.Errorf("%s: short code %q; want %q (%v)", tc.body, got, tc.wantCode, err)
+			}
+			if got := AssertionCalledFail(err); got != tc.calledFail {
+				t.Errorf("%s: AssertionCalledFail = %v; want %v", tc.body, got, tc.calledFail)
+			}
+		})
 	}
 }
 
