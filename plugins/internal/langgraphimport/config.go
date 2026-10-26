@@ -171,7 +171,7 @@ func readApplications(in aggrega.ImportInput, parse func(syntax string, source [
 			continue
 		}
 		if _, err := parse(Syntax, src.Bytes); err != nil {
-			diags = append(diags, importer.ParseFailed(src, in.Format, err))
+			diags = append(diags, importer.ParseFailed(importer.Named(in, src), in.Format, err))
 			continue
 		}
 		a := &application{file: src.Name, dir: dirOf(src.Name)}

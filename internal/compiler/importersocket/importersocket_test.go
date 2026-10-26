@@ -103,7 +103,7 @@ func TestImportArtifact_ResolvesAndRuns(t *testing.T) {
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 	load := demoImporterLoader(fixture)
 
-	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("hello world"), nil, nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("hello world"), "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -130,11 +130,11 @@ func TestImportArtifact_Deterministic(t *testing.T) {
 	fixture := wasmtest.EnsureFixtureBuilt(t, "import-go.wasm")
 	load := demoImporterLoader(fixture)
 
-	first, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), nil, nil, nil)
+	first, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("first ImportArtifact: %v", err)
 	}
-	second, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), nil, nil, nil)
+	second, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "demo", []byte("repeatable"), "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("second ImportArtifact: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestImportArtifact_UnknownFormatHaltsLoud(t *testing.T) {
 		return wasm.PluginSpec{}, nil
 	}
 
-	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "unknown", []byte("x"), nil, nil, nil)
+	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, load, nil, nil, "unknown", []byte("x"), "", nil, nil, nil)
 	if !errors.Is(err, errNoImporterForFormat) {
 		t.Fatalf("err = %v; want errNoImporterForFormat", err)
 	}
@@ -193,7 +193,7 @@ func TestImportArtifact_HostMediatedParse(t *testing.T) {
 	}
 	parserRes, parserLoad, probe := demoParserSeam(parserFixture)
 
-	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), nil, nil, nil)
+	out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestImportArtifact_HostMediatedParseDeterministic(t *testing.T) {
 
 	run := func() []byte {
 		parserRes, parserLoad, _ := demoParserSeam(parserFixture)
-		out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), nil, nil, nil)
+		out, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"hello":"world"}`), "", nil, nil, nil)
 		if err != nil {
 			t.Fatalf("ImportArtifact: %v", err)
 		}
@@ -278,7 +278,7 @@ func TestImportArtifact_NoParserForFormatHaltsLoud(t *testing.T) {
 		t.Fatalf("parser resolver err = %v; want ErrNoParserForFormat", err)
 	}
 
-	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"x":1}`), nil, nil, nil)
+	_, err := importersocket.ImportArtifact(context.Background(), stubImporterCatalog{}, importerLoad, parserRes, parserLoad, "demo", []byte(`{"x":1}`), "", nil, nil, nil)
 	if err == nil {
 		t.Fatal("ImportArtifact: want a loud halt for an unresolvable syntactic format, got nil error")
 	}

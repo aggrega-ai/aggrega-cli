@@ -268,6 +268,42 @@ func TestADSLNewerThanThePinnedEngineIsReported(t *testing.T) {
 	}
 }
 
+// TestTheNewerDSLWarningNamesTheFileImported imports the chat application at a
+// newer version of the DSL, once as a file of its own — its bytes the request's
+// primary bytes and the file's name the request's name — and once as a named
+// source of a request carrying no name: both warnings name the file, in one
+// message shape, and reference it. A request naming no file, from a host that
+// sends none, reads as an empty name as before.
+func TestTheNewerDSLWarningNamesTheFileImported(t *testing.T) {
+	t.Parallel()
+	body := bytes.Replace(fixture(t, "authored/chat.yml"), []byte("\nversion: 0.7.0\n"), []byte("\nversion: 0.8.0\n"), 1)
+	for _, tc := range []struct {
+		scenario string
+		in       aggrega.ImportInput
+		name     string
+	}{
+		{"a file imported on its own", aggrega.ImportInput{Format: Format, Bytes: body, Name: "policy-assistant.yml",
+			Catalog: catalog}, "policy-assistant.yml"},
+		{"a named source", aggrega.ImportInput{Format: Format, Catalog: catalog,
+			Sources: []aggrega.ImportSource{{Name: "apps/policy-assistant.yml", Bytes: body}}}, "apps/policy-assistant.yml"},
+		{"a request naming no file", aggrega.ImportInput{Format: Format, Bytes: body, Catalog: catalog}, ""},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			t.Parallel()
+			out := Import(tc.in, hostParse)
+			if len(out.Diagnostics) == 0 || out.Diagnostics[0].Code != "dsl-version-newer" {
+				t.Fatalf("the import reported %+v, want dsl-version-newer first", out.Diagnostics)
+			}
+			d := out.Diagnostics[0]
+			if want := `source "` + tc.name + `" is written in version "0.8.0" of the Dify DSL, `; !strings.HasPrefix(d.Message, want) ||
+				d.SourceRef != tc.name {
+				t.Errorf("the warning reads %q referencing %q, want it opening %q and referencing %q", d.Message,
+					d.SourceRef, want, tc.name)
+			}
+		})
+	}
+}
+
 // TestTheEmptyCredentialsSettingDecidesWhatTheApplicationCarries imports the
 // workflow application under each value of empty_credentials: with none, every
 // value is carried byte for byte; with marked, the secret variable and the

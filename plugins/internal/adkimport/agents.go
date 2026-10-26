@@ -219,7 +219,7 @@ func (r *reader) tree(i int) json.RawMessage {
 	t, err := r.parse(Syntax, r.sources[i].Bytes)
 	if err != nil {
 		r.failed[i] = true
-		r.diags = append(r.diags, importer.ParseFailed(r.sources[i], r.in.Format, err))
+		r.diags = append(r.diags, importer.ParseFailed(importer.Named(r.in, r.sources[i]), r.in.Format, err))
 		return nil
 	}
 	r.trees[i] = t

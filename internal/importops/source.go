@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -267,6 +268,18 @@ func (s *Source) inputsFor(importer types.Plugin, format string) ([]byte, []abi.
 					"patterns match the files this directory holds"), nil)
 	}
 	return nil, sources, nil
+}
+
+// primaryName returns the name a file source's bytes are handed to the importer
+// under: the file's base name, with no directory, so what the importer reports
+// names the file alike wherever the import ran and however the path to it was
+// spelled. A directory source hands its files on as named sources and has none,
+// and so does a file the caller received no name for.
+func (s *Source) primaryName() string {
+	if s.directory || s.entries[0].name == "" {
+		return ""
+	}
+	return path.Base(s.entries[0].name)
 }
 
 // mergeSources returns the named sources the importer is handed: those read from a

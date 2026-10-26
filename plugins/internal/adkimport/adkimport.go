@@ -180,7 +180,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		// Every source is one with.sources hands, read only as a configuration a
 		// root names; with no root, each is reported as holding nothing drafted.
 		for _, src := range r.sources {
-			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(src, in.Format))
+			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(importer.Named(in, src), in.Format))
 		}
 		return out
 	}
@@ -189,7 +189,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		app := r.readApplication(i)
 		if app == nil {
 			if !r.failed[i] {
-				r.diags = append(r.diags, importer.NoNodes(r.sources[i], in.Format))
+				r.diags = append(r.diags, importer.NoNodes(importer.Named(in, r.sources[i]), in.Format))
 			}
 			continue
 		}

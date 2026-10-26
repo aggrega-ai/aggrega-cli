@@ -404,6 +404,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	attachments := rw.Config().Plugins.Importer
 	importer, at, resolveErr := seam.ImporterRes.ImporterPluginForFormat(format, attachmentURIs(attachments))
 	var primary []byte
+	var primaryName string
 	var sources []abi.ImportSource
 	var settings json.RawMessage
 	if resolveErr == nil {
@@ -414,6 +415,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		if primary, read, err = src.inputsFor(importer, format); err != nil {
 			return Result{}, err
 		}
+		primaryName = src.primaryName()
 		var attached []attachedSource
 		if attached, settings, err = attachmentInputs(attachments, at); err != nil {
 			return Result{}, err
@@ -424,7 +426,8 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	}
 
 	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
-		seam.importerLoader(ctx), seam.ParserRes, seam.parserLoader(ctx), format, primary, sources, settings, seam.Catalog)
+		seam.importerLoader(ctx), seam.ParserRes, seam.parserLoader(ctx), format, primary, primaryName, sources, settings,
+		seam.Catalog)
 	if err != nil {
 		return Result{}, err
 	}

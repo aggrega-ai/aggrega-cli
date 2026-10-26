@@ -203,12 +203,12 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	for _, src := range sources {
 		tree, err := parse(Syntax, src.Bytes)
 		if err != nil {
-			out.Diagnostics = append(out.Diagnostics, importer.ParseFailed(src, in.Format, err))
+			out.Diagnostics = append(out.Diagnostics, importer.ParseFailed(importer.Named(in, src), in.Format, err))
 			continue
 		}
 		a := readAgent(src.Name, tree)
 		if a == nil {
-			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(src, in.Format))
+			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(importer.Named(in, src), in.Format))
 			continue
 		}
 		agents = append(agents, a)

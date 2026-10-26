@@ -195,7 +195,8 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	var read []*application
 	for _, a := range apps {
 		if !slices.ContainsFunc(a.graphs, func(g *graph) bool { return g.entrypoint != "" }) {
-			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(aggrega.ImportSource{Name: a.file}, in.Format))
+			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(importer.Named(in, aggrega.ImportSource{Name: a.file}),
+				in.Format))
 			continue
 		}
 		read = append(read, a)

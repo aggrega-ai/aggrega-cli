@@ -172,7 +172,7 @@ func readCrews(in aggrega.ImportInput, parse func(syntax string, source []byte) 
 			tree, err = parse(syntax, src.Bytes)
 		}
 		if err != nil {
-			diags = append(diags, importer.ParseFailed(src, in.Format, err))
+			diags = append(diags, importer.ParseFailed(importer.Named(in, src), in.Format, err))
 			continue
 		}
 		c := crewOf(dir)

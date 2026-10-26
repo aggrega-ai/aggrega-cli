@@ -601,19 +601,26 @@ func TestSeveralSourcesDraftOneAggregateInTheirOrder(t *testing.T) {
 // host's parser refuses, one listing no server, and one that is neither a
 // client's configuration nor a registry description: the first is reported
 // under parse-failed with the parser's reason, which halts, and the other two
-// under no-nodes; nothing is drafted.
+// under no-nodes; nothing is drafted. A request naming the file it was handed on
+// its own has each reported under that name; one naming none, from a host that
+// sends none, reports an empty name.
 func TestASourceTheParserRefusesHaltsAndAnEmptyOneWarns(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
-		name, body, code, severity, message string
+		name, file, body, code, severity, message string
 	}{
-		{"truncated", `{"mcpServers": {"x": {"command": "npx",`, "parse-failed", "halt",
+		{"truncated", "", `{"mcpServers": {"x": {"command": "npx",`, "parse-failed", "halt",
 			`could not parse source "" as mcp: json parse: unexpected EOF`},
-		{"no server", `{"mcpServers": {}}`, "no-nodes", "warn", `source "" carried no recognisable mcp nodes`},
-		{"another shape", `{"nodes": [], "edges": []}`, "no-nodes", "warn", `source "" carried no recognisable mcp nodes`},
+		{"no server", "", `{"mcpServers": {}}`, "no-nodes", "warn", `source "" carried no recognisable mcp nodes`},
+		{"another shape", "", `{"nodes": [], "edges": []}`, "no-nodes", "warn",
+			`source "" carried no recognisable mcp nodes`},
+		{"truncated, named", ".mcp.json", `{"mcpServers": {"x": {"command": "npx",`, "parse-failed", "halt",
+			`could not parse source ".mcp.json" as mcp: json parse: unexpected EOF`},
+		{"no server, named", ".mcp.json", `{"mcpServers": {}}`, "no-nodes", "warn",
+			`source ".mcp.json" carried no recognisable mcp nodes`},
 	} {
-		out := importOne([]byte(row.body), "")
-		want := []aggrega.Diagnostic{{Severity: row.severity, Code: row.code, Message: row.message}}
+		out := Import(aggrega.ImportInput{Format: Format, Bytes: []byte(row.body), Name: row.file}, hostParse)
+		want := []aggrega.Diagnostic{{Severity: row.severity, Code: row.code, Message: row.message, SourceRef: row.file}}
 		if !reflect.DeepEqual(out.Diagnostics, want) || len(out.Files) != 0 {
 			t.Errorf("%s: the import reported %+v and drafted %+v, want %+v and nothing", row.name, out.Diagnostics,
 				out.Files, want)

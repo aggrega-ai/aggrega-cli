@@ -81,10 +81,14 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // ImportOutput carry, and reports a failure it can describe in the output's
 // error field.
 //
-// sources carries the named sources for a multi-file import, and settings is the
-// opaque importer-specific options document the consumer supplies; the host
-// pipes both through without interpreting them — settings crosses as the bytes
-// the consumer supplied. A nil settings is omitted from the wire payload.
+// sourceName is the name of the file source was read from, which the payload
+// carries beside it so the importer can name the file in what it reports; an
+// empty sourceName — an import of a directory, whose files arrive as named
+// sources — is omitted from the wire payload. sources carries the named sources
+// for a multi-file import, and settings is the opaque importer-specific options
+// document the consumer supplies; the host pipes them through without
+// interpreting them — settings crosses as the bytes the consumer supplied. A nil
+// settings is omitted from the wire payload.
 //
 // catalogView is the view of the workspace catalog's Components the importer is
 // handed, as [ProjectCatalog] builds it from the catalog the import resolved
@@ -107,7 +111,7 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // importer reports it as a source that does not parse rather than walking an
 // empty tree. The tree arrives through this callback, never through the import
 // input payload.
-func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sources []abi.ImportSource, settings json.RawMessage, catalogView *abi.CatalogProjection) (abi.ImportOutput, error) {
+func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sourceName string, sources []abi.ImportSource, settings json.RawMessage, catalogView *abi.CatalogProjection) (abi.ImportOutput, error) {
 	plugin, err := res.ImporterPluginForFormat(format)
 	if err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("resolve importer for format %q: %w", format, err)
@@ -119,7 +123,8 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	}
 	spec.PluginType = wasm.PluginTypeImporter
 
-	payload, err := abi.ImportInput{Format: format, Bytes: source, Sources: sources, Settings: settings, Catalog: catalogView}.EncodeCBOR()
+	payload, err := abi.ImportInput{Format: format, Bytes: source, Name: sourceName, Sources: sources, Settings: settings,
+		Catalog: catalogView}.EncodeCBOR()
 	if err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("encode import input for %q: %w", format, err)
 	}

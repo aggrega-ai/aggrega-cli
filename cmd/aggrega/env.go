@@ -47,10 +47,14 @@ func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(
 // told two different things about where entities are looked for. It states the
 // whole stack, since the part a reader most often needs is the part they did not
 // have to type.
-const helpCatalogDir = "Catalog directory; repeatable. Each --catalog is prepended to the " +
+//
+// Its one back-quoted span is the argument's placeholder in the help listing,
+// which takes the first back-quoted word of a flag's usage as its argument name;
+// a second back-quoted word would print with its back-quotes.
+const helpCatalogDir = "Catalog directory; repeatable. Each --catalog `<dir>` is prepended to the " +
 	"catalog search stack (first match wins): the workspace catalog_dirs, or, for a Release the " +
 	"workspace configuration gives directories of its own under workspace.releases, that " +
-	"Release's; the stack ends with the `catalog` directory at the workspace root when there is " +
+	"Release's; the stack ends with the directory named catalog at the workspace root when there is " +
 	"one. A catalog_dirs list written empty reads no local catalog at all."
 
 // helpReleaseResolution is the part of a --release flag's help text that says

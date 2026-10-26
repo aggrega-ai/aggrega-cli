@@ -318,6 +318,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// length, so the length-first CBOR key order is pinned against an encoder this
 	// schema did not generate.
 	vec[abi.ImportInput](t, "ImportInputCatalog", false)
+	// A file imported on its own: a text string naming the file beside the byte
+	// string of its bytes, which the reference encoder writes the same way, so it
+	// stays anchored.
+	vec[abi.ImportInput](t, "ImportInputNamed", false)
 	vec[abi.ImportOutput](t, "ImportOutput", false)
 	vec[abi.ParseSourceResponse](t, "ParseSourceResponse", false)
 	// The parse-source reply's SUCCESS shape, which its failure envelope above

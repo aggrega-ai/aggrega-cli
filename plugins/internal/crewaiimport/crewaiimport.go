@@ -175,7 +175,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			if len(c.files) > 0 {
 				src.Name = c.files[0]
 			}
-			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(src, in.Format))
+			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(importer.Named(in, src), in.Format))
 			continue
 		}
 		read = append(read, c)

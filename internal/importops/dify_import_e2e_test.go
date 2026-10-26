@@ -21,6 +21,7 @@ package importops
 // The fixtures and their provenance are described in testdata/dify/README.md.
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,6 +160,36 @@ func TestEveryDifyApplicationIsRecognisedAndDraftedAsTheInstallationCarryingIt(t
 				}
 			}
 		})
+	}
+}
+
+// TestTheNewerDSLWarningNamesTheFileImportedOnItsOwn imports the authored chat
+// application at a version of the DSL newer than the engine's, as a file of its
+// own reached through a path naming a directory, through the real Import and the
+// Dify importer: the one dsl-version-newer warning names the file by its base
+// name — the name the import request carries beside the file's bytes — and
+// references it, wherever the path to it led.
+//
+// 🔴 PLANTED DEFECT: in Import (internal/importops/import.go), delete
+// `primaryName = src.primaryName()`: the warning names `source ""` and references
+// nothing, and the case fails.
+func TestTheNewerDSLWarningNamesTheFileImportedOnItsOwn(t *testing.T) {
+	t.Parallel()
+	authored := readDifyFixture(t, "authored/chat.yml")
+	source := bytes.Replace(authored, []byte("\nversion: 0.7.0\n"), []byte("\nversion: 0.8.0\n"), 1)
+	if bytes.Equal(source, authored) {
+		t.Fatal("the fixture's version line was not rewritten, so no warning is owed")
+	}
+	res, _ := writtenImport(t, difyWorkspace(t, nil), "apps/policy-assistant.yml", source)
+	var newer []string
+	for _, d := range res.Diagnostics {
+		if d.Code == "dsl-version-newer" {
+			newer = append(newer, d.SourceRef+" | "+d.Message)
+		}
+	}
+	want := `policy-assistant.yml | source "policy-assistant.yml" is written in version "0.8.0" of the Dify DSL, `
+	if len(newer) != 1 || !strings.HasPrefix(newer[0], want) {
+		t.Errorf("the import warned %q, want one warning opening %q", newer, want)
 	}
 }
 

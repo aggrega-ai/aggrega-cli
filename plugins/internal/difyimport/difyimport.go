@@ -147,7 +147,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			if err != nil {
 				continue
 			}
-			if d, newer := versionNewer(src, tree); newer {
+			if d, newer := versionNewer(importer.Named(in, src), tree); newer {
 				versions = append(versions, d)
 			}
 		}

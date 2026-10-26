@@ -161,7 +161,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		for _, src := range p.files {
 			tree, err := parse(Syntax, src.Bytes)
 			if err != nil {
-				out.Diagnostics = append(out.Diagnostics, importer.ParseFailed(src, in.Format, err))
+				out.Diagnostics = append(out.Diagnostics, importer.ParseFailed(importer.Named(in, src), in.Format, err))
 				failed = true
 				continue
 			}
@@ -173,7 +173,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			continue
 		}
 		if len(p.services) == 0 && len(p.models) == 0 {
-			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(p.files[0], in.Format))
+			out.Diagnostics = append(out.Diagnostics, importer.NoNodes(importer.Named(in, p.files[0]), in.Format))
 			continue
 		}
 		read = append(read, p)
