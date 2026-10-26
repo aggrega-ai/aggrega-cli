@@ -471,10 +471,21 @@ func TestWireSubjectSetAccountsForEveryTaggedStruct(t *testing.T) {
 // at its zero value with an omitempty tag marshals to nothing at all, so a
 // half-populated instance would validate while saying nothing about the fields
 // it omitted.
+//
+// A field the session reads off the raw request before it routes is the one
+// thing a params struct cannot carry, so where a position requires such a field
+// the instance is given it before validating (supplyBoundaryFields). The rule is
+// the dispatch-boundary rule the schema → Go direction derives, and it is held
+// live: a schema in which no subject's position requires such a field fails,
+// because a supply with no occupant is a rule that has stopped being true without
+// anything saying so. That check reads the schema in this function's own body
+// rather than counting supplies inside the subtests, so a -run filter selecting
+// a subset of subjects cannot make it report a live rule as dead.
 func TestWireShapeGoToSchema(t *testing.T) {
 	t.Parallel()
 
 	doc, compiler := compileWireSchema(t)
+	boundary := wireBoundaryPropertyNames(t, doc)
 
 	// Every position is compiled here, in one goroutine, before the subjects
 	// run. The compiler keeps a resource cache that is not safe for concurrent
@@ -500,6 +511,17 @@ func TestWireShapeGoToSchema(t *testing.T) {
 		compiled[s.def] = schema
 	}
 
+	occupants := 0
+	for _, position := range positions {
+		occupants += supplyBoundaryFields(map[string]any{}, position, boundary)
+	}
+	if occupants == 0 {
+		t.Errorf("no subject's position requires a field the session reads at the routing boundary, so " +
+			"supplyBoundaryFields has no occupant. Either no request params position requires one any " +
+			"longer, in which case the supply is dead and goes, or the derivation is reading the wrong " +
+			"position")
+	}
+
 	for _, s := range subjects {
 		name := s.name + " against " + s.def
 		t.Run(name, func(t *testing.T) {
@@ -516,6 +538,7 @@ func TestWireShapeGoToSchema(t *testing.T) {
 				t.Fatalf("%s: decode the marshalled instance: %v (%s)", s.name, err, body)
 			}
 			decoded = conformConstants(decoded, positions[s.def], doc)
+			supplyBoundaryFields(decoded, positions[s.def], boundary)
 
 			if err := compiled[s.def].Validate(decoded); err != nil {
 				conformed, _ := json.Marshal(decoded)
@@ -834,6 +857,45 @@ func fillValue(t *testing.T, value reflect.Value, path map[reflect.Type]bool, de
 		defer delete(path, typ)
 		fillStruct(t, value, nil, nil, path, depth)
 	}
+}
+
+// supplyBoundaryFields adds to a decoded instance each field the session reads
+// off the raw request at the routing boundary that the position requires and the
+// instance does not carry, and reports how many it added.
+//
+// Such a field has no home on a params struct by construction — the session
+// decodes it before it knows which params shape the request has — so a
+// reflected instance of the struct never carries it, and a position requiring it
+// would refuse every instance for a reason that says nothing about whether the
+// struct's own fields agree with the schema. The field is supplied only where the
+// position declares it BY REFERENCE to the shared declaration, the same clause
+// the schema → Go direction's boundary rule turns on: a position declaring a
+// field of that name in place owns it, and its Go type must carry it, so nothing
+// is supplied there and a missing field still fails.
+func supplyBoundaryFields(instance any, position map[string]any, boundary map[string]bool) int {
+	object, ok := instance.(map[string]any)
+	if !ok {
+		return 0
+	}
+	required, _ := position["required"].([]any)
+	properties, _ := position["properties"].(map[string]any)
+	added := 0
+	for _, entry := range required {
+		name, _ := entry.(string)
+		if !boundary[name] {
+			continue
+		}
+		if _, present := object[name]; present {
+			continue
+		}
+		declaration, _ := properties[name].(map[string]any)
+		if _, byRef := declaration["$ref"].(string); !byRef {
+			continue
+		}
+		object[name] = wirePlaceholder
+		added++
+	}
+	return added
 }
 
 // conformConstants replaces, in a decoded instance, every value the schema

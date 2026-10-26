@@ -17,7 +17,7 @@ type methodBinding struct {
 	handler methodHandler
 
 	// workspaceFree marks a method whose subject is not a workspace, so no
-	// `workspace` parameter is required of it and none is resolved for it. It is
+	// `workspaceRoot` parameter is required of it and none is resolved for it. It is
 	// routing information rather than a handler input — the routing path has to
 	// know it before any params shape is decoded — which is why it sits on the
 	// binding beside the handler rather than being reached for by the handler.
@@ -44,7 +44,7 @@ func at(method string, handler methodHandler) methodBinding {
 }
 
 // atWorkspaceFree binds a wire method whose subject is NOT a workspace: it
-// requires no `workspace` parameter and none is resolved for it.
+// requires no `workspaceRoot` parameter and none is resolved for it.
 //
 // Three methods qualify and each for its own reason. The schema report and the
 // document skeleton are derived from the schema set compiled into the binary, so
