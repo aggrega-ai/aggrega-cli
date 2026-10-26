@@ -48,7 +48,40 @@ serde_yaml = "0.9"
 anyhow = "1"
 # Embedded Rego evaluator. Pure-Rust and evaluated entirely in-guest, so the
 # host runs no policy engine and carries no policy-language logic.
-regorus = "0.10.1"
+#
+# The engine's default feature set, less `http`. That feature registers
+# `http.send` as a builtin that evaluates to undefined rather than making a
+# request, so a rule whose body calls it never holds and the policy reaches no
+# decision without saying so. Left out, `http.send` is a builtin this engine does
+# not implement: a policy calling it fails evaluation naming the function, the
+# same way any other unimplemented builtin does, and the build stops instead of
+# passing. The guest has no network either way.
+#
+# The list is the engine's own `default` (`full-opa`, `arc`, `rvm`) with
+# `full-opa` spelled out minus `http`. A feature a later engine release adds to
+# its defaults is not picked up here until it is listed; the builtins it would
+# have registered fail loudly in the meantime rather than allowing.
+regorus = { version = "0.10.1", default-features = false, features = [
+    "arc",
+    "base64",
+    "base64url",
+    "cache",
+    "coverage",
+    "glob",
+    "graph",
+    "hex",
+    "jsonschema",
+    "net",
+    "opa-runtime",
+    "regex",
+    "rvm",
+    "semver",
+    "std",
+    "time",
+    "urlquery",
+    "uuid",
+    "yaml",
+] }
 # Reads a bundled policy archive an operator attached: the archive arrives
 # base64-encoded because the source wire carries text, so it is decoded, then
 # decompressed, then read as a tar archive. Pure-Rust backends only, so the

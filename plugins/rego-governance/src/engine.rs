@@ -596,6 +596,64 @@ deny contains msg if {
     }
 
     #[test]
+    fn a_policy_calling_http_send_fails_naming_it_rather_than_allowing() {
+        // The plugin has no network, so `http.send` can never return a response.
+        // It must fail like any other builtin the engine does not implement,
+        // naming the function, rather than evaluating to nothing and leaving the
+        // rule that depends on it silently unfired. Unlike the test above, this
+        // one admits no decision either: the call has nothing to return.
+        let policy = r#"
+package proof
+
+import rego.v1
+
+deny contains msg if {
+    response := http.send({"method": "get", "url": "http://127.0.0.1:9/unreachable"})
+    msg := sprintf("status %v", [response.status_code])
+}
+"#;
+        let err = evaluate(
+            &[source(policy)],
+            None,
+            &serde_json::json!({}),
+            &Translation::conventional(),
+        )
+        .expect_err("a policy calling http.send fails evaluation");
+        assert!(
+            err.to_string().contains("http.send"),
+            "the failure names the function: {err}"
+        );
+    }
+
+    #[test]
+    fn the_engine_does_not_list_http_send_among_its_builtins() {
+        // A policy can ask the engine which builtins it implements; the answer
+        // must not offer one that cannot run here.
+        let policy = r#"
+package proof
+
+import rego.v1
+
+audit contains "http.send listed" if {
+    "http.send" in opa.runtime().builtins
+}
+
+audit contains "builtins listed" if {
+    count(opa.runtime().builtins) > 0
+}
+"#;
+        let results = evaluate(
+            &[source(policy)],
+            None,
+            &serde_json::json!({}),
+            &Translation::conventional(),
+        )
+        .expect("evaluation succeeds");
+        let seen: Vec<&str> = results.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(seen, vec!["builtins listed"]);
+    }
+
+    #[test]
     fn a_decision_key_holding_a_non_collection_fails_loudly() {
         let policy = "package proof\n\nimport rego.v1\n\ndeny := \"not a collection\"\n";
         let err = evaluate(

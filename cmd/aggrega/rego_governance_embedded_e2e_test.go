@@ -1083,6 +1083,39 @@ deny contains msg if {
 	}
 }
 
+// TestRegoEmbedded_HTTPSendHaltsNamingIt proves a policy calling http.send stops
+// the build as a fault naming the function. The plugin has no network, so the
+// call can never return a response; were it to evaluate to nothing instead, the
+// deny rule depending on it would simply not fire and the build would pass with
+// nothing said. The address is one nothing listens on, so the test reaches no
+// network whichever way the guest behaves.
+func TestRegoEmbedded_HTTPSendHaltsNamingIt(t *testing.T) {
+	nonInteractive(t)
+
+	root, catalogDir := regoWorkspace(t)
+	writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
+
+import rego.v1
+
+deny contains msg if {
+	response := http.send({"method": "get", "url": "http://127.0.0.1:9/unreachable"})
+	msg := sprintf("status %v", [response.status_code])
+}
+`)
+	err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+		[]string{catalogDir, standardCatalogDir(t)},
+		regoAttachment("ir-verdict", "policy.rego", ""), "out")
+	if err == nil {
+		t.Fatal("a policy calling http.send must stop the build")
+	}
+	if errors.Is(err, analyzer.ErrPolicyViolation()) {
+		t.Fatalf("a policy calling http.send is a build fault, not a policy verdict: %v", err)
+	}
+	if !strings.Contains(err.Error(), "http.send") {
+		t.Fatalf("the fault must name http.send, got: %v", err)
+	}
+}
+
 // TestRegoEmbedded_DeterministicOutput proves two builds of the same pinned
 // input are byte-identical with the guest attached at both transform roles at
 // once, which is where a non-deterministic decision order would show.

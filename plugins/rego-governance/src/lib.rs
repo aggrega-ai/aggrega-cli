@@ -440,12 +440,18 @@ deny contains msg if {
     }
 
     /// One rendered file, optionally carrying the tree the host parsed it into.
-    fn artifact(path: &str, content: &str, tree: Option<&str>, format: &str) -> aggrega_abi::RenderedArtifact {
+    fn artifact(
+        path: &str,
+        content: &str,
+        tree: Option<&str>,
+        format: &str,
+    ) -> aggrega_abi::RenderedArtifact {
         aggrega_abi::RenderedArtifact {
             path: path.to_string(),
             content: content.to_string(),
             tree: tree.map(|t| {
-                serde_json::value::RawValue::from_string(t.to_string()).expect("test tree is valid JSON")
+                serde_json::value::RawValue::from_string(t.to_string())
+                    .expect("test tree is valid JSON")
             }),
             format: format.to_string(),
         }
@@ -570,7 +576,10 @@ deny contains msg if {
 
     /// Builds a graph-facet payload carrying the given attached files verbatim,
     /// so a test can attach an archive where another attaches policy text.
-    fn graph_payload_with_sources(nodes: &[&str], sources: Vec<aggrega_abi::PolicySource>) -> Vec<u8> {
+    fn graph_payload_with_sources(
+        nodes: &[&str],
+        sources: Vec<aggrega_abi::PolicySource>,
+    ) -> Vec<u8> {
         graph_payload_from(nodes, sources, None)
     }
 
@@ -608,7 +617,11 @@ deny contains msg if {
 
     /// Builds an injection-target payload for the annotation-injecting role,
     /// encoded by the generated codec as the host encodes it.
-    fn annotation_payload(targets: &[(&str, &str)], binding_keys: &[&str], policy: &str) -> Vec<u8> {
+    fn annotation_payload(
+        targets: &[(&str, &str)],
+        binding_keys: &[&str],
+        policy: &str,
+    ) -> Vec<u8> {
         let input = AnnotationTransformInput {
             targets: targets
                 .iter()
@@ -713,6 +726,28 @@ labels contains {"node": id, "key": "k", "value": "v"} if {
                 "an unimplemented builtin must not produce a silent no-change"
             ),
         }
+    }
+
+    #[test]
+    fn the_label_role_fails_naming_http_send_rather_than_reporting_no_change() {
+        // The roles that compute a change evaluate through the same engine as
+        // the verdict roles, so `http.send` fails here too, naming the function.
+        const POLICY: &str = r#"
+package tagging
+
+import rego.v1
+
+labels contains {"node": id, "key": "k", "value": "v"} if {
+    some id, _ in input.graph.nodes
+    http.send({"method": "get", "url": "http://127.0.0.1:9/unreachable"})
+}
+"#;
+        let err = label_changes(&label_payload(&[("app", "server")], POLICY))
+            .expect_err("a policy calling http.send fails evaluation");
+        assert!(
+            err.to_string().contains("http.send"),
+            "the failure names the function: {err}"
+        );
     }
 
     #[test]
