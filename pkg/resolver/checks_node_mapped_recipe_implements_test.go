@@ -44,8 +44,9 @@ func (f nodeMappingFixture) refused() (refusedNodeMapping, bool) {
 // passing on the value it names and on nothing else.
 //
 // 🔴 PLANTED DEFECT: in nodeMappingRefused (pkg/resolver/checks_node_mapped_recipe_implements.go),
-// delete the early return on a key that names a version: the "a versioned key"
-// row reddens, refused although the rule over the entry judges it.
+// return early on a key that names a version: the two "a key naming another
+// version … to a 1.0.0 Recipe" and "… extending another base version" rows
+// redden, passed over although the instance's version is not the key's.
 func TestTheInstanceMappingJudgementRefusesOnlyAnotherVersionsRecipe(t *testing.T) {
 	t.Parallel()
 	baseline := func() nodeMappingFixture {
@@ -92,8 +93,35 @@ func TestTheInstanceMappingJudgementRefusesOnlyAnotherVersionsRecipe(t *testing.
 					"acme/pg:2.0.0": {"core/postgres:2.0.0"},
 				}
 			}},
-		{name: "a versioned key, judged by the rule over the entry", wantRefused: false,
+		{name: "a key naming another version sending a 2.0.0 instance to a 1.0.0 Recipe", wantRefused: true,
 			edit: func(f *nodeMappingFixture) { f.key = "core/postgres:1.0.0" }},
+		{name: "a key naming the instance's version, mapped to a Recipe implementing it", wantRefused: false,
+			edit: func(f *nodeMappingFixture) {
+				f.key, f.reference, f.implements = "core/postgres:2.0.0", "postgres-chart-v2:1.0.0", "core/postgres:2.0.0"
+			}},
+		{name: "a key naming the instance's version whose Recipe the rule over the entry refuses", wantRefused: false,
+			edit: func(f *nodeMappingFixture) { f.key = "core/postgres:2.0.0" }},
+		{name: "a key naming another version and a Recipe implementing a caret range covering both", wantRefused: false,
+			edit: func(f *nodeMappingFixture) {
+				f.key, f.resolved, f.implements = "core/postgres:1.0.0", "core/postgres:1.4.0", "core/postgres:^1.0.0"
+			}},
+		{name: "a key naming another version reaching a type whose base the Recipe implements at every version",
+			wantRefused: false,
+			edit: func(f *nodeMappingFixture) {
+				f.key, f.resolved, f.implements = "acme/pg:1.0.0", "acme/pg:2.0.0", "core/postgres"
+				f.ancestry = map[string][]string{
+					"acme/pg:1.0.0": {"core/postgres:1.0.0"},
+					"acme/pg:2.0.0": {"core/postgres:2.0.0"},
+				}
+			}},
+		{name: "a key naming another version reaching a type extending another base version", wantRefused: true,
+			edit: func(f *nodeMappingFixture) {
+				f.key, f.resolved, f.implements = "acme/pg:1.0.0", "acme/pg:2.0.0", "core/postgres:1.0.0"
+				f.ancestry = map[string][]string{
+					"acme/pg:1.0.0": {"core/postgres:1.0.0"},
+					"acme/pg:2.0.0": {"core/postgres:2.0.0"},
+				}
+			}},
 		{name: "a name-axis entry", wantRefused: false,
 			edit: func(f *nodeMappingFixture) { f.key, f.byType = "", false }},
 		{name: "an instance nothing maps", wantRefused: false,

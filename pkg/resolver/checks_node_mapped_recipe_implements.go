@@ -8,12 +8,14 @@ import (
 )
 
 // NodeMappedRecipeImplementsTheNodeVersion reports each component instance that a
-// Manifest mapping key naming no version sends to a Recipe whose spec.implements
-// the instance's own type version does not satisfy.
+// Manifest mapping key whose version is not the instance's own sends to a Recipe
+// whose spec.implements the instance's own type version does not satisfy.
 //
-// A key written without a version matches every version of its type, so the
-// rule over the mapping entry can only ask whether the Recipe implements that
-// type at all. Which version the Recipe has to serve is settled by the instance
+// The type-axis lookup matches a key to an instance by the type's base when no
+// key names the instance's type exactly, so a key written without a version
+// reaches every version of its type, and a key naming one version reaches the
+// instances of another. The rule over the mapping entry judges the Recipe against
+// the key alone. Which version the Recipe has to serve is settled by the instance
 // the key reaches, and an instance of one version mapped to a Recipe written for
 // another would otherwise render through it with nothing said — its sizing read
 // by no template, its contract served by a Recipe that never saw it. So the
@@ -35,9 +37,10 @@ import (
 //
 // # What it passes over, and who reports it instead
 //
-// A key that names a version is passed over: the rule over the mapping entry
-// judges the Recipe against that version, and judging it here as well would
-// report one mapping twice. So is an instance a name-axis entry reached, because
+// A key naming the instance's own version is the request the rule over the
+// mapping entry already asked, so the second judgement repeats the first and
+// cannot refuse what the first accepted; one mapping is never reported twice.
+// Passed over too are an instance a name-axis entry reached, because
 // a name keys an instance and says nothing about a type; an instance no mapping
 // reached, or one whose lookup refused, which the rules over the instance's
 // resolution report; and a reference the catalog does not hold, which the path
@@ -100,7 +103,7 @@ var NodeMappedRecipeImplementsTheNodeVersion = constraint.Check[
 }
 
 // refusedNodeMapping is one component instance the rule over an instance's
-// mapping refuses, as the values it judged it by: the unversioned key that
+// mapping refuses, as the values it judged it by: the type-axis key that
 // reached it, the reference that key maps to, what that Recipe declares it
 // implements, and the instance's type at the version the build compiled it as.
 type refusedNodeMapping struct {
@@ -129,9 +132,6 @@ func nodeMappingRefused(
 ) (refusedNodeMapping, bool) {
 	key, byType := typeKey(node)
 	if !byType {
-		return refusedNodeMapping{}, false
-	}
-	if _, _, keyHasVersion := SplitVersionedURI(key); keyHasVersion {
 		return refusedNodeMapping{}, false
 	}
 	reference, mapped := mappedReference(node)
