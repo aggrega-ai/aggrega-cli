@@ -1140,27 +1140,14 @@ func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types
 	return renderer.NodeProjection(nodeCtx, values, w)
 }
 
-// renderContext builds the wire render context from the host node context: the
-// render-wide indentation width and the node's already-merged annotations placed
-// in a single bucket in sorted key order, so the wire payload is deterministic
-// and the guest's own bucket-merge yields that same flat map.
+// renderContext is the wire render context this engine hands its guest on every
+// export that carries one: the node's guest context, built by the renderer's one
+// constructor — the same one a pipeline step's context comes from — with the
+// render-wide indentation width the guest serializes its output at.
 func (e *Engine) renderContext(nodeCtx renderer.NodeRenderContext) renderer.RenderContext {
-	return renderer.RenderContext{
-		Annotations: flattenAnnotations(nodeCtx.Annotations),
-		YAMLIndent:  nodeCtx.YAMLIndent,
-	}
-}
-
-// flattenAnnotations places the already-merged host annotation map into a single
-// wire bucket. The guest merges its three buckets into one flat map, so one
-// populated bucket reproduces the host's merged map exactly. Keys are inserted in
-// sorted order so the wire payload stays deterministic across runs.
-func flattenAnnotations(anns map[string]string) renderer.RenderAnnotations {
-	bucket := types.OrderedMap[string]{}
-	for _, k := range sortedKeys(anns) {
-		bucket.Set(k, anns[k])
-	}
-	return renderer.RenderAnnotations{Aggregate: bucket}
+	rc := nodeCtx.GuestContext
+	rc.YAMLIndent = nodeCtx.YAMLIndent
+	return rc
 }
 
 // valuesToOrdered converts the plain values map the engine interface delivers

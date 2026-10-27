@@ -368,23 +368,34 @@ func runNodePipelineWithInvoker(
 	return res, nil
 }
 
-// buildPipelineRenderCtx assembles the render-time context a pipeline guest
-// receives for a node: the fulfilled parameters (deterministically ordered),
-// the three annotation buckets partitioned by authoring side, and the
-// boundary metadata. It is the wire projection the FRP step input carries;
-// the host hands it whole and the guest reads it without the host
-// interpreting it.
-func buildPipelineRenderCtx(node types.IRNode, bi *resolver.BoundaryInfra, parameters map[string]any) renderctx.RenderContext {
+// buildNodeGuestContext assembles the render-time context a guest receives for
+// a node, on either socket that carries one: the fulfilled parameters
+// (deterministically ordered), the three annotation buckets partitioned by
+// authoring side exactly as the IR node carries them, and the boundary metadata.
+// A pipeline step's input carries it as built; a provider export carries it with
+// the render-wide indentation width added by the provider engine. The host hands
+// it whole and the guest reads it without the host interpreting it.
+func buildNodeGuestContext(node types.IRNode, bi *resolver.BoundaryInfra, parameters map[string]any) renderctx.RenderContext {
+	return buildGuestContext(node.BoundaryPath, renderctx.RenderAnnotations{
+		Aggregate: node.AggregateAnnotations,
+		Release:   node.ReleaseAnnotations,
+		Catalog:   node.CatalogAnnotations,
+	}, node.SyncWave, bi, parameters)
+}
+
+// buildGuestContext is the one constructor of the render context a guest
+// receives, whichever socket hands it over and whatever scope the render runs
+// at: the boundary's name and path segments are derived from boundaryPath, the
+// buckets and the sync wave are the caller's, and the output directory, its
+// sub-directory and the boundary's annotation set come from bi when the render
+// has a boundary placement to read them from.
+func buildGuestContext(boundaryPath string, buckets renderctx.RenderAnnotations, syncWave int, bi *resolver.BoundaryInfra, parameters map[string]any) renderctx.RenderContext {
 	rc := renderctx.RenderContext{
-		Annotations: renderctx.RenderAnnotations{
-			Aggregate: node.AggregateAnnotations,
-			Release:   node.ReleaseAnnotations,
-			Catalog:   node.CatalogAnnotations,
-		},
+		Annotations: buckets,
 		Boundary: renderctx.BoundaryContext{
-			Name:     boundaryLeafName(node.BoundaryPath),
-			Path:     splitBoundaryPath(node.BoundaryPath),
-			SyncWave: node.SyncWave,
+			Name:     boundaryLeafName(boundaryPath),
+			Path:     splitBoundaryPath(boundaryPath),
+			SyncWave: syncWave,
 		},
 	}
 	rc.Parameters = orderedParameters(parameters)
@@ -394,6 +405,21 @@ func buildPipelineRenderCtx(node types.IRNode, bi *resolver.BoundaryInfra, param
 		rc.Boundary.Annotations = bi.Annotations
 	}
 	return rc
+}
+
+// nodeBoundaryInputs reads, for one node, the two render-input facts its guest
+// context is built from beside the IR node itself: the node's boundary placement
+// and the fulfilled parameters. Both are nil when the render has no resolve
+// result to read them from.
+func nodeBoundaryInputs(input RendererInput, nodeID string) (*resolver.BoundaryInfra, map[string]any) {
+	if input.ResolveResult == nil {
+		return nil, nil
+	}
+	var bi *resolver.BoundaryInfra
+	if rbi, ok := input.ResolveResult.BoundaryInfra[nodeID]; ok && rbi != nil {
+		bi = rbi
+	}
+	return bi, input.ResolveResult.Parameters
 }
 
 // orderedParameters projects a parameter map into a deterministically-ordered

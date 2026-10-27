@@ -2446,14 +2446,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if recipe != nil {
 			recipeName = recipe.Metadata.Name
 		}
-		var bi *resolver.BoundaryInfra
-		var parameters map[string]any
-		if input.ResolveResult != nil {
-			if rbi, ok := input.ResolveResult.BoundaryInfra[nodeID]; ok && rbi != nil {
-				bi = rbi
-			}
-			parameters = input.ResolveResult.Parameters
-		}
+		bi, parameters := nodeBoundaryInputs(input, nodeID)
 		pathEval, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("path eval node %q", nodeID))
@@ -2481,7 +2474,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// document.
 		var recipeOwnDeferred *DeferredPatch
 		if recipe != nil && len(recipe.Spec.Pipeline) > 0 {
-			renderCtx := buildPipelineRenderCtx(node, bi, parameters)
+			renderCtx := buildNodeGuestContext(node, bi, parameters)
 			if renderIsIntermediate {
 				recipeOwnDeferred = &DeferredPatch{
 					Steps:             recipe.Spec.Pipeline,
@@ -2698,7 +2691,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// targets is enforced against the provider rendering the
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
-		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
+		pipelineRenderCtx := buildNodeGuestContext(node, bi, parameters)
 		// Whether this node's dispatch group gives each contributor a position of
 		// its own, which is what decides where this node's attachments write. It is
 		// asked of the engine that rendered THIS node: a component-scope attachment
@@ -3713,9 +3706,11 @@ func buildNodeRenderContext(
 	input RendererInput,
 ) NodeRenderContext {
 	attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
+	bi, parameters := nodeBoundaryInputs(input, nodeID)
 	nrc := NodeRenderContext{
 		NodeID:       nodeID,
 		Annotations:  flattenOrderedStringMap(node.ReleaseAnnotations),
+		GuestContext: buildNodeGuestContext(node, bi, parameters),
 		BoundaryPath: node.BoundaryPath,
 		SyncWave:     node.SyncWave,
 		Attachments:  attachments,

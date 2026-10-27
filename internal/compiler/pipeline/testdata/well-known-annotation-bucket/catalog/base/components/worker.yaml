@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/worker
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "worker"
+  annotations:
+    aggrega.ai/namespace: "from-catalog"
+    aggrega.ai/image-registry: "catalog.registry.example"
+spec:
+  schema:
+    values:
+      image: { type: string, required: true }

@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: well-known-bucket-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: well-known-bucket-app
+  manifest: well-known-bucket-manifest
+  boundaries:
+    operated-zone:
+      directory: ./dist/operated
+      annotations:
+        aggrega.ai/namespace: "from-release"
+        aggrega.ai/image-registry: "release.registry.example"
+      components:
+        operated: {}
+    plain-zone:
+      directory: ./dist/plain
+      components:
+        unoperated: {}

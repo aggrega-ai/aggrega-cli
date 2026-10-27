@@ -787,17 +787,11 @@ func dispatchBoundaryScopeFR(
 // component, so the context carries the boundary's metadata and the fulfilled
 // parameters; the boundary's cascaded annotations land on the boundary root.
 func buildBoundaryFRRenderCtx(boundaryPath string, parameters map[string]any, boundaryAnnotations map[string]types.OrderedMap[string]) renderctx.RenderContext {
-	rc := renderctx.RenderContext{
-		Boundary: renderctx.BoundaryContext{
-			Name: boundaryLeafName(boundaryPath),
-			Path: splitBoundaryPath(boundaryPath),
-		},
-	}
-	rc.Parameters = orderedParameters(parameters)
+	var placement *resolver.BoundaryInfra
 	if ann, ok := boundaryAnnotations[boundaryPath]; ok {
-		rc.Boundary.Annotations = ann
+		placement = &resolver.BoundaryInfra{Annotations: ann}
 	}
-	return rc
+	return buildGuestContext(boundaryPath, renderctx.RenderAnnotations{}, 0, placement, parameters)
 }
 
 // buildBoundaryFRTemplateContext assembles the FR-scoped TemplateContext for a

@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: well-known-bucket-app
+  version: "1.0.0"
+spec:
+  components:
+    operated:
+      type: core/worker
+      annotations:
+        aggrega.ai/namespace: "from-aggregate"
+        aggrega.ai/image-registry: "aggregate.registry.example"
+      values:
+        image: "corp/operated:v1"
+    unoperated:
+      type: core/worker
+      annotations:
+        aggrega.ai/namespace: "from-aggregate"
+        aggrega.ai/image-registry: "aggregate.registry.example"
+      values:
+        image: "corp/unoperated:v1"

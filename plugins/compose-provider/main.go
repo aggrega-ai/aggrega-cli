@@ -37,7 +37,6 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composecore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -268,7 +267,7 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 // fragment's serialized bytes as a RenderedFile. Compose's selection is a single
 // document; a pack that returns a different file count is
 // an orchestrator bug rather than authoring drift and halts loudly. The node's
-// values, identity, provenance, merged annotations and omit entries arrive in the
+// values, identity, provenance, release annotations and omit entries arrive in the
 // node projection, the render context and the input's omits list, and the counts
 // the render core returns for the entries go back on the output — one per entry
 // the input carried, and none when it carried none.
@@ -351,7 +350,7 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 // input's workload projection, running the shared filesystem-free synthesis
 // core, and returns the fragment's serialized bytes as a RenderedFile. The
 // workload arrives in the workload projection; the node's
-// identity, provenance, and merged annotations arrive in the node projection and
+// identity, provenance, and release annotations arrive in the node projection and
 // render context. Compose's synthesis reads no attachment provides, so the
 // projection's AttachmentProvides are ignored by design. The core's emission
 // order is deterministic and load-bearing (a single Intermediate=true fragment
@@ -380,8 +379,8 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 	return out, nil
 }
 
-// The guest glue below (nodeCtxFromInput, orderedStringMapToPlain,
-// mergeAnnotations, sortedKeys) is byte-identical-critical: it reconstructs the
+// The guest glue below (nodeCtxFromInput, orderedStringMapToPlain, sortedKeys) is
+// byte-identical-critical: it reconstructs the
 // render context the render cores stamp from off the wire. The value-flattening
 // that renormalizes wire numerics is single-sourced in the renderer package
 // (rendercore.OrderedMapToPlain / rendercore.PlainValue), which compiles for both
@@ -391,7 +390,9 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 // input: the node's identity and the provenance the render core stamps onto
 // every emitted service (boundary path, deployment wave, Recipe identity,
 // component-id override, derived-name basis, and build identity) from the node
-// projection, the merged annotations from the render context, and the render-wide YAML
+// projection, the render context's release annotations, which the well-known
+// aggrega.ai/* keys are read from (the other two buckets never decide one; see
+// rendercore.WellKnownAnnotationSet), and the render-wide YAML
 // indentation width the guest serializes output at (carried on the render
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's fragments carry
@@ -410,7 +411,7 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 		Omits:             rendercore.ResolvedOmitsOf(in.Omits),
 		SensitiveValues:   in.Node.SensitiveValues,
 		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,
-		Annotations:       mergeAnnotations(in.Context.Annotations),
+		Annotations:       rendercore.WellKnownAnnotationSet(in.Context.Annotations),
 		BoundaryPath:      in.Node.BoundaryPath,
 		SyncWave:          in.Node.SyncWave,
 		RecipeName:        in.Node.RecipeName,
@@ -438,21 +439,6 @@ func orderedStringMapToPlain(m *types.OrderedMap[string]) map[string]string {
 	for _, k := range m.Keys() {
 		if v, ok := m.Get(k); ok {
 			out[k] = v
-		}
-	}
-	return out
-}
-
-// mergeAnnotations flattens the three render-context annotation buckets into the
-// single merged map the engine reads. Later buckets win on key collision,
-// matching the aggregate-then-release-then-catalog precedence.
-func mergeAnnotations(a renderctx.RenderAnnotations) map[string]string {
-	out := map[string]string{}
-	for _, bucket := range []*types.OrderedMap[string]{&a.Aggregate, &a.Release, &a.Catalog} {
-		for _, k := range bucket.Keys() {
-			if v, ok := bucket.Get(k); ok {
-				out[k] = v
-			}
 		}
 	}
 	return out

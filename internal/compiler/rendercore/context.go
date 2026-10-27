@@ -21,8 +21,16 @@ type IREdgeInfo struct {
 
 // NodeRenderContext provides identity metadata for manifest generation.
 type NodeRenderContext struct {
-	NodeID       string
-	Annotations  map[string]string // merged release annotations
+	NodeID      string
+	Annotations map[string]string // merged release annotations
+	// GuestContext is the render context a provider guest is handed on every
+	// export that carries one — the parameters, the three annotation buckets by
+	// the side that wrote each annotation, and the boundary the node renders
+	// within — built by the same constructor that builds a pipeline step's, so
+	// the two sockets receive one shape with one content. The provider engine
+	// adds the render-wide indentation width when it hands the context over.
+	// Host-only as a field: the guest receives its wire form, not this struct.
+	GuestContext renderctx.RenderContext
 	BoundaryPath string
 	SyncWave     int // deployment wave from the containing boundary's syncWave (signed integer; default 0)
 	// Attachments is the node's post-cascade attachment set, keyed by the

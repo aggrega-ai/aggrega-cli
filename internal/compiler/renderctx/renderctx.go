@@ -8,11 +8,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// RenderContext is the render-time context a Provider guest receives:
+// RenderContext is the render-time context a guest receives for a node:
 // the fulfilled parameters, the three annotation buckets
 // ([RenderAnnotations]), the [BoundaryContext] the node renders within,
-// and the render-wide indentation width the guest applies when
-// serializing its output.
+// and, on a Provider export, the render-wide indentation width the guest
+// applies when serializing its output. A Provider guest receives it on
+// every export that renders or checks a node, and a pipeline step on its
+// step input; both are built by one constructor in the renderer from the
+// same IR node, so the two sockets see the same values for the same node.
+// The assembly export, which merges several nodes, carries only the
+// indentation width: each contributor's annotations ride its own entry.
 //
 // RenderContext is the guest-facing wire projection of render-time
 // context and is deliberately distinct from the package's host-internal

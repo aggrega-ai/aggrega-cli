@@ -3,7 +3,11 @@
 
 package rendercore
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+)
 
 // Well-known provider annotation keys. Provider engines read these out of
 // NodeRenderContext.Annotations and apply them to the rendered artifacts. Which
@@ -53,6 +57,28 @@ const (
 //     overriding a list would silently drop recipe-declared entries.
 //
 // The resolution for each field lives in exactly one render site per engine.
+
+// WellKnownAnnotationSet returns the annotation map a provider render reads the
+// well-known keys above from: the render context's release bucket — the
+// annotations the Release wrote for the node, its boundaries' cascaded down with
+// its own Release entry's layered last — flattened into a plain map.
+//
+// The aggregate and catalog buckets reach a guest beside it, and a guest may read
+// them for anything of its own, but they never decide a well-known key. The keys
+// are the operator's boundary layer: a value written in an Aggregate or a catalog
+// entity must not override the operator's Release, and the compiler reads a
+// node's namespace from the Release alone when it places the node's connections,
+// so a render reading it from another bucket would place the node somewhere its
+// connections do not look for it.
+func WellKnownAnnotationSet(a renderctx.RenderAnnotations) map[string]string {
+	out := make(map[string]string, a.Release.Len())
+	for _, k := range a.Release.Keys() {
+		if v, ok := a.Release.Get(k); ok {
+			out[k] = v
+		}
+	}
+	return out
+}
 
 // NamespaceFromAnnotations returns the value of AnnotationNamespace or "".
 func NamespaceFromAnnotations(annotations map[string]string) string {

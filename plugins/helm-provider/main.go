@@ -29,8 +29,6 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/chartignore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -275,7 +273,9 @@ func renderedName() int32 {
 // input: the node's identity and the provenance the render core stamps onto
 // every emitted manifest (boundary path, deployment wave, Recipe identity,
 // component-id override, derived-name basis, and build identity) from the node
-// projection, the merged annotations from the render context, and the render-wide YAML
+// projection, the render context's release annotations, which the well-known
+// aggrega.ai/* keys are read from (the other two buckets never decide one; see
+// rendercore.WellKnownAnnotationSet), and the render-wide YAML
 // indentation width the guest serializes output at (carried on the render
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's rendered
@@ -294,7 +294,7 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 		Omits:             rendercore.ResolvedOmitsOf(in.Omits),
 		SensitiveValues:   in.Node.SensitiveValues,
 		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,
-		Annotations:       mergeAnnotations(in.Context.Annotations),
+		Annotations:       rendercore.WellKnownAnnotationSet(in.Context.Annotations),
 		BoundaryPath:      in.Node.BoundaryPath,
 		SyncWave:          in.Node.SyncWave,
 		RecipeName:        in.Node.RecipeName,
@@ -317,7 +317,7 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 // name-only source listing, asks the host to pack the chart's file tree,
 // reconstructs the chart in memory, runs the shared filesystem-free render core,
 // and returns each rendered manifest's serialized bytes as a RenderedFile. The
-// node's values, identity, provenance, and merged annotations arrive in the node
+// node's values, identity, provenance, and release annotations arrive in the node
 // projection and render context.
 //
 // Values-schema validation runs hermetically: the chart's values.schema.json
@@ -379,7 +379,7 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 // input's workload projection, running the shared filesystem-free synthesis
 // core, and returns each synthesized manifest's serialized bytes as a
 // RenderedFile. The workload and its attachments' resolved provides
-// arrive in the workload projection; the node's identity, provenance, and merged
+// arrive in the workload projection; the node's identity, provenance, and release
 // annotations arrive in the node projection and render context. The core's
 // emission order is deterministic and load-bearing, so the files are collected
 // in order and never re-sorted.
@@ -425,22 +425,6 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: body})
 	}
 	return out, nil
-}
-
-// mergeAnnotations flattens the three render-context annotation buckets
-// into the single merged map the helm engine reads for the well-known
-// aggrega.ai/* annotations. Later buckets win on key collision, matching the
-// aggregate-then-release-then-catalog precedence.
-func mergeAnnotations(a renderctx.RenderAnnotations) map[string]string {
-	out := map[string]string{}
-	for _, bucket := range []*types.OrderedMap[string]{&a.Aggregate, &a.Release, &a.Catalog} {
-		for _, k := range bucket.Keys() {
-			if v, ok := bucket.Get(k); ok {
-				out[k] = v
-			}
-		}
-	}
-	return out
 }
 
 // sortedKeys returns the map's keys in lexical order so file emission is
