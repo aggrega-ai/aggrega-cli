@@ -46,8 +46,9 @@ func mappingPairs(n *yaml.Node) []string {
 // chart whose every entry under it is conditional and none taken — and its two
 // explicit null spellings receive the annotations in a block map, in the key's
 // own place, exactly as an absent key does; an empty map, a map holding the
-// chart's own entries, and a quoted "null" (which is text) keep the behaviour
-// they had.
+// chart's own entries, a quoted "null" (which is text) and a list keep the
+// behaviour they had — the list is written into as it stands, so it gains the
+// keys and values as entries after the chart's own.
 func TestInjectAggregaAnnotations_EveryShapeOfTheAnnotationsKey(t *testing.T) {
 	t.Parallel()
 
@@ -63,7 +64,7 @@ func TestInjectAggregaAnnotations_EveryShapeOfTheAnnotationsKey(t *testing.T) {
 		hookWeight  string
 		wantKind    yaml.Kind
 		wantStyle   yaml.Style
-		wantPairs   []string // for a mapping: keys and values in order
+		wantPairs   []string // for a mapping or a list: keys and values (or entries) in order
 		wantValue   string   // for a scalar: the text kept
 	}{
 		{name: "a key with nothing under it", annotations: "  annotations:\n",
@@ -81,6 +82,9 @@ func TestInjectAggregaAnnotations_EveryShapeOfTheAnnotationsKey(t *testing.T) {
 			wantPairs: append([]string{"chart.example/key", "keep"}, stamped...)},
 		{name: "a quoted null, which is text", annotations: "  annotations: \"null\"\n",
 			wantKind: yaml.ScalarNode, wantValue: "null"},
+		{name: "a list", annotations: "  annotations:\n    - x\n    - y\n",
+			wantKind:  yaml.SequenceNode,
+			wantPairs: append([]string{"x", "y"}, stamped...)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

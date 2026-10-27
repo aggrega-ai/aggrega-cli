@@ -20,8 +20,8 @@ import (
 // Chart-author labels are preserved; aggrega keys overwrite on collision.
 //
 // A document whose root is not a mapping is left untouched (it is not K8s-shaped);
-// one with no metadata gets a metadata map. Multi-doc boundaries ("---") are
-// preserved via yaml.Encoder per document.
+// one with no metadata, or a null one, gets a metadata map. Multi-doc boundaries
+// ("---") are preserved via yaml.Encoder per document.
 func injectAggregaLabels(yamlBytes []byte, labels map[string]string, indent int) ([]byte, error) {
 	if len(labels) == 0 {
 		return yamlBytes, nil
@@ -76,16 +76,14 @@ func injectAggregaLabels(yamlBytes []byte, labels map[string]string, indent int)
 
 // mergeLabelsIntoMetadata walks a root mapping node for a K8s manifest, finds or
 // creates `metadata.labels`, and merges the aggrega labels into it (aggrega wins
-// on key collision, chart-author labels preserved otherwise).
+// on key collision, chart-author labels preserved otherwise). A `metadata:` or
+// `labels:` the chart rendered as null receives the labels exactly as an absent
+// one does (see [findOrCreateMapChild]); any other value that is not a map is
+// written into as it stands, so text keeps no labels and a list gains them as
+// entries.
 func mergeLabelsIntoMetadata(root *yaml.Node, keys []string, labels map[string]string) {
-	metadata := findMapChild(root, "metadata")
-	if metadata == nil {
-		metadata = appendMapChild(root, "metadata")
-	}
-	labelsNode := findMapChild(metadata, "labels")
-	if labelsNode == nil {
-		labelsNode = appendMapChild(metadata, "labels")
-	}
+	metadata := findOrCreateMapChild(root, "metadata")
+	labelsNode := findOrCreateMapChild(metadata, "labels")
 	// Build a lookup of existing keys for overwrite semantics.
 	existing := map[string]int{}
 	for i := 0; i < len(labelsNode.Content); i += 2 {
@@ -136,20 +134,36 @@ func appendMapChild(m *yaml.Node, key string) *yaml.Node {
 	return child
 }
 
+// findOrCreateMapChild returns the value mapped from key in m, where a null value
+// counts as an absent key: an absent key gets an empty map appended under it, and
+// a null value becomes an empty block-style map in place, so the key keeps its
+// position and any comment written on it. A chart template commonly writes
+// `metadata:`, `labels:` or `annotations:` and then only conditional entries under
+// it; with none taken the key renders as null, not as an empty map, and a
+// scalar's children are never encoded — merging into the null as it stands would
+// drop every key silently. Any other value is returned as it stands.
+//
+// The label merge and the annotation merge find every map they write into through
+// this one function, so their null rule has a single home.
+func findOrCreateMapChild(m *yaml.Node, key string) *yaml.Node {
+	child := findMapChild(m, key)
+	switch {
+	case child == nil:
+		return appendMapChild(m, key)
+	case isNullScalar(child):
+		child.Kind = yaml.MappingNode
+		child.Tag = "!!map"
+		child.Value = ""
+		child.Style = 0
+		child.Content = nil
+	}
+	return child
+}
+
 // isNullScalar reports whether n is a YAML null — a key written with nothing
 // after it, or `null` or `~` — as opposed to a quoted "null", which is text.
 func isNullScalar(n *yaml.Node) bool {
 	return n != nil && n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null"
-}
-
-// becomeEmptyMap turns n, in place, into an empty block-style mapping, so the
-// key holding it keeps its position in its parent and any comment written on it.
-func becomeEmptyMap(n *yaml.Node) {
-	n.Kind = yaml.MappingNode
-	n.Tag = "!!map"
-	n.Value = ""
-	n.Style = 0
-	n.Content = nil
 }
 
 // chooseScalarStyle returns a conservative style for label values. Plain style
@@ -168,8 +182,8 @@ func chooseScalarStyle(v string) yaml.Style {
 // aggrega keys overwrite on collision.
 //
 // A document whose root is not a mapping is left untouched (it is not K8s-
-// shaped); one with no metadata gets a metadata map. Multi-doc boundaries
-// ("---") are preserved via yaml.Encoder per document.
+// shaped); one with no metadata, or a null one, gets a metadata map.
+// Multi-doc boundaries ("---") are preserved via yaml.Encoder per document.
 //
 // hookWeight, when non-empty, is emitted as helm.sh/hook-weight ONLY on
 // resources that already carry a helm.sh/hook annotation (chart-author
@@ -229,27 +243,17 @@ func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, h
 // mergeAnnotationsIntoMetadata walks a root mapping node for a K8s
 // manifest, finds or creates `metadata.annotations`, and merges the
 // aggrega annotations into it (aggrega wins on key collision; chart-
-// author entries preserved otherwise). An `annotations:` the chart
-// rendered as null receives the annotations exactly as an absent one does.
+// author entries preserved otherwise). A `metadata:` or `annotations:`
+// the chart rendered as null receives the annotations exactly as an
+// absent one does (see [findOrCreateMapChild]); any other value that is
+// not a map is written into as it stands, so text keeps no annotations
+// and a list gains them as entries.
 //
 // hookWeight, when non-empty, is injected as helm.sh/hook-weight ONLY
 // when the manifest already carries a helm.sh/hook annotation.
 func mergeAnnotationsIntoMetadata(root *yaml.Node, keys []string, annotations map[string]string, hookWeight string) {
-	metadata := findMapChild(root, "metadata")
-	if metadata == nil {
-		metadata = appendMapChild(root, "metadata")
-	}
-	annotationsNode := findMapChild(metadata, "annotations")
-	switch {
-	case annotationsNode == nil:
-		annotationsNode = appendMapChild(metadata, "annotations")
-	case isNullScalar(annotationsNode):
-		// A chart template commonly writes `annotations:` and then only
-		// conditional entries under it; with none taken the key renders as
-		// null, not as an empty map. A scalar's children are never encoded, so
-		// merging into the null as it stands would drop every key silently.
-		becomeEmptyMap(annotationsNode)
-	}
+	metadata := findOrCreateMapChild(root, "metadata")
+	annotationsNode := findOrCreateMapChild(metadata, "annotations")
 
 	// Detect helm.sh/hook before mutating annotations: scan existing
 	// keys for the marker. The chart author sets this via templates;
