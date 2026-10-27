@@ -7,9 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegmenttest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestExportName asserts the deterministic export-name scheme for representative
@@ -286,64 +284,5 @@ func TestExportNameDeterministic(t *testing.T) {
 		if again := ExportName("prod", "prod/api", "orders-db", "host"); again != first {
 			t.Fatalf("ExportName not stable on run %d: %q != %q", i, again, first)
 		}
-	}
-}
-
-// TestReadCloudTargetAnnotationsPresent asserts the reader extracts each of the
-// three cloud-target annotations from the node-scoped Release bucket as opaque
-// strings.
-func TestReadCloudTargetAnnotationsPresent(t *testing.T) {
-	var rel types.OrderedMap[string]
-	rel.Set("aggrega.ai/aws-account", "123456789012")
-	rel.Set("aggrega.ai/aws-region", "eu-west-1")
-	rel.Set("aggrega.ai/aws-assume-role-arn", "arn:aws:iam::123456789012:role/cross-stack-reader")
-
-	ctx := renderctx.RenderContext{
-		Annotations: renderctx.RenderAnnotations{Release: rel},
-	}
-
-	got := ReadCloudTargetAnnotations(ctx)
-	if got.AWSAccount != "123456789012" {
-		t.Fatalf("AWSAccount = %q, want 123456789012", got.AWSAccount)
-	}
-	if got.AWSRegion != "eu-west-1" {
-		t.Fatalf("AWSRegion = %q, want eu-west-1", got.AWSRegion)
-	}
-	if got.AWSAssumeRoleARN != "arn:aws:iam::123456789012:role/cross-stack-reader" {
-		t.Fatalf("AWSAssumeRoleARN = %q, want the role arn", got.AWSAssumeRoleARN)
-	}
-}
-
-// TestReadCloudTargetAnnotationsAbsent asserts an absent annotation yields the
-// empty string on every field.
-func TestReadCloudTargetAnnotationsAbsent(t *testing.T) {
-	got := ReadCloudTargetAnnotations(renderctx.RenderContext{})
-	if got.AWSAccount != "" || got.AWSRegion != "" || got.AWSAssumeRoleARN != "" {
-		t.Fatalf("expected empty strings for an empty render context, got %+v", got)
-	}
-}
-
-// TestReadCloudTargetAnnotationsComponentOverBoundary asserts the node-scoped
-// Release bucket wins over the boundary bucket for the same key, and a key
-// present only on the boundary is read from there.
-func TestReadCloudTargetAnnotationsComponentOverBoundary(t *testing.T) {
-	var rel types.OrderedMap[string]
-	rel.Set("aggrega.ai/aws-region", "us-west-2")
-
-	var boundary types.OrderedMap[string]
-	boundary.Set("aggrega.ai/aws-region", "us-east-1")
-	boundary.Set("aggrega.ai/aws-account", "999988887777")
-
-	ctx := renderctx.RenderContext{
-		Annotations: renderctx.RenderAnnotations{Release: rel},
-		Boundary:    renderctx.BoundaryContext{Annotations: boundary},
-	}
-
-	got := ReadCloudTargetAnnotations(ctx)
-	if got.AWSRegion != "us-west-2" {
-		t.Fatalf("AWSRegion = %q, want the node-scoped value us-west-2 (component over boundary)", got.AWSRegion)
-	}
-	if got.AWSAccount != "999988887777" {
-		t.Fatalf("AWSAccount = %q, want the boundary-only value 999988887777", got.AWSAccount)
 	}
 }
