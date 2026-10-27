@@ -19,8 +19,9 @@ import (
 // merges aggrega.ai provenance labels into each document's metadata.labels map.
 // Chart-author labels are preserved; aggrega keys overwrite on collision.
 //
-// Documents without a metadata map are left untouched (they aren't K8s-shaped).
-// Multi-doc boundaries ("---") are preserved via yaml.Encoder per document.
+// A document whose root is not a mapping is left untouched (it is not K8s-shaped);
+// one with no metadata gets a metadata map. Multi-doc boundaries ("---") are
+// preserved via yaml.Encoder per document.
 func injectAggregaLabels(yamlBytes []byte, labels map[string]string, indent int) ([]byte, error) {
 	if len(labels) == 0 {
 		return yamlBytes, nil
@@ -135,6 +136,22 @@ func appendMapChild(m *yaml.Node, key string) *yaml.Node {
 	return child
 }
 
+// isNullScalar reports whether n is a YAML null — a key written with nothing
+// after it, or `null` or `~` — as opposed to a quoted "null", which is text.
+func isNullScalar(n *yaml.Node) bool {
+	return n != nil && n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null"
+}
+
+// becomeEmptyMap turns n, in place, into an empty block-style mapping, so the
+// key holding it keeps its position in its parent and any comment written on it.
+func becomeEmptyMap(n *yaml.Node) {
+	n.Kind = yaml.MappingNode
+	n.Tag = "!!map"
+	n.Value = ""
+	n.Style = 0
+	n.Content = nil
+}
+
 // chooseScalarStyle returns a conservative style for label values. Plain style
 // is used for simple identifiers; any value containing special YAML characters
 // falls back to double-quoted for safety.
@@ -150,9 +167,9 @@ func chooseScalarStyle(v string) yaml.Style {
 // metadata.annotations map. Chart-author annotations are preserved;
 // aggrega keys overwrite on collision.
 //
-// Documents without a metadata map are left untouched (they aren't K8s-
-// shaped). Multi-doc boundaries ("---") are preserved via yaml.Encoder
-// per document.
+// A document whose root is not a mapping is left untouched (it is not K8s-
+// shaped); one with no metadata gets a metadata map. Multi-doc boundaries
+// ("---") are preserved via yaml.Encoder per document.
 //
 // hookWeight, when non-empty, is emitted as helm.sh/hook-weight ONLY on
 // resources that already carry a helm.sh/hook annotation (chart-author
@@ -212,7 +229,8 @@ func injectAggregaAnnotations(yamlBytes []byte, annotations map[string]string, h
 // mergeAnnotationsIntoMetadata walks a root mapping node for a K8s
 // manifest, finds or creates `metadata.annotations`, and merges the
 // aggrega annotations into it (aggrega wins on key collision; chart-
-// author entries preserved otherwise).
+// author entries preserved otherwise). An `annotations:` the chart
+// rendered as null receives the annotations exactly as an absent one does.
 //
 // hookWeight, when non-empty, is injected as helm.sh/hook-weight ONLY
 // when the manifest already carries a helm.sh/hook annotation.
@@ -222,8 +240,15 @@ func mergeAnnotationsIntoMetadata(root *yaml.Node, keys []string, annotations ma
 		metadata = appendMapChild(root, "metadata")
 	}
 	annotationsNode := findMapChild(metadata, "annotations")
-	if annotationsNode == nil {
+	switch {
+	case annotationsNode == nil:
 		annotationsNode = appendMapChild(metadata, "annotations")
+	case isNullScalar(annotationsNode):
+		// A chart template commonly writes `annotations:` and then only
+		// conditional entries under it; with none taken the key renders as
+		// null, not as an empty map. A scalar's children are never encoded, so
+		// merging into the null as it stands would drop every key silently.
+		becomeEmptyMap(annotationsNode)
 	}
 
 	// Detect helm.sh/hook before mutating annotations: scan existing
