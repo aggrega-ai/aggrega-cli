@@ -45,9 +45,9 @@ func omitsWithheld() redact.Keys {
 // TestEvaluateOmits_ResolvesEachEntryOnTheValuesMappingTerms is the evaluation
 // contract, one row per behaviour the item states: when first and judged by the
 // shared truthiness rule, a falsy when dropping the entry without its other fields
-// being evaluated, the three fields rendering against the context (the rendered
-// name among it), an empty namespace left absent, and positions counted over the
-// list the author wrote.
+// being evaluated, the fields rendering against the context (the rendered name
+// among it), an empty namespace or subchart left absent, and positions counted over
+// the list the author wrote.
 func TestEvaluateOmits_ResolvesEachEntryOnTheValuesMappingTerms(t *testing.T) {
 	t.Parallel()
 
@@ -101,6 +101,21 @@ func TestEvaluateOmits_ResolvesEachEntryOnTheValuesMappingTerms(t *testing.T) {
 			want:    []ResolvedOmit{{Entry: OmitEntry{Kind: "Secret", Name: "token"}, Position: 0}},
 		},
 		{
+			name:    "a subchart renders against the context the values mapping reads",
+			entries: []types.OmitEntry{{Kind: "CustomResourceDefinition", Name: "widgets.example.com", Subchart: "{{ .values.ns }}/webhooks"}},
+			want:    []ResolvedOmit{{Entry: OmitEntry{Kind: "CustomResourceDefinition", Name: "widgets.example.com", Subchart: "apps/webhooks"}, Position: 0}},
+		},
+		{
+			name:    "a subchart rendering to the empty string is left absent",
+			entries: []types.OmitEntry{{Kind: "Secret", Name: "token", Subchart: `{{ "" }}`}},
+			want:    []ResolvedOmit{{Entry: OmitEntry{Kind: "Secret", Name: "token"}, Position: 0}},
+		},
+		{
+			name:    "a when rendering false evaluates no subchart either",
+			entries: []types.OmitEntry{{Kind: "Secret", Name: "token", Subchart: failIfRendered, When: "false"}},
+			want:    nil,
+		},
+		{
 			name: "positions count the entries a when dropped",
 			entries: []types.OmitEntry{
 				{Kind: failIfRendered, Name: failIfRendered, When: "false"},
@@ -120,6 +135,15 @@ func TestEvaluateOmits_ResolvesEachEntryOnTheValuesMappingTerms(t *testing.T) {
 				Entry:    OmitEntry{Kind: "Secret", Name: "hunter2", Namespace: "apps"},
 				Position: 0,
 				Withheld: OmitFieldsWithheld{Name: true},
+			}},
+		},
+		{
+			name:    "a subchart whose template reads a value declared sensitive is marked withheld",
+			entries: []types.OmitEntry{{Kind: "Secret", Name: "token", Subchart: "{{ .values.password }}"}},
+			want: []ResolvedOmit{{
+				Entry:    OmitEntry{Kind: "Secret", Name: "token", Subchart: "hunter2"},
+				Position: 0,
+				Withheld: OmitFieldsWithheld{Subchart: true},
 			}},
 		},
 	} {
@@ -151,6 +175,7 @@ func TestEvaluateOmits_AWhenThatFailsHaltsAsAFailedTemplateDoes(t *testing.T) {
 		{name: "a kind", entry: types.OmitEntry{Kind: `{{ fail "gate broke" }}`, Name: "token"}, field: "omits[0].kind"},
 		{name: "a name", entry: types.OmitEntry{Kind: "Secret", Name: `{{ fail "gate broke" }}`}, field: "omits[0].name"},
 		{name: "a namespace", entry: types.OmitEntry{Kind: "Secret", Name: "token", Namespace: `{{ fail "gate broke" }}`}, field: "omits[0].namespace"},
+		{name: "a subchart", entry: types.OmitEntry{Kind: "Secret", Name: "token", Subchart: `{{ fail "gate broke" }}`}, field: "omits[0].subchart"},
 		{name: "a reference to a root the context does not define", entry: types.OmitEntry{Kind: "Secret", Name: "{{ .nosuch.value }}"}, field: "omits[0].name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -185,7 +210,7 @@ func TestRequireOmitCounts_ReadsOneCountPerEntryAndHaltsOnTheFirstZero(t *testin
 
 	two := []ResolvedOmit{
 		{Entry: OmitEntry{Kind: "ConfigMap", Name: "settings"}, Position: 1},
-		{Entry: OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps"}, Position: 3},
+		{Entry: OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps", Subchart: "auth"}, Position: 3},
 	}
 
 	for _, tc := range []struct {
@@ -209,7 +234,7 @@ func TestRequireOmitCounts_ReadsOneCountPerEntryAndHaltsOnTheFirstZero(t *testin
 			want: ErrOmitReportMismatch(), says: []string{"a count of -1 for the entry at omits[3]"}},
 		{name: "an entry matching nothing", sent: two, counts: []int{1, 0},
 			want: ErrOmitMatchedNothing(),
-			says: []string{`node "app"`, `provider "provider/helm:1.0.0"`, `"web-chart" omits[3]`, `kind "Secret"`, `name "token"`, `namespace "apps"`}},
+			says: []string{`node "app"`, `provider "provider/helm:1.0.0"`, `"web-chart" omits[3]`, `kind "Secret"`, `name "token"`, `namespace "apps"`, `subchart "auth"`}},
 		{name: "the first entry matching nothing is the one named", sent: two, counts: []int{0, 0},
 			want: ErrOmitMatchedNothing(), says: []string{`"web-chart" omits[1]`, `name "settings"`}},
 	} {
@@ -313,7 +338,7 @@ func TestTheTemplateFieldEnumerationsCarryEachOmitsField(t *testing.T) {
 	t.Parallel()
 	entries := []types.OmitEntry{
 		{Kind: "Secret", Name: "{{ .context.rendered_name }}-token", When: "{{ .values.on }}"},
-		{Kind: "ConfigMap", Name: "settings", Namespace: "apps"},
+		{Kind: "ConfigMap", Name: "settings", Namespace: "apps", Subchart: "{{ .values.sub }}"},
 	}
 	want := []RecipeTemplateField{
 		{Label: "omits[0].when", Text: "{{ .values.on }}", AuthoredKeys: []string{"omits", "0", "when"}},
@@ -322,6 +347,7 @@ func TestTheTemplateFieldEnumerationsCarryEachOmitsField(t *testing.T) {
 		{Label: "omits[1].kind", Text: "ConfigMap", AuthoredKeys: []string{"omits", "1", "kind"}},
 		{Label: "omits[1].name", Text: "settings", AuthoredKeys: []string{"omits", "1", "name"}},
 		{Label: "omits[1].namespace", Text: "apps", AuthoredKeys: []string{"omits", "1", "namespace"}},
+		{Label: "omits[1].subchart", Text: "{{ .values.sub }}", AuthoredKeys: []string{"omits", "1", "subchart"}},
 	}
 	same := func(got []RecipeTemplateField) bool {
 		return slices.EqualFunc(got, want, func(a, b RecipeTemplateField) bool {

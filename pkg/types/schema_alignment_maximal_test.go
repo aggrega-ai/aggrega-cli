@@ -123,7 +123,7 @@ func maximalRecipe() types.Recipe {
 			Provides:   om[string]("host", "{{ .context.instance_id }}"),
 			Workload:   types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: x:1"},
 			Pipeline:   []types.PipelineStep{{ID: "s1", Plugin: "p.wasm", Function: "render", With: "{}", Optional: true}},
-			Omits:      []types.OmitEntry{{Kind: "Secret", Name: "{{ .context.rendered_name }}-token", Namespace: "apps", When: "{{ true }}"}},
+			Omits:      []types.OmitEntry{{Kind: "Secret", Name: "{{ .context.rendered_name }}-token", Namespace: "apps", Subchart: "auth", When: "{{ true }}"}},
 			Boundary: types.RecipeSpecBoundary{
 				Artifacts: om[types.ArtifactEntry]("providers.tf", types.ArtifactEntry{Inline: "provider \"azurerm\" {\n  features {}\n}\n"}),
 			},
@@ -145,7 +145,7 @@ func maximalFeatureRecipe() types.FeatureRecipe {
 			Provides:       om[string]("ref", "x"),
 			InjectMapping:  "env:\n  {{ .values.key }}: \"{{ .values.origin }}\"",
 			ExecutionScope: "component",
-			Omits:          []types.OmitEntry{{Kind: "Secret", Name: "token", Namespace: "apps", When: "{{ true }}"}},
+			Omits:          []types.OmitEntry{{Kind: "Secret", Name: "token", Namespace: "apps", Subchart: "auth", When: "{{ true }}"}},
 			Assertions:     om[string]("rule", "{{ true }}"),
 		},
 	}

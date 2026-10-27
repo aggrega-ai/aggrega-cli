@@ -251,6 +251,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// member it adds is a boolean, which the reference encoder writes as the same
 	// simple value and leaves out when false, so it stays anchored.
 	vec[abi.RenderNodeInput](t, "RenderNodeInputOmitsSensitive", false)
+	// An omit entry naming the subchart its unit came from beside one that does not.
+	// The member it adds is a text string, which the reference encoder writes the
+	// same way and leaves out when empty, so it stays anchored.
+	vec[abi.RenderNodeInput](t, "RenderNodeInputOmitsSubchart", false)
 	vec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
 	// A node projection whose values a values mapping produced. The member it adds
 	// is a boolean, which the reference encoder writes as the same simple value and

@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: omits-operator
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/omits/operator
+  source: ./chart
+  # Active only where the Release names a subchart: the chart's two subcharts each
+  # ship the definition widgets.example.com, with differing bytes.
+  omits:
+    - when: '{{ ne (optional .infra "leave_out_from" "") "" }}'
+      kind: CustomResourceDefinition
+      name: widgets.example.com
+      subchart: '{{ .infra.leave_out_from }}'

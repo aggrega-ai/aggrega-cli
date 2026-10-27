@@ -254,9 +254,9 @@ type NodeRenderContext struct {
 // Withheld names any of them; Position describes the entry to whoever reads a report
 // about it and never reaches a guest.
 type ResolvedOmit struct {
-	// Entry is the entry's kind, name and namespace as its templates resolved them. A
-	// namespace that resolved to the empty string is absent, which places it exactly
-	// where an entry naming none is placed.
+	// Entry is the entry's kind, name, namespace and subchart as its templates resolved
+	// them. A namespace or a subchart that resolved to the empty string is absent, which
+	// places it exactly where an entry naming none is placed.
 	//
 	// Its Sensitive is never set on this side. Whether the entry is marked is Withheld's
 	// to say, and [OmitEntriesOf] derives the mark from it when the wire list is built,
@@ -273,21 +273,21 @@ type ResolvedOmit struct {
 	Withheld OmitFieldsWithheld
 }
 
-// OmitFieldsWithheld names which of an omit entry's three resolved fields were
-// produced by a template reading a value an author declared sensitive. It is read
-// from each field's template over the declarations, never from what the template
-// produced.
+// OmitFieldsWithheld names which of an omit entry's resolved fields were produced by
+// a template reading a value an author declared sensitive. It is read from each
+// field's template over the declarations, never from what the template produced.
 type OmitFieldsWithheld struct {
 	Kind      bool
 	Name      bool
 	Namespace bool
+	Subchart  bool
 }
 
-// Any reports whether any of the three fields is withheld, which is what marks the
-// whole entry sensitive on a render's input: the wire mark covers the entry rather
-// than naming a field.
+// Any reports whether any of the fields is withheld, which is what marks the whole
+// entry sensitive on a render's input: the wire mark covers the entry rather than
+// naming a field.
 func (w OmitFieldsWithheld) Any() bool {
-	return w.Kind || w.Name || w.Namespace
+	return w.Kind || w.Name || w.Namespace || w.Subchart
 }
 
 // OmitFieldText renders one resolved field of an omit entry for a text a reader is
@@ -309,7 +309,7 @@ func OmitFieldText(resolved string, withheld bool) string {
 // that only receives the mark: every field may have been produced from a value
 // declared sensitive, because the mark does not name which one was.
 func omitFieldsWithheldByMark(marked bool) OmitFieldsWithheld {
-	return OmitFieldsWithheld{Kind: marked, Name: marked, Namespace: marked}
+	return OmitFieldsWithheld{Kind: marked, Name: marked, Namespace: marked, Subchart: marked}
 }
 
 // OmitEntriesOf returns the omits list a render input carries for a set of resolved

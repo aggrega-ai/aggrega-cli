@@ -525,19 +525,20 @@ type PipelineStep struct {
 // the entity's source renders that is to be left out of the output — a document a
 // chart renders, a service, volume or config a compose file declares, or a resource
 // a CloudFormation template declares — named by its kind, its name and, where the
-// entry gives one, its namespace.
+// entry gives them, its namespace and the subchart it came from.
 // Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/omits/items,
 // and identically in the FeatureRecipe schema.
 //
 // Every field is a template, evaluated against the context the entity's values
 // mapping is evaluated against. When is evaluated before the others: a falsy When
 // drops the entry, so its other fields are never evaluated, and an empty When keeps
-// it. What the resolved Kind, Name and Namespace select is the rendering
+// it. What the resolved Kind, Name, Namespace and Subchart select is the rendering
 // provider's own contract; the compiler hands the resolved strings over and reads
 // back how many units each entry left out.
 type OmitEntry struct {
 	Kind      string `json:"kind" yaml:"kind"`
 	Name      string `json:"name" yaml:"name"`
 	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Subchart  string `json:"subchart,omitempty" yaml:"subchart,omitempty"`
 	When      string `json:"when,omitempty" yaml:"when,omitempty"`
 }

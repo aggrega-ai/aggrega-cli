@@ -1,0 +1,4 @@
+apiVersion: v2
+name: catalog
+version: 0.1.0
+description: A catalog of widgets, shipping its own copy of the definition, marked as not for the cluster.

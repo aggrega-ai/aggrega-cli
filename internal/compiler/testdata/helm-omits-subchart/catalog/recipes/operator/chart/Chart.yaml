@@ -1,0 +1,4 @@
+apiVersion: v2
+name: operator-bundle
+version: 0.1.0
+description: An umbrella chart whose two subcharts each ship one definition, with differing bytes.

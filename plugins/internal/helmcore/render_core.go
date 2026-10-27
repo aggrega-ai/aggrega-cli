@@ -319,8 +319,12 @@ func RenderChart(
 	// The omit entries the node's render was handed, matched against every document
 	// as the emission below reaches it. The kinds above are classified over every
 	// rendered document, those left out included, so leaving a document out changes
-	// nothing about how the documents kept are placed.
-	omits := newOmitSelection(nodeCtx.Omits)
+	// nothing about how the documents kept are placed. An entry naming a subchart is
+	// read against the subcharts the chart renders, its dependencies processed above.
+	omits, err := newOmitSelection(nodeCtx.Omits, ch, nodeCtx.NodeID)
+	if err != nil {
+		return ChartRender{}, err
+	}
 
 	// emitDocuments places, labels, annotates, keys, and stores each split document
 	// from one source (a rendered template or a chart CRD file). sourcePath names the
@@ -360,6 +364,7 @@ func RenderChart(
 			idCount[id]++
 		}
 
+		subchart := omits.subchartOf(sourcePath)
 		for i := range docs {
 			// A document an omit entry matches is left out here, after every
 			// document's identity is settled and before anything is written into
@@ -368,7 +373,7 @@ func RenderChart(
 			// and a document left out is in none of the files returned, which is
 			// what the names this render declares and the facts it reports are read
 			// from.
-			if omits.leaveOut(docs[i]) {
+			if omits.leaveOut(docs[i], subchart) {
 				continue
 			}
 			id := ids[i]

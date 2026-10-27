@@ -15,7 +15,7 @@ import (
 // field, whichever field it is, and an entry it names none of carries no mark.
 func TestOmitEntriesOf_MarksAnEntryAnyOfWhoseFieldsIsWithheld(t *testing.T) {
 	t.Parallel()
-	entry := OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps"}
+	entry := OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps", Subchart: "auth"}
 	for _, tc := range []struct {
 		name     string
 		withheld OmitFieldsWithheld
@@ -25,7 +25,8 @@ func TestOmitEntriesOf_MarksAnEntryAnyOfWhoseFieldsIsWithheld(t *testing.T) {
 		{name: "the kind withheld", withheld: OmitFieldsWithheld{Kind: true}, marked: true},
 		{name: "the name withheld", withheld: OmitFieldsWithheld{Name: true}, marked: true},
 		{name: "the namespace withheld", withheld: OmitFieldsWithheld{Namespace: true}, marked: true},
-		{name: "every field withheld", withheld: OmitFieldsWithheld{Kind: true, Name: true, Namespace: true}, marked: true},
+		{name: "the subchart withheld", withheld: OmitFieldsWithheld{Subchart: true}, marked: true},
+		{name: "every field withheld", withheld: OmitFieldsWithheld{Kind: true, Name: true, Namespace: true, Subchart: true}, marked: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -66,6 +67,35 @@ func TestOmitEntriesOf_AnUnmarkedEntryEncodesAsItDidWithoutTheMark(t *testing.T)
 	}
 }
 
+// TestOmitEntriesOf_ASubchartIsCarriedOnlyWhereTheEntryNamesOne pins the subchart on
+// the wire: an entry naming one carries it after its namespace, and an entry naming
+// none carries no key for it, so every entry written before the field existed keeps
+// the bytes it had.
+func TestOmitEntriesOf_ASubchartIsCarriedOnlyWhereTheEntryNamesOne(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		entry OmitEntry
+		want  string
+	}{
+		{name: "no subchart", entry: OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps"},
+			want: `{"kind":"Secret","name":"token","namespace":"apps"}`},
+		{name: "a subchart", entry: OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps", Subchart: "auth/webhooks"},
+			want: `{"kind":"Secret","name":"token","namespace":"apps","subchart":"auth/webhooks"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := OmitEntriesOf([]ResolvedOmit{{Entry: tc.entry}})[0].MarshalJSON()
+			if err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("encodes as %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestResolvedOmitsOf_AMarkedEntryWithholdsEveryField holds the receiving direction:
 // a guest told an entry is marked is not told which field a declared value produced,
 // so it withholds them all, while an unmarked entry withholds none. Rebuilding the
@@ -74,13 +104,13 @@ func TestOmitEntriesOf_AnUnmarkedEntryEncodesAsItDidWithoutTheMark(t *testing.T)
 func TestResolvedOmitsOf_AMarkedEntryWithholdsEveryField(t *testing.T) {
 	t.Parallel()
 	wire := []OmitEntry{
-		{Kind: "Secret", Name: "token", Namespace: "apps", Sensitive: true},
+		{Kind: "Secret", Name: "token", Namespace: "apps", Subchart: "auth", Sensitive: true},
 		{Kind: "ConfigMap", Name: "settings"},
 	}
 	got := ResolvedOmitsOf(wire)
 	want := []ResolvedOmit{
-		{Entry: OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps"}, Position: 0,
-			Withheld: OmitFieldsWithheld{Kind: true, Name: true, Namespace: true}},
+		{Entry: OmitEntry{Kind: "Secret", Name: "token", Namespace: "apps", Subchart: "auth"}, Position: 0,
+			Withheld: OmitFieldsWithheld{Kind: true, Name: true, Namespace: true, Subchart: true}},
 		{Entry: OmitEntry{Kind: "ConfigMap", Name: "settings"}, Position: 1},
 	}
 	if !slices.Equal(got, want) {

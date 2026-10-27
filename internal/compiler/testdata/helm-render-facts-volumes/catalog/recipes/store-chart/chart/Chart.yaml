@@ -1,0 +1,4 @@
+apiVersion: v2
+name: store
+version: 0.1.0
+description: A StatefulSet mounting two volumes of its pod template and one claim it creates per pod.

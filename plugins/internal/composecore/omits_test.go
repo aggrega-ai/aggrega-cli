@@ -225,6 +225,27 @@ func TestOmits_AnEntryWithANamespaceIsRefused(t *testing.T) {
 	}
 }
 
+// TestOmits_AnEntryWithASubchartIsRefused refuses an entry naming a subchart,
+// whatever its kind, because a compose file has none.
+func TestOmits_AnEntryWithASubchartIsRefused(t *testing.T) {
+	t.Parallel()
+
+	entries := omitEntries("service/db")
+	entries[0].Entry.Subchart = "operator"
+	_, _, err := renderOmitting(t, omitsSource, nil, entries)
+	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		t.Fatalf("got %v, want the condition naming a construct the provider cannot express", err)
+	}
+	for _, want := range []string{
+		`compose: an omits entry (kind "service", name "db") names subchart "operator", and a compose file has no subcharts`,
+		"remove the subchart from the entry",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not carry %q:\n%v", want, err)
+		}
+	}
+}
+
 // TestOmits_AUnitTheOverlayAddedIsLeftOut leaves out a service the values overlay
 // added rather than the source: the match runs over the merged document.
 func TestOmits_AUnitTheOverlayAddedIsLeftOut(t *testing.T) {

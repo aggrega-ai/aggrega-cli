@@ -28,9 +28,9 @@ import (
 // by the shared truthiness rule: a falsy result drops the entry, so its other fields
 // are never evaluated, it is not handed over and it is not checked; an empty when
 // keeps the entry; a when that fails to render halts as any failed template does.
-// The kind, name and namespace of a kept entry then render. A namespace rendering to
-// the empty string is left absent, which places the entry exactly where an entry
-// naming none is placed.
+// The kind, name, namespace and subchart of a kept entry then render. A namespace or
+// a subchart rendering to the empty string is left absent, which places the entry
+// exactly where an entry naming none is placed.
 //
 // Each field whose template reads a value withheld names is recorded on the entry's
 // Withheld, read from the template by the same reading the values mapping's own mark
@@ -71,13 +71,20 @@ func EvaluateOmits(entries []types.OmitEntry, data *types.TemplateContext, withh
 				return nil, err
 			}
 		}
+		subchart := ""
+		if entry.Subchart != "" {
+			if subchart, err = EvalTemplate(omitFieldLabel(i, omitFieldSubchart), entry.Subchart, data, withheld); err != nil {
+				return nil, err
+			}
+		}
 		out = append(out, ResolvedOmit{
-			Entry:    OmitEntry{Kind: kind, Name: name, Namespace: namespace},
+			Entry:    OmitEntry{Kind: kind, Name: name, Namespace: namespace, Subchart: subchart},
 			Position: i,
 			Withheld: OmitFieldsWithheld{
 				Kind:      templateReadsWithheld(entry.Kind, withheld),
 				Name:      templateReadsWithheld(entry.Name, withheld),
 				Namespace: templateReadsWithheld(entry.Namespace, withheld),
+				Subchart:  templateReadsWithheld(entry.Subchart, withheld),
 			},
 		})
 	}
@@ -112,9 +119,9 @@ func declaresOmits(entries []types.OmitEntry) bool {
 //     some anyway is refused the same way.
 //   - Every count must be above zero. The first entry, in the order the author wrote
 //     them, whose count is zero halts with [ErrOmitMatchedNothing], naming its
-//     position in the list its document declares and the kind, name and namespace
-//     it resolved to — with any field whose template read a value declared sensitive
-//     shown as the placeholder rather than as what it resolved to.
+//     position in the list its document declares and the kind, name, namespace and
+//     subchart it resolved to — with any field whose template read a value declared
+//     sensitive shown as the placeholder rather than as what it resolved to.
 //
 // Only the counts are read. What the provider left out is absent from what it
 // returned, and nothing here looks at a returned document to confirm it.
@@ -166,6 +173,9 @@ func omitMatchedNothingErr(entry ResolvedOmit, document, nodeID, provider string
 	)
 	if entry.Entry.Namespace != "" {
 		values = append(values, omitFieldValue("namespace", entry.Entry.Namespace, entry.Withheld.Namespace))
+	}
+	if entry.Entry.Subchart != "" {
+		values = append(values, omitFieldValue("subchart", entry.Entry.Subchart, entry.Withheld.Subchart))
 	}
 	return cerrors.Wrap(ErrOmitMatchedNothing(), cerrors.CatalogError,
 		cerrors.SourceLocation{File: nodeID},

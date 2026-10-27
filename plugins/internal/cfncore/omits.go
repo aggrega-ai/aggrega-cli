@@ -75,8 +75,8 @@ type remainingTemplate struct {
 // An entry names a resource by its Type — the entry's kind, such as AWS::S3::Bucket
 // — and by its logical ID, its key under Resources — the entry's name. Every entry
 // is checked before any is matched, and the first in the order they arrived that
-// carries a namespace is refused: a template has no namespaces, so there is nothing
-// such an entry could select. Each template the source carries is matched: a
+// carries a namespace or a subchart is refused: a template has neither, so there is
+// nothing such an entry could select. Each template the source carries is matched: a
 // single-file source's one template, and every template of a directory source, the
 // same files [NormalizeSourced] normalizes; a file it vendors verbatim is never
 // matched. Each entry's count is the number of resources it matched across all of
@@ -100,6 +100,9 @@ func LeaveOutSourced(files []SourcedFile, rootIsDir bool, entries []rendercore.R
 	}
 	for _, entry := range entries {
 		if err := refuseOmitNamespace(entry, nodeID); err != nil {
+			return nil, nil, err
+		}
+		if err := refuseOmitSubchart(entry, nodeID); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -148,6 +151,21 @@ func refuseOmitNamespace(entry rendercore.ResolvedOmit, nodeID string) error {
 			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),
 			rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name),
 			rendercore.OmitFieldText(entry.Entry.Namespace, entry.Withheld.Namespace),
+			omitTarget))
+}
+
+// refuseOmitSubchart refuses an entry that names a subchart, which nothing a
+// CloudFormation template declares came from.
+func refuseOmitSubchart(entry rendercore.ResolvedOmit, nodeID string) error {
+	if entry.Entry.Subchart == "" {
+		return nil
+	}
+	return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf("cloudformation-provider: an omits entry (kind %s, name %s) names subchart %s, and a CloudFormation template has no subcharts: %s; remove the subchart from the entry",
+			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),
+			rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name),
+			rendercore.OmitFieldText(entry.Entry.Subchart, entry.Withheld.Subchart),
 			omitTarget))
 }
 

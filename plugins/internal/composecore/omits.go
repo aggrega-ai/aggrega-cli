@@ -101,8 +101,8 @@ func (u leftOutUnit) text(kind, name string) string {
 // An entry names a unit by its kind — service, volume or config — and its name, the
 // unit's exact key under services:, volumes: or configs:. Every entry is checked
 // before any is matched, and the first in the order they arrived that names any
-// other kind, or a namespace, is refused: a compose file has neither, so there is
-// nothing such an entry could leave out. Each entry's count is the number of units
+// other kind, a namespace or a subchart is refused: a compose file has none of them,
+// so there is nothing such an entry could leave out. Each entry's count is the number of units
 // it names that the document declares, taken over the document before anything is
 // removed, so two entries naming one unit each count it. A section every unit of
 // which was left out is removed with them, so the document reads as one that never
@@ -148,7 +148,7 @@ func leaveOut(doc map[string]any, entries []rendercore.ResolvedOmit, nodeID stri
 }
 
 // omitKindOf resolves the kind one entry names, refusing an entry that names a kind
-// compose has no section for or that carries a namespace.
+// compose has no section for or that carries a namespace or a subchart.
 func omitKindOf(entry rendercore.ResolvedOmit, nodeID string) (omitKind, error) {
 	kindText := rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind)
 	nameText := rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name)
@@ -157,6 +157,12 @@ func omitKindOf(entry rendercore.ResolvedOmit, nodeID string) (omitKind, error) 
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("compose: an omits entry (kind %s, name %s) names namespace %s, and a compose file has no namespaces: %s; remove the namespace from the entry",
 				kindText, nameText, rendercore.OmitFieldText(entry.Entry.Namespace, entry.Withheld.Namespace), omitKindsAccepted()))
+	}
+	if entry.Entry.Subchart != "" {
+		return omitKind{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("compose: an omits entry (kind %s, name %s) names subchart %s, and a compose file has no subcharts: %s; remove the subchart from the entry",
+				kindText, nameText, rendercore.OmitFieldText(entry.Entry.Subchart, entry.Withheld.Subchart), omitKindsAccepted()))
 	}
 	for _, k := range omitKinds {
 		if entry.Entry.Kind == k.kind {

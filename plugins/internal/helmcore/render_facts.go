@@ -22,13 +22,15 @@ const (
 	controllerSelectorsFact = "controller_selectors"
 	serviceSelectorsFact    = "service_selectors"
 	containerPortsFact      = "container_ports"
+	podTemplateVolumesFact  = "pod_template_volumes"
 )
 
 // ReportEmitted reads what one render emitted, once, and returns both things this
 // provider reports about it: the names its resources are addressed by, per key
 // space (see [DeclaredResourceNames]), and its render facts — the labels of every
-// pod template it emitted, each controller's selector, each Service's selector and
-// each container's ports, every entry with the namespace its document writes.
+// pod template it emitted, each controller's selector, each Service's selector,
+// each container's ports and each pod template's volumes with the volume mounts of
+// its containers, every entry with the namespace its document writes.
 //
 // Both come from the same walk over the same documents, so a resource is either
 // read by both or by neither; neither reader parses a file of its own.
@@ -102,6 +104,52 @@ type containerPort struct {
 	Protocol      string `json:"protocol,omitempty"`
 }
 
+// podTemplateVolumes is one entry of pod_template_volumes: the volumes one pod
+// template the render emitted declares, the claim templates its controller
+// declares, and the volume mounts of each of its containers, named by the resource
+// that carries the template.
+//
+// Volumes and VolumeClaimTemplates are pointers so that a part the document does
+// not write is left out of the entry while a part it writes empty is reported
+// empty. Containers is always a list: it holds the containers that carry a
+// volumeMounts list, and is empty when none does.
+type podTemplateVolumes struct {
+	Kind                 string                  `json:"kind"`
+	Name                 string                  `json:"name,omitempty"`
+	Namespace            string                  `json:"namespace,omitempty"`
+	Volumes              *[]podVolume            `json:"volumes,omitempty"`
+	VolumeClaimTemplates *[]string               `json:"volume_claim_templates,omitempty"`
+	Containers           []containerVolumeMounts `json:"containers"`
+}
+
+// podVolume is one volume a pod template declares: its name, and its type — the
+// key naming where its content comes from: persistentVolumeClaim, emptyDir,
+// configMap, secret and so on, as the document spells it.
+//
+// The type is reported under "type" rather than "source" because a FeatureRecipe
+// template reads an entry's fields by name, and a field spelled like one of the
+// template context's own pillars is read as that pillar.
+type podVolume struct {
+	Name string `json:"name,omitempty"`
+	Type string `json:"type,omitempty"`
+}
+
+// containerVolumeMounts is the volume mounts one container of a pod template
+// declares.
+type containerVolumeMounts struct {
+	Container    string        `json:"container,omitempty"`
+	VolumeMounts []volumeMount `json:"volume_mounts"`
+}
+
+// volumeMount is one volume mount a container declares. ReadOnly is a boolean
+// where the document writes one and the document's own text otherwise.
+type volumeMount struct {
+	Name      string `json:"name,omitempty"`
+	MountPath string `json:"mount_path,omitempty"`
+	SubPath   string `json:"sub_path,omitempty"`
+	ReadOnly  any    `json:"read_only,omitempty"`
+}
+
 // workloadShape is where one kind of workload keeps its pod template and its
 // selector, as paths from the document's root.
 type workloadShape struct {
@@ -111,6 +159,10 @@ type workloadShape struct {
 	// selector is the path to a controller's label selector. Empty for a bare
 	// Pod, which selects nothing.
 	selector []string
+	// claimTemplates is the path to the list of persistent volume claims a
+	// controller creates one of per pod, which its pods mount by name like a volume.
+	// Empty for every workload but a StatefulSet.
+	claimTemplates []string
 }
 
 // controller reports whether the shape is a controller's, one that creates its
@@ -133,7 +185,13 @@ func workloadShapeOf(apiVersion, kind string) (workloadShape, bool) {
 	switch group + "/" + kind {
 	case "/Pod":
 		return workloadShape{}, true
-	case "apps/Deployment", "apps/StatefulSet", "apps/DaemonSet", "apps/ReplicaSet", "batch/Job":
+	case "apps/StatefulSet":
+		return workloadShape{
+			template:       []string{"spec", "template"},
+			selector:       []string{"spec", "selector"},
+			claimTemplates: []string{"spec", "volumeClaimTemplates"},
+		}, true
+	case "apps/Deployment", "apps/DaemonSet", "apps/ReplicaSet", "batch/Job":
 		return workloadShape{
 			template: []string{"spec", "template"},
 			selector: []string{"spec", "selector"},
@@ -169,8 +227,8 @@ func apiGroup(apiVersion string) (string, bool) {
 	return group, true
 }
 
-// renderFactsOf builds the four render facts from the resource documents one walk
-// over the emitted files read.
+// renderFactsOf builds the render facts from the resource documents one walk over
+// the emitted files read.
 //
 // Entries are in the order the walk met the documents, which is the order the
 // render emitted them; a label map keeps the order the document writes its keys.
@@ -187,6 +245,7 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 	controllers := []controllerSelector{}
 	services := []serviceSelector{}
 	ports := []containerPorts{}
+	volumes := []podTemplateVolumes{}
 
 	for _, root := range resources {
 		apiVersion := scalarChildValue(root, "apiVersion")
@@ -227,6 +286,7 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 			Labels:    stringMapping(pathOf(template, "metadata", "labels")),
 		})
 		ports = append(ports, containerPortsOf(kind, name, namespace, childOf(template, "spec"))...)
+		volumes = append(volumes, podTemplateVolumesOf(kind, name, namespace, childOf(template, "spec"), shape.claimTemplates, root))
 	}
 
 	reported := []struct {
@@ -237,6 +297,7 @@ func renderFactsOf(resources []*yaml.Node) ([]rendercore.RenderFact, error) {
 		{controllerSelectorsFact, controllers},
 		{serviceSelectorsFact, services},
 		{containerPortsFact, ports},
+		{podTemplateVolumesFact, volumes},
 	}
 	facts := make([]rendercore.RenderFact, 0, len(reported))
 	for _, r := range reported {
@@ -295,6 +356,107 @@ func containerPortsOf(kind, name, namespace string, podSpec *yaml.Node) []contai
 		}
 	}
 	return out
+}
+
+// podTemplateVolumesOf reads one pod template's entry of pod_template_volumes: the
+// volumes its pod spec writes, the claim templates its controller writes where its
+// shape has them (claimTemplates, a path from the document's root), and, for each
+// container carrying a volumeMounts list, its mounts — init containers included, in
+// the order the pod spec writes its container lists and each list its containers,
+// as containerPortsOf reads them. A container mounting a volume reads its data
+// whichever list declares it.
+func podTemplateVolumesOf(kind, name, namespace string, podSpec *yaml.Node, claimTemplates []string, root *yaml.Node) podTemplateVolumes {
+	entry := podTemplateVolumes{
+		Kind:       kind,
+		Name:       name,
+		Namespace:  namespace,
+		Containers: []containerVolumeMounts{},
+	}
+	if declared := childOf(podSpec, "volumes"); declared != nil && declared.Kind == yaml.SequenceNode {
+		list := make([]podVolume, 0, len(declared.Content))
+		for _, v := range declared.Content {
+			v = rendercore.UnwrapAlias(v)
+			if v == nil || v.Kind != yaml.MappingNode {
+				continue
+			}
+			list = append(list, podVolume{Name: scalarChildValue(v, "name"), Type: volumeTypeKey(v)})
+		}
+		entry.Volumes = &list
+	}
+	if len(claimTemplates) > 0 {
+		if declared := pathOf(root, claimTemplates...); declared != nil && declared.Kind == yaml.SequenceNode {
+			names := make([]string, 0, len(declared.Content))
+			for _, c := range declared.Content {
+				names = append(names, scalarChildValue(childOf(c, "metadata"), "name"))
+			}
+			entry.VolumeClaimTemplates = &names
+		}
+	}
+	if podSpec == nil || podSpec.Kind != yaml.MappingNode {
+		return entry
+	}
+	for i := 0; i+1 < len(podSpec.Content); i += 2 {
+		if key := podSpec.Content[i].Value; key != "initContainers" && key != "containers" {
+			continue
+		}
+		list := rendercore.UnwrapAlias(podSpec.Content[i+1])
+		if list == nil || list.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, c := range list.Content {
+			c = rendercore.UnwrapAlias(c)
+			declared := childOf(c, "volumeMounts")
+			if declared == nil || declared.Kind != yaml.SequenceNode {
+				continue
+			}
+			mounts := containerVolumeMounts{
+				Container:    scalarChildValue(c, "name"),
+				VolumeMounts: make([]volumeMount, 0, len(declared.Content)),
+			}
+			for _, m := range declared.Content {
+				m = rendercore.UnwrapAlias(m)
+				if m == nil || m.Kind != yaml.MappingNode {
+					continue
+				}
+				mounts.VolumeMounts = append(mounts.VolumeMounts, volumeMount{
+					Name:      scalarChildValue(m, "name"),
+					MountPath: scalarChildValue(m, "mountPath"),
+					SubPath:   scalarChildValue(m, "subPath"),
+					ReadOnly:  writtenBool(childOf(m, "readOnly")),
+				})
+			}
+			entry.Containers = append(entry.Containers, mounts)
+		}
+	}
+	return entry
+}
+
+// volumeTypeKey is the key a volume's mapping names its content's source by: the
+// first key the document writes other than name. Empty when it writes none.
+func volumeTypeKey(volume *yaml.Node) string {
+	for i := 0; i+1 < len(volume.Content); i += 2 {
+		k := rendercore.UnwrapAlias(volume.Content[i])
+		if k == nil || k.Kind != yaml.ScalarNode || k.Value == "name" {
+			continue
+		}
+		return k.Value
+	}
+	return ""
+}
+
+// writtenBool reads a value as the boolean the document writes, or as the
+// document's own text when it writes something else; nil when it writes nothing.
+func writtenBool(n *yaml.Node) any {
+	if n == nil || n.Kind != yaml.ScalarNode {
+		return nil
+	}
+	if n.Tag == "!!bool" {
+		var b bool
+		if err := n.Decode(&b); err == nil {
+			return b
+		}
+	}
+	return n.Value
 }
 
 // writtenNamespace is the namespace a resource's metadata writes, or "" where it

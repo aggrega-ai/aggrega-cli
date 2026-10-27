@@ -33,7 +33,7 @@ type RenderNodeInput struct {
 	WorkloadProjection *WorkloadProjection `json:"workload_projection,omitempty" yaml:"workload_projection,omitempty" cbor:"workload_projection,omitempty"`
 	// ArtifactsProjection The pre-evaluated artifact set the host hands the guest to place into the node's output, present when the bound Recipe declares artifacts. The host has already read each entry's source, evaluated it as a Go template against the render context, and computed the build-provenance key sets; the guest decides the output format, the provenance placement, the on-disk path, and the final bytes. Absent when the node declares no artifacts.
 	ArtifactsProjection *ArtifactsProjection `json:"artifacts_projection,omitempty" yaml:"artifacts_projection,omitempty" cbor:"artifacts_projection,omitempty"`
-	// Omits The entries naming rendered units the guest leaves out of this node's output, in the order the author declared them. Each entry arrives resolved, its fields plain strings, and an entry that does not apply to this build is not carried. What an entry's kind, name and namespace select is this provider's own documented contract, not this socket's: the guest matches every entry against what it rendered in its own format's terms, leaves each unit an entry matches out of everything it returns — its files, the names it declares in derived_keys and the facts it reports in render_facts — and reports in the output's omitted how many units each entry matched. The entries accompany a source listing and no other input: a render of a synthesized workload or of an artifact set never carries them. Absent when there are no entries, and a guest handed none renders exactly as it would if the field did not exist.
+	// Omits The entries naming rendered units the guest leaves out of this node's output, in the order the author declared them. Each entry arrives resolved, its fields plain strings, and an entry that does not apply to this build is not carried. What an entry's kind, name, namespace and subchart select is this provider's own documented contract, not this socket's: the guest matches every entry against what it rendered in its own format's terms, leaves each unit an entry matches out of everything it returns — its files, the names it declares in derived_keys and the facts it reports in render_facts — and reports in the output's omitted how many units each entry matched. The entries accompany a source listing and no other input: a render of a synthesized workload or of an artifact set never carries them. Absent when there are no entries, and a guest handed none renders exactly as it would if the field did not exist.
 	Omits []OmitEntry `json:"omits,omitempty" yaml:"omits,omitempty" cbor:"omits,omitempty"`
 }
 
@@ -139,7 +139,7 @@ type RenderFact struct {
 	Value json.RawMessage `json:"value" yaml:"value" cbor:"value"`
 }
 
-// OmitEntry One entry naming rendered units a Provider guest leaves out of a node's output, its fields already resolved to plain strings and marked where any of them was produced from a value declared sensitive. The socket attaches no meaning to them: each provider documents what kind, name and namespace select in its own format, and matches them itself.
+// OmitEntry One entry naming rendered units a Provider guest leaves out of a node's output, its fields already resolved to plain strings and marked where any of them was produced from a value declared sensitive. The socket attaches no meaning to them: each provider documents what kind, name, namespace and subchart select in its own format, and matches them itself.
 type OmitEntry struct {
 	// Kind The kind of rendered unit the entry names, in the provider's own vocabulary.
 	Kind string `json:"kind" yaml:"kind" cbor:"kind"`
@@ -147,7 +147,9 @@ type OmitEntry struct {
 	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Namespace The namespace the named unit sits in, for a provider whose format places units in one. Absent when the author wrote none; what an entry with no namespace matches is the provider's own contract.
 	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty" cbor:"namespace,omitempty"`
-	// Sensitive True when the template that produced any of the entry's kind, name or namespace reads a value an author declared sensitive, or a value traced to one. It is read from each field's template against the declarations — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from the resolved strings. The mark covers the whole entry rather than naming the field, so a guest treats a marked entry as it treats every other marked value on its input: it still matches and counts the entry by its fields, which is what the entry is for, and keeps every field of it out of any text a person reads — a refusal, a warning or a log line. Absent when no field's template reads such a value; absence never states that no field is sensitive.
+	// Subchart The nested source the named unit came from, for a provider whose source is assembled from nested sources, as a chart is from its subcharts. Absent when the author wrote none; what an entry with no subchart matches, and what a provider whose source has no nested sources does with an entry naming one, is the provider's own contract.
+	Subchart string `json:"subchart,omitempty" yaml:"subchart,omitempty" cbor:"subchart,omitempty"`
+	// Sensitive True when the template that produced any of the entry's kind, name, namespace or subchart reads a value an author declared sensitive, or a value traced to one. It is read from each field's template against the declarations — a reference reaching a declared value, the template handing on the whole of its data, or a template that does not parse all count — and never from the resolved strings. The mark covers the whole entry rather than naming the field, so a guest treats a marked entry as it treats every other marked value on its input: it still matches and counts the entry by its fields, which is what the entry is for, and keeps every field of it out of any text a person reads — a refusal, a warning or a log line. Absent when no field's template reads such a value; absence never states that no field is sensitive.
 	Sensitive bool `json:"sensitive,omitempty" yaml:"sensitive,omitempty" cbor:"sensitive,omitempty"`
 }
 
@@ -1785,6 +1787,14 @@ func (t OmitEntry) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"namespace\":")
 		writeJSONString(&buf, t.Namespace)
 	}
+	if t.Subchart != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"subchart\":")
+		writeJSONString(&buf, t.Subchart)
+	}
 	if t.Sensitive != false {
 		if !first {
 			buf.WriteByte(',')
@@ -1833,6 +1843,12 @@ func (t *OmitEntry) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Namespace = s
 			}
+		case "subchart":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Subchart = s
+			}
 		case "sensitive":
 			if v, err := readBool(dec); err != nil {
 				return err
@@ -1858,7 +1874,7 @@ func (t *OmitEntry) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *OmitEntry) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "kind", "name", "namespace", "sensitive"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "kind", "name", "namespace", "subchart", "sensitive"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -7284,6 +7300,9 @@ func (t OmitEntry) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t OmitEntry) appendCBOR(dst []byte) ([]byte, error) {
 	n := 2
+	if t.Subchart != "" {
+		n++
+	}
 	if t.Namespace != "" {
 		n++
 	}
@@ -7295,6 +7314,10 @@ func (t OmitEntry) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.Kind)
 	dst = appendCBORTextString(dst, "name")
 	dst = appendCBORTextString(dst, t.Name)
+	if t.Subchart != "" {
+		dst = appendCBORTextString(dst, "subchart")
+		dst = appendCBORTextString(dst, t.Subchart)
+	}
 	if t.Namespace != "" {
 		dst = appendCBORTextString(dst, "namespace")
 		dst = appendCBORTextString(dst, t.Namespace)
@@ -7342,6 +7365,12 @@ func (t *OmitEntry) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Namespace = s
 			}
+		case "subchart":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Subchart = s
+			}
 		case "sensitive":
 			if v, err := dec.readBool(); err != nil {
 				return err
@@ -7364,7 +7393,7 @@ func (t *OmitEntry) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *OmitEntry) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "kind", "name", "namespace", "sensitive"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "kind", "name", "namespace", "subchart", "sensitive"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

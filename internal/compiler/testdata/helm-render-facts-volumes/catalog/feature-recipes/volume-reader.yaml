@@ -1,0 +1,35 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: volume-reader
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.myco/volume-reader
+  # One line per volume, per claim template and per volume mount the host's render
+  # reported, each named by the resource carrying the pod template. A mount's
+  # readOnly is read with `optional`, so a mount writing none prints <absent>.
+  artifacts:
+    volumes.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-volumes
+      data:
+        read: |
+          host {{ .context.instance_id }}
+          {{- range .context.render_facts.pod_template_volumes }}
+          {{- $owner := printf "%s/%s" .kind .name }}
+          {{- range .volumes }}
+          volume {{ $owner }} {{ .name }} {{ .type }}
+          {{- end }}
+          {{- range .volume_claim_templates }}
+          claim {{ $owner }} {{ . }}
+          {{- end }}
+          {{- range .containers }}
+          {{- $container := .container }}
+          {{- range .volume_mounts }}
+          mount {{ $owner }} {{ $container }} {{ .name }} {{ .mount_path }} read_only={{ optional . "read_only" "<absent>" }}
+          {{- end }}
+          {{- end }}
+          {{- end }}

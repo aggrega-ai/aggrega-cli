@@ -1455,7 +1455,7 @@ var errUnsupportedBoundaryArtifacts = cerrors.Register("unsupported-boundary-art
 // a typo in the name — and the document the author meant to leave out may now be in
 // the output under its new name. Passing over it would ship exactly what the entry
 // was written to keep out, so the build halts and names the entry: its position in
-// the list the author wrote, and the kind, name and namespace it resolved to, with
+// the list the author wrote, and the kind, name, namespace and subchart it resolved to, with
 // any of those its template produced from a value declared sensitive withheld. The
 // first such entry in the order the author wrote them is the one named, so the same
 // entry is named on every run.

@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: omits-subchart-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/omits/operator: omits-operator:1.0.0

@@ -18,11 +18,11 @@ import (
 
 // renderFactNames are the facts the helm provider documents, in the order it
 // reports them.
-var renderFactNames = []string{"pod_template_labels", "controller_selectors", "service_selectors", "container_ports"}
+var renderFactNames = []string{"pod_template_labels", "controller_selectors", "service_selectors", "container_ports", "pod_template_volumes"}
 
 // reportedFacts runs the report over files and returns each fact's value as the
-// JSON the guest hands the host, keyed by name, after asserting the four facts are
-// all there, in the documented order, and each a list.
+// JSON the guest hands the host, keyed by name, after asserting the facts are all
+// there, in the documented order, and each a list.
 func reportedFacts(t *testing.T, files []rendercore.RenderedFile) map[string]string {
 	t.Helper()
 	return reportedFactsUnder(t, files, "default")
@@ -88,6 +88,7 @@ func controllerFacts(kind, name string) map[string]string {
 		"controller_selectors": `[{"kind":"` + kind + `","name":"` + name + `","match_labels":{"app":"` + name + `"}}]`,
 		"service_selectors":    `[]`,
 		"container_ports":      `[{"kind":"` + kind + `","name":"` + name + `","container":"main","ports":[{"name":"http","container_port":8080,"protocol":"TCP"}]}]`,
+		"pod_template_volumes": `[{"kind":"` + kind + `","name":"` + name + `","containers":[]}]`,
 	}
 }
 
@@ -97,6 +98,7 @@ var noFacts = map[string]string{
 	"controller_selectors": `[]`,
 	"service_selectors":    `[]`,
 	"container_ports":      `[]`,
+	"pod_template_volumes": `[]`,
 }
 
 // TestReportEmitted_ReportsThePodFactsOfEachKindItReads holds what each kind of
@@ -142,6 +144,7 @@ spec:
 				"controller_selectors": `[]`,
 				"service_selectors":    `[]`,
 				"container_ports":      `[{"kind":"Pod","name":"probe","container":"main","ports":[{"name":"http","container_port":8080}]}]`,
+				"pod_template_volumes": `[{"kind":"Pod","name":"probe","containers":[]}]`,
 			},
 		},
 		{
@@ -200,6 +203,7 @@ spec:
 				"controller_selectors": `[{"kind":"CronJob","name":"nightly","match_labels":{"job":"nightly"}}]`,
 				"service_selectors":    `[]`,
 				"container_ports":      `[{"kind":"CronJob","name":"nightly","container":"run","ports":[{"container_port":9090}]}]`,
+				"pod_template_volumes": `[{"kind":"CronJob","name":"nightly","containers":[]}]`,
 			},
 		},
 		{
@@ -221,6 +225,7 @@ spec:
 				"controller_selectors": `[]`,
 				"service_selectors":    `[{"name":"api","selector":{"tier":"web","app":"api"}}]`,
 				"container_ports":      `[]`,
+				"pod_template_volumes": `[]`,
 			},
 		},
 		{
@@ -285,6 +290,7 @@ spec:
 				"controller_selectors": `[{"kind":"Job"}]`,
 				"service_selectors":    `[{"name":"external"},{"name":"manual","selector":{}}]`,
 				"container_ports":      `[{"kind":"Pod","name":"quiet","container":"main","ports":[]},{"kind":"Pod","name":"quiet","container":"side","ports":[{"container_port":"8443"}]}]`,
+				"pod_template_volumes": `[{"kind":"Job","containers":[]},{"kind":"Pod","name":"quiet","containers":[]}]`,
 			},
 		},
 		{
@@ -359,6 +365,9 @@ spec:
 			`{"kind":"StatefulSet","name":"alpha","container":"main","ports":[{"name":"http","container_port":8080,"protocol":"TCP"}]},` +
 			`{"kind":"Pod","name":"mid","container":"proxy","ports":[{"container_port":15001}]},` +
 			`{"kind":"Pod","name":"mid","container":"app","ports":[{"name":"web","container_port":80},{"name":"admin","container_port":9000,"protocol":"UDP"}]}]`,
+		"pod_template_volumes": `[{"kind":"Deployment","name":"zeta","containers":[]},` +
+			`{"kind":"StatefulSet","name":"alpha","containers":[]},` +
+			`{"kind":"Pod","name":"mid","containers":[]}]`,
 	}
 	for _, name := range renderFactNames {
 		if got[name] != want[name] {
@@ -528,6 +537,7 @@ spec:
 		"controller_selectors": `[{"kind":"Deployment","name":"web","match_labels":{"app":"web"}}]`,
 		"service_selectors":    `[{"name":"web","selector":{"app":"web"}}]`,
 		"container_ports":      `[{"kind":"Deployment","name":"web","container":"server","ports":[{"name":"http","container_port":8080}]}]`,
+		"pod_template_volumes": `[{"kind":"Deployment","name":"web","containers":[]}]`,
 	}
 
 	t.Run("a chart", func(t *testing.T) {
@@ -679,6 +689,7 @@ func TestReportEmitted_EveryEntryCarriesTheNamespaceItsDocumentWrites(t *testing
 				"controller_selectors": `[{"kind":"Deployment","name":"api","namespace":"shop","match_labels":{"app":"api"}}]`,
 				"service_selectors":    `[]`,
 				"container_ports":      `[{"kind":"Deployment","name":"api","namespace":"shop","container":"main","ports":[{"name":"http","container_port":8080,"protocol":"TCP"}]}]`,
+				"pod_template_volumes": `[{"kind":"Deployment","name":"api","namespace":"shop","containers":[]}]`,
 			},
 		},
 		{
@@ -711,6 +722,7 @@ spec:
 				"controller_selectors": `[]`,
 				"service_selectors":    `[{"name":"api","namespace":"shop","selector":{"app":"api"}}]`,
 				"container_ports":      `[{"kind":"Pod","name":"probe","namespace":"tools","container":"main","ports":[{"container_port":9000}]}]`,
+				"pod_template_volumes": `[{"kind":"Pod","name":"probe","namespace":"tools","containers":[]}]`,
 			},
 		},
 		{
@@ -740,6 +752,7 @@ spec:
 				"controller_selectors": `[{"kind":"CronJob","name":"nightly","namespace":"batch-jobs"}]`,
 				"service_selectors":    `[]`,
 				"container_ports":      `[]`,
+				"pod_template_volumes": `[{"kind":"CronJob","name":"nightly","namespace":"batch-jobs","containers":[]}]`,
 			},
 		},
 	} {
@@ -796,9 +809,10 @@ func TestReportEmitted_AnEntryWhoseDocumentWritesNoNamespaceCarriesNone(t *testi
 		}
 	}
 	// Three pod templates, three controllers, one Service, three containers with
-	// ports: every entry was read, so the silence above is about entries that exist.
-	if entries != 10 {
-		t.Errorf("read %d entries, want 10", entries)
+	// ports and three pod templates' volumes: every entry was read, so the silence
+	// above is about entries that exist.
+	if entries != 13 {
+		t.Errorf("read %d entries, want 13", entries)
 	}
 }
 
@@ -871,6 +885,176 @@ func TestReportEmitted_ASynthesizedWorkloadCarriesTheNamespaceItsNodeRendersInto
 				if read[name] == 0 {
 					t.Errorf("the synthesis reported no %s entry, so this row says nothing about that fact", name)
 				}
+			}
+		})
+	}
+}
+
+// TestReportEmitted_PodTemplateVolumesReportsVolumesClaimTemplatesAndMounts holds
+// what pod_template_volumes reports, row by row: a StatefulSet's volumes, its
+// volume claim templates and the mounts of an init container and a container, each
+// in the order its document writes them, the names chosen against alphabetical
+// order so a reader that sorted would read differently; a Deployment, which has no
+// claim templates to report; a bare Pod; and what a document leaves out — no
+// volumes key, a container carrying no volumeMounts — beside parts written empty,
+// which are reported empty, and a readOnly written as text, reported as that text.
+func TestReportEmitted_PodTemplateVolumesReportsVolumesClaimTemplatesAndMounts(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		files []rendercore.RenderedFile
+		want  string
+	}{
+		{
+			name: "a StatefulSet's volumes, claim templates and mounts, in author order",
+			files: []rendercore.RenderedFile{file("db.yaml", `apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: data
+spec:
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      initContainers:
+        - name: seed
+          image: example/seed:1
+          volumeMounts:
+            - name: wal
+              mountPath: /seed/wal
+      containers:
+        - name: server
+          image: example/db:1
+          volumeMounts:
+            - name: wal
+              mountPath: /var/lib/db/wal
+            - name: config
+              mountPath: /etc/db/db.conf
+              subPath: db.conf
+              readOnly: true
+        - name: exporter
+          image: example/exporter:1
+      volumes:
+        - name: config
+          configMap:
+            name: db-config
+        - name: scratch
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: wal
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: archive
+      spec:
+        accessModes: [ReadWriteOnce]
+`)},
+			want: `[{"kind":"StatefulSet","name":"db","namespace":"data",` +
+				`"volumes":[{"name":"config","type":"configMap"},{"name":"scratch","type":"emptyDir"}],` +
+				`"volume_claim_templates":["wal","archive"],` +
+				`"containers":[{"container":"seed","volume_mounts":[{"name":"wal","mount_path":"/seed/wal"}]},` +
+				`{"container":"server","volume_mounts":[{"name":"wal","mount_path":"/var/lib/db/wal"},` +
+				`{"name":"config","mount_path":"/etc/db/db.conf","sub_path":"db.conf","read_only":true}]}]}]`,
+		},
+		{
+			name: "a Deployment mounting a claim, and a bare Pod mounting a Secret",
+			files: []rendercore.RenderedFile{
+				file("d.yaml", `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: api-uploads
+      containers:
+        - name: main
+          image: example/api:1
+          volumeMounts:
+            - name: uploads
+              mountPath: /srv/uploads
+              readOnly: false
+`),
+				file("p.yaml", `apiVersion: v1
+kind: Pod
+metadata:
+  name: probe
+spec:
+  volumes:
+    - name: token
+      secret:
+        secretName: probe-token
+  containers:
+    - name: main
+      image: example/probe:1
+      volumeMounts:
+        - name: token
+          mountPath: /run/token
+`),
+			},
+			want: `[{"kind":"Deployment","name":"api","volumes":[{"name":"uploads","type":"persistentVolumeClaim"}],` +
+				`"containers":[{"container":"main","volume_mounts":[{"name":"uploads","mount_path":"/srv/uploads","read_only":false}]}]},` +
+				`{"kind":"Pod","name":"probe","volumes":[{"name":"token","type":"secret"}],` +
+				`"containers":[{"container":"main","volume_mounts":[{"name":"token","mount_path":"/run/token"}]}]}]`,
+		},
+		{
+			name: "a part the document leaves out is left out, a part written empty is reported empty",
+			files: []rendercore.RenderedFile{file("s.yaml", `apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bare
+spec:
+  selector:
+    matchLabels:
+      app: bare
+  template:
+    metadata:
+      labels:
+        app: bare
+    spec:
+      volumes: []
+      containers:
+        - name: quiet
+          image: example/quiet:1
+        - name: empty
+          image: example/empty:1
+          volumeMounts: []
+        - name: texty
+          image: example/texty:1
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+              readOnly: "yes"
+  volumeClaimTemplates: []
+`)},
+			want: `[{"kind":"StatefulSet","name":"bare","volumes":[],"volume_claim_templates":[],` +
+				`"containers":[{"container":"empty","volume_mounts":[]},` +
+				`{"container":"texty","volume_mounts":[{"name":"cache","mount_path":"/cache","read_only":"yes"}]}]}]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := reportedFacts(t, tc.files)["pod_template_volumes"]; got != tc.want {
+				t.Errorf("pod_template_volumes =\n  %s\nwant\n  %s", got, tc.want)
 			}
 		})
 	}

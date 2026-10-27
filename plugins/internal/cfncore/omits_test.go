@@ -284,6 +284,26 @@ func TestLeaveOutSourced_AnEntryWithANamespaceIsRefused(t *testing.T) {
 	}
 }
 
+// TestLeaveOutSourced_AnEntryWithASubchartIsRefused refuses an entry naming a
+// subchart, which nothing a CloudFormation template declares came from, under the
+// condition and in the shape the namespace refusal takes.
+func TestLeaveOutSourced_AnEntryWithASubchartIsRefused(t *testing.T) {
+	entries := resourceOmits("AWS::SQS::Queue/Queue", "AWS::S3::Bucket/Logs")
+	entries[1].Entry.Subchart = "operator"
+	_, counts, err := LeaveOutSourced(oneTemplate(t, omitsTemplate), false, entries, "app")
+	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		t.Fatalf("got %v, want the refusal of an entry naming a subchart", err)
+	}
+	if counts != nil {
+		t.Errorf("a refused render returned counts %v", counts)
+	}
+	want := `cloudformation-provider: an omits entry (kind "AWS::S3::Bucket", name "Logs") names subchart "operator", and a CloudFormation template has no subcharts: ` +
+		omitTarget + `; remove the subchart from the entry`
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("the refusal does not carry\n%s\ngot:\n%s", want, err.Error())
+	}
+}
+
 // omitsReferring is a template whose App resource can be given one reference to the
 // Logs bucket; the Spare queue is named by nothing, so leaving it out is the
 // control every reference row builds.

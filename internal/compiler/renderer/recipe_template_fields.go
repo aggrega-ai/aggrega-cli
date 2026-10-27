@@ -29,12 +29,13 @@ const (
 	recipeFieldOmits         = "omits"
 	recipeFieldBoundary      = "boundary"
 
-	// The four fields of one omits entry, in the order the entry is evaluated in:
-	// its gate first, then the three it resolves to.
+	// The fields of one omits entry, in the order the entry is evaluated in: its
+	// gate first, then the ones it resolves to.
 	omitFieldWhen      = "when"
 	omitFieldKind      = "kind"
 	omitFieldName      = "name"
 	omitFieldNamespace = "namespace"
+	omitFieldSubchart  = "subchart"
 
 	// recipeFieldSource is the spec-root key a Recipe's source entry is written
 	// under. It joins the constants above because two surfaces spell it — the
@@ -81,7 +82,7 @@ func omitFieldLabel(position int, field string) string {
 }
 
 // omitTemplateFields presents the template fields one omits list writes, each
-// entry's when first and then its kind, name and namespace — the order the entry is
+// entry's when first and then its kind, name, namespace and subchart — the order the entry is
 // evaluated in — under the labels [omitFieldLabel] spells and the authored keys that
 // locate each field inside the document's spec.
 //
@@ -98,6 +99,7 @@ func omitTemplateFields(entries []types.OmitEntry, add func(label, text string, 
 			{omitFieldKind, entry.Kind},
 			{omitFieldName, entry.Name},
 			{omitFieldNamespace, entry.Namespace},
+			{omitFieldSubchart, entry.Subchart},
 		} {
 			add(omitFieldLabel(i, field.name), field.text, recipeFieldOmits, position, field.name)
 		}
