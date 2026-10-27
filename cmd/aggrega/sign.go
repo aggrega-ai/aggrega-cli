@@ -22,6 +22,7 @@ type signFlags struct {
 	rekor     string
 	timestamp string
 	idToken   string
+	jobs      int
 }
 
 // signConfig is the signing operation's input contract, which lives with the
@@ -47,9 +48,16 @@ func newSignCmd() *cobra.Command {
 			"whose policy pins no public key or trusted identity gives nothing to judge a signature against, so a " +
 			"reference there is signed. Every other signable reference is signed; failures are collected and reported " +
 			"at the end, and the command exits non-zero if any reference failed — including one whose existing " +
-			"signatures could not be read, which is not signed.",
+			"signatures could not be read, which is not signed. With --jobs N up to N references are signed at once; " +
+			"each is still signed exactly as it would be alone — when keyless, with its own certificate and its own " +
+			"transparency-log entry — and the output lists the references in the order they were given. The default, " +
+			"1, signs one reference after another, because keyless signing reaches the public certificate authority " +
+			"and transparency log by default, and those limit how many requests they accept.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.jobs < 1 {
+				return fmt.Errorf("aggrega sign: --jobs must be at least 1, got %d", opts.jobs)
+			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
 				return err
@@ -62,6 +70,7 @@ func newSignCmd() *cobra.Command {
 				TimestampURL: opts.timestamp,
 				IDToken:      opts.idToken,
 				Workspace:    rw,
+				Jobs:         opts.jobs,
 			})
 		},
 	}
@@ -70,6 +79,7 @@ func newSignCmd() *cobra.Command {
 	c.Flags().StringVar(&opts.rekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
 	c.Flags().StringVar(&opts.timestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
 	c.Flags().StringVar(&opts.idToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
+	c.Flags().IntVar(&opts.jobs, "jobs", 1, "Number of references signed at once. Each is still signed exactly as it would be alone, and the output keeps the order the references were given. At least 1.")
 	return c
 }
 
@@ -78,19 +88,19 @@ func newSignCmd() *cobra.Command {
 // rung and the terminal check — and names the command in any failure.
 //
 // The facts the operation reports are discarded here because the operation has
-// already written them one at a time: each reference is reported as it is signed,
-// or as it is found already signed, with the digest its signature commits to, and
-// the batch records that same pair for that same reference. There is a line for every reference the batch signed
-// and a reference for every line, so the result holds nothing this surface has
-// not already shown — including on a batch that failed partway, where the
-// successes were reported as they happened and the failures are named in the
-// error rather than in the result.
+// already written them: each reference is reported once it is signed, or found
+// already signed, with the digest its signature commits to, in the order the
+// references were given, and the batch records that same pair for that same
+// reference. There is a line for every reference the batch signed and a reference
+// for every line, so the result holds nothing this surface has not already shown —
+// including on a batch that failed partway, where the successes were reported as
+// the batch ran and the failures are named in the error rather than in the result.
 func signRun(ctx context.Context, cfg signConfig) error {
 	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply
-	// projection-omits SignResult: every reference the batch signs is written to this surface's own status output as it is signed, carrying the same digest the result records for it, so the result holds nothing the terminal has not already been shown
+	// projection-omits SignResult: every reference the batch signs is written to this surface's own status output once it is signed, carrying the same digest the result records for it, so the result holds nothing the terminal has not already been shown
 	if _, err := publishops.Sign(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega sign: %w", err)
 	}

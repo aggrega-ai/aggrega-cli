@@ -724,6 +724,11 @@ func renderPublishArtifactText(p publishArtifactPayload) string {
 //
 // The references are addresses in a registry rather than paths, so they carry no
 // workspace-relative contract. One authentication serves the whole batch.
+//
+// Jobs is how many references are signed at once. It is a pointer so an absent
+// argument and an explicit zero are distinguishable: an absent one signs one
+// reference after another, which is the command line's behaviour when its flag is
+// not passed, while a value below 1 is refused before any reference is read.
 type signArtifactsArgs struct {
 	References    []string `json:"references"`
 	KeyPath       string   `json:"key_path"`
@@ -732,6 +737,7 @@ type signArtifactsArgs struct {
 	TimestampURL  string   `json:"timestamp_url"`
 	IdentityToken string   `json:"identity_token"`
 	WorkspaceRoot string   `json:"workspace_root"`
+	Jobs          *int     `json:"jobs"`
 }
 
 // signedArtifact is one signed reference and the digest its signature commits to.
@@ -767,8 +773,10 @@ var signArtifactsToolSpec = toolSpec{
 		"for one and none for another, are refused before anything is signed: send one call per credential. " +
 		"Keyless signing takes its identity from " +
 		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Signing " +
-		"a reference nothing published is refused rather than attached to nothing. The result names every " +
-		"reference signed with the digest its signature commits to.",
+		"a reference nothing published is refused rather than attached to nothing. `jobs` signs that many " +
+		"references at once; each is still signed exactly as it would be alone, and absent it signs one after " +
+		"another. The result names every reference signed with the digest its signature commits to, in the " +
+		"order the references were given.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -803,6 +811,11 @@ var signArtifactsToolSpec = toolSpec{
     "workspace_root": {
       "type": "string",
       "description": "Optional workspace root override. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+    },
+    "jobs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many references are signed at once. Absent signs one after another. Each reference is still signed exactly as it would be alone — when keyless, with its own certificate and its own transparency-log entry — and the result keeps the order the references were given."
     }
   },
   "required": ["references"]
@@ -847,6 +860,15 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 				" was sent an empty entry in 'references'; every entry names one already-published artifact."
 		}
 	}
+	jobs := 1
+	if a.Jobs != nil {
+		if *a.Jobs < 1 {
+			return publishops.SignConfig{}, fmt.Sprintf("%s was sent 'jobs' of %d; send a whole number of at least 1, "+
+				"how many references are signed at once, or leave it out to sign one after another.",
+				signArtifactsToolName, *a.Jobs)
+		}
+		jobs = *a.Jobs
+	}
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, nil)
 	if err != nil {
 		return publishops.SignConfig{}, explainToolErrorAt("Could not resolve the workspace to sign against.", err,
@@ -865,6 +887,7 @@ func (s *server) signArtifactsConfig(a signArtifactsArgs) (publishops.SignConfig
 		Workspace:                 tw.rw,
 		IdentitySupply:            credentials.supply,
 		Out:                       io.Discard,
+		Jobs:                      jobs,
 	}, ""
 }
 

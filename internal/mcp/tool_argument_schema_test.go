@@ -388,6 +388,11 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{signArtifactsToolName, "an empty reference list", `{"references":[]}`, false},
 		{signArtifactsToolName, "a blank entry in the list", `{"references":[""]}`, false},
 		{signArtifactsToolName, "references sent as a bare string", `{"references":"a:1"}`, false},
+		{signArtifactsToolName, "a batch signed four at a time", `{"references":["a:1","b:1"],"jobs":4}`, true},
+		{signArtifactsToolName, "a batch signed one at a time, named outright", `{"references":["a:1"],"jobs":1}`, true},
+		{signArtifactsToolName, "a bound of zero", `{"references":["a:1"],"jobs":0}`, false},
+		{signArtifactsToolName, "a negative bound", `{"references":["a:1"],"jobs":-1}`, false},
+		{signArtifactsToolName, "a bound that is not a whole number", `{"references":["a:1"],"jobs":"4"}`, false},
 
 		// deprecate-artifact: a single reference with its content, or a batch file
 		// — and the batch file carries its own content, so content sent alongside it

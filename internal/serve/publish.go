@@ -5,6 +5,7 @@ package serve
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
@@ -205,12 +206,18 @@ type publishArtifactResult struct {
 //
 // The references are addresses in a registry rather than paths, so they carry no
 // workspace-relative contract. One authentication serves the whole batch.
+//
+// jobs is how many references are signed at once. It is a pointer so an absent
+// field and an explicit zero are distinguishable: an absent one signs one reference
+// after another, which is the command line's behaviour when its flag is not passed,
+// while a value below 1 is refused before any reference is read.
 type signArtifactsParams struct {
 	References    []string `json:"references"`
 	FulcioURL     string   `json:"fulcioUrl,omitempty"`
 	RekorURL      string   `json:"rekorUrl,omitempty"`
 	TimestampURL  string   `json:"timestampUrl,omitempty"`
 	IdentityToken string   `json:"identityToken,omitempty"`
+	Jobs          *int     `json:"jobs,omitempty"`
 }
 
 // signArtifactsResult is the aggrega/signArtifacts response: every reference
@@ -555,8 +562,9 @@ func (s *Server) dispatchSignArtifacts(ctx context.Context, req *jsonRPCRequest)
 // contract.
 //
 // progressOut carries the operation's own account of itself, on the same terms
-// as the publications above. A batch walks its references one at a time, so what
-// reaches a watching caller is which reference is being signed as it is signed.
+// as the publications above. What reaches a watching caller is each reference's
+// line once that reference is signed or found already signed, in the order the
+// request named the references, however many are signed at once.
 func (s *Server) signArtifactsConfig(params signArtifactsParams, progressOut io.Writer) (publishops.SignConfig, *jsonRPCError) {
 	if s.resolvedWorkspace == nil {
 		return publishops.SignConfig{}, &jsonRPCError{
@@ -574,6 +582,15 @@ func (s *Server) signArtifactsConfig(params signArtifactsParams, progressOut io.
 				"signArtifacts: references carries an empty entry; every entry names one already-published artifact")
 		}
 	}
+	jobs := 1
+	if params.Jobs != nil {
+		if *params.Jobs < 1 {
+			return publishops.SignConfig{}, invalidPublicationParam(fmt.Sprintf(
+				"signArtifacts: jobs must be at least 1, got %d (how many references are signed at once; leave it out to sign one after another)",
+				*params.Jobs))
+		}
+		jobs = *params.Jobs
+	}
 	return publishops.SignConfig{
 		References:     params.References,
 		FulcioURL:      params.FulcioURL,
@@ -583,6 +600,7 @@ func (s *Server) signArtifactsConfig(params signArtifactsParams, progressOut io.
 		Workspace:      s.resolvedWorkspace,
 		IdentitySupply: daemonIdentitySupply,
 		Out:            progressOut,
+		Jobs:           jobs,
 	}, nil
 }
 

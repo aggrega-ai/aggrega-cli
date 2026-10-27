@@ -4,12 +4,14 @@
 package publishops
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"oras.land/oras-go/v2"
 
@@ -79,8 +81,32 @@ type SignConfig struct {
 
 	// Out is the sink for the per-reference status line. Nil defaults to
 	// os.Stdout, so a caller that wants to capture the output passes a buffer
-	// rather than mutating a process global.
+	// rather than mutating a process global. Sign writes to it from one goroutine
+	// at a time, so a writer that is not safe for concurrent use is safe here.
 	Out io.Writer
+
+	// Jobs bounds how many references Sign signs at once. Zero means one, which
+	// signs the references one after another; a negative value is refused before
+	// any reference is read.
+	//
+	// The bound changes when each reference is signed and nothing about how: each
+	// reference resolves its digest, is skipped when it already carries a signature
+	// its registry's trust policy verifies, and otherwise gets its own signer — for a
+	// keyless batch its own key, certificate and transparency-log entry — exactly as
+	// it would signed alone. One consequence follows from that and is accepted: two
+	// references naming the same artifact, signed at once, are both signed, because
+	// neither's check sees the other's signature while it is still being made; one
+	// after another, the second finds the first's and attaches nothing.
+	Jobs int
+}
+
+// jobs is the number of references the batch signs at once: cfg.Jobs, with zero
+// read as one.
+func (cfg SignConfig) jobs() int {
+	if cfg.Jobs == 0 {
+		return 1
+	}
+	return cfg.Jobs
 }
 
 // signerRequest projects the batch's credential inputs onto the shared
@@ -149,11 +175,26 @@ type SignedArtifact struct {
 //
 // Signing is continue-and-report: a reference that fails to resolve, sign, or
 // attach — or whose existing signatures could not be judged — is recorded and the
-// batch proceeds to the next reference; after the loop, if any reference failed, a
+// batch carries on with the others; once every reference has run, if any failed, a
 // summary naming each failure is returned.
+//
+// Up to cfg.Jobs references are signed at once (see SignConfig.Jobs), and the
+// answer is ordered as the references were given whatever order they finish in:
+// each reference's status lines are held until every reference before it has
+// written its own, then written whole, so lines of two references never
+// interleave; the signed list and the failure summary follow the same order.
+//
+// References are started in the order given, and the batch's stop check precedes
+// starting each one. Once the caller has withdrawn, no further reference is
+// started; the ones already started run to their own end, Sign waits for them, and
+// it returns the references among them that were signed, in the order given, with
+// the stop.
 func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 	if len(cfg.References) == 0 {
 		return SignResult{}, fmt.Errorf("at least one reference required")
+	}
+	if cfg.Jobs < 0 {
+		return SignResult{}, fmt.Errorf("the number of references signed at once must be at least 1, got %d", cfg.Jobs)
 	}
 	out := cfg.Out
 	if out == nil {
@@ -167,27 +208,59 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 	if err != nil {
 		return SignResult{}, err
 	}
-	b := &batchSigner{cfg: cfg, cred: cred, out: out}
+	b := &batchSigner{cfg: cfg, cred: cred}
+
+	outcomes := make([]refOutcome, len(cfg.References))
+	w := &orderedWriter{out: out, outcomes: outcomes}
+	slots := make(chan struct{}, cfg.jobs())
+	var wg sync.WaitGroup
+	var stop error
+	for i, ref := range cfg.References {
+		// Wait for a free slot, or for the caller to withdraw, whichever comes first;
+		// a withdrawal is then read by the check below either way.
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+		}
+		// One interruption point per reference, which is this batch's seam: each
+		// reference resolves, signs and attaches one artifact at the registry. A
+		// reference not yet started is one never signed, and the check precedes the
+		// attach rather than following it, because an attached signature is
+		// published and cannot be withdrawn.
+		if serr := stopped(ctx); serr != nil {
+			stop = serr
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// The slot is given back only after this reference's lines are written, so
+			// at a bound of one a reference's lines precede the next reference's start.
+			defer func() { <-slots }()
+			o := &outcomes[i]
+			o.digest, o.attached, o.err = b.signRef(ctx, &o.lines, ref)
+			w.finished(i)
+		}()
+	}
+	wg.Wait()
 
 	var (
 		failures []refFailure
 		signed   []SignedArtifact
 	)
-	for _, ref := range cfg.References {
-		// One interruption point per reference, which is this batch's seam: each
-		// iteration resolves, signs and attaches one artifact at the registry. A
-		// reference not yet reached is one never signed, and the check precedes the
-		// attach rather than following it, because an attached signature is
-		// published and cannot be withdrawn.
-		if serr := stopped(ctx); serr != nil {
-			return SignResult{Signed: signed}, serr
+	for i, ref := range cfg.References {
+		o := &outcomes[i]
+		switch {
+		case !o.done:
+			// Never started: the batch stopped before reaching it.
+		case o.err != nil:
+			failures = append(failures, refFailure{ref: ref, err: o.err})
+		default:
+			signed = append(signed, SignedArtifact{Reference: ref, Digest: o.digest, Attached: o.attached})
 		}
-		digest, attached, err := b.signRef(ctx, ref)
-		if err != nil {
-			failures = append(failures, refFailure{ref: ref, err: err})
-			continue
-		}
-		signed = append(signed, SignedArtifact{Reference: ref, Digest: digest, Attached: attached})
+	}
+	if stop != nil {
+		return SignResult{Signed: signed}, stop
 	}
 
 	if len(failures) > 0 {
@@ -201,6 +274,44 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 	return SignResult{Signed: signed}, nil
 }
 
+// refOutcome is what one reference of the batch came to: the digest its signature
+// commits to, whether this batch attached it, or the error that stopped it, and the
+// status lines it wrote. done is set once the reference has finished; a reference
+// the batch never started stays not done.
+type refOutcome struct {
+	digest   string
+	attached bool
+	err      error
+	lines    bytes.Buffer
+	done     bool
+}
+
+// orderedWriter writes each reference's status lines to the batch's sink in the
+// order the references were given. A reference finishing ahead of one before it
+// has its lines held until that one has finished too, and each reference's lines
+// are written in one piece, so the account reads as it would signed one after
+// another whatever order the references finished in.
+type orderedWriter struct {
+	mu       sync.Mutex
+	out      io.Writer
+	outcomes []refOutcome
+	// next is the first reference whose lines have not been written yet.
+	next int
+}
+
+// finished records that reference i has finished and writes every finished
+// reference's lines that no unfinished reference precedes. The sink is written
+// under the lock, so it is written from one goroutine at a time.
+func (w *orderedWriter) finished(i int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.outcomes[i].done = true
+	for w.next < len(w.outcomes) && w.outcomes[w.next].done {
+		_, _ = w.out.Write(w.outcomes[w.next].lines.Bytes())
+		w.next++
+	}
+}
+
 // refFailure pairs a reference with the error that stopped it, so the batch can
 // continue past it and report every failure together at the end.
 type refFailure struct {
@@ -208,22 +319,20 @@ type refFailure struct {
 	err error
 }
 
-// batchSigner carries the batch's once-resolved credential across the batch loop.
+// batchSigner carries the batch's once-resolved credential to every reference.
+// Every field is written once, by Sign, before any reference starts, and only read
+// afterwards, so the references the batch signs at once share it safely.
 type batchSigner struct {
 	cfg SignConfig
 
 	// cred is the one credential every reference is signed with, resolved by Sign
-	// over every reference before the loop.
+	// over every reference before any reference starts.
 	cred *credential
-
-	// out is the resolved sink for the per-reference status line, set once by
-	// Sign.
-	out io.Writer
 }
 
 // signRef signs one reference and attaches its signature, returning the published
-// digest the signature commits to and whether this call attached it. It asks the
-// batch's credential for the
+// digest the signature commits to and whether this call attached it, and writes the
+// reference's status line to out. It asks the batch's credential for the
 // reference's signer — never resolving a credential or an identity itself; the one
 // resolution happened in Sign, over every reference. A keyless failure whose cause
 // is a token without a usable signing subject is mapped to a precise diagnostic;
@@ -246,7 +355,7 @@ type batchSigner struct {
 // not be read or judged — the reference is reported as failed and nothing is
 // signed: an unanswered question is not read as "unsigned", so a run never adds a
 // signature on the strength of a registry that failed to answer.
-func (b *batchSigner) signRef(ctx context.Context, ref string) (string, bool, error) {
+func (b *batchSigner) signRef(ctx context.Context, out io.Writer, ref string) (string, bool, error) {
 	target := b.cfg.Target
 	if target == nil {
 		rw, werr := requireWorkspace(b.cfg.Workspace)
@@ -284,7 +393,7 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, bool, er
 		return "", false, err
 	}
 	if existing != nil {
-		fmt.Fprintf(b.out, "Already signed: %s (%s) by %s%s; nothing attached\n", ref, digest, existing.Identity, loggedClause(existing))
+		fmt.Fprintf(out, "Already signed: %s (%s) by %s%s; nothing attached\n", ref, digest, existing.Identity, loggedClause(existing))
 		return digest, false, nil
 	}
 
@@ -310,7 +419,7 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) (string, bool, er
 		return "", false, fmt.Errorf("attach signature to %s: %w", ref, err)
 	}
 
-	fmt.Fprintf(b.out, "Signature attached: %s (%s)\n", ref, digest)
+	fmt.Fprintf(out, "Signature attached: %s (%s)\n", ref, digest)
 	return digest, true, nil
 }
 
