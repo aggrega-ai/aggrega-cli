@@ -66,7 +66,7 @@ entities:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - uri: manifest-helm-synth
       resolved_version: ""
-      digest: sha256:f0ce6a757c949f51003dc51aa077726430e4e1a46f36fd747b75387d4225c8eb
+      digest: sha256:409f6a809e0e4fc924e3c214e589c6cea06ccf2304c9a3e576b99685ca16618d
       referenced_from:
         - release.spec.manifest
 external_inputs: []
