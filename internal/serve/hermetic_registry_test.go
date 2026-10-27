@@ -40,9 +40,18 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/hometest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// TestPerUserHomesAreIsolated is the regression floor for the redirect TestMain
+// runs the suite under: if it is ever dropped, this fails loudly rather than
+// letting the developer's own configuration, credentials or netrc file reach the
+// suite.
+func TestPerUserHomesAreIsolated(t *testing.T) {
+	hometest.AssertRedirected(t)
+}
 
 // defaultRegistryRefusal is a proxy decision that refuses every request to one
 // registry host and records it, and hands every other request to the decision
@@ -86,7 +95,9 @@ func builtInDefaultRegistryHost() string {
 }
 
 // TestMain installs the refusal for the whole binary and fails the run when any
-// test made a request it refused.
+// test made a request it refused. It runs the suite with the per-user homes
+// redirected (hometest.RunHermetic), so a resolution a test drives reads none of
+// the developer's own configuration, registry credentials or netrc file.
 func TestMain(m *testing.M) {
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -96,7 +107,7 @@ func TestMain(m *testing.M) {
 	}
 	refusal := &defaultRegistryRefusal{host: builtInDefaultRegistryHost(), next: transport.Proxy}
 	transport.Proxy = refusal.proxy
-	code := m.Run()
+	code := hometest.RunHermetic(m)
 	if refused := refusal.requests(); len(refused) > 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: %d request(s) reached %s, the built-in default registry; every test here "+
 			"resolves against a registry it owns (testOwnedRegistryConfig):\n", len(refused), refusal.host)

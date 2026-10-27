@@ -8,9 +8,8 @@
 // ResolvedSource for the lockfile writer.
 //
 // Auth: the GET carries the credential the netrc file holds for the URL's
-// host (see package netrc), as HTTP basic credentials; a URL carrying a user
-// and password of its own sends those instead. A 401 or 403 answer is
-// reported as an unauthorized fetch.
+// host (see package netrc), as HTTP basic credentials. A 401 or 403 answer
+// is reported as an unauthorized fetch.
 package compose
 
 import (

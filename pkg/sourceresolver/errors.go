@@ -125,7 +125,7 @@ func remediationFor(spec SourceSpec, sentinel error) string {
 				file += " " + path
 			}
 			return "remediation: add an entry for " + host + " (machine " + host +
-				" login <user> password <secret>) to " + file + ", then re-run aggrega pull --release <release>"
+				" login <user> password <secret>) to " + file + ", then run the command again"
 		}
 	}
 	return oci.RemediationFor(sentinel, registryhost.Of(spec.URL))

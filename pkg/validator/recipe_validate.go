@@ -23,18 +23,21 @@ import (
 // a property of what each names rather than a list to keep here — a rule about
 // the document as a whole has only the file to give.
 //
-// Rules enforced here: values-mapping, input-kinds and source-kind. The
+// Rules enforced here: values-mapping, input-kinds, source-kind and source-url. The
 // workload-requires-provider-workloadSchema constraint is enforced at render time
 // by the central input-kind gate (a synthesized Recipe bound to a provider that
 // does not implement workload synthesis halts loudly there). The
 // filename-collision rule (a collision across input-kind origins) is enforced at
 // emission time by feature rendering.
 //
-// What is deliberately NOT checked: the contents of `source:`, with one key
+// What is deliberately NOT checked: the contents of `source:`, with two readings
 // excepted. Whether a source is present is a shape question and is answered here,
 // and so is whether a structured source's `kind:` names a kind a source adapter
 // serves — that word selects the adapter the host fetches the artifact with, so it
-// is the host's contract rather than an engine's. What every other key means is
+// is the host's contract rather than an engine's. So is whether the reference the
+// source names — its `url:`, or the source itself where it is a single URI —
+// carries a credential before its host: that text is what the host fetches and
+// what every record of the fetch keeps as authored. What every other key means is
 // not. A structured `source:` is an open dictionary, and the keys inside it —
 // `registry`, `chart`, `appVersion`, `workspace`, or anything else a provider
 // defines — are carried through uninterpreted, exposed to the Recipe's templates
@@ -68,7 +71,39 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeSourceKind(r, sourcePath); err != nil {
 		return err
 	}
+	if err := validateRecipeSourceURL(r, sourcePath); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateRecipeSourceURL enforces the source-url rule: the reference a source
+// names carries no credential of its own.
+//
+// The rule itself is declared rather than written out here: see
+// recipeSourceURLCarriesNoCredential, which names the facts it reads and is
+// invoked once per presented document. What this function does is present the
+// document the load is holding and render whatever came back into the failure
+// shape this package's callers read.
+func validateRecipeSourceURL(r *types.Recipe, sourcePath string) error {
+	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			recipeSourceURLCarriesNoCredential,
+		),
+		ruleSubject{
+			Kind:    envelope.KindRecipe,
+			Name:    r.Metadata.Name,
+			Version: r.Metadata.Version,
+			Rule:    "source-url",
+		},
+	)
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures[0]
 }
 
 // validateRecipeSourceKind enforces the source-kind rule: a structured source

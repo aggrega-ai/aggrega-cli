@@ -212,8 +212,9 @@ func TestWrapSkipsRemediationForNonFetchSentinel(t *testing.T) {
 // TestAnUnauthorizedFetchOverHTTPAdvisesTheNetrcFile holds which advice a refused
 // credential carries: a source fetched over http or https reads its credential
 // from the netrc file, so it is told the entry to write — keyed on the host name
-// without the port — and the file its fetch read; a source fetched any other way
-// keeps the registry fetches' advice.
+// without the port — and the file its fetch read, then to run whichever command
+// it ran again, since the advice is the same under a pull, a pin or a push; a
+// source fetched any other way keeps the registry fetches' advice.
 //
 // A planted defect makes this fail: give every refused credential the registry
 // fetches' advice.
@@ -228,11 +229,13 @@ func TestAnUnauthorizedFetchOverHTTPAdvisesTheNetrcFile(t *testing.T) {
 	}{
 		{name: "a chart over https names the entry and the file", kind: "helm-https-chart",
 			url: "https://charts.example.com:8443/repo", netrc: netrc.FromFile(netrcPath),
-			want:    "machine charts.example.com login <user> password <secret>) to the netrc file " + netrcPath,
-			wantNot: "docker login"},
+			want: "machine charts.example.com login <user> password <secret>) to the netrc file " + netrcPath +
+				", then run the command again",
+			wantNot: "aggrega pull"},
 		{name: "a fragment over plain http is answered the same way", kind: "compose-https-fragment",
-			url:  "http://fragments.example.com/web.yaml",
-			want: "machine fragments.example.com", wantNot: "docker login"},
+			url:     "http://fragments.example.com/web.yaml",
+			want:    "machine fragments.example.com login <user> password <secret>) to the netrc file, then run the command again",
+			wantNot: "aggrega pull"},
 		{name: "a git clone over ssh keeps the registry advice", kind: "git-repository",
 			url: "ssh://git@git.example.com/org/module.git", want: "docker login", wantNot: "netrc"},
 		{name: "an OCI chart keeps the registry advice", kind: "helm-oci-chart",

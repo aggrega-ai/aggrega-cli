@@ -93,7 +93,7 @@ type SourceSpec struct {
 	// the fetch runs, and what it holds is written into nothing the resolution
 	// returns or records. The production caller sets it to the file the
 	// environment names (netrc.FromEnvironment); nil reads no file, so a request
-	// sends only what its URL carries.
+	// sends no credential.
 	Netrc *netrc.Source
 }
 

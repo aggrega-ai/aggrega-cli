@@ -12,8 +12,8 @@ import (
 )
 
 // featureRecipeDocumentView presents one authored FeatureRecipe to a check as
-// named facts: whether it declares a source pointer or a values overlay, and the
-// kind its structured source names.
+// named facts: whether it declares a source pointer or a values overlay, the kind
+// its structured source names, and the reference its source names.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -68,6 +68,12 @@ type featureRecipeDocumentView struct {
 	// sourceKindWritten whether it names one.
 	sourceKind        string
 	sourceKindWritten bool
+
+	// sourceReference is the reference the document's source names, as authored,
+	// and sourceReferenceInURLKey whether it sits under a structured source's
+	// `url:` key rather than being the source itself.
+	sourceReference         string
+	sourceReferenceInURLKey bool
 }
 
 // newFeatureRecipeDocumentView presents the FeatureRecipe a load is holding: the
@@ -79,12 +85,15 @@ type featureRecipeDocumentView struct {
 // answers could pass ones taken from a different document, or derived differently.
 func newFeatureRecipeDocumentView(path string, fr *types.FeatureRecipe) featureRecipeDocumentView {
 	kind, written := authoredSourceKind(fr.Spec.Source)
+	reference, inURLKey := authoredSourceReference(fr.Spec.Source)
 	return featureRecipeDocumentView{
-		path:              path,
-		source:            !sourceIsEmpty(fr.Spec.Source),
-		valuesMapping:     !fr.Spec.ValuesMapping.IsEmpty(),
-		sourceKind:        kind,
-		sourceKindWritten: written,
+		path:                    path,
+		source:                  !sourceIsEmpty(fr.Spec.Source),
+		valuesMapping:           !fr.Spec.ValuesMapping.IsEmpty(),
+		sourceKind:              kind,
+		sourceKindWritten:       written,
+		sourceReference:         reference,
+		sourceReferenceInURLKey: inURLKey,
 	}
 }
 
@@ -107,6 +116,14 @@ func (v featureRecipeDocumentView) FeatureRecipeValuesMappingDeclared(document s
 func (v featureRecipeDocumentView) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
 	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceKind")
 	return v.sourceKind, v.sourceKindWritten
+}
+
+// FeatureRecipeAuthoredSourceReference is the reference the presented
+// FeatureRecipe's source names, as authored, and whether it sits under the
+// structured form's `url:` key.
+func (v featureRecipeDocumentView) FeatureRecipeAuthoredSourceReference(document string) (string, bool) {
+	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceReference")
+	return v.sourceReference, v.sourceReferenceInURLKey
 }
 
 // FeatureRecipeSourceKindServed reports whether this program serves kind, read

@@ -24,6 +24,21 @@ var errNetrcFileUnreadable = cerrors.Register("netrc-file-unreadable", cerrors.M
 		"reports is a read of the user's own credential file that could not yield credentials."),
 })
 
+// ErrSourceURLCarriesCredential reports a Recipe or FeatureRecipe whose source
+// URL carries a credential of its own — a user, or a user and password, written
+// before the host ([URLCredential] decides which). Such a URL is refused as the
+// document is read, before anything is fetched: the credential would be sent, but
+// it would also be written into every lockfile and cache record that keeps the
+// URL as authored, and into the document itself, which is committed and may be
+// published. The credential belongs in the netrc file instead.
+func ErrSourceURLCarriesCredential() error { return errSourceURLCarriesCredential }
+
+var errSourceURLCarriesCredential = cerrors.Register("source-url-carries-credential", cerrors.Meta{
+	ShortCode: "E0361",
+	Message:   "the source URL carries a credential",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // unreadableAdvice is what a reader does about either form of the condition.
 const unreadableAdvice = "Correct the file, or set NETRC to the path of another netrc file to read instead"
 

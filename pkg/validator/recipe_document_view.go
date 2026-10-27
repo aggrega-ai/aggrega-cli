@@ -8,14 +8,15 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // recipeDocumentView presents one authored Recipe to a check as named facts:
 // whether it declares a values overlay, a source pointer, a workload body or
-// artifact entries, the kind its structured source names, and the keys each of
-// its two output-label blocks declares.
+// artifact entries, the kind its structured source names, the reference its
+// source names, and the keys each of its two output-label blocks declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -68,6 +69,12 @@ type recipeDocumentView struct {
 	// sourceKindWritten whether it names one.
 	sourceKind        string
 	sourceKindWritten bool
+
+	// sourceReference is the reference the document's source names, as authored,
+	// and sourceReferenceInURLKey whether it sits under a structured source's
+	// `url:` key rather than being the source itself.
+	sourceReference         string
+	sourceReferenceInURLKey bool
 
 	// outputLabelKeys are the keys the literal output-label block declares, in
 	// sorted order.
@@ -122,6 +129,7 @@ func authoredOutputComponentLabelKeys(block []string) []string {
 // answers could pass ones read from a different document, or read differently.
 func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 	kind, written := authoredSourceKind(r.Spec.Source)
+	reference, inURLKey := authoredSourceReference(r.Spec.Source)
 	return recipeDocumentView{
 		path:                     path,
 		valuesMapping:            !r.Spec.ValuesMapping.IsEmpty(),
@@ -130,6 +138,8 @@ func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 		artifacts:                r.Spec.Artifacts.Len() > 0,
 		sourceKind:               kind,
 		sourceKindWritten:        written,
+		sourceReference:          reference,
+		sourceReferenceInURLKey:  inURLKey,
 		outputLabelKeys:          authoredOutputLabelKeys(r.Spec.OutputLabels),
 		outputComponentLabelKeys: authoredOutputComponentLabelKeys(r.Spec.OutputComponentLabels),
 	}
@@ -161,6 +171,24 @@ func authoredSourceKind(src any) (string, bool) {
 		return "", false
 	}
 	return kind, true
+}
+
+// authoredSourceReference reads the reference a source names, as authored, and
+// whether it is the structured form's `url:` key rather than the source itself.
+// It is the one reader of that text for both authored kinds that write a source,
+// and it reads through the walk every other reading of a source's reference uses
+// (sourceref.Reference), so a rule over the reference and the fetch it names read
+// the same text.
+//
+// A source of a shape that walk cannot read, and a structured source writing no
+// `url:`, answer with no text.
+func authoredSourceReference(src any) (string, bool) {
+	reference, readable := sourceref.Reference(src)
+	if !readable {
+		return "", false
+	}
+	_, structured := src.(map[string]any)
+	return reference, structured
 }
 
 // RecipeValuesMappingDeclared reports whether the presented Recipe declares a
@@ -196,6 +224,13 @@ func (v recipeDocumentView) RecipeArtifactsDeclared(document string) bool {
 func (v recipeDocumentView) RecipeAuthoredSourceKind(document string) (string, bool) {
 	v.refuseOtherDocument(document, "RecipeAuthoredSourceKind")
 	return v.sourceKind, v.sourceKindWritten
+}
+
+// RecipeAuthoredSourceReference is the reference the presented Recipe's source
+// names, as authored, and whether it sits under the structured form's `url:` key.
+func (v recipeDocumentView) RecipeAuthoredSourceReference(document string) (string, bool) {
+	v.refuseOtherDocument(document, "RecipeAuthoredSourceReference")
+	return v.sourceReference, v.sourceReferenceInURLKey
 }
 
 // RecipeSourceKindServed reports whether this program serves kind, read from the

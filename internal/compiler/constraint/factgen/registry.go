@@ -1242,6 +1242,27 @@ var facts = []factDecl{
 			"presented document because that is the subject such a rule is " +
 			"invoked once per, while the answer follows from the kind alone.",
 	},
+	{
+		Name:        "recipe-authored-source-reference",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Source",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "RecipeAuthoredSourceReference is the reference the presented " +
+			"Recipe's source names, as the author wrote it — the whole source " +
+			"where it is written as a single URI, its `url:` key where it is " +
+			"structured — and whether it is the structured form's `url:` key.\n\n" +
+			"It is read through the one walk of the two shapes a source takes, so " +
+			"a rule over the reference and every other reading of it agree about " +
+			"which text the source names. The reference is the text a fetch " +
+			"requests and a lockfile records as authored, which is why a rule " +
+			"over what that text may carry reads it here, as the document " +
+			"arrives, rather than where it is fetched.\n\nA Recipe declaring no " +
+			"source, or a structured source writing no `url:`, answers with no " +
+			"text. The second result names which key the text sits under, so a " +
+			"finding about it can name the key the author edits.",
+	},
 
 	{
 		Name:        "recipe-output-label-keys",
@@ -1481,6 +1502,21 @@ var facts = []factDecl{
 			"for the reason the authored kind is: a fact is filed under one " +
 			"document kind. Both read the one declaration of the served set, so " +
 			"the two cannot answer differently about a kind.",
+	},
+	{
+		Name:        "feature-recipe-authored-source-reference",
+		Stage:       "document",
+		SourceField: "types.FeatureRecipeSpec.Source",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "FeatureRecipeAuthoredSourceReference is the reference the presented " +
+			"FeatureRecipe's source names, as authored, and whether it is the " +
+			"structured form's `url:` key.\n\nIt is the Recipe's fact for the " +
+			"other authored kind that writes a source, declared twice because a " +
+			"fact is filed under exactly one document kind. What it reads is what " +
+			"the Recipe's own fact states; it is not restated here, because a " +
+			"fact's documentation has one home.",
 	},
 	{
 		Name:        "release-boundary-placements",

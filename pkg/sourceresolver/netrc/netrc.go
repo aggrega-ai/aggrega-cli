@@ -26,7 +26,9 @@
 //
 // The file is read when a fetch needs it and at no other time, and what it holds
 // is sent with the request and written nowhere: a lockfile, the source cache and
-// every diagnostic carry the source's URL as it was written. A file that does not
+// every diagnostic carry the source's URL as it was written. That URL carries no
+// credential of its own, because a Recipe or FeatureRecipe whose source URL
+// carries one ([URLCredential]) is refused as its document is read. A file that does not
 // follow the grammar is refused naming the file and the line, never repeating
 // what the line holds.
 //
@@ -63,14 +65,16 @@ type File struct {
 // there is one.
 //
 // There is none for a URL whose scheme is not http or https, for a URL that does
-// not parse, and for a URL that carries a user of its own in its authority part:
-// that URL's own credential is what the request sends. Otherwise the answer is
-// the entry for the URL's host, as the package documentation describes.
+// not parse, and for a URL that carries a credential of its own
+// ([URLCredential]): such a URL is refused as its document is read, so it reaches
+// no fetch, and the file is not asked to stand in for a credential the URL already
+// names. Otherwise the answer is the entry for the URL's host, as the package
+// documentation describes.
 func (f *File) ForURL(rawURL string) (Credential, bool) {
 	if f == nil {
 		return Credential{}, false
 	}
-	if u, err := url.Parse(rawURL); err != nil || u.User != nil {
+	if _, carries := URLCredential(rawURL); carries {
 		return Credential{}, false
 	}
 	host, ok := HostFor(rawURL)
@@ -78,6 +82,40 @@ func (f *File) ForURL(rawURL string) (Credential, bool) {
 		return Credential{}, false
 	}
 	return f.forHost(host)
+}
+
+// URLCredential reports whether a source URL carries a credential of its own in
+// its authority part, and the host it names that credential for — the host name
+// without its port, so a diagnostic can name the host without repeating the
+// credential.
+//
+// It reads the URL's grammar and nothing else: the user-information part before
+// the host, which is where a URL carries a user and password. Over http or https
+// any user information counts, a user written alone included, because a service
+// reached over HTTP commonly takes a token in the user's place, and the netrc file
+// is where a credential for those schemes is read from. Over any other scheme only
+// a password counts: a user written alone there names an account rather than a
+// secret — `ssh://git@host/…` is how a Git repository reached over SSH is
+// commonly written, and the SSH agent supplies its key — while a password is a
+// secret whatever the transport. A token written into a query string or a path is
+// not user information, and nothing here guesses whether a value is one.
+//
+// It is the single answer to the question for every reader of it: the check
+// refusing a Recipe or FeatureRecipe whose source URL carries a credential, and
+// [File.ForURL], which declines such a URL.
+func URLCredential(rawURL string) (host string, carries bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.User == nil {
+		return "", false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return u.Hostname(), true
+	}
+	if _, hasPassword := u.User.Password(); hasPassword {
+		return u.Hostname(), true
+	}
+	return "", false
 }
 
 // HostFor returns the host whose entry answers a request for rawURL — the URL's

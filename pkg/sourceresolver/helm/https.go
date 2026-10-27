@@ -109,8 +109,7 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 //
 // Each fetch carries the credential the netrc file spec.Netrc names holds
 // for that fetch's own host — the index.yaml lookup and the chart download
-// are asked separately, since an index can place a chart on another host —
-// and a URL carrying a user and password of its own sends those instead.
+// are asked separately, since an index can place a chart on another host.
 // The file is read first, and one that cannot be read or does not parse
 // halts the resolution before any request.
 //

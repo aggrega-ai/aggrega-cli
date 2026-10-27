@@ -39,10 +39,10 @@
 // "aggrega pull --upgrade --release <release>" adopts it.
 //
 // Auth: over HTTPS (and plain HTTP) the clone sends the credential the
-// netrc file holds for the repository's host (see package netrc), and a
-// URL carrying a user and password of its own sends those instead. Over
-// SSH, go-git authenticates through the SSH agent and no netrc file is
-// read. No gitconfig credential helper is read. The adapter passes
+// netrc file holds for the repository's host (see package netrc); a URL
+// carrying a credential of its own is refused as its document is read and
+// reaches no clone. Over SSH, go-git authenticates through the SSH agent
+// and no netrc file is read. No gitconfig credential helper is read. The adapter passes
 // spec.URL through to git.CloneContext unchanged, so any URL shape go-git
 // accepts works (https://, ssh://, git+ssh://, git://).
 package gitrepo
@@ -126,15 +126,13 @@ func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Cli
 
 // netrcAuth returns the credential a clone of the source sends — the one the
 // netrc file spec.Netrc names holds for the URL's host — or nil for none. Only a
-// remote reached over http or https is answered, and one whose URL carries a user
-// of its own is not, so its own credential is what go-git sends; every other
-// remote reads no netrc file at all, so an SSH clone is untouched by one that
-// does not parse. A file that exists and cannot be read or does not parse is the
-// error.
+// remote reached over http or https is answered; every other remote reads no
+// netrc file at all, so an SSH clone is untouched by one that does not parse. A
+// file that exists and cannot be read or does not parse is the error.
 //
 // The nil it returns for no credential is an untyped one. A nil *BasicAuth held
 // in the interface would read as present to go-git, which would then send an
-// empty credential in place of the one the URL carries.
+// empty basic credential on every request.
 func netrcAuth(spec sourceresolver.SourceSpec) (transport.AuthMethod, error) {
 	if _, ok := netrc.HostFor(spec.URL); !ok {
 		return nil, nil

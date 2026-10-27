@@ -15,7 +15,7 @@
 // through Helm's built-in getters with no Helm settings, so neither
 // repositories.yaml nor the Helm registry configuration is read: each
 // fetch sends the credential the netrc file holds for its own host (see
-// package netrc), or the user and password its URL carries.
+// package netrc).
 //
 // The OCI adapter pins the upstream archive verbatim (no
 // normalisation) and catches drift via ErrFetchIntegrity on the

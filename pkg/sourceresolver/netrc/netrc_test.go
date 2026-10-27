@@ -101,6 +101,45 @@ default login anyuser password anytoken
 	}
 }
 
+// TestURLCredentialReadsTheUserInformationAlone holds what counts as a credential
+// a source URL carries: over http or https any user information, a user written
+// alone included; over any other scheme a password only, so an SSH URL naming its
+// account is not one; and never a value outside the user-information part, so a
+// token in a query string or a path is not read. A credential answers with the
+// URL's host name, port dropped.
+//
+// A planted defect makes this fail: answer a credential for every user
+// information over every scheme.
+func TestURLCredentialReadsTheUserInformationAlone(t *testing.T) {
+	t.Parallel()
+
+	for _, row := range []struct {
+		url      string
+		wantHost string
+		carries  bool
+	}{
+		{url: "https://user:pass@charts.example.com/repo", wantHost: "charts.example.com", carries: true},
+		{url: "http://token@raw.example.com:8080/web.yaml", wantHost: "raw.example.com", carries: true},
+		{url: "HTTPS://user:pass@Charts.Example.com/repo", wantHost: "Charts.Example.com", carries: true},
+		{url: "https://user:@charts.example.com/repo", wantHost: "charts.example.com", carries: true},
+		{url: "ssh://git:secret@git.example.com/org/repo.git", wantHost: "git.example.com", carries: true},
+		{url: "oci://user:pass@registry.example.com/charts/c", wantHost: "registry.example.com", carries: true},
+		{url: "ssh://git@git.example.com/org/repo.git"},
+		{url: "git+ssh://git@git.example.com/org/repo.git"},
+		{url: "https://charts.example.com/repo"},
+		{url: "https://raw.example.com/web.yaml?access_token=abc"},
+		{url: "https://raw.example.com/abc123token/web.yaml"},
+		{url: "git@git.example.com:org/repo.git"},
+		{url: "./charts/local"},
+		{url: ""},
+	} {
+		host, carries := URLCredential(row.url)
+		if carries != row.carries || host != row.wantHost {
+			t.Errorf("URLCredential(%q) = %q, %v; want %q, %v", row.url, host, carries, row.wantHost, row.carries)
+		}
+	}
+}
+
 // TestAMissingNetrcFileHoldsNoCredentials holds that a netrc file that does not
 // exist is no error, and that a nil Source reads nothing at all.
 func TestAMissingNetrcFileHoldsNoCredentials(t *testing.T) {
