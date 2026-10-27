@@ -398,8 +398,12 @@ func TestWireRegistryRefusesAnUnregisteredExportOverTheRealRegistrations(t *test
 	}
 
 	served := map[plugintype.Type]bool{}
-	for _, tgt := range codecTargets {
-		for _, w := range tgt.wireExports {
+	for base, tgt := range codecTargets {
+		registrations, err := tgt.wireRegistrations()
+		if err != nil {
+			t.Fatalf("codec target %q: %v", base, err)
+		}
+		for _, w := range registrations {
 			if _, pluginType, err := w.exportName(plugintype.Entries()); err == nil {
 				served[pluginType] = true
 			}

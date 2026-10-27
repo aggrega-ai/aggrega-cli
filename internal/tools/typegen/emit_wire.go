@@ -21,7 +21,8 @@ import (
 //
 // It is derived rather than declared. There is no schema behind this target and
 // no table beside it: the emitter walks the codec targets, reads each one's
-// wireExports, and resolves an entry's role, or its plugin type and the listed
+// wire registrations — its wireExports, or the export table its schema
+// publishes — and resolves an entry's role, or its plugin type and the listed
 // export it names, to an export name through the plugin-type registry. So the
 // fact the registry carries lives on the registrations that drive the codecs,
 // and the export name itself is spelled in neither place — an entry reads it
@@ -190,12 +191,15 @@ func (e wireEntry) encodeFunc() string { return "encode" + e.shape }
 func (e wireEntry) newOutputFunc() string { return "new" + e.output }
 
 // collectWireEntries walks the given codec targets and returns one row per
-// wireExports entry, in a sorted order so the emitted file is byte-identical run
+// wire registration, in a sorted order so the emitted file is byte-identical run
 // to run. It takes the targets as a parameter so each refusal can be driven over
 // a registration built to trip it.
 //
-// It refuses rather than skipping in five cases, because each one would emit a
-// registry that reads as complete and is not: a target carrying wireExports with
+// It refuses rather than skipping in six cases, because each one would emit a
+// registry that reads as complete and is not: a target whose registrations
+// cannot be read — an export table its schema does not carry or carries
+// malformed, or one declared beside wireExports (see
+// [codecTarget.wireRegistrations]); a target carrying registrations with
 // no destination import path has no way to name its shape; an entry whose role
 // or plugin type does not resolve to exactly one listed export — or that names an
 // export its type's list does not hold — would contribute no export or a wrong
@@ -243,14 +247,18 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 	declared := map[string]bool{}
 	for _, base := range bases {
 		t := targets[base]
-		if len(t.wireExports) == 0 {
+		registrations, err := t.wireRegistrations()
+		if err != nil {
+			return nil, fmt.Errorf("typegen: codec target %q %w", base, err)
+		}
+		if len(registrations) == 0 {
 			continue
 		}
 		if t.pkgPath == "" {
-			return nil, fmt.Errorf("typegen: codec target %q carries wireExports but no pkgPath, "+
+			return nil, fmt.Errorf("typegen: codec target %q carries wire registrations but no pkgPath, "+
 				"so the registry cannot name the package its payload shapes are declared in", base)
 		}
-		for _, w := range t.wireExports {
+		for _, w := range registrations {
 			export, pluginType, err := w.exportName(registry)
 			if err != nil {
 				return nil, fmt.Errorf("codec target %q has a wireExports entry for %q that %w",

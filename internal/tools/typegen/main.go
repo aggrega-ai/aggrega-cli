@@ -496,9 +496,18 @@ type codecTarget struct {
 	// fact — which is the failure this registry exists to avoid rather than to
 	// relocate.
 	wireExports []wireExport
+	// exportTable names the plugin type whose host exports this target's schema
+	// maps, in its top-level export table, to the definitions of their input and
+	// output. A target naming it reads its wire registrations from that table — one
+	// per row, each naming this plugin type and the row's export — instead of
+	// declaring wireExports, so the binding a schema publishes to its readers and
+	// the one the registry is emitted from are one declaration rather than two that
+	// must be kept in step. The rows then pass every check a declared entry does,
+	// and generation refuses a target naming both this and wireExports.
+	exportTable plugintype.Type
 	// pkgPath is the destination package's Go import path. Only a target carrying
-	// wireExports needs it — the registry emitter imports the package to name the
-	// payload type — and emission refuses a wireExports target that omits it.
+	// wire registrations needs it — the registry emitter imports the package to name
+	// the payload type — and emission refuses such a target that omits it.
 	pkgPath string
 }
 
@@ -885,8 +894,8 @@ var diagnosticGuestVocabulary = map[string]string{}
 
 // providerGuestVocabulary maps the provider render schema's host type spellings
 // to the neutral, cycle-free guest vocabulary: an opaque cross-package host type
-// (the render-time context, the per-render boundary context, the enriched uses
-// edge the boundary-env-overrides input carries) becomes json.RawMessage
+// (the render-time context, the enriched uses edge the boundary-env-overrides
+// input carries) becomes json.RawMessage
 // (verbatim passthrough preserves its bytes), and every order-preserving host
 // container becomes the guest package's own order-keeping container, at every
 // level it nests, with only what it holds rewritten where that is a host type —
@@ -902,14 +911,13 @@ var diagnosticGuestVocabulary = map[string]string{}
 // optional carve/reassemble exports carries them verbatim, while the host
 // realizes them as the typed frp shapes its pipeline drives.
 var providerGuestVocabulary = map[string]string{
-	"renderctx.RenderContext":   "json.RawMessage",
-	"renderctx.BoundaryContext": "json.RawMessage",
-	"Unit":                      "json.RawMessage",
-	"PatchedUnit":               "json.RawMessage",
-	"JSONPatchOp":               "json.RawMessage",
-	"types.EnrichedEdge":        "json.RawMessage",
-	"OrderedMap[any]":           "OrderedMap[json.RawMessage]",
-	"types.OrderedMap[string]":  "OrderedMap[string]",
+	"renderctx.RenderContext":  "json.RawMessage",
+	"Unit":                     "json.RawMessage",
+	"PatchedUnit":              "json.RawMessage",
+	"JSONPatchOp":              "json.RawMessage",
+	"types.EnrichedEdge":       "json.RawMessage",
+	"OrderedMap[any]":          "OrderedMap[json.RawMessage]",
+	"types.OrderedMap[string]": "OrderedMap[string]",
 	"types.OrderedMap[types.OrderedMap[string]]": "OrderedMap[OrderedMap[string]]",
 	"OrderedMap[types.IRFeatureEntry]":           "OrderedMap[json.RawMessage]",
 	"OrderedMap[types.Component]":                "OrderedMap[json.RawMessage]",
@@ -928,8 +936,8 @@ var providerGuestVocabulary = map[string]string{
 // The ordered structured content of an output file is the recursively
 // order-preserving types.OrderedMap[any], so the guest's key order is carried to
 // the host serializer intact rather than collapsed by an unordered map. The
-// render context and boundary context carry their real host spelling verbatim (no
-// entry needed); the shared diagnostic maps to renderctx.Diagnostic (the host
+// render context carries its real host spelling verbatim (no entry needed); the
+// shared diagnostic maps to renderctx.Diagnostic (the host
 // realization of the single generated diagnostic shape). The host marshals these
 // through their own codecs. The
 // pipeline-codec unit and patched-unit shapes resolve to the typed frp shapes
@@ -1387,7 +1395,7 @@ var codecTargets = map[string]codecTarget{
 	// Provider render socket — guest codecs into aggrega-abi (Go/Rust/TS) and the
 	// host codec into aggrega-cli's renderer package. The guest realizes the
 	// order-preserving containers as its own order-keeping container and the
-	// opaque cross-package host types (render context, boundary context) as
+	// opaque cross-package host types (render context, enriched uses edge) as
 	// json.RawMessage; the host realizes the containers as types.OrderedMap and the
 	// opaque host types at their real spelling. The abi Go codec references the helpers FRP owns in
 	// package abi (helpers: false); the renderer host codec is alone in its package
@@ -1424,8 +1432,10 @@ var codecTargets = map[string]codecTarget{
 	// encodes its input with the generated encoder and decodes the output through
 	// the host's socket-output decode entry point, and every provider guest reads
 	// and writes the same encoding. The family's exports are the provider type's
-	// host-export list, so each entry names the plugin type and which listed export
-	// its payload shape serves; render_node and validate_node_input read one shape.
+	// host-export list, and the schema publishes which definitions each of them
+	// reads and answers with in its export table — render_node and
+	// validate_node_input read one shape — so the registration is read from that
+	// table rather than declared here a second time.
 	//
 	// crossPackageDefTypes makes each diagnostic ride as the shared diagnostic's own
 	// structural encoding — the one every plugin kit's codec writes — by dispatching
@@ -1441,18 +1451,7 @@ var codecTargets = map[string]codecTarget{
 		helpers:              true, // the host provider render codec is alone in package rendercore
 		crossPackageDefTypes: []string{"renderctx.Diagnostic"},
 		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore",
-		wireExports: []wireExport{
-			{pluginType: plugintype.Provider, export: exportname.RenderNode, inputDef: "RenderNodeInput", outputDef: "RenderNodeOutput"},
-			{pluginType: plugintype.Provider, export: exportname.ValidateNodeInput, inputDef: "RenderNodeInput", outputDef: "ValidateNodeOutput"},
-			{pluginType: plugintype.Provider, export: exportname.AssembleBoundary, inputDef: "AssembleBoundaryInput", outputDef: "AssembleBoundaryOutput"},
-			{pluginType: plugintype.Provider, export: exportname.Carve, inputDef: "CarveInput", outputDef: "CarveOutput"},
-			{pluginType: plugintype.Provider, export: exportname.Reassemble, inputDef: "ReassembleInput", outputDef: "ReassembleOutput"},
-			{pluginType: plugintype.Provider, export: exportname.NameBound, inputDef: "NameBoundInput", outputDef: "NameBoundOutput"},
-			{pluginType: plugintype.Provider, export: exportname.RenderedName, inputDef: "RenderedNameInput", outputDef: "RenderedNameOutput"},
-			{pluginType: plugintype.Provider, export: exportname.BoundaryEnvOverrides, inputDef: "BoundaryEnvOverridesInput", outputDef: "BoundaryEnvOverridesOutput"},
-			{pluginType: plugintype.Provider, export: exportname.LinkPublish, inputDef: "LinkPublishInput", outputDef: "LinkPublishOutput"},
-			{pluginType: plugintype.Provider, export: exportname.LinkResolve, inputDef: "LinkResolveInput", outputDef: "LinkResolveOutput"},
-		},
+		exportTable:          plugintype.Provider,
 	},
 
 	// Parser socket — guest codecs into aggrega-abi (Go/Rust/TS). A parser turns
@@ -1605,8 +1604,8 @@ var codecTargets = map[string]codecTarget{
 		lang: "ts-ordered-map",
 	},
 	// The plugin-wire registry. Schema-free and derived: it reads no schema of its
-	// own and instead walks the targets above, collecting each one's wireExports,
-	// so the export-to-payload table is emitted from the same registrations that
+	// own and instead walks the targets above, collecting each one's wire
+	// registrations, so the export-to-payload table is emitted from the same registrations that
 	// drive the codecs rather than hand-kept beside them — and generation fails on
 	// a served plugin type whose host-export list names an export no registration
 	// declares.

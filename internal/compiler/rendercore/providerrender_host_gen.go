@@ -263,8 +263,6 @@ type ArtifactProjectionEntry struct {
 
 // AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one dispatch group into a single assembled artifact (an umbrella chart, a merged compose file). It carries the per-node render outputs with their merged annotations and deployment waves, the dispatch-group output path the assembled artifact lands at, the graph's uses edges for per-service dependency inference, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
 type AssembleBoundaryInput struct {
-	// Boundary Not populated by the host: it is absent from every assembly input. A dispatch group can merge contributors from several boundaries, so there is no single boundary to carry; a guest reads each contributor's placement from its rendered_nodes entry, its annotations and sync_wave.
-	Boundary renderctx.BoundaryContext `json:"boundary,omitempty" yaml:"boundary,omitempty" cbor:"boundary,omitempty"`
 	// RenderedNodes The per-node render outputs that fed this dispatch group, in node order.
 	RenderedNodes []RenderedNode `json:"rendered_nodes" yaml:"rendered_nodes" cbor:"rendered_nodes"`
 	// Context The render-time context, carried as the bytes of its JSON document. On this export the host sets only yaml_indent, the render-wide indentation width the assembled files are serialized at; the context's other members carry nothing here, because an assembly merges contributors whose annotations and boundaries differ, and each contributor's annotations arrive on its rendered_nodes entry instead.
@@ -3077,16 +3075,6 @@ func (t AssembleBoundaryInput) MarshalJSON() ([]byte, error) {
 		buf.WriteByte(',')
 	}
 	first = false
-	buf.WriteString("\"boundary\":")
-	if enc, err := json.Marshal(t.Boundary); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
 	buf.WriteString("\"rendered_nodes\":")
 	buf.WriteByte('[')
 	for i := range t.RenderedNodes {
@@ -3191,16 +3179,6 @@ func (t *AssembleBoundaryInput) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		switch key {
-		case "boundary":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Boundary); err != nil {
-					return err
-				}
-			}
 		case "rendered_nodes":
 			t.RenderedNodes = nil
 			if err := expectDelim(dec, '['); err != nil {
@@ -3305,7 +3283,7 @@ func (t *AssembleBoundaryInput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *AssembleBoundaryInput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "boundary", "rendered_nodes", "context", "boundary_path", "edges", "sub_charts", "chart_name", "aggregate_name"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "rendered_nodes", "context", "boundary_path", "edges", "sub_charts", "chart_name", "aggregate_name"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -8558,7 +8536,7 @@ func (t AssembleBoundaryInput) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t AssembleBoundaryInput) appendCBOR(dst []byte) ([]byte, error) {
-	n := 4
+	n := 3
 	if len(t.Edges) != 0 {
 		n++
 	}
@@ -8585,12 +8563,6 @@ func (t AssembleBoundaryInput) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	dst = appendCBORTextString(dst, "context")
 	if raw, mErr := json.Marshal(t.Context); mErr != nil {
-		return nil, mErr
-	} else {
-		dst = appendCBORByteString(dst, raw)
-	}
-	dst = appendCBORTextString(dst, "boundary")
-	if raw, mErr := json.Marshal(t.Boundary); mErr != nil {
 		return nil, mErr
 	} else {
 		dst = appendCBORByteString(dst, raw)
@@ -8644,16 +8616,6 @@ func (t *AssembleBoundaryInput) decodeCBOR(dec *cborDec) error {
 			return err
 		}
 		switch key {
-		case "boundary":
-			if raw, err := dec.readByteString(); err != nil {
-				return err
-			} else {
-				d2 := json.NewDecoder(bytes.NewReader(raw))
-				d2.UseNumber()
-				if err := d2.Decode(&t.Boundary); err != nil {
-					return err
-				}
-			}
 		case "rendered_nodes":
 			{
 				sn, err := dec.readArrayHeader()
@@ -8746,7 +8708,7 @@ func (t *AssembleBoundaryInput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *AssembleBoundaryInput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "boundary", "rendered_nodes", "context", "boundary_path", "edges", "sub_charts", "chart_name", "aggregate_name"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "rendered_nodes", "context", "boundary_path", "edges", "sub_charts", "chart_name", "aggregate_name"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

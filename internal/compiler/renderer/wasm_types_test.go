@@ -171,7 +171,6 @@ func TestAssembleBoundaryInput_RoundTrip(t *testing.T) {
 	t.Parallel()
 	in := sampleRenderNodeInput(t)
 	fixture := renderer.AssembleBoundaryInput{
-		Boundary: in.Context.Boundary,
 		RenderedNodes: []renderer.RenderedNode{
 			{ID: "payments-api", Type: "core/web-service", Rendered: sampleRenderNodeOutput(t)},
 		},
