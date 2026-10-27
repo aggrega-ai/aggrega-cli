@@ -1154,25 +1154,42 @@ jobs:
         # written here: a pin or a target changed in the tree is the one
         # installed. RUSTUP_TOOLCHAIN is cleared for the call because it outranks
         # every toolchain file. The release build only compiles the guests, so it
-        # needs no component beyond the minimal profile's. rustup installs from a
-        # toolchain file this way from release 1.28.0 on; an older one refuses the
-        # call, and the step then stops naming that minimum and the runner's own
-        # rustup. rustup is taken from the path or from the cargo home, and the
-        # cargo home's bin directory is put on the path of the steps after this one.
+        # needs no component beyond the minimal profile's.
+        #
+        # The rustup that installs them is this job's own: pinned-rustup.sh
+        # fetches rustup-init at the one release it pins, refuses it unless its
+        # SHA-256 is the one pinned for this machine's platform, and installs
+        # rustup with it into a directory under the runner's temporary directory,
+        # which the runner empties at the start and end of every job. So a release
+        # needs no Rust on the runner, uses none the runner's user has installed,
+        # and installs no Rust into that user's home. The script refuses a directory
+        # that is not empty, so a leftover is never used. RUSTUP_HOME and
+        # CARGO_HOME name that directory's two halves for this step and, through
+        # the job's environment file, for every step after it: the cargo and
+        # rustc there find their toolchains through RUSTUP_HOME, and the guest
+        # build remaps CARGO_HOME out of the guests' bytes. The cargo home's bin
+        # directory is put ahead of the path of the steps after this one, so the
+        # cargo and rustc they run are this rustup's. Installing from a toolchain
+        # file with no toolchain named needs rustup 1.28.0 or newer, which the
+        # pinned release is.
         run: |
           set -euo pipefail
-          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-          if ! command -v rustup >/dev/null 2>&1; then
-            [ -x "$cargo_bin/rustup" ] || { echo "rust: rustup is neither on the path nor in $cargo_bin; install it on the runner" >&2; exit 1; }
-            PATH="$cargo_bin:$PATH"
-          fi
+          homes="$(aggrega-cli/scripts/pinned-rustup.sh install "$RUNNER_TEMP/rust")"
+          while IFS= read -r line; do
+            case "$line" in
+              RUSTUP_HOME=?*|CARGO_HOME=?*) export "${line?}" ;;
+              *) echo "rust: pinned-rustup.sh printed $line, not a RUSTUP_HOME or CARGO_HOME setting" >&2; exit 1 ;;
+            esac
+          done <<< "$homes"
+          printf '%s\n' "$homes" >> "$GITHUB_ENV"
+          cargo_bin="$CARGO_HOME/bin"
           . aggrega-cli/scripts/lib/core-plugins.sh
           dirs="$(core_plugin_rust_dirs)"
           while IFS= read -r dir; do
             [ -n "$dir" ] || continue
             echo "rust: installing the toolchain aggrega-cli/$dir/rust-toolchain.toml pins, with its targets"
-            if ! ( cd "$CORE_PLUGIN_MODULE_ROOT/$dir" && env -u RUSTUP_TOOLCHAIN rustup toolchain install --profile minimal --no-self-update ); then
-              echo "rust: rustup could not install the toolchain aggrega-cli/$dir/rust-toolchain.toml pins. With no toolchain named, rustup installs the one a toolchain file names from release 1.28.0 on; this runner has $(rustup --version 2>/dev/null | awk 'NR == 1')" >&2
+            if ! ( cd "$CORE_PLUGIN_MODULE_ROOT/$dir" && env -u RUSTUP_TOOLCHAIN "$cargo_bin/rustup" toolchain install --profile minimal --no-self-update ); then
+              echo "rust: $("$cargo_bin/rustup" --version 2>/dev/null) could not install the toolchain aggrega-cli/$dir/rust-toolchain.toml pins" >&2
               exit 1
             fi
           done <<< "$dirs"
