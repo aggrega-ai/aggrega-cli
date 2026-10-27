@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-self-inject-metadata
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/db
+    api:
+      type: core/api
+      inject:
+        env:
+          # The component's own block reading the Release's identity, one field
+          # per entry. The Aggregate's own text is rendered against its
+          # parameters first, so each template is written escaped and reaches
+          # the component's injection block as written below the escape.
+          - in: AGGREGATE_NAME
+            value: '{{ "{{" }} .metadata.aggregate_name {{ "}}" }}'
+          - in: ENVIRONMENT
+            value: '{{ "{{" }} .metadata.environment {{ "}}" }}'
+          - in: RELEASE_NAME
+            value: '{{ "{{" }} .metadata.release_name {{ "}}" }}'
+          - in: RELEASE_VERSION
+            value: '{{ "{{" }} .metadata.release_version {{ "}}" }}'

@@ -90,13 +90,9 @@ func AssembleNodeContext(
 	// its own FeatureRecipe.
 	features, connectionAttachments := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID, attachmentProvides, &uses)
 
-	// Metadata from Release
-	var metadata *types.TemplateMetadata
-	if graph.Spec.Provenance.ReleaseVersion != "" || graph.Spec.Provenance.AggregateVersion != "" {
-		metadata = &types.TemplateMetadata{
-			AggregateName: graph.Metadata.AggregateName,
-		}
-	}
+	// Metadata from the graph; the Release's identity is folded in by
+	// AssembleNodeContextWithRelease.
+	metadata := graphTemplateMetadata(graph)
 
 	providesForNode := allProvides[nodeID]
 
@@ -203,14 +199,42 @@ func AssembleNodeContextWithRelease(
 	ctx *types.TemplateContext,
 	release *types.Release,
 ) {
-	if release == nil || ctx.Metadata == nil {
-		if release != nil {
-			ctx.Metadata = &types.TemplateMetadata{}
-		} else {
-			return
-		}
+	ctx.Metadata = withReleaseMetadata(ctx.Metadata, release)
+}
+
+// nodeTemplateMetadata is the .metadata every template of one node reads: the
+// compilation identity the graph carries, with the Release's identity folded in.
+//
+// It is the one assembly of that block for a node. The context a Recipe template
+// renders against is assembled from the same two halves, by AssembleNodeContext
+// and AssembleNodeContextWithRelease, and a component-level self-inject value:
+// template reads this result, so the two surfaces cannot come to disagree about
+// what the Release is called.
+func nodeTemplateMetadata(graph *types.IRGraph, release *types.Release) *types.TemplateMetadata {
+	return withReleaseMetadata(graphTemplateMetadata(graph), release)
+}
+
+// graphTemplateMetadata is the half of .metadata the graph carries: the
+// Aggregate's name, present once the graph records the versions it was compiled
+// from. It is nil for a graph recording neither.
+func graphTemplateMetadata(graph *types.IRGraph) *types.TemplateMetadata {
+	if graph.Spec.Provenance.ReleaseVersion == "" && graph.Spec.Provenance.AggregateVersion == "" {
+		return nil
 	}
-	ctx.Metadata.ReleaseName = release.Metadata.Name
-	ctx.Metadata.ReleaseVersion = release.Metadata.Version
-	ctx.Metadata.Environment = release.Metadata.Environment
+	return &types.TemplateMetadata{AggregateName: graph.Metadata.AggregateName}
+}
+
+// withReleaseMetadata folds the Release's name, version and environment into m,
+// allocating the block where m is nil. With no Release it returns m unchanged.
+func withReleaseMetadata(m *types.TemplateMetadata, release *types.Release) *types.TemplateMetadata {
+	if release == nil {
+		return m
+	}
+	if m == nil {
+		m = &types.TemplateMetadata{}
+	}
+	m.ReleaseName = release.Metadata.Name
+	m.ReleaseVersion = release.Metadata.Version
+	m.Environment = release.Metadata.Environment
+	return m
 }

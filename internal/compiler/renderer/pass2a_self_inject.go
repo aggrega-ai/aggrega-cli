@@ -20,11 +20,25 @@ import (
 // from the shape of the type, so no list anywhere names the two pillars it keeps
 // out — a pillar added to or retired from the block moves what the surface admits
 // with no edit at the check.
+//
+// Metadata is the Release and compilation identity the node's Recipe templates read
+// at .metadata, from the same assembly. It is held by value, so the block is always
+// present: a template reading one of its fields renders that field, or nothing where
+// the build has no Release, and never stops on an absent block.
 type SelfInjectContext struct {
-	Values   types.OrderedMap[any]   `json:"values"`
-	Infra    types.OrderedMap[any]   `json:"infra"`
-	Context  SelfInjectContextBlock  `json:"context"`
-	Metadata *types.TemplateMetadata `json:"metadata,omitempty"`
+	Values   types.OrderedMap[any]  `json:"values"`
+	Infra    types.OrderedMap[any]  `json:"infra"`
+	Context  SelfInjectContextBlock `json:"context"`
+	Metadata types.TemplateMetadata `json:"metadata"`
+}
+
+// selfInjectMetadata is the .metadata block a node's self-inject value: templates
+// read: the node's template metadata, or an empty block where there is none.
+func selfInjectMetadata(graph *types.IRGraph, release *types.Release) types.TemplateMetadata {
+	if m := nodeTemplateMetadata(graph, release); m != nil {
+		return *m
+	}
+	return types.TemplateMetadata{}
 }
 
 // SelfInjectContextBlock holds the restricted context fields for self-inject templates.

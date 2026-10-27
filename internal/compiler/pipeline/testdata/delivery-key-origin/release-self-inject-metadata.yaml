@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: self-inject-metadata-release
+  environment: staging
+  version: "3.1.4"
+spec:
+  aggregate: aggregate-self-inject-metadata
+  manifest: delivery-key-origin-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api: {}
+        db: {}

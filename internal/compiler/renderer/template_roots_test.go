@@ -228,7 +228,7 @@ func TestContextRootNames_MatchesDeliveredTemplateKeys(t *testing.T) {
 		{"TemplateContext", populatedTemplateContext(t)},
 		{"ProvidesContext", ProvidesContext{AttachmentName: "creds"}},
 		{"LocalsContext", LocalsContext{}},
-		{"SelfInjectContext", SelfInjectContext{Metadata: &types.TemplateMetadata{}}},
+		{"SelfInjectContext", SelfInjectContext{}},
 		{"AssertionContext", AssertionContext{Recipe: &AssertionRecipeContext{}}},
 	}
 	for _, tc := range cases {

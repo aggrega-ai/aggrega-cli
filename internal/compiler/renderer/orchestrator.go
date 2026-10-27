@@ -1721,6 +1721,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		_ = traceWriter.Write(trace.PassLabels, nodeID, boundaryPath, "", labelsSummary)
 	}
 
+	// The Release whose identity every node's templates read at .metadata, nil
+	// where the render was handed none.
+	var release *types.Release
+	if input.ResolveResult != nil {
+		release = input.ResolveResult.Release
+	}
+
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
 	// deterministic walk); nodeOrder is the host node's position in that order,
 	// the outer A1 replay-ordering key for deferred host PATCHes.
@@ -1745,6 +1752,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 						Aggregate: node.AggregateAnnotations,
 					},
 				},
+				Metadata: selfInjectMetadata(graph, release),
 			}
 			if err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx, nodeDeclared.pillarKeys()); err != nil {
 				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
@@ -1804,8 +1812,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Build template context
 		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, declaredProvides, inject, injectRaw, renderedNames, attachmentProvides)
-		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
-			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
+		if release != nil {
+			AssembleNodeContextWithRelease(tmplCtx, release)
 		}
 
 		// The node's redaction set, assembled once here where the catalog, the
