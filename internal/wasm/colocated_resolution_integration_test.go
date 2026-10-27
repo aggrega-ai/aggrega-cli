@@ -84,7 +84,8 @@ func TestColocatedResolvedPluginLoadsThroughGate(t *testing.T) {
 // TestColocatedMissFallsThroughToExhaustionHalt: a reference mapped to a
 // co-located directory that holds no matching .wasm is a clean miss — the
 // cascade falls through every tier to the loud exhaustion halt, and the halt
-// message names the co-located tier.
+// message tells the author to place the module beside its Plugin entity in the
+// directory the reference is mapped to.
 func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 	const ref = "frp-step-patch:1.0.0"
 	emptyDir := filepath.Join(t.TempDir(), "plugin", "frp-step-patch", "1.0.0")
@@ -99,8 +100,12 @@ func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 	if !errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) {
 		t.Fatalf("want the artifact-not-found exhaustion halt; got %v", err)
 	}
-	if !strings.Contains(err.Error(), "colocated") {
-		t.Fatalf("halt message should name the colocated tier; got %q", err.Error())
+	// The remedy is the directory the reference is mapped to, so the halt has to
+	// name that directory and say the module goes beside the entity there.
+	for _, want := range []string{"beside its Plugin entity", emptyDir} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("halt message should contain %q; got %q", want, err.Error())
+		}
 	}
 }
 

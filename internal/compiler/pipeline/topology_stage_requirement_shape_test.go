@@ -392,11 +392,11 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 	// The walks this site performs, each rooted at the node axis: the
 	// attachment-requirement shape, the component-identity refusal, the
 	// identity-declared-once refusal, the required-socket population, the
-	// recipe-resolution refusal, the mapped-recipe pin refusal, and the
-	// mapping-ambiguity refusal. Each is handed `ctx.Err` like the ones around
-	// it, which is the thing this count exists to make somebody check when a
-	// walk is added.
-	const walks = 7
+	// recipe-resolution refusal, the mapped-recipe pin refusal, the
+	// mapping-ambiguity refusal, and the mapped-recipe version refusal. Each is
+	// handed `ctx.Err` like the ones around it, which is the thing this count
+	// exists to make somebody check when a walk is added.
+	const walks = 8
 	expectedReads := nodes * walks
 
 	t.Run("a caller that withdraws stops the walk before its first node", func(t *testing.T) {

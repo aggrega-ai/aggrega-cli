@@ -445,10 +445,11 @@ func TestADirectoryAndAnAttachmentsSourcesMeetUnderOneListOfNames(t *testing.T) 
 }
 
 // TestASingleFileImportHandsTheFileWholeAsBefore holds a single file's import to
-// the payload it has always crossed with: the file's bytes as the primary bytes,
-// named sources only where the attachment configuring the importer names some, under
-// their base names — compared byte for byte with the input the format, the file
-// and those sources encode — for the format named and recognised.
+// the payload it crosses with: the file's bytes as the primary bytes,
+// under the file's base name, named sources only where the attachment configuring
+// the importer names some, under their base names — compared byte for byte with the
+// input the format, the file and those sources encode — for the format named and
+// recognised.
 func TestASingleFileImportHandsTheFileWholeAsBefore(t *testing.T) {
 	t.Parallel()
 	body := importopstest.FilesProbeBody("single")
@@ -489,7 +490,7 @@ func TestASingleFileImportHandsTheFileWholeAsBefore(t *testing.T) {
 				t.Errorf("the importer was handed primary bytes %q; want the file's own %q", report.Primary, body)
 			}
 			payload, err := abi.ImportInput{Format: importopstest.FilesProbeFormat, Bytes: []byte(body),
-				Sources: row.sources}.EncodeCBOR()
+				Name: "flow.probe.json", Sources: row.sources}.EncodeCBOR()
 			if err != nil {
 				t.Fatalf("encode the expected input: %v", err)
 			}

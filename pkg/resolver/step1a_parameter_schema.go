@@ -37,13 +37,13 @@ import (
 // `properties.spec.properties.parameters` subtree, update THIS literal
 // in lockstep. The drift detector at
 // `step1a_parameter_schema_test.go::TestParameterContractSchema_NoDrift`
-// reads the canonical schema from disk and asserts byte-equivalent
-// content after canonical formatting. Drift fails the test with a
+// reads the canonical schema the schemas module embeds and asserts
+// byte-equivalent content after canonical formatting. Drift fails the test with a
 // directed message naming the canonical path.
 const parameterContractSchemaJSON = `{
   "type": "object",
   "x-aggrega-go-type": "OrderedMap[any]",
-  "description": "Global environment contract. Each entry is a typed-contract object authoring the compact-form vocabulary subset (type, description, default, enum, min/max, minLength/maxLength, pattern, format, validate, validateMessage, required, items, valuesType, properties). Nested structure is expressed via the typed-form properties: sub-field. Release fulfillment may be inline (parameters: {...}) or single-source file import (parameters: {$import: <path>}); the parameter-contract layer validates the merged map against this contract before parameter interpolation. See aggrega-docs/language-reference/entities/aggregate.md for the full vocabulary.",
+  "description": "Global environment contract. Each entry is a typed-contract object authoring the compact-form vocabulary subset (type, description, default, enum, min/max, minLength/maxLength, pattern, format, validate, validateMessage, required, items, valuesType, properties). Nested structure is expressed via the typed-form properties: sub-field. Release fulfillment may be inline (parameters: {...}) or single-source file import (parameters: {$import: <path>}); the parameter-contract layer validates the merged map against this contract before parameter interpolation. The Aggregate page of the language reference teaches the full vocabulary.",
   "additionalProperties": {
     "type": "object",
     "description": "Typed contract authoring the compact-form vocabulary subset.",

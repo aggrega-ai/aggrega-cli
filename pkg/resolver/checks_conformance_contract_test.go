@@ -451,14 +451,18 @@ func TestTheConformanceRulesReachAComponentWhereverTheDocumentDeclaresIt(t *test
 	}
 }
 
-// TestTheConformanceRulesEndOnATypeThatIsNotACatalogIdentity pins the skip for a
-// relative-path type: it addresses no catalog entity, so there is no contract to
-// measure against and no fault to report — neither by the conformance rule nor by
-// the rule about a type resolved as a catalog identity nobody found.
+// TestARelativePathTypeEndsTheConformanceRuleAndIsReportedAsAbsent pins how the
+// two rules treat a relative-path type. The conformance rule ends on it: it
+// addresses no catalog entity, so there is no contract to measure its values
+// against. The catalog-entry rule reports it as an absent catalog identity,
+// because a type is never read as a file — the same report a bare component
+// with such a type receives.
 //
-// The sibling of a catalog type sits beside it in the same document, so the
-// silence is proven against a document that does report.
-func TestTheConformanceRulesEndOnATypeThatIsNotACatalogIdentity(t *testing.T) {
+// The sibling of a catalog type sits beside it in the same document, so each
+// rule is proven against a document holding both: the conformance rule reports
+// only the sibling, and the catalog-entry rule reports only the relative-path
+// instance.
+func TestARelativePathTypeEndsTheConformanceRuleAndIsReportedAsAbsent(t *testing.T) {
 	t.Parallel()
 
 	catalog := catalogFromComponentSchema(t, `values:
@@ -486,7 +490,9 @@ func TestTheConformanceRulesEndOnATypeThatIsNotACatalogIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the node walk returned an error: %v", err)
 	}
-	if got := locatorsOf(objections); len(got) != 0 {
-		t.Errorf("the catalog-entry rule reported a relative-path type: %v", got)
+	wantAbsent := []string{".spec.components.local"}
+	if got := locatorsOf(objections); !equalStrings(got, wantAbsent) {
+		t.Errorf("the catalog-entry rule raised %v; want %v — the relative-path type is an absent catalog "+
+			"identity, and its catalog-typed sibling resolves", got, wantAbsent)
 	}
 }
