@@ -126,7 +126,9 @@
 #                 is served on this machine's loopback address by
 #                 scripts/lib/serve-release-folder.py, which answers
 #                 latest/download/ with a redirect to the release, as GitHub does,
-#                 and is named to the scripts as their mirror, AGGREGA_MIRROR. On
+#                 and is named to the scripts as their mirror, AGGREGA_MIRROR; a
+#                 server that names no port within 20 seconds fails the step with
+#                 its log printed, whether it exited or still ran. On
 #                 macOS and Linux, `curl -fsSL <url>/install.sh | sh` runs with HOME
 #                 naming a directory beneath step 4's; on Windows,
 #                 `irm <url>/install.ps1 | iex` runs under Windows PowerShell
@@ -1022,7 +1024,7 @@ lay_out_release_folder() {
 
 check_install() {
   local log="$LOGS/install" base="$ODD/install" tag="v$VERSION"
-  local folder asset="" listed_sum="" port="" url i run shell label home dir installed text
+  local folder asset="" listed_sum="" port="" url run shell label home dir installed text
   local -a shells=()
   folder="$base/release/download/$tag"
   mkdir -p "$log"
@@ -1034,21 +1036,11 @@ check_install() {
     { fail "the release folder's SHA256SUMS lists no $asset"; return 1; }
 
   : > "$log/server.log"
-  "$PYTHON" -I -u "$CLI_ROOT/scripts/lib/serve-release-folder.py" "$(smoke_native_path "$base/release")" "$tag" \
-    "$(smoke_native_path "$base/port")" >> "$log/server.log" 2>&1 &
-  INSTALL_SERVER_PID=$!
+  smoke_serve_release_folder "$PYTHON" "$base/release" "$tag" "$base/port" "$log/server.log" ||
+    { fail "the release folder's server named no port; its log is printed above"; return 1; }
+  INSTALL_SERVER_PID="$SMOKE_SERVER_PID"
   trap end_install EXIT
-  for ((i = 0; i < 200; i++)); do
-    if [ -s "$base/port" ]; then break; fi
-    sleep 0.1
-  done
-  if [ ! -s "$base/port" ]; then
-    cat "$log/server.log" >&2
-    fail "the release folder's server named no port within 20 seconds"
-    return 1
-  fi
-  read -r port < "$base/port"
-  port="${port%$'\r'}"
+  port="$SMOKE_SERVER_PORT"
   url="http://127.0.0.1:$port"
   echo "ok: $url serves the release folder, its latest release $tag"
 

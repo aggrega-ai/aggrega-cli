@@ -77,6 +77,21 @@
 #     Prints <path> in the form a native program on this system reads: the Windows
 #     form under the Git for Windows shell (through cygpath), unchanged elsewhere.
 #
+#   smoke_serve_release_folder <python> <root> <tag> <port-file> <log-file>
+#     Starts scripts/lib/serve-release-folder.py in the background with the Python
+#     <python>, as `<python> -I -u`, serving <root> as a release's download folder
+#     holding <tag>, every path given it in smoke_native_path's form, its standard
+#     output and standard error appended to <log-file>; then waits up to 20 seconds
+#     for it to write its port into <port-file>. Sets SMOKE_SERVER_PID to the
+#     server's process and, once the port is written, SMOKE_SERVER_PORT to the
+#     port, and returns 0; the caller stops the server. When the server exits
+#     before writing the port, it stops waiting at once; when 20 seconds pass
+#     without one, it asks the server, where the platform can, to write each of its
+#     threads' stacks into <log-file>, and stops it. Either way it returns 1,
+#     having printed whether the server exited, and with which status, or was
+#     still running, then <log-file> under a line giving its size, so an empty
+#     log is shown as empty rather than as nothing.
+#
 #   smoke_isolate <config-dir>
 #     Prepares this shell's environment for every aggrega run that follows: unsets
 #     every AGGREGA_ variable it inherited, so no setting of the machine reaches the
@@ -339,6 +354,45 @@ smoke_native_path() {
   else
     printf '%s\n' "$1"
   fi
+}
+
+smoke_serve_release_folder() {
+  local python="$1" root="$2" tag="$3" port_file="$4" log_file="$5" server i status="" state port
+  server="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/serve-release-folder.py"
+  SMOKE_SERVER_PID="" SMOKE_SERVER_PORT=""
+  "$python" -I -u "$(smoke_native_path "$server")" "$(smoke_native_path "$root")" "$tag" \
+    "$(smoke_native_path "$port_file")" >> "$log_file" 2>&1 &
+  SMOKE_SERVER_PID=$!
+  for ((i = 0; i < 200; i++)); do
+    if [ -s "$port_file" ]; then break; fi
+    if ! kill -0 "$SMOKE_SERVER_PID" 2>/dev/null; then
+      wait "$SMOKE_SERVER_PID" || status=$?
+      state="exited ${status:-0} before writing its port"
+      break
+    fi
+    sleep 0.1
+  done
+  if [ -z "${state:-}" ] && [ -s "$port_file" ]; then
+    read -r port < "$port_file"
+    # shellcheck disable=SC2034 # read by the script that sourced this file
+    SMOKE_SERVER_PORT="${port%$'\r'}"
+    return 0
+  fi
+  if [ -z "${state:-}" ]; then
+    state="was still running after 20 seconds without writing its port"
+    # SIGUSR1 has the server write every thread's stack into its log. The Git for
+    # Windows shell cannot deliver it to a native program, so it is not sent there.
+    if ! command -v cygpath >/dev/null 2>&1; then
+      if kill -USR1 "$SMOKE_SERVER_PID" 2>/dev/null; then sleep 1; fi
+    fi
+    kill "$SMOKE_SERVER_PID" 2>/dev/null || true
+    wait "$SMOKE_SERVER_PID" 2>/dev/null || true
+  fi
+  printf 'smoke: the release folder server, %s %s, %s; its log, %s, holds %s bytes:\n' \
+    "$python" "$server" "$state" "$log_file" "$(wc -c < "$log_file" | tr -d '[:space:]')" >&2
+  cat "$log_file" >&2
+  printf 'smoke: end of the release folder server log\n' >&2
+  return 1
 }
 
 smoke_isolate() {
