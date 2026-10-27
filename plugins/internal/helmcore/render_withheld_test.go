@@ -105,6 +105,8 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 		absent      []string
 		// sameCondition: the failure carries the plain render's registered condition.
 		sameCondition bool
+		// omits: the omit entries the node's render is handed.
+		omits []rendercore.ResolvedOmit
 	}{
 		{
 			name: "a render that succeeds is the plain render",
@@ -225,12 +227,47 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 			values: nestedValues, identical: true,
 			want: []string{withheldMarkedValue},
 		},
+		{
+			// The placeholder in place of the boolean the schema types fails the second
+			// render's values, so the refusal is kept only where it precedes them.
+			name: "an omits entry naming a subchart the chart does not render keeps its sentence where the placeholder breaks the values schema",
+			files: map[string]string{
+				"values.schema.json": `{"type":"object","properties":{"cleaner":{"type":"object","properties":{"skip":{"type":"boolean"}}}}}`,
+				"templates/a.yaml":   configMapTemplate("cm", "  ready: \"true\"\n"),
+			},
+			values: `{"auth":{"password":"` + withheldMarkedValue + `"},"cleaner":{"skip":true}}`, sensitiveValues: true,
+			omits:     []rendercore.ResolvedOmit{{Entry: rendercore.OmitEntry{Kind: "CustomResourceDefinition", Name: "widgets.example.com", Subchart: "addons"}}},
+			identical: true,
+			want:      []string{`names subchart "addons", and the chart renders no subchart of that name: it renders no subchart at all`},
+			absent:    []string{"failure text withheld"},
+		},
+		{
+			// The placeholder in place of the boolean a template function takes faults the
+			// second render's template engine, as it does in a chart whose helper reads a
+			// flag it is handed.
+			name: "an omits entry naming a subchart the chart does not render keeps its sentence where the placeholder breaks a template",
+			files: map[string]string{
+				"templates/a.yaml": configMapTemplate("cm", "  mode: {{ ternary \"skip\" \"run\" .Values.cleaner.skip | quote }}\n"),
+			},
+			values: `{"auth":{"password":"` + withheldMarkedValue + `"},"cleaner":{"skip":true}}`, sensitiveValues: true,
+			omits:     []rendercore.ResolvedOmit{{Entry: rendercore.OmitEntry{Kind: "CustomResourceDefinition", Name: "widgets.example.com", Subchart: "addons"}}},
+			identical: true,
+			want:      []string{`names subchart "addons", and the chart renders no subchart of that name: it renders no subchart at all`},
+			absent:    []string{"failure text withheld"},
+		},
+		{
+			name:   "a fail quoting a nested value of a map marked whole keeps the placeholder beside an entry the chart can match",
+			files:  map[string]string{"templates/a.yaml": `{{ fail (printf "the password %s must be a reference" .Values.auth.password) }}`},
+			values: nestedValues, sensitiveValues: true, plainQuotes: true,
+			omits: []rendercore.ResolvedOmit{{Entry: rendercore.OmitEntry{Kind: "ConfigMap", Name: "cm"}}},
+			want:  []string{"the password " + redact.Placeholder() + " must be a reference"},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			nodeCtx := rendercore.NodeRenderContext{NodeID: "api", SensitiveValues: tc.sensitiveValues}
+			nodeCtx := rendercore.NodeRenderContext{NodeID: "api", SensitiveValues: tc.sensitiveValues, Omits: tc.omits}
 			load := chartLoaderFor(withheldFixtureFiles(tc.files))
 
 			plainChart, err := load()

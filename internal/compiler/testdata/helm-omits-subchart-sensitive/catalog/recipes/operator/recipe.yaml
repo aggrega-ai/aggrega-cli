@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: omits-sensitive-operator
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/omits-sensitive/operator
+  source: ./chart
+  omits:
+    - when: '{{ ne (optional .infra "leave_out_from" "") "" }}'
+      kind: CustomResourceDefinition
+      name: widgets.example.com
+      subchart: '{{ .infra.leave_out_from }}'
+  # The mapping reads the licence, so the chart's values are marked sensitive as a
+  # whole; it also hands the chart a boolean its values schema types.
+  valuesMapping: |
+    licenceName: {{ toJson .values.licence }}
+    cleaner:
+      skip: true
+    {{- if optional .infra "quote_licence" false }}
+    quote: true
+    {{- end }}

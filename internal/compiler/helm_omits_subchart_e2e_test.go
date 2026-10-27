@@ -96,6 +96,63 @@ func TestHelmOmitsSubchart_AnEntryNamingASubchartTheChartDoesNotRenderHalts(t *t
 	}
 }
 
+// helmOmitsSubchartSensitiveLicence is the value the sensitive fixture's Aggregate
+// declares sensitive.
+const helmOmitsSubchartSensitiveLicence = "omits-sensitive-licence-plaintext"
+
+// TestHelmOmitsSubchart_TheHaltKeepsItsSentenceWhereTheInputMarksAValueSensitive builds
+// a fixture whose values mapping reads a value declared sensitive, so the chart's
+// values reach the provider marked as a whole, and whose values schema types a
+// boolean the mapping writes — a value the placeholder cannot stand in for. The
+// Release naming a subchart the chart does not have halts naming the entry, the
+// subchart and the subcharts the chart renders; the control, whose chart refuses
+// quoting the declared value, still keeps that value out of its text.
+func TestHelmOmitsSubchart_TheHaltKeepsItsSentenceWhereTheInputMarksAValueSensitive(t *testing.T) {
+	t.Parallel()
+	input := func(release string) pipelinetest.Input {
+		return pipelinetest.Input{
+			ReleasePath:  "testdata/helm-omits-subchart-sensitive/" + release,
+			CatalogPaths: []string{"testdata/helm-omits-subchart-sensitive/catalog"},
+		}
+	}
+
+	t.Run("the unknown-subchart halt", func(t *testing.T) {
+		t.Parallel()
+		_, err := pipelinetest.BuildE(t, input("release-unknown-subchart.yaml"))
+		if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+			t.Fatalf("got %v; want the refusal of an entry naming a subchart the chart does not render", err)
+		}
+		chain := cerrors.CauseChain(err)
+		for _, want := range []string{
+			`an omits entry (kind "CustomResourceDefinition", name "widgets.example.com") names subchart "addons"`,
+			"the chart renders no subchart of that name",
+			`the subcharts it renders are "operator"`,
+		} {
+			if !strings.Contains(chain, want) {
+				t.Errorf("the halt does not carry %q:\n%s", want, chain)
+			}
+		}
+		if strings.Contains(chain, helmOmitsSubchartSensitiveLicence) {
+			t.Errorf("the halt carries the value declared sensitive:\n%s", chain)
+		}
+	})
+
+	t.Run("the control: a chart quoting the declared value", func(t *testing.T) {
+		t.Parallel()
+		_, err := pipelinetest.BuildE(t, input("release-quote.yaml"))
+		if err == nil {
+			t.Fatal("the control built; its chart must refuse, or the absence below proves nothing")
+		}
+		text := err.Error() + "\n" + cerrors.CauseChain(err)
+		if strings.Contains(text, helmOmitsSubchartSensitiveLicence) {
+			t.Errorf("the refusal carries the value declared sensitive:\n%s", text)
+		}
+		if !strings.Contains(text, "templates/quote.yaml") {
+			t.Errorf("the refusal does not name the template that refused, so it is not the chart's own:\n%s", text)
+		}
+	})
+}
+
 // TestHelmOmitsSubchart_LeavingOneCopyOutIsDeterministic builds the Release leaving
 // catalog's copy out repeatedly and requires byte-identical output.
 func TestHelmOmitsSubchart_LeavingOneCopyOutIsDeterministic(t *testing.T) {

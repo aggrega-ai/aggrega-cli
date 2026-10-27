@@ -1,0 +1,3 @@
+{{- if .Values.quote }}
+{{- fail (printf "the licence %s must not be quoted" .Values.licenceName) }}
+{{- end }}

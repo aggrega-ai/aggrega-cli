@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/omits-sensitive/operator
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      # The licence the chart is handed, declared sensitive.
+      licence: { type: string, sensitive: true }
+    infra:
+      # The subchart the Recipe's omits entry names; unset leaves the entry out.
+      leave_out_from: { type: string }
+      # Makes the chart refuse while quoting the licence.
+      quote_licence: { type: boolean }

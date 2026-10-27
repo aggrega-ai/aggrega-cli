@@ -137,6 +137,23 @@ func RenderChart(
 		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
 	}
 
+	// The omit entries the node's render was handed, prepared as soon as the
+	// dependencies are processed: an entry naming a subchart is read against the
+	// subcharts the chart renders, and an entry naming one it does not render is
+	// refused here, before any value reaches the values schema or the template
+	// engine. 🔴 Keep the refusal ahead of the render: it is composed of the entries
+	// and the subchart names alone, so a second render of a node whose input marks a
+	// value sensitive — every marked value replaced by the placeholder (see
+	// [RenderChartWithholding]) — reaches it unchanged wherever its dependencies
+	// process the same way, and its sentence is reported. Placed after the render,
+	// it is reached only by a second render the placeholder lets through the schema
+	// and the templates, and a chart that types a value it is handed — a boolean, a
+	// number — refuses the placeholder there.
+	omits, err := newOmitSelection(nodeCtx.Omits, ch, nodeCtx.NodeID)
+	if err != nil {
+		return ChartRender{}, err
+	}
+
 	// Build release options. We are not installing — just rendering templates.
 	// Namespace comes from the `aggrega.ai/namespace` annotation when present
 	// (merged from boundary + boundary_component); otherwise the cluster default.
@@ -316,15 +333,10 @@ func RenderChart(
 	// the one classification the declared names are keyed by too ([kindScopes]).
 	placement := newNamespacePlacement(rendercore.NamespaceFromAnnotations(nodeCtx.Annotations), classifyKinds(roots), nodeCtx.YAMLIndent)
 
-	// The omit entries the node's render was handed, matched against every document
-	// as the emission below reaches it. The kinds above are classified over every
-	// rendered document, those left out included, so leaving a document out changes
-	// nothing about how the documents kept are placed. An entry naming a subchart is
-	// read against the subcharts the chart renders, its dependencies processed above.
-	omits, err := newOmitSelection(nodeCtx.Omits, ch, nodeCtx.NodeID)
-	if err != nil {
-		return ChartRender{}, err
-	}
+	// The omit entries, prepared above, are matched against every document as the
+	// emission below reaches it. The kinds above are classified over every rendered
+	// document, those left out included, so leaving a document out changes nothing
+	// about how the documents kept are placed.
 
 	// emitDocuments places, labels, annotates, keys, and stores each split document
 	// from one source (a rendered template or a chart CRD file). sourcePath names the

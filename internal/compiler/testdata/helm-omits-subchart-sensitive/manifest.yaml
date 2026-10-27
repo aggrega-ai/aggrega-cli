@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: omits-subchart-sensitive-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/omits-sensitive/operator: omits-sensitive-operator:1.0.0

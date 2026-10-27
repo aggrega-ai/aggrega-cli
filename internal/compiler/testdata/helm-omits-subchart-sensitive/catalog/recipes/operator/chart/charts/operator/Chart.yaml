@@ -1,0 +1,4 @@
+apiVersion: v2
+name: operator
+version: 0.1.0
+description: The operator, shipping the definition it serves.
