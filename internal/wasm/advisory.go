@@ -8,10 +8,10 @@ import "fmt"
 // EntityCuratedSurface is the authored, curated surface a Plugin entity declares
 // for the under-declaration advisory: the export names, the plugin-level
 // capabilities, and whether the entity authors a render-behavior contract. It is
-// the inverse view of the load-gate cross-check — the cross-check verifies the
-// authored surface is a subset of the binary's self-report (author ⊆ binary),
-// and this surface feeds the advisory that reports where the binary offers more
-// than the entity curates (binary ⊇ entity).
+// the inverse view of the cross-checks — they verify the authored surface is a
+// subset of the binary's self-report (author ⊆ binary), its capability list
+// included at publish, and this surface feeds the advisory that reports where the
+// binary offers more than the entity curates (binary ⊇ entity).
 type EntityCuratedSurface struct {
 	// ExportNames is the export names the entity declares, in author order.
 	ExportNames []string

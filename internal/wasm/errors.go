@@ -804,8 +804,10 @@ func GuestDiagnosticSeverities(plugin, export string, diags []abi.Diagnostic) er
 // descriptor at load. The cross-check is per-export, keyed by export name:
 // either the entity claims an export the plugin's describe() does not declare, or
 // a claimed export's operates or scope field does not match the plugin's
-// self-report. This is a structural contract check — the authored claim and the
-// plugin's own report must agree — not semantic policing of what an export does.
+// self-report. The publish-side validation also raises it for an entity whose
+// capability list names a capability the plugin's describe() does not report.
+// This is a structural contract check — the authored claim and the plugin's own
+// report must agree — not semantic policing of what an export does.
 //
 // The wrapping error names the entity, the offending export, the disagreeing
 // field, and both values so the author sees exactly which claim diverged from

@@ -139,6 +139,47 @@ var selfInjectMechanismAllowed = constraint.Check[
 	},
 }
 
+// selfInjectKeyWrittenOnce reports each delivery key a component's own injection
+// block writes more than once under one mechanism.
+//
+// Each entry delivers one value under its key, and a key written in two entries
+// asks for two values where one arrives: the later entry's would replace the
+// earlier's without a word. That is the contradiction the rules beside this one
+// refuse between two sources, and between two mechanisms of one source, written
+// here within one mechanism — so it is refused under the same condition rather
+// than resolved by the order the entries were written in.
+//
+// It is invoked once per mechanism rather than once per key, because the keys a
+// mechanism delivers are read as the entries were written, so a key written twice
+// is two of them: a rule asked once per key would be asked twice about it and
+// raise the same finding twice. One objection is raised per repeated key, in the
+// order the keys first appear, and its detail is the mechanism and the key.
+var selfInjectKeyWrittenOnce = constraint.Check[
+	constraint.NormalizedView,
+	constraint.NodeMechanismSubject,
+]{
+	Sentinel: ErrInjectKeyCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.NormalizedView,
+		s constraint.NodeMechanismSubject,
+	) []constraint.Objection {
+		written := map[string]int{}
+		var repeated []string
+		for _, key := range v.AuthoredInjectDeliveryKeys(s.NodeID(), s.MechanismName()) {
+			written[key]++
+			if written[key] == 2 {
+				repeated = append(repeated, key)
+			}
+		}
+		var out []constraint.Objection
+		for _, key := range repeated {
+			out = append(out, s.Raise(ErrInjectKeyCollision(), s.MechanismName(), key))
+		}
+		return out
+	},
+}
+
 // selfInjectKeyNotAlsoOnAConnection reports each delivery key a component claims
 // both in its own injection block and on one of its connections, within one
 // mechanism.

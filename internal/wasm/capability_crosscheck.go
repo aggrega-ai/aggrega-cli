@@ -115,6 +115,41 @@ func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc P
 	return crossCheckDetect(entityIdentity, claim.Detect, desc.Importer)
 }
 
+// crossCheckDeclaredCapabilities verifies that every capability an entity's list
+// names is one the plugin's describe() reports, returning a Loud Guardrail error
+// wrapping [ErrWasmContractMismatch] that names each capability the plugin does not
+// report, and nil when the list names none.
+//
+// The direction is list ⊆ describe(), the same as the per-export claim's: a
+// consumer resolves a plugin by the capabilities its published entity lists, so a
+// listed capability the binary does not provide is a promise made where it cannot
+// be kept. A list leaving reported capabilities out is a deliberate narrowing and
+// passes here; [UnderDeclaredNotices] reports it, and refuses nothing.
+//
+// It is called by the publish-side validation door, [ValidatePlugin], which
+// publish and the standalone validate given the plugin's binary both reach; the
+// load gate compares the per-export and contract claims of [CrossCheckContract]
+// alone.
+func crossCheckDeclaredCapabilities(entityIdentity string, declared []string, desc PluginDescriptor) error {
+	reported := make(map[string]bool, len(desc.Capabilities))
+	for _, c := range desc.Capabilities {
+		reported[c] = true
+	}
+	var unreported []string
+	for _, c := range declared {
+		if !reported[c] {
+			unreported = append(unreported, c)
+		}
+	}
+	if len(unreported) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"entity %q lists capabilities %q, which the plugin's describe() does not report (it reports %q); "+
+			"remove them from the list, which may name only capabilities the plugin reports: %w",
+		entityIdentity, unreported, desc.Capabilities, ErrWasmContractMismatch())
+}
+
 // crossCheckDetect compares the recognition signatures an entity records with
 // the ones describe() reports, where the entity records any. The comparison is
 // one-sided for the reason crossCheckSourceIgnore's is: an absent record makes no

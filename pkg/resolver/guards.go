@@ -593,6 +593,10 @@ func runDeclaredRules(
 		cancelled, coordinates, coordinates, facts, selfInjectMechanismAllowed)); err != nil {
 		return nil, err
 	}
+	if err := developerRule(constraint.RunOnNodeMechanisms(
+		cancelled, coordinates, coordinates, facts, selfInjectKeyWrittenOnce)); err != nil {
+		return nil, err
+	}
 
 	// Once per key a component delivers through one mechanism.
 	if err := developerRule(constraint.RunOnNodeMechanismDeliveryKeys(

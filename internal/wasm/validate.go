@@ -114,8 +114,11 @@ type ValidateReport struct {
 //     ErrWasmPluginTypeMismatch — the single home of that verdict, shared with
 //     every load-and-dispatch socket.
 //  2. Entity cross-checks, only when opts.Entity is non-nil: the authored
-//     capability claim against describe(), the machine-owned command mirror for
-//     full equality against the described commands, and the machine-owned
+//     capability claim against describe(), the entity's capability list against
+//     the capabilities describe() reports — every listed capability must be one
+//     the plugin reports, while a list leaving reported ones out is a narrowing
+//     the step 4 notices describe — the machine-owned command mirror for full
+//     equality against the described commands, and the machine-owned
 //     host-function record for set-equality against the binary's actual imports.
 //  3. The build-provenance version, only when opts.RefuseUncommittedBuild is set:
 //     a describe() version saying the binary was built from a working tree with
@@ -149,6 +152,9 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 
 	if opts.Entity != nil {
 		if err := CrossCheckContract(opts.Identity, opts.Entity.Claim, desc); err != nil {
+			return ValidateReport{}, err
+		}
+		if err := crossCheckDeclaredCapabilities(opts.Identity, opts.Entity.CuratedSurface.Capabilities, desc); err != nil {
 			return ValidateReport{}, err
 		}
 		if !CommandMirrorsEqual(opts.Entity.CommandMirror, desc.Commands) {
