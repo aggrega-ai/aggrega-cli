@@ -58,6 +58,14 @@ func stopped(ctx context.Context) error {
 // network error, and the only failure this adds is one the authority, not a
 // registry, reports.
 //
+// A rate-limited or server-error answer from the certificate authority, the
+// transparency log or the timestamp authority is not classified here. The keyless
+// signer's own client for each service retries that request inside the signing
+// call, so such an answer arrives here only after those attempts are spent, as a
+// failure this reports terminal. The transparency log's client also retries an
+// upload whose connection failed; a network failure it met on every attempt
+// arrives here wrapped, and is classified as any network failure is.
+//
 // Terminal (returns false): a nil error; a caller cancellation; and every error
 // oci.IsTransientRegistryError reports terminal that is not the authority's
 // token-processing failure.

@@ -344,11 +344,18 @@ func checkIDTokenSubject(rawToken string) error {
 // committed to; the bundle is identical whether produced before or after the
 // bytes land.
 //
-// It is also the one place a signing call is retried. A transient failure of
-// the signing authority or of the network (IsRetryablePublishError) is retried
-// with the shared budget and backoff, so a single flaky token mint loses
-// neither a publication nor one reference of a batch. The classifier sees the
-// signer's raw error; whatever a caller maps it to acts on the error that
+// It is also the one place a whole signing call is retried. A transient failure
+// of the network or the certificate authority's token-processing failure
+// (IsRetryablePublishError) is retried here, with the shared budget and backoff,
+// so a single flaky token mint loses neither a publication nor one reference of a
+// batch. A rate-limited or server-error answer from the certificate authority,
+// the transparency log or the timestamp authority is not retried here: the
+// keyless signer's own clients retry that one request inside the call, so it
+// reaches this classifier only once those attempts are spent. The transparency
+// log's client also retries an upload whose connection failed, so a network
+// failure there is retried inside the call before this retry repeats the whole
+// call. The classifier sees
+// the signer's raw error; whatever a caller maps it to acts on the error that
 // survives the last attempt.
 func signDigest(ctx context.Context, signer signing.Signer, digest string) (bundle []byte, artifactType string, err error) {
 	res, err := retry.Transient(ctx, func() (signBundle, error) {

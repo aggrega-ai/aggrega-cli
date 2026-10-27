@@ -9,13 +9,55 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"time"
 
+	rekorclient "github.com/sigstore/rekor/pkg/client"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/sign"
+	sigstoreutil "github.com/sigstore/sigstore-go/pkg/util"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/retry"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// signingServiceRetries is how many times the certificate authority, the
+// transparency log and the timestamp authority clients retry one request after a
+// rate-limited or server-error answer. It is derived from the one retry budget
+// every signing call and registry write shares (retry.MaxAttempts), so each of
+// those requests is attempted no more often than any other publication step: the
+// first attempt plus this many retries.
+const signingServiceRetries = retry.MaxAttempts - 1
+
+// transparencyLogFirstWait and transparencyLogLongestWait bound the transparency
+// log client's waits between attempts. Its backoff waits the first bound doubled
+// once per retry already made, capped at the second, so with signingServiceRetries
+// retries it waits 1 s before the second attempt and 2 s before the third — the
+// waits the certificate authority and timestamp authority clients take. A 429 or
+// 503 carrying a Retry-After header is waited out for as long as the header asks
+// instead, which the cap does not shorten.
+const (
+	transparencyLogFirstWait   = time.Second
+	transparencyLogLongestWait = 2 * time.Second
+)
+
+// transparencyLogClient builds the client the transparency-log upload is made
+// through: the signing library's own client for that log, with the retry count
+// and the waits set rather than left to the library. Left to the library, the
+// client gets the retry count it is handed but no wait at all, so it would re-ask a
+// rate-limited log at once.
+func transparencyLogClient(rekorURL string) (sign.RekorClient, error) {
+	c, err := rekorclient.GetRekorClient(rekorURL,
+		rekorclient.WithUserAgent(sigstoreutil.ConstructUserAgent()),
+		rekorclient.WithRetryCount(signingServiceRetries),
+		rekorclient.WithRetryWaitMin(transparencyLogFirstWait),
+		rekorclient.WithRetryWaitMax(transparencyLogLongestWait),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return c.Entries, nil
+}
 
 // KeylessSigner signs with an ephemeral key whose public half is bound to
 // an OIDC identity by a short-lived Fulcio certificate, with the
@@ -28,9 +70,12 @@ import (
 // the identity token), a live Fulcio (FulcioURL), and a live Rekor
 // (RekorURL). There is no offline mode and no simulated mode — the
 // certificate issuance, transparency-log inclusion, and timestamp are all
-// network operations against running services. This path cannot be exercised
-// without that infrastructure; correctness is provable only against live
-// Fulcio/Rekor/OIDC, not in an offline unit test.
+// network operations against running services. A test drives Sign against
+// loopback stand-ins for the certificate authority, the transparency log and the
+// timestamp authority, which shows the requests it makes, the retry of a
+// rate-limited answer and the bundle it assembles from the answers; whether the
+// public-good services accept those requests, and whether what they return
+// verifies against their trust root, is shown only against the live services.
 type KeylessSigner struct {
 	// TokenSource yields the OIDC identity token presented to Fulcio for
 	// certificate issuance. It is consulted once per Sign, so a source
@@ -66,10 +111,22 @@ type KeylessSigner struct {
 // LIVE-ONLY: this contacts Fulcio, Rekor, and (transitively) the OIDC
 // provider. It returns ErrKeylessLive when no token source is configured or
 // the source yields an empty token, and otherwise depends entirely on those
-// live services — it has no offline path and no test exercises its network
-// behaviour. The Fulcio and Rekor URLs are optional here: a caller that leaves
-// them empty is expected to have defaulted them to the public-good Sigstore
-// instances before constructing the signer.
+// live services — it has no offline path. Its network behaviour is exercised
+// against loopback stand-ins only (see KeylessSigner). The Fulcio and Rekor URLs
+// are optional here: a caller that leaves them empty is expected to have
+// defaulted them to the public-good Sigstore instances before constructing the
+// signer.
+//
+// Each of the three services is asked through the signing library's own client,
+// with signingServiceRetries set on it: a rate-limited (429) or server-error
+// (5xx, but for the transparency log not 501) answer is retried by that client,
+// so only the limited request is repeated and each is attempted at most three
+// times. Every client waits 1 s before the second attempt and 2 s before the
+// third. The certificate authority and timestamp authority clients also wait 4 s
+// more after a third limited answer before giving up; the transparency-log client
+// instead waits out a Retry-After header on a 429 or 503 for as long as it asks,
+// and it also retries a request whose connection failed. Every wait ends when ctx
+// does. A failure that survives those attempts is returned like any other.
 func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundleBytes []byte, artifactType string, err error) {
 	// Defensive backstop for a signer constructed directly with no source. The
 	// operator-facing token resolution and the helpful refuse message live at
@@ -108,15 +165,28 @@ func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundle
 	// gate-constructed transport. The transparency-log client exposes no transport
 	// option in this release; its egress is governed by the offline refusal above,
 	// which returns before this bundle flow runs.
+	logClient, err := transparencyLogClient(k.RekorURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("signing: transparency log client: %w", err)
+	}
 	opts := sign.BundleOptions{
-		Context:                    ctx,
-		CertificateProvider:        sign.NewFulcio(&sign.FulcioOptions{BaseURL: k.FulcioURL, Transport: transport}),
+		Context: ctx,
+		CertificateProvider: sign.NewFulcio(&sign.FulcioOptions{
+			BaseURL: k.FulcioURL, Transport: transport, Retries: signingServiceRetries,
+		}),
 		CertificateProviderOptions: &sign.CertificateProviderOptions{IDToken: idToken},
-		TransparencyLogs:           []sign.Transparency{sign.NewRekor(&sign.RekorOptions{BaseURL: k.RekorURL})},
+		// RekorOptions.Retries is left unset: the library reads it only when it
+		// builds the client itself, and the client handed in here carries the
+		// retry count and the waits.
+		TransparencyLogs: []sign.Transparency{sign.NewRekor(&sign.RekorOptions{
+			BaseURL: k.RekorURL, Client: logClient,
+		})},
 	}
 	if k.TimestampURL != "" {
 		opts.TimestampAuthorities = []*sign.TimestampAuthority{
-			sign.NewTimestampAuthority(&sign.TimestampAuthorityOptions{URL: k.TimestampURL, Transport: transport}),
+			sign.NewTimestampAuthority(&sign.TimestampAuthorityOptions{
+				URL: k.TimestampURL, Transport: transport, Retries: signingServiceRetries,
+			}),
 		}
 	}
 
