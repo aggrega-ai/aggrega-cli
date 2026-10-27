@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 func TestGitRepositoryResolveHappyPath(t *testing.T) {
@@ -215,7 +216,7 @@ func buildFixtureRepoWithTag(t *testing.T, tag string, files map[string]string) 
 }
 
 func cloneFromFixture(fixtureDir string) cloneFunc {
-	return func(ctx context.Context, destDir, url string, _ *http.Client) (*git.Repository, error) {
+	return func(ctx context.Context, destDir, url string, _ *http.Client, _ transport.AuthMethod) (*git.Repository, error) {
 		return git.PlainCloneContext(ctx, destDir, false, &git.CloneOptions{
 			URL:        fixtureDir,
 			NoCheckout: true,

@@ -79,7 +79,7 @@ func TestHTTPSResolveRepoRootViaIndex(t *testing.T) {
 	t.Parallel()
 	body := []byte("fake-helm-chart-tgz-content\n")
 	a := &httpsAdapter{
-		resolveIndex: func(repoURL, chart, version string, _ ...getter.Option) (string, error) {
+		resolveIndex: func(repoURL, chart, version string, _ func(string) []getter.Option) (string, error) {
 			if chart != "mariadb" || version != "25.0.8" {
 				t.Errorf("resolveIndex called with %s@%s", chart, version)
 			}
@@ -130,7 +130,7 @@ func TestHTTPSResolveRepoRootViaIndex(t *testing.T) {
 func TestHTTPSResolveRepoRootMissingChart(t *testing.T) {
 	t.Parallel()
 	a := &httpsAdapter{
-		resolveIndex: func(repoURL, chart, version string, _ ...getter.Option) (string, error) { return "", nil },
+		resolveIndex: func(repoURL, chart, version string, _ func(string) []getter.Option) (string, error) { return "", nil },
 	}
 	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
 		Kind:          KindHTTPS,

@@ -37,6 +37,8 @@ package sourceresolver
 import (
 	"context"
 	"net/http"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 )
 
 // SourceSpec is the lock-time input to source resolution: the
@@ -85,6 +87,14 @@ type SourceSpec struct {
 	// an offline workspace before a spec reaches an adapter, so an adapter that
 	// reaches its fetch always has a permitted client.
 	Client *http.Client
+	// Netrc is where the adapters fetching over HTTP — helm-https-chart,
+	// compose-https-fragment, and git-repository over http or https — read the
+	// credential each request sends, chosen by the request's host. It is read when
+	// the fetch runs, and what it holds is written into nothing the resolution
+	// returns or records. The production caller sets it to the file the
+	// environment names (netrc.FromEnvironment); nil reads no file, so a request
+	// sends only what its URL carries.
+	Netrc *netrc.Source
 }
 
 // ResolvedSource is the lock-time output of source resolution: the

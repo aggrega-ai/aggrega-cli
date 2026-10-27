@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 // TestAModuleSubdirectoryThatClimbsIsRefusedBeforeAnythingIsFetched drives a pull of
@@ -75,9 +76,9 @@ func TestAModuleSubdirectoryThatClimbsIsRefusedBeforeAnythingIsFetched(t *testin
 		t.Run(row.name, func(t *testing.T) {
 			clones := 0
 			fromFixture := cloneFromFixture(fixture)
-			a := &adapter{clone: func(ctx context.Context, destDir, url string, c *http.Client) (*git.Repository, error) {
+			a := &adapter{clone: func(ctx context.Context, destDir, url string, c *http.Client, auth transport.AuthMethod) (*git.Repository, error) {
 				clones++
-				return fromFixture(ctx, destDir, url, c)
+				return fromFixture(ctx, destDir, url, c, auth)
 			}}
 			ws := t.TempDir()
 			got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{

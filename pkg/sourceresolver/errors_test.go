@@ -6,11 +6,13 @@ package sourceresolver_test
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 )
 
 func TestSentinelReExportsIdentity(t *testing.T) {
@@ -204,6 +206,48 @@ func TestWrapSkipsRemediationForNonFetchSentinel(t *testing.T) {
 	err := sourceresolver.Wrap(spec, customSentinel, nil)
 	if strings.Contains(err.Error(), "remediation:") {
 		t.Errorf("non-fetch sentinel should not get remediation appendix; got %q", err.Error())
+	}
+}
+
+// TestAnUnauthorizedFetchOverHTTPAdvisesTheNetrcFile holds which advice a refused
+// credential carries: a source fetched over http or https reads its credential
+// from the netrc file, so it is told the entry to write — keyed on the host name
+// without the port — and the file its fetch read; a source fetched any other way
+// keeps the registry fetches' advice.
+//
+// A planted defect makes this fail: give every refused credential the registry
+// fetches' advice.
+func TestAnUnauthorizedFetchOverHTTPAdvisesTheNetrcFile(t *testing.T) {
+	t.Parallel()
+
+	netrcPath := filepath.Join(t.TempDir(), "netrc")
+	for _, row := range []struct {
+		name, kind, url string
+		netrc           *netrc.Source
+		want, wantNot   string
+	}{
+		{name: "a chart over https names the entry and the file", kind: "helm-https-chart",
+			url: "https://charts.example.com:8443/repo", netrc: netrc.FromFile(netrcPath),
+			want:    "machine charts.example.com login <user> password <secret>) to the netrc file " + netrcPath,
+			wantNot: "docker login"},
+		{name: "a fragment over plain http is answered the same way", kind: "compose-https-fragment",
+			url:  "http://fragments.example.com/web.yaml",
+			want: "machine fragments.example.com", wantNot: "docker login"},
+		{name: "a git clone over ssh keeps the registry advice", kind: "git-repository",
+			url: "ssh://git@git.example.com/org/module.git", want: "docker login", wantNot: "netrc"},
+		{name: "an OCI chart keeps the registry advice", kind: "helm-oci-chart",
+			url: "oci://hub.aggrega.ai/charts/mariadb", want: "docker login hub.aggrega.ai", wantNot: "netrc"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			spec := sourceresolver.SourceSpec{Kind: row.kind, URL: row.url, Version: "1.0.0", Netrc: row.netrc}
+			msg := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), errors.New("401")).Error()
+			if !strings.Contains(msg, row.want) {
+				t.Errorf("the refusal does not say %q: %q", row.want, msg)
+			}
+			if strings.Contains(msg, row.wantNot) {
+				t.Errorf("the refusal says %q: %q", row.wantNot, msg)
+			}
+		})
 	}
 }
 

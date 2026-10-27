@@ -11,6 +11,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 )
 
 // The four accessors below re-export the canonical fetch-error identities
@@ -93,8 +94,7 @@ func Wrap(spec SourceSpec, sentinel error, cause error) error {
 		return fmt.Errorf("kind=%s url=%s version=%s: %w",
 			spec.Kind, spec.URL, spec.Version, cause)
 	}
-	host := registryhost.Of(spec.URL)
-	remediation := oci.RemediationFor(sentinel, host)
+	remediation := remediationFor(spec, sentinel)
 	if cause == nil {
 		base := fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w",
 			spec.Kind, spec.URL, spec.Version, sentinel)
@@ -109,4 +109,24 @@ func Wrap(spec SourceSpec, sentinel error, cause error) error {
 		return fmt.Errorf("%w; %s", base, remediation)
 	}
 	return base
+}
+
+// remediationFor is the advice appended to a fetch failure on spec.
+//
+// A refused credential on a source fetched over http or https is answered by the
+// netrc file, which is where those fetches read their credential, so the advice
+// names the entry to write and the file the fetch read. Every other case takes
+// the remediation the registry fetches share.
+func remediationFor(spec SourceSpec, sentinel error) string {
+	if errors.Is(sentinel, ErrFetchUnauthorized()) {
+		if host, ok := netrc.HostFor(spec.URL); ok {
+			file := "the netrc file"
+			if path, ok := spec.Netrc.Path(); ok {
+				file += " " + path
+			}
+			return "remediation: add an entry for " + host + " (machine " + host +
+				" login <user> password <secret>) to " + file + ", then re-run aggrega pull --release <release>"
+		}
+	}
+	return oci.RemediationFor(sentinel, registryhost.Of(spec.URL))
 }

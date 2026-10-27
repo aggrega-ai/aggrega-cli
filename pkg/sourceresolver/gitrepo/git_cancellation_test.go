@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 // The clone already took a context before this change; what it did not take was
@@ -57,7 +58,7 @@ func parkingClone(
 	entered chan struct{},
 	release <-chan struct{},
 ) cloneFunc {
-	return func(ctx context.Context, _, _ string, _ *http.Client) (*git.Repository, error) {
+	return func(ctx context.Context, _, _ string, _ *http.Client, _ transport.AuthMethod) (*git.Repository, error) {
 		return nil, park(ctx, entered, release)
 	}
 }
@@ -184,7 +185,7 @@ func TestAStoppedGitResolutionLeavesNoTemporaryCloneBehind(t *testing.T) {
 	var cloneDir string
 	withdrawn, cancel := context.WithCancel(context.Background())
 
-	a := &adapter{clone: func(ctx context.Context, destDir, _ string, _ *http.Client) (*git.Repository, error) {
+	a := &adapter{clone: func(ctx context.Context, destDir, _ string, _ *http.Client, _ transport.AuthMethod) (*git.Repository, error) {
 		// Recorded from inside the clone, which is the only place the path is
 		// known, and written to before the withdrawal so the check below is
 		// looking at a directory that genuinely existed.

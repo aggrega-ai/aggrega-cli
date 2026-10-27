@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 	"helm.sh/helm/v4/pkg/getter"
 	repo "helm.sh/helm/v4/pkg/repo/v1"
 )
@@ -31,8 +32,9 @@ const KindHTTPS = sourcekind.HelmHTTPSChart
 // resolution (fetch index.yaml from the repo root, parse with
 // helm's repo.LoadIndexFile, look up the chart+version) and the
 // test-injected resolver that returns a fixed URL without network
-// access.
-type indexResolver func(repoURL, chart, version string, opts ...getter.Option) (directURL string, err error)
+// access. optionsFor returns the getter options for a fetch of one URL,
+// so the index fetch carries the credential for its own host.
+type indexResolver func(repoURL, chart, version string, optionsFor func(href string) []getter.Option) (directURL string, err error)
 
 // httpsGetter abstracts Helm's getter.Getter so tests can inject a
 // static-body implementation without spinning up helm's full provider
@@ -65,8 +67,8 @@ type httpsAdapter struct {
 func NewHTTPSAdapter() sourceresolver.Adapter {
 	g := &productionGetter{providers: builtInProviders()}
 	return &httpsAdapter{
-		resolveIndex: func(repoURL, chart, version string, opts ...getter.Option) (string, error) {
-			return resolveFromIndexProduction(g, repoURL, chart, version, opts...)
+		resolveIndex: func(repoURL, chart, version string, optionsFor func(href string) []getter.Option) (string, error) {
+			return resolveFromIndexProduction(g, repoURL, chart, version, optionsFor)
 		},
 		getter: g,
 	}
@@ -105,6 +107,13 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 // pulls of the same version is caught at the next pull via
 // ErrFetchIntegrity.
 //
+// Each fetch carries the credential the netrc file spec.Netrc names holds
+// for that fetch's own host — the index.yaml lookup and the chart download
+// are asked separately, since an index can place a chart on another host —
+// and a URL carrying a user and password of its own sends those instead.
+// The file is read first, and one that cannot be read or does not parse
+// halts the resolution before any request.
+//
 // Both fetches this method can make — the index.yaml lookup and the
 // chart download — run through Helm's getter, which accepts no context
 // of its own. The caller's ctx therefore reaches them underneath, by
@@ -113,6 +122,11 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 // the transfer stops on the wire rather than continuing behind a caller
 // that has stopped waiting.
 func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+	credentials, err := spec.Netrc.Load()
+	if err != nil {
+		return nil, err
+	}
+
 	// Production routes every fetch — the chart .tgz and any index.yaml lookup —
 	// through the network-egress gate's transport, so an offline workspace is
 	// refused before any dial and helm never builds its own ungated transport.
@@ -130,6 +144,9 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 		defer stoppable.CloseIdleConnections()
 		httpOpts = append(httpOpts, getter.WithTransport(stoppable))
 	}
+	optionsFor := func(href string) []getter.Option {
+		return withCredentialFor(href, credentials, httpOpts)
+	}
 
 	fetchURL := spec.URL
 	// resolvedURL is provenance: empty unless the authored URL differs from the
@@ -141,7 +158,7 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 			return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(),
 				errors.New("repo-root URL requires spec.Chart"))
 		}
-		u, err := a.resolveIndex(spec.URL, spec.Chart, spec.Version, httpOpts...)
+		u, err := a.resolveIndex(spec.URL, spec.Chart, spec.Version, optionsFor)
 		if err != nil {
 			return nil, mapHTTPError(spec, err)
 		}
@@ -149,7 +166,7 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 		resolvedURL = u
 	}
 
-	buf, err := a.getter.Get(fetchURL, httpOpts...)
+	buf, err := a.getter.Get(fetchURL, optionsFor(fetchURL)...)
 	if err != nil {
 		return nil, mapHTTPError(spec, err)
 	}
@@ -178,6 +195,24 @@ func (a *httpsAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSp
 		CachePath:      slot + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,
 	}, nil
+}
+
+// withCredentialFor returns opts plus, where the netrc file holds a credential for
+// href's host, that credential scoped to href.
+//
+// It is asked once per fetch, for the URL that fetch requests, because the two
+// fetches of a repository root can reach two hosts: an index may place the chart
+// archive anywhere. Helm's getter sends basic credentials only to the scheme and
+// host of the URL they are scoped to, so scoping them to href itself is what
+// gives each request its own host's credential and no other's.
+func withCredentialFor(href string, credentials *netrc.File, opts []getter.Option) []getter.Option {
+	cred, ok := credentials.ForURL(href)
+	if !ok {
+		return opts
+	}
+	out := make([]getter.Option, 0, len(opts)+2)
+	out = append(out, opts...)
+	return append(out, getter.WithURL(href), getter.WithBasicAuth(cred.Login, cred.Password))
 }
 
 // builtInProviders returns Helm's built-in getters — http and https in one
@@ -290,9 +325,9 @@ func (p *productionGetter) Get(href string, options ...getter.Option) (*tarGzBuf
 // + version, and returns the first direct .tgz URL from the
 // entry's URLs slice. If the URL is relative, it is joined against
 // the repo root per Helm's index.yaml convention.
-func resolveFromIndexProduction(g *productionGetter, repoURL, chart, version string, opts ...getter.Option) (string, error) {
+func resolveFromIndexProduction(g *productionGetter, repoURL, chart, version string, optionsFor func(href string) []getter.Option) (string, error) {
 	indexURL := strings.TrimRight(repoURL, "/") + "/index.yaml"
-	buf, err := g.Get(indexURL, opts...)
+	buf, err := g.Get(indexURL, optionsFor(indexURL)...)
 	if err != nil {
 		return "", err
 	}
@@ -328,15 +363,21 @@ func resolveFromIndexProduction(g *productionGetter, repoURL, chart, version str
 
 // mapHTTPError maps a raw helm getter / index-parse error to a
 // sourceresolver-wrapped sentinel. Helm getter's HTTPGetter wraps
-// HTTP-status errors with "failed to fetch ... : <status>"; we
+// HTTP-status errors with "failed to fetch <url> : <status>"; we
 // match against the textual fragments because the wrapped error
-// chain doesn't expose typed status codes.
+// chain doesn't expose typed status codes. The status is read from
+// after the URL, so a URL whose port or path holds the digits of a
+// status is not mistaken for that status.
 func mapHTTPError(spec sourceresolver.SourceSpec, err error) error {
 	msg := err.Error()
+	status := msg
+	if i := strings.LastIndex(msg, " : "); i >= 0 {
+		status = msg[i+len(" : "):]
+	}
 	switch {
-	case strings.Contains(msg, "404"):
+	case strings.Contains(status, "404"):
 		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), err)
-	case strings.Contains(msg, "401"), strings.Contains(msg, "403"):
+	case strings.Contains(status, "401"), strings.Contains(status, "403"):
 		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), err)
 	case strings.Contains(msg, "no such host"),
 		strings.Contains(msg, "connection refused"),

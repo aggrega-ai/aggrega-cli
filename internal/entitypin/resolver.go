@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -27,6 +28,9 @@ import (
 // source is a primary fetch verb. A source the workspace already holds never
 // reaches it — the descent skips such a source before resolution — so a
 // workspace holding only local sources is unaffected by the offline posture here.
+//
+// It is also where a resolution is handed the netrc file the environment names,
+// for the source kinds fetched over HTTP to read their credentials from.
 //
 // ctx is the caller's, and it rides on the returned value because the contract it
 // satisfies takes no context: each resolution runs under it, so ending the run
@@ -92,6 +96,7 @@ func (s sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedS
 		CacheDir:       spec.CacheDir,
 		OriginalSource: spec.OriginalSource,
 		Client:         httpClient,
+		Netrc:          netrc.FromEnvironment(),
 	})
 	if err != nil {
 		return nil, err

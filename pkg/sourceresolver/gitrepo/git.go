@@ -38,13 +38,13 @@
 // one it pinned halts the next pull instead of being adopted;
 // "aggrega pull --upgrade --release <release>" adopts it.
 //
-// Auth: the clone is given no credential of its own, so go-git's
-// default transports decide: over SSH they authenticate through the
-// SSH agent, and over HTTPS they send only a user and password
-// written into the URL itself. Neither ~/.netrc nor a gitconfig
-// credential helper is read. The adapter passes spec.URL through to
-// git.CloneContext unchanged, so any URL shape go-git accepts works
-// (https://, ssh://, git+ssh://, git://).
+// Auth: over HTTPS (and plain HTTP) the clone sends the credential the
+// netrc file holds for the repository's host (see package netrc), and a
+// URL carrying a user and password of its own sends those instead. Over
+// SSH, go-git authenticates through the SSH agent and no netrc file is
+// read. No gitconfig credential helper is read. The adapter passes
+// spec.URL through to git.CloneContext unchanged, so any URL shape go-git
+// accepts works (https://, ssh://, git+ssh://, git://).
 package gitrepo
 
 import (
@@ -61,6 +61,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -83,8 +84,8 @@ const MediatypeTarGz = "application/gzip"
 // wrapper around git.PlainCloneContext (filesystem-backed) that also
 // receives the network-egress client. Tests inject their own
 // implementation that clones from a local fixture repo and ignores the
-// client argument.
-type cloneFunc func(ctx context.Context, destDir, url string, httpClient *http.Client) (*git.Repository, error)
+// client argument. auth is the credential the clone sends, nil for none.
+type cloneFunc func(ctx context.Context, destDir, url string, httpClient *http.Client, auth transport.AuthMethod) (*git.Repository, error)
 
 type adapter struct {
 	clone cloneFunc
@@ -106,7 +107,11 @@ func NewAdapter() sourceresolver.Adapter {
 // git, and file remotes carry no HTTP client — go-git builds their transports
 // itself — so for those schemes the nil-client refusal above is the whole egress
 // guarantee.
-func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Client) (*git.Repository, error) {
+//
+// auth, where it is not nil, is the clone's credential, and it replaces any user
+// and password the URL carries; go-git drops it when the remote redirects the
+// clone to another host.
+func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Client, auth transport.AuthMethod) (*git.Repository, error) {
 	if httpClient == nil {
 		return nil, egress.ErrOfflineEgress()
 	}
@@ -114,8 +119,35 @@ func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Cli
 	transportclient.InstallProtocol("http", githttp.NewClient(httpClient))
 	return git.PlainCloneContext(ctx, destDir, false, &git.CloneOptions{
 		URL:        url,
+		Auth:       auth,
 		NoCheckout: true,
 	})
+}
+
+// netrcAuth returns the credential a clone of the source sends — the one the
+// netrc file spec.Netrc names holds for the URL's host — or nil for none. Only a
+// remote reached over http or https is answered, and one whose URL carries a user
+// of its own is not, so its own credential is what go-git sends; every other
+// remote reads no netrc file at all, so an SSH clone is untouched by one that
+// does not parse. A file that exists and cannot be read or does not parse is the
+// error.
+//
+// The nil it returns for no credential is an untyped one. A nil *BasicAuth held
+// in the interface would read as present to go-git, which would then send an
+// empty credential in place of the one the URL carries.
+func netrcAuth(spec sourceresolver.SourceSpec) (transport.AuthMethod, error) {
+	if _, ok := netrc.HostFor(spec.URL); !ok {
+		return nil, nil
+	}
+	credentials, err := spec.Netrc.Load()
+	if err != nil {
+		return nil, err
+	}
+	cred, ok := credentials.ForURL(spec.URL)
+	if !ok {
+		return nil, nil
+	}
+	return &githttp.BasicAuth{Username: cred.Login, Password: cred.Password}, nil
 }
 
 // ReadsFromThisHost reports whether a repository URL names a repository this
@@ -168,13 +200,18 @@ func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (
 		return nil, fmt.Errorf("git-repository: %w", err)
 	}
 
+	auth, err := netrcAuth(spec)
+	if err != nil {
+		return nil, err
+	}
+
 	cloneDir, err := os.MkdirTemp("", "aggrega-git-repo-*")
 	if err != nil {
 		return nil, fmt.Errorf("git-repository: tempdir: %w", err)
 	}
 	defer os.RemoveAll(cloneDir)
 
-	repo, err := a.clone(ctx, cloneDir, spec.URL, spec.Client)
+	repo, err := a.clone(ctx, cloneDir, spec.URL, spec.Client, auth)
 	if err != nil {
 		// Preserve the egress refusal as the specific offline sentinel; the
 		// generic fetch-error mapping would flatten it into a network-unreachable

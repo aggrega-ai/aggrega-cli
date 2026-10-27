@@ -32,6 +32,14 @@
 // Pointing $DOCKER_CONFIG at an empty throwaway directory makes the store empty
 // and helper-free.
 //
+// The netrc file. A source fetched over HTTP — a classic Helm chart repository,
+// a compose fragment, a Git repository over HTTPS — sends the credential the
+// netrc file holds for its host: $NETRC when that is set, otherwise $HOME/.netrc.
+// Left ambient, a suite sends the developer's own credentials to its test
+// servers, and a netrc file of theirs that does not parse fails it. Pointing
+// $NETRC at a path inside the throwaway where no file exists leaves the suite
+// with no credentials.
+//
 // $HOME itself is deliberately left untouched, and that is a decision rather
 // than an omission. Each home above is reached through its own variable, which
 // wins over the $HOME fallback in the resolution rule this mirrors, so
@@ -66,6 +74,10 @@ const (
 	// envCredentialHome is the variable carrying the redirected
 	// container-registry credential home.
 	envCredentialHome = "DOCKER_CONFIG"
+
+	// envNetrc is the variable naming the netrc file source fetches read their
+	// credentials from. The redirect points it at a file that does not exist.
+	envNetrc = "NETRC"
 )
 
 // RunHermetic isolates the per-user homes for a whole test binary and runs its
@@ -123,6 +135,10 @@ func RunHermetic(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "hometest: clear %s: %v\n", envConfigOverride, err)
 		return 1
 	}
+	if err := os.Setenv(envNetrc, filepath.Join(dir, "credentials", "netrc")); err != nil {
+		fmt.Fprintf(os.Stderr, "hometest: redirect %s: %v\n", envNetrc, err)
+		return 1
+	}
 
 	return m.Run()
 }
@@ -146,6 +162,7 @@ func Isolate(t *testing.T) {
 	t.Setenv(envWindowsConfigHome, filepath.Join(home, "config"))
 	t.Setenv(envCredentialHome, filepath.Join(home, "credentials"))
 	t.Setenv(envConfigOverride, "")
+	t.Setenv(envNetrc, filepath.Join(home, "credentials", "netrc"))
 }
 
 // ConfigHome returns the redirected configuration home, so a test can plant a
@@ -187,6 +204,7 @@ func AssertRedirected(t *testing.T) {
 		{envConfigHome, ConfigHome()},
 		{envWindowsConfigHome, os.Getenv(envWindowsConfigHome)},
 		{envCredentialHome, CredentialHome()},
+		{envNetrc, os.Getenv(envNetrc)},
 	} {
 		if redirect.path == "" {
 			t.Errorf("$%s is empty; the redirect did not run", redirect.name)

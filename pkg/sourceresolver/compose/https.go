@@ -7,10 +7,10 @@
 // computes the content digest, populates the cache slot, and returns a
 // ResolvedSource for the lockfile writer.
 //
-// Auth: the fetch carries no credential of its own. The adapter sends a
-// plain GET for the URL as written through the client it is handed, so
-// only a user and password written into the URL itself are sent, and a
-// 401 or 403 answer is reported as an unauthorized fetch.
+// Auth: the GET carries the credential the netrc file holds for the URL's
+// host (see package netrc), as HTTP basic credentials; a URL carrying a user
+// and password of its own sends those instead. A 401 or 403 answer is
+// reported as an unauthorized fetch.
 package compose
 
 import (
@@ -64,6 +64,9 @@ func (a *adapter) Kind() string { return Kind }
 // final path segment, computes the digest, and populates the cache
 // slot.
 //
+// The netrc file spec.Netrc names is read first, and a file that cannot be
+// read or does not parse halts the resolution before any request.
+//
 // Error mapping: HTTP 404 → ErrFetchNotFound; 401/403 →
 // ErrFetchUnauthorized; transport-level failures (DNS, connection
 // refused, timeouts) → ErrFetchNetworkUnreachable; non-2xx other →
@@ -77,9 +80,16 @@ func (a *adapter) Kind() string { return Kind }
 // cache slot is derived from that digest, so an interrupted fetch writes
 // nothing at all.
 func (a *adapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+	credentials, err := spec.Netrc.Load()
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.URL, nil)
 	if err != nil {
 		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
+	}
+	if cred, ok := credentials.ForURL(spec.URL); ok {
+		req.SetBasicAuth(cred.Login, cred.Password)
 	}
 	// Production carries no client of its own: the egress-gate client threaded
 	// through the spec transports the fetch. Tests inject a client on the adapter.
