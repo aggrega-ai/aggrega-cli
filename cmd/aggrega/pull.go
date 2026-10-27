@@ -432,6 +432,10 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	opts.CompilerVersion = provenanceCompilerVersion()
 	opts.Toolchain = toolchainStamp()
 	opts.DiagOut = diagOut
+	// A failure the resolution reports and survives is printed in the rendering
+	// this command's own refusals use, so it carries the same head and condition
+	// code a validate or build of the same Release prints for it.
+	opts.FormatFailure = formatCompilerError
 	opts.Puller = cfg.puller
 	opts.SourceResolver = cfg.sourceResolver
 	opts.RenderOptions = cfg.renderOptions

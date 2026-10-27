@@ -92,7 +92,7 @@ func newDeprecateCmd() *cobra.Command {
 	c.Flags().StringVar(&opts.severity, "severity", "", "Deprecation severity: one of warning, error, retracted. Required unless --from or an interactive prompt supplies it.")
 	c.Flags().StringVar(&opts.reason, "reason", "", "Human-readable reason for the deprecation — why it is deprecated and what to do instead. Required unless --from or an interactive prompt supplies it.")
 	c.Flags().StringVar(&opts.replacement, "replacement", "", "Optional artifact reference that replaces the deprecated one.")
-	c.Flags().StringVar(&opts.message, "message", "", "Optional legacy message retained for audit and for the recorded build-time diagnostic; defaults to --reason when unset.")
+	c.Flags().StringVar(&opts.message, "message", "", "Optional message retained for audit and for the recorded build-time diagnostic; defaults to --reason when unset.")
 	c.Flags().StringVar(&opts.from, "from", "", "Batch file (YAML, or JSON as a subset) whose top-level list attaches one marker per entry. Each entry carries reference and severity and reason, plus optional replacement and message. Mutually exclusive with a positional reference.")
 	c.Flags().StringVar(&opts.keyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
 	c.Flags().StringVar(&opts.fulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")

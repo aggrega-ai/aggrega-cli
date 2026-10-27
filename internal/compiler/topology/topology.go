@@ -1045,7 +1045,7 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// absent from the guard's view is the same loud halt the Step-1 guards
 		// raise — classify ONCE here, before any conformance pass. This subsumes
 		// the value, per-edge-value, and per-edge-infra conformance below (all gated
-		// on the same component lookup that previously skipped silently on a miss),
+		// on the same component lookup, which alone would pass a miss silently),
 		// so a no-uses node's miss is loud too, not silently skipped. A type with
 		// a ./ or ../ prefix is no exception: it names no catalog entity, and the
 		// dependency resolution every surface runs before compiling refuses it, so

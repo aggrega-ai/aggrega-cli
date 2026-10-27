@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -182,11 +183,26 @@ func discoverExternalInputs(
 // the time: a run that reported rather than wrote has written no pins at all, so
 // telling its reader that the dependency pins "were written" would name an act
 // that did not happen and a file that did not move.
-func reportExternalInputDiscoveryFailure(out io.Writer, lockfilePath string, pinned int, reportOnly bool, err error) {
+//
+// format is the caller's own rendering of a failure (Config.FormatFailure). Where
+// the caller supplies one, the failure is printed in that rendering — the shape,
+// head and condition code the same surface prints when it refuses the same
+// failure itself — on the lines beneath the first sentence, each indented under
+// it so the block reads as that sentence's detail rather than as a refusal of the
+// command. Where it supplies none, the failure's cause chain closes the first
+// sentence.
+func reportExternalInputDiscoveryFailure(out io.Writer, lockfilePath string, pinned int, reportOnly bool, err error, format func(error) string) {
 	if out == nil {
 		return
 	}
-	fmt.Fprintf(out, "  external inputs: could not finish rendering %s to discover them: %s\n", lockfilePath, cerrors.CauseChain(err))
+	if format == nil {
+		fmt.Fprintf(out, "  external inputs: could not finish rendering %s to discover them: %s\n", lockfilePath, cerrors.CauseChain(err))
+	} else {
+		fmt.Fprintf(out, "  external inputs: could not finish rendering %s to discover them:\n", lockfilePath)
+		for _, line := range strings.Split(format(err), "\n") {
+			fmt.Fprintf(out, "    %s\n", line)
+		}
+	}
 	if reportOnly {
 		fmt.Fprintf(out, "  external inputs: the reported lockfile's dependency pins are complete; it carries %d external input(s), and any this Release also needs are absent from it\n", pinned)
 		fmt.Fprintf(out, "  external inputs: so the reported lockfile is short of what a pull would write on this one axis. A pull rewrites the recorded digests in each Recipe before it renders, and a report leaves those files alone — so a render held to a digest an unwritten file does not yet carry stops here. Resolving for real pins what this render could not reach\n")

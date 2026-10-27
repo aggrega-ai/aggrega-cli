@@ -405,8 +405,8 @@ func refuseClosure(subject string) error {
 // path discriminators. Each of those answers a question about a
 // different authored surface, and the divergence is the point:
 //
-//   - resolver.IsRelativePathRef, the discriminator for a Release's
-//     aggregate: and manifest: pointers, recognises ./ and ../ only.
+//   - The discriminator entity resolution applies to a Release's
+//     aggregate: and manifest: pointers recognises ./ and ../ only.
 //     It is false for a bare foo.yaml, so routing through it would
 //     send `inspect foo.yaml` to the catalog branch and report that no
 //     catalog entity matched — for a file in the working directory.

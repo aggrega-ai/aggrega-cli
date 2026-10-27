@@ -905,7 +905,7 @@ var retiredShortCodes = []retirement{
 		"build resolves a component type the catalog it reads then holds no entry for reports that " +
 		"state now, and its code is `E0154`."},
 	{"E0134", "It named a publishable entity whose directory was not named after the version the entity " +
-		"declares; a publication no longer judges a directory's name, and the condition raised when an " +
+		"declares; a publication does not judge a directory's name, and the condition raised when an " +
 		"entity shares its directory with another entity where its kind has a directory of its own is " +
 		"`E0303`."},
 	{"E0157", "It named an Aggregate key — a component, feature, subsystem or nested-module " +
@@ -926,9 +926,9 @@ var retiredShortCodes = []retirement{
 		"those is refused on every capability under `E0210`."},
 	{"E0217", "It named a schema-validation failure that could not be reported against a particular " +
 		"field, and no build reported it before the condition was withdrawn."},
-	{"E0219", "It named a cyclic `extends` chain, reported by a second chain walk the schema-merge " +
-		"library kept beside its combining step; one walk reports every cyclic chain now, and its " +
-		"code is `E0202`."},
+	{"E0219", "It named a cyclic `extends` chain, reported by a chain walk separate from the schema " +
+		"merge's combining step; a single chain walk reports every cyclic chain, and its code is " +
+		"`E0202`."},
 	// The entries below sharing one sentence share one fate: each named something
 	// a single rendering target could not do, and they were withdrawn together
 	// when the conditions a plugin may report became a small set naming KINDS of

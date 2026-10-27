@@ -524,9 +524,12 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 				// Displayed and recorded together, so the recorded order is the
 				// displayed order. Unlike the ir-verdict role's warn, this one has no
 				// advisory stream to join — it is displayed here directly — so here is
-				// where it joins the channel.
+				// where it joins the channel. The line is printed exactly as that
+				// stream prints the ir-verdict role's warn, so a warning reads the same
+				// whichever verdict role raised it: the attributed line already names
+				// the severity, so no second label is prefixed.
 				line := policyWarnMessage(ref.URI, r)
-				fmt.Fprintf(os.Stderr, "  warning: %s\n", line)
+				fmt.Fprintf(os.Stderr, "  %s\n", line)
 				inputs.AdvisoryLog.record(advisoryFromPolicyVerdict(r, line))
 			case analyzer.SeverityInfo:
 				emitPolicyInfo(inputs.AdvisoryLog, ref.URI, r)
@@ -746,7 +749,7 @@ func emitPolicyInfo(log *AdvisoryLog, pluginURI string, r abi.Diagnostic) {
 // policyVerdictDetail renders the optional fields a fired verdict carried beside
 // its severity and message, as a bracketed suffix appended to the rendered
 // verdict — empty when the verdict carried none, so a verdict that sets only
-// severity and message renders exactly as it always has.
+// severity and message renders with no suffix at all.
 //
 // It is the single detail renderer all three verdict surfaces share (the halt,
 // the warn diagnostic, and the info record), so a verdict's detail reads

@@ -226,6 +226,16 @@ type Config struct {
 	// global.
 	DiagOut io.Writer
 
+	// FormatFailure is the caller's rendering of a failure, used where a notice on
+	// DiagOut carries a failure the run reports and survives: the external-input
+	// discovery render that could not finish. It is supplied rather than chosen here
+	// because how a failure reads belongs to the surface a reader is looking at, and
+	// a surface whose own refusals print in a rendering of their own hands that
+	// rendering over, so the same failure reads the same whether the surface refuses
+	// it or a notice carries it. Nil prints the failure's cause chain, which is what
+	// a caller with no rendering of its own hands over.
+	FormatFailure func(error) string
+
 	// Report carries the caller's progress surface and its report of what
 	// resolved. The zero value reports nothing.
 	Report Reporter
@@ -1413,7 +1423,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, discoveryErr
 	}
 	if discoveryErr != nil {
-		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), cfg.DryRun, discoveryErr)
+		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), cfg.DryRun, discoveryErr, cfg.FormatFailure)
 	}
 
 	report.phase(PhaseLockfile)

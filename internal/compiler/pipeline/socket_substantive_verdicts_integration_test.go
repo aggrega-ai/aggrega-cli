@@ -130,6 +130,7 @@ func TestGraphRuleIRVerdictWarnE2E(t *testing.T) {
 	if !strings.Contains(stderr, "warning:") || !strings.Contains(stderr, missingGovernanceLabel) {
 		t.Errorf("graph-rule warn did not flag the graph detail on stderr:\n%s", stderr)
 	}
+	assertPolicyWarnLineForm(t, stderr)
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityWarn)
 	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
@@ -166,6 +167,31 @@ func TestGraphRuleIRVerdictInfoE2E(t *testing.T) {
 		t.Fatalf("graph-rule info (second build): %v", err)
 	}
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
+}
+
+// assertPolicyWarnLineForm asserts the printed form of a warn verdict, which is
+// the same at both verdict roles: the attributed line, indented, naming the
+// severity once — `  policy plugin "<name>" warning: <message>`. A line carrying
+// the attribution must be present, so the check cannot pass over a stderr that
+// printed no verdict at all.
+func assertPolicyWarnLineForm(t *testing.T, stderr string) {
+	t.Helper()
+	found := false
+	for _, line := range strings.Split(stderr, "\n") {
+		if !strings.Contains(line, "policy plugin ") || !strings.Contains(line, " warning: ") {
+			continue
+		}
+		found = true
+		if !strings.HasPrefix(line, `  policy plugin "`) {
+			t.Errorf("warn verdict line does not open with the attribution:\n%q", line)
+		}
+		if n := strings.Count(line, "warning:"); n != 1 {
+			t.Errorf("warn verdict line names the severity %d times, want once:\n%q", n, line)
+		}
+	}
+	if !found {
+		t.Errorf("no attributed warn verdict line on stderr:\n%s", stderr)
+	}
 }
 
 // renderContentForbiddenToken is a token every rendered manifest carries, so a
@@ -237,6 +263,7 @@ func TestContentRuleRenderVerdictWarnE2E(t *testing.T) {
 	if !strings.Contains(stderr, "warning:") || !strings.Contains(stderr, renderContentForbiddenToken) {
 		t.Errorf("content-rule warn did not flag the content detail on stderr:\n%s", stderr)
 	}
+	assertPolicyWarnLineForm(t, stderr)
 
 	inputs2, buildLookup2, recipeLookup2, subAgg2 := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityWarn)
 	res2, err := runPipelineCompleted(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
