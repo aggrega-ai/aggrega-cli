@@ -938,6 +938,8 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //
 //   - Workload.PodSecurityContext.RunAsUser → user (overridden by container
 //     SecurityContext.RunAsUser if set)
+//   - Workload.PodSecurityContext.FSGroup and SupplementalGroups → no
+//     equivalent in the compose service model
 //   - Workload.HostNetwork                 → network_mode: host
 //   - Workload.Scheduling                  → no compose equivalent (single-host)
 //   - Workload.ServiceAccount              → no compose equivalent
@@ -951,7 +953,8 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //
 // Every authored pod-level field compose cannot honor — scheduling,
 // serviceAccount, replicas, runtimeClassName, priorityClassName,
-// imagePullSecrets, dnsPolicy, and dnsConfig.options — is dropped with a
+// imagePullSecrets, dnsPolicy, dnsConfig.options, podSecurityContext.fsGroup
+// and podSecurityContext.supplementalGroups — is dropped with an
 // unsupported-field warning. Returns one diagnostic per authored-and-dropped field, in
 // a deterministic order.
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.Diagnostic {
@@ -1009,6 +1012,14 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 	}
 	if w.DNSConfig != nil && len(w.DNSConfig.Options) > 0 {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "dnsConfig.options"))
+	}
+	if psc := w.PodSecurityContext; psc != nil {
+		if psc.FSGroup != nil {
+			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.fsGroup"))
+		}
+		if len(psc.SupplementalGroups) > 0 {
+			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.supplementalGroups"))
+		}
 	}
 	// An init container becomes its own service, and that service joins the
 	// boundary network in its own right rather than sharing this one's namespace

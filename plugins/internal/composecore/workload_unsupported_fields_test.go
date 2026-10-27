@@ -61,6 +61,12 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 		{"dnsConfig.options", func(w *types.Workload) {
 			w.DNSConfig = &types.DNSConfig{Options: []any{map[string]any{"name": "ndots"}}}
 		}},
+		{"podSecurityContext.fsGroup", func(w *types.Workload) {
+			w.PodSecurityContext = &types.PodSecurityContext{FSGroup: ptrInt(2000)}
+		}},
+		{"podSecurityContext.supplementalGroups", func(w *types.Workload) {
+			w.PodSecurityContext = &types.PodSecurityContext{SupplementalGroups: []int{3000, 4000}}
+		}},
 		{"runAsNonRoot", func(w *types.Workload) {
 			withMainContainer(w, func(c *types.ContainerSpec) {
 				c.SecurityContext = &types.ContainerSecurityContext{RunAsNonRoot: ptrBool(true)}
@@ -210,6 +216,58 @@ func TestUnsupportedField_OutOfBand(t *testing.T) {
 	if !bytes.Equal(baseFiles[0].Body, wfFiles[0].Body) {
 		t.Errorf("degraded fields changed rendered bytes (must be out-of-band)\n--- base ---\n%s\n--- with fields ---\n%s",
 			baseFiles[0].Body, wfFiles[0].Body)
+	}
+}
+
+// TestUnsupportedField_PodSecurityGroupsOutOfBand proves the pod security
+// settings compose cannot carry are announced without touching what it does
+// carry. A pod security context authoring runAsUser and runAsGroup beside
+// fsGroup and supplementalGroups renders the same service bytes as one
+// authoring only the first two — the user mapping is kept — and raises exactly
+// the two warnings for the dropped settings, in that order, and none for the
+// mapped ones.
+func TestUnsupportedField_PodSecurityGroupsOutOfBand(t *testing.T) {
+	t.Parallel()
+	mapped := func() *types.Workload {
+		w := baseDegradeWorkload()
+		w.PodSecurityContext = &types.PodSecurityContext{RunAsUser: ptrInt(1000), RunAsGroup: ptrInt(1001)}
+		return w
+	}
+
+	bareFiles, bareDiags, err := SynthesizeWorkloadCore(mapped(), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth with the mapped settings only: %v", err)
+	}
+	if len(bareDiags) != 0 {
+		t.Fatalf("the mapped settings raised diagnostics: %+v", bareDiags)
+	}
+	if !bytes.Contains(bareFiles[0].Body, []byte("1000:1001")) {
+		t.Fatalf("the mapped settings did not reach the service user:\n%s", bareFiles[0].Body)
+	}
+
+	w := mapped()
+	w.PodSecurityContext.FSGroup = ptrInt(2000)
+	w.PodSecurityContext.SupplementalGroups = []int{3000}
+	files, diags, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth with the dropped settings: %v", err)
+	}
+
+	want := []string{"podSecurityContext.fsGroup", "podSecurityContext.supplementalGroups"}
+	if len(diags) != len(want) {
+		t.Fatalf("got %d diagnostics, want %d (all: %+v)", len(diags), len(want), diags)
+	}
+	for i, d := range diags {
+		if d.SourceRef != want[i] {
+			t.Errorf("diagnostic %d source ref = %q, want %q", i, d.SourceRef, want[i])
+		}
+		if d.Code != rendercore.UnsupportedFieldCode {
+			t.Errorf("%s: code = %q, want %q", d.SourceRef, d.Code, rendercore.UnsupportedFieldCode)
+		}
+	}
+	if !bytes.Equal(bareFiles[0].Body, files[0].Body) {
+		t.Errorf("the dropped settings changed rendered bytes (must be out-of-band)\n--- mapped only ---\n%s\n--- with dropped ---\n%s",
+			bareFiles[0].Body, files[0].Body)
 	}
 }
 

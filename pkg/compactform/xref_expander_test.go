@@ -34,6 +34,7 @@ package compactform
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -679,6 +680,139 @@ properties: {}
 		if _, present := props[name]; present {
 			t.Errorf("unrelated entry property %q leaked into merged shape; keys = %v", name, propertyKeys(props))
 		}
+	}
+}
+
+// TestExpand_NonObjectEntryCompilesToTheEntry asserts a reference to an entry
+// that is not an object compiles to that entry — its type and constraints kept,
+// no object closure written over it — wherever the reference sits and however
+// it is reached, while a consumer that adds properties beside the reference
+// still gets the merged object.
+func TestExpand_NonObjectEntryCompilesToTheEntry(t *testing.T) {
+	t.Parallel()
+
+	libs := map[string]types.SchemaLibrary{
+		"Names": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: Names
+  version: 1.0.0
+spec:
+  schemas:
+    Slug:
+      type: string
+      pattern: "^[a-z][a-z0-9-]*$"
+      description: A lowercase name.
+    Port:
+      type: integer
+      min: 1
+      max: 65535
+    Method:
+      enum: [GET, POST]
+    SlugAlias:
+      $ref: "Names#/schemas/Slug"
+    Endpoint:
+      type: object
+      properties:
+        host: { type: string }
+`),
+	}
+
+	cases := []struct {
+		name      string
+		consumer  string
+		at        func(Schema) Schema // selects the schema the reference compiled to
+		wantType  any
+		wantKey   string // a constraint keyword the entry carries
+		wantValue any
+		wantDesc  any
+	}{
+		{"compact property, string entry", `name:
+  $ref: "Names#/schemas/Slug"
+`, propertyAt("name"), "string", "pattern", "^[a-z][a-z0-9-]*$", "A lowercase name."},
+		{"JSON Schema property, string entry", `type: object
+properties:
+  name:
+    $ref: "Names#/schemas/Slug"
+`, propertyAt("name"), "string", "pattern", "^[a-z][a-z0-9-]*$", "A lowercase name."},
+		{"integer entry", `port:
+  $ref: "Names#/schemas/Port"
+`, propertyAt("port"), "integer", "maximum", 65535, nil},
+		{"enum entry with no type", `method:
+  $ref: "Names#/schemas/Method"
+`, propertyAt("method"), nil, "enum", []any{"GET", "POST"}, nil},
+		{"library-to-library chain ending in a string entry", `name:
+  $ref: "Names#/schemas/SlugAlias"
+`, propertyAt("name"), "string", "pattern", "^[a-z][a-z0-9-]*$", "A lowercase name."},
+		{"consumer description wins", `name:
+  $ref: "Names#/schemas/Slug"
+  description: The service name.
+`, propertyAt("name"), "string", "pattern", "^[a-z][a-z0-9-]*$", "The service name."},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			out, err := Compile(parseConsumer(t, tc.consumer), WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
+			}
+			got := tc.at(out)
+			if got == nil {
+				t.Fatalf("no compiled schema at the reference; got %v", out)
+			}
+			if got["type"] != tc.wantType {
+				t.Errorf("type = %v, want %v (schema %v)", got["type"], tc.wantType, got)
+			}
+			// Compared as printed, so a numeric or list constraint is checked by
+			// its value whatever Go type the decoder gave it.
+			if v, present := got[tc.wantKey]; !present || fmt.Sprint(v) != fmt.Sprint(tc.wantValue) {
+				t.Errorf("%s = %#v, want %#v (schema %v)", tc.wantKey, got[tc.wantKey], tc.wantValue, got)
+			}
+			if got["description"] != tc.wantDesc {
+				t.Errorf("description = %v, want %v", got["description"], tc.wantDesc)
+			}
+			for _, closure := range []string{"properties", "additionalProperties"} {
+				if _, present := got[closure]; present {
+					t.Errorf("an object closure keyword %q was written over a non-object entry: %v", closure, got)
+				}
+			}
+		})
+	}
+
+	// An object entry referenced on its own, with nothing beside it, is still
+	// merged and closed.
+	out, err := Compile(parseConsumer(t, `endpoint:
+  $ref: "Names#/schemas/Endpoint"
+`), WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
+	if err != nil {
+		t.Fatalf("Compile with an object entry: %v", err)
+	}
+	if ep := propertyAt("endpoint")(out); ep == nil || ep["type"] != "object" || ep["additionalProperties"] != false {
+		t.Errorf("an object entry referenced alone must compile to a closed object; got %v", ep)
+	}
+
+	// Properties beside the reference make the consumer an object: the merge
+	// and its closure still apply.
+	out, err = Compile(parseConsumer(t, `$ref: "Names#/schemas/Slug"
+properties:
+  extra: { type: string }
+`), WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
+	if err != nil {
+		t.Fatalf("Compile with properties beside the reference: %v", err)
+	}
+	if out["type"] != "object" || out["additionalProperties"] != false {
+		t.Errorf("properties beside a reference must compile to a closed object; got %v", out)
+	}
+}
+
+// propertyAt selects a named property's compiled schema from an object schema.
+func propertyAt(name string) func(Schema) Schema {
+	return func(s Schema) Schema {
+		props, _ := s["properties"].(Schema)
+		p, _ := props[name].(Schema)
+		return p
 	}
 }
 

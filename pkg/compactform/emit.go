@@ -658,7 +658,9 @@ func emitInDocumentReference(node *yaml.Node, path string, ctx *compileCtx) (Sch
 //  5. Inject `additionalProperties: false` on the merged shape so the
 //     inferred-form-mandatory rule survives the architecture change —
 //     the closure semantic the compact form establishes is preserved
-//     through compile-time expansion.
+//     through compile-time expansion. Steps 4 and 5 apply to an object;
+//     a reference to an entry of any other type, with no properties or
+//     required names beside it, compiles to the entry itself.
 //  6. Annotate library-sourced properties with x-aggrega-source values
 //     identifying the originating library + entry. The annotation lands
 //     at Step E (xref_annotations.go); this function calls
@@ -821,7 +823,24 @@ func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*ya
 //     library entry's own additionalProperties setting).
 //   - Description: consumer wins if present; otherwise library-sourced
 //     description is preserved.
+//
+// The object merge applies only where there is an object to merge: the entry
+// describes one, or the consumer adds properties or required names beside the
+// reference. A reference to any other entry — a string with a pattern, an
+// integer range, an enum — is the entry itself, so a value is validated as that
+// entry rather than as an object closed over no properties.
 func composeXRefSchema(resolved Schema, consumerProps Schema, consumerRequired []string, consumerDescription any) Schema {
+	if len(consumerProps) == 0 && len(consumerRequired) == 0 && !describesObject(resolved) {
+		out := Schema{}
+		for k, v := range resolved {
+			out[k] = v
+		}
+		if consumerDescription != nil {
+			out["description"] = consumerDescription
+		}
+		return out
+	}
+
 	out := Schema{}
 	// Start from the resolved library shape so library author-order
 	// applies before consumer additions.
@@ -885,6 +904,33 @@ func composeXRefSchema(resolved Schema, consumerProps Schema, consumerRequired [
 		out["description"] = consumerDescription
 	}
 	return out
+}
+
+// describesObject reports whether a compiled schema describes an object: its
+// `type` is "object" (alone or within a list of types), or it declares
+// `properties`. An entry with neither is validated as written when a consumer
+// references it without adding properties of its own.
+func describesObject(s Schema) bool {
+	if _, ok := s["properties"]; ok {
+		return true
+	}
+	switch t := s["type"].(type) {
+	case string:
+		return t == "object"
+	case []any:
+		for _, item := range t {
+			if item == "object" {
+				return true
+			}
+		}
+	case []string:
+		for _, item := range t {
+			if item == "object" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // emitComposition recurses each entry of an `allOf` / `anyOf` / `oneOf`
