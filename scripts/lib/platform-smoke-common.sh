@@ -181,7 +181,9 @@
 #
 #   smoke_write_tree_sums <dir>
 #     Writes <dir>/SHA256SUMS: the SHA-256 of every file beneath <dir>, by its
-#     path from <dir>, in bytewise order, in the form sha256sum writes. It is
+#     path from <dir>, in bytewise order, in the text form sha256sum writes,
+#     "<digest>  <name>", on every machine: where sha256sum writes its binary
+#     form, "<digest> *<name>", as on Windows, each line is rewritten. It is
 #     written under another name and then renamed, so a list present is a list
 #     complete. Returns 1, writing no list, when <dir> holds anything that is
 #     neither a file nor a directory, since no list can hold it, when it holds no
@@ -770,7 +772,7 @@ smoke_tree_files() {
 }
 
 smoke_write_tree_sums() {
-  local dir="$1" bytes
+  local dir="$1" bytes listed line odd=""
   local -a files=() digest=()
   smoke_tree_refuse_special "$dir" || return 1
   if [ -e "$dir/SHA256SUMS" ] || [ -e "$dir/SHA256SUMS.partial" ]; then
@@ -783,7 +785,28 @@ smoke_write_tree_sums() {
     return 1
   fi
   smoke_sha256_command digest || return 1
-  if ! (cd "$dir" && "${digest[@]}" -- "${files[@]}" > SHA256SUMS.partial && mv SHA256SUMS.partial SHA256SUMS); then
+  if ! listed="$(cd "$dir" && "${digest[@]}" -- "${files[@]}")"; then
+    printf 'smoke: could not write the SHA-256 list of %s\n' "$dir" >&2
+    return 1
+  fi
+  # sha256sum on Windows writes each line in its binary form, "<digest> *<name>";
+  # every line is written here in the text form, "<digest>  <name>", read through
+  # the one statement of a list's lines, so a list is the same on every machine
+  # as the one a release attaches.
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    if ! smoke_sums_line "$line"; then
+      odd=1
+      break
+    fi
+    printf '%s  %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+  done <<<"$listed" > "$dir/SHA256SUMS.partial"
+  if [ -n "$odd" ]; then
+    rm -f -- "$dir/SHA256SUMS.partial"
+    printf 'smoke: %s wrote a line that is not "<SHA-256>  <name>" for %s: %s\n' "${digest[0]}" "$dir" "$line" >&2
+    return 1
+  fi
+  if ! mv -- "$dir/SHA256SUMS.partial" "$dir/SHA256SUMS"; then
     rm -f -- "$dir/SHA256SUMS.partial"
     printf 'smoke: could not write the SHA-256 list of %s\n' "$dir" >&2
     return 1

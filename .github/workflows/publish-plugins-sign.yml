@@ -24,7 +24,9 @@ name: Publish and sign core plugins
 #                        from the event, the dry_run input and the ref alone,
 #                        whether this run signs the Windows binaries, and
 #                        refuses a decision to leave them unsigned on a run
-#                        that publishes, as described below. It runs the
+#                        that publishes, as described below; then, from that
+#                        and the repository variable AGGREGA_MACOS_SIGNING,
+#                        whether it signs the macOS ones. It runs the
 #                        repository's own scripts and nothing else but, first,
 #                        the refusal of a run with no self-hosted runner named
 #                        for the local jobs.
@@ -139,7 +141,10 @@ name: Publish and sign core plugins
 #                        each target's three with a SHA-256 list of them, as
 #                        macos-binaries-signed-darwin-arm64 and
 #                        macos-binaries-signed-darwin-amd64; skipped on the
-#                        decision that skips sign-windows. It runs on a
+#                        decision that skips sign-windows, and whenever the
+#                        repository variable AGGREGA_MACOS_SIGNING is not
+#                        true, when the release ships the six unsigned, as
+#                        the build wrote them, and says so. It runs on a
 #                        GitHub-hosted Apple silicon macOS machine, after the
 #                        build, with Apple's own codesign, notarytool,
 #                        security, ditto and openssl, and nothing else but the
@@ -160,8 +165,10 @@ name: Publish and sign core plugins
 #                        release inputs from the hand-over folder once every
 #                        file there matches its list, downloads
 #                        windows-binaries-signed, windows-installer-signed and
-#                        both macos-binaries-signed artifacts, and publishes
-#                        them: it pushes
+#                        both macos-binaries-signed artifacts — or, while macOS
+#                        signing is off, the build's unsigned macOS binaries,
+#                        held to the list the build wrote of them — and
+#                        publishes them: it pushes
 #                        the tooling image's platforms from their archives and
 #                        then the index joining them under one tag, publishes each
 #                        plugin with its guest, signs both, and creates the
@@ -344,7 +351,13 @@ name: Publish and sign core plugins
 # Gatekeeper must accept a copy of each carrying the
 # quarantine mark a browser gives a download, as notarized Developer ID
 # software, and each must match sign-macos' SHA-256 list, while the unsigned
-# copies the build wrote are shown refused. On a manual dry run from a ref the signing identity
+# copies the build wrote are shown refused. While macOS signing is off, the
+# repository variable AGGREGA_MACOS_SIGNING not being true, sign-macos is
+# skipped on every run, macos-smoke runs the unsigned macOS binaries the build
+# wrote, its signature check not applicable, and passes when every other check
+# does, and sign-and-publish releases those binaries unsigned, saying so in the
+# release notes and in the run's summary; the Windows binaries are signed as
+# ever. On a manual dry run from a ref the signing identity
 # is taken not to admit, nothing is signed: windows-smoke and macos-smoke run the unsigned
 # binaries the build wrote, windows-smoke the installer windows-installer built from
 # them too, through the same script, which reports the
@@ -419,10 +432,15 @@ name: Publish and sign core plugins
 # before anything is built or signed, and never by a signing that failed; the
 # same job refuses it on a tag push and on a dispatch that is not a dry run,
 # which always sign, so on those a ref the credentials do not admit fails in
-# sign-windows, naming the ref. The macOS signing follows that one decision:
-# Apple's credentials are not bound to a ref, so the refs a dry run signs from
-# are the ones written for Windows, and a run that signs and lacks an Apple
-# setting fails in sign-macos, naming each one missing.
+# sign-windows, naming the ref. The macOS signing follows that one decision,
+# and is switched on by the repository variable AGGREGA_MACOS_SIGNING: on a
+# decision to sign, the macOS binaries are signed when it is true, and
+# otherwise released unsigned, which registry-credential prints and writes to
+# the run's summary; on a decision to skip, they are not signed whatever it
+# is. Apple's credentials are not bound to a ref, so the refs a dry run signs
+# from are the ones written for Windows, and a run that signs the macOS
+# binaries and lacks an Apple setting fails in sign-macos, naming each one
+# missing.
 #
 # Settings, by name:
 #   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
@@ -463,6 +481,13 @@ name: Publish and sign core plugins
 #                                        arguments, neither a secret, and
 #                                        sign-macos refuses, naming it, either
 #                                        that is not set)
+#              AGGREGA_MACOS_SIGNING     true to sign and notarize the macOS
+#                                        binaries in sign-macos, which then
+#                                        needs the two above and the three
+#                                        Apple secrets below; anything else,
+#                                        unset included, releases them
+#                                        unsigned and not notarized, saying so
+#                                        (read by registry-credential alone)
 #   secrets    REGISTRY_PASSWORD         the registry password
 #                                        (registry-credential and
 #                                        sign-and-publish only)
@@ -575,17 +600,22 @@ jobs:
     # one request, and it holds the registry password in a job that runs no
     # third-party code. It is the run's first job, so it is also where a run with
     # no runner for the local jobs stops, and where the run decides whether it
-    # signs the Windows binaries.
+    # signs the Windows binaries, and the macOS ones.
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
-    # Whether this run signs the Windows and macOS binaries, sign or skip, as the
+    # signing: whether this run signs the Windows binaries, sign or skip, as the
     # decision step below wrote it and the guard step after it let it stand.
-    # sign-windows, sign-macos, windows-smoke and macos-smoke read it, and name
-    # this job in their needs for that.
+    # sign-windows, windows-installer, sign-windows-installer and windows-smoke
+    # read it. macos_signing: what that decision means for the macOS binaries,
+    # with the repository variable AGGREGA_MACOS_SIGNING — sign, on sign with
+    # the variable true; unsigned, on sign with it anything else, when the
+    # release ships them unsigned; skip, on skip. sign-macos, macos-smoke and
+    # sign-and-publish read it. Each names this job in its needs for that.
     outputs:
       signing: ${{ steps.signing.outputs.signing }}
+      macos_signing: ${{ steps.macos-signing.outputs.macos_signing }}
 
     steps:
       - name: Require the runner the local jobs share
@@ -621,8 +651,8 @@ jobs:
         # skip, sign-windows and sign-macos are skipped and windows-smoke and
         # macos-smoke run the unsigned binaries the build wrote; no signing has
         # happened yet, so a signing that failed can never be what decided it.
-        # The script speaks of the Windows binaries; the step after it says
-        # what the decision means for the macOS ones.
+        # The script speaks of the Windows binaries; the step after the guard
+        # decides what it means for the macOS ones.
         id: signing
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -632,15 +662,15 @@ jobs:
           aggrega-cli/.github/scripts/windows-signing.sh decide \
             --event "$EVENT_NAME" --dry-run "$DISPATCH_DRY_RUN" --ref "$RUN_REF"
 
-      - name: Refuse to leave the Windows or macOS binaries unsigned on a run that publishes
+      - name: Refuse to leave the Windows binaries unsigned on a run that publishes
         # The decision as the jobs after this one read it, held to the one
-        # property that keeps an unsigned binary from a release: skip stands only
-        # on a workflow_dispatch with dry_run true, and any other value, an empty
-        # one included, is refused. The script reads the event and the input
-        # itself rather than trusting the step above, so a decision gone wrong
-        # stops the run here, before anything is built, signed or published, and
-        # a tag push or a dispatch that publishes always signs. The macOS binaries
-        # follow the same decision, and the step says so.
+        # property that keeps an unsigned Windows binary from a release: skip
+        # stands only on a workflow_dispatch with dry_run true, and any other
+        # value, an empty one included, is refused. The script reads the event
+        # and the input itself rather than trusting the step above, so a
+        # decision gone wrong stops the run here, before anything is built,
+        # signed or published, and a tag push or a dispatch that publishes
+        # always signs the Windows binaries.
         env:
           SIGNING: ${{ steps.signing.outputs.signing }}
           EVENT_NAME: ${{ github.event_name }}
@@ -648,10 +678,47 @@ jobs:
         run: |
           aggrega-cli/.github/scripts/windows-signing.sh guard \
             --signing "$SIGNING" --event "$EVENT_NAME" --dry-run "$DISPATCH_DRY_RUN"
+
+      - name: Decide whether this run signs the macOS binaries
+        # From the decision the guard above let stand and the repository
+        # variable AGGREGA_MACOS_SIGNING, which switches macOS signing on: sign
+        # when the decision is sign and the variable is true; unsigned when the
+        # decision is sign and the variable is anything else, unset included —
+        # sign-macos is skipped, macos-smoke runs the binaries as the build wrote
+        # them, and sign-and-publish releases them so, saying so in the release
+        # notes; skip when the decision is skip, as for the Windows binaries.
+        # Any outcome but sign is printed and written to the run's summary, so
+        # a release never ships the macOS binaries unsigned silently.
+        id: macos-signing
+        env:
+          SIGNING: ${{ steps.signing.outputs.signing }}
+          AGGREGA_MACOS_SIGNING: ${{ vars.AGGREGA_MACOS_SIGNING }}
+        run: |
+          set -euo pipefail
           case "$SIGNING" in
-            sign) echo "publish-plugins: this run signs and notarizes the macOS binaries too, in sign-macos" ;;
-            skip) echo "publish-plugins: this run leaves the macOS binaries unsigned too: sign-macos is skipped, and macos-smoke runs them as the build wrote them, its signature check not applicable" ;;
+            sign)
+              if [ "$AGGREGA_MACOS_SIGNING" = true ]; then
+                macos=sign
+                line="this run signs the macOS binaries and has Apple notarize them, in sign-macos"
+              else
+                macos=unsigned
+                line="the macOS binaries are not signed or notarized: the repository variable AGGREGA_MACOS_SIGNING is not true, so sign-macos is skipped, macos-smoke runs them as the build wrote them, and the release ships them so"
+              fi
+              ;;
+            skip)
+              macos=skip
+              line="this run leaves the macOS binaries unsigned too: sign-macos is skipped, and macos-smoke runs them as the build wrote them, its signature check not applicable"
+              ;;
+            *)
+              echo "publish-plugins: the signing decision is '$SIGNING', neither sign nor skip" >&2
+              exit 1
+              ;;
           esac
+          printf 'macos_signing=%s\n' "$macos" >> "$GITHUB_OUTPUT"
+          echo "publish-plugins: $line"
+          if [ "$macos" != sign ]; then
+            printf -- '- %s\n' "${line^}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Check the stored registry credential
         # One GET /v2/ with the stored credential, before anything is built;
@@ -2443,11 +2510,14 @@ jobs:
     # whatever the outcome.
     #
     # It runs on every trigger, a dry run's included, on the decision
-    # registry-credential makes for the Windows signing and on no other: skipped
-    # on a manual dry run launched from a ref that decision does not sign from,
-    # and run everywhere else. Run, it first refuses, naming each, any Apple
-    # setting that is not set, so a run meant to sign never leaves the binaries
-    # unsigned for want of one; macos-smoke and sign-and-publish wait for it.
+    # registry-credential makes for the macOS binaries, macos_signing, and on no
+    # other: skipped on a manual dry run launched from a ref the Windows signing
+    # decision does not sign from, skipped whenever the repository variable
+    # AGGREGA_MACOS_SIGNING is not true, when the release ships the binaries
+    # unsigned, and run everywhere else. Run, it first refuses, naming each, any
+    # Apple setting that is not set, so a run meant to sign never leaves the
+    # binaries unsigned for want of one; macos-smoke and sign-and-publish wait
+    # for it.
     #
     # It runs on a GitHub-hosted Apple silicon macOS machine, a fresh one for the
     # job, because Apple's codesign and notarytool run only on macOS. What runs
@@ -2487,7 +2557,7 @@ jobs:
     # unsigned ones; the bytes that run on macOS and ship are the ones this job
     # signed, which its SHA-256 lists name.
     needs: [registry-credential, build]
-    if: ${{ needs.registry-credential.outputs.signing != 'skip' }}
+    if: ${{ needs.registry-credential.outputs.macos_signing == 'sign' }}
     # macos-15 names GitHub's hosted Apple silicon image, the one macos-smoke's
     # darwin/arm64 run uses.
     runs-on: macos-15
@@ -2524,7 +2594,7 @@ jobs:
             for setting in "${missing[@]}"; do
               echo "sign-macos: $setting is not set" >&2
             done
-            echo "sign-macos: this run signs and notarizes the macOS binaries and cannot without the ${#missing[@]} setting(s) above: set each in the repository's settings, or, for a dry run, start it from a ref the release does not sign from" >&2
+            echo "sign-macos: this run signs and notarizes the macOS binaries and cannot without the ${#missing[@]} setting(s) above: set each in the repository's settings; or unset the repository variable AGGREGA_MACOS_SIGNING, and the release ships the macOS binaries unsigned, saying so; or, for a dry run, start it from a ref the release does not sign from" >&2
             exit 1
           fi
           echo "sign-macos: the three Apple secrets and the notary key's two identifiers are set"
@@ -2851,24 +2921,44 @@ jobs:
   sign-and-publish:
     # Waits for the build, for sign-windows, sign-macos and for every smoke run —
     # windows-smoke, both targets of macos-smoke and linux-smoke — and starts only when each
-    # one succeeded: a job is skipped when a job it needs failed, was cancelled
-    # or was skipped, and this job carries no if: of its own, so it never starts
-    # beside a job it needs that did not succeed. sign-windows and sign-macos are
+    # one succeeded, but for sign-macos, which may instead have been skipped on
+    # registry-credential's macOS decision of unsigned: the if: below takes the
+    # place of the default for that alone, and names every other job it needs
+    # as having succeeded, so it never starts beside one that did not.
+    # sign-windows and sign-macos are
     # skipped on a manual dry run from a ref the signing identity is taken not to
     # admit, and this job is skipped with them there, so the unsigned binaries
     # windows-smoke and macos-smoke run on such a run never reach it. The smoke
     # jobs' own if: lets each run when its signing was skipped so, and decides
     # that job alone: this job's needs name sign-windows and sign-macos
-    # themselves. Nothing is pushed, signed,
+    # themselves. While macOS signing is off — the decision unsigned —
+    # sign-windows has signed and sign-macos is skipped, and this job takes the
+    # macOS binaries unsigned from the build job's artifact, held to the list
+    # the build wrote of them — copies, made in the build job, of the files it
+    # staged for macos-smoke too — and says in the release notes that they are
+    # not signed or notarized.
+    # Nothing is pushed, signed,
     # published or released unless the
     # binaries passed on their own platforms, and a dry run prints its plan only
     # once they have. The build is named as well because a job reads the
-    # outputs only of the jobs it names, sign-windows because this job
+    # outputs only of the jobs it names, registry-credential for its macOS
+    # decision, sign-windows because this job
     # attaches the Windows binaries it signed, sign-windows-installer
     # because it attaches the installer that job signed, skipped with
     # sign-windows, and sign-macos because it attaches the macOS binaries that
     # job signed; from the smoke jobs this job reads nothing but their result.
-    needs: [build, sign-windows, sign-windows-installer, sign-macos, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, build, sign-windows, sign-windows-installer, sign-macos, windows-smoke, macos-smoke, linux-smoke]
+    if: >-
+      ${{ !cancelled()
+      && needs.registry-credential.result == 'success'
+      && needs.build.result == 'success'
+      && needs.sign-windows.result == 'success'
+      && needs.sign-windows-installer.result == 'success'
+      && (needs.sign-macos.result == 'success'
+      || (needs.sign-macos.result == 'skipped' && needs.registry-credential.outputs.macos_signing == 'unsigned'))
+      && needs.windows-smoke.result == 'success'
+      && needs.macos-smoke.result == 'success'
+      && needs.linux-smoke.result == 'success' }}
     # The runner the build ran on, with no hosted fallback: this job reads the
     # release inputs from the hand-over folder on that machine's disk.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
@@ -2910,6 +3000,10 @@ jobs:
       DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
       DISPATCH_TAG: ${{ inputs.tag }}
       REF_NAME: ${{ github.ref_name }}
+      # This run's macOS decision, sign or unsigned, as registry-credential
+      # wrote it: on unsigned, sign-macos signed nothing, and the macOS binaries
+      # come unsigned from the build job's artifact.
+      MACOS_SIGNING: ${{ needs.registry-credential.outputs.macos_signing }}
 
     steps:
       # Every step here either readies or performs a publish. The steps with an
@@ -2970,7 +3064,8 @@ jobs:
         # release beside its own. The signed Windows binaries arrive in a
         # directory of this run's own, WINDOWS_SIGNED, the signed Windows
         # installer in another, WINDOWS_INSTALLER, the signed macOS binaries in
-        # a third, MACOS_SIGNED, one directory per target beneath it, the
+        # a third, MACOS_SIGNED, one directory per target beneath it — or, while
+        # macOS signing is off, the unsigned ones in MACOS_UNSIGNED — the
         # release assets are assembled in a fourth, RELEASE_DIR, and the
         # Homebrew formula, the Scoop manifest and the winget manifest are
         # rendered into a fifth, CHANNELS_DIR, all made empty
@@ -2986,10 +3081,11 @@ jobs:
           windows_signed="$(mktemp -d "$RUNNER_TEMP/windows-signed.XXXXXX")"
           windows_installer="$(mktemp -d "$RUNNER_TEMP/windows-installer.XXXXXX")"
           macos_signed="$(mktemp -d "$RUNNER_TEMP/macos-signed.XXXXXX")"
+          macos_unsigned="$(mktemp -d "$RUNNER_TEMP/macos-unsigned.XXXXXX")"
           release="$(mktemp -d "$RUNNER_TEMP/release.XXXXXX")"
           channels="$(mktemp -d "$RUNNER_TEMP/channels.XXXXXX")"
-          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nWINDOWS_INSTALLER=%s\nMACOS_SIGNED=%s\nRELEASE_DIR=%s\nCHANNELS_DIR=%s\n' \
-            "$handover" "$handover/release-inputs" "$windows_signed" "$windows_installer" "$macos_signed" "$release" "$channels" >> "$GITHUB_ENV"
+          printf 'HANDOVER=%s\nINPUTS=%s\nWINDOWS_SIGNED=%s\nWINDOWS_INSTALLER=%s\nMACOS_SIGNED=%s\nMACOS_UNSIGNED=%s\nRELEASE_DIR=%s\nCHANNELS_DIR=%s\n' \
+            "$handover" "$handover/release-inputs" "$windows_signed" "$windows_installer" "$macos_signed" "$macos_unsigned" "$release" "$channels" >> "$GITHUB_ENV"
 
       - name: Hold the hand-over folder to the build job's list
         # Before anything in it is used or run: every file in this run's
@@ -3053,7 +3149,9 @@ jobs:
       - name: Download the signed darwin/arm64 binaries
         # The artifact sign-macos uploaded for darwin/arm64 and that target's
         # macos-smoke run ran: the three signed and notarized binaries and their
-        # SHA-256 list.
+        # SHA-256 list. Not while macOS signing is off, when sign-macos signed
+        # nothing and uploaded nothing.
+        if: ${{ env.MACOS_SIGNING == 'sign' }}
         uses: actions/download-artifact@v4
         with:
           name: macos-binaries-signed-darwin-arm64
@@ -3061,10 +3159,57 @@ jobs:
 
       - name: Download the signed darwin/amd64 binaries
         # The same for darwin/amd64.
+        if: ${{ env.MACOS_SIGNING == 'sign' }}
         uses: actions/download-artifact@v4
         with:
           name: macos-binaries-signed-darwin-amd64
           path: ${{ env.MACOS_SIGNED }}/darwin-amd64
+
+      - name: Download the unsigned macOS binaries
+        # While macOS signing is off: the artifact the build job uploaded for
+        # sign-macos, the six macOS binaries unsigned, the entitlements file and
+        # SHA256SUMS, the build's list of the seven.
+        if: ${{ env.MACOS_SIGNING == 'unsigned' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binaries-unsigned
+          path: ${{ env.MACOS_UNSIGNED }}
+
+      - name: Hold the unsigned macOS binaries to the build job's list
+        # While macOS signing is off, before anything is pushed, published or
+        # released: the list must have the SHA-256 the build job gave as its
+        # macos_unsigned_sums output, so it is the list the build wrote, and
+        # must name exactly the six macOS binaries and the entitlements file,
+        # each with the digest of the file here, held by the smoke library's one
+        # reader of such lists. So what the release attaches is byte for byte
+        # what the build wrote. The release step below refuses a file that is
+        # missing. A dry run checks too.
+        if: ${{ env.MACOS_SIGNING == 'unsigned' }}
+        env:
+          LISTED_SUMS: ${{ needs.build.outputs.macos_unsigned_sums }}
+        run: |
+          set -euo pipefail
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          list="$MACOS_UNSIGNED/SHA256SUMS"
+          [ -f "$list" ] || { echo "sign-and-publish: the build job's macOS artifact holds no SHA256SUMS" >&2; exit 1; }
+          actual="$(sha256sum < "$list")"
+          actual="${actual%% *}"
+          if [ -z "$LISTED_SUMS" ] || [ "$actual" != "$LISTED_SUMS" ]; then
+            echo "sign-and-publish: the list in the build job's macOS artifact has SHA-256 $actual, but the build job wrote one with SHA-256 '$LISTED_SUMS'" >&2
+            exit 1
+          fi
+          echo "ok: SHA256SUMS is the list the build job wrote, SHA-256 $actual"
+          names=()
+          for target in darwin/arm64 darwin/amd64; do
+            listed="$(smoke_target_binaries "$target")"
+            mapfile -t target_binaries <<<"$listed"
+            names+=("${target_binaries[@]}")
+          done
+          entitlements="$(smoke_macos_entitlements)"
+          names+=("${entitlements##*/}")
+          smoke_check_sums "$list" "$MACOS_UNSIGNED" "${names[@]}"
+          echo "sign-and-publish: the macOS binaries this release attaches are not signed or notarized: the repository variable AGGREGA_MACOS_SIGNING is not true"
 
       - name: Hold the signed macOS binaries to their lists
         # Before anything is pushed, published or released: each target's
@@ -3074,6 +3219,7 @@ jobs:
         # Apple notarized and what macos-smoke ran and checked. It is the same
         # check that smoke run makes, from the same function; the release step
         # below refuses a file that is missing. A dry run checks too.
+        if: ${{ env.MACOS_SIGNING == 'sign' }}
         run: |
           set -euo pipefail
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
@@ -3271,7 +3417,10 @@ jobs:
         # build job's macOS steps wrote, held to that version too, as sign-macos
         # signed them and Apple notarized them: the step above held them to
         # sign-macos' SHA-256 lists, so they are byte for byte the files each
-        # macos-smoke run ran and whose signatures and notarization it checked.
+        # macos-smoke run ran and whose signatures and notarization it checked;
+        # while macOS signing is off, they are those files unsigned, as the
+        # build job wrote them, held above to its list, and the release notes
+        # say they are not signed or notarized.
         # The Windows ones are the files the
         # build job's Windows steps wrote, held to that version too, as
         # sign-windows signed them: the step above held them to sign-windows'
@@ -3386,11 +3535,22 @@ jobs:
             asset="$(smoke_release_asset_name linux/arm64 "$BIN_VERSION" "$name")"
             attach "$BIN/$name" "$asset" "the linux/arm64 build steps"
           done <<<"$names"
+          # The macOS binaries as sign-macos signed them, or, while macOS
+          # signing is off, as the build wrote them; the release notes say which.
+          case "$MACOS_SIGNING" in
+            sign) MACOS_NOTE="the macOS files are signed with the Developer ID of Cognitio S.r.l. and notarized by Apple" ;;
+            unsigned) MACOS_NOTE="the macOS files are not signed or notarized" ;;
+            *) echo "sign-and-publish: the macOS signing decision is '$MACOS_SIGNING', neither sign nor unsigned" >&2; exit 1 ;;
+          esac
           for target in darwin/arm64 darwin/amd64; do
             names="$(smoke_target_binaries "$target")"
             while IFS= read -r name; do
               asset="$(smoke_release_asset_name "$target" "$BIN_VERSION" "$name")"
-              attach "$MACOS_SIGNED/${target/\//-}/$name" "$asset" "sign-macos"
+              if [ "$MACOS_SIGNING" = sign ]; then
+                attach "$MACOS_SIGNED/${target/\//-}/$name" "$asset" "sign-macos"
+              else
+                attach "$MACOS_UNSIGNED/$name" "$asset" "the build job's macOS steps, unsigned"
+              fi
             done <<<"$names"
           done
           names="$(smoke_target_binaries windows/amd64)"
@@ -3422,6 +3582,10 @@ jobs:
           smoke_check_sums "$RELEASE_DIR/SHA256SUMS" "$RELEASE_DIR" "${asset_names[@]}"
           ASSETS+=("$RELEASE_DIR/SHA256SUMS")
 
+          # The release notes, written once: the dry run prints them, and the
+          # creation below gives them to the release.
+          NOTES="Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) ($MACOS_NOTE): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $WINDOWS_SETUP is the Windows installer, signed as the Windows files are: it installs the default aggrega for the current user, with no administrator rights, into %LOCALAPPDATA%\Programs\aggrega, adds that folder to the user PATH and registers an uninstaller in the list of installed apps; run it with /S to install without a window, and uninstall.exe /S in that folder to uninstall the same way. $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
+
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
             for asset in "${ASSETS[@]}"; do
@@ -3429,6 +3593,8 @@ jobs:
             done
             echo "publish-plugins (dry-run): SHA256SUMS would read:"
             cat "$RELEASE_DIR/SHA256SUMS"
+            echo "publish-plugins (dry-run): the release notes would read:"
+            printf '%s\n' "$NOTES"
             exit 0
           fi
 
@@ -3458,7 +3624,7 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) (the macOS files are signed with the Developer ID of Cognitio S.r.l. and notarized by Apple): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $WINDOWS_SETUP is the Windows installer, signed as the Windows files are: it installs the default aggrega for the current user, with no administrator rights, into %LOCALAPPDATA%\Programs\aggrega, adds that folder to the user PATH and registers an uninstaller in the list of installed apps; run it with /S to install without a window, and uninstall.exe /S in that folder to uninstall the same way. $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
+              --notes "$NOTES"
           fi
 
       - name: Render the Homebrew formula, the Scoop manifest and the winget manifest
@@ -3505,8 +3671,8 @@ jobs:
         # clean-up's to remove.
         if: ${{ always() && env.RELEASE_DIR != '' }}
         run: |
-          chmod -R u+w -- "$WINDOWS_SIGNED" "$WINDOWS_INSTALLER" "$MACOS_SIGNED" "$RELEASE_DIR" "$CHANNELS_DIR" 2>/dev/null || true
-          rm -rf -- "$WINDOWS_SIGNED" "$WINDOWS_INSTALLER" "$MACOS_SIGNED" "$RELEASE_DIR" "$CHANNELS_DIR"
+          chmod -R u+w -- "$WINDOWS_SIGNED" "$WINDOWS_INSTALLER" "$MACOS_SIGNED" "$MACOS_UNSIGNED" "$RELEASE_DIR" "$CHANNELS_DIR" 2>/dev/null || true
+          rm -rf -- "$WINDOWS_SIGNED" "$WINDOWS_INSTALLER" "$MACOS_SIGNED" "$MACOS_UNSIGNED" "$RELEASE_DIR" "$CHANNELS_DIR"
 
       - name: Remove this run's configuration
         # Whatever the steps above did, so nothing written to this run's
@@ -3539,8 +3705,15 @@ jobs:
     # On the runner the build ran on, because the entities it records are the
     # ones the build job left in the hand-over folder, read once the folder
     # matches its list. clean-up waits for it.
+    # The if: names both jobs it needs as having succeeded rather than leaving
+    # it to the default, since sign-and-publish may run beside a sign-macos
+    # skipped while macOS signing is off.
     needs: [build, sign-and-publish]
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+    if: >-
+      ${{ !cancelled()
+      && needs.build.result == 'success'
+      && needs.sign-and-publish.result == 'success'
+      && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15
     permissions:
@@ -3709,8 +3882,12 @@ jobs:
     # nothing more. It runs no action but checkout and GitHub's own
     # create-github-app-token, and no program but git and the shell's own
     # utilities; it compiles nothing, which is why the comparison with the
-    # generator runs in the build job.
+    # generator runs in the build job. The if: names both jobs it needs as
+    # having succeeded rather than leaving it to the default, since
+    # sign-and-publish may run beside a sign-macos skipped while macOS signing
+    # is off.
     needs: [build, sign-and-publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -3888,7 +4065,12 @@ jobs:
     #
     # The two repositories' names are written once, in this job's env, which
     # the token step and the commit step both read.
+    #
+    # The if: names the job it needs as having succeeded rather than leaving
+    # it to the default, since sign-and-publish may run beside a sign-macos
+    # skipped while macOS signing is off.
     needs: [sign-and-publish]
+    if: ${{ !cancelled() && needs.sign-and-publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -4305,12 +4487,21 @@ jobs:
     # do. sign-and-publish is skipped on such a run, since it needs sign-macos
     # itself, so those binaries go no further.
     #
+    # While macOS signing is off — registry-credential's macOS decision
+    # unsigned, the repository variable AGGREGA_MACOS_SIGNING not being true —
+    # sign-macos is skipped and this job runs the unsigned binaries the build
+    # wrote, staged in its inputs, as the ones the release attaches: it stops
+    # at the first failure as a signed run does, reports the signature check
+    # not applicable, and passes when every other check passed, so
+    # sign-and-publish can release them unsigned.
+    #
     # The if: takes the place of the default, which would skip this job whenever
     # sign-macos is skipped. It runs when the run was not cancelled, when
     # registry-credential and build succeeded, and when sign-macos either
-    # succeeded or was skipped on a decision of skip; one that failed, or was
-    # skipped on any other ground, skips this job. registry-credential is named
-    # because a job reads the outputs only of the jobs it names.
+    # succeeded or was skipped on a macOS decision of skip or unsigned; one
+    # that failed, or was skipped on any other ground, skips this job.
+    # registry-credential is named because a job reads the outputs only of the
+    # jobs it names.
     #
     # macos-15 names GitHub's hosted Apple silicon image and macos-15-intel its
     # hosted Intel image. A label GitHub does not offer leaves its job queued,
@@ -4323,7 +4514,9 @@ jobs:
       && needs.registry-credential.result == 'success'
       && needs.build.result == 'success'
       && (needs.sign-macos.result == 'success'
-      || (needs.sign-macos.result == 'skipped' && needs.registry-credential.outputs.signing == 'skip')) }}
+      || (needs.sign-macos.result == 'skipped'
+      && (needs.registry-credential.outputs.macos_signing == 'skip'
+      || needs.registry-credential.outputs.macos_signing == 'unsigned'))) }}
     name: macos-smoke (${{ matrix.target }})
     strategy:
       # Each target is a proof of its own: one failing does not cancel the other.
@@ -4343,9 +4536,10 @@ jobs:
     permissions:
       contents: read
     env:
-      # This run's signing decision, sign or skip, as registry-credential wrote
-      # it: on skip no signed binaries exist, and the unsigned ones run.
-      SIGNING: ${{ needs.registry-credential.outputs.signing }}
+      # This run's macOS decision, sign, unsigned or skip, as
+      # registry-credential wrote it: on unsigned or skip no signed binaries
+      # exist, and the unsigned ones run.
+      MACOS_SIGNING: ${{ needs.registry-credential.outputs.macos_signing }}
     defaults:
       run:
         shell: bash
@@ -4372,9 +4566,9 @@ jobs:
       - name: Download the signed macOS binaries
         # The three binaries sign-macos signed for this target, and SHA256SUMS,
         # its list of them: the binaries every check below runs, and the ones
-        # the release attaches. Not on a run whose decision is skip, on which
-        # sign-macos signed nothing and uploaded nothing.
-        if: ${{ env.SIGNING != 'skip' }}
+        # the release attaches. Only on a run whose macOS decision is sign: on
+        # any other, sign-macos signed nothing and uploaded nothing.
+        if: ${{ env.MACOS_SIGNING == 'sign' }}
         uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.signed }}
@@ -4413,10 +4607,13 @@ jobs:
         # Gatekeeper must accept a quarantined copy of it as notarized
         # Developer ID software,
         # with the unsigned copy the build wrote shown refused. On a run whose
-        # decision is skip, the script is told the binaries are unsigned: it
-        # runs the ones the build wrote, staged in its inputs, every check
+        # macOS decision is skip, the script is told the binaries are unsigned:
+        # it runs the ones the build wrote, staged in its inputs, every check
         # reporting its verdict, reports the signature check not applicable
-        # rather than passed, and fails whatever the others do.
+        # rather than passed, and fails whatever the others do. On a run whose
+        # macOS decision is unsigned, it is told the release ships them so: it
+        # runs the same ones, stops at the first failure, reports the signature
+        # check not applicable, and passes when every other check passed.
         # aggrega-cli/scripts/platform-smoke.sh --help says what each check
         # asserts.
         env:
@@ -4424,11 +4621,12 @@ jobs:
         run: |
           set -euo pipefail
           args=(--target "$TARGET" --inputs "$RUNNER_TEMP/macos-smoke")
-          if [ "$SIGNING" = skip ]; then
-            args+=(--unsigned)
-          else
-            args+=(--signed "$RUNNER_TEMP/macos-signed")
-          fi
+          case "$MACOS_SIGNING" in
+            sign) args+=(--signed "$RUNNER_TEMP/macos-signed") ;;
+            unsigned) args+=(--ships-unsigned) ;;
+            skip) args+=(--unsigned) ;;
+            *) echo "macos-smoke: the macOS signing decision is '$MACOS_SIGNING', not sign, unsigned or skip" >&2; exit 1 ;;
+          esac
           aggrega-cli/scripts/platform-smoke.sh "${args[@]}"
 
   linux-smoke:

@@ -15,9 +15,11 @@
 # unsigned copies the build wrote, staged in bin/, run in no step, and step 12
 # holds them as what its checks must refuse. On a run that signs nothing,
 # --unsigned takes the place of --signed: every step runs the unsigned copies in
-# bin/, and step 12, with no signature to check, is not applicable. The Linux
-# binaries are not signed by the release, so a linux target runs the staged ones
-# and takes neither.
+# bin/, and step 12, with no signature to check, is not applicable. On a run
+# whose release attaches the macOS binaries unsigned, --ships-unsigned takes its
+# place for a darwin target: the same, but the run is held as a signed one is. The
+# Linux binaries are not signed by the release, so a linux target runs the staged
+# ones and takes none of the three.
 # It needs no Go toolchain, no sibling repositories, no credentials and no
 # registry or server but the ones it starts on this machine — save GitHub, for
 # step 14 on a Windows machine that carries no winget; it does need bash 4.3
@@ -172,7 +174,8 @@
 #                 printed. Then the same codesign and Gatekeeper checks over a
 #                 quarantined copy of the unsigned default binary staged in
 #                 bin/, and the same list check over bin/, must refuse them.
-#                 Given --unsigned it is not applicable, as for Windows
+#                 Given --unsigned or --ships-unsigned it is not applicable,
+#                 as for Windows
 #  13. installer  windows/amd64 only. The installer in the --installer directory
 #                 must have the SHA-256 the SHA256SUMS beside it lists. Run as
 #                 `<installer> /S`, it must exit 0 within five minutes — a silent
@@ -237,7 +240,7 @@
 # what it does.
 #
 # Usage:
-#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned] [--installer <dir>] [--binaries <dir>]
+#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned | --ships-unsigned] [--installer <dir>] [--binaries <dir>]
 #   scripts/platform-smoke.sh --help
 #
 # --signed <dir> names the directory holding the signed binaries and SHA256SUMS.
@@ -256,6 +259,14 @@
 # never passed; step 13 checks no signature, saying so; and the run ends naming
 # every step that failed and the step that was not applicable. It exits 1 when a step failed and 3 when none did — never
 # 0, since what ran is not the signed binaries the release attaches.
+#
+# --ships-unsigned runs the darwin/arm64 or darwin/amd64 binaries staged in bin/,
+# unsigned as the build wrote them, on a run whose release attaches them so: the
+# way to run the checks while macOS signing is switched off. It is refused with
+# --signed or --unsigned and for any other target. The run stops at the first
+# failure, as with --signed; step 12 checks nothing and is reported not
+# applicable, never passed; and the run exits 0 when every other step passed,
+# since what ran is what the release attaches.
 #
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
 # them, in place of the ones it would run otherwise (the --signed ones for
@@ -281,7 +292,7 @@ step() { printf '\n==> %s\n' "$*"; }
 . scripts/lib/platform-smoke-common.sh
 smoke_require_bash || exit 1
 
-INPUTS="" SIGNED="" UNSIGNED="" SUBSTITUTE="" INSTALLER=""
+INPUTS="" SIGNED="" UNSIGNED="" SHIPS_UNSIGNED="" SUBSTITUTE="" INSTALLER=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target)
@@ -301,6 +312,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --unsigned)
       UNSIGNED=1
+      shift
+      ;;
+    --ships-unsigned)
+      SHIPS_UNSIGNED=1
       shift
       ;;
     --installer)
@@ -336,6 +351,15 @@ EXE_SUFFIX=""
 # Linux run takes neither.
 [ -z "$SIGNED" ] || [ -z "$UNSIGNED" ] ||
   { fail "--signed and --unsigned cannot both be given: --signed runs the signed binaries in its directory, --unsigned the unsigned ones in bin/"; exit 2; }
+# A release that attaches the macOS binaries unsigned: they run as --unsigned runs
+# them, and the run is held as a signed one is, since they are what ships.
+if [ -n "$SHIPS_UNSIGNED" ]; then
+  [ -z "$SIGNED" ] && [ -z "$UNSIGNED" ] ||
+    { fail "--ships-unsigned takes the place of --signed and --unsigned: it runs the unsigned binaries in bin/, which the release attaches as they are"; exit 2; }
+  [ "${TARGET%/*}" = darwin ] ||
+    { fail "--ships-unsigned applies to darwin/arm64 and darwin/amd64 alone, the binaries a release may attach unsigned"; exit 2; }
+  UNSIGNED=1
+fi
 case "$GOOS_T" in
   windows | darwin)
     [ -n "$SIGNED" ] || [ -n "$UNSIGNED" ] || { fail "--signed <dir> is required for $TARGET: the binaries the release attaches are the signed ones; on a run that signs nothing, give --unsigned instead"; exit 2; }
@@ -455,7 +479,9 @@ if [ -n "$SIGNED" ]; then
   BIN_DIR="$SIGNED"
   echo "platform-smoke: running the signed binaries in $SIGNED; bin/ holds the unsigned ones the build wrote"
 fi
-if [ -n "$UNSIGNED" ]; then
+if [ -n "$SHIPS_UNSIGNED" ]; then
+  echo "platform-smoke: --ships-unsigned: the release attaches the $TARGET binaries unsigned, so the binaries it runs are the unsigned ones in bin/, as the build wrote them, and step 12 is not applicable"
+elif [ -n "$UNSIGNED" ]; then
   echo "platform-smoke: --unsigned: this run signs nothing, so the binaries it runs are the unsigned ones in bin/, as the build wrote them, and step 12 is not applicable"
 fi
 if [ -n "$SUBSTITUTE" ]; then
@@ -996,7 +1022,7 @@ lay_out_release_folder() {
 
 check_install() {
   local log="$LOGS/install" base="$ODD/install" tag="v$VERSION"
-  local folder asset="" listed_sum="" sum line port="" url i run shell label home dir installed text
+  local folder asset="" listed_sum="" port="" url i run shell label home dir installed text
   local -a shells=()
   folder="$base/release/download/$tag"
   mkdir -p "$log"
@@ -1004,10 +1030,8 @@ check_install() {
   lay_out_release_folder "$folder" || return 1
   cat "$folder/SHA256SUMS"
   asset="$(smoke_release_asset_name "$TARGET" "$VERSION" "${BINARY_NAMES[0]}")"
-  while read -r sum line; do
-    if [ "$line" = "$asset" ]; then listed_sum="$sum"; fi
-  done < "$folder/SHA256SUMS"
-  [ -n "$listed_sum" ] || { fail "the release folder's SHA256SUMS lists no $asset"; return 1; }
+  listed_sum="$(smoke_listed_digest "$folder/SHA256SUMS" "$asset")" ||
+    { fail "the release folder's SHA256SUMS lists no $asset"; return 1; }
 
   : > "$log/server.log"
   "$PYTHON" -I -u "$CLI_ROOT/scripts/lib/serve-release-folder.py" "$(smoke_native_path "$base/release")" "$tag" \
@@ -1581,7 +1605,7 @@ check_winget() {
 # starts, end with it. The subshell is not the left side of || or &&: there the
 # shell would stop honouring set -e inside it, and a failing command would no
 # longer end the step. A failing step ends the run, unless --binaries named the
-# binaries or --unsigned was given, in which case the run goes on and names every
+# binaries or --unsigned (not --ships-unsigned) was given, in which case the run goes on and names every
 # failed step at its end. GO_ON says why a run goes on; RAN and NOT_CARRIED name,
 # for its last lines, the binaries it ran in place of the ones the release
 # attaches, and why those are not them.
@@ -1589,7 +1613,7 @@ FAILED=() NOT_APPLICABLE=()
 GO_ON="" RAN="" NOT_CARRIED=""
 if [ -n "$SUBSTITUTE" ]; then
   GO_ON="--binaries named the binaries" RAN="the binaries in $SUBSTITUTE" NOT_CARRIED="which the release does not carry"
-elif [ -n "$UNSIGNED" ]; then
+elif [ -n "$UNSIGNED" ] && [ -z "$SHIPS_UNSIGNED" ]; then
   GO_ON="--unsigned has every step report its verdict" RAN="the unsigned binaries in $INPUTS/bin" NOT_CARRIED="which the release attaches only signed"
 fi
 run_step() { # <title> <function> [isolated]
@@ -1641,7 +1665,10 @@ if [ "$GOOS_T" = windows ] || [ "$GOOS_T" = darwin ]; then
     SIGNATURE_STEP="12. signature: each binary signed with the Developer ID of $SIGNER_CN, hardened, timestamped, accepted by Gatekeeper as notarized, and the one SHA256SUMS lists"
     SIGNATURE_CHECK=check_macos_signature
   fi
-  if [ -n "$UNSIGNED" ]; then
+  if [ -n "$SHIPS_UNSIGNED" ]; then
+    not_applicable "$SIGNATURE_STEP" \
+      "--ships-unsigned: the release attaches these binaries unsigned and not notarized, so there is no signature and no SHA256SUMS of a signing to hold them to; this step neither passed nor failed"
+  elif [ -n "$UNSIGNED" ]; then
     not_applicable "$SIGNATURE_STEP" \
       "--unsigned: this run signs nothing, so there is no signature and no SHA256SUMS to hold the binaries to; this step neither passed nor failed"
   else
@@ -1669,4 +1696,8 @@ if [ -n "$RAN" ]; then
     "$TARGET" "$which_passed" "$RAN" "$NOT_CARRIED" >&2
   exit 3
 fi
-printf '\nplatform-smoke: %s: every check passed\n' "$TARGET"
+if [ "${#NOT_APPLICABLE[@]}" -gt 0 ]; then
+  printf '\nplatform-smoke: %s: every applicable check passed\n' "$TARGET"
+else
+  printf '\nplatform-smoke: %s: every check passed\n' "$TARGET"
+fi
