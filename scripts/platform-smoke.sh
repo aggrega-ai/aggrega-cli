@@ -220,9 +220,14 @@
 #                 which ran. Then `winget validate --manifest <folder>
 #                 --disable-interactivity`, run through Windows PowerShell,
 #                 must exit 0, which it does only when the manifest has neither
-#                 an error nor a warning. Then the same validation over a copy
-#                 of the manifest whose installer type is one winget does not
-#                 know must refuse it
+#                 an error nor a warning — or exit 0x8A150028, a validation that
+#                 succeeded with warnings, every warning being the one a winget
+#                 gives for a correct schema header naming a manifest version
+#                 newer than any it carries: each header must be exactly the one
+#                 for its file's ManifestType and ManifestVersion, and any other
+#                 warning or any error fails the step. Then the same validation
+#                 over a copy of the manifest whose installer type is one winget
+#                 does not know must refuse it
 #
 # Each binary started in steps 1-8, 11 and 13 has every AGGREGA_ setting of the
 # machine unset, the global configuration pointed at an empty directory
@@ -1532,23 +1537,36 @@ winget_install() {
 }
 
 # winget_validate <manifest folder> — run `winget validate` over <manifest
-# folder> in Windows PowerShell, with the winget at SMOKE_WINGET, print the exit
-# code winget gave, and return 0 when it is 0 — which winget gives only when the
-# manifest has neither an error nor a warning — and 1 otherwise. winget's other
-# codes are 32-bit values whose low byte, all this shell would see of them, could
-# be 0. The folder and the winget reach PowerShell through the environment, as
-# authenticode_report's file does.
+# folder> in Windows PowerShell, with the winget at SMOKE_WINGET, print what it
+# printed and the exit code it gave, and return 0 when that code is 0 — which
+# winget gives only when the manifest has neither an error nor a warning — or
+# when it is 0x8A150028, a validation that succeeded with warnings, and
+# smoke_check_winget_warnings finds every warning to be the one a winget gives
+# for a correct schema header naming a manifest version newer than any it
+# carries; and 1 otherwise. Such a winget still validates the manifest against
+# the newest schema it carries; it is not given --ignore-warnings, which would
+# set aside every warning. PowerShell turns winget's code into one of three
+# small ones, since winget's codes are 32-bit values whose low byte, all this
+# shell would see of them, could be 0. What winget printed is kept in
+# <manifest folder>.report, beside the folder. The folder and the winget reach
+# PowerShell through the environment, as authenticode_report's file does.
 winget_validate() {
-  local script
+  local script report="$1.report" status=0
   script="\$ErrorActionPreference = 'Continue'; "
   script+="'winget: ' + \$env:SMOKE_WINGET; "
   script+="& \$env:SMOKE_WINGET --version; "
   script+="& \$env:SMOKE_WINGET validate --manifest \$env:SMOKE_WINGET_MANIFEST --disable-interactivity; "
   script+="\$code = \$LASTEXITCODE; "
   script+="'winget validate exited ' + \$code + ' (0x' + ('{0:X8}' -f \$code) + ')'; "
-  script+="if (\$code -eq 0) { exit 0 } else { exit 1 }"
+  script+="if (\$code -eq 0) { exit 0 } elseif (\$code -eq -1978335192) { exit 3 } else { exit 1 }"
   SMOKE_WINGET_MANIFEST="$(smoke_native_path "$1")" MSYS_NO_PATHCONV=1 \
-    powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script"
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$script" > "$report" || status=$?
+  cat "$report"
+  case "$status" in
+    0) echo "winget validate reports neither an error nor a warning" ;;
+    3) smoke_check_winget_warnings "$report" "$1" || return 1 ;;
+    *) return 1 ;;
+  esac
 }
 
 check_winget() {
@@ -1578,7 +1596,7 @@ check_winget() {
   done
   smoke_run_captured "$log" validate winget_validate "$manifest" ||
     { fail "winget validate does not accept the winget manifest rendered from the release folder"; return 1; }
-  echo "ok: winget validate accepts the winget manifest rendered from the release folder, with neither an error nor a warning"
+  echo "ok: winget validate accepts the winget manifest rendered from the release folder, with no error and no warning but the schema-header ones named above, if any"
 
   echo "The same validation over a copy whose installer type is one winget does not know must refuse it:"
   cp "$manifest"/* "$planted/"

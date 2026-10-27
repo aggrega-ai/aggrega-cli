@@ -4424,8 +4424,10 @@ jobs:
         # uninstaller run with /S, each install and the uninstall checked and
         # the user PATH put back after them; then the winget manifest, rendered
         # by scripts/render-package-channels.sh from a release folder laid out
-        # on this machine, which winget validate must accept with neither an
-        # error nor a warning, and refuse with a planted installer type. On a dry run naming smoke_binaries_from, the binaries
+        # on this machine, which winget validate must accept with no error and
+        # no warning but the one a winget gives for a correct schema header
+        # naming a manifest version newer than any it carries, and refuse with
+        # a planted installer type. On a dry run naming smoke_binaries_from, the binaries
         # downloaded above run instead, the signature check among the checks
         # reporting on them, and the step fails whatever they do. On a run whose
         # decision is skip, the script is told the binaries are unsigned: it runs

@@ -232,6 +232,26 @@
 #     it, hidden names included, is exactly the names given: none missing and
 #     nothing else, at any depth. With no name, <dir> must be empty.
 #
+#   smoke_check_winget_warnings <report> <manifest-folder>
+#     Holds what `winget validate --manifest <manifest-folder>` printed on standard
+#     output, in <report>, when it exited with the code for a validation that
+#     succeeded with warnings (APPINSTALLER_CLI_ERROR_MANIFEST_VALIDATION_WARNING,
+#     0x8A150028). Returns 0, saying so, only when every finding winget printed —
+#     each a line beginning "Manifest Warning: " or "Manifest Error: " — is the
+#     warning a winget gives for a schema header naming a manifest version newer
+#     than any it carries: "The schema header URL does not match the expected
+#     pattern.", its value exactly the header line of the file it names, that
+#     header exactly "# yaml-language-server:
+#     $schema=https://aka.ms/winget-manifest.<ManifestType>.<ManifestVersion>.schema.json"
+#     for that file's own ManifestType and ManifestVersion, and no file named
+#     twice. Such a winget compares the header with the schema of the newest
+#     version it carries, and so finds a correct header for a newer version not
+#     matching; a winget that carries the version finds no such warning. Returns
+#     1, naming each, on any error, any other warning, a header that is not that
+#     exact line, a file not in <manifest-folder>, a finding line it cannot read,
+#     or no finding at all. A carriage return ending a line, and any terminal
+#     colour sequence in it, are set aside.
+#
 #   smoke_check_authenticode_report <report> <common-name>
 #     Holds a report of what Windows' Get-AuthenticodeSignature says about one
 #     file, written as key=value lines (a trailing carriage return set aside), to
@@ -921,6 +941,94 @@ smoke_check_only_entries() {
   done
   [ "$bad" = 0 ] || return 1
   printf 'ok: %s holds %s\n' "$dir" "${*:-nothing}"
+}
+
+smoke_check_winget_warnings() {
+  local report="$1" folder="$2" line rest value file name header type version expected bad=0 count=0
+  local message="The schema header URL does not match the expected pattern."
+  local -A seen=()
+  if [ ! -f "$report" ]; then
+    printf 'smoke: there is no winget validate report at %s\n' "$report" >&2
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    # A terminal colour sequence winget may write around a line is taken out, so
+    # the line is read for its words alone.
+    while [[ "$line" =~ $'\e'\[[0-9\;]*[A-Za-z] ]]; do
+      line="${line/"${BASH_REMATCH[0]}"/}"
+    done
+    case "$line" in
+      "Manifest Warning: "*) ;;
+      "Manifest Error: "*)
+        printf 'smoke: winget reports an error: %s\n' "$line" >&2
+        bad=1
+        continue
+        ;;
+      *"Manifest Warning:"* | *"Manifest Error:"*)
+        printf 'smoke: winget reports a finding this check cannot read: %s\n' "$line" >&2
+        bad=1
+        continue
+        ;;
+      *) continue ;;
+    esac
+    rest="${line#"Manifest Warning: "}"
+    if [[ "$rest" != "$message Value: "* ]]; then
+      printf 'smoke: winget warns of something other than a schema header: %s\n' "$line" >&2
+      bad=1
+      continue
+    fi
+    rest="${rest#"$message Value: "}"
+    if [[ ! "$rest" =~ ^(.*)\ File:\ (.+)$ ]]; then
+      printf 'smoke: winget'"'"'s schema header warning names no file: %s\n' "$line" >&2
+      bad=1
+      continue
+    fi
+    value="${BASH_REMATCH[1]}" file="${BASH_REMATCH[2]}"
+    if [[ "$value" =~ ^(.*)\ Line:\ [0-9]+,\ Column:\ [0-9]+$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+    name="${file##*[\\/]}"
+    if [ ! -f "$folder/$name" ]; then
+      printf 'smoke: winget warns of a schema header in %s, which %s does not hold\n' "$file" "$folder" >&2
+      bad=1
+      continue
+    fi
+    if [ -n "${seen[$name]+set}" ]; then
+      printf 'smoke: winget warns twice of the schema header in %s\n' "$name" >&2
+      bad=1
+      continue
+    fi
+    seen[$name]=1
+    header="" type="" version=""
+    while IFS= read -r rest || [ -n "$rest" ]; do
+      rest="${rest%$'\r'}"
+      case "$rest" in
+        "# yaml-language-server: "*) [ -n "$header" ] || header="$rest" ;;
+        "ManifestType: "*) type="${rest#ManifestType: }" ;;
+        "ManifestVersion: "*) version="${rest#ManifestVersion: }" ;;
+      esac
+    done < "$folder/$name"
+    expected="# yaml-language-server: \$schema=https://aka.ms/winget-manifest.$type.$version.schema.json"
+    if [ -z "$type" ] || [ -z "$version" ] || [ "$header" != "$expected" ]; then
+      printf 'smoke: the schema header of %s is "%s", not "%s"\n' "$name" "$header" "$expected" >&2
+      bad=1
+      continue
+    fi
+    if [ "$value" != "$header" ]; then
+      printf 'smoke: winget warns of the schema header "%s" in %s, whose header is "%s"\n' "$value" "$name" "$header" >&2
+      bad=1
+      continue
+    fi
+    printf 'warned of: the schema header of %s, %s\n' "$name" "$header"
+    count=$((count + 1))
+  done < "$report"
+  if [ "$count" = 0 ] && [ "$bad" = 0 ]; then
+    printf 'smoke: winget reports warnings, but %s holds none this check reads\n' "$report" >&2
+    bad=1
+  fi
+  [ "$bad" = 0 ] || return 1
+  printf 'ok: every warning winget gives is for a correct schema header naming a manifest version newer than any it carries (%s file(s))\n' "$count"
 }
 
 smoke_check_authenticode_report() {
