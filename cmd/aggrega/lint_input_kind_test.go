@@ -296,13 +296,12 @@ func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
 	}
 }
 
-// Unknown / unimplemented / eval providers bind to no shipped engine
+// Unknown / unimplemented providers bind to no shipped engine
 // (ContractFor ok=false) → skipped, no false positive against forward-looking
 // catalog scaffolding.
 func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
 	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("b", "cloudformation", true),
-		wlRecipe("c", "eval", true),
 		wlRecipe("d", "nonsense-typo", true),
 	}, nil)
 	if len(errs) != 0 {

@@ -21,8 +21,8 @@ func TestLazyRecipeIndex_TolerantSkipsBroken(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "good-a.yaml", recipeYAML("core/recipe-a", "core/a"))
 	writeFixture(t, dir, "good-b.yaml", recipeYAML("core/recipe-b", "core/b"))
-	// A recipe whose body fails load-time shape validation (no implements, no
-	// input kind under a non-eval provider is rejected by ValidateRecipe).
+	// A recipe whose body fails load-time shape validation (no implements, and no
+	// input kind, which ValidateRecipe rejects).
 	writeFixture(t, dir, "broken.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:

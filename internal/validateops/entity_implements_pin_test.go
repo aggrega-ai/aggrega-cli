@@ -53,7 +53,8 @@ spec:
 			t.Parallel()
 			recipePath := filepath.Join(t.TempDir(), "recipe.yaml")
 			data := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: probe-recipe\n" +
-				"  version: 1.0.0\nspec:\n  capability: eval\n  implements: " + tc.implements + "\n")
+				"  version: 1.0.0\nspec:\n  capability: probe\n  implements: " + tc.implements + "\n" +
+				"  artifacts:\n    probe.txt: \"probe\"\n")
 			if err := os.WriteFile(recipePath, data, 0o644); err != nil {
 				t.Fatalf("write recipe: %v", err)
 			}

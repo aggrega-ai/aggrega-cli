@@ -1199,24 +1199,6 @@ var facts = []factDecl{
 			"Nothing here reads inside an entry.",
 	},
 	{
-		Name:        "recipe-declared-capability",
-		Stage:       "document",
-		SourceField: "types.RecipeSpec.Capability",
-		Subject:     []string{"document"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "string",
-		Doc: "RecipeDeclaredCapability is the capability the presented Recipe " +
-			"declares, as the author wrote it.\n\nIt carries the declaration's " +
-			"own text: the bare capability name where the author pinned no " +
-			"version, and the name together with the pin where they did. " +
-			"Nothing here splits the two apart. Which plugin version a pin " +
-			"selects is settled where the binding is resolved, and a fact " +
-			"answering that here would be answering about a provider under a " +
-			"name that promises an answer about the document.\n\nA Recipe " +
-			"declaring no capability answers with the empty string, which is " +
-			"the authored state rather than a convenience over a missing one.",
-	},
-	{
 		Name:        "recipe-authored-source-kind",
 		Stage:       "document",
 		SourceField: "types.RecipeSpec.Source",
@@ -1466,58 +1448,6 @@ var facts = []factDecl{
 			"authoring decision and a rule asking whether an overlay exists is " +
 			"asking about that decision, so splitting them would hand every such " +
 			"rule three answers to recombine.",
-	},
-	{
-		Name:        "feature-recipe-workload-declared",
-		Stage:       "document",
-		SourceField: "types.FeatureRecipeSpec.Workload",
-		Subject:     []string{"document"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "bool",
-		Doc: "FeatureRecipeWorkloadDeclared reports whether the presented " +
-			"FeatureRecipe declares a workload body.\n\nIt answers whether the " +
-			"author wrote the block at all, in any of the forms the block " +
-			"accepts — an inline template, a file import, a library import — and " +
-			"never what the body synthesizes to.\n\nWhether the bound provider " +
-			"can synthesize a workload at all is a later question and a " +
-			"different one, settled once the binding is resolved. A fact " +
-			"answering it here would be answering about a provider under a name " +
-			"that promises an answer about the document.",
-	},
-	{
-		Name:        "feature-recipe-artifacts-declared",
-		Stage:       "document",
-		SourceField: "types.FeatureRecipeSpec.Artifacts",
-		Subject:     []string{"document"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "bool",
-		Doc: "FeatureRecipeArtifactsDeclared reports whether the presented " +
-			"FeatureRecipe declares any artifact entry.\n\nIt answers whether " +
-			"the block carries an entry rather than how many, because the rules " +
-			"over a FeatureRecipe's authored surface ask whether this one is " +
-			"present at all and would treat every count above zero alike. A " +
-			"count is also a different fact with a different life: an entry " +
-			"importing a bundle expands into one output per file once it is " +
-			"resolved, so a number the authored document carries is not the " +
-			"number of outputs. Nothing here looks inside an entry.",
-	},
-	{
-		Name:        "feature-recipe-declared-capability",
-		Stage:       "document",
-		SourceField: "types.FeatureRecipeSpec.Capability",
-		Subject:     []string{"document"},
-		Params:      []paramDecl{{Name: "document", Type: "string"}},
-		Returns:     "string",
-		Doc: "FeatureRecipeDeclaredCapability is the capability the presented " +
-			"FeatureRecipe declares, as the author wrote it.\n\nIt carries the " +
-			"declaration's own text: the bare capability name where the author " +
-			"pinned no version, and the name together with the pin where they " +
-			"did. Nothing here splits the two apart. Which plugin version a pin " +
-			"selects is settled where the binding is resolved, and a fact " +
-			"answering that here would be answering about a provider under a " +
-			"name that promises an answer about the document.\n\nA FeatureRecipe " +
-			"declaring no capability answers with the empty string, which is the " +
-			"authored state rather than a convenience over a missing one.",
 	},
 	{
 		Name:        "feature-recipe-authored-source-kind",

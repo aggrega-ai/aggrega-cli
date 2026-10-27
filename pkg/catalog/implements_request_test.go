@@ -81,13 +81,13 @@ func TestAnUnversionedTypeIsAskedAtTheVersionTheCatalogResolvesItTo(t *testing.T
 		want          []string
 	}{
 		{name: "a bare type the catalog holds at two versions", componentType: "app/db", component: c.componentOfType,
-			want: []string{"eval/db-any:1.0.0", "eval/db-caret:1.0.0", "eval/db-two:1.0.0"}},
+			want: []string{"probe/db-any:1.0.0", "probe/db-caret:1.0.0", "probe/db-two:1.0.0"}},
 		{name: "a type pinning a version", componentType: "app/db:1.0.0", component: c.componentOfType,
-			want: []string{"eval/db-any:1.0.0", "eval/db-one:1.0.0"}},
+			want: []string{"probe/db-any:1.0.0", "probe/db-one:1.0.0"}},
 		{name: "a bare type the catalog holds no Component of", componentType: "app/none", component: c.componentOfType,
-			want: []string{"eval/none-any:1.0.0"}},
+			want: []string{"probe/none-any:1.0.0"}},
 		{name: "a bare type asked with no Component resolution", componentType: "app/db", component: nil,
-			want: []string{"eval/db-any:1.0.0"}},
+			want: []string{"probe/db-any:1.0.0"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			candidates := recipesImplementing(c.Recipes, tc.componentType, tc.component)
@@ -122,7 +122,7 @@ func TestABareInstanceIsOfferedTheRecipesImplementingItsResolvedVersion(t *testi
 		t.Fatalf("load: %v", err)
 	}
 	lazy := NewLazyLookup(dir, "", []string{dir}, nil)
-	want := []string{"eval/db-any:1.0.0", "eval/db-caret:1.0.0", "eval/db-two:1.0.0"}
+	want := []string{"probe/db-any:1.0.0", "probe/db-caret:1.0.0", "probe/db-two:1.0.0"}
 	for _, tc := range []struct {
 		name    string
 		resolve func(manifest *types.Manifest, instanceName, componentType string) []string

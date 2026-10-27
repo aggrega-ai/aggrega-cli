@@ -167,12 +167,6 @@ func (AggregateDocumentBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (AggregateDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
 // RecipeAuthoredSourceKind panics. This view does not carry
 // recipe-authored-source-kind, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
@@ -220,27 +214,6 @@ func (AggregateDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (AggregateDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (AggregateDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (AggregateDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (AggregateDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -402,12 +375,6 @@ func (ComponentDocumentBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (ComponentDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
 // RecipeAuthoredSourceKind panics. This view does not carry
 // recipe-authored-source-kind, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
@@ -455,27 +422,6 @@ func (ComponentDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (ComponentDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (ComponentDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (ComponentDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (ComponentDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -649,12 +595,6 @@ func (FeatureDocumentBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (FeatureDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
 // RecipeAuthoredSourceKind panics. This view does not carry
 // recipe-authored-source-kind, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
@@ -702,27 +642,6 @@ func (FeatureDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (FeatureDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (FeatureDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (FeatureDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (FeatureDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -878,12 +797,6 @@ func (ManifestDocumentBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (ManifestDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
 // RecipeAuthoredSourceKind panics. This view does not carry
 // recipe-authored-source-kind, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
@@ -919,27 +832,6 @@ func (ManifestDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (ManifestDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (ManifestDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (ManifestDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (ManifestDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -1098,12 +990,6 @@ func (ReleaseDocumentBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (ReleaseDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
 // RecipeAuthoredSourceKind panics. This view does not carry
 // recipe-authored-source-kind, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeAuthoredSourceKind(document string) (string, bool) {
@@ -1151,27 +1037,6 @@ func (ReleaseDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (ReleaseDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (ReleaseDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (ReleaseDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (ReleaseDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -1356,27 +1221,6 @@ func (RecipeDocumentBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (RecipeDocumentBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (RecipeDocumentBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (RecipeDocumentBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (RecipeDocumentBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -1567,12 +1411,6 @@ func (FeatureRecipeDocumentBase) RecipeWorkloadDeclared(document string) bool {
 // recipe-artifacts-declared, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
-}
-
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (FeatureRecipeDocumentBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
 }
 
 // RecipeAuthoredSourceKind panics. This view does not carry
@@ -1789,12 +1627,6 @@ func (CatalogViewBase) RecipeArtifactsDeclared(document string) bool {
 	panic("this view does not carry recipe-artifacts-declared, which a Recipe document carries")
 }
 
-// RecipeDeclaredCapability panics. This view does not carry
-// recipe-declared-capability, which a Recipe document carries.
-func (CatalogViewBase) RecipeDeclaredCapability(document string) string {
-	panic("this view does not carry recipe-declared-capability, which a Recipe document carries")
-}
-
 // RecipeAuthoredSourceKind panics. This view does not carry
 // recipe-authored-source-kind, which a Recipe document carries.
 func (CatalogViewBase) RecipeAuthoredSourceKind(document string) (string, bool) {
@@ -1842,27 +1674,6 @@ func (CatalogViewBase) FeatureRecipeSourceDeclared(document string) bool {
 // carries.
 func (CatalogViewBase) FeatureRecipeValuesMappingDeclared(document string) bool {
 	panic("this view does not carry feature-recipe-values-mapping-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeWorkloadDeclared panics. This view does not carry
-// feature-recipe-workload-declared, which a FeatureRecipe document
-// carries.
-func (CatalogViewBase) FeatureRecipeWorkloadDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-workload-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeArtifactsDeclared panics. This view does not carry
-// feature-recipe-artifacts-declared, which a FeatureRecipe document
-// carries.
-func (CatalogViewBase) FeatureRecipeArtifactsDeclared(document string) bool {
-	panic("this view does not carry feature-recipe-artifacts-declared, which a FeatureRecipe document carries")
-}
-
-// FeatureRecipeDeclaredCapability panics. This view does not carry
-// feature-recipe-declared-capability, which a FeatureRecipe document
-// carries.
-func (CatalogViewBase) FeatureRecipeDeclaredCapability(document string) string {
-	panic("this view does not carry feature-recipe-declared-capability, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceKind panics. This view does not carry
@@ -3460,7 +3271,6 @@ type RecipeDocumentFacts interface {
 	RecipeSourceDeclared(document string) bool
 	RecipeWorkloadDeclared(document string) bool
 	RecipeArtifactsDeclared(document string) bool
-	RecipeDeclaredCapability(document string) string
 	RecipeAuthoredSourceKind(document string) (string, bool)
 	RecipeSourceKindServed(kind string) bool
 	RecipeOutputLabelKeys(document string) []string
@@ -3483,9 +3293,6 @@ type RecipeDocumentFacts interface {
 type FeatureRecipeDocumentFacts interface {
 	FeatureRecipeSourceDeclared(document string) bool
 	FeatureRecipeValuesMappingDeclared(document string) bool
-	FeatureRecipeWorkloadDeclared(document string) bool
-	FeatureRecipeArtifactsDeclared(document string) bool
-	FeatureRecipeDeclaredCapability(document string) string
 	FeatureRecipeAuthoredSourceKind(document string) (string, bool)
 	FeatureRecipeSourceKindServed(kind string) bool
 }

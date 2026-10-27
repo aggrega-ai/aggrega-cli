@@ -493,17 +493,18 @@ func writeCatalogEntity(t *testing.T, dir, rel, body string) {
 	}
 }
 
-// recipeYAML builds a minimal loadable Recipe. target: eval bans the
-// three-input-kinds, so the recipe needs no source/workload/artifacts to pass
-// load validation — enough for a resolution-only test.
+// recipeYAML builds a minimal loadable Recipe: one artifact entry, the least a
+// Recipe declares to pass load validation, on a capability no provider serves —
+// enough for a resolution-only test, which renders nothing.
 func recipeYAML(name, implements string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  capability: eval\n  implements: " + implements + "\n"
+		"\n  version: 1.0.0\nspec:\n  capability: probe\n  implements: " + implements +
+		"\n  artifacts:\n    probe.txt: \"probe\"\n"
 }
 
 func featureRecipeYAML(name, implements string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  capability: eval\n  implements: " + implements + "\n"
+		"\n  version: 1.0.0\nspec:\n  capability: probe\n  implements: " + implements + "\n"
 }
 
 // TestNameTierOverride_FiresAtBothJoins is the per-instance recipe-override
@@ -640,8 +641,8 @@ func TestNodeRecipeResolution_SeparatesTheOutcomesARuleActsOn(t *testing.T) {
 	if len(unmapped.AmbiguousKeys) != 0 {
 		t.Errorf("a type no mapping reaches is not a refused lookup; got keys %v", unmapped.AmbiguousKeys)
 	}
-	if !slices.Contains(unmapped.PinCandidates, "eval/db-a:1.0.0") ||
-		!slices.Contains(unmapped.PinCandidates, "eval/db-b:1.0.0") {
+	if !slices.Contains(unmapped.PinCandidates, "probe/db-a:1.0.0") ||
+		!slices.Contains(unmapped.PinCandidates, "probe/db-b:1.0.0") {
 		t.Errorf("the candidates must name both implementing recipes; got %v", unmapped.PinCandidates)
 	}
 
@@ -760,12 +761,12 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 
 	// Fiction-killer: at an accepted shape both references resolve, so the two
 	// failures below are caused by the mapping value and nothing else.
-	if err := c.VerifyRecipeResolution(manifestFor("eval/present:1.0.0", "eval/cred:1.0.0"), graph); err != nil {
+	if err := c.VerifyRecipeResolution(manifestFor("probe/present:1.0.0", "probe/cred:1.0.0"), graph); err != nil {
 		t.Fatalf("capability-qualified references should resolve cleanly; got %v", err)
 	}
 
 	// Shape fault: one segment past the ceiling, naming a recipe that IS present.
-	shapeErr := c.VerifyRecipeResolution(manifestFor("core/eval/present:1.0.0", "core/eval/cred:1.0.0"), graph)
+	shapeErr := c.VerifyRecipeResolution(manifestFor("core/probe/present:1.0.0", "core/probe/cred:1.0.0"), graph)
 	if shapeErr == nil {
 		t.Fatalf("a reference past the segment ceiling must halt")
 	}
@@ -779,11 +780,11 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 		t.Errorf("a shape fault must not claim the entity is absent; got %v", shapeErr)
 	}
 	for _, want := range []string{
-		`"core/eval/present:1.0.0"`,            // the shape the author typed
+		`"core/probe/present:1.0.0"`,           // the shape the author typed
 		"3 slash-separated segments",           // and its segment count
 		resolver.AcceptedRecipeReferenceShapes, // the shapes a reference accepts
 		"correct the mapping value in the Manifest",
-		`"core/eval/cred:1.0.0"`, // the feature twin fires too
+		`"core/probe/cred:1.0.0"`, // the feature twin fires too
 	} {
 		if !strings.Contains(shapeErr.Error(), want) {
 			t.Errorf("shape diagnostic missing %q; got %v", want, shapeErr)
@@ -823,7 +824,7 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 		t.Errorf("reference = %q, want the mapping value verbatim", componentAbsent.Reference)
 	}
 	componentShape := c.nodeRecipeResolution(
-		manifestFor("core/eval/present:1.0.0", "core/eval/cred:1.0.0"), "db", compType, c.componentOfType)
+		manifestFor("core/probe/present:1.0.0", "core/probe/cred:1.0.0"), "db", compType, c.componentOfType)
 	if !componentShape.Mapped || componentShape.Present {
 		t.Errorf("a component mapped past the segment ceiling must come back mapped and not present; got %+v", componentShape)
 	}

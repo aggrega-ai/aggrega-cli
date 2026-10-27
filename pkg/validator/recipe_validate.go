@@ -23,19 +23,12 @@ import (
 // a property of what each names rather than a list to keep here — a rule about
 // the document as a whole has only the file to give.
 //
-// Rules enforced here: values-mapping, input-kinds and source-kind, plus the
-// eval-provider constraint. The workload-requires-provider-workloadSchema constraint is
-// enforced at render time by the central input-kind gate (a synthesized Recipe
-// bound to a provider that does not implement workload synthesis halts loudly
-// there). The filename-collision rule (a collision across input-kind origins)
-// is enforced at emission time by feature rendering.
-//
-// The eval-provider carve-out is two-sided:
-//
-//  1. Reject non-empty source / workload / artifacts / valuesMapping (eval has
-//     no rendering surface).
-//  2. Exempt eval Recipes from the input-kinds rule (a Recipe declaring only
-//     `provides:` is legitimate eval-mode authoring).
+// Rules enforced here: values-mapping, input-kinds and source-kind. The
+// workload-requires-provider-workloadSchema constraint is enforced at render time
+// by the central input-kind gate (a synthesized Recipe bound to a provider that
+// does not implement workload synthesis halts loudly there). The
+// filename-collision rule (a collision across input-kind origins) is enforced at
+// emission time by feature rendering.
 //
 // What is deliberately NOT checked: the contents of `source:`, with one key
 // excepted. Whether a source is present is a shape question and is answered here,
@@ -56,10 +49,9 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return nil
 	}
 
-	// The output-label rules are engine-agnostic and run before the eval
-	// carve-out: an eval Recipe declares no rendering surface but must still not
-	// claim a reserved provenance key, whether it names one literally or
-	// promotes it from a component label.
+	// The output-label rules are engine-agnostic: a Recipe must not claim a
+	// reserved provenance key, whether it names one literally or promotes it from
+	// a component label, whatever it renders from.
 	if err := validateRecipeOutputLabels(r, sourcePath); err != nil {
 		return err
 	}
@@ -67,9 +59,6 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return err
 	}
 
-	if err := validateRecipeEvalProvider(r, sourcePath); err != nil {
-		return err
-	}
 	if err := validateRecipeValuesMapping(r, sourcePath); err != nil {
 		return err
 	}
@@ -89,8 +78,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 // recipeSourceKindHasAnAdapter, which names the facts it reads and is invoked once
 // per presented document. What this function does is present the document the
 // load is holding and render whatever came back into the failure shape this
-// package's callers read. It runs after the eval rule, which refuses any source on
-// an eval Recipe, so a source reaching it is one the document may carry.
+// package's callers read.
 func validateRecipeSourceKind(r *types.Recipe, sourcePath string) error {
 	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
 	failures := shapeRuleErrorsFrom(
@@ -104,44 +92,6 @@ func validateRecipeSourceKind(r *types.Recipe, sourcePath string) error {
 			Name:    r.Metadata.Name,
 			Version: r.Metadata.Version,
 			Rule:    "source-kind",
-		},
-	)
-	if len(failures) == 0 {
-		return nil
-	}
-	return failures[0]
-}
-
-// validateRecipeEvalProvider enforces the eval-provider constraint: a Recipe
-// binding the eval capability declares no rendering surface.
-//
-// The rule itself is declared rather than written out here: see
-// recipeEvalDeclaresNoRenderingSurface, which names the facts it reads — the
-// declared capability among them — and is invoked once per presented document.
-// What this function does is present the document the load is holding and render
-// whatever came back into the failure shape this package's callers read.
-//
-// It is invoked for every Recipe rather than only for an eval one, because the
-// capability gate belongs to the rule. The values-mapping rule below is reached
-// on an eval Recipe as a result, and reaching it changes nothing: this rule
-// refuses any eval Recipe declaring an overlay and runs first, so an eval Recipe
-// arriving there declares none.
-//
-// The rule raises at most one objection, for the reason validateRecipeValuesMapping
-// states.
-func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
-	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
-	failures := shapeRuleErrorsFrom(
-		constraint.RunOnDocument(
-			sourcePath,
-			presented,
-			recipeEvalDeclaresNoRenderingSurface,
-		),
-		ruleSubject{
-			Kind:    envelope.KindRecipe,
-			Name:    r.Metadata.Name,
-			Version: r.Metadata.Version,
-			Rule:    "eval",
 		},
 	)
 	if len(failures) == 0 {
@@ -338,9 +288,7 @@ func validateRecipeValuesMapping(r *types.Recipe, sourcePath string) error {
 //  3. Artifacts — at least one entry under artifacts.
 //
 // The rule itself is declared rather than written out here: see
-// recipeDeclaresAnInputKind, which names the facts it reads and carries the eval
-// carve-out as part of the rule rather than as a property of this call site.
-// What this function does is present the document the load is holding and render
+// recipeDeclaresAnInputKind, which names the facts it reads. What this function does is present the document the load is holding and render
 // whatever came back into the failure shape this package's callers read.
 //
 // The rule raises at most one objection, for the reason validateRecipeValuesMapping

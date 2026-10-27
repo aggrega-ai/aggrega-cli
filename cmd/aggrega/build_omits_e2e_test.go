@@ -356,8 +356,7 @@ func TestBuild_OmitsOnAProviderThatRendersNothingAtBuildTimeIsRefused(t *testing
 // key's schema declares through the single-entity scope's load, which reports the
 // document-envelope condition with the findings that name the constraint. Each row
 // carries one fault; the control row is the same document with none, and its
-// schema tier passes. An eval document carrying omits also has no source, so its
-// row pins the ban's own finding rather than any refusal.
+// schema tier passes.
 func TestValidate_TheOmitsKeyNegativeCorpus(t *testing.T) {
 	t.Parallel()
 
@@ -369,19 +368,16 @@ func TestValidate_TheOmitsKeyNegativeCorpus(t *testing.T) {
 	}
 	const entries = "  omits:\n    - kind: Secret\n      name: token\n"
 	const sourced = "  capability: helm\n  implements: server\n  source: ./chart\n"
-	const evalSpec = "  capability: eval\n  implements: server\n  provides:\n    host: \"x\"\n"
 	const workloadSpec = "  capability: helm\n  implements: server\n  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n" +
 		"    kind: Workload\n    containers:\n      main:\n        image: x:1\n"
 
 	for _, tc := range []struct {
 		name, document, finding string
 	}{
-		{"an eval Recipe carrying omits", recipe(evalSpec + entries), "spec.omits: value matches a shape that is not allowed here"},
 		{"a Recipe carrying omits and no source", recipe(workloadSpec + entries), `spec: dependentRequired["omits"]: missing properties ["source"]`},
 		{"a misspelt entry field", recipe(sourced + entries + "      namspace: apps\n"), `spec.omits[0].namspace: unexpected property: "namspace"`},
 		{"a value that is not a string", recipe(sourced + "  omits:\n    - kind: Secret\n      name: 42\n"), `spec.omits[0].name: type: 42 has type "integer", want "string"`},
 		{"an empty list", recipe(sourced + "  omits: []\n"), "spec.omits: minItems: array length 0 is less than 1"},
-		{"an eval FeatureRecipe carrying omits", featureRecipe("  capability: eval\n  implements: core/f\n" + entries), "spec.omits: value matches a shape that is not allowed here"},
 		{"a FeatureRecipe carrying omits and no source", featureRecipe("  capability: helm\n  implements: core/f\n" + entries), `spec: dependentRequired["omits"]: missing properties ["source"]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -135,14 +135,14 @@ func nameMappingRuleFindings(c *Catalog, m *types.Manifest, graph *types.IRGraph
 // produce is about a name-tier key.
 func nameMappingManifest(components, features [][2]string) *types.Manifest {
 	comp := &types.MappingTier{}
-	comp.Type.Set("app/greeter", "eval/greeter-blue:1.0.0")
+	comp.Type.Set("app/greeter", "probe/greeter-blue:1.0.0")
 	for _, kv := range components {
 		comp.Name.Set(kv[0], kv[1])
 	}
 	feat := &types.MappingTier{}
-	feat.Type.Set("sec/banner", "eval/banner-plain:1.0.0")
-	feat.Type.Set("sec/logs", "eval/logs:1.0.0")
-	feat.Type.Set("sec/waf", "eval/waf:1.0.0")
+	feat.Type.Set("sec/banner", "probe/banner-plain:1.0.0")
+	feat.Type.Set("sec/logs", "probe/logs:1.0.0")
+	feat.Type.Set("sec/waf", "probe/waf:1.0.0")
 	for _, kv := range features {
 		feat.Name.Set(kv[0], kv[1])
 	}
@@ -162,8 +162,8 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 	t.Run("every key names an instance the build holds", func(t *testing.T) {
 		t.Parallel()
 		m := nameMappingManifest(
-			[][2]string{{"greeter-special", "eval/greeter-green:1.0.0"}},
-			[][2]string{{"loud-banner", "eval/banner-loud:1.0.0"}, {"firewall", "eval/waf:1.0.0"}},
+			[][2]string{{"greeter-special", "probe/greeter-green:1.0.0"}},
+			[][2]string{{"loud-banner", "probe/banner-loud:1.0.0"}, {"firewall", "probe/waf:1.0.0"}},
 		)
 		if findings := nameMappingRuleFindings(c, m, graph); len(findings) != 0 {
 			t.Fatalf("a Manifest whose every name-tier key names an instance must produce no finding; got %d: %v", len(findings), findings)
@@ -183,7 +183,7 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 	}{
 		{
 			name:     "a features.name key written as the name of the component the attachment sits on",
-			features: [][2]string{{"greeter-special", "eval/banner-loud:1.0.0"}},
+			features: [][2]string{{"greeter-special", "probe/banner-loud:1.0.0"}},
 			locator:  ".spec.mappings.features.name.greeter-special",
 			want: []string{
 				`(Manifest greeters-manifest, at .spec.mappings.features.name.greeter-special, "greeter-special"`,
@@ -196,7 +196,7 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 		},
 		{
 			name:     "a features.name key one edit from an attachment's name",
-			features: [][2]string{{"loud-baner", "eval/banner-loud:1.0.0"}},
+			features: [][2]string{{"loud-baner", "probe/banner-loud:1.0.0"}},
 			locator:  ".spec.mappings.features.name.loud-baner",
 			want: []string{
 				`"loud-baner"`,
@@ -206,7 +206,7 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 		},
 		{
 			name:     "a features.name key near no attachment's name",
-			features: [][2]string{{"unrelated-key", "eval/banner-loud:1.0.0"}},
+			features: [][2]string{{"unrelated-key", "probe/banner-loud:1.0.0"}},
 			locator:  ".spec.mappings.features.name.unrelated-key",
 			want: []string{
 				`attachments of that type in this build "banner, loud-banner"`,
@@ -215,7 +215,7 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 		},
 		{
 			name:     "a features.name key mapped to a feature recipe the catalog does not hold",
-			features: [][2]string{{"unrelated-key", "eval/absent:1.0.0"}},
+			features: [][2]string{{"unrelated-key", "probe/absent:1.0.0"}},
 			locator:  ".spec.mappings.features.name.unrelated-key",
 			want: []string{
 				`attachments in this build "access-logs, banner, firewall, loud-banner"`,
@@ -224,7 +224,7 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 		},
 		{
 			name:       "a components.name key one edit from an instance's name",
-			components: [][2]string{{"greeter-specail", "eval/greeter-green:1.0.0"}},
+			components: [][2]string{{"greeter-specail", "probe/greeter-green:1.0.0"}},
 			locator:    ".spec.mappings.components.name.greeter-specail",
 			want: []string{
 				`(Manifest greeters-manifest, at .spec.mappings.components.name.greeter-specail, "greeter-specail"`,
@@ -236,7 +236,7 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 		},
 		{
 			name:       "a components.name key written as the name of an attachment",
-			components: [][2]string{{"loud-banner", "eval/greeter-green:1.0.0"}},
+			components: [][2]string{{"loud-banner", "probe/greeter-green:1.0.0"}},
 			locator:    ".spec.mappings.components.name.loud-banner",
 			want: []string{
 				`did you mean "greeter-special")`,
@@ -292,8 +292,8 @@ func TestANameMappingKeyThatNamesNothingIsReported(t *testing.T) {
 	t.Run("several keys that name nothing are each reported, in the Manifest's order", func(t *testing.T) {
 		t.Parallel()
 		m := nameMappingManifest(
-			[][2]string{{"zz-absent", "eval/greeter-green:1.0.0"}},
-			[][2]string{{"zz-second", "eval/banner-loud:1.0.0"}, {"aa-third", "eval/banner-loud:1.0.0"}},
+			[][2]string{{"zz-absent", "probe/greeter-green:1.0.0"}},
+			[][2]string{{"zz-second", "probe/banner-loud:1.0.0"}, {"aa-third", "probe/banner-loud:1.0.0"}},
 		)
 		first := nameMappingRuleFindings(c, m, graph)
 		if len(first) != 3 {

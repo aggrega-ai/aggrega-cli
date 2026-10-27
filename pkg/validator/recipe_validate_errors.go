@@ -7,11 +7,10 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// Recipe-validation sentinels. The general shape rules constrain how a Recipe
-// composes its input kinds; the eval-provider constraint is provider-specific
-// and covers the eval mode's mathematical-evaluation-only contract. Each rule
-// is named by what it constrains, and that name is the identifier the
-// diagnostic prints and the reference documentation heads its entry with.
+// Recipe-validation sentinels. The shape rules constrain how a Recipe composes
+// its input kinds. Each rule is named by what it constrains, and that name is
+// the identifier the diagnostic prints and the reference documentation heads
+// its entry with.
 //
 // Shape rules surfaced at Recipe load time: values-mapping and input-kinds.
 // The workload-requires-provider-workloadSchema constraint is enforced at
@@ -65,19 +64,6 @@ func ErrRecipeFilenameCollisionAcrossInputKinds() error {
 var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("recipe-filename-collision-across-input-kinds", cerrors.Meta{
 	ShortCode: "E0211",
 	Message:   "filename collision across input kinds: two input-kind blocks produced a file under one output name",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
-})
-
-// ErrRecipeEvalProviderConstraint: the eval provider executes formatting
-// in-memory and has no rendering surface; declaring source/workload/
-// artifacts on an eval Recipe is rejected. The eval carve-out also
-// exempts the Recipe from the input-kinds rule — eval Recipes legitimately
-// declare only `provides:` and have zero input kinds.
-func ErrRecipeEvalProviderConstraint() error { return errRecipeEvalProviderConstraint }
-
-var errRecipeEvalProviderConstraint = cerrors.Register("recipe-eval-provider-constraint", cerrors.Meta{
-	ShortCode: "E0206",
-	Message:   "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

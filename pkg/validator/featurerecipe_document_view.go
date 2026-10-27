@@ -12,8 +12,8 @@ import (
 )
 
 // featureRecipeDocumentView presents one authored FeatureRecipe to a check as
-// named facts: the capability the document declares, and whether it declares a
-// source pointer, a values overlay, a workload body or artifact entries.
+// named facts: whether it declares a source pointer or a values overlay, and the
+// kind its structured source names.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -64,15 +64,6 @@ type featureRecipeDocumentView struct {
 	// valuesMapping is whether the document declares a values overlay.
 	valuesMapping bool
 
-	// workload is whether the document declares a workload body.
-	workload bool
-
-	// artifacts is whether the document declares any artifact entry.
-	artifacts bool
-
-	// capability is the capability the document declares, as authored.
-	capability string
-
 	// sourceKind is the kind the document's structured source names, and
 	// sourceKindWritten whether it names one.
 	sourceKind        string
@@ -86,21 +77,12 @@ type featureRecipeDocumentView struct {
 // has exactly one producer in this package, and routing the presentation through
 // those producers is what keeps each fact single-valued. A caller passing its own
 // answers could pass ones taken from a different document, or derived differently.
-//
-// The capability is carried as authored and is not compared against anything
-// here. A view presents what the document says; which capability a rule cares
-// about is the rule's own business, and a presentation that answered "is this an
-// eval FeatureRecipe" would be presenting one rule's predicate as though it were a
-// property of the file.
 func newFeatureRecipeDocumentView(path string, fr *types.FeatureRecipe) featureRecipeDocumentView {
 	kind, written := authoredSourceKind(fr.Spec.Source)
 	return featureRecipeDocumentView{
 		path:              path,
 		source:            !sourceIsEmpty(fr.Spec.Source),
 		valuesMapping:     !fr.Spec.ValuesMapping.IsEmpty(),
-		workload:          !fr.Spec.Workload.IsEmpty(),
-		artifacts:         fr.Spec.Artifacts.Len() > 0,
-		capability:        fr.Spec.Capability,
 		sourceKind:        kind,
 		sourceKindWritten: written,
 	}
@@ -118,27 +100,6 @@ func (v featureRecipeDocumentView) FeatureRecipeSourceDeclared(document string) 
 func (v featureRecipeDocumentView) FeatureRecipeValuesMappingDeclared(document string) bool {
 	v.refuseOtherDocument(document, "FeatureRecipeValuesMappingDeclared")
 	return v.valuesMapping
-}
-
-// FeatureRecipeWorkloadDeclared reports whether the presented FeatureRecipe
-// declares a workload body.
-func (v featureRecipeDocumentView) FeatureRecipeWorkloadDeclared(document string) bool {
-	v.refuseOtherDocument(document, "FeatureRecipeWorkloadDeclared")
-	return v.workload
-}
-
-// FeatureRecipeArtifactsDeclared reports whether the presented FeatureRecipe
-// declares any artifact entry.
-func (v featureRecipeDocumentView) FeatureRecipeArtifactsDeclared(document string) bool {
-	v.refuseOtherDocument(document, "FeatureRecipeArtifactsDeclared")
-	return v.artifacts
-}
-
-// FeatureRecipeDeclaredCapability is the capability the presented FeatureRecipe
-// declares, as the author wrote it.
-func (v featureRecipeDocumentView) FeatureRecipeDeclaredCapability(document string) string {
-	v.refuseOtherDocument(document, "FeatureRecipeDeclaredCapability")
-	return v.capability
 }
 
 // FeatureRecipeAuthoredSourceKind is the kind the presented FeatureRecipe's

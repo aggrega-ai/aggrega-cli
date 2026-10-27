@@ -37,19 +37,6 @@ var errFeatureRecipeValuesMappingRequiresSource = cerrors.Register("feature-reci
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrFeatureRecipeEvalProviderConstraint: the eval provider executes
-// formatting in-memory and has no rendering surface; declaring
-// source/valuesMapping/workload/artifacts on an eval FeatureRecipe is
-// rejected. injectMapping remains allowed (it is an inject-mapping delivery
-// transform, not a rendering surface).
-func ErrFeatureRecipeEvalProviderConstraint() error { return errFeatureRecipeEvalProviderConstraint }
-
-var errFeatureRecipeEvalProviderConstraint = cerrors.Register("feature-recipe-eval-provider-constraint", cerrors.Meta{
-	ShortCode: "E0203",
-	Message:   "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
-})
-
 // Every rule here reports through NewShapeRuleError, so a FeatureRecipe failure
 // is a *ValidationError carrying the FeatureRecipe kind — the same shape a
 // Recipe failure takes, so the two read identically to the operator.
@@ -58,27 +45,13 @@ var errFeatureRecipeEvalProviderConstraint = cerrors.Register("feature-recipe-ev
 // Called from catalog loading immediately after yaml.Unmarshal succeeds.
 // Returns a *ValidationError against the FeatureRecipe kind (or nil on pass).
 //
-// Three rules: the eval-provider carve-out (reject render input-kind fields —
-// eval has no rendering surface), values-mapping (valuesMapping requires
-// source) and source-kind (a structured source names a kind an adapter serves).
-// There is deliberately no at-least-one-input-kind rule: a FeatureRecipe may
-// be pure-wiring (provider + implements only) or inject-only.
-//
-// The eval rule is invoked first and the first failure is returned, and that
-// ordering is the rule's precedence rather than an arrangement. An eval
-// FeatureRecipe declaring a values overlay and no source satisfies both rules'
-// conditions, and the eval one is the finding an author needs: the overlay is
-// forbidden on that capability whatever else the document says, so telling them
-// to add a source would send them further from a document that loads. The
-// overlay is one of the fields the eval rule refuses, so it fires on every such
-// document and the values-mapping rule is reached only where no overlay is
-// declared at all.
+// Two rules: values-mapping (valuesMapping requires source) and source-kind (a
+// structured source names a kind an adapter serves). There is deliberately no
+// at-least-one-input-kind rule: a FeatureRecipe may be pure-wiring (provider +
+// implements only) or inject-only.
 func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr == nil {
 		return nil
-	}
-	if err := validateFeatureRecipeEvalProvider(fr, sourcePath); err != nil {
-		return err
 	}
 	if err := validateFeatureRecipeValuesMapping(fr, sourcePath); err != nil {
 		return err
@@ -96,9 +69,7 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 // featureRecipeSourceKindHasAnAdapter, which names the facts it reads and is
 // invoked once per presented document. What this function does is present the
 // document the load is holding and render whatever came back into the failure
-// shape this package's callers read. It runs after the eval rule, which refuses
-// any source on an eval FeatureRecipe, so a source reaching it is one the
-// document may carry.
+// shape this package's callers read.
 func validateFeatureRecipeSourceKind(fr *types.FeatureRecipe, sourcePath string) error {
 	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
 	failures := shapeRuleErrorsFrom(
@@ -151,44 +122,6 @@ func validateFeatureRecipeValuesMapping(fr *types.FeatureRecipe, sourcePath stri
 			Name:    fr.Metadata.Name,
 			Version: fr.Metadata.Version,
 			Rule:    "values-mapping",
-		},
-	)
-	if len(failures) == 0 {
-		return nil
-	}
-	return failures[0]
-}
-
-// validateFeatureRecipeEvalProvider enforces the eval-provider constraint: a
-// FeatureRecipe binding the eval capability declares no rendering surface.
-//
-// The rule itself is declared rather than written out here: see
-// featureRecipeEvalDeclaresNoRenderingSurface, which names the facts it reads —
-// the declared capability among them — and is invoked once per presented
-// document. What this function does is present the document the load is holding
-// and render whatever came back into the failure shape this package's callers
-// read.
-//
-// It is invoked for every FeatureRecipe rather than only for an eval one, because
-// the capability gate belongs to the rule. There is deliberately no
-// at-least-one-input-kind rule on this kind, so nothing else here depends on
-// knowing which capability the document binds.
-//
-// The rule raises at most one objection, for the reason
-// validateFeatureRecipeValuesMapping states.
-func validateFeatureRecipeEvalProvider(fr *types.FeatureRecipe, sourcePath string) error {
-	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
-	failures := shapeRuleErrorsFrom(
-		constraint.RunOnDocument(
-			sourcePath,
-			presented,
-			featureRecipeEvalDeclaresNoRenderingSurface,
-		),
-		ruleSubject{
-			Kind:    envelope.KindFeatureRecipe,
-			Name:    fr.Metadata.Name,
-			Version: fr.Metadata.Version,
-			Rule:    "eval",
 		},
 	)
 	if len(failures) == 0 {

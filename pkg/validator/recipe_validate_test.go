@@ -157,46 +157,20 @@ func TestValidateRecipe_HelmChartArtifactsImportOnly_Passes(t *testing.T) {
 	}
 }
 
-// ----- Eval-provider constraint -----
+// ----- A Recipe publishing values only -----
 
-func TestValidateRecipe_Eval_BareProvides_Passes(t *testing.T) {
+// A Recipe declaring only the values it publishes renders nothing, and is refused
+// under the input-kinds condition on every capability, `eval` included. A service
+// the build does not provision declares a workload of the reference form instead.
+func TestValidateRecipe_ProvidesOnly_IsRefusedUnderInputKinds(t *testing.T) {
 	t.Parallel()
-	r := newRecipe("eval")
-	r.Spec.Provides = types.OrderedMap[string]{}
-	r.Spec.Provides.Set("connection_string", `{{ .infra.host }}:{{ .infra.port }}`)
-	if err := validator.ValidateRecipe(r, tFile); err != nil {
-		t.Fatalf("expected pass, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Eval_RejectsValuesMapping(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("eval")
-	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"x": 1}`}
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint()) {
-		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Eval_RejectsWorkload(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("eval")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint()) {
-		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
-	}
-}
-
-func TestValidateRecipe_Eval_RejectsArtifacts(t *testing.T) {
-	t.Parallel()
-	r := newRecipe("eval")
-	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
-	r.Spec.Artifacts.Set("x.yaml", types.ArtifactEntry{Import: "./x.yaml"})
-	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint()) {
-		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
+	for _, capability := range []string{"eval", "helm"} {
+		r := newRecipe(capability)
+		r.Spec.Provides = types.OrderedMap[string]{}
+		r.Spec.Provides.Set("connection_string", `{{ .infra.host }}:{{ .infra.port }}`)
+		if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeNoInputKind()) {
+			t.Errorf("capability %q: expected ErrRecipeNoInputKind, got %v", capability, err)
+		}
 	}
 }
 
@@ -281,14 +255,15 @@ func TestValidateRecipe_OutputLabels_NonReserved_Passes(t *testing.T) {
 	}
 }
 
-// The reserved-namespace rule is engine-agnostic: it fires even on an eval
-// Recipe, which the eval carve-out would otherwise short-circuit past.
-func TestValidateRecipe_OutputLabels_EvalReserved_Fails(t *testing.T) {
+// The reserved-namespace rule is engine-agnostic and runs ahead of the shape
+// rules: a Recipe declaring no rendering block is still told about the reserved
+// key first.
+func TestValidateRecipe_OutputLabels_ReservedReportedBeforeInputKinds(t *testing.T) {
 	t.Parallel()
-	r := newRecipe("eval")
+	r := newRecipe("helm")
 	r.Spec.OutputLabels = map[string]string{"aggrega.ai/x": "y"}
 	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
-		t.Fatalf("expected reserved-namespace reject on eval Recipe, got %v", err)
+		t.Fatalf("expected reserved-namespace reject ahead of the input-kinds rule, got %v", err)
 	}
 }
 
@@ -443,14 +418,14 @@ func TestValidateRecipe_OutputComponentLabels_FirstReportedIsAuthorOrder(t *test
 	}
 }
 
-// Engine-agnostic, matching the literal block: the rule fires on an eval
-// Recipe, which the eval carve-out would otherwise short-circuit past.
-func TestValidateRecipe_OutputComponentLabels_EvalReserved_Fails(t *testing.T) {
+// Engine-agnostic and ahead of the shape rules, matching the literal block: a
+// Recipe declaring no rendering block is still told about the reserved key first.
+func TestValidateRecipe_OutputComponentLabels_ReservedReportedBeforeInputKinds(t *testing.T) {
 	t.Parallel()
-	r := newRecipe("eval")
+	r := newRecipe("helm")
 	r.Spec.OutputComponentLabels = []string{"aggrega.ai/x"}
 	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
-		t.Fatalf("expected reserved-namespace reject on eval Recipe, got %v", err)
+		t.Fatalf("expected reserved-namespace reject ahead of the input-kinds rule, got %v", err)
 	}
 }
 

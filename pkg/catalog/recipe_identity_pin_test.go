@@ -14,11 +14,13 @@ import (
 // and never renames it. Both catalog backings are held to it, because a mapping
 // resolves through whichever one the surface reading it holds.
 
-// capabilityRecipeYAML builds a loadable Recipe binding the given capability. The
-// eval capability needs no input kind, which is enough for a resolution-only test.
+// capabilityRecipeYAML builds a loadable Recipe binding the given capability,
+// declaring one artifact entry — the least a Recipe declares to pass load
+// validation, which is enough for a resolution-only test.
 func capabilityRecipeYAML(name, capability string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  capability: \"" + capability + "\"\n  implements: core/a\n"
+		"\n  version: 1.0.0\nspec:\n  capability: \"" + capability + "\"\n  implements: core/a\n" +
+		"  artifacts:\n    probe.txt: \"probe\"\n"
 }
 
 func capabilityFeatureRecipeYAML(name, capability string) string {
@@ -34,7 +36,7 @@ func capabilityFeatureRecipeYAML(name, capability string) string {
 // identity the catalog holds, and is the negative row beside the controls.
 func TestAPinnedCapabilityIsNoPartOfTheIdentity(t *testing.T) {
 	t.Parallel()
-	const pinned = "eval:1.2.3"
+	const pinned = "probe:1.2.3"
 	dir := t.TempDir()
 	writeFixture(t, dir, "r.yaml", capabilityRecipeYAML("svc", pinned))
 	writeFixture(t, dir, "fr.yaml", capabilityFeatureRecipeYAML("frx", pinned))
@@ -80,11 +82,11 @@ func TestAPinnedCapabilityIsNoPartOfTheIdentity(t *testing.T) {
 			uri     string
 			resolve bool
 		}{
-			{"Recipe", b.recipe, "eval/svc:1.0.0", true},
-			{"Recipe", b.recipe, "eval/svc", true},
+			{"Recipe", b.recipe, "probe/svc:1.0.0", true},
+			{"Recipe", b.recipe, "probe/svc", true},
 			{"Recipe", b.recipe, "svc:1.0.0", true},
 			{"Recipe", b.recipe, pinned + "/svc:1.0.0", false},
-			{"FeatureRecipe", b.featureRecipe, "eval/frx:1.0.0", true},
+			{"FeatureRecipe", b.featureRecipe, "probe/frx:1.0.0", true},
 			{"FeatureRecipe", b.featureRecipe, "frx", true},
 			{"FeatureRecipe", b.featureRecipe, pinned + "/frx:1.0.0", false},
 		} {
@@ -113,8 +115,8 @@ func TestAPinnedAndAnUnpinnedRecipeOfOneNameAreOneIdentity(t *testing.T) {
 	t.Run("one name: one identity", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		writeFixture(t, dir, "a.yaml", capabilityRecipeYAML("svc", "eval"))
-		writeFixture(t, dir, "b.yaml", capabilityRecipeYAML("svc", "eval:1.2.3"))
+		writeFixture(t, dir, "a.yaml", capabilityRecipeYAML("svc", "probe"))
+		writeFixture(t, dir, "b.yaml", capabilityRecipeYAML("svc", "probe:1.2.3"))
 		if _, err := LoadAll("", dir); !errors.Is(err, ErrDuplicateEntityIdentity()) {
 			t.Errorf("eager load: want the duplicate-identity refusal; got %v", err)
 		}
@@ -128,8 +130,8 @@ func TestAPinnedAndAnUnpinnedRecipeOfOneNameAreOneIdentity(t *testing.T) {
 	t.Run("control: two names, two identities", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		writeFixture(t, dir, "a.yaml", capabilityRecipeYAML("svc", "eval"))
-		writeFixture(t, dir, "b.yaml", capabilityRecipeYAML("svc-pinned", "eval:1.2.3"))
+		writeFixture(t, dir, "a.yaml", capabilityRecipeYAML("svc", "probe"))
+		writeFixture(t, dir, "b.yaml", capabilityRecipeYAML("svc-pinned", "probe:1.2.3"))
 		eager, err := LoadAll("", dir)
 		if err != nil {
 			t.Fatalf("eager load: %v", err)

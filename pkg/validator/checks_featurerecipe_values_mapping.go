@@ -20,13 +20,7 @@ import (
 // catalog reached, or anything normalized: both are answers about keys the author
 // wrote in the file being loaded, so the rule runs as the document arrives.
 //
-// It carries no capability gate, and the absence is deliberate rather than an
-// omission. An eval FeatureRecipe declaring an overlay is already refused by the
-// eval rule — the overlay is one of the fields that rule forbids — and the load
-// invokes that rule first and returns the first failure. So the only eval
-// documents reaching this one declare no overlay, and this rule returns at its
-// first condition. A gate here would restate, as a second copy, a precedence the
-// caller's ordering already settles.
+// It carries no capability gate: the pairing holds on every capability.
 //
 // It is invoked once per document rather than once per anything inside it. The
 // violation is a property of the pair of keys rather than of either one, so there

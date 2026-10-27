@@ -101,12 +101,12 @@ func TestTheMappingCheckAsksNoRegistryForAnAncestor(t *testing.T) {
 			if tc.baseHeldLocal {
 				writeCatalogEntity(t, dir, "component/test/base/1.0.0/component.yaml", baseComponentDoc)
 			}
-			writeCatalogEntity(t, dir, "recipe/eval/base-recipe/1.0.0/recipe.yaml", recipeYAML("base-recipe", "test/base"))
+			writeCatalogEntity(t, dir, "recipe/probe/base-recipe/1.0.0/recipe.yaml", recipeYAML("base-recipe", "test/base"))
 
 			puller := &questionRecordingPuller{}
 			view := NewLazyLookup(ws, ".aggrega/cache", []string{dir}, puller)
 			mapping := &types.MappingTier{}
-			mapping.Type.Set("test/child:1.0.0", "eval/base-recipe:1.0.0")
+			mapping.Type.Set("test/child:1.0.0", "probe/base-recipe:1.0.0")
 			manifest := &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: mapping}}}
 
 			err := view.AssertManifestImplementsConsistency(manifest, "manifest.yaml")
@@ -134,13 +134,13 @@ func TestTheMappingCheckAsksNoRegistryForAnAncestor(t *testing.T) {
 func TestTheClosureProbeAsksNoRegistryForALocalEntity(t *testing.T) {
 	ws := t.TempDir()
 	dir := filepath.Join(ws, "catalog")
-	writeCatalogEntity(t, dir, "recipe/eval/svc/1.0.0/recipe.yaml", recipeYAML("svc", "test/svc"))
+	writeCatalogEntity(t, dir, "recipe/probe/svc/1.0.0/recipe.yaml", recipeYAML("svc", "test/svc"))
 
 	puller := &questionRecordingPuller{}
 	view := NewLazyLookup(ws, ".aggrega/cache", []string{dir}, puller)
 	lookup := view.ClosureLookup(puller, ws, ".aggrega/cache", nil, nil, nil)
 
-	res, err := lookup.ResolveCatalogEntity(context.Background(), "eval/svc:1.0.0", "recipe")
+	res, err := lookup.ResolveCatalogEntity(context.Background(), "probe/svc:1.0.0", "recipe")
 	if err != nil {
 		t.Fatalf("resolve the local Recipe: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestTheRefusalRecordTellsAShadowFromARefusal(t *testing.T) {
 		writeCatalogEntity(t, filepath.Join(ws, d), "recipe.yaml", recipeYAML("svc", "test/svc"))
 	}
 	view := NewLazyLookup(ws, ".aggrega/cache", []string{filepath.Join(ws, "a"), filepath.Join(ws, "b")}, nil)
-	if _, ok := view.RecipeByURI("eval/svc:1.0.0"); !ok {
+	if _, ok := view.RecipeByURI("probe/svc:1.0.0"); !ok {
 		t.Error("the shadowed identity must still be held, by the earlier directory's file")
 	}
 }

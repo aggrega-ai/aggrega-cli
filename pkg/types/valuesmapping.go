@@ -87,8 +87,7 @@ func (v ValuesMapping) HasOCIPrefix() bool {
 }
 
 // IsEmpty reports whether neither mode is populated. The validator
-// uses this to enforce the "at-least-one-input-kind" gate on
-// non-eval Recipes.
+// uses this to enforce the "at-least-one-input-kind" gate on Recipes.
 func (v ValuesMapping) IsEmpty() bool {
 	return v.Inline == "" && v.Import == ""
 }

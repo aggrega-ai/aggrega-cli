@@ -1202,22 +1202,6 @@ type DocumentView interface {
 	// Keyed by document; read from types.RecipeSpec.Artifacts.
 	RecipeArtifactsDeclared(document string) bool
 
-	// RecipeDeclaredCapability is the capability the presented Recipe
-	// declares, as the author wrote it.
-	//
-	// It carries the declaration's own text: the bare capability name where
-	// the author pinned no version, and the name together with the pin where
-	// they did. Nothing here splits the two apart. Which plugin version a pin
-	// selects is settled where the binding is resolved, and a fact answering
-	// that here would be answering about a provider under a name that promises
-	// an answer about the document.
-	//
-	// A Recipe declaring no capability answers with the empty string, which is
-	// the authored state rather than a convenience over a missing one.
-	//
-	// Keyed by document; read from types.RecipeSpec.Capability.
-	RecipeDeclaredCapability(document string) string
-
 	// RecipeAuthoredSourceKind is the source kind the presented Recipe's
 	// structured source names under its `kind:` key, as the author wrote it,
 	// and whether the source names one at all.
@@ -1365,52 +1349,6 @@ type DocumentView interface {
 	//
 	// Keyed by document; read from types.FeatureRecipeSpec.ValuesMapping.
 	FeatureRecipeValuesMappingDeclared(document string) bool
-
-	// FeatureRecipeWorkloadDeclared reports whether the presented
-	// FeatureRecipe declares a workload body.
-	//
-	// It answers whether the author wrote the block at all, in any of the
-	// forms the block accepts — an inline template, a file import, a library
-	// import — and never what the body synthesizes to.
-	//
-	// Whether the bound provider can synthesize a workload at all is a later
-	// question and a different one, settled once the binding is resolved. A
-	// fact answering it here would be answering about a provider under a name
-	// that promises an answer about the document.
-	//
-	// Keyed by document; read from types.FeatureRecipeSpec.Workload.
-	FeatureRecipeWorkloadDeclared(document string) bool
-
-	// FeatureRecipeArtifactsDeclared reports whether the presented
-	// FeatureRecipe declares any artifact entry.
-	//
-	// It answers whether the block carries an entry rather than how many,
-	// because the rules over a FeatureRecipe's authored surface ask whether
-	// this one is present at all and would treat every count above zero alike.
-	// A count is also a different fact with a different life: an entry
-	// importing a bundle expands into one output per file once it is resolved,
-	// so a number the authored document carries is not the number of outputs.
-	// Nothing here looks inside an entry.
-	//
-	// Keyed by document; read from types.FeatureRecipeSpec.Artifacts.
-	FeatureRecipeArtifactsDeclared(document string) bool
-
-	// FeatureRecipeDeclaredCapability is the capability the presented
-	// FeatureRecipe declares, as the author wrote it.
-	//
-	// It carries the declaration's own text: the bare capability name where
-	// the author pinned no version, and the name together with the pin where
-	// they did. Nothing here splits the two apart. Which plugin version a pin
-	// selects is settled where the binding is resolved, and a fact answering
-	// that here would be answering about a provider under a name that promises
-	// an answer about the document.
-	//
-	// A FeatureRecipe declaring no capability answers with the empty string,
-	// which is the authored state rather than a convenience over a missing
-	// one.
-	//
-	// Keyed by document; read from types.FeatureRecipeSpec.Capability.
-	FeatureRecipeDeclaredCapability(document string) string
 
 	// FeatureRecipeAuthoredSourceKind is the source kind the presented
 	// FeatureRecipe's structured source names under its `kind:` key, as the

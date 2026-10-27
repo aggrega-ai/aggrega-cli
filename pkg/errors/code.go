@@ -918,6 +918,12 @@ var retiredShortCodes = []retirement{
 	{"E0166", "It named the file a Release's `parameters: { $import: … }` points at when that file " +
 		"could not be read or its bytes did not parse; a file that yields no document is one " +
 		"condition wherever the path was written, and its code is `E0175`."},
+	{"E0203", "It named a FeatureRecipe on the `eval` capability that declared a source, a values " +
+		"overlay, a workload or artifacts; that capability was withdrawn, and nothing reports this " +
+		"state now."},
+	{"E0206", "It named a Recipe on the `eval` capability that declared a source, a workload, " +
+		"artifacts or a values overlay; that capability was withdrawn, and a Recipe declaring none of " +
+		"those is refused on every capability under `E0210`."},
 	{"E0217", "It named a schema-validation failure that could not be reported against a particular " +
 		"field, and no build reported it before the condition was withdrawn."},
 	{"E0219", "It named a cyclic `extends` chain, reported by a second chain walk the schema-merge " +

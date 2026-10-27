@@ -13,9 +13,9 @@ import (
 )
 
 // recipeDocumentView presents one authored Recipe to a check as named facts:
-// the capability the document declares, whether it declares a values overlay, a
-// source pointer, a workload body or artifact entries, and the keys each of its
-// two output-label blocks declares.
+// whether it declares a values overlay, a source pointer, a workload body or
+// artifact entries, the kind its structured source names, and the keys each of
+// its two output-label blocks declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -63,9 +63,6 @@ type recipeDocumentView struct {
 
 	// artifacts is whether the document declares any artifact entry.
 	artifacts bool
-
-	// capability is the capability the document declares, as authored.
-	capability string
 
 	// sourceKind is the kind the document's structured source names, and
 	// sourceKindWritten whether it names one.
@@ -123,12 +120,6 @@ func authoredOutputComponentLabelKeys(block []string) []string {
 // exactly one producer in this package, and routing the presentation through
 // those producers is what keeps each fact single-valued. A caller passing its own
 // answers could pass ones read from a different document, or read differently.
-//
-// The capability is carried as authored and is not compared against anything
-// here. A view presents what the document says; which capability a rule cares
-// about is the rule's own business, and a presentation that answered "is this an
-// eval Recipe" would be presenting one rule's predicate as though it were a
-// property of the file.
 func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 	kind, written := authoredSourceKind(r.Spec.Source)
 	return recipeDocumentView{
@@ -137,7 +128,6 @@ func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 		source:                   !sourceIsEmpty(r.Spec.Source),
 		workload:                 !r.Spec.Workload.IsEmpty(),
 		artifacts:                r.Spec.Artifacts.Len() > 0,
-		capability:               r.Spec.Capability,
 		sourceKind:               kind,
 		sourceKindWritten:        written,
 		outputLabelKeys:          authoredOutputLabelKeys(r.Spec.OutputLabels),
@@ -199,13 +189,6 @@ func (v recipeDocumentView) RecipeWorkloadDeclared(document string) bool {
 func (v recipeDocumentView) RecipeArtifactsDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeArtifactsDeclared")
 	return v.artifacts
-}
-
-// RecipeDeclaredCapability is the capability the presented Recipe declares, as
-// the author wrote it.
-func (v recipeDocumentView) RecipeDeclaredCapability(document string) string {
-	v.refuseOtherDocument(document, "RecipeDeclaredCapability")
-	return v.capability
 }
 
 // RecipeAuthoredSourceKind is the kind the presented Recipe's structured source

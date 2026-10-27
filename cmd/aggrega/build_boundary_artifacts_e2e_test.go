@@ -215,7 +215,6 @@ func TestValidate_TheBoundaryBlockNegativeCorpus(t *testing.T) {
 		return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
 	}
 	const artifactsOnly = "  capability: terraform\n  implements: server\n  artifacts:\n    main.tf: \"# main\"\n"
-	const evalSpec = "  capability: eval\n  implements: server\n  provides:\n    host: \"x\"\n"
 
 	for _, tc := range []struct {
 		name, document string
@@ -229,8 +228,6 @@ func TestValidate_TheBoundaryBlockNegativeCorpus(t *testing.T) {
 			[]string{"spec.boundary.artifacts"}},
 		{"a key naming a path rather than a file", recipe(artifactsOnly + "  boundary:\n    artifacts:\n      ../providers.tf: \"# x\"\n"),
 			[]string{"spec.boundary.artifacts", "../providers.tf"}},
-		{"an eval Recipe carrying the block", recipe(evalSpec + "  boundary:\n    artifacts:\n      a.tf: \"# a\"\n"),
-			[]string{"spec.boundary: value matches a shape that is not allowed here"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

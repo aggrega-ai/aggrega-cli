@@ -256,7 +256,7 @@ func TestVerifyRecipeResolution_MalformedPin(t *testing.T) {
 		}}}
 	}
 
-	if err := c.VerifyRecipeResolution(manifestFor("eval/present:1.0.0", "eval/cred:1.0.0"), graph); err != nil {
+	if err := c.VerifyRecipeResolution(manifestFor("probe/present:1.0.0", "probe/cred:1.0.0"), graph); err != nil {
 		t.Fatalf("control: pins the catalog satisfies must resolve cleanly; got %v", err)
 	}
 
@@ -268,10 +268,10 @@ func TestVerifyRecipeResolution_MalformedPin(t *testing.T) {
 		featURI     string
 		wantFeature bool
 	}{
-		{"a feature pin whose caret range does not parse", "eval/present:1.0.0", "eval/cred:^garbage", true},
-		{"a feature pin that is not a semantic version", "eval/present:1.0.0", "eval/cred:1.x", true},
-		{"a component pin whose caret range does not parse", "eval/present:^garbage", "eval/cred:1.0.0", false},
-		{"a component pin that is not a semantic version", "eval/present:1.x", "eval/cred:1.0.0", false},
+		{"a feature pin whose caret range does not parse", "probe/present:1.0.0", "probe/cred:^garbage", true},
+		{"a feature pin that is not a semantic version", "probe/present:1.0.0", "probe/cred:1.x", true},
+		{"a component pin whose caret range does not parse", "probe/present:^garbage", "probe/cred:1.0.0", false},
+		{"a component pin that is not a semantic version", "probe/present:1.x", "probe/cred:1.0.0", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -303,7 +303,7 @@ func TestVerifyRecipeResolution_MalformedPin(t *testing.T) {
 
 	t.Run("well-formed pins no version satisfies", func(t *testing.T) {
 		t.Parallel()
-		findings := c.ResolutionFindings(manifestFor("eval/present:9.9.9", "eval/cred:9.9.9"), graph)
+		findings := c.ResolutionFindings(manifestFor("probe/present:9.9.9", "probe/cred:9.9.9"), graph)
 		if len(findings) != 1 {
 			t.Fatalf("want the feature arm's finding alone, got %d: %v", len(findings), findings)
 		}

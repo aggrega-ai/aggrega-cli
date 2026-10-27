@@ -12,14 +12,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
-// The two rules over a FeatureRecipe's authored surface are gated on two
-// conditions between them — the capability the document declares, and which of
-// the four authored blocks it declares — so what they specify is a grid rather
-// than two lists. Testing each condition on its own would state the grid's
-// margins and leave its interior unsaid, and the interior is where the pair
-// overlaps: a document declaring an overlay with no source satisfies both rules'
-// conditions at once, and which of the two refuses it is a contract rather than
-// an accident.
+// The rules over a FeatureRecipe's authored surface read which of the authored
+// blocks the document declares, and nothing about the capability it binds. A
+// FeatureRecipe owes no rendering block at all — a pure-wiring one is valid — and
+// the one shape it may not take is an overlay with no source to overlay.
 
 // featureRecipeWithSource returns fr carrying a source pointer.
 func featureRecipeWithSource(fr *types.FeatureRecipe) *types.FeatureRecipe {
@@ -52,20 +48,17 @@ func featureRecipeWithInject(fr *types.FeatureRecipe) *types.FeatureRecipe {
 	return fr
 }
 
-// TestValidateFeatureRecipe_ShapeSurface_Grid drives both rules over the cells of
-// the pair of conditions that gate them, rather than over each condition alone.
+// TestValidateFeatureRecipe_ShapeSurface_Grid drives the shape rules over the
+// blocks a FeatureRecipe may declare.
 //
-// The cells that carry the weight each fail differently if a gate is dropped. A
-// FeatureRecipe declaring no block at all must be accepted whatever its
+// A FeatureRecipe declaring no block at all must be accepted whatever its
 // capability — there is deliberately no at-least-one-input-kind rule on this
-// kind, and a row asserting it is what would catch one being added. An eval
-// FeatureRecipe declaring any render block must be refused under the eval
-// condition. A FeatureRecipe on any other capability declaring the same blocks
-// must not reach that verdict, which is what the capability gate on the eval rule
-// buys. And the overlay-without-source fault must be refused under the
-// values-mapping condition on every capability the eval rule does not cover.
+// kind, and a row asserting it is what would catch one being added. Any render
+// block is accepted on any capability, `eval` included: no capability name forbids
+// one. And the overlay-without-source fault must be refused under the
+// values-mapping condition on every capability.
 //
-// Each row asserts a condition identity rather than "some error", because the two
+// Each row asserts a condition identity rather than "some error", because the
 // rules run in sequence over one document: a row asserting only that something
 // was refused keeps passing once a different rule starts refusing it first, and
 // stops covering the rule it was written for without saying so.
@@ -86,43 +79,19 @@ func TestValidateFeatureRecipe_ShapeSurface_Grid(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "an eval FeatureRecipe declaring no block at all is accepted",
+			name: "a FeatureRecipe binding the capability eval and declaring no block at all is accepted",
 			doc:  func() *types.FeatureRecipe { return newFeatureRecipe("eval") },
 			want: nil,
 		},
 		{
-			name: "an eval FeatureRecipe declaring only an inject mapping is accepted",
-			doc:  func() *types.FeatureRecipe { return featureRecipeWithInject(newFeatureRecipe("eval")) },
+			name: "a FeatureRecipe binding the capability eval and declaring artifacts is accepted",
+			doc:  func() *types.FeatureRecipe { return featureRecipeWithArtifacts(newFeatureRecipe("eval")) },
 			want: nil,
 		},
 		{
-			name: "an eval FeatureRecipe declaring a source is refused under the eval condition",
-			doc:  func() *types.FeatureRecipe { return featureRecipeWithSource(newFeatureRecipe("eval")) },
-			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
-		},
-		{
-			name: "an eval FeatureRecipe declaring a workload is refused under the eval condition",
-			doc:  func() *types.FeatureRecipe { return featureRecipeWithWorkload(newFeatureRecipe("eval")) },
-			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
-		},
-		{
-			name: "an eval FeatureRecipe declaring artifacts is refused under the eval condition",
-			doc:  func() *types.FeatureRecipe { return featureRecipeWithArtifacts(newFeatureRecipe("eval")) },
-			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
-		},
-		{
-			// The document also violates the values-mapping rule — an overlay
-			// with no source — so the row pins which of the two refuses it.
-			name: "an eval FeatureRecipe declaring a values overlay is refused under the eval condition rather than the values-mapping one",
-			doc:  func() *types.FeatureRecipe { return featureRecipeWithValuesMapping(newFeatureRecipe("eval")) },
-			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
-		},
-		{
-			name: "an eval FeatureRecipe declaring a source alongside its overlay is still refused under the eval condition",
-			doc: func() *types.FeatureRecipe {
-				return featureRecipeWithValuesMapping(featureRecipeWithSource(newFeatureRecipe("eval")))
-			},
-			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
+			name: "a FeatureRecipe declaring only an inject mapping is accepted",
+			doc:  func() *types.FeatureRecipe { return featureRecipeWithInject(newFeatureRecipe("helm")) },
+			want: nil,
 		},
 		{
 			name: "a FeatureRecipe on another capability declaring a source is accepted",
@@ -154,16 +123,9 @@ func TestValidateFeatureRecipe_ShapeSurface_Grid(t *testing.T) {
 			want: validator.ErrFeatureRecipeValuesMappingRequiresSource(),
 		},
 		{
-			// The eval rule reads the capability through the projection that
-			// removes a version pin, so a pinned declaration names the same
-			// capability as the bare one and the rule reaches it. This document
-			// also violates the values-mapping rule — an overlay with no source —
-			// so the row carries the pinned form of the precedence the bare row
-			// above pins: the pin moves neither the verdict nor which of the two
-			// rules reports it.
-			name: "a FeatureRecipe pinning the eval capability is refused under the eval condition, exactly as the bare form is",
-			doc:  func() *types.FeatureRecipe { return featureRecipeWithValuesMapping(newFeatureRecipe("eval:^1.0.0")) },
-			want: validator.ErrFeatureRecipeEvalProviderConstraint(),
+			name: "a FeatureRecipe binding the capability eval and declaring an overlay with no source is refused under the values-mapping condition",
+			doc:  func() *types.FeatureRecipe { return featureRecipeWithValuesMapping(newFeatureRecipe("eval")) },
+			want: validator.ErrFeatureRecipeValuesMappingRequiresSource(),
 		},
 		{
 			name: "a FeatureRecipe declaring no capability at all is refused under the values-mapping condition",
@@ -191,138 +153,11 @@ func TestValidateFeatureRecipe_ShapeSurface_Grid(t *testing.T) {
 	}
 }
 
-// TestValidateFeatureRecipe_EvalRuleIsSettledBeforeTheValuesMappingRule pins the
-// precedence between the two rules on the one document both of them object to.
-//
-// An eval FeatureRecipe declaring an overlay and no source satisfies both
-// conditions: the overlay is a render block the eval rule forbids, and it has no
-// source for the values-mapping rule to find. The eval finding is the one an
-// author needs — the overlay is forbidden on that capability whatever else the
-// document says, so being told to add a source would send them further from a
-// document that loads.
-//
-// The precedence is held by the order the two rules are invoked in and by the
-// caller returning the first failure, so nothing in either declaration states it
-// and nothing else in the tree asserts it. This test is what turns an inverted
-// invocation order into a red rather than a quietly different diagnostic. It
-// asserts the condition that must NOT be reported as well as the one that must,
-// because an inversion produces a refusal either way and a test checking only
-// that something was refused would pass through it.
-func TestValidateFeatureRecipe_EvalRuleIsSettledBeforeTheValuesMappingRule(t *testing.T) {
-	t.Parallel()
-
-	err := validator.ValidateFeatureRecipe(
-		featureRecipeWithValuesMapping(newFeatureRecipe("eval")), tFile)
-	if err == nil {
-		t.Fatal("an eval FeatureRecipe declaring a values overlay must be refused; got nil")
-	}
-	if !errors.Is(err, validator.ErrFeatureRecipeEvalProviderConstraint()) {
-		t.Fatalf("the refusal must carry the eval-provider condition; got: %v", err)
-	}
-	if errors.Is(err, validator.ErrFeatureRecipeValuesMappingRequiresSource()) {
-		t.Fatalf("the values-mapping condition must not be the one reported here; got: %v", err)
-	}
-}
-
-// TestValidateFeatureRecipe_EvalRuleNamesTheBlocksInThisKindsOwnOrder pins the
-// order the eval refusal names the offending blocks in, on both authored kinds.
-//
-// The order is part of the contract rather than an artifact of how each rule is
-// written: identical input produces identical output, so a document declaring
-// several blocks names them the same way on every run and in every reader's diff,
-// and each kind's reference entry quotes its own list.
-//
-// The two kinds order differently, and one test drives both because the failure
-// worth catching is a unification. Someone reading the two rules side by side and
-// "fixing" the apparent inconsistency would align one order to the other, and a
-// test that knew only one kind's order would still pass.
-func TestValidateFeatureRecipe_EvalRuleNamesTheBlocksInThisKindsOwnOrder(t *testing.T) {
-	t.Parallel()
-
-	// Asserted as the message's tail rather than as a substring anywhere in it:
-	// the advice closes the diagnostic, so a suffix match also pins that nothing
-	// follows the list and that no block was appended after it.
-	const wantFeatureRecipe = "forbidden fields declared: source, valuesMapping, workload, artifacts"
-	const wantRecipe = "forbidden fields declared: source, workload, artifacts, valuesMapping"
-
-	frErr := validator.ValidateFeatureRecipe(
-		featureRecipeWithValuesMapping(
-			featureRecipeWithArtifacts(
-				featureRecipeWithWorkload(featureRecipeWithSource(newFeatureRecipe("eval"))))),
-		tFile)
-	if frErr == nil {
-		t.Fatal("an eval FeatureRecipe declaring every render block must be refused; got nil")
-	}
-	if msg := frErr.Error(); !strings.HasSuffix(msg, wantFeatureRecipe) {
-		t.Errorf("the FeatureRecipe diagnostic must close by naming the blocks as %q; got: %s",
-			wantFeatureRecipe, msg)
-	}
-
-	rErr := validator.ValidateRecipe(
-		withValuesMapping(withArtifacts(withWorkload(withSource(newRecipe("eval"))))), tFile)
-	if rErr == nil {
-		t.Fatal("an eval Recipe declaring every input-kind block must be refused; got nil")
-	}
-	if msg := rErr.Error(); !strings.HasSuffix(msg, wantRecipe) {
-		t.Errorf("the Recipe diagnostic must close by naming the blocks as %q; got: %s",
-			wantRecipe, msg)
-	}
-}
-
-// TestValidateFeatureRecipe_EvalRuleNamesOnlyTheBlocksTheDocumentDeclares asserts
-// the refusal reports the occurrence rather than the rule's whole field set.
-//
-// A FeatureRecipe declaring one block and being told four are forbidden has to
-// work out which of them it wrote, which is the difference between a diagnostic
-// and a restatement of the rule.
-func TestValidateFeatureRecipe_EvalRuleNamesOnlyTheBlocksTheDocumentDeclares(t *testing.T) {
-	t.Parallel()
-
-	err := validator.ValidateFeatureRecipe(featureRecipeWithWorkload(newFeatureRecipe("eval")), tFile)
-	if err == nil {
-		t.Fatal("an eval FeatureRecipe declaring a workload must be refused; got nil")
-	}
-	// The suffix match carries both halves at once: the one block the document
-	// declares is named, and nothing follows it — so a rule that reported its
-	// whole field set rather than the occurrence would fail here.
-	if msg := err.Error(); !strings.HasSuffix(msg, "forbidden fields declared: workload") {
-		t.Errorf("the diagnostic must close by naming the one block declared; got: %s", msg)
-	}
-}
-
-// TestValidateFeatureRecipe_EvalRuleCarriesItsRegisteredSentenceAndPosition
-// asserts the refusal an author actually reads.
-//
-// The sentence is taken off the condition rather than restated here, so this
-// cannot pass against a second copy of the wording composed from the failure's
-// fields.
-func TestValidateFeatureRecipe_EvalRuleCarriesItsRegisteredSentenceAndPosition(t *testing.T) {
-	t.Parallel()
-
-	err := validator.ValidateFeatureRecipe(featureRecipeWithSource(newFeatureRecipe("eval")), tFile)
-	if err == nil {
-		t.Fatal("an eval FeatureRecipe declaring a source must be refused; got nil")
-	}
-	msg := err.Error()
-
-	if sentence := validator.ErrFeatureRecipeEvalProviderConstraint().Error(); !strings.HasPrefix(msg, sentence+" (") {
-		t.Errorf("the message must open with the registered sentence %q; got: %s", sentence, msg)
-	}
-	for _, want := range []string{
-		"FeatureRecipe " + tName + ":" + tVer,
-		"rule eval",
-		tFile,
-	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the diagnostic must carry %q; got: %s", want, msg)
-		}
-	}
-}
-
 // TestValidateFeatureRecipe_ValuesMappingRuleCarriesItsRemedyAndItsRegisteredSentence
-// asserts the same contract on the values-mapping refusal, whose rule identifier
-// differs and whose remedy is the only part of the message saying what to write
-// instead.
+// asserts the refusal an author actually reads: the registered sentence, the
+// rule identifier, the position, and the remedy — the only part of the message
+// saying what to write instead. The sentence is taken off the condition rather
+// than restated here, so this cannot pass against a second copy of the wording.
 func TestValidateFeatureRecipe_ValuesMappingRuleCarriesItsRemedyAndItsRegisteredSentence(t *testing.T) {
 	t.Parallel()
 

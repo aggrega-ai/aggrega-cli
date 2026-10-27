@@ -76,12 +76,11 @@ const (
 // what refuses them is the reading alone, and they carry no short code.
 //
 // A drafted Recipe with only its version filled is still refused by the gate,
-// and not for a placeholder: a Recipe whose capability is not `eval` has to
-// name at least one input — a source, a values mapping, a workload or
-// artifacts — and the draft leaves that choice to the author, because the
-// schema asks for it only conditionally. That finding reaches the author in the
-// gate's own words ahead of the placeholder list, and the refusal carries the
-// gate's condition.
+// and not for a placeholder: a Recipe has to name at least one input — a
+// source, a values mapping, a workload or artifacts — and the draft leaves that
+// choice to the author, because no one input suits every Recipe. That finding
+// reaches the author in the gate's own words ahead of the placeholder list, and
+// the refusal carries the gate's condition.
 func TestADraftedDocumentIsRefusedNamingEveryPlaceholder(t *testing.T) {
 	t.Parallel()
 	const (
@@ -89,7 +88,7 @@ func TestADraftedDocumentIsRefusedNamingEveryPlaceholder(t *testing.T) {
 		componentType = "7:5: metadata.labels.component.aggrega.ai/type takes one of: server, worker, task, function, stateful-server, resource"
 		frCapability  = "7:3: spec.capability takes what its schema describes: The explicit provider capability this recipe binds to (e.g., 'helm', 'terraform', 'compose') — the provider kind that renders it."
 		frImplements  = "8:3: spec.implements takes what its schema describes: Declares which catalog Feature type this recipe is able to implement"
-		rcCapability  = "7:3: spec.capability takes what its schema describes: The explicit provider capability this recipe binds to (e.g., 'helm', 'terraform', 'compose', 'eval') — the provider kind that renders it."
+		rcCapability  = "7:3: spec.capability takes what its schema describes: The explicit provider capability this recipe binds to (e.g., 'helm', 'terraform', 'compose') — the provider kind that renders it."
 		rcImplements  = "8:3: spec.implements takes what its schema describes: Declares which catalog component type this recipe is able to implement"
 		pluginType    = "6:3: metadata.pluginType takes one of: provider, linter, pipeline-step, governance, cli, parser, importer"
 	)

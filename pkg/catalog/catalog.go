@@ -255,7 +255,7 @@ type Catalog struct {
 // Recipe-side side effects. The Recipe dispatch arm runs validator.ValidateRecipe
 // at load time (load-time shape rules from chapter 16: valuesMapping ⇔
 // source pairing, workload mutex, at-least-one-input-kind, artifacts
-// basename collision, eval-provider input-kind ban) and rewrites a relative
+// basename collision) and rewrites a relative
 // string spec.source to an absolute path against the Recipe file's
 // directory so co-located charts stay resolvable when the consuming code
 // is run from a different working directory.
@@ -1426,7 +1426,7 @@ func resolveFeatureDocument(data []byte, path string, read schemaFileRead) (type
 // eager (catalog.Load, per file via indexFile) and lazy (LazyLookup recipe
 // enumeration) backings: full unmarshal, kind-check, the load-time shape rules
 // (validator.ValidateRecipe — valuesMapping ⇔ source pairing, at-least-one-
-// input-kind, eval-provider input-kind ban), and the relative-source /
+// input-kind), and the relative-source /
 // relative-artifact-$import path rewrites against the Recipe file's directory.
 // It is the SSOT for "what an authored Recipe resolves to" so the two backings
 // cannot drift. The cross-entity dup-identity check is a catalog-level concern

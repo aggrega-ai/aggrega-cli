@@ -59,24 +59,14 @@ func TestValidateFeatureRecipe_ValuesMapping_WithSource_Passes(t *testing.T) {
 	}
 }
 
-// eval provider forbids render input-kind fields; injectMapping (a Phase-A
-// delivery transform, not a rendering surface) remains allowed.
-func TestValidateFeatureRecipe_EvalProvider_RejectsRenderKinds(t *testing.T) {
+// No capability name forbids a render block: a FeatureRecipe binding `eval`
+// declaring a source is accepted like one on any other capability.
+func TestValidateFeatureRecipe_NoCapabilityForbidsARenderBlock(t *testing.T) {
 	t.Parallel()
 	fr := newFeatureRecipe("eval")
 	fr.Spec.Source = "./chart"
-	err := validator.ValidateFeatureRecipe(fr, tFile)
-	if !errors.Is(err, validator.ErrFeatureRecipeEvalProviderConstraint()) {
-		t.Fatalf("expected ErrFeatureRecipeEvalProviderConstraint, got %v", err)
-	}
-}
-
-func TestValidateFeatureRecipe_EvalProvider_InjectOnly_Passes(t *testing.T) {
-	t.Parallel()
-	fr := newFeatureRecipe("eval")
-	fr.Spec.InjectMapping = `{"env": {"X": "y"}}`
 	if err := validator.ValidateFeatureRecipe(fr, tFile); err != nil {
-		t.Fatalf("expected eval inject-only FeatureRecipe to pass, got %v", err)
+		t.Fatalf("expected a FeatureRecipe declaring a source to pass, got %v", err)
 	}
 }
 
