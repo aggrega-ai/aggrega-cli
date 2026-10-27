@@ -21,20 +21,20 @@ import (
 //   - release (ReleaseAnnotations) — the Release boundary annotations,
 //     already cascaded down to the per-node level by the resolver and
 //     surfaced via BoundaryInfra.Annotations. Authored by the Operator.
-//   - aggregate (AggregateAnnotations) — reserved. **Empty today.**
-//     The schema bans `annotations:` on Aggregate ComponentInstance
-//     blocks, so the Aggregate offers no per-instance annotation
-//     authoring surface for this bucket to draw from. The bucket exists
-//     in the return signature to keep the IRNode.AggregateAnnotations
-//     field populated symmetrically with the other two; if a future
-//     authoring surface (per-instance subsystem-style annotation
-//     cascading) is introduced, this is where its read would land.
-//     The inline comment in the body marks the future-extension point.
+//   - aggregate (AggregateAnnotations) — the Aggregate's subsystem
+//     annotations cascaded down onto the node, with the component
+//     instance's own annotations written over them, as flattening read
+//     it from the resolver for the document declaring the node and
+//     carried it on the topology node. Authored by the Developer.
+//
+// All three are the scalar projection: a structured annotation value
+// takes part in its cascade and is absent here.
 func buildAnnotationBuckets(
 	nodeID string,
 	compType string,
 	catalogLookup resolver.CatalogLookup,
 	boundaryInfra map[string]*resolver.BoundaryInfra,
+	aggregateAnnotations types.OrderedMap[string],
 ) (catalog, release, aggregate types.OrderedMap[string]) {
 	// Catalog annotations
 	if catalogLookup.Component != nil {
@@ -49,9 +49,10 @@ func buildAnnotationBuckets(
 		release = copyOrderedStringMap(bi.Annotations)
 	}
 
-	// Aggregate annotations: reserved for future use.
-	// The ComponentInstance type does not currently have an Annotations field.
-	// When it is added, populate here.
+	// Aggregate annotations (from the topology node, already cascaded)
+	if aggregateAnnotations.Len() > 0 {
+		aggregate = copyOrderedStringMap(aggregateAnnotations)
+	}
 
 	return catalog, release, aggregate
 }

@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: annotation-bucket-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: annotation-bucket-app
+  manifest: annotation-bucket-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      annotations:
+        example.org/zone: "z1"
+      components:
+        invoice: {}
+        payment: {}
+        posting: {}
+        lone: {}

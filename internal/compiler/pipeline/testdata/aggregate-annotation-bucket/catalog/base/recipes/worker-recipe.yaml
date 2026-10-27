@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: worker-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/worker
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    form: stateless
+    replicas: 1
+    containers:
+      main:
+        image: "{{ .values.image }}"
+        ports:
+          web: 8080
+        variables:
+          # Each reads one key of the node's aggregate annotation bucket, and
+          # "unset" where the bucket or the key is absent.
+          OWNER: '{{ optional (optional (default dict .context.annotations) "aggregate" dict) "team.example/owner" "unset" }}'
+          CENTER: '{{ optional (optional (default dict .context.annotations) "aggregate" dict) "cost.example/center" "unset" }}'
+          LIMITS: '{{ optional (optional (default dict .context.annotations) "aggregate" dict) "example.org/limits" "unset" }}'
+          ZONE: '{{ optional (optional (default dict .context.annotations) "release" dict) "example.org/zone" "unset" }}'

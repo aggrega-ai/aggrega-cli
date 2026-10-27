@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -378,6 +379,17 @@ func flattenAggregate(
 // lets the node map keep the last of them; the rule declared over the flattened
 // composition reads that record and reports the pair.
 func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile string, na types.NormalizedAggregate, params map[string]any) error {
+	// The Aggregate-side annotation cascade of this one document, read per node
+	// below rather than re-derived alongside the feature cascade: the resolver is
+	// its one home. It is keyed by the path inside the document, so the lookup
+	// drops the rootPath the walk's own paths hang beneath.
+	aggregateAnnotations := resolver.WireAggregateAnnotations(na)
+	annotationsOf := func(subsystemPath, name string) types.OrderedMap[string] {
+		if rootPath != "" {
+			subsystemPath = strings.TrimPrefix(subsystemPath, rootPath+".")
+		}
+		return aggregateAnnotations[resolver.AggregateAnnotationComponentPath(subsystemPath, name)]
+	}
 	return types.WalkInstanceTree(na.Aggregate().Spec.Subsystems, types.SubsystemTree(), rootPath, []scopeFeatureUses(nil),
 		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, []scopeFeatureUses]{
 			Path: types.JoinSubsystemPath,
@@ -425,6 +437,7 @@ func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile strin
 					Uses:                 comp.Uses,
 					ScopeFeatureUses:     scopeFeatures,
 					ResolvedParameters:   params,
+					AggregateAnnotations: annotationsOf(subsystemPath, name),
 					SubsystemPath:        subsystemPath,
 					SynthesizedSubsystem: synthesized,
 					SourceAggregate:      prefix,

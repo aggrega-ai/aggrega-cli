@@ -125,11 +125,11 @@ type StageAxes interface {
 // populated across two phases of Build, plus one upstream contribution:
 //
 //   - Phase 1 (flattenAggregate): InstanceID, ComponentType, Values,
-//     SelfInject, SubsystemPath, SourceAggregate. InstanceID is the dot-
-//     notation ID synthesized by qualifiedID (the dot is reserved as
-//     the compiler-internal path separator); SubsystemPath is the
-//     dotted path of the subsystem the component sits in (empty at
-//     top level); SourceAggregate is the dotted prefix of the
+//     SelfInject, SubsystemPath, SourceAggregate, AggregateAnnotations.
+//     InstanceID is the dot-notation ID synthesized by qualifiedID (the
+//     dot is reserved as the compiler-internal path separator);
+//     SubsystemPath is the dotted path of the subsystem the component
+//     sits in (empty at top level); SourceAggregate is the dotted prefix of the
 //     sub-aggregate that contributed the node (empty for root-aggregate
 //     components).
 //   - Phase 2 (Build steps 2 + 3): Labels populated from the catalog via
@@ -172,7 +172,16 @@ type TopologyNode struct {
 	// is the context the post-flatten conformance pass evaluates a sub-aggregate
 	// node's parameter-dependent predicates against, instead of the root context.
 	ResolvedParameters map[string]any
-	SubsystemPath      string
+	// AggregateAnnotations is the node's effective Aggregate-side annotation set:
+	// the annotations of every subsystem on its path, outer to inner, with the
+	// component's own written over them, as [resolver.WireAggregateAnnotations]
+	// computes it for the Aggregate document that declares the node — the root
+	// Aggregate, or the sub-aggregate a module node comes from. Only scalar values
+	// are present; a structured value takes part in the cascade and is left out of
+	// this projection, as it is of every annotation bucket a template reads. Empty
+	// when nothing on the node's path carries an annotation.
+	AggregateAnnotations types.OrderedMap[string]
+	SubsystemPath        string
 	// SynthesizedSubsystem is true when SubsystemPath names the compiler-
 	// synthesized `default` subsystem (an Aggregate authored with top-level
 	// components rather than named subsystems). Derived provenance carried onto

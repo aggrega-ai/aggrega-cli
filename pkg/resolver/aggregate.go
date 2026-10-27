@@ -4,6 +4,8 @@
 package resolver
 
 import (
+	"strings"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -24,6 +26,10 @@ import (
 // A component authored at the top-level `.spec.components` surface is reached
 // through the synthesized default subsystem and keys at
 // subsystems.default.components.<name>.
+//
+// [AggregateAnnotationComponentPath] composes the same key from the dotted
+// subsystem path a flattened node carries, so a node's entry is looked up rather
+// than recomputed.
 //
 // The returned map values are the renderer-facing Scalar-projection of
 // the post-flatten cascade: only scalar entries surface in the
@@ -62,12 +68,38 @@ func WireAggregateAnnotations(na types.NormalizedAggregate) map[string]types.Ord
 			// cascade, then project to the OrderedMap[string] downstream consumers use.
 			Visit: func(comp types.ComponentInstance, name, path string, _ bool, cascade types.OrderedMap[*types.AnnotationValue]) error {
 				compAnnotations := mergeAnnotationValueMaps(cascade, comp.Annotations)
-				perComponent[path+".components."+name] = types.ScalarOnly(compAnnotations)
+				perComponent[aggregateAnnotationComponentPath(path, name)] = types.ScalarOnly(compAnnotations)
 				return nil
 			},
 		})
 
 	return perComponent
+}
+
+// AggregateAnnotationComponentPath returns the key [WireAggregateAnnotations]
+// files one component's effective annotation set under, given the dotted
+// subsystem path [types.JoinSubsystemPath] spells — "a" for a top-level
+// subsystem, "a.b" for one nested inside it, the path a flattened node carries —
+// and the component's instance name.
+//
+// The key is composed segment by segment through the same composers the walk
+// uses, so a reader holding the dotted path and the walk cannot come to spell one
+// component two ways. Splitting on the dot is exact because a subsystem name
+// cannot contain one: the Aggregate schema admits only letters, digits, hyphens
+// and underscores in a subsystem name.
+func AggregateAnnotationComponentPath(subsystemPath, name string) string {
+	scope := ""
+	for _, segment := range strings.Split(subsystemPath, ".") {
+		scope = aggregateAnnotationScopePath(scope, segment, false)
+	}
+	return aggregateAnnotationComponentPath(scope, name)
+}
+
+// aggregateAnnotationComponentPath composes the canonical authoring path of one
+// component from the path of the subsystem scope holding it:
+// "<scope>.components.<name>".
+func aggregateAnnotationComponentPath(scopePath, name string) string {
+	return scopePath + ".components." + name
 }
 
 // aggregateAnnotationScopePath composes the canonical authoring path of one

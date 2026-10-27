@@ -1,0 +1,40 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: annotation-bucket-app
+  version: "1.0.0"
+spec:
+  subsystems:
+    billing:
+      annotations:
+        team.example/owner: "billing-squad"
+        example.org/limits:
+          cpu: "2"
+          memory: "4Gi"
+        cost.example/center: "CC-3421"
+      components:
+        invoice:
+          type: core/worker
+          values:
+            image: "corp/invoice:v2"
+        payment:
+          type: core/worker
+          annotations:
+            team.example/owner: "payments-squad"
+          values:
+            image: "corp/payment:v1"
+      subsystems:
+        ledger:
+          annotations:
+            cost.example/center: "CC-3422"
+          components:
+            posting:
+              type: core/worker
+              values:
+                image: "corp/posting:v1"
+    plain:
+      components:
+        lone:
+          type: core/worker
+          values:
+            image: "corp/lone:v1"

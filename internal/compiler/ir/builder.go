@@ -325,7 +325,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		}
 
 		catalogAnnotations, releaseAnnotations, aggregateAnnotations := buildAnnotationBuckets(
-			nodeID, topoNode.ComponentType, cfg.CatalogLookup, res.BoundaryInfra,
+			nodeID, topoNode.ComponentType, cfg.CatalogLookup, res.BoundaryInfra, topoNode.AggregateAnnotations,
 		)
 
 		irNode := types.IRNode{

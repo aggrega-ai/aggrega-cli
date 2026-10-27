@@ -30,10 +30,10 @@
 //     shape as any other attachment. The `feature.aggrega.ai/kind: secret`
 //     label is opaque metadata here; no branch in this package reads it.
 //   - Annotation buckets. The IR keeps three independent annotation
-//     buckets (catalog, release, aggregate). The aggregate bucket is
-//     permanently empty today because the schema bans annotations on
-//     Aggregate ComponentInstance blocks; buildAnnotationBuckets returns
-//     the empty third value to keep the IRNode shape symmetric.
+//     buckets (catalog, release, aggregate), never merged into one. The
+//     aggregate bucket is the Aggregate's subsystem annotations cascaded
+//     onto the node with the component's own over them, which flattening
+//     carries on the topology node; buildAnnotationBuckets copies it.
 //   - Type-match fatal halt. ErrFeatureTypeMismatch fires when the same
 //     attachment instance name carries divergent type URIs across
 //     authoring surfaces. With one bucket per node the instance-name key
