@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: assertion-number-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/sized-worker: sized-worker-recipe:1.0.0

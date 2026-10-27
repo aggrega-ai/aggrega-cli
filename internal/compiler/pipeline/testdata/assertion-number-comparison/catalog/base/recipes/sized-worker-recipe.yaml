@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: sized-worker-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/sized-worker
+  assertions:
+    at-most-ten: |
+      {{- if gt .values.replicas 10.5 -}}{{- fail "replicas must be at most 10" -}}{{- end -}}
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    form: stateless
+    replicas: 1
+    containers:
+      main:
+        image: "worker:1.0"
+        ports:
+          web: 8080

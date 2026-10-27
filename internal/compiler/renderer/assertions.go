@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -68,6 +69,10 @@ type AssertionRecipeContext struct {
 // through index does not help either: index of a map key the map does not
 // hold halts naming the key, on this surface as on every other.)
 //
+// Its eq, ne, lt, le, gt and ge compare numbers by value whatever kind carries
+// them, and refuse a number against text naming both kinds; the bindings and
+// their full behaviour are [gotmpl.AssertionComparisons].
+//
 // Returns nil on pass (template renders to empty/whitespace and no fail
 // call). Returns a non-nil error wrapping ErrAssertionFailed on
 // {{ fail "..." }} invocation. An execution that stops for any other reason
@@ -84,19 +89,22 @@ type AssertionRecipeContext struct {
 // never the value. The condition it reports is unchanged either way.
 func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.Keys) error {
 	// The assertion surface declares no narrowing: every field the context type
-	// defines is readable from an assertion. What it contributes is fail — the one
-	// function that exists only here, because an assertion is the only surface
-	// whose purpose is to halt the build rather than to produce text.
+	// defines is readable from an assertion. What it contributes is two things.
+	// fail is the one function that exists only here, because an assertion is the
+	// only surface whose purpose is to halt the build rather than to produce text.
+	// And its comparisons read every number as a number: an assertion's job is to
+	// judge authored values, which reach it as numbers the engine's own
+	// comparisons treat as text — see gotmpl.AssertionComparisons.
+	funcs := gotmpl.AssertionComparisons()
+	funcs["fail"] = func(msg string) (string, error) {
+		return "", fmt.Errorf("%w: %s", ErrAssertionFailed(), msg)
+	}
 	_, err := templateEval{
 		name:       name,
 		text:       body,
 		scope:      templateScope{}.with(ctx, withheld),
 		missingKey: missingKeyError,
-		extraFuncs: map[string]any{
-			"fail": func(msg string) (string, error) {
-				return "", fmt.Errorf("%w: %s", ErrAssertionFailed(), msg)
-			},
-		},
+		extraFuncs: funcs,
 		failed: func(stage templateEvalStage, err error) error {
 			if stage == stageParse {
 				return fmt.Errorf("assertion %q parse: %w", name, err)

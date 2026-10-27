@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/sized-worker
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "worker"
+spec:
+  schema:
+    values:
+      replicas: { type: integer, default: 3 }
+  assertions:
+    at-least-two: |
+      {{- if lt .values.replicas 2 -}}{{- fail "replicas must be at least 2" -}}{{- end -}}

@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-below
+  version: "1.0.0"
+spec:
+  components:
+    worker:
+      type: core/sized-worker
+      values:
+        replicas: 1

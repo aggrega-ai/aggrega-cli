@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: release-above
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: aggregate-above
+  manifest: assertion-number-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        worker: {}
