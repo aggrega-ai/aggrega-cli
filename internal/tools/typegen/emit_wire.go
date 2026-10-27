@@ -249,13 +249,13 @@ func collectWireEntriesOver(targets map[string]codecTarget, registry []plugintyp
 		t := targets[base]
 		registrations, err := t.wireRegistrations()
 		if err != nil {
-			return nil, fmt.Errorf("typegen: codec target %q %w", base, err)
+			return nil, fmt.Errorf("codec target %q %w", base, err)
 		}
 		if len(registrations) == 0 {
 			continue
 		}
 		if t.pkgPath == "" {
-			return nil, fmt.Errorf("typegen: codec target %q carries wire registrations but no pkgPath, "+
+			return nil, fmt.Errorf("codec target %q carries wire registrations but no pkgPath, "+
 				"so the registry cannot name the package its payload shapes are declared in", base)
 		}
 		for _, w := range registrations {
