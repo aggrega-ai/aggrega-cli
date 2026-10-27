@@ -27,6 +27,31 @@ type compileCtx struct {
 	libraries       map[string]types.SchemaLibrary
 	consumerFile    string
 	resolutionStack []string
+
+	// jsonSchema is set while the body of a `$jsonschema:` escape is compiled.
+	// There every mapping in a schema position is a JSON Schema node whose keys
+	// are keywords — never an inferred object, never a property list — and a
+	// keyword whose value is data rather than a schema carries that value as
+	// written. See dispatchMapping and emitEscape.
+	jsonSchema bool
+}
+
+// inJSONSchema reports whether ctx compiles the body of a `$jsonschema:`
+// escape. A nil ctx compiles compact form.
+func (ctx *compileCtx) inJSONSchema() bool {
+	return ctx != nil && ctx.jsonSchema
+}
+
+// escapeContext is the context an escape body compiles under: the caller's
+// library catalog, consumer file and resolution stack, read as JSON Schema.
+func escapeContext(ctx *compileCtx) *compileCtx {
+	out := &compileCtx{jsonSchema: true}
+	if ctx != nil {
+		out.libraries = ctx.libraries
+		out.consumerFile = ctx.consumerFile
+		out.resolutionStack = ctx.resolutionStack
+	}
+	return out
 }
 
 // CompileOption configures a Compile invocation. Options are functional;

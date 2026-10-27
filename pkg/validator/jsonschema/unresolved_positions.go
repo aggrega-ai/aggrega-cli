@@ -194,12 +194,7 @@ func (a *googleAdapter) checkUnresolvedPositions(instance any, rpt *Report) {
 
 	locations := schemaLocations(err)
 	for _, position := range a.unresolved {
-		deepest := ""
-		for _, location := range locations {
-			if isPointerUnder(location, position.pointer) && len(location) >= len(deepest) {
-				deepest = location
-			}
-		}
+		deepest := locationBeforeMove(locations, position.pointer)
 		if deepest == "" {
 			continue
 		}
@@ -209,6 +204,36 @@ func (a *googleAdapter) checkUnresolvedPositions(instance any, rpt *Report) {
 			instancePathFromPointer(deepest), a.subDefinition[position.instancePath]))
 		return
 	}
+}
+
+// locationBeforeMove returns the deepest location the chain reaches at or
+// beneath pointer before a reference moves it elsewhere, or "" where the chain
+// never reaches pointer.
+//
+// Each step of a chain is beneath the one before it until a reference is
+// followed, and then the next location is wherever the reference points. So
+// the walk starts at the first location at or beneath pointer and stops at the
+// first step that is not beneath its predecessor. Taking the longest location
+// beneath pointer instead would be wrong exactly where it matters: a reference
+// pointing at a sibling inside the same recorded position moves the chain to a
+// location that is still beneath pointer, and naming it reports the referenced
+// field — which may hold a valid value — rather than the field carrying the
+// reference.
+func locationBeforeMove(locations []string, pointer string) string {
+	deepest := ""
+	for _, location := range locations {
+		if deepest == "" {
+			if isPointerUnder(location, pointer) {
+				deepest = location
+			}
+			continue
+		}
+		if !isPointerUnder(location, deepest) {
+			break
+		}
+		deepest = location
+	}
+	return deepest
 }
 
 // sortUnresolvedPositions orders the recorded positions by their location

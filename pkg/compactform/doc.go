@@ -31,12 +31,21 @@
 // narrow type: or drop the constraint.
 //
 // The escape hatch $jsonschema: embeds full JSON Schema YAML at any node
-// for cases the compact form cannot express. It widens the STRUCTURE a node
+// for cases the compact form cannot express. Inside its body every mapping
+// in a schema position is a JSON Schema node — none is read as an inferred
+// object — and a keyword whose value is data (const, enum, default,
+// examples, …) carries that value as written. It widens the STRUCTURE a node
 // may carry and not the vocabulary: the body's keys are checked against the
 // same known-keyword set as any other node, so an unrecognised key inside an
 // escape is refused rather than carried through. The $mode: annotation
 // (compact / jsonschema) provides explicit dispatch for the rare edge
 // cases where content-shape dispatch is ambiguous.
+//
+// Keys beside an in-document $ref: are compact form, read as they would be
+// on the same node without the reference, and apply beside it. A
+// required: true on an entry of an explicit properties: block, as on a child
+// of an inferred object, adds the entry's name to the enclosing object's
+// required list.
 //
 // A cross-document $ref: naming a SchemaLibrary entry is resolved and
 // inlined at compile time, and every property the entry contributes

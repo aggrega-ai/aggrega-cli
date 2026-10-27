@@ -26,6 +26,9 @@ import (
 //
 // The `$mode:` annotation, when present, overrides the heuristic and
 // forces dispatch to either `compact` or `jsonschema`.
+//
+// Inside the body of a `$jsonschema:` escape the heuristic does not run: past
+// a nested escape and a reference, every mapping goes to the keyword emitter.
 func dispatchMapping(node *yaml.Node, path string, ctx *compileCtx) (any, error) {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil, &CompileError{
@@ -73,6 +76,15 @@ func dispatchMapping(node *yaml.Node, path string, ctx *compileCtx) (any, error)
 	// document refs (expanded against ctx.libraries at compile time).
 	if _, ok := keys["$ref"]; ok {
 		return emitReference(node, path, ctx)
+	}
+
+	// Inside a `$jsonschema:` escape body there is nothing to infer: a mapping
+	// in a schema position is a JSON Schema node, every key of it a keyword. The
+	// shape heuristics below exist to tell an inferred object from a constraint
+	// leaf, and applied here they read a node carrying only `$dynamicRef` (or
+	// `const`, or `minimum`) as an object declaring a property of that name.
+	if ctx.inJSONSchema() {
+		return emitCompactConstraint(node, path, ctx)
 	}
 
 	// Composition: allOf / anyOf / oneOf present at the top of this

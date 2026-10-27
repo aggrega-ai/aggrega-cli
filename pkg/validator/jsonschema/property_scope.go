@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"sort"
+	"strings"
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
 )
@@ -65,7 +68,103 @@ func NewUnderProperty(property string, schema, enclosing map[string]any) (Valida
 	if err := json.Unmarshal(wrapperJSON, libSchema); err != nil {
 		return nil, unreadableSchemaError(err)
 	}
+	if err := rootPointersAtProperty(libSchema, property, schema); err != nil {
+		return nil, err
+	}
 	return New(libSchema)
+}
+
+// rootPointersAtProperty makes every pointer written in the schema carried at
+// property resolve against that schema, the way a pointer into its definitions
+// already does.
+//
+// A pointer is read from the root of the document it sits in, and here that
+// root is the wrapper rather than the schema the author wrote — so, left as
+// written, "#/properties/primary" would look for a primary property on the
+// wrapper, which holds only property. Each such pointer is therefore re-rooted
+// at property's position: "#" becomes "#/properties/<property>" and
+// "#/properties/primary" becomes "#/properties/<property>/properties/primary".
+// A pointer into the definitions ("#/$defs/…", "#/definitions/…") is left as
+// written, because the definitions are hoisted onto the wrapper and resolve
+// there already, the enclosing scope's included. A reference by anchor name
+// carries no pointer and is left alone.
+//
+// The pointers re-rooted are those written in the schema itself and in the
+// definitions it declares, which are the ones hoisted from it. A re-rooted
+// pointer naming nothing is refused here, naming the pointer as the author
+// wrote it, since the resolution failure the library would raise names the
+// re-rooted spelling instead.
+func rootPointersAtProperty(doc *libschema.Schema, property string, schema map[string]any) error {
+	base := childPointer("", property)
+	var roots []*libschema.Schema
+	if carried := doc.Properties[property]; carried != nil {
+		roots = append(roots, carried)
+	}
+	for _, keyword := range definitionalKeywords {
+		own, _ := schema[keyword].(map[string]any)
+		hoisted := doc.Defs
+		if keyword == "definitions" {
+			hoisted = doc.Definitions
+		}
+		names := make([]string, 0, len(own))
+		for name := range own {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if def := hoisted[name]; def != nil {
+				roots = append(roots, def)
+			}
+		}
+	}
+	for _, root := range roots {
+		if err := rootPointersIn(root, doc, property, base); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rootPointersIn re-roots the pointers of s and of every sub-schema beneath it;
+// see rootPointersAtProperty.
+func rootPointersIn(s, doc *libschema.Schema, property, base string) error {
+	for _, ref := range []*string{&s.Ref, &s.DynamicRef} {
+		rooted, ok := pointerRootedAt(*ref, base)
+		if !ok {
+			continue
+		}
+		target, err := url.Parse(rooted)
+		if err != nil || schemaAtPointer(doc, target.Fragment) == nil {
+			return &AdapterError{
+				Keyword: "$ref",
+				Message: fmt.Sprintf("the reference %q names nothing in the %s schema it is written in: "+
+					"a pointer is read from the root of that schema, as %q is", *ref, property, localDefsPrefix+"<Name>"),
+				Err: ErrSchemaResolve(),
+			}
+		}
+		*ref = rooted
+	}
+	for _, child := range subSchemas(s) {
+		if err := rootPointersIn(child.schema, doc, property, base); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pointerRootedAt returns ref re-rooted at base when ref is a pointer from the
+// document root other than one into the definitions, and reports false for any
+// other reference.
+func pointerRootedAt(ref, base string) (string, bool) {
+	if ref != "#" && !strings.HasPrefix(ref, "#/") {
+		return "", false
+	}
+	for _, keyword := range definitionalKeywords {
+		if strings.HasPrefix(ref, "#/"+keyword+"/") {
+			return "", false
+		}
+	}
+	return "#" + base + strings.TrimPrefix(ref, "#"), true
 }
 
 // unreadableSchemaError restates a decode failure over a schema document in

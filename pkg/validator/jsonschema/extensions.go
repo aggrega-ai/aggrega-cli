@@ -56,6 +56,10 @@ import (
 //     authored).
 //     Subsequent x-aggrega-when: nodes nested under a falsy outer
 //     branch are skipped (consumed by the outer's filter).
+//     A when-node whose value is absent while its parent is present is
+//     evaluated only where a finding sits at its position — its parent
+//     requiring it — and on falsy that finding is dropped: a requirement
+//     on a gated node holds only while the predicate does.
 //
 //  3. Walk the pre-collected x-aggrega-validate: nodes. For each:
 //     - Navigate to the node's instance position.
@@ -168,15 +172,7 @@ nextWhen:
 			}
 		}
 
-		subInstance, ok := navigate(instance, wn.instancePath)
-		// If the instance does not extend to the when: node's position,
-		// the predicate cannot evaluate against a meaningful sub-instance.
-		// Skip the subtree: any walk-findings for this path were already
-		// emitted by the deterministic walk and remain accurate (the
-		// missing-required check handles "field not present").
-		if !ok {
-			continue
-		}
+		subInstance, present := navigate(instance, wn.instancePath)
 
 		// For x-aggrega-when:, the template's data scope is the parent
 		// of the when-node — the surrounding object where sibling
@@ -184,10 +180,23 @@ nextWhen:
 		// sibling of the when-bearing field. For a root-level
 		// when-node (empty instancePath), parent = instance.
 		parentInstance := instance
+		parentPresent := true
 		if len(wn.instancePath) > 0 {
 			parentPath := wn.instancePath[:len(wn.instancePath)-1]
-			if p, ok := navigate(instance, parentPath); ok {
-				parentInstance = p
+			parentInstance, parentPresent = navigate(instance, parentPath)
+		}
+
+		// A value absent from its position has no subtree to check, but its
+		// absence may have been reported at the position itself: the parent's
+		// required list names it, which is where a `required: true` written
+		// beside the `when:` compiles to. That requirement is one of the gated
+		// node's constraints, so it is withdrawn when the predicate is false,
+		// exactly as the node's other constraints are. The predicate is read
+		// from the parent, which is present, and only where a finding at the
+		// position is waiting on it.
+		if !present {
+			if !parentPresent || !hasFindingUnder(rpt.Findings, whenPathStr) {
+				continue
 			}
 		}
 
@@ -212,8 +221,9 @@ nextWhen:
 		// Falsy: drop the walk's findings under this subtree.
 		rpt.Findings = filterOutPath(rpt.Findings, whenPathStr)
 
-		// If else: was authored, validate against it.
-		if wn.elseResolved != nil {
+		// If else: was authored, validate against it. An absent value has
+		// nothing for it to check.
+		if wn.elseResolved != nil && present {
 			if err := wn.elseResolved.Validate(subInstance); err != nil {
 				start := len(rpt.Findings)
 				a.libraryErrorToFindingsWithPathPrefix(rpt, err, whenPathStr, subInstance)
@@ -850,6 +860,16 @@ func navigate(instance any, path []string) (any, bool) {
 		current = v
 	}
 	return current, true
+}
+
+// hasFindingUnder reports whether any finding sits at path or beneath it.
+func hasFindingUnder(findings []Finding, path string) bool {
+	for _, f := range findings {
+		if isUnderPath(f.FieldPath, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // filterOutPath returns the findings whose FieldPath is NOT under the

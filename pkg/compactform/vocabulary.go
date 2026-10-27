@@ -104,6 +104,8 @@ var jsonSchemaReservedKeywords = map[string]bool{
 	"minItems":              true,
 	"maxItems":              true,
 	"uniqueItems":           true,
+	"minProperties":         true,
+	"maxProperties":         true,
 	"contains":              true,
 	"minContains":           true,
 	"maxContains":           true,
@@ -125,6 +127,27 @@ var jsonSchemaReservedKeywords = map[string]bool{
 	"contentEncoding":       true,
 	"contentMediaType":      true,
 	"contentSchema":         true,
+}
+
+// dataValuedKeywords are the JSON Schema 2020-12 keywords whose value is
+// data — an instance value, a list of property names, a vocabulary map — and
+// never a schema. Inside a `$jsonschema:` escape their value is carried as
+// written: read as a schema, `default: {host: db}` would compile into an
+// object schema declaring a property named host.
+var dataValuedKeywords = map[string]bool{
+	"const":             true,
+	"enum":              true,
+	"default":           true,
+	"examples":          true,
+	"dependentRequired": true,
+	"$vocabulary":       true,
+}
+
+// isDataValuedKeyword reports whether a keyword's value is data rather than a
+// schema: one of dataValuedKeywords, or an `x-aggrega-*` extension, whose
+// value is the extension's own content.
+func isDataValuedKeyword(key string) bool {
+	return dataValuedKeywords[key] || isAggregaExtensionKey(key)
 }
 
 // isAggregaExtensionKey reports whether the given key matches the

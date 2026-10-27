@@ -14,7 +14,9 @@ import (
 // compact-form keyword) plus zero or more constraint keywords. The
 // emitter dispatches `min` / `max` to the appropriate JSON Schema
 // keyword (`minimum` / `maximum` for numeric, `minLength` / `maxLength`
-// for string, `minItems` / `maxItems` for array) based on `type:`.
+// for string, `minItems` / `maxItems` for array) based on `type:`. An entry
+// of its `properties:` block marked `required: true` joins its `required`
+// list, as a marked child of an inferred object does.
 func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 	out := Schema{}
 	keys := mappingKeyOrder(node)
@@ -58,6 +60,11 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 			}
 		}
 	}
+
+	// The names a `properties:` block marks `required: true`, merged into the
+	// node's `required` list once every keyword has been read, so an authored
+	// `required:` array is kept whichever side of `properties:` it was written.
+	var requiredLeaves []string
 
 	// Second pass: emit each keyword in author order.
 	for _, k := range keys {
@@ -133,7 +140,11 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 			}
 			out["else"] = child
 		case "$ref":
-			out["$ref"] = decodeScalar(v)
+			if v != nil && v.Kind == yaml.ScalarNode {
+				out["$ref"] = v.Value
+			} else {
+				out["$ref"] = decodeScalar(v)
+			}
 		case "items":
 			// items: recurse — element can be compact form or JSON Schema
 			child, err := compileNode(v, pathJoin(path, "items"), ctx)
@@ -150,6 +161,7 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 				return nil, err
 			}
 			out["properties"] = child
+			requiredLeaves = requiredLeafNames(v)
 		case "patternProperties":
 			child, err := emitSchemaMap(v, pathJoin(path, "patternProperties"), ctx)
 			if err != nil {
@@ -178,6 +190,10 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 					Err:     ErrUnknownKeyword(),
 				}
 			}
+			if ctx.inJSONSchema() && isDataValuedKeyword(k) {
+				out[k] = decodeValue(v)
+				continue
+			}
 			// Generic passthrough for known JSON Schema keywords
 			// (enum / pattern / format / default / description / etc.)
 			// and for composition keywords inside a leaf.
@@ -189,8 +205,55 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 		}
 	}
 
+	mergeRequired(out, requiredLeaves)
 	injectWhenWrapper(out)
 	return out, nil
+}
+
+// requiredLeafNames lists, in author order, the entries of a `properties:`
+// mapping whose schema carries the per-leaf `required: true` marker. The marker
+// means the same in an explicit `properties:` block as in an inferred object: the
+// name joins the enclosing object's `required` list.
+func requiredLeafNames(properties *yaml.Node) []string {
+	if properties == nil || properties.Kind != yaml.MappingNode {
+		return nil
+	}
+	var names []string
+	for i := 0; i+1 < len(properties.Content); i += 2 {
+		k := properties.Content[i]
+		if k.Kind == yaml.ScalarNode && isRequiredLeaf(properties.Content[i+1]) {
+			names = append(names, k.Value)
+		}
+	}
+	return names
+}
+
+// mergeRequired adds names to the `required` list of a compiled schema node,
+// after any names the author already listed there, each name once. A node with
+// no list yet receives one holding names alone.
+func mergeRequired(out Schema, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	authored, ok := out["required"].([]any)
+	if !ok {
+		out["required"] = append([]string{}, names...)
+		return
+	}
+	merged := append([]any{}, authored...)
+	for _, name := range names {
+		present := false
+		for _, existing := range merged {
+			if existing == name {
+				present = true
+				break
+			}
+		}
+		if !present {
+			merged = append(merged, name)
+		}
+	}
+	out["required"] = merged
 }
 
 // emitSchemaMap compiles the value of a JSON Schema reserved keyword
@@ -410,10 +473,12 @@ func isRequiredLeaf(node *yaml.Node) bool {
 // value is a map-of-schemas (`properties:`, `patternProperties:`,
 // `$defs:`, `definitions:`, `dependentSchemas:`) route through
 // emitSchemaMap so the container is a flat map rather than an implicit-
-// object schema.
+// object schema. An entry of `properties:` marked `required: true` joins the
+// node's `required` list.
 func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 	out := Schema{}
 	keys := mappingKeyOrder(node)
+	var requiredLeaves []string
 
 	for _, k := range keys {
 		v := mappingValue(node, k)
@@ -436,6 +501,9 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (S
 				return nil, err
 			}
 			out[k] = child
+			if k == "properties" {
+				requiredLeaves = requiredLeafNames(v)
+			}
 		default:
 			child, err := compileNode(v, pathJoin(path, k), ctx)
 			if err != nil {
@@ -444,21 +512,30 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (S
 			out[k] = child
 		}
 	}
+	mergeRequired(out, requiredLeaves)
 	return out, nil
 }
 
 // emitEscape embeds the `$jsonschema:` block content at this node's
-// position. The body is JSON Schema YAML and its structure is carried
-// through unchanged.
+// position. The body is JSON Schema 2020-12 written as YAML and its structure
+// is carried through unchanged.
+//
+// Both forms of the body — a block-scalar string, parsed here, and a
+// directly-nested mapping — compile under escapeContext, where every mapping
+// in a schema position is a JSON Schema node: nothing in the body is read as
+// an inferred object, so a node holding only `$dynamicRef`, or `allOf` beside
+// `patternProperties`, compiles as the keywords it holds; and the value of a
+// keyword that takes data (`const`, `enum`, `default`, `examples`, …) is
+// carried as written. A cross-document `$ref:` inside the body is still
+// expanded, since a library entry is not in the compiled document.
 //
 // "Verbatim" describes the STRUCTURE and not the vocabulary: every key in
-// the body is checked against the known-keyword set, on both of the two
-// routes below — a block-scalar body is parsed and run through compileNode,
-// a directly-nested mapping goes to emitJSONSchemaPassthrough, and each
-// rejects an unrecognised key with ErrUnknownKeyword. So the escape widens
-// what a node may CONTAIN, never which keywords it may name, and an
-// authored key outside the vocabulary is refused here rather than passed
-// through into the compiled schema.
+// the body is checked against the known-keyword set and an unrecognised key
+// is refused with ErrUnknownKeyword. So the escape widens what a node may
+// CONTAIN, never which keywords it may name, and an authored key outside the
+// vocabulary is refused here rather than passed through into the compiled
+// schema. A compact-form keyword (`min`, `when`, `sensitive`, …) written in
+// the body keeps its compact-form meaning.
 func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		k := node.Content[i]
@@ -499,7 +576,7 @@ func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 			if inner.Kind == yaml.DocumentNode && len(inner.Content) > 0 {
 				inner = *inner.Content[0]
 			}
-			child, err := compileNode(&inner, pathJoin(path, "$jsonschema"), ctx)
+			child, err := compileNode(&inner, pathJoin(path, "$jsonschema"), escapeContext(ctx))
 			if err != nil {
 				return nil, err
 			}
@@ -510,7 +587,12 @@ func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 		}
 		// Directly-nested mapping.
 		if v.Kind == yaml.MappingNode {
-			return emitJSONSchemaPassthrough(v, pathJoin(path, "$jsonschema"), ctx)
+			child, err := dispatchMapping(v, pathJoin(path, "$jsonschema"), escapeContext(ctx))
+			if err != nil {
+				return nil, err
+			}
+			m, _ := child.(Schema)
+			return m, nil
 		}
 		return nil, &CompileError{
 			Path:    path,
@@ -542,13 +624,14 @@ func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 //     as ErrUnresolvedSchemaLibraryRef rather than passing through as an
 //     unresolvable literal.
 //
-// Adjacent keys at a $ref node ("siblings" of $ref) are merged into the
-// emitted schema. Under JSON Schema 2019-09 sibling-of-$ref semantics
-// implemented by google/jsonschema-go, siblings of an in-document $ref
-// are ignored at validation; the in-document path emits them anyway for
-// authoring-fidelity and downstream-tool consumption. The cross-document
-// path applies a sibling allowlist + composition merge per the
-// emitWithXRefExpand function.
+// Adjacent keys at a $ref node ("siblings" of $ref) apply beside the
+// reference, as JSON Schema 2020-12 has them do. Beside an in-document
+// reference they are compact form, read exactly as they would be on a node
+// without the reference: `required: true` marks the node required in its
+// parent, `properties:` declares properties, `when:` gates the node, `min:`
+// needs a `type:`, and a key that is not a keyword is refused. The
+// cross-document path applies a sibling allowlist + composition merge per
+// the emitWithXRefExpand function.
 func emitReference(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 	refValue := refURIFromNode(node)
 	if refValue != "" && !isInDocumentRef(refValue) {
@@ -584,55 +667,24 @@ func isInDocumentRef(refURI string) bool {
 	return refURI != "" && refURI[0] == '#'
 }
 
-// emitInDocumentReference preserves today's $ref passthrough behaviour
-// verbatim: emit the literal $ref string into the output schema; emit
-// adjacent sibling keys alongside (under JSON Schema 2019-09 sibling
-// semantics the validator ignores them; authoring intent is preserved
-// for downstream tools).
+// emitInDocumentReference emits a node carrying an in-document `$ref:`. The
+// reference is carried as written, for the validator to resolve against the
+// document, and every other key of the node is a keyword read as it would be
+// on any compact-form node — so the node goes to the keyword emitter whole,
+// the reference being one of the keywords it holds. A node carrying a
+// reference is a keyword node, which is why a key beside it that is not a
+// keyword is refused rather than read as a property.
 func emitInDocumentReference(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
-	out := Schema{}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		k := node.Content[i]
-		v := node.Content[i+1]
-		if k.Kind != yaml.ScalarNode {
-			continue
-		}
-		if k.Value == "$mode" {
-			continue
-		}
-		if k.Value == "$ref" {
-			if v.Kind != yaml.ScalarNode || v.Value == "" {
-				return nil, &CompileError{
-					Path:    path,
-					Line:    nodeLine(v),
-					Keyword: "$ref",
-					Message: "expected a non-empty reference URL",
-					Err:     ErrReferenceUnresolvable(),
-				}
-			}
-			out["$ref"] = v.Value
-			continue
-		}
-		// Adjacent keys at a $ref node are composed alongside the
-		// reference (e.g. `secondary: { $ref: ..., when: ... }`).
-		child, err := compileNode(v, pathJoin(path, k.Value), ctx)
-		if err != nil {
-			return nil, err
-		}
-		if k.Value == "validate" {
-			out["x-aggrega-validate"] = child
-		} else if k.Value == "validateMessage" {
-			out["x-aggrega-validateMessage"] = child
-		} else if k.Value == "when" {
-			out["x-aggrega-when"] = child
-		} else if k.Value == "sensitive" {
-			out["x-aggrega-sensitive"] = child
-		} else {
-			out[k.Value] = child
+	if v := mappingValue(node, "$ref"); v == nil || v.Kind != yaml.ScalarNode || v.Value == "" {
+		return nil, &CompileError{
+			Path:    path,
+			Line:    nodeLine(v),
+			Keyword: "$ref",
+			Message: "expected a non-empty reference URL",
+			Err:     ErrReferenceUnresolvable(),
 		}
 	}
-	injectWhenWrapper(out)
-	return out, nil
+	return emitCompactConstraint(node, path, ctx)
 }
 
 // emitWithXRefExpand resolves a cross-document $ref at compile time and
@@ -745,9 +797,14 @@ func emitWithXRefExpand(node *yaml.Node, refURI, path string, ctx *compileCtx) (
 // allowlist in the message. Returning a map[string]*yaml.Node for
 // properties (preserving author order via a slice of names alongside)
 // lets the merge step compile each property with its own path
-// provenance.
+// provenance. The required names are the `required:` array's, then each
+// property marked `required: true`.
 func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*yaml.Node, required []string, description any, err error) {
 	props = map[string]*yaml.Node{}
+	// A `required: true` on a property authored beside the reference joins the
+	// required list after the names the `required:` array gives, whichever of the
+	// two keys was written first.
+	var requiredLeaves []string
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		k := node.Content[i]
 		v := node.Content[i+1]
@@ -774,6 +831,7 @@ func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*ya
 					props[pk.Value] = pv
 				}
 			}
+			requiredLeaves = requiredLeafNames(v)
 		case "required":
 			if v != nil && v.Kind == yaml.SequenceNode {
 				for _, item := range v.Content {
@@ -805,7 +863,7 @@ func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*ya
 			}
 		}
 	}
-	return props, required, description, nil
+	return props, append(required, requiredLeaves...), description, nil
 }
 
 // composeXRefSchema merges a resolved library schema with consumer-side
@@ -1031,6 +1089,19 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 		}
 	}
 	return nil
+}
+
+// decodeValue decodes a node of any kind into the plain Go value it holds — a
+// scalar, a list, a string-keyed map — without reading any of it as a schema.
+func decodeValue(node *yaml.Node) any {
+	if node == nil {
+		return nil
+	}
+	var v any
+	if err := node.Decode(&v); err == nil {
+		return v
+	}
+	return node.Value
 }
 
 // decodeScalar decodes a yaml.Node scalar into its native Go type
