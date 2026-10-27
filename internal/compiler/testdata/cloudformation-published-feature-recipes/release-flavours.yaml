@@ -49,9 +49,6 @@ spec:
             ha:
               enabled: false
               read_replicas: 0
-            backup:
-              enabled: true
-              retention_days: 14
     app:
       directory: ./dist/app
       features:
@@ -69,7 +66,4 @@ spec:
             ha:
               enabled: false
               read_replicas: 0
-            backup:
-              enabled: true
-              retention_days: 7
         reporting-app: {}

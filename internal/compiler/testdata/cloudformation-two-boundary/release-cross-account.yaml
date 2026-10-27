@@ -36,9 +36,6 @@ spec:
             ha:
               enabled: false
               read_replicas: 0
-            backup:
-              enabled: true
-              retention_days: 14
         app-a: {}
     # Stack B: a second application that reads the same database assembles into
     # its own stack in a different account. The reference shape keys on the

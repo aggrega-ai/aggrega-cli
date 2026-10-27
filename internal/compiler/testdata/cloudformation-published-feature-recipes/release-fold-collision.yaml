@@ -24,9 +24,6 @@ spec:
             ha:
               enabled: false
               read_replicas: 0
-            backup:
-              enabled: true
-              retention_days: 14
         payments:
           infra:
             engine_version: "11.4"
@@ -36,6 +33,3 @@ spec:
             ha:
               enabled: false
               read_replicas: 0
-            backup:
-              enabled: true
-              retention_days: 14

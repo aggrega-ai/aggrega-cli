@@ -26,9 +26,6 @@ spec:
             ha:
               enabled: false
               read_replicas: 0
-            backup:
-              enabled: true
-              retention_days: 14
     stack-b:
       directory: ./dist/stack-b
       components:
