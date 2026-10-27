@@ -546,6 +546,16 @@ func dispatchBoundaryScopeFR(
 	frNodeCtx := nodeCtx
 	frNodeCtx.NodeID = boundaryFRNodeID(key)
 	frNodeCtx.BoundaryPath = key.BoundaryPath
+	// The guest context is the boundary's — one value, handed to this render's
+	// provider and to its pipeline step below, so the two sockets receive the same
+	// bytes — and not the copied one: that described whichever component's turn
+	// reached this dispatch, so its annotations and placement were an artifact of
+	// the walk order rather than anything authored about this boundary-wide render.
+	var parameters map[string]any
+	if input.ResolveResult != nil {
+		parameters = input.ResolveResult.Parameters
+	}
+	frNodeCtx.GuestContext = buildBoundaryFRRenderCtx(key.BoundaryPath, parameters, boundaryAnnotations)
 	// The component identity is COMPOSED from the two things an author wrote —
 	// the instance name this feature is attached under, and the segments of the
 	// boundary path it is attached to — and deliberately not read out of the
@@ -762,15 +772,10 @@ func dispatchBoundaryScopeFR(
 	// no single host component, so host is nil and any /host operation halts
 	// with ErrPipelineHostScopeUnavailable).
 	if len(fr.Spec.Pipeline) > 0 {
-		var parameters map[string]any
-		if input.ResolveResult != nil {
-			parameters = input.ResolveResult.Parameters
-		}
-		renderCtx := buildBoundaryFRRenderCtx(key.BoundaryPath, parameters, boundaryAnnotations)
 		// own provider is the boundary-scope FR's own engine kind (version pin
 		// stripped — the codec keys on the kind); a boundary-scope FR has no
 		// single host component (host nil), so hostProvider is empty.
-		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, withheld, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", frNodeCtx.GuestContext, frCtx, withheld, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
 		if perr != nil {
 			return perr
 		}
@@ -783,15 +788,24 @@ func dispatchBoundaryScopeFR(
 }
 
 // buildBoundaryFRRenderCtx assembles the render-time context a boundary-scope
-// FeatureRecipe pipeline step receives. A boundary-scope FR has no single host
-// component, so the context carries the boundary's metadata and the fulfilled
-// parameters; the boundary's cascaded annotations land on the boundary root.
+// FeatureRecipe is handed on both sockets — its provider render and its
+// pipeline step receive these same bytes. A boundary-scope FR has no host
+// component, so the context carries the fulfilled parameters and the boundary's
+// metadata, and the boundary's own cascaded annotation set is both the
+// boundary's annotations and the release bucket: the release bucket holds the
+// annotations the Release wrote for what is being rendered, which here is the
+// boundary itself. That is what lets a guest reading the well-known keys from
+// the release bucket place a boundary-wide render by the boundary's values, and
+// by no component's. The aggregate and catalog buckets stay empty, since no
+// Aggregate component and no catalog entity stands behind this render.
 func buildBoundaryFRRenderCtx(boundaryPath string, parameters map[string]any, boundaryAnnotations map[string]types.OrderedMap[string]) renderctx.RenderContext {
 	var placement *resolver.BoundaryInfra
+	var buckets renderctx.RenderAnnotations
 	if ann, ok := boundaryAnnotations[boundaryPath]; ok {
 		placement = &resolver.BoundaryInfra{Annotations: ann}
+		buckets.Release = ann
 	}
-	return buildGuestContext(boundaryPath, renderctx.RenderAnnotations{}, 0, placement, parameters)
+	return buildGuestContext(boundaryPath, buckets, 0, placement, parameters)
 }
 
 // buildBoundaryFRTemplateContext assembles the FR-scoped TemplateContext for a

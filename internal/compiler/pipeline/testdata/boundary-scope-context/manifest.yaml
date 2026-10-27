@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: boundary-scope-context-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/worker: worker-recipe:1.0.0
+    features:
+      type:
+        feature.example/zone-agent: zone-agent-helm:1.0.0

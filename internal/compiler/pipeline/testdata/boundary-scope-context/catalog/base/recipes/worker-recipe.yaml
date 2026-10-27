@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: worker-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/worker
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    form: stateless
+    replicas: 1
+    containers:
+      main:
+        image: "{{ .values.image }}"
+        ports:
+          web: 8080

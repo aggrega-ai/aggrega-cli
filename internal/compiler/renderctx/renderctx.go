@@ -16,8 +16,13 @@ import (
 // every export that renders or checks a node, and a pipeline step on its
 // step input; both are built by one constructor in the renderer from the
 // same IR node, so the two sockets see the same values for the same node.
-// The assembly export, which merges several nodes, carries only the
-// indentation width: each contributor's annotations ride its own entry.
+// A boundary-scope FeatureRecipe, which has no node of its own, is handed
+// one context on both sockets too: the boundary's, whose release bucket is
+// the boundary's own annotation set, so a guest reading the well-known
+// annotations from that bucket renders it by the boundary rather than by
+// whichever component's turn dispatched it. The assembly export, which
+// merges several nodes, carries only the indentation width: each
+// contributor's annotations ride its own entry.
 //
 // RenderContext is the guest-facing wire projection of render-time
 // context and is deliberately distinct from the package's host-internal

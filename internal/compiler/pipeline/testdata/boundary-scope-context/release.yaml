@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-scope-context-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: boundary-scope-context-app
+  manifest: boundary-scope-context-manifest
+  boundaries:
+    zone:
+      directory: ./dist/zone
+      # The boundary's own placement, which the boundary-wide attachment renders by.
+      annotations:
+        aggrega.ai/namespace: "boundary-ns"
+        aggrega.ai/image-registry: "boundary.registry.example"
+      features:
+        agent:
+          type: feature.example/zone-agent
+      components:
+        # The component's own entry places the component elsewhere. It is the
+        # component whose turn dispatches the boundary-wide attachment, and its
+        # values must stay with it.
+        served:
+          annotations:
+            aggrega.ai/namespace: "component-ns"
+            aggrega.ai/image-registry: "component.registry.example"

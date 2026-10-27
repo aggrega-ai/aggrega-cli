@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: zone-agent-helm
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.example/zone-agent
+  # Renders once for the boundary it is attached to. Its Workload writes no
+  # namespace and an unqualified image, so where it lands and which registry
+  # it pulls from are decided by the provider, from the well-known annotations
+  # in the context the render is handed.
+  executionScope: boundary
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    form: stateless
+    replicas: 1
+    containers:
+      main:
+        image: "corp/agent:v1"
+        ports:
+          agent: 9090
