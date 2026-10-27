@@ -431,6 +431,23 @@ func runGraphStageRules(
 	}
 	out.Violations = append(out.Violations, violations...)
 
+	// No delivery entry on any connection carries a literal, evaluated over the
+	// same set and for the same reason as the reading above: a connection delivers
+	// what its target publishes, and a literal written on one — on whichever
+	// surface drew it — delivered nothing and said so nowhere. It reads the
+	// delivery the author wrote, which is the only form that still tells a literal
+	// from a reference.
+	violations, err = constraint.RunOnOriginatedConnections(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		resolver.OriginatedConnectionInjectEntryNamesAKey,
+	)
+	if err != nil {
+		return err
+	}
+	out.Violations = append(out.Violations, violations...)
+
 	// No connection dictates a delivery mechanism the socket it is wired into
 	// does not permit, evaluated once per connection the composition drew
 	// together with the surface that drew it. The socket is read on whichever

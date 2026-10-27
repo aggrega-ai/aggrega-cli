@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: delivery-key-origin-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: aggregate-attachment-literal
+  manifest: delivery-key-origin-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api: {}
+        db: {}

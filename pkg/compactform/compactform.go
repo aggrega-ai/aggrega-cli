@@ -30,9 +30,9 @@ type compileCtx struct {
 
 	// jsonSchema is set while the body of a `$jsonschema:` escape is compiled.
 	// There every mapping in a schema position is a JSON Schema node whose keys
-	// are keywords — never an inferred object, never a property list — and a
-	// keyword whose value is data rather than a schema carries that value as
-	// written. See dispatchMapping and emitEscape.
+	// are keywords — never an inferred object, never a property list — and an
+	// `x-aggrega-*` extension's value is carried as written, as a data keyword's
+	// is everywhere. See dispatchMapping, emitEscape and readsAsValue.
 	jsonSchema bool
 }
 

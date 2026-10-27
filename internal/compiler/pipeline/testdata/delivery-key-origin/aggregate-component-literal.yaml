@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
-  name: aggregate-own-literal
+  name: aggregate-component-literal
   version: "1.0.0"
 spec:
   components:
@@ -15,6 +15,7 @@ spec:
             target: db
             inject:
               env:
+                # A literal on the component's own connection: refused.
                 - in: DB_HOST
                   value: literal-value
                 - in: DB_PORT

@@ -5,7 +5,7 @@ metadata:
   environment: local
   version: "1.0.0"
 spec:
-  aggregate: aggregate-own-literal
+  aggregate: aggregate-attachment-reference
   manifest: delivery-key-origin-manifest
   boundaries:
     cluster:

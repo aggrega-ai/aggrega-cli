@@ -190,14 +190,10 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 					Err:     ErrUnknownKeyword(),
 				}
 			}
-			if ctx.inJSONSchema() && isDataValuedKeyword(k) {
-				out[k] = decodeValue(v)
-				continue
-			}
 			// Generic passthrough for known JSON Schema keywords
 			// (enum / pattern / format / default / description / etc.)
 			// and for composition keywords inside a leaf.
-			child, err := compileNode(v, pathJoin(path, k), ctx)
+			child, err := emitKeywordValue(k, v, pathJoin(path, k), ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -208,6 +204,18 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 	mergeRequired(out, requiredLeaves)
 	injectWhenWrapper(out)
 	return out, nil
+}
+
+// emitKeywordValue compiles the value of one keyword the emitters carry through
+// generically: a keyword whose value is data (see readsAsValue) is carried as
+// written, and any other keyword's value is compiled as the schema, or list of
+// schemas, it holds. It is the one place a generic keyword's value is read, so
+// every emitter reads `default: {host: db}` as the mapping it is.
+func emitKeywordValue(keyword string, v *yaml.Node, path string, ctx *compileCtx) (any, error) {
+	if readsAsValue(keyword, ctx) {
+		return decodeValue(v), nil
+	}
+	return compileNode(v, path, ctx)
 }
 
 // requiredLeafNames lists, in author order, the entries of a `properties:`
@@ -505,7 +513,7 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (S
 				requiredLeaves = requiredLeafNames(v)
 			}
 		default:
-			child, err := compileNode(v, pathJoin(path, k), ctx)
+			child, err := emitKeywordValue(k, v, pathJoin(path, k), ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -524,9 +532,9 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (S
 // directly-nested mapping — compile under escapeContext, where every mapping
 // in a schema position is a JSON Schema node: nothing in the body is read as
 // an inferred object, so a node holding only `$dynamicRef`, or `allOf` beside
-// `patternProperties`, compiles as the keywords it holds; and the value of a
-// keyword that takes data (`const`, `enum`, `default`, `examples`, …) is
-// carried as written. A cross-document `$ref:` inside the body is still
+// `patternProperties`, compiles as the keywords it holds; and an `x-aggrega-*`
+// extension's value is carried as written, as a data keyword's is everywhere.
+// A cross-document `$ref:` inside the body is still
 // expanded, since a library entry is not in the compiled document.
 //
 // "Verbatim" describes the STRUCTURE and not the vocabulary: every key in
@@ -1037,7 +1045,7 @@ func emitComposition(node *yaml.Node, compKey, path string, ctx *compileCtx) (Sc
 				Err:     ErrUnknownKeyword(),
 			}
 		}
-		child, err := compileNode(v, pathJoin(path, k), ctx)
+		child, err := emitKeywordValue(k, v, pathJoin(path, k), ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1091,17 +1099,37 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-// decodeValue decodes a node of any kind into the plain Go value it holds — a
-// scalar, a list, a string-keyed map — without reading any of it as a schema.
+// decodeValue decodes a node of any kind into the plain value it holds — a
+// scalar, a list, a map keyed by the keys as written — without reading any of it
+// as a schema. A mapping's keys are taken as the strings the author wrote, so a
+// value such as `{80: http}` stays one a JSON document can carry.
 func decodeValue(node *yaml.Node) any {
 	if node == nil {
 		return nil
 	}
-	var v any
-	if err := node.Decode(&v); err == nil {
-		return v
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) == 0 {
+			return nil
+		}
+		return decodeValue(node.Content[0])
+	case yaml.AliasNode:
+		return decodeValue(node.Alias)
+	case yaml.MappingNode:
+		out := make(map[string]any, len(node.Content)/2)
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			out[node.Content[i].Value] = decodeValue(node.Content[i+1])
+		}
+		return out
+	case yaml.SequenceNode:
+		out := make([]any, 0, len(node.Content))
+		for _, item := range node.Content {
+			out = append(out, decodeValue(item))
+		}
+		return out
+	default:
+		return scalarValue(node)
 	}
-	return node.Value
 }
 
 // decodeScalar decodes a yaml.Node scalar into its native Go type

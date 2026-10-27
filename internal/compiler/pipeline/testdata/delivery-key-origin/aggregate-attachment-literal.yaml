@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-attachment-literal
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/db
+    api:
+      type: core/api
+      features:
+        shared_backend:
+          type: core/shared-backend
+          uses:
+            backend:
+              primary:
+                target: db
+                inject:
+                  env:
+                    # A literal on a connection, which delivers only what its
+                    # target publishes: refused. The string is spelled like a
+                    # mistyped key, so a rule reading it as a reference would
+                    # report the wrong condition here.
+                    - in: DB_HOST
+                      value: hosst
+                    # A reference on the same connection, legal, so the refusal
+                    # is about the literal alone.
+                    - in: DB_PORT
+                      from: port

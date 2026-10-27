@@ -67,9 +67,17 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 		{"podSecurityContext.supplementalGroups", func(w *types.Workload) {
 			w.PodSecurityContext = &types.PodSecurityContext{SupplementalGroups: []int{3000, 4000}}
 		}},
+		{"podSecurityContext.runAsGroup", func(w *types.Workload) {
+			w.PodSecurityContext = &types.PodSecurityContext{RunAsGroup: ptrInt(1001)}
+		}},
 		{"runAsNonRoot", func(w *types.Workload) {
 			withMainContainer(w, func(c *types.ContainerSpec) {
 				c.SecurityContext = &types.ContainerSecurityContext{RunAsNonRoot: ptrBool(true)}
+			})
+		}},
+		{"allowPrivilegeEscalation", func(w *types.Workload) {
+			withMainContainer(w, func(c *types.ContainerSpec) {
+				c.SecurityContext = &types.ContainerSecurityContext{AllowPrivilegeEscalation: ptrBool(false)}
 			})
 		}},
 		// Another vendor's GPU key keeps its warning: only nvidia.com/gpu has a
@@ -268,6 +276,61 @@ func TestUnsupportedField_PodSecurityGroupsOutOfBand(t *testing.T) {
 	if !bytes.Equal(bareFiles[0].Body, files[0].Body) {
 		t.Errorf("the dropped settings changed rendered bytes (must be out-of-band)\n--- mapped only ---\n%s\n--- with dropped ---\n%s",
 			bareFiles[0].Body, files[0].Body)
+	}
+}
+
+// TestUnsupportedField_UnmappedUserAndEscalationOutOfBand proves the two security
+// settings compose does not map are announced and change nothing it renders: a
+// pod runAsGroup authored without runAsUser (no uid for it to join, so no user is
+// rendered) and a container allowPrivilegeEscalation each raise one warning, the
+// service bytes equal those of the workload without them, and a runAsGroup
+// authored beside runAsUser — which compose does carry — raises none.
+func TestUnsupportedField_UnmappedUserAndEscalationOutOfBand(t *testing.T) {
+	t.Parallel()
+	bareFiles, bareDiags, err := SynthesizeWorkloadCore(baseDegradeWorkload(), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("baseline synth: %v", err)
+	}
+	if len(bareDiags) != 0 {
+		t.Fatalf("baseline produced diagnostics: %+v", bareDiags)
+	}
+
+	w := baseDegradeWorkload()
+	w.PodSecurityContext = &types.PodSecurityContext{RunAsGroup: ptrInt(1001)}
+	withMainContainer(w, func(c *types.ContainerSpec) {
+		c.SecurityContext = &types.ContainerSecurityContext{AllowPrivilegeEscalation: ptrBool(false)}
+	})
+	files, diags, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth with the unmapped settings: %v", err)
+	}
+	want := []string{"allowPrivilegeEscalation", "podSecurityContext.runAsGroup"}
+	if len(diags) != len(want) {
+		t.Fatalf("got %d diagnostics, want %d (all: %+v)", len(diags), len(want), diags)
+	}
+	for i, d := range diags {
+		if d.SourceRef != want[i] {
+			t.Errorf("diagnostic %d source ref = %q, want %q", i, d.SourceRef, want[i])
+		}
+		if d.Code != rendercore.UnsupportedFieldCode {
+			t.Errorf("%s: code = %q, want %q", d.SourceRef, d.Code, rendercore.UnsupportedFieldCode)
+		}
+	}
+	if !bytes.Equal(bareFiles[0].Body, files[0].Body) {
+		t.Errorf("the unmapped settings changed rendered bytes (must be out-of-band)\n--- without ---\n%s\n--- with ---\n%s",
+			bareFiles[0].Body, files[0].Body)
+	}
+
+	mapped := baseDegradeWorkload()
+	mapped.PodSecurityContext = &types.PodSecurityContext{RunAsUser: ptrInt(1000), RunAsGroup: ptrInt(1001)}
+	_, mappedDiags, err := SynthesizeWorkloadCore(mapped, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth with runAsUser and runAsGroup: %v", err)
+	}
+	for _, d := range mappedDiags {
+		if d.SourceRef == "podSecurityContext.runAsGroup" {
+			t.Errorf("a runAsGroup joined to a runAsUser raised a diagnostic: %+v", d)
+		}
 	}
 }
 

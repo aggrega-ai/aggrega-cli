@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The rules over what a delivery entry reads from, expressed as constraint
@@ -152,9 +153,11 @@ var connectionInjectReferenceIsPublished = constraint.Check[
 // A delivery entry may carry a literal instead of a reference, and the graph
 // stores both as one string per delivery key. A rule reading that form would
 // resolve every literal against the target's published set and refuse the ones
-// that happened not to name a key — refusing legal authoring, which is the
-// defect this rule exists to close reproduced in a new place. So it reads the
-// payload the author wrote, through the decoder the entity contract documents.
+// that happened not to name a key — under this rule's condition, which names a
+// mistyped published key, for an entry that names no key at all. A literal on a
+// connection is refused, by the rule below and under its own condition; this
+// rule reads the payload the author wrote, through the decoder the entity
+// contract documents, so the two never report one entry twice under two names.
 //
 // # Why every payload the coordinate names is read
 //
@@ -207,6 +210,57 @@ var OriginatedConnectionInjectReferenceIsPublished = constraint.Check[
 					out = append(out, s.Raise(ErrInvalidInjectKey(),
 						append([]string{mechanism, entry.deliveryKey, entry.providesKey, targetType},
 							published...)...))
+				}
+			}
+		}
+		return out
+	},
+}
+
+// OriginatedConnectionInjectEntryNamesAKey reports each delivery entry on one
+// connection that carries `value:`, wherever that connection was written.
+//
+// A connection delivers into the consumer what the component it points at
+// publishes, so each of its entries names a published key with `from:`. A
+// literal written there names nothing to read, and a build delivered nothing for
+// it, without a word; it is refused instead. A literal a component delivers
+// to itself belongs in the component's own injection block, where `value:` is
+// admitted, and this rule does not read that block.
+//
+// It is asked once per connection the composition drew together with the surface
+// that drew it — a component's own dependency block, an attachment, or the
+// Release — for the reason the rule above is: every connection is in range, and
+// each finding names the block its own author wrote. Every payload the coordinate
+// names is read, as above.
+//
+// One finding is raised per offending entry, and its detail is the mechanism and
+// the entry's `in:`. An entry this rule cannot read as an entry — one lacking
+// `in:`, or not a mapping at all — is the delivery-shape rule's to report.
+var OriginatedConnectionInjectEntryNamesAKey = constraint.Check[
+	constraint.GraphView,
+	constraint.OriginatedConnectionSubject,
+]{
+	Sentinel: ErrUsesInjectValue(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.GraphView,
+		s constraint.OriginatedConnectionSubject,
+	) []constraint.Objection {
+		dictated := v.OriginatedConnectionAuthoredDelivery(
+			s.NodeID(), s.OriginKind(), s.OriginAttachment(),
+			s.SocketName(), s.AliasName(), s.TargetNodeID())
+		var out []constraint.Objection
+		for _, payloads := range dictated {
+			for mechanism, payload := range payloads.All() {
+				entries, isList := payload.([]any)
+				if !isList {
+					continue
+				}
+				for _, entry := range entries {
+					in, _, _, hasValue, _, ok := types.DecodeVerboseInjectEntry(entry)
+					if ok && hasValue {
+						out = append(out, s.Raise(ErrUsesInjectValue(), mechanism, in))
+					}
 				}
 			}
 		}

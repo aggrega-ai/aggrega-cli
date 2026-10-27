@@ -134,35 +134,99 @@ func TestADeliveryKeyTheTargetDoesNotPublishIsRefusedWhereverItWasWritten(t *tes
 	}
 }
 
-// TestALiteralDeliveryOnAContributedConnectionIsNotRefused is the calibration
-// this rule most needs, because the failure it guards against is the rule
-// reproducing the defect it closes in a new place.
+// TestALiteralOnAContributedConnectionIsRefusedAndNotReadAsAReference proves a
+// literal on a connection an attachment drew halts the build under the condition
+// that names it, at the attachment's own block, and that no rule reads it as a
+// reference.
 //
-// A delivery entry may carry a literal instead of a reference, and the finalised
-// graph stores both as one string per delivery key. A rule reading that form
-// would resolve every literal against the target's published set and refuse the
-// ones that happened not to name a key — refusing legal authoring on every build.
-// The fixture's literal is deliberately spelled like a mistyped key, so a rule
-// making that mistake refuses it here.
+// A connection delivers what its target publishes, so a literal written on one
+// delivered nothing and said so nowhere; it is refused. The fixture's literal is
+// deliberately spelled like a mistyped key: a rule reading the stored form, where
+// a literal and a reference share one slot, would resolve it against the target's
+// published set and report it as a mistyped reference — the wrong condition, for
+// an entry that names no key at all.
 //
-// The same connection carries a legal reference beside the literal, which is
-// what stops the case passing for the wrong reason: a rule that skipped the
-// connection wholesale would also be silent.
-func TestALiteralDeliveryOnAContributedConnectionIsNotRefused(t *testing.T) {
+// The same connection carries a legal reference beside the literal, and the
+// refusal naming only the literal's entry is what says the reference was read and
+// passed rather than the connection refused wholesale.
+func TestALiteralOnAContributedConnectionIsRefusedAndNotReadAsAReference(t *testing.T) {
 	t.Parallel()
 
-	artifacts, err := buildDeliveryOrigin(t, "legal-literal")
+	_, err := buildDeliveryOrigin(t, "attachment-literal")
+	if err == nil {
+		t.Fatal("the build succeeded over a literal on a connection.\n" +
+			"INVARIANT: a connection delivers its target's published keys; a literal there is refused.\n" +
+			"CONSEQUENCE: the literal reaches no consumer and the build reports success.")
+	}
+	if !errors.Is(err, resolver.ErrUsesInjectValue()) {
+		t.Fatalf("the build halted on a different condition than the one naming a literal on a connection: %v", err)
+	}
+	refusal := refusalText(err)
+	for _, want := range []string{".spec.components.api.features.shared_backend.uses.backend.primary", "env", "DB_HOST"} {
+		if !strings.Contains(refusal, want) {
+			t.Errorf("the refusal does not name %q; got: %s", want, refusal)
+		}
+	}
+	if findings := pipelinetest.Findings(err, resolver.ErrInvalidInjectKey()); len(findings) != 0 {
+		t.Errorf("the literal was read as a reference to a published key; got: %v", findings)
+	}
+	if strings.Contains(refusal, "DB_PORT") {
+		t.Errorf("the legal reference beside the literal was refused too; got: %s", refusal)
+	}
+}
+
+// TestALiteralOnAConnectionIsRefusedWhereverItWasWritten is the
+// surface-independence proof for a literal on a connection: the same entry —
+// `value:` beside a legal `from:` — written on the component's own connection,
+// on an attachment's, and on one the Release contributes, halts under one
+// condition, each finding naming the block its own author wrote.
+func TestALiteralOnAConnectionIsRefusedWhereverItWasWritten(t *testing.T) {
+	t.Parallel()
+
+	for _, row := range []struct {
+		name    string
+		variant string
+		locator string
+	}{
+		{"the component's own dependency block", "component-literal", ".spec.components.api.uses.backend.primary"},
+		{"an attachment declared on the component", "attachment-literal",
+			".spec.components.api.features.shared_backend.uses.backend.primary"},
+		{"an attachment the Release declared against one component", "release-literal",
+			".spec.boundaries.cluster.components.api.features.shared_backend.uses.backend.primary"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := buildDeliveryOrigin(t, row.variant)
+			if err == nil {
+				t.Fatal("the build succeeded over a literal on a connection")
+			}
+			findings := pipelinetest.Findings(err, resolver.ErrUsesInjectValue())
+			if len(findings) != 1 {
+				t.Fatalf("got %d finding(s) for the literal, want 1: %v", len(findings), err)
+			}
+			if got := findings[0].Source().Locator; got != row.locator {
+				t.Errorf("the finding is positioned at %q; want %q", got, row.locator)
+			}
+			if !strings.Contains(findings[0].Error(), "DB_HOST") {
+				t.Errorf("the finding does not name the entry's key; got: %s", findings[0].Error())
+			}
+		})
+	}
+}
+
+// TestAReferenceOnAContributedConnectionReachesTheOutput is the reference half
+// of the case above, alone: the same connection with the literal removed builds,
+// and the reference it carries reaches the rendered output.
+func TestAReferenceOnAContributedConnectionReachesTheOutput(t *testing.T) {
+	t.Parallel()
+
+	artifacts, err := buildDeliveryOrigin(t, "attachment-reference")
 	if err != nil {
-		t.Fatalf("the build halted on legal authoring.\n"+
-			"INVARIANT: a literal is nothing to resolve, so no rule over published-key references may read one.\n"+
-			"CONSEQUENCE: refusing a literal is the defect this rule exists to close, reproduced on the other side.\n"+
-			"got: %v", err)
+		t.Fatalf("the build halted on a reference to a published key: %v", err)
 	}
 	if len(artifacts) == 0 {
 		t.Fatal("the build produced no artifact, so the case proves nothing about what it rendered")
 	}
-	// The reference beside the literal reached the output, which is what says the
-	// connection was examined rather than skipped.
 	var carriesReference bool
 	for _, body := range artifacts {
 		if strings.Contains(string(body), "DB_PORT=5432") {
@@ -170,8 +234,7 @@ func TestALiteralDeliveryOnAContributedConnectionIsNotRefused(t *testing.T) {
 		}
 	}
 	if !carriesReference {
-		t.Error("the legal reference on the same connection did not reach the output, so the silence above " +
-			"could be a connection nothing looked at rather than a literal correctly left alone")
+		t.Error("the reference on the connection did not reach the output")
 	}
 }
 

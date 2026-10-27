@@ -131,9 +131,10 @@ var jsonSchemaReservedKeywords = map[string]bool{
 
 // dataValuedKeywords are the JSON Schema 2020-12 keywords whose value is
 // data — an instance value, a list of property names, a vocabulary map — and
-// never a schema. Inside a `$jsonschema:` escape their value is carried as
-// written: read as a schema, `default: {host: db}` would compile into an
-// object schema declaring a property named host.
+// never a schema. Their value is carried as written wherever the keyword is
+// read as a keyword: read as a schema, `default: {host: db}` would compile into
+// an object schema declaring a property named host, and that schema would be
+// what a default materialises as and what a const compares against.
 var dataValuedKeywords = map[string]bool{
 	"const":             true,
 	"enum":              true,
@@ -143,11 +144,11 @@ var dataValuedKeywords = map[string]bool{
 	"$vocabulary":       true,
 }
 
-// isDataValuedKeyword reports whether a keyword's value is data rather than a
-// schema: one of dataValuedKeywords, or an `x-aggrega-*` extension, whose
-// value is the extension's own content.
-func isDataValuedKeyword(key string) bool {
-	return dataValuedKeywords[key] || isAggregaExtensionKey(key)
+// readsAsValue reports whether a keyword's value is data rather than a schema:
+// one of dataValuedKeywords anywhere, and, inside a `$jsonschema:` escape body,
+// an `x-aggrega-*` extension too, whose value is the extension's own content.
+func readsAsValue(key string, ctx *compileCtx) bool {
+	return dataValuedKeywords[key] || (ctx.inJSONSchema() && isAggregaExtensionKey(key))
 }
 
 // isAggregaExtensionKey reports whether the given key matches the

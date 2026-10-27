@@ -4,9 +4,11 @@
 package resolver
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -164,6 +166,38 @@ func TestPillarConformance_PointerIntoAPropertyReadsFromItsPillar(t *testing.T) 
 		{"an invalid value through the pointer", object("primary", requests("250m"), "secondary", requests("lots")),
 			".secondary.resources", "does not match"},
 	})
+}
+
+// TestPillarConformance_DataKeywordsHoldValues measures values against a const
+// and an enum written as mappings in compact form, and reads the default a
+// mapping-valued `default` materialises: the equal value is accepted, a different
+// one refused, and the default is the mapping as written.
+func TestPillarConformance_DataKeywordsHoldValues(t *testing.T) {
+	t.Parallel()
+
+	const schema = `values:
+  endpoint: { type: object, default: { host: db, port: 5432 } }
+  mode: { type: object, const: { kind: fast } }
+  tier: { type: object, enum: [ { name: gold }, { name: silver } ] }
+`
+	checkConformance(t, schema, []conformanceCase{
+		{"the const's value and an enum member", object(
+			"mode", object("kind", "fast"),
+			"tier", object("name", "silver"),
+		), "", ""},
+		{"a value the const does not equal", object("mode", object("kind", "slow")), ".mode", "const"},
+		{"a value the enum does not list", object("tier", object("name", "bronze")), ".tier", "enum"},
+	})
+
+	defaults := compactform.PillarDefaults(compileEntitySchema(t, schema), "values")
+	got, ok := defaults.Get("endpoint")
+	if !ok {
+		t.Fatalf("no default materialised for endpoint: %v", defaults)
+	}
+	want := map[string]any{"host": "db", "port": 5432}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the endpoint default materialised as %#v, want the mapping %#v", got, want)
+	}
 }
 
 // TestPillarConformance_WhenGatesAReferenceAndItsRequirement measures values

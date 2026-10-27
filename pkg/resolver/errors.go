@@ -237,6 +237,27 @@ var errInjectEntryAmbiguous = cerrors.Register("inject-entry-ambiguous", cerrors
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrUsesInjectValue reports a delivery entry on a connection that carries
+// `value:`. A connection delivers into the consumer what the component it points
+// at publishes, each entry naming a published key through `from:`; a literal has
+// no place there and reached no consumer, so the entry is refused rather than
+// dropped. A literal a component delivers to itself is written in the
+// component's own injection block, where `value:` is admitted.
+//
+// It is asked of every connection the composition draws — one a component's own
+// dependency block writes, one an attachment draws, and one the Release
+// contributes — once each connection's surface is known, and the build halts
+// with one finding per offending entry, positioned at the connection's own entry
+// and naming the mechanism and the entry's `in:`.
+func ErrUsesInjectValue() error { return errUsesInjectValue }
+
+var errUsesInjectValue = cerrors.Register("uses-inject-value", cerrors.Meta{
+	ShortCode: "E0362",
+	Message: "inject entry on a connection carries `value:`; a connection delivers the target's published keys, " +
+		"each named with `from:`",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrInjectDeliveryShape reports an inject delivery mechanism — env, file, arg
 // or a mechanism an author names beside them — whose value is not a list of
 // entries. A mechanism is the list of {in, from?, value?} entries the

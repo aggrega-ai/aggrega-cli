@@ -33,13 +33,17 @@
 // The escape hatch $jsonschema: embeds full JSON Schema YAML at any node
 // for cases the compact form cannot express. Inside its body every mapping
 // in a schema position is a JSON Schema node — none is read as an inferred
-// object — and a keyword whose value is data (const, enum, default,
-// examples, …) carries that value as written. It widens the STRUCTURE a node
+// object. It widens the STRUCTURE a node
 // may carry and not the vocabulary: the body's keys are checked against the
 // same known-keyword set as any other node, so an unrecognised key inside an
 // escape is refused rather than carried through. The $mode: annotation
 // (compact / jsonschema) provides explicit dispatch for the rare edge
 // cases where content-shape dispatch is ambiguous.
+//
+// A keyword whose value is data — const, enum, default, examples,
+// dependentRequired, $vocabulary — carries that value as written wherever it
+// is read as a keyword, a mapping or a list included; it is never compiled as
+// a schema, so a mapping default materialises as that mapping.
 //
 // Keys beside an in-document $ref: are compact form, read as they would be
 // on the same node without the reference, and apply beside it. A

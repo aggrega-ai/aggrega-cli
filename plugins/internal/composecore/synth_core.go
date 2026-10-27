@@ -904,11 +904,11 @@ func resolveHTTPProbePort(ports types.OrderedMap[types.PortSpec]) (int, error) {
 //   - readOnlyRootFilesystem → read_only
 //   - capabilities.add        → cap_add
 //   - capabilities.drop       → cap_drop
-//   - allowPrivilegeEscalation == false → privileged stays default
 //   - runAsUser / runAsGroup  → user (formatted as "<uid>:<gid>" or "<uid>")
 //
-// runAsNonRoot has no compose equivalent; an authored value is dropped with a
-// unsupported-field warning. Returns one diagnostic per authored-and-dropped field.
+// runAsNonRoot and allowPrivilegeEscalation are not mapped; an authored value of
+// either is dropped with an unsupported-field warning. Returns one diagnostic per
+// authored-and-dropped field.
 func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityContext) []renderctx.Diagnostic {
 	if sc.ReadOnlyRootFilesystem != nil {
 		svc.ReadOnly = *sc.ReadOnlyRootFilesystem
@@ -929,6 +929,9 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 	if sc.RunAsNonRoot != nil {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "runAsNonRoot"))
 	}
+	if sc.AllowPrivilegeEscalation != nil {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "allowPrivilegeEscalation"))
+	}
 	return diags
 }
 
@@ -937,7 +940,9 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 // only fields with direct equivalents are applied:
 //
 //   - Workload.PodSecurityContext.RunAsUser → user (overridden by container
-//     SecurityContext.RunAsUser if set)
+//     SecurityContext.RunAsUser if set), with RunAsGroup joined to it; a
+//     RunAsGroup authored without RunAsUser has no uid to join and renders no
+//     user
 //   - Workload.PodSecurityContext.FSGroup and SupplementalGroups → no
 //     equivalent in the compose service model
 //   - Workload.HostNetwork                 → network_mode: host
@@ -953,10 +958,10 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //
 // Every authored pod-level field compose cannot honor — scheduling,
 // serviceAccount, replicas, runtimeClassName, priorityClassName,
-// imagePullSecrets, dnsPolicy, dnsConfig.options, podSecurityContext.fsGroup
-// and podSecurityContext.supplementalGroups — is dropped with an
-// unsupported-field warning. Returns one diagnostic per authored-and-dropped field, in
-// a deterministic order.
+// imagePullSecrets, dnsPolicy, dnsConfig.options, podSecurityContext.fsGroup,
+// podSecurityContext.supplementalGroups, and podSecurityContext.runAsGroup
+// authored without runAsUser — is dropped with an unsupported-field warning.
+// Returns one diagnostic per authored-and-dropped field, in a deterministic order.
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.Diagnostic {
 	applyPodUser(svc, w)
 
@@ -1019,6 +1024,9 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 		}
 		if len(psc.SupplementalGroups) > 0 {
 			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.supplementalGroups"))
+		}
+		if psc.RunAsGroup != nil && psc.RunAsUser == nil {
+			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.runAsGroup"))
 		}
 	}
 	// An init container becomes its own service, and that service joins the

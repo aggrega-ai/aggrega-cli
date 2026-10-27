@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-attachment-reference
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/db
+    api:
+      type: core/api
+      features:
+        shared_backend:
+          type: core/shared-backend
+          uses:
+            backend:
+              primary:
+                target: db
+                inject:
+                  env:
+                    # The attachment-literal connection's reference, alone: it
+                    # builds and reaches the output.
+                    - in: DB_PORT
+                      from: port
