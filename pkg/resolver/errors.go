@@ -169,6 +169,27 @@ var errAnnotationSubkeyNotConforming = cerrors.Register("annotation-subkey-not-c
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrAnnotationSubkeyNotBound wraps a subkey an author wrote inside a structured
+// annotation value that the annotation's binding does not route: the Manifest
+// declares a binding for the annotation key, and the subkey names none of the paths
+// that binding lists under maps.infra and maps.values. Such a value has nowhere to
+// go, so it is refused rather than dropped; the finding names the subkey, the key
+// it was written under and the paths the binding does route.
+//
+// It is asked over the value an Aggregate or Release author wrote, before any
+// annotation is expanded, beside the rule ErrAnnotationSubkeyNotConforming names.
+// The two divide one question: this one refuses a subkey the binding does not
+// route, that one a subkey it routes whose value the target Feature's schema does
+// not admit. An annotation key the Manifest declares no binding for routes nowhere
+// and contributes nothing, so it is neither condition's finding.
+func ErrAnnotationSubkeyNotBound() error { return errAnnotationSubkeyNotBound }
+
+var errAnnotationSubkeyNotBound = cerrors.Register("annotation-subkey-not-bound", cerrors.Meta{
+	ShortCode: "E0363",
+	Message:   "annotation subkey is not routed by the annotation's binding",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrAnnotationSidePillarMismatch wraps an annotation whose binding routes it
 // through a pillar the authoring side it was written on may not use: an
 // Aggregate-side annotation routes through values, a Release-side annotation

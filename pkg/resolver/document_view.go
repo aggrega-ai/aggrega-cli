@@ -268,9 +268,24 @@ func (v manifestDocumentView) ManifestAnnotationBindingRoutes(
 	binding string,
 ) []constraint.AnnotationBindingRoute {
 	v.refuseOtherDocument(document, "ManifestAnnotationBindingRoutes")
+	routes, _ := v.AnnotationBindingDeclaredRoutes(binding)
+	return routes
+}
+
+// AnnotationBindingDeclaredRoutes returns the routing slots the binding of one
+// annotation key claims, and whether the presented Manifest declares a binding of
+// that key at all.
+//
+// It takes no document argument, for the reason AnnotationBindingSubkeyTarget
+// takes none: it is asked by a rule over an annotation an author wrote, which holds
+// the key and no Manifest coordinate. The document-keyed routes above are this
+// answer asked about the presented document, so the table has one reading.
+func (v manifestDocumentView) AnnotationBindingDeclaredRoutes(
+	binding string,
+) ([]constraint.AnnotationBindingRoute, bool) {
 	declared, ok := v.bindings.Lookup(binding)
 	if !ok {
-		return nil
+		return nil, false
 	}
 	var routes []constraint.AnnotationBindingRoute
 	for _, pillar := range []struct {
@@ -287,7 +302,7 @@ func (v manifestDocumentView) ManifestAnnotationBindingRoutes(
 			})
 		}
 	}
-	return routes
+	return routes, true
 }
 
 // AnnotationBindingSubkeyTarget returns what one subkey written under an

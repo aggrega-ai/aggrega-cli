@@ -12,9 +12,9 @@ import (
 )
 
 // ValidateAuthoredAnnotations asks the rules over every annotation entry either
-// authoring document declares, and refuses the build when any of them routes
-// through a pillar its own document may not use, or carries a value the Feature
-// its binding targets does not admit.
+// authoring document declares, and refuses the build when any of them names a
+// subkey its binding does not route, routes through a pillar its own document may
+// not use, or carries a value the Feature its binding targets does not admit.
 //
 // It presents the documents and names each rule rather than walking the
 // annotations itself: the rules are declared in this package as constraints, so
@@ -50,11 +50,10 @@ import (
 // author fixing several sees them all in one build.
 //
 // Unlike the binding-target rule beside it, it does NOT return early on a build
-// resolving against no catalog. One of the two rules reads no contract at all —
-// the pillar comes from the binding and the side from the document — so
-// returning early would lose a finding that is fully decidable without a
-// catalog. The rule that does read a contract ends on its own where the
-// contract cannot be read.
+// resolving against no catalog. Two of its rules read no contract at all — the
+// routing comes from the binding and the side from the document — so returning
+// early would lose findings that are fully decidable without a catalog. The rule
+// that does read a contract ends on its own where the contract cannot be read.
 //
 // The findings are joined, so a caller matching the refusal by identity keeps
 // matching however many entries offended.
@@ -111,11 +110,16 @@ func ValidateAuthoredAnnotations(
 		rule := func(objections []constraint.Objection, err error) error {
 			return collect(side.entity, side.injectedBy, objections, err)
 		}
-		// The side rule declares the narrower view, because its predicate reads only
-		// what a presented document carries. A later presentation contains an
-		// earlier one, so the same value serves both calls and the narrowing is a
-		// statement about where the rule COULD run rather than a second
-		// presentation.
+		// The routing rule and the side rule declare the narrower view, because their
+		// predicates read only what a presented document carries. A later
+		// presentation contains an earlier one, so the same value serves every call
+		// and the narrowing is a statement about where a rule COULD run rather than a
+		// second presentation.
+		if err := rule(constraint.RunOnAuthoredAnnotations(
+			cancelled, entries, constraint.DocumentView(presented),
+			annotationSubkeyIsRoutedByItsBinding)); err != nil {
+			return err
+		}
 		if err := rule(constraint.RunOnAuthoredAnnotations(
 			cancelled, entries, constraint.DocumentView(presented),
 			annotationRoutesThroughItsAuthoringSidesPillar)); err != nil {

@@ -102,6 +102,12 @@ func (v manifestGraphView) AnnotationBindingSubkeyTarget(binding, subkey string)
 	return v.manifest.AnnotationBindingSubkeyTarget(binding, subkey)
 }
 
+// AnnotationBindingDeclaredRoutes returns the routing slots the binding of one
+// annotation key claims, answered by the Manifest's own presentation.
+func (v manifestGraphView) AnnotationBindingDeclaredRoutes(binding string) ([]constraint.AnnotationBindingRoute, bool) {
+	return v.manifest.AnnotationBindingDeclaredRoutes(binding)
+}
+
 // ManifestExtendsChainCycleEdge is answered by the Manifest's own presentation,
 // which refuses it: the fact is read off a walk of the chain, not off the
 // document.

@@ -105,6 +105,15 @@ func (v *manifestNormalizedView) AnnotationBindingSubkeyTarget(
 	return v.bindings.AnnotationBindingSubkeyTarget(binding, subkey)
 }
 
+// AnnotationBindingDeclaredRoutes returns the routing slots the binding of one
+// annotation key claims, and whether the presented Manifest declares that binding
+// at all. It delegates like the binding facts above.
+func (v *manifestNormalizedView) AnnotationBindingDeclaredRoutes(
+	binding string,
+) ([]constraint.AnnotationBindingRoute, bool) {
+	return v.bindings.AnnotationBindingDeclaredRoutes(binding)
+}
+
 // CompiledFeatureSchema returns the contract of a Feature a binding targets,
 // resolved, and whether there was a contract that resolved at all.
 //

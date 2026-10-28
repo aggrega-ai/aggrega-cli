@@ -1147,6 +1147,28 @@ type DocumentView interface {
 	// types.AnnotationBinding.
 	AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool)
 
+	// AnnotationBindingDeclaredRoutes are the routing slots the binding of one
+	// annotation key claims, in the order the Manifest's own binding routes
+	// are read, and whether the presented Manifest declares a binding of that
+	// key at all.
+	//
+	// It is asked by a rule invoked over an annotation an author wrote, and
+	// such a rule holds the annotation key and no Manifest coordinate: the
+	// entry sits in an Aggregate or a Release, and the binding it is routed by
+	// is whichever one the presented Manifest declares under that key. So it
+	// is keyed by the binding alone, as the subkey's routing target is, rather
+	// than by a document the rule could not name.
+	//
+	// The second result separates a key nobody declared a binding for, which
+	// routes nowhere and is passed over, from a declared binding, every subkey
+	// of which has to name one of the paths returned. The two answer the same
+	// absence of a route differently, and a rule that could not tell them
+	// apart would refuse an annotation no binding claims.
+	//
+	// Keyed by (document, annotation-binding); read from
+	// types.AnnotationBinding.Maps.
+	AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool)
+
 	// RecipeValuesMappingDeclared reports whether the presented Recipe
 	// declares a values overlay.
 	//

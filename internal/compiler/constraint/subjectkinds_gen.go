@@ -52,7 +52,7 @@ const (
 	// SubjectDocumentSchemaPillar is the subject kind (document, schema-pillar), keyed by 2 declared facts.
 	SubjectDocumentSchemaPillar SubjectKind = "(document, schema-pillar)"
 
-	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 5 declared facts.
+	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 6 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
 	// SubjectDocumentOutputLabel is the subject kind (document, output-label), keyed by 2 declared facts.

@@ -12,7 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// The four annotation conditions each carry three identifiers, and this file
+// The annotation conditions each carry three identifiers, and this file
 // renders the output each of them actually emits.
 //
 // Two properties are pinned that neither a unit test of the predicate nor the
@@ -209,6 +209,56 @@ values:
 		t.Errorf("non-conforming-value output does not open with the condition and the occurrence; got: %s", got)
 	}
 	assertNoCategoryToken(t, nonConforming.Error())
+}
+
+// TestAnnotationSubkeyNotBound_RendersItsOutput renders the unbound-subkey
+// condition on both authoring sides and pins its identifiers, its emitted text and
+// the category each side's finding is filed under.
+func TestAnnotationSubkeyNotBound_RendersItsOutput(t *testing.T) {
+	t.Parallel()
+	manifest := structuredManifest(t)
+
+	releaseSide := authoredAnnotationRefusal(t, manifest, nil,
+		releaseAnnotating(t, "feature.myco/db-pool:\n  nosuch: 1\n"), CatalogLookup{})
+	assertIdentity(t, releaseSide, ErrAnnotationSubkeyNotBound(),
+		"annotation-subkey-not-bound", "E0363")
+	const wantRelease = `annotation subkey is not routed by the annotation's binding ` +
+		`(Release test, at .spec.boundaries.prod.components.api.annotations, ` +
+		`"nosuch", written under annotation "feature.myco/db-pool", ` +
+		`whose binding routes only "pool_size, max_connections, db_name, read_replicas")`
+	if got := releaseSide.Error(); got != wantRelease {
+		t.Errorf("Release-side output\n got: %s\nwant: %s", got, wantRelease)
+	}
+	assertNoCategoryToken(t, releaseSide.Error())
+
+	aggregateSide := authoredAnnotationRefusal(t, manifest,
+		aggregateAnnotating(t, "feature.myco/db-pool:\n  dbname: \"orders\"\n"), nil, CatalogLookup{})
+	assertIdentity(t, aggregateSide, ErrAnnotationSubkeyNotBound(),
+		"annotation-subkey-not-bound", "E0363")
+	const wantAggregate = `annotation subkey is not routed by the annotation's binding ` +
+		`(Aggregate test, at .spec.components.api.annotations, ` +
+		`"dbname", written under annotation "feature.myco/db-pool", ` +
+		`whose binding routes only "pool_size, max_connections, db_name, read_replicas")`
+	if got := aggregateSide.Error(); got != wantAggregate {
+		t.Errorf("Aggregate-side output\n got: %s\nwant: %s", got, wantAggregate)
+	}
+	assertNoCategoryToken(t, aggregateSide.Error())
+
+	for _, side := range []struct {
+		err  error
+		want cerrors.Category
+	}{
+		{releaseSide, cerrors.OpsError},
+		{aggregateSide, cerrors.DeveloperError},
+	} {
+		var re *ResolverError
+		if !stderrors.As(side.err, &re) {
+			t.Fatalf("the refusal carries no finding: %v", side.err)
+		}
+		if got := re.ToCompilerError().Category(); got != side.want {
+			t.Errorf("the finding is filed under %q, want %q", got, side.want)
+		}
+	}
 }
 
 // TestAnnotationSidePillarMismatch_RendersItsOutput renders the side-vs-pillar

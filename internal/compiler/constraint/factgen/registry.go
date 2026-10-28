@@ -1133,6 +1133,31 @@ var facts = []factDecl{
 			"on and a separate condition advises about.",
 	},
 	{
+		Name:         "annotation-binding-declared-routes",
+		Stage:        "document",
+		SourceField:  "types.AnnotationBinding.Maps",
+		DocumentKind: "Manifest",
+		Subject:      []string{"document", "annotation-binding"},
+		Params:       []paramDecl{{Name: "binding", Type: "string"}},
+		Returns:      "([]AnnotationBindingRoute, bool)",
+		Doc: "AnnotationBindingDeclaredRoutes are the routing slots the binding " +
+			"of one annotation key claims, in the order the Manifest's own " +
+			"binding routes are read, and whether the presented Manifest " +
+			"declares a binding of that key at all.\n\nIt is asked by a rule " +
+			"invoked over an annotation an author wrote, and such a rule holds " +
+			"the annotation key and no Manifest coordinate: the entry sits in " +
+			"an Aggregate or a Release, and the binding it is routed by is " +
+			"whichever one the presented Manifest declares under that key. So " +
+			"it is keyed by the binding alone, as the subkey's routing target " +
+			"is, rather than by a document the rule could not name.\n\nThe " +
+			"second result separates a key nobody declared a binding for, which " +
+			"routes nowhere and is passed over, from a declared binding, every " +
+			"subkey of which has to name one of the paths returned. The two " +
+			"answer the same absence of a route differently, and a rule that " +
+			"could not tell them apart would refuse an annotation no binding " +
+			"claims.",
+	},
+	{
 		Name:        "recipe-values-mapping-declared",
 		Stage:       "document",
 		SourceField: "types.RecipeSpec.ValuesMapping",

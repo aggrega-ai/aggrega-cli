@@ -483,6 +483,12 @@ func expandBindingStructured(
 	for subkey, subvalue := range value.Structured.All() {
 		pillar, found := binding.Maps.Lookup(subkey)
 		if !found {
+			// A subkey the binding does not route is refused, under its own condition,
+			// by the rule asked over the authored entry before expansion runs, so a
+			// build never reaches this branch with one in place. The refusal stays
+			// rather than a skip because expansion is reachable without that rule —
+			// directly, by a caller that has not asked it — and there an unroutable
+			// value would otherwise be dropped with nothing said.
 			declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
 			errs = append(errs, fmt.Errorf(
 				"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
@@ -548,6 +554,8 @@ func synthesizeAggregateFeatureFromAnnotation(
 		for subkey, subvalue := range value.Structured.All() {
 			pillar, found := binding.Maps.Lookup(subkey)
 			if !found {
+				// Reached only without the rule over the authored entry, for the
+				// reason the Release-side branch states.
 				declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
 				errs = append(errs, fmt.Errorf(
 					"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",

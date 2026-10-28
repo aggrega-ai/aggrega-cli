@@ -140,6 +140,13 @@ func (v manifestChainDocumentView) AnnotationBindingSubkeyTarget(
 	panic(v.refusal("AnnotationBindingSubkeyTarget"))
 }
 
+// AnnotationBindingDeclaredRoutes refuses: this view carries a chain's shape.
+func (v manifestChainDocumentView) AnnotationBindingDeclaredRoutes(
+	binding string,
+) ([]constraint.AnnotationBindingRoute, bool) {
+	panic(v.refusal("AnnotationBindingDeclaredRoutes"))
+}
+
 // ManifestRecipeMappingEntries refuses: this view carries a chain's shape.
 func (v manifestChainDocumentView) ManifestRecipeMappingEntries(
 	document string,

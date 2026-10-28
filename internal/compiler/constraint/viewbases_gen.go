@@ -143,6 +143,12 @@ func (AggregateDocumentBase) AnnotationBindingSubkeyTarget(binding string, subke
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (AggregateDocumentBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
+}
+
 // RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeValuesMappingDeclared(document string) bool {
@@ -362,6 +368,12 @@ func (ComponentDocumentBase) ManifestAnnotationBindingRoutes(document string, bi
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (ComponentDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (ComponentDocumentBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This view does not carry
@@ -595,6 +607,12 @@ func (FeatureDocumentBase) ManifestAnnotationBindingRoutes(document string, bind
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (FeatureDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (FeatureDocumentBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This view does not carry
@@ -1018,6 +1036,12 @@ func (ReleaseDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey 
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (ReleaseDocumentBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
+}
+
 // RecipeValuesMappingDeclared panics. This view does not carry
 // recipe-values-mapping-declared, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeValuesMappingDeclared(document string) bool {
@@ -1263,6 +1287,12 @@ func (RecipeDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey s
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
 }
 
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (RecipeDocumentBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
+}
+
 // ManifestRecipeMappingEntries panics. This view does not carry
 // manifest-recipe-mapping-entries, which a Manifest document carries.
 func (RecipeDocumentBase) ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping {
@@ -1459,6 +1489,12 @@ func (FeatureRecipeDocumentBase) ManifestAnnotationBindingRoutes(document string
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (FeatureRecipeDocumentBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (FeatureRecipeDocumentBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This view does not carry
@@ -1679,6 +1715,12 @@ func (CatalogViewBase) ManifestAnnotationBindingRoutes(document string, binding 
 // annotation-binding-subkey-target, which a Manifest document carries.
 func (CatalogViewBase) AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool) {
 	panic("this view does not carry annotation-binding-subkey-target, which a Manifest document carries")
+}
+
+// AnnotationBindingDeclaredRoutes panics. This view does not carry
+// annotation-binding-declared-routes, which a Manifest document carries.
+func (CatalogViewBase) AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool) {
+	panic("this view does not carry annotation-binding-declared-routes, which a Manifest document carries")
 }
 
 // RecipeValuesMappingDeclared panics. This view does not carry
@@ -3320,6 +3362,7 @@ type ManifestDocumentFacts interface {
 	ManifestAnnotationBindingFeature(document string, binding string) (string, bool)
 	ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute
 	AnnotationBindingSubkeyTarget(binding string, subkey string) (AnnotationSubkeyTarget, bool)
+	AnnotationBindingDeclaredRoutes(binding string) ([]AnnotationBindingRoute, bool)
 	ManifestRecipeMappingEntries(document string) []ManifestRecipeMapping
 	ManifestRecipeMappingReference(document string, tier string, axis string, key string) (string, bool)
 }
