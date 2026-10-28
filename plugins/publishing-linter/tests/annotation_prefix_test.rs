@@ -172,6 +172,30 @@ fn annotation_prefix_reserved_but_unread_keys_exempted() {
 }
 
 #[test]
+fn annotation_prefix_provenance_label_keys_exempted() {
+    // Providers stamp these keys on rendered output, so the platform owns the
+    // names: a catalog entity that annotates one must not be flagged, and an
+    // enterprise catalog cannot take one for a meaning of its own.
+    let input = fixture(
+        "Recipe",
+        json!({
+            "aggrega.ai/component-id": "api",
+            "aggrega.ai/recipe-uri": "acme/api:1.0.0",
+            "aggrega.ai/boundary-path": "prod",
+            "aggrega.ai/aggregate-name": "shop",
+            "aggrega.ai/compiler-version": "1.0.0",
+            "aggrega.ai/provider": "helm",
+            "aggrega.ai/provider-version": "1.0.0",
+            "aggrega.ai/environment": "production",
+            "aggrega.ai/sync-wave": "1",
+        }),
+        None,
+    );
+    let findings = annotation_prefix::classify(&input);
+    assert_eq!(findings.len(), 0, "provenance label keys are reserved and exempt");
+}
+
+#[test]
 fn annotation_prefix_unreserved_bare_key_still_flagged_alongside_reserved_ones() {
     // The exemption stays a list, not a blanket pass on the bare prefix: an
     // unreserved key is still namespace pollution even when it sits beside

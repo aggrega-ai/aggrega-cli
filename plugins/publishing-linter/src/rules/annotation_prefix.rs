@@ -174,6 +174,8 @@ const WELL_KNOWN_ANNOTATIONS: &[&str] = &[
     "aggrega.ai/boundary-path",
     "aggrega.ai/aggregate-name",
     "aggrega.ai/compiler-version",
+    "aggrega.ai/provider",
+    "aggrega.ai/provider-version",
     "aggrega.ai/environment",
     "aggrega.ai/sync-wave",
 ];
