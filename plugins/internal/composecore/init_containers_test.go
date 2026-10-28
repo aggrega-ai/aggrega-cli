@@ -127,8 +127,8 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 
 	// The configuration the init container carries reaches it: the env var it
 	// declared and the command that reads the mounted file both survive.
-	if got, _ := seed.Environment.Get("SEED_SOURCE"); got != "/seed/workflow.json" {
-		t.Errorf("init service SEED_SOURCE = %q, want /seed/workflow.json", got)
+	if got, _ := seed.Environment.Get("SEED_SOURCE"); got == nil || *got != "/seed/workflow.json" {
+		t.Errorf("init service SEED_SOURCE = %v, want /seed/workflow.json", got)
 	}
 	if len(seed.Entrypoint) == 0 || len(seed.Command) == 0 {
 		t.Errorf("init service lost its command: entrypoint=%v command=%v", seed.Entrypoint, seed.Command)

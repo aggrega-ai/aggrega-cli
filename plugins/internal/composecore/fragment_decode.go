@@ -68,9 +68,10 @@ type fragmentKeyShape interface {
 // opaqueFragmentTypes are the self-decoding types whose content holds no key of
 // a compose shape: each one carries what it decodes as written. The environment
 // mapping is the one such type — its keys are variable names the author chose,
-// and every one of them reaches the assembled file.
+// and every one of them reaches the assembled file, an entry with no value
+// included.
 var opaqueFragmentTypes = map[reflect.Type]bool{
-	reflect.TypeOf(types.OrderedMap[string]{}): true,
+	reflect.TypeOf(types.OrderedMap[*string]{}): true,
 }
 
 var (
@@ -310,7 +311,25 @@ func (w *fragmentKeyWalk) walk(node *yaml.Node, t reflect.Type, path string) {
 // decoder reads, and the Extensions field its owner's decode fills, so the walk
 // and the decode cannot disagree about a key.
 func fragmentFields(t reflect.Type) (fields map[string]reflect.Type, acceptsAny, acceptsExtensions bool) {
-	fields = map[string]reflect.Type{}
+	list, acceptsAny, acceptsExtensions := fragmentFieldList(t)
+	fields = make(map[string]reflect.Type, len(list))
+	for _, f := range list {
+		fields[f.key] = f.typ
+	}
+	return fields, acceptsAny, acceptsExtensions
+}
+
+// fragmentField is one key a struct decodes and the type of the field it lands
+// in.
+type fragmentField struct {
+	key string
+	typ reflect.Type
+}
+
+// fragmentFieldList is fragmentFields in the order the struct declares its
+// fields, which is the order the encoder writes their keys in: an inline
+// struct's keys sit where the inline field sits.
+func fragmentFieldList(t reflect.Type) (fields []fragmentField, acceptsAny, acceptsExtensions bool) {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.PkgPath != "" && !f.Anonymous {
@@ -334,10 +353,8 @@ func fragmentFields(t reflect.Type) (fields map[string]reflect.Type, acceptsAny,
 			case reflect.Map:
 				acceptsAny = true
 			case reflect.Struct:
-				inner, innerAny, innerExtensions := fragmentFields(ft)
-				for k, v := range inner {
-					fields[k] = v
-				}
+				inner, innerAny, innerExtensions := fragmentFieldList(ft)
+				fields = append(fields, inner...)
 				acceptsAny = acceptsAny || innerAny
 				acceptsExtensions = acceptsExtensions || innerExtensions
 			}
@@ -346,7 +363,7 @@ func fragmentFields(t reflect.Type) (fields map[string]reflect.Type, acceptsAny,
 		if name == "" {
 			name = strings.ToLower(f.Name)
 		}
-		fields[name] = f.Type
+		fields = append(fields, fragmentField{key: name, typ: f.Type})
 	}
 	return fields, acceptsAny, acceptsExtensions
 }
@@ -379,6 +396,39 @@ func fragmentPairs(mapping *yaml.Node) []fragmentPair {
 			continue
 		}
 		out = append(out, fragmentPair{key: k.Value, value: v})
+	}
+	return out
+}
+
+// effectiveFragmentPairs lists each key of a mapping once, with the value the
+// decoder gives it, in the order the key first appears among fragmentPairs.
+// Where a key is both written in place and brought in by a merge key (`<<`), the
+// value written in place is the one listed, at the place the key first appears;
+// among several merged mappings the earlier one wins. That is the precedence the
+// decoder gives every key of the mapping.
+func effectiveFragmentPairs(mapping *yaml.Node) []fragmentPair {
+	mapping = resolveFragmentAlias(mapping)
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return nil
+	}
+	inPlace := map[string]*yaml.Node{}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		k := mapping.Content[i]
+		if k.Kind == yaml.ScalarNode && k.ShortTag() != "!!merge" {
+			inPlace[k.Value] = mapping.Content[i+1]
+		}
+	}
+	listed := map[string]bool{}
+	var out []fragmentPair
+	for _, kv := range fragmentPairs(mapping) {
+		if listed[kv.key] {
+			continue
+		}
+		listed[kv.key] = true
+		if written, ok := inPlace[kv.key]; ok {
+			kv.value = written
+		}
+		out = append(out, kv)
 	}
 	return out
 }

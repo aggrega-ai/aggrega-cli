@@ -537,7 +537,7 @@ func translateContainer(
 			// advisory is what makes it honest: an empty variable the author is
 			// told about is debuggable, whereas a variable that simply never
 			// appears leaves nothing to debug from.
-			svc.Environment.Set(slotKey, "")
+			svc.Environment.Set(slotKey, envValue(""))
 			diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName,
 				containerPath+".attachments."+slotKey,
 				"compose cannot source an environment variable from an attachment, so the variable is emitted with an empty value"))
@@ -553,7 +553,7 @@ func translateContainer(
 
 	// Plain variables, in authored order, after every attachment-read entry.
 	for k, v := range c.Variables.All() {
-		svc.Environment.Set(k, v)
+		svc.Environment.Set(k, envValue(v))
 	}
 
 	// Volume mounts (typed list — VolumeMount carries Name + Path + ReadOnly).

@@ -89,32 +89,15 @@ func (e *Extensions) add(key string, value *yaml.Node) {
 
 // decodeExtensions reads the extension members of mapping in document order. A
 // member a YAML merge key (`<<`) brings in is read where the merge sits, as the
-// fragment key walk reads it. Where a key is both written in place and brought in
-// by a merge, the value written in place is the one held, at the place the key
-// first appears, and among several merged mappings the earlier one wins: that is
-// the precedence the decoder gives every other key of the mapping.
+// fragment key walk reads it, with the value the decoder gives it (see
+// effectiveFragmentPairs).
 func decodeExtensions(mapping *yaml.Node) Extensions {
-	mapping = resolveFragmentAlias(mapping)
-	if mapping == nil || mapping.Kind != yaml.MappingNode {
-		return Extensions{}
-	}
-	inPlace := map[string]*yaml.Node{}
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		k := mapping.Content[i]
-		if k.Kind == yaml.ScalarNode && k.ShortTag() != "!!merge" && isExtensionKey(k.Value) {
-			inPlace[k.Value] = mapping.Content[i+1]
-		}
-	}
 	var out Extensions
-	for _, kv := range fragmentPairs(mapping) {
-		if !isExtensionKey(kv.key) || out.has(kv.key) {
+	for _, kv := range effectiveFragmentPairs(mapping) {
+		if !isExtensionKey(kv.key) {
 			continue
 		}
-		value := kv.value
-		if written, ok := inPlace[kv.key]; ok {
-			value = written
-		}
-		out.add(kv.key, carriedExtensionValue(value))
+		out.add(kv.key, carriedExtensionValue(kv.value))
 	}
 	return out
 }
@@ -210,25 +193,36 @@ func (ComposeFile) walkFragmentKeys(w *fragmentKeyWalk, node *yaml.Node, path st
 	w.walk(node, composeFileFieldsType, path)
 }
 
-// UnmarshalYAML decodes every modelled key as the struct declares it and keeps
-// the extension members the service writes, in document order.
+// UnmarshalYAML decodes every modelled key as the struct declares it, keeps the
+// extension members the service writes, in document order, and records the
+// modelled keys it writes as null.
 func (s *Service) UnmarshalYAML(node *yaml.Node) error {
 	var fields serviceFields
 	if err := node.Decode(&fields); err != nil {
 		return err
 	}
 	fields.Extensions = decodeExtensions(node)
+	fields.writtenNull = writtenNullKeys(node, serviceFieldsType)
 	*s = Service(fields)
 	return nil
 }
 
-// MarshalYAML writes every modelled key, then the extension members in the order
-// held.
+// MarshalYAML writes every modelled key, each key written as null that still has
+// no value of its own as `key: null` at its place, then the extension members in
+// the order held.
 //
 // Value receiver so dispatch works when Service is the value of a map, which is
 // not addressable.
 func (s Service) MarshalYAML() (any, error) {
-	return encodeWithExtensions(serviceFields(s), s.Extensions)
+	if len(s.writtenNull) == 0 {
+		return encodeWithExtensions(serviceFields(s), s.Extensions)
+	}
+	var node yaml.Node
+	if err := node.Encode(serviceFields(s)); err != nil {
+		return nil, err
+	}
+	restoreWrittenNulls(&node, s.writtenNull, serviceFieldsType)
+	return encodeWithExtensions(&node, s.Extensions)
 }
 
 // walkFragmentKeys walks a service against the keys Service models, accepting

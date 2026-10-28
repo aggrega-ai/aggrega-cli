@@ -52,38 +52,55 @@ type ComposeFile struct {
 // Extensions holds the service's extension members (keys beginning x-), in the
 // order written, and is emitted after every other key; Service decodes and
 // encodes itself to carry them.
+//
+// A null is carried as written, at two depths. An environment entry written with
+// no value (`KEY:` or `KEY: null`) is held as a nil value and emitted as
+// `KEY: null`, so Compose takes the variable from the environment it runs in
+// rather than setting it empty. A key of the service itself written as null is
+// recorded by the decode in writtenNull and emitted as `key: null` wherever the
+// service still has no value of its own for it (see written_null.go); a value
+// set later, such as the network the merge attaches, is emitted as that value.
 type Service struct {
-	Image           string                   `yaml:"image,omitempty"`
-	PullPolicy      string                   `yaml:"pull_policy,omitempty"`
-	Command         []string                 `yaml:"command,omitempty"`
-	Entrypoint      []string                 `yaml:"entrypoint,omitempty"`
-	Environment     types.OrderedMap[string] `yaml:"environment,omitempty"`
-	EnvFile         []string                 `yaml:"env_file,omitempty"`
-	Ports           []string                 `yaml:"ports,omitempty"`
-	Labels          map[string]string        `yaml:"labels,omitempty"`
-	Volumes         []ServiceVolume          `yaml:"volumes,omitempty"`
-	Tmpfs           []string                 `yaml:"tmpfs,omitempty"`
-	Networks        []string                 `yaml:"networks,omitempty"`
-	NetworkMode     string                   `yaml:"network_mode,omitempty"`
-	DependsOn       DependsOn                `yaml:"depends_on,omitempty"`
-	Healthcheck     *Healthcheck             `yaml:"healthcheck,omitempty"`
-	Restart         string                   `yaml:"restart,omitempty"`
-	User            string                   `yaml:"user,omitempty"`
-	WorkingDir      string                   `yaml:"working_dir,omitempty"`
-	Privileged      bool                     `yaml:"privileged,omitempty"`
-	ReadOnly        bool                     `yaml:"read_only,omitempty"`
-	CapAdd          []string                 `yaml:"cap_add,omitempty"`
-	CapDrop         []string                 `yaml:"cap_drop,omitempty"`
-	Configs         []ServiceConfig          `yaml:"configs,omitempty"`
-	Models          ServiceModels            `yaml:"models,omitempty"`
-	Deploy          *Deploy                  `yaml:"deploy,omitempty"`
-	StopGracePeriod string                   `yaml:"stop_grace_period,omitempty"`
-	DNS             []string                 `yaml:"dns,omitempty"`
-	DNSSearch       []string                 `yaml:"dns_search,omitempty"`
-	ExtraHosts      []string                 `yaml:"extra_hosts,omitempty"`
-	Profiles        []string                 `yaml:"profiles,omitempty"`
-	Extensions      Extensions               `yaml:"-"`
+	Image           string                    `yaml:"image,omitempty"`
+	PullPolicy      string                    `yaml:"pull_policy,omitempty"`
+	Command         []string                  `yaml:"command,omitempty"`
+	Entrypoint      []string                  `yaml:"entrypoint,omitempty"`
+	Environment     types.OrderedMap[*string] `yaml:"environment,omitempty"`
+	EnvFile         []string                  `yaml:"env_file,omitempty"`
+	Ports           []string                  `yaml:"ports,omitempty"`
+	Labels          map[string]string         `yaml:"labels,omitempty"`
+	Volumes         []ServiceVolume           `yaml:"volumes,omitempty"`
+	Tmpfs           []string                  `yaml:"tmpfs,omitempty"`
+	Networks        []string                  `yaml:"networks,omitempty"`
+	NetworkMode     string                    `yaml:"network_mode,omitempty"`
+	DependsOn       DependsOn                 `yaml:"depends_on,omitempty"`
+	Healthcheck     *Healthcheck              `yaml:"healthcheck,omitempty"`
+	Restart         string                    `yaml:"restart,omitempty"`
+	User            string                    `yaml:"user,omitempty"`
+	WorkingDir      string                    `yaml:"working_dir,omitempty"`
+	Privileged      bool                      `yaml:"privileged,omitempty"`
+	ReadOnly        bool                      `yaml:"read_only,omitempty"`
+	CapAdd          []string                  `yaml:"cap_add,omitempty"`
+	CapDrop         []string                  `yaml:"cap_drop,omitempty"`
+	Configs         []ServiceConfig           `yaml:"configs,omitempty"`
+	Models          ServiceModels             `yaml:"models,omitempty"`
+	Deploy          *Deploy                   `yaml:"deploy,omitempty"`
+	StopGracePeriod string                    `yaml:"stop_grace_period,omitempty"`
+	DNS             []string                  `yaml:"dns,omitempty"`
+	DNSSearch       []string                  `yaml:"dns_search,omitempty"`
+	ExtraHosts      []string                  `yaml:"extra_hosts,omitempty"`
+	Profiles        []string                  `yaml:"profiles,omitempty"`
+	Extensions      Extensions                `yaml:"-"`
+
+	// writtenNull holds, in the order the fragment wrote them, the keys above
+	// whose value the fragment wrote as null. Unexported, so neither the encode
+	// nor the fragment key walk reads it as a key.
+	writtenNull []string
 }
+
+// envValue returns an environment entry holding v. A nil entry is one written
+// with no value.
+func envValue(v string) *string { return &v }
 
 // Compose `depends_on` conditions, as the Compose Specification defines them.
 // conditionStarted is the specification's stated equivalent of the short form;
