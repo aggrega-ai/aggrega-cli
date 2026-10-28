@@ -62,10 +62,12 @@ type TrustedIdentity struct {
 // accepted here only where that reading agrees — the same reading a build holds
 // the recorded fact to.
 //
-// Returns nil on success; a wrapped ErrSignatureVerificationFailed when
-// the bundle does not verify against the key, the artifact binding
-// fails, or the toolchain's reading does not agree with it;
-// ErrUntrustedIdentity is never returned here (keyed mode has no
+// Returns nil on success; a wrapped ErrUnsupportedKey, naming what the key is,
+// when the pinned key is not an ECDSA P-256 key — the one key profile keyed
+// signing uses, checked before any signature is; a wrapped
+// ErrSignatureVerificationFailed when the bundle does not verify against the
+// key, the artifact binding fails, or the toolchain's reading does not agree
+// with it; ErrUntrustedIdentity is never returned here (keyed mode has no
 // identity).
 func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error {
 	if err := verifyKeyedWithLibrary(bundleBytes, pubPEM, artifactDigest); err != nil {
@@ -87,10 +89,10 @@ func verifyKeyedWithLibrary(bundleBytes, pubPEM []byte, artifactDigest string) e
 	if err != nil {
 		return fmt.Errorf("signing: parse pinned public key: %w", err)
 	}
-	ecPub, ok := pub.(*ecdsa.PublicKey)
-	if !ok {
-		return fmt.Errorf("%w: pinned key is %s, want ECDSA P-256", ErrUnsupportedKey(), keyAlgorithm(pub))
+	if err := requireKeyProfile("pinned", pub); err != nil {
+		return err
 	}
+	ecPub := pub.(*ecdsa.PublicKey)
 	verifier, err := signature.LoadECDSAVerifier(ecPub, crypto.SHA256)
 	if err != nil {
 		return fmt.Errorf("signing: load pinned-key verifier: %w", err)

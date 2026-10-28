@@ -47,18 +47,20 @@ func GenerateKeyedPEM() (privPEM, pubPEM []byte, err error) {
 	return privPEM, pubPEM, nil
 }
 
-// LoadKeyedSigner loads a held ECDSA private key from a cosign-compatible
-// PEM block and returns a KeyedSigner backed by it. pf supplies the
-// passphrase for an encrypted PEM; pass nil for an unencrypted key.
+// LoadKeyedSigner loads a held ECDSA P-256 private key from a cosign-compatible
+// PEM block and returns a KeyedSigner backed by it. A key of any other
+// algorithm, or an ECDSA key on any other curve, is refused with
+// ErrUnsupportedKey naming what it is. pf supplies the passphrase for an
+// encrypted PEM; pass nil for an unencrypted key.
 func LoadKeyedSigner(privPEM []byte, pf cryptoutils.PassFunc) (*KeyedSigner, error) {
 	priv, err := cryptoutils.UnmarshalPEMToPrivateKey(privPEM, pf)
 	if err != nil {
 		return nil, fmt.Errorf("signing: parse private key: %w", err)
 	}
-	ecKey, ok := priv.(*ecdsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("%w: held key is %s, want ECDSA P-256", ErrUnsupportedKey(), keyAlgorithm(priv))
+	if err := requireKeyProfile("held", priv); err != nil {
+		return nil, err
 	}
+	ecKey := priv.(*ecdsa.PrivateKey)
 	sv, err := signature.LoadSignerVerifier(priv, keyedHash)
 	if err != nil {
 		return nil, fmt.Errorf("signing: load signer: %w", err)
