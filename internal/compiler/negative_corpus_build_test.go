@@ -29,9 +29,10 @@ import (
 
 // socketedCorpusComponent is the base Component plus one `peer` socket whose
 // selector admits the base component's own type, so a second instance of it is a
-// legal target. injectLine is spliced into the socket declaration: pass an
-// `inject:` line to declare an allowlist, or the empty string for the Black-Box
-// declaration that permits no dictation.
+// legal target, and one published `endpoint` key for a connection to read.
+// injectLine is spliced into the socket declaration: pass an `inject:` line to
+// declare an allowlist, or the empty string for the Black-Box declaration that
+// permits no dictation.
 func socketedCorpusComponent(injectLine string) string {
 	return `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -47,11 +48,37 @@ spec:
 ` + injectLine + `  schema:
     values:
       port: { type: integer }
+    provides:
+      endpoint: { type: string }
 `
 }
 
+// providingCorpusRecipe is the base Recipe publishing the `endpoint` key the
+// socketed Component declares, so a connection reading it reads a key the target
+// both declares and publishes.
+const providingCorpusRecipe = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: server-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/server
+  provides:
+    endpoint: "{{ .context.instance_id }}:8080"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: x:1
+        ports:
+          p: 8080
+`
+
 // dictatingCorpusAggregate wires one edge into the `peer` socket and dictates
-// delivery through the named mechanism. The delivered value is a literal, so the
+// delivery through the named mechanism. The entry reads the `endpoint` key the
+// target publishes, which is the only kind of entry a connection carries, so the
 // document exercises the socket's delivery allowlist and nothing else.
 func dictatingCorpusAggregate(mechanism string) string {
 	return `apiVersion: aggrega.ai/v1alpha1
@@ -72,7 +99,7 @@ spec:
             inject:
               ` + mechanism + `:
                 - in: PEER_ENDPOINT
-                  value: "static-endpoint"
+                  from: endpoint
     api2:
       type: core/server
       values:
@@ -208,9 +235,9 @@ spec:
 `
 )
 
-// workspaceFiles names the four overridable documents.
+// workspaceFiles names the overridable documents.
 type workspaceFiles struct {
-	aggregate, manifest, release, component string
+	aggregate, manifest, release, component, recipe string
 }
 
 func baseWorkspaceFiles() workspaceFiles {
@@ -219,6 +246,7 @@ func baseWorkspaceFiles() workspaceFiles {
 		manifest:  baseManifest,
 		release:   baseRelease,
 		component: baseComponent,
+		recipe:    baseRecipe,
 	}
 }
 
@@ -242,7 +270,7 @@ func writeMinimalWorkspace(t *testing.T, wf workspaceFiles) pipelinetest.Input {
 	write("manifest.yaml", wf.manifest)
 	write("release.yaml", wf.release)
 	write("catalog/components/server.yaml", wf.component)
-	write("catalog/recipes/server.yaml", baseRecipe)
+	write("catalog/recipes/server.yaml", wf.recipe)
 	write("catalog/plugins/compose-renderer.yaml", baseComposeRendererPlugin)
 	return pipelinetest.Input{
 		ReleasePath:  filepath.Join(dir, "release.yaml"),
@@ -271,6 +299,7 @@ func TestNegativeCorpusBuild_UsesInjectWithinAllowlistBuilds(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
 	wf.component = socketedCorpusComponent("      inject: [env]\n")
+	wf.recipe = providingCorpusRecipe
 	wf.aggregate = dictatingCorpusAggregate("env")
 	wf.release = dictatingCorpusRelease()
 	if _, err := pipelinetest.BuildE(t, writeMinimalWorkspace(t, wf)); err != nil {
@@ -383,11 +412,12 @@ spec: {}
 		// A socket's delivery allowlist, both refusals, authored as documents so the
 		// halt is proven on the surface an author actually writes. Each row carries a
 		// single fault: the socket declaration and the edge are consistent about
-		// everything except whether the dictated mechanism is permitted. Both dictate
-		// a literal `value:` rather than a `from:`, so neither row depends on the
-		// target declaring a provides key and neither can pass on that gate instead.
+		// everything except whether the dictated mechanism is permitted. Both read a
+		// key the target declares and its Recipe publishes, so neither row can halt on
+		// an unpublished key or on a literal written on a connection instead.
 		{name: "uses-inject-outside-socket-allowlist", want: ir.ErrUsesInjectForbidden(), mutate: func(wf *workspaceFiles) {
 			wf.component = socketedCorpusComponent("      inject: [env]\n")
+			wf.recipe = providingCorpusRecipe
 			// `fil` is `file` less one character: a mechanism an author could plausibly
 			// mistype, not a string no allowlist would ever hold.
 			wf.aggregate = dictatingCorpusAggregate("fil")
@@ -397,6 +427,7 @@ spec: {}
 			// No `inject:` on the socket at all — the Black-Box declaration, which
 			// permits no dictation rather than permitting every mechanism.
 			wf.component = socketedCorpusComponent("")
+			wf.recipe = providingCorpusRecipe
 			wf.aggregate = dictatingCorpusAggregate("env")
 			wf.release = dictatingCorpusRelease()
 		}},

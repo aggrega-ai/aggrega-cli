@@ -147,26 +147,29 @@ func TestExampleMariaDBAdminerComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	}
 
 	// Healthcheck: the Recipe's container health block reaches the rendered
-	// service. The exec probe becomes a CMD-form test; interval carries
-	// periodSeconds and timeout carries timeoutSeconds. Asserted as one exact
-	// block rather than as scattered substrings, because the shape and the
-	// indentation are both part of what a compose runtime consumes.
+	// service. The exec probe becomes a CMD-form test running the image's own
+	// healthcheck.sh; interval carries periodSeconds, timeout carries
+	// timeoutSeconds, retries carries failureThreshold and start_period carries
+	// initialDelaySeconds. Asserted as one exact block rather than as scattered
+	// substrings, because the shape and the indentation are both part of what a
+	// compose runtime consumes.
 	const wantHealthcheck = "    healthcheck:\n" +
 		"      test:\n" +
 		"        - CMD\n" +
-		"        - mysqladmin\n" +
-		"        - ping\n" +
+		"        - healthcheck.sh\n" +
+		"        - --connect\n" +
+		"        - --innodb_initialized\n" +
 		"      interval: 10s\n" +
-		"      timeout: 5s\n"
+		"      timeout: 5s\n" +
+		"      retries: 3\n" +
+		"      start_period: 10s\n"
 	if !strings.Contains(merged, wantHealthcheck) {
 		t.Errorf("expected healthcheck block\n%s\nin rendered compose:\n%s", wantHealthcheck, merged)
 	}
 
-	// Compose carries a single healthcheck per service, so the container's
-	// readiness probe collapses away in favour of the liveness one. Asserting
-	// its absence keeps the collapse a stated property of the rendered output
-	// rather than a silent one.
-	if strings.Contains(merged, "nc -z localhost 3306") {
-		t.Errorf("expected the tcp readiness probe to collapse away (compose carries one healthcheck per service), but its translation is present in rendered compose:\n%s", merged)
+	// Compose carries a single healthcheck per service, and the Recipe declares
+	// one probe for it, so the rendered service carries exactly one.
+	if n := strings.Count(merged, "healthcheck:\n"); n != 1 {
+		t.Errorf("expected exactly one healthcheck in rendered compose (compose carries one per service); got %d:\n%s", n, merged)
 	}
 }
