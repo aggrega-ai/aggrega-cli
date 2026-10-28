@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: local/numbers
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: [env]
+  schema:
+    values:
+      zero: { type: integer }
+      one: { type: integer }
+      e7: { type: number }
+      huge: { type: number }
+    infra:
+      izero: { type: integer }

@@ -16,17 +16,19 @@ import (
 )
 
 // AssertionComparisons returns the bindings of `eq`, `ne`, `lt`, `le`, `gt` and
-// `ge` that the assertion surface installs over the template engine's built-ins
-// of the same names. A template's own functions are looked up before the
-// engine's, so a surface merging this set over its own reads every comparison
-// the way described here, and a surface that does not keeps the engine's.
+// `ge` that the assertion surface and the value-template surfaces install over
+// the template engine's built-ins of the same names. A template's own functions
+// are looked up before the engine's, so a surface merging this set over its own
+// reads every comparison the way described here, and a surface that does not
+// keeps the engine's.
 //
 // They differ from the engine's in one respect: every number is a number. A
-// value an author wrote reaches a template as a [json.Number], which the engine
+// value an author wrote reaches an assertion as a [json.Number], which the engine
 // treats as text, while a number written in the template itself arrives as an
 // integer or a floating-point value, and the engine refuses to compare across
-// those kinds at all. So `lt .values.replicas 2` either stops the evaluation or,
-// against a quoted literal, compares digits as text. Here two numbers compare by
+// those kinds at all — an integer with a decimal included. So `lt
+// .values.replicas 2` either stops the evaluation or, against a quoted literal,
+// compares digits as text. Here two numbers compare by
 // value whatever kind carries them — exactly, so 3 equals 3.0 and 10 is greater
 // than 9 — and a number never compares with text: `eq .values.replicas "3"` is a
 // comparison that cannot be made, refused naming both kinds.

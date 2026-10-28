@@ -63,6 +63,10 @@ type templateEval struct {
 	rightDelim string
 	// missingKey is the surface's missing-key policy; empty is missingKeyZero.
 	missingKey templateMissingKey
+	// numbers hands every number the context carries to the template as a number
+	// rather than as its text; see numbersAsNumbers. The value surfaces set it,
+	// through valueTemplate.
+	numbers bool
 	// category is the authoring domain a diagnostic raised here is charged to,
 	// which is what decides whether the author is sent to the Recipe or to the
 	// Aggregate. Empty is cerrors.CatalogError, the Recipe-authored default every
@@ -198,7 +202,20 @@ func (e templateEval) missingKeyPolicy() templateMissingKey {
 // datum the author left unset is still unset when it is seeded — a template
 // testing whether it was supplied takes the branch it took on the real data.
 func (e templateEval) execute(t *template.Template, refs []gotmpl.RootRef, substitute bool) (string, error) {
-	return e.executeData(t, refs, toLowercaseMap(e.scope.data), substitute)
+	return e.executeData(t, refs, e.data(), substitute)
+}
+
+// data converts the surface's context into the fresh private tree one execution
+// reads: the conversion toLowercaseMap performs, with every number made a number
+// where the surface reads numbers as numbers. Every execution of a template reads
+// its data through here, so no execution of one template can see a number where
+// another execution of it sees the number's text.
+func (e templateEval) data() any {
+	tree := toLowercaseMap(e.scope.data)
+	if e.numbers {
+		tree = numbersAsNumbers(tree)
+	}
+	return tree
 }
 
 // executeData runs a prepared tree over data already converted from the surface's
@@ -513,8 +530,15 @@ func evalValueTemplate(name, tmplText string, scope templateScope, leftDelim, ri
 }
 
 // valueTemplate is the one construction of a value-template evaluation, shared
-// by the evaluation itself and by the second evaluation a failure to read its
-// output may need, so the two are the same template on the same terms.
+// by the evaluation itself, by the second evaluation a failure to read its output
+// may need, and by the self-inject surface, so all of them are the same template
+// on the same terms.
+//
+// A value template reads every number as a number. A number an author wrote
+// reaches it as a number — see numbersAsNumbers — and its comparisons are the
+// ones the assertion surface reads, gotmpl.AssertionComparisons: two numbers
+// compare by value whatever kind carries them, so an integer compares with a
+// decimal, and a number never compares with text.
 func valueTemplate(name, tmplText string, scope templateScope, leftDelim, rightDelim string) templateEval {
 	return templateEval{
 		name:       name,
@@ -523,6 +547,8 @@ func valueTemplate(name, tmplText string, scope templateScope, leftDelim, rightD
 		leftDelim:  leftDelim,
 		rightDelim: rightDelim,
 		missingKey: missingKeyZero,
+		numbers:    true,
+		extraFuncs: gotmpl.AssertionComparisons(),
 		failed: func(stage templateEvalStage, err error) error {
 			return cerrors.Wrap(valueTemplateRunFailure(stage, err), cerrors.CatalogError,
 				cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q %s", name, stage))

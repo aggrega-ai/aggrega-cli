@@ -152,7 +152,7 @@ func TestBuild_AValueTemplateFailingWhileItRunsCarriesItsConditionsShortCode(t *
 			halts:     true,
 			condition: renderer.ErrValueTemplateExecutionFailed(),
 			code:      failed,
-			reason:    "incompatible types for comparison",
+			reason:    "cannot compare text with a number",
 		},
 		{
 			name:      "a locals entry reading a field through an absent map",

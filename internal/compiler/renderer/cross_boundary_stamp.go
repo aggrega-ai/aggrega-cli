@@ -355,14 +355,13 @@ func linkReadsOf(data any) *crossBoundaryLinks {
 // It reports checked false when the data carries none of the record's
 // placeholders, and the caller evaluates the template as it otherwise would.
 func (l *crossBoundaryLinks) runCopyOnly(p preparedTemplate) (string, bool, error) {
-	scopeData := p.eval.scope.data
-	data := toLowercaseMap(scopeData)
+	data := p.eval.data()
 	present := l.placeholdersInTree(data)
 	if len(present) == 0 {
 		return "", false, nil
 	}
 	out, outErr := p.executeOver(data)
-	realOut, realErr := p.executeOver(l.writtenBack(scopeData, present, ""))
+	realOut, realErr := p.executeOver(l.writtenBack(p.eval, present, ""))
 	if outErr != nil && realErr != nil {
 		return "", true, p.executionFailure(realErr)
 	}
@@ -372,7 +371,7 @@ func (l *crossBoundaryLinks) runCopyOnly(p preparedTemplate) (string, bool, erro
 		return l.deliveredForm(out, read), true, nil
 	}
 	involved := l.involved(present, realErr == nil, func(except string) (string, error) {
-		return p.executeOver(l.writtenBack(scopeData, present, except))
+		return p.executeOver(l.writtenBack(p.eval, present, except))
 	}, realOut)
 	return "", true, l.notCopiedError(fmt.Sprintf("template %q", p.eval.name), p.eval.name, involved)
 }
@@ -503,16 +502,17 @@ func (l *crossBoundaryLinks) record(placeholders []string) {
 	}
 }
 
-// writtenBack converts a template's data afresh and writes every given
-// placeholder but one — except, which may be empty — back to its real value.
-func (l *crossBoundaryLinks) writtenBack(data any, placeholders []string, except string) any {
+// writtenBack converts an evaluation's data afresh, as every execution of it
+// does, and writes every given placeholder but one — except, which may be empty —
+// back to its real value.
+func (l *crossBoundaryLinks) writtenBack(e templateEval, placeholders []string, except string) any {
 	keep := make([]string, 0, len(placeholders))
 	for _, placeholder := range placeholders {
 		if placeholder != except {
 			keep = append(keep, placeholder)
 		}
 	}
-	return rewriteTreeStrings(toLowercaseMap(data), func(s string) string { return l.writeBack(s, keep) })
+	return rewriteTreeStrings(e.data(), func(s string) string { return l.writeBack(s, keep) })
 }
 
 // rewriteTreeStrings rewrites every string in a converted template data tree in

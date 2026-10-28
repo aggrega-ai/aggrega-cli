@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: numbers-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: local/numbers
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: numbers:1.0
+        variables:
+          DEFAULT: "{{ .values.zero | default 1 }}"
+          IF: "{{ if .values.zero }}true{{ else }}false{{ end }}"
+          EQ: "{{ eq .values.zero 0 }}"
+          LT: "{{ lt .values.zero 1 }}"
+          MIXED: "{{ lt .values.one 1.5 }}"
+          INFRA_DEFAULT: "{{ .infra.izero | default 1 }}"
+          SMALL: "{{ .values.e7 }}"
+          LARGE: "{{ .values.huge }}"
+          SI_DEFAULT: "{{ .context.inject.env.SI_DEFAULT }}"
+          SI_LT: "{{ .context.inject.env.SI_LT }}"
+          SI_SMALL: "{{ .context.inject.env.SI_SMALL }}"

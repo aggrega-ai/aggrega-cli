@@ -226,21 +226,19 @@ var selfInjectScope = templateScope{data: SelfInjectContext{}}
 // evalSelfInjectValue evaluates one component-level self-inject value: template.
 // It is the value-template surface in every respect but one: every diagnostic it
 // raises is DEVELOPER_ERROR, because a component-level inject: block is authored on
-// the Aggregate. The reference rules, the wording, the sentinel and the
-// missing-key policy are all the shared ones.
+// the Aggregate. The reference rules, the wording, the sentinel, the missing-key
+// policy and the reading of numbers are all the shared ones, because the
+// evaluation is valueTemplate's with only the category and the failure wrap
+// replaced.
 //
 // withheld names what the node's Component declares sensitive among the values and
 // infra the template reads, so a failing template reports without such a value.
 func evalSelfInjectValue(name, tmplText string, siCtx SelfInjectContext, withheld redact.Keys) (string, error) {
-	return templateEval{
-		name:       name,
-		text:       tmplText,
-		scope:      selfInjectScope.with(siCtx, withheld),
-		missingKey: missingKeyZero,
-		category:   cerrors.DeveloperError,
-		failed: func(stage templateEvalStage, err error) error {
-			return cerrors.Wrap(valueTemplateRunFailure(stage, err), cerrors.DeveloperError,
-				cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q %s", name, stage))
-		},
-	}.run()
+	e := valueTemplate(name, tmplText, selfInjectScope.with(siCtx, withheld), "", "")
+	e.category = cerrors.DeveloperError
+	e.failed = func(stage templateEvalStage, err error) error {
+		return cerrors.Wrap(valueTemplateRunFailure(stage, err), cerrors.DeveloperError,
+			cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q %s", name, stage))
+	}
+	return e.run()
 }

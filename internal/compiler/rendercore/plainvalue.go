@@ -46,17 +46,27 @@ func PlainValue(v any) any {
 		// types a YAML scalar parse yields, so a value that reached the render
 		// through the wire codec would serialize differently from one parsed
 		// straight out of YAML. Renormalize to those same types so a value that
-		// crosses the wire serializes byte-identically to one that did not: an
-		// integral value to int64, a fractional value to float64, and anything
-		// neither leaves the number untouched.
-		if i, err := strconv.ParseInt(string(t), 10, 64); err == nil {
-			return i
-		}
-		if f, err := strconv.ParseFloat(string(t), 64); err == nil {
-			return f
-		}
-		return t
+		// crosses the wire serializes byte-identically to one that did not.
+		return PlainNumber(t)
 	default:
 		return v
 	}
+}
+
+// PlainNumber reads a number carried as its text as the Go numeric type a YAML
+// scalar parse yields: an integral value as int64, any other as float64, and a
+// text that is neither — which no decoded number is — as the number untouched.
+//
+// It is the one reading of a decoded number's text into a number, shared by the
+// values a render core consumes and the data a value template reads, so a value
+// cannot be one kind of number to a template and another to the output written
+// from it.
+func PlainNumber(n json.Number) any {
+	if i, err := strconv.ParseInt(string(n), 10, 64); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(string(n), 64); err == nil {
+		return f
+	}
+	return n
 }

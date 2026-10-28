@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: value-template-numbers
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: local/numbers
+      values:
+        zero: 0
+        one: 1
+        e7: 0.0000001
+        huge: 1e21
+      # The whole Aggregate is rendered against its parameters first, so a
+      # self-inject template is written escaped.
+      inject:
+        env:
+          - in: SI_DEFAULT
+            value: '{{ "{{" }} .values.zero | default 1 {{ "}}" }}'
+          - in: SI_LT
+            value: '{{ "{{" }} lt .values.one 1.5 {{ "}}" }}'
+          - in: SI_SMALL
+            value: '{{ "{{" }} .values.e7 {{ "}}" }}'
