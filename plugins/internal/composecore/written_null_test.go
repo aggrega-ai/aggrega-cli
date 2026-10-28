@@ -245,6 +245,162 @@ image: a:1`, nil, ""},
 	}
 }
 
+// TestWrittenNull_OverlayLabelCarriedAsNull lays an overlay writing one label as
+// null over a source that gives it a value. The label is emitted as `tier: null`
+// — not an empty string, not removed — beside the source's other label and the
+// provenance labels the render adds.
+func TestWrittenNull_OverlayLabelCarriedAsNull(t *testing.T) {
+	t.Parallel()
+	source := `services:
+  api:
+    image: base:1
+    labels:
+      tier: backend
+      team: core
+`
+	values := map[string]any{"services": map[string]any{"api": map[string]any{
+		"labels": map[string]any{"tier": nil},
+	}}}
+	body, svc := renderSourcedAndAssemble(t, source, values, "api")
+
+	labels := mappingValue(svc, "labels")
+	if labels == nil || labels.Kind != yaml.MappingNode {
+		t.Fatalf("no labels mapping on the service:\n%s", body)
+	}
+	byKey := map[string]writtenNullPair{}
+	for _, p := range mappingPairs(labels) {
+		byKey[p.key] = p
+	}
+	if got, want := byKey["tier"], (writtenNullPair{"tier", "!!null", "null"}); got != want {
+		t.Errorf("label tier = %v, want %v\n%s", got, want, body)
+	}
+	if got, want := byKey["team"], (writtenNullPair{"team", "!!str", "core"}); got != want {
+		t.Errorf("label team = %v, want %v\n%s", got, want, body)
+	}
+	if _, ok := byKey["aggrega.ai/component-id"]; !ok {
+		t.Errorf("the provenance labels are missing:\n%s", body)
+	}
+	if !strings.Contains(string(body), "      tier: null\n") {
+		t.Errorf("the assembled file does not carry `tier: null`:\n%s", body)
+	}
+}
+
+// TestWrittenNull_OverlayHealthcheckKeyCarriedAsNull lays an overlay writing two
+// keys of a healthcheck as null over a source that gives them values. Each is
+// emitted as `key: null` at its place among the healthcheck's keys, and the keys
+// the overlay does not touch keep their values.
+func TestWrittenNull_OverlayHealthcheckKeyCarriedAsNull(t *testing.T) {
+	t.Parallel()
+	source := `services:
+  api:
+    image: base:1
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+`
+	values := map[string]any{"services": map[string]any{"api": map[string]any{
+		"healthcheck": map[string]any{"interval": nil, "retries": nil},
+	}}}
+	body, svc := renderSourcedAndAssemble(t, source, values, "api")
+
+	got := mappingPairs(mappingValue(svc, "healthcheck"))
+	want := []writtenNullPair{
+		{"test", "!!seq", ""},
+		{"interval", "!!null", "null"},
+		{"timeout", "!!str", "5s"},
+		{"retries", "!!null", "null"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("healthcheck = %v, want %v\n%s", got, want, body)
+	}
+}
+
+// TestWrittenNull_OverlayDeployKeyCarriedAsNull lays an overlay writing a deploy
+// block's resources as null over a source that gives them a value. The block is
+// emitted as `resources: null`, not as an empty block, and in block style like
+// the service's other mappings.
+func TestWrittenNull_OverlayDeployKeyCarriedAsNull(t *testing.T) {
+	t.Parallel()
+	source := `services:
+  api:
+    image: base:1
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+`
+	values := map[string]any{"services": map[string]any{"api": map[string]any{
+		"deploy": map[string]any{"resources": nil},
+	}}}
+	body, svc := renderSourcedAndAssemble(t, source, values, "api")
+
+	got := mappingPairs(mappingValue(svc, "deploy"))
+	want := []writtenNullPair{{"resources", "!!null", "null"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("deploy = %v, want %v\n%s", got, want, body)
+	}
+	if !strings.Contains(string(body), "    deploy:\n      resources: null\n") {
+		t.Errorf("the assembled file does not carry the deploy block in block style:\n%s", body)
+	}
+}
+
+// TestWrittenNull_FragmentNestedNullsRoundTrip decodes a fragment — the shape an
+// artifacts: body reaches the merge in — writing a label, a healthcheck key and a
+// deploy key as null, and encodes the service again. Every null is emitted as
+// written and every value beside it is kept; a second decode of the emitted
+// service records the same keys, so a fragment carried twice reads the same.
+func TestWrittenNull_FragmentNestedNullsRoundTrip(t *testing.T) {
+	t.Parallel()
+	body := `services:
+  side:
+    image: busybox:1.36
+    labels:
+      tier: null
+      team: core
+    healthcheck:
+      test: ["CMD", "true"]
+      interval:
+      timeout: 5s
+    deploy:
+      resources: ~
+`
+	frag, err := decodeFragment([]byte(body), "app", `fragment "probe"`)
+	if err != nil {
+		t.Fatalf("decodeFragment: %v\n%s", err, body)
+	}
+	svc := frag.Services["side"]
+	if svc.Healthcheck == nil || !reflect.DeepEqual(svc.Healthcheck.writtenNull, []string{"interval"}) {
+		t.Errorf("decoded healthcheck = %+v, want interval recorded as written null", svc.Healthcheck)
+	}
+	if svc.Deploy == nil || !reflect.DeepEqual(svc.Deploy.writtenNull, []string{"resources"}) {
+		t.Errorf("decoded deploy = %+v, want resources recorded as written null", svc.Deploy)
+	}
+
+	out, err := yaml.Marshal(map[string]Service{"side": svc})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	for _, line := range []string{
+		"        tier: null\n", "        team: core\n",
+		"        interval: null\n", "        timeout: 5s\n",
+		"        resources: null\n",
+	} {
+		if !strings.Contains(string(out), line) {
+			t.Errorf("the encoded service does not carry %q:\n%s", line, out)
+		}
+	}
+
+	again, err := decodeFragment(append([]byte("services:\n"), indentLines(strings.TrimRight(string(out), "\n"), "  ")...), "app", `fragment "again"`)
+	if err != nil {
+		t.Fatalf("decode the encoded service: %v\n%s", err, out)
+	}
+	if !reflect.DeepEqual(again.Services["side"], svc) {
+		t.Errorf("a second decode reads %+v, want %+v", again.Services["side"], svc)
+	}
+}
+
 // indentLines prefixes every line of s with prefix and ends it with a newline.
 func indentLines(s, prefix string) string {
 	var b strings.Builder

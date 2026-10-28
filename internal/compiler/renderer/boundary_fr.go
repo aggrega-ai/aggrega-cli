@@ -1129,8 +1129,8 @@ func evaluateBoundaryFRTemplates(
 //
 // The function populates the documented BoundaryContext pillars:
 //
-//   - Path: the boundary's evaluated directory (read from any subtree
-//     node's BoundaryInfra; falls back to the boundaryPath verbatim).
+//   - Path: boundaryPath as given — the Release boundary path, never the
+//     evaluated directory its output is assembled under.
 //   - BoundaryName: the last segment of the boundary path (the map key
 //     in release.spec.boundaries).
 //   - Components: every node in the boundary subtree (recursive),

@@ -53,13 +53,15 @@ type ComposeFile struct {
 // order written, and is emitted after every other key; Service decodes and
 // encodes itself to carry them.
 //
-// A null is carried as written, at two depths. An environment entry written with
-// no value (`KEY:` or `KEY: null`) is held as a nil value and emitted as
-// `KEY: null`, so Compose takes the variable from the environment it runs in
-// rather than setting it empty. A key of the service itself written as null is
-// recorded by the decode in writtenNull and emitted as `key: null` wherever the
-// service still has no value of its own for it (see written_null.go); a value
-// set later, such as the network the merge attaches, is emitted as that value.
+// A null is carried as written, on the service and one level below it. An
+// environment entry written with no value (`KEY:` or `KEY: null`) is held as a
+// nil value and emitted as `KEY: null`, so Compose takes the variable from the
+// environment it runs in rather than setting it empty; a label written as null
+// is held and emitted the same way. A key of the service itself written as null
+// is recorded by the decode in writtenNull and emitted as `key: null` wherever
+// the service still has no value of its own for it, and a key of its
+// healthcheck or deploy block likewise (see written_null.go); a value set later,
+// such as the network the merge attaches, is emitted as that value.
 type Service struct {
 	Image           string                    `yaml:"image,omitempty"`
 	PullPolicy      string                    `yaml:"pull_policy,omitempty"`
@@ -68,7 +70,7 @@ type Service struct {
 	Environment     types.OrderedMap[*string] `yaml:"environment,omitempty"`
 	EnvFile         []string                  `yaml:"env_file,omitempty"`
 	Ports           []string                  `yaml:"ports,omitempty"`
-	Labels          map[string]string         `yaml:"labels,omitempty"`
+	Labels          map[string]*string        `yaml:"labels,omitempty"`
 	Volumes         []ServiceVolume           `yaml:"volumes,omitempty"`
 	Tmpfs           []string                  `yaml:"tmpfs,omitempty"`
 	Networks        []string                  `yaml:"networks,omitempty"`
@@ -101,6 +103,19 @@ type Service struct {
 // envValue returns an environment entry holding v. A nil entry is one written
 // with no value.
 func envValue(v string) *string { return &v }
+
+// labelValues returns labels as a service's labels mapping holds them, every
+// entry holding its value. A nil entry there is one written as null.
+func labelValues(labels map[string]string) map[string]*string {
+	if labels == nil {
+		return nil
+	}
+	out := make(map[string]*string, len(labels))
+	for k, v := range labels {
+		out[k] = envValue(v)
+	}
+	return out
+}
 
 // Compose `depends_on` conditions, as the Compose Specification defines them.
 // conditionStarted is the specification's stated equivalent of the short form;
@@ -309,8 +324,15 @@ func (DependsOn) walkFragmentKeys(w *fragmentKeyWalk, node *yaml.Node, path stri
 // limits map to deploy.resources.limits and requests map to
 // deploy.resources.reservations; a container's nvidia.com/gpu request maps to a
 // device entry under deploy.resources.reservations.
+//
+// A key of the block written as null is recorded in writtenNull and emitted as
+// `key: null`, as Service carries one of its own keys (see written_null.go).
 type Deploy struct {
 	Resources *DeployResources `yaml:"resources,omitempty"`
+
+	// writtenNull holds, in the order written, the keys above the fragment
+	// wrote as null.
+	writtenNull []string
 }
 
 // DeployResources holds the compose deploy.resources limits/reservations pair.
@@ -553,10 +575,17 @@ type Network struct {
 //   - exec: → ["CMD", <token>...] (CMD form when token list available)
 //
 // Compose only supports CMD/CMD-SHELL/NONE; no native HTTP or TCP probes.
+//
+// A key of the block written as null is recorded in writtenNull and emitted as
+// `key: null`, as Service carries one of its own keys (see written_null.go).
 type Healthcheck struct {
 	Test        []string `yaml:"test,omitempty"`
 	Interval    string   `yaml:"interval,omitempty"`
 	Timeout     string   `yaml:"timeout,omitempty"`
 	Retries     int      `yaml:"retries,omitempty"`
 	StartPeriod string   `yaml:"start_period,omitempty"`
+
+	// writtenNull holds, in the order written, the keys above the fragment
+	// wrote as null.
+	writtenNull []string
 }

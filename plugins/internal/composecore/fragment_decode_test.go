@@ -352,11 +352,14 @@ func TestFragmentKeyShapes_EverySelfDecodingTypeDeclaresOne(t *testing.T) {
 		}
 	}
 	// ComposeFile and Service decode themselves to keep their extension members,
-	// so the visit stops at each of them; the structs they walk through are
-	// visited as roots of their own.
+	// and Healthcheck and Deploy to carry a key written as null, so the visit
+	// stops at each of them; the structs they walk through are visited as roots
+	// of their own.
 	visit(composeFileType)
 	visit(composeFileFieldsType)
 	visit(serviceFieldsType)
+	visit(healthcheckFieldsType)
+	visit(deployFieldsType)
 	visit(reflect.TypeOf(dependsOnBody{}))
 	visit(reflect.TypeOf(ServiceModelBinding{}))
 
@@ -366,6 +369,8 @@ func TestFragmentKeyShapes_EverySelfDecodingTypeDeclaresOne(t *testing.T) {
 	for _, reached := range []reflect.Type{
 		reflect.TypeOf(DependsOn{}), reflect.TypeOf(ServiceModels{}),
 		reflect.TypeOf(Service{}), reflect.TypeOf(Volume{}),
+		reflect.TypeOf(Healthcheck{}), reflect.TypeOf(Deploy{}),
+		reflect.TypeOf(DeviceRequest{}),
 	} {
 		if !seen[reached] {
 			t.Errorf("the visit did not reach %v, so it proves nothing about it", reached)

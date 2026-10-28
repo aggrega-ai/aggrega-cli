@@ -447,7 +447,7 @@ func translateContainer(
 
 	svc := Service{
 		Image:  rendercore.ApplyImageRegistry(c.Image, rendercore.ImageRegistryFromAnnotations(nodeCtx.Annotations)),
-		Labels: buildAggregaLabels(nodeCtx),
+		Labels: labelValues(buildAggregaLabels(nodeCtx)),
 	}
 
 	// Lifecycle hooks have no compose primitive. A silently-unrun postStart/

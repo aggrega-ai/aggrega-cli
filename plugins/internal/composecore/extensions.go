@@ -198,11 +198,12 @@ func (ComposeFile) walkFragmentKeys(w *fragmentKeyWalk, node *yaml.Node, path st
 // modelled keys it writes as null.
 func (s *Service) UnmarshalYAML(node *yaml.Node) error {
 	var fields serviceFields
-	if err := node.Decode(&fields); err != nil {
+	nulls, err := decodeRecordingNulls(node, &fields)
+	if err != nil {
 		return err
 	}
 	fields.Extensions = decodeExtensions(node)
-	fields.writtenNull = writtenNullKeys(node, serviceFieldsType)
+	fields.writtenNull = nulls
 	*s = Service(fields)
 	return nil
 }
@@ -214,15 +215,11 @@ func (s *Service) UnmarshalYAML(node *yaml.Node) error {
 // Value receiver so dispatch works when Service is the value of a map, which is
 // not addressable.
 func (s Service) MarshalYAML() (any, error) {
-	if len(s.writtenNull) == 0 {
-		return encodeWithExtensions(serviceFields(s), s.Extensions)
-	}
-	var node yaml.Node
-	if err := node.Encode(serviceFields(s)); err != nil {
+	fields, err := encodeRestoringNulls(serviceFields(s), s.writtenNull)
+	if err != nil {
 		return nil, err
 	}
-	restoreWrittenNulls(&node, s.writtenNull, serviceFieldsType)
-	return encodeWithExtensions(&node, s.Extensions)
+	return encodeWithExtensions(fields, s.Extensions)
 }
 
 // walkFragmentKeys walks a service against the keys Service models, accepting

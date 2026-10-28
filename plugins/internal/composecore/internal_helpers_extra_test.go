@@ -143,7 +143,7 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 		t.Errorf("author-managed service should not get labels")
 	}
 	webSvc := svc["web"].(map[string]any)
-	labels, hasLabels := webSvc["labels"].(map[string]string)
+	labels, hasLabels := webSvc["labels"].(map[string]any)
 	if !hasLabels || labels["aggrega.ai/component-id"] != "comp" {
 		t.Errorf("web should receive aggrega labels; got %v", webSvc["labels"])
 	}
@@ -152,19 +152,23 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 	badSvc := map[string]any{"services": map[string]any{"weird": 42}}
 	injectAggregaLabelsIntoServices(badSvc, map[string]renderer.NodeRenderContext{"weird": ctx})
 
-	// Existing labels (map[string]any with string vals) merged.
+	// Existing labels (map[string]any with string vals) merged; one written as
+	// null is kept as a null.
 	docWithLabels := map[string]any{
 		"services": map[string]any{
 			"web": map[string]any{
-				"labels": map[string]any{"tier": "backend"},
+				"labels": map[string]any{"tier": "backend", "unset": nil},
 			},
 		},
 	}
 	injectAggregaLabelsIntoServices(docWithLabels, map[string]renderer.NodeRenderContext{"web": ctx})
 	webSvc = docWithLabels["services"].(map[string]any)["web"].(map[string]any)
-	mergedLabels := webSvc["labels"].(map[string]string)
+	mergedLabels := webSvc["labels"].(map[string]any)
 	if mergedLabels["tier"] != "backend" {
 		t.Errorf("existing label lost; got %v", mergedLabels)
+	}
+	if v, kept := mergedLabels["unset"]; !kept || v != nil {
+		t.Errorf("label written as null not kept as a null; got %v", mergedLabels)
 	}
 	if mergedLabels["aggrega.ai/component-id"] != "comp" {
 		t.Errorf("aggrega label missing; got %v", mergedLabels)

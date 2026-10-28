@@ -69,8 +69,9 @@ var composeOmittedProvenanceKeys = rendercore.KubernetesOnlyProvenanceKeys
 //
 // Existing label keys on a service are merged with — not replaced by —
 // the origin-derived labels: author-set non-aggrega.ai/* keys
-// (`tier: backend`, etc.) are preserved; origin-derived aggrega.ai/*
-// keys overwrite any pre-existing aggrega.ai/* values for the same key.
+// (`tier: backend`, etc.) are preserved, a key written as null among them
+// as a null; origin-derived aggrega.ai/* keys overwrite any pre-existing
+// aggrega.ai/* values for the same key.
 //
 // The function tolerates malformed compose documents silently — sourced-
 // mode treats the input as authored YAML, and label injection is a
@@ -98,11 +99,12 @@ func injectAggregaLabelsIntoServices(doc map[string]any, origins map[string]rend
 		if !ok {
 			continue
 		}
-		merged := map[string]string{}
+		merged := map[string]any{}
 		if existing, ok := asStringMap(svc["labels"]); ok {
 			for k, v := range existing {
-				if s, ok := v.(string); ok {
-					merged[k] = s
+				switch v.(type) {
+				case string, nil:
+					merged[k] = v
 				}
 			}
 		}
