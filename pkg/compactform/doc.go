@@ -10,8 +10,8 @@
 // within one document is supported via per-node dispatch on content shape.
 //
 // The vocabulary is small (about 15 keywords): type keywords (type,
-// description, default, required), constraint keywords (enum, min, max,
-// pattern, format, minLength, maxLength), composition keywords (allOf,
+// description, default, required), constraint keywords (const, enum, min,
+// max, pattern, format, minLength, maxLength), composition keywords (allOf,
 // anyOf, oneOf, patternProperties, valuesType), container keywords
 // (items, properties, additionalProperties), and Aggrega-specific
 // additions (validate, validateMessage, when, sensitive, $jsonschema,
@@ -43,7 +43,11 @@
 // A keyword whose value is data — const, enum, default, examples,
 // dependentRequired, $vocabulary — carries that value as written wherever it
 // is read as a keyword, a mapping or a list included; it is never compiled as
-// a schema, so a mapping default materialises as that mapping.
+// a schema, so a mapping default materialises as that mapping. A node carrying
+// const or enum is read as a constraint leaf rather than as an inferred object,
+// with or without a type: beside it, so { const: fast } alone admits exactly
+// fast; an object with a property named const, like one with a property named
+// enum, writes that property under an explicit properties: block.
 //
 // Keys beside an in-document $ref: are compact form, read as they would be
 // on the same node without the reference, and apply beside it. A

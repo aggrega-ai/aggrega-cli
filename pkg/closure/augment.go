@@ -142,7 +142,8 @@ func importConsumer(uri, importTarget string) []TemplateConsumer {
 // closure: the lockfile pull writes and the closure build verifies against it
 // agree by construction, because pull and build read the same resolved closure
 // rather than two independently-built catalog views. It scans every in-closure
-// Component and Feature schema for cross-document $ref:s, resolves the discovered libraries
+// Component's and Feature's schema, and every per-edge contract their dependency
+// sockets declare, for cross-document $ref:s, resolves the discovered libraries
 // (minimum-version selection + the injected lookup), and descends them
 // transitively to a fixpoint, merging the result into cl.SchemaLibraries.
 //
@@ -169,7 +170,7 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			}
 			compSeen[comp.Metadata.Name] = struct{}{}
 			c := comp
-			compConsumers = append(compConsumers, SchemaConsumer{URI: c.Metadata.Name, Schema: &c.Spec.Schema})
+			compConsumers = append(compConsumers, entitySchemaConsumers(c.Metadata.Name, &c.Spec.Schema, c.Spec.UsesSchema)...)
 			continue
 		}
 		if feat, ok := src.ClosureFeature(ctx, e); ok {
@@ -178,11 +179,12 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			}
 			featSeen[feat.Metadata.Name] = struct{}{}
 			f := feat
-			featConsumers = append(featConsumers, SchemaConsumer{URI: f.Metadata.Name, Schema: &f.Spec.Schema})
+			featConsumers = append(featConsumers, entitySchemaConsumers(f.Metadata.Name, &f.Spec.Schema, f.Spec.UsesSchema)...)
 		}
 	}
-	sort.Slice(compConsumers, func(i, j int) bool { return compConsumers[i].URI < compConsumers[j].URI })
-	sort.Slice(featConsumers, func(i, j int) bool { return featConsumers[i].URI < featConsumers[j].URI })
+	// Stable, so an entity's own contracts keep their authored order behind its pillars.
+	sort.SliceStable(compConsumers, func(i, j int) bool { return compConsumers[i].URI < compConsumers[j].URI })
+	sort.SliceStable(featConsumers, func(i, j int) bool { return featConsumers[i].URI < featConsumers[j].URI })
 	consumers := append(compConsumers, featConsumers...)
 
 	// Transitive body accessor: a discovered library's own entry bodies, for
@@ -205,6 +207,26 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 	})
 
 	return cl.DiscoverSchemaLibraries(ctx, lookup, consumers, body)
+}
+
+// entitySchemaConsumers lists every schema body one Component or Feature
+// declares, as the consumers whose cross-document $ref:s the SchemaLibrary axis
+// discovers: its own spec.schema first, then each per-edge contract its
+// dependency sockets declare, socket by socket in declared order. A socket's
+// contract references a library exactly as a pillar does and is compiled against
+// the same library set, so a library only a socket names must be discovered,
+// pinned and reported missing here like any other — left out, it would be pinned
+// by no lockfile and reported by nothing until the contract failed to compile.
+func entitySchemaConsumers(uri string, schema *yaml.Node, sockets types.OrderedMap[types.UsesSchemaEntry]) []SchemaConsumer {
+	out := []SchemaConsumer{{URI: uri, Schema: schema}}
+	for _, entry := range sockets.All() {
+		for _, contract := range entry.ContractNodes() {
+			if contract.Kind != 0 {
+				out = append(out, SchemaConsumer{URI: uri, Schema: contract})
+			}
+		}
+	}
+	return out
 }
 
 // heldLibraryBodies is the body accessor every library axis hands the discovery

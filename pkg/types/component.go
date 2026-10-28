@@ -85,6 +85,19 @@ func (e *UsesSchemaEntry) PillarNode(pillar string) *yaml.Node {
 	}
 }
 
+// ContractNodes returns every per-edge contract field this socket carries, in
+// field order, whether or not the socket declares a contract there — a field the
+// socket leaves unwritten is a zero node. It serves a reader that needs each
+// contract body regardless of which pillar it constrains, such as one collecting
+// the schema libraries those bodies reference; a reader asking about one pillar
+// asks PillarNode, and TestUsesSchemaEntry_ContractNodesAreThePillarNodes holds the
+// two to the same fields.
+//
+// The returned nodes are the entry's own, as PillarNode's are.
+func (e *UsesSchemaEntry) ContractNodes() []*yaml.Node {
+	return []*yaml.Node{&e.ValueSchema, &e.InfraSchema}
+}
+
 // AttachmentSlot declares one named attachment slot on a Component or Feature.
 // A slot is a place an attachment is expected: the entity declares it, and a
 // Release fills it by attaching a Feature under the slot's name. Declaring a

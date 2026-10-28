@@ -758,10 +758,14 @@ func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string
 //
 // A compose service carries one healthcheck, so an author who declares more than
 // one probe slot keeps only the preferred one and the rest reach no part of the
-// output. healthPath is the authored path to the health block, used solely to
-// locate the partial-support warning that reports the dropped slots by name; it
-// never affects the rendered bytes. Returns no diagnostic when nothing is
-// dropped, which is every health block declaring a single probe slot.
+// output. Within the translated probe, a compose healthcheck has no success
+// threshold — one passing check marks the service healthy — so an authored
+// successThreshold is omitted and reported with the unsupported-field warning,
+// named by its path in the health block. healthPath is the authored path to the
+// health block, used solely to locate the warnings; it never affects the rendered
+// bytes. A dropped slot is reported whole by the partial-support warning, so a
+// field inside it is not reported again. Returns no diagnostic when nothing is
+// dropped.
 func translateHealthcheck(h *types.HealthSpec, ports types.OrderedMap[types.PortSpec], healthPath string) (*Healthcheck, []renderctx.Diagnostic, error) {
 	probe, selected := pickPrimaryProbe(h)
 	if probe == nil {
@@ -774,6 +778,10 @@ func translateHealthcheck(h *types.HealthSpec, ports types.OrderedMap[types.Port
 	}
 
 	var diags []renderctx.Diagnostic
+	if probe.SuccessThreshold != nil {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName,
+			healthPath+"."+selected+".successThreshold"))
+	}
 	if dropped := droppedProbeSlots(h, selected); len(dropped) > 0 {
 		diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, healthPath,
 			fmt.Sprintf("a service carries a single healthcheck, so only the %s probe is translated and the %s dropped",

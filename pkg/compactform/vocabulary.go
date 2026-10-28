@@ -23,8 +23,12 @@ var typeIdentityKeywords = map[string]bool{
 }
 
 // Constraint compact-form keywords. `min` and `max` are polymorphic on
-// the field's declared `type:` — see emit.go for the dispatch.
+// the field's declared `type:` — see emit.go for the dispatch. `const` and
+// `enum` are JSON Schema's own keywords, listed here because each is a
+// complete constraint on its own: a node carrying either is a constraint leaf
+// whether or not a `type:` stands beside it, as JSON Schema reads it.
 var constraintKeywords = map[string]bool{
+	"const":     true,
 	"enum":      true,
 	"min":       true, // -> minimum / minLength / minItems by type
 	"max":       true, // -> maximum / maxLength / maxItems by type
@@ -95,7 +99,6 @@ var jsonSchemaReservedKeywords = map[string]bool{
 	"$anchor":               true,
 	"$dynamicRef":           true,
 	"$dynamicAnchor":        true,
-	"const":                 true,
 	"minimum":               true,
 	"maximum":               true,
 	"exclusiveMinimum":      true,

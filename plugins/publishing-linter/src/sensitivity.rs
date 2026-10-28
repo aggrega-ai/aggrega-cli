@@ -89,6 +89,7 @@ pub const COMPACT_KEYWORDS: &[&str] = &[
     "description",
     "default",
     "required",
+    "const",
     "enum",
     "min",
     "max",
