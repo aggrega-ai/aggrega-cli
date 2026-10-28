@@ -236,6 +236,13 @@ type BoundaryFRState struct {
 	// share, and each stamps the edge views it builds through it. Nil in a render
 	// that wires no links, which stamps nothing.
 	links *crossBoundaryLinks
+
+	// assemblyPaths is the render's one answer to where each node's output is
+	// assembled, keyed by node ID ([assemblyPathsByNode]). It rides on this state
+	// for the reason links does: both boundary-scope renders build the boundary's
+	// edge views, and each view carries its endpoints' assembly paths from here.
+	// Nil in a render that computed none, which leaves every assembly path empty.
+	assemblyPaths map[string]string
 }
 
 // consumerEnvOverride is one boundary-scope attachment's override of one
@@ -514,7 +521,7 @@ func dispatchBoundaryScopeFR(
 	//       empty per the Release pillar-split). Shared with the pre-loop
 	//       provides pre-pass so both evaluate against an identical context.
 	feat, _ := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
-	frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, frInstance, key, graph, release, boundaryAnnotations)
+	frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, frInstance, key, graph, release, boundaryAnnotations, boundaryFRState.assemblyPaths)
 	if err != nil {
 		return err
 	}
@@ -822,8 +829,9 @@ func buildBoundaryFRTemplateContext(
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
+	assemblyPaths map[string]string,
 ) (*types.TemplateContext, error) {
-	boundaryCtx, err := buildBoundaryContext(allProvides, key.BoundaryPath, graph, release, boundaryAnnotations)
+	boundaryCtx, err := buildBoundaryContext(allProvides, key.BoundaryPath, graph, release, boundaryAnnotations, assemblyPaths)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: build context for boundary %q", frInstance, key.BoundaryPath))
 	}
@@ -897,7 +905,7 @@ func PrepopulateBoundaryScopeProvides(
 				continue
 			}
 			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
-			frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, instName, key, graph, release, boundaryAnnotations)
+			frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, instName, key, graph, release, boundaryAnnotations, state.assemblyPaths)
 			if err != nil {
 				return err
 			}
@@ -1132,7 +1140,8 @@ func evaluateBoundaryFRTemplates(
 //     IncomingCrossBoundaryUsesEdges, CrossBoundaryUsesEdges — derived by
 //     intersecting graph.Spec.Edges with subtree node membership, each
 //     endpoint's namespace and boundary path read by
-//     edgeEndpointNetworkInputs from that endpoint's own placement.
+//     edgeEndpointNetworkInputs from that endpoint's own placement, and its
+//     assembly path read from assemblyPaths.
 //   - Labels: union of subtree nodes' Labels with author-order preservation
 //     (alphabetical-by-key key order; OrderedMap iteration preserves
 //     insertion order).
@@ -1140,12 +1149,17 @@ func evaluateBoundaryFRTemplates(
 //     resolver-side cascade-resolved set).
 //   - FeatureAttachments: features directly attached to the boundary,
 //     parsed from boundary.Features via parseBoundaryFeature equivalent.
+//
+// assemblyPaths is the render's one answer to where each node's output is
+// assembled ([assemblyPathsByNode]); an endpoint it holds nothing for carries an
+// empty assembly path.
 func buildBoundaryContext(
 	allProvides NodeProvides,
 	boundaryPath string,
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
+	assemblyPaths map[string]string,
 ) (*types.BoundaryContext, error) {
 	if release == nil {
 		return nil, cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, "internal error while building a boundary render context: no Release was supplied", nil, nil)
@@ -1203,11 +1217,14 @@ func buildBoundaryContext(
 			tgtIn := subtreeMembers[edge.Target]
 			edgeView := EnrichedEdgeViewFromIREdge(edge, allProvides)
 			// Per-endpoint network inputs (pure data): the endpoints' boundary
-			// paths and raw aggrega.ai/namespace annotation values, so a provider
-			// engine can resolve each endpoint's network and decide whether the
-			// edge crosses a seam. No interpretation here (Invariant 1/6).
+			// paths, assembly paths and raw aggrega.ai/namespace annotation
+			// values, so a provider engine can resolve each endpoint's network and
+			// decide whether the edge crosses a seam. No interpretation here
+			// (Invariant 1/6).
 			edgeView.SourceBoundaryPath, edgeView.SourceNamespace = edgeEndpointNetworkInputs(edge.Source, graph)
 			edgeView.TargetBoundaryPath, edgeView.TargetNamespace = edgeEndpointNetworkInputs(edge.Target, graph)
+			edgeView.SourceAssemblyPath = assemblyPaths[edge.Source]
+			edgeView.TargetAssemblyPath = assemblyPaths[edge.Target]
 			switch {
 			case srcIn && tgtIn:
 				bc.InternalUsesEdges = append(bc.InternalUsesEdges, edgeView)

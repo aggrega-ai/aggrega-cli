@@ -181,9 +181,9 @@ func bridgeSpecFromMap(m map[string]any, hostField string) bridgeSpec {
 		Target:  bridgeStr(m["target"]),
 		Socket:  bridgeStr(m["socket"]),
 		SrcNS:   bridgeStr(m["source_namespace"]),
-		SrcPath: bridgeStr(m["source_boundary_path"]),
+		SrcPath: bridgeStr(m["source_assembly_path"]),
 		TgtNS:   bridgeStr(m["target_namespace"]),
-		TgtPath: bridgeStr(m["target_boundary_path"]),
+		TgtPath: bridgeStr(m["target_assembly_path"]),
 	}
 	if prov, ok := m["provides"].(map[string]any); ok {
 		s.UpstreamHost = bridgeStr(prov[hostField])

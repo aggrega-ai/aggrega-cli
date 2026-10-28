@@ -11,14 +11,21 @@ import "sort"
 // (reading the structured boundary edges). Both normalize their input into this
 // shape and run it through resolveBridge, so the listen port and the consumer
 // rewrite agree per edge by construction.
+//
+// Each endpoint's network inputs are the two the assembler places that endpoint
+// by: its aggrega.ai/namespace, else its assembly path — the directory its
+// output is assembled into, which the host hands the assembler as the group's
+// path and the edge view as the endpoint's assembly path. Never the endpoint's
+// boundary path: two boundaries assembled into one file share that file's
+// network, so their boundary paths differ where their networks do not.
 type bridgeSpec struct {
 	Source       string // consumer node ID (override-map key)
 	Target       string
 	Socket       string
 	SrcNS        string // raw aggrega.ai/namespace of the source endpoint
-	SrcPath      string // source endpoint boundary path (no-namespace fallback)
+	SrcPath      string // source endpoint assembly path (no-namespace fallback)
 	TgtNS        string
-	TgtPath      string
+	TgtPath      string   // target endpoint assembly path (no-namespace fallback)
 	UpstreamHost string   // the target's provided host (the proxy_pass target host)
 	TargetPort   int      // the target's own port (default listen port + proxy_pass port)
 	TargetVars   []string // consumer env vars to rewrite (host-carrying inject keys)

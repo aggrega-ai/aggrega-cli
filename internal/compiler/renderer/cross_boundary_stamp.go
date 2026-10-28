@@ -138,8 +138,7 @@ func classifyCrossBoundaryLinks(
 		node, found := graph.Spec.Nodes.Get(nodeID)
 		recipe := nodeRecipes[nodeID]
 		if found && recipe != nil {
-			d.key, d.err = onDemandDispatchKey(nodeID, ProviderEngineKind(recipe.Spec.Capability), recipe.Metadata.Name,
-				node.BoundaryPath, boundaryInfraFor(input, nodeID), parameters, boundaryDirEvals, perBoundaryAnnotations)
+			d.key, d.err = nodeDispatchKey(nodeID, node, recipe, input, parameters, boundaryDirEvals, perBoundaryAnnotations)
 			d.ok = d.err == nil
 		}
 		keys[nodeID] = d

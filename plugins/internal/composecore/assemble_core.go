@@ -545,7 +545,9 @@ func isNetworkNameRune(r rune) bool {
 //
 // Both the per-node network-assignment loop and the compose-bridge
 // cross-network opt-in filter call THIS function — the network identity is the
-// resolved name, never the raw namespace string — so the bridge's "is this edge
+// resolved name, never the raw namespace string — and both pass it the same
+// fallback, the path the node's output is assembled at (the group path here, each
+// endpoint's assembly path on the bridge's edges), so the bridge's "is this edge
 // cross-network?" decision can never drift from where the nodes are actually
 // assigned. Splitting two identities that used to fold together therefore moves
 // an edge between them from same-network to cross-network.

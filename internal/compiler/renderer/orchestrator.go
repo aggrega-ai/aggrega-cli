@@ -1436,6 +1436,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	crossLinks := classifyCrossBoundaryLinks(graph, nodeRecipes, engineFactory, input, boundaryDirEvals, perBoundaryAnnotations)
 	boundaryFRState.links = crossLinks
 
+	// Where each node's output is assembled, answered once by the evaluation the
+	// per-node loop runs, before the boundary-scope pre-pass below builds the edge
+	// views that carry it to a provider.
+	boundaryFRState.assemblyPaths = assemblyPathsByNode(graph, nodeRecipes, input, boundaryDirEvals, perBoundaryAnnotations)
+
 	// Provides pre-pass: evaluate every boundary-scope FeatureRecipe's
 	// provides before the per-node loop so a per-component consumer's uses
 	// edge can resolve them during Phase A inject rehydration. The per-node

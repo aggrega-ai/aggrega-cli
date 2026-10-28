@@ -16,14 +16,14 @@ import (
 func TestBuildBoundaryContext_AllBranches(t *testing.T) {
 	t.Parallel()
 	// Nil release.
-	_, err := buildBoundaryContext(nil, "p", &types.IRGraph{}, nil, nil)
+	_, err := buildBoundaryContext(nil, "p", &types.IRGraph{}, nil, nil, nil)
 	if err == nil {
 		t.Errorf("nil release should error")
 	}
 
 	// Missing boundary.
 	rel := &types.Release{}
-	_, err = buildBoundaryContext(nil, "absent", &types.IRGraph{}, rel, nil)
+	_, err = buildBoundaryContext(nil, "absent", &types.IRGraph{}, rel, nil, nil)
 	if err == nil {
 		t.Errorf("missing boundary should error")
 	}
@@ -67,7 +67,7 @@ func TestBuildBoundaryContext_AllBranches(t *testing.T) {
 	annOM.Set("a", "v")
 	anns["infra"] = annOM
 
-	got, err := buildBoundaryContext(nil, "infra", graph, rel, anns)
+	got, err := buildBoundaryContext(nil, "infra", graph, rel, anns, nil)
 	if err != nil {
 		t.Fatalf("populated: %v", err)
 	}

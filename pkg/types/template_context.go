@@ -504,18 +504,23 @@ type EnrichedEdge struct {
 	// it. Empty for a connection that carries none.
 	Features OrderedMap[TemplateAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
 
-	// Per-endpoint network inputs, carried as pure opaque data for a provider
-	// engine to resolve into a network identity (the compose engine compares
-	// resolved names to decide whether an edge crosses a network seam). The core
-	// does not interpret these. SourceNamespace/TargetNamespace are the raw
+	// Per-endpoint placement, carried as pure opaque data for a provider engine to
+	// resolve into a network identity (the compose engine compares resolved names
+	// to decide whether an edge crosses a network seam). The core does not
+	// interpret these. SourceNamespace/TargetNamespace are the raw
 	// `aggrega.ai/namespace` annotation values each endpoint's own render is
 	// handed — its own Release entry's setting included (empty when absent); the
-	// *BoundaryPath fields are the endpoints' boundary paths used for the
-	// no-namespace fallback.
+	// *BoundaryPath fields are the endpoints' Release boundary paths; the
+	// *AssemblyPath fields are the directories each endpoint's provider assembles
+	// its output into — the dispatch path the render groups and assembles that
+	// endpoint by — which a provider reads as an endpoint's network when no
+	// namespace applies.
 	SourceNamespace    string `json:"source_namespace,omitempty" yaml:"source_namespace,omitempty"`
 	SourceBoundaryPath string `json:"source_boundary_path,omitempty" yaml:"source_boundary_path,omitempty"`
+	SourceAssemblyPath string `json:"source_assembly_path,omitempty" yaml:"source_assembly_path,omitempty"`
 	TargetNamespace    string `json:"target_namespace,omitempty" yaml:"target_namespace,omitempty"`
 	TargetBoundaryPath string `json:"target_boundary_path,omitempty" yaml:"target_boundary_path,omitempty"`
+	TargetAssemblyPath string `json:"target_assembly_path,omitempty" yaml:"target_assembly_path,omitempty"`
 
 	// RenderFacts is what the target's renders reported about what they emitted,
 	// keyed by fact name, in the shape [InboundEdge.RenderFacts] gives a caller's:
