@@ -154,7 +154,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		return nil
 	}
 
-	var values map[string]any
+	var values valuesMappingOutput
 	_, err, decodeErr := EvalTemplateDecoded(
 		fmt.Sprintf("valuesMapping[%s]", state.Recipe.Metadata.Name),
 		tmplText,
@@ -168,7 +168,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	if decodeErr != nil {
 		return cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
-	state.ResolvedValues = values
+	state.ResolvedValues = map[string]any(values)
 	// This branch is the only one whose values a mapping produced, so it is the
 	// one that records the fact, as the branch above records its own.
 	state.ValuesMapped = true

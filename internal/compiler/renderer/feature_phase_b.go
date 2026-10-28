@@ -335,7 +335,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{Resolved: out, KeysAreDeclaredLeaves: true, Omits: omits}, nil
 	}
 
-	var values map[string]any
+	var values valuesMappingOutput
 	_, err, decodeErr := EvalTemplateDecoded(
 		fmt.Sprintf("fr-valuesMapping[%s]", fr.Metadata.Name),
 		tmplText,
@@ -350,7 +350,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{}, cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
-	return FeatureValues{Resolved: values, Sensitive: templateReadsWithheld(tmplText, withheld), Mapped: true, Omits: omits}, nil
+	return FeatureValues{Resolved: map[string]any(values), Sensitive: templateReadsWithheld(tmplText, withheld), Mapped: true, Omits: omits}, nil
 }
 
 // featureRecipeDeclaredSensitivity assembles the sensitivity declarations one

@@ -189,8 +189,10 @@ const (
 // carrying a Resources map and optionally provides/Outputs material — and
 // re-emits it as pure-JSON long-form intrinsics. YAML short-form intrinsic tags
 // (!Ref, !GetAtt, !Sub, and the rest) are expanded to their long-form object
-// spellings ({"Ref": ...}, {"Fn::GetAtt": [...]}); a fragment already in JSON
-// long form passes through unchanged in meaning. The output serializes with
+// spellings ({"Ref": ...}, {"Fn::GetAtt": [...]}), and a string value that is
+// wholly one of those short forms — written inside quotes, as a spliced reference
+// often is — expands the same way, so quoted and bare mean the same; a fragment
+// already in JSON long form passes through unchanged in meaning. The output serializes with
 // sorted object keys so it is byte-identical across runs of identical input.
 func NormalizeFragment(content []byte) ([]byte, error) {
 	v, err := decodeToValue(content)
@@ -861,8 +863,10 @@ func readProvidesValue(text string) (value any, intrinsic bool) {
 }
 
 // nodeToValue converts one YAML node to a plain Go value, resolving aliases and
-// expanding a CloudFormation short-form intrinsic tag into its long-form object
-// spelling.
+// expanding a CloudFormation short-form intrinsic — a tag, or a string that is
+// wholly one short form, read by shortFormIntrinsic — into its long-form object
+// spelling. A tagged scalar's own argument is read raw (innerValue), so the
+// template text of an `!Sub` is never itself re-read as an intrinsic.
 //
 // It follows alias links without tracking where it has been, so it terminates
 // only on a tree whose anchors are free of recursion. decodeToValue establishes
@@ -890,7 +894,18 @@ func nodeToValue(n *yaml.Node) (any, error) {
 	case yaml.SequenceNode:
 		return sequenceToValue(n)
 	case yaml.ScalarNode:
-		return scalarToValue(n), nil
+		v := scalarToValue(n)
+		// A string that is wholly one short-form intrinsic is that intrinsic, quoted
+		// or not, as the binding of a values mapping reads it: a fragment splicing a
+		// published reference writes the same thing either way, and the stack must
+		// not come to hold the reference's text in one spelling and the reference in
+		// the other.
+		if s, ok := v.(string); ok {
+			if intrinsic, isIntrinsic := shortFormIntrinsic(s); isIntrinsic {
+				return intrinsic, nil
+			}
+		}
+		return v, nil
 	default:
 		return nil, fmt.Errorf("cloudformation-provider: unsupported YAML node kind %d", n.Kind)
 	}
