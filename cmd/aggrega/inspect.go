@@ -843,8 +843,10 @@ func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspa
 // refusal where a reference does not resolve — a component type no catalog
 // holds, at the Aggregate's root or inside a module it imports, whether written
 // as a catalog identity or as a ./ or ../ path. The resolution reads only local
-// catalogs and the cache, and what the command writes to standard output for a
-// Release whose references all resolve does not depend on it; where the catalog
+// catalogs, the cache and the lockfile beside the Release, and what the command
+// writes to standard output for a Release whose references all resolve depends on
+// it only through that lockfile, from which the transform-role governance
+// attachments are composed as a build composes them; where the catalog
 // directories declare one identity twice, the first-win notices the resolution
 // raises reach standard error, as they do on a validation.
 //
@@ -959,10 +961,11 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// compiles the Release, and its checks are entitled to assume every reference
 	// already resolved: a type no catalog holds would otherwise reach them and be
 	// reported as a disagreement inside the compiler — or, written as a ./ path,
-	// be drawn as though it named something. Nothing it returns is read beyond its
-	// verdict, so the picture below is drawn from the documents loaded above
-	// exactly as it was before the question was asked.
-	if _, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogDirs); err != nil {
+	// be drawn as though it named something. Beyond its verdict, the one thing read
+	// from it is the lockfile it loaded beside the Release, which the governance
+	// composition below reconstructs the transform attachments from.
+	deps, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogDirs)
+	if err != nil {
 		return err
 	}
 
@@ -990,12 +993,15 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			ReleasePath:       releasePath,
 			RootAggregateFile: catalog.RelativeToWorkspace(wsRoot, aggPath),
 			CompilerVersion:   provenanceCompilerVersion(),
-			// The workspace's own configuration, live, plus the root and cache
-			// directory a transform-role guest resolves through. A transform role
-			// shapes the graph, so drawing the graph without it would draw a
-			// composition no build of the same documents produces — which is the one
-			// thing this command promises not to do.
-			WorkspaceConfig: &wsCfg,
+			// The workspace's own configuration, with its governance attachment list
+			// composed as a build composes it, plus the root and cache directory a
+			// transform-role guest resolves through. A transform role shapes the
+			// graph, and its source files reach its guest only from the lockfile, so
+			// drawing the graph from the live list would run the transforms without
+			// them and draw a graph no build of the same documents produces — which is
+			// the one thing this command promises not to do. With no lockfile there
+			// is nothing to reconstruct from, and the live list stands as authored.
+			WorkspaceConfig: compilerops.ComposeGovernanceAttachments(&wsCfg, deps.lockfile),
 			WorkspaceRoot:   wsRoot,
 			// A pinned claim over an empty set, and both halves are deliberate.
 			// This command inspects a workspace whose plugins a recorded closure

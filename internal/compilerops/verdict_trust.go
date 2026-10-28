@@ -247,12 +247,40 @@ func applyGovernanceComposition(in *pipeline.Inputs, view *catalog.LazyLookup, r
 		return err
 	}
 	in.VerdictPluginTrust = trusted
-	if in.Lockfile != nil {
-		composed := *in.WorkspaceConfig
-		composed.Plugins.Governance = append(
-			lockfile.MutatorAttachments(in.Lockfile),
-			in.WorkspaceConfig.Plugins.VerdictGovernanceRefs()...)
-		in.WorkspaceConfig = &composed
-	}
+	in.WorkspaceConfig = ComposeGovernanceAttachments(in.WorkspaceConfig, in.Lockfile)
 	return nil
+}
+
+// ComposeGovernanceAttachments returns the configuration whose governance
+// attachment list a run dispatches: under a lockfile, the transform attachments
+// reconstructed from it — each carrying the settings and the source content the
+// pull recorded — followed by the live verdict attachments; with no lockfile, cfg
+// itself, whose live list stands as authored.
+//
+// It is the one home of that list. Every surface that dispatches the transform
+// roles reaches it — a build and a Release-scoped validation through
+// ApplyGovernanceComposition, and the release inspection, which draws the graph
+// a build produces, directly — so the transforms run with the same pinned
+// settings and sources whichever of them drew the graph. A transform's source
+// files reach its guest only from the lockfile, so a surface composing the list
+// any other way runs its transforms without them and draws labels no build of
+// the same documents gives.
+//
+// A surface that dispatches a verdict attachment composes through
+// ApplyGovernanceComposition instead, which also holds the configuration to the
+// record of the plugin identities trusted for those attachments; this function
+// alone supplies none of that record.
+//
+// cfg is never written through. Under a lockfile the list lands on a copy, so a
+// long-lived surface handing one configuration to every request does not leak
+// one request's reconstructed attachments into the next.
+func ComposeGovernanceAttachments(cfg *workspaceconfig.Config, lf *lockfile.Lockfile) *workspaceconfig.Config {
+	if cfg == nil || lf == nil {
+		return cfg
+	}
+	composed := *cfg
+	composed.Plugins.Governance = append(
+		lockfile.MutatorAttachments(lf),
+		cfg.Plugins.VerdictGovernanceRefs()...)
+	return &composed
 }
