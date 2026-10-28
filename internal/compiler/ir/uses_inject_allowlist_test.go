@@ -162,10 +162,13 @@ type connection struct {
 	mechanisms []string
 }
 
-// injectBlock renders one connection's dictated delivery. Every entry carries a
-// literal rather than a reference to a published key, so a row exercises the
-// socket's allowlist and cannot halt instead on whether the target publishes
-// what the entry reads.
+// injectBlock renders one connection's dictated delivery. Every entry reads
+// `host` with `from:`, a key the shared catalog's `core/db` declares in its
+// provides schema and its Recipe publishes. A connection delivers what its
+// target publishes, so an entry carrying a literal halts the build, and one
+// reading a key the target does not publish halts it too; reading a key that
+// is published means a row exercises the socket's allowlist and cannot halt
+// instead on what its entries carry.
 //
 // The delivery key is unique per connection AND per mechanism, which each row
 // needs for its own reason: two connections on one component delivering one key
@@ -181,7 +184,7 @@ func injectBlock(indent string, c connection) string {
 	for _, mechanism := range c.mechanisms {
 		b.WriteString(indent + "  " + mechanism + ":\n")
 		b.WriteString(indent + "    - in: " + deliveryKey(c, mechanism) + "\n")
-		b.WriteString(indent + `      value: "static"` + "\n")
+		b.WriteString(indent + "      from: host\n")
 	}
 	return b.String()
 }
