@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
@@ -233,25 +234,25 @@ func typecheckParam(paramName string, decl ParamDecl, argVal any) error {
 	switch decl.Type {
 	case "string":
 		if _, ok := argVal.(string); !ok {
-			return fmt.Errorf("%q expected string, got %T", paramName, argVal)
+			return fmt.Errorf("%q expected string, got %s", paramName, authoredshape.Of(argVal))
 		}
 	case "integer":
 		switch argVal.(type) {
 		case int, int32, int64:
 			// OK
 		default:
-			return fmt.Errorf("%q expected integer, got %T", paramName, argVal)
+			return fmt.Errorf("%q expected integer, got %s", paramName, authoredshape.Of(argVal))
 		}
 	case "number":
 		switch argVal.(type) {
 		case float32, float64, int, int32, int64:
 			// OK
 		default:
-			return fmt.Errorf("%q expected number, got %T", paramName, argVal)
+			return fmt.Errorf("%q expected number, got %s", paramName, authoredshape.Of(argVal))
 		}
 	case "boolean":
 		if _, ok := argVal.(bool); !ok {
-			return fmt.Errorf("%q expected boolean, got %T", paramName, argVal)
+			return fmt.Errorf("%q expected boolean, got %s", paramName, authoredshape.Of(argVal))
 		}
 	case "":
 		// Untyped parameter — accept any literal scalar. Authors who want

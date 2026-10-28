@@ -27,7 +27,7 @@ import (
 // parametersReferenceRoot is the template path an Aggregate's declared parameters
 // are read through, and therefore the root a reference census over the Aggregate's
 // own text is taken under.
-const parametersReferenceRoot = ".parameters"
+const parametersReferenceRoot = "." + parametersRoot
 
 // aggregateTextParsesAsATemplate reports an Aggregate whose authored text is not
 // a Go template, so no value a Release fulfils can be carried into it.

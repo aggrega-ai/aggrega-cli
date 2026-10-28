@@ -30,6 +30,29 @@ func ProviderEngineKind(providerRef string) string {
 	return types.BareCapability(providerRef)
 }
 
+// providerIdentity resolves the provider a capability binding renders through:
+// the bare engine kind and the version of the provider-rendering plugin the
+// binding resolves to, the pair a render stamps on what it emits as the
+// aggrega.ai/provider and aggrega.ai/provider-version labels. versionOf is the
+// render's resolver; with none, or where it resolves no version, the version is
+// empty.
+//
+// Every render reads its pair through this one function, from the binding of the
+// entity that render belongs to — a component's Recipe, or a FeatureRecipe, which
+// names its own capability whatever the component it is attached to, or the
+// boundary it is attached at, renders through. A FeatureRecipe's render context
+// starts as a copy of a component's, and the pair it carried there named that
+// component's provider; resolving it again from the FeatureRecipe's own binding
+// is what keeps an attachment rendered through another provider from labelling
+// its output with the provider that did not render it.
+func providerIdentity(capability string, versionOf func(ref string) string) (name, version string) {
+	name = ProviderEngineKind(capability)
+	if versionOf != nil {
+		version = versionOf(capability)
+	}
+	return name, version
+}
+
 // providerVersionGreater orders resolved provider versions for boundary-assembler
 // selection within a dispatch group. A populated version outranks the empty
 // version — a version-less binding, one for which no provider-rendering plugin

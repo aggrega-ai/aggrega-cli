@@ -34,11 +34,16 @@ import (
 )
 
 // genCatalogHeader is the two-part banner every generated Plugin entity
-// carries: the do-not-edit marker (the entity is machine-derived from the
-// guest's describe() self-report and an authored overlay, so hand edits are
-// overwritten on the next generation) followed by the standard license header.
-// The editable input is the overlay, not this output.
-const genCatalogHeader = "# generated; DO NOT EDIT\n" +
+// carries: the generation note, then the standard license header.
+//
+// The note says where the entity comes from and the one edit its author may
+// make: the entity is generated from the plugin — its contract fields from the
+// plugin's describe() self-report, the rest from an authored overlay — and its
+// capability lists may be narrowed before it is published. It
+// says nothing else, because anything else an author changes in the entity is
+// changed in the overlay and generated again.
+const genCatalogHeader = "# Generated from the plugin by `aggrega plugin gen-catalog`. You may narrow its " +
+	"capability lists; edit nothing else here.\n" +
 	"# SPDX-License-Identifier: Apache-2.0\n" +
 	"# Copyright 2026 Cognitio S.r.l.\n"
 

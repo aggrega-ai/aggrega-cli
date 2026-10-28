@@ -89,7 +89,7 @@ func verifyKeyedWithLibrary(bundleBytes, pubPEM []byte, artifactDigest string) e
 	}
 	ecPub, ok := pub.(*ecdsa.PublicKey)
 	if !ok {
-		return fmt.Errorf("%w: pinned key is %T, want ECDSA P-256", ErrUnsupportedKey(), pub)
+		return fmt.Errorf("%w: pinned key is %s, want ECDSA P-256", ErrUnsupportedKey(), keyAlgorithm(pub))
 	}
 	verifier, err := signature.LoadECDSAVerifier(ecPub, crypto.SHA256)
 	if err != nil {

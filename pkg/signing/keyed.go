@@ -57,7 +57,7 @@ func LoadKeyedSigner(privPEM []byte, pf cryptoutils.PassFunc) (*KeyedSigner, err
 	}
 	ecKey, ok := priv.(*ecdsa.PrivateKey)
 	if !ok {
-		return nil, fmt.Errorf("%w: held key is %T, want ECDSA P-256", ErrUnsupportedKey(), priv)
+		return nil, fmt.Errorf("%w: held key is %s, want ECDSA P-256", ErrUnsupportedKey(), keyAlgorithm(priv))
 	}
 	sv, err := signature.LoadSignerVerifier(priv, keyedHash)
 	if err != nil {

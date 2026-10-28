@@ -12,6 +12,7 @@ package parse
 import (
 	"encoding/json"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -24,8 +25,13 @@ import (
 // superset, so JSON-shaped Recipe output continues to parse cleanly while
 // authors gain access to YAML-native authoring features (block scalars,
 // comments, unquoted scalars).
+//
+// A value the output writes in a shape its position does not take is reported in
+// the author's terms — what was written and what the position takes — rather than
+// by the Go type the output is decoded into, which the author of the template
+// never sees.
 func TemplateOutput(b []byte, dst any) error {
-	return yaml.Unmarshal(b, dst)
+	return authoredshape.DescribeYAMLDecodeError(yaml.Unmarshal(b, dst))
 }
 
 // IRPayload decodes JSON read from a json.RawMessage stored on the

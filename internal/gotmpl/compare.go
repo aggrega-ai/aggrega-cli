@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strconv"
 	"text/template"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 )
 
 // AssertionComparisons returns the bindings of `eq`, `ne`, `lt`, `le`, `gt` and
@@ -51,37 +53,20 @@ func AssertionComparisons() template.FuncMap {
 }
 
 // valueKind is the kind of value a comparison sees, in the terms an author
-// writes values in.
-type valueKind int
+// writes values in. The kinds and the words a refusal names them by have one
+// home, shared with every other message that names the shape of an authored
+// value.
+type valueKind = authoredshape.Kind
 
 const (
-	kindAbsent valueKind = iota
-	kindNumber
-	kindText
-	kindBool
-	kindList
-	kindMap
-	kindOther
+	kindAbsent = authoredshape.Absent
+	kindNumber = authoredshape.Number
+	kindText   = authoredshape.Text
+	kindBool   = authoredshape.Bool
+	kindList   = authoredshape.List
+	kindMap    = authoredshape.Map
+	kindOther  = authoredshape.Other
 )
-
-// phrase is the kind as a refusal names it.
-func (k valueKind) phrase() string {
-	switch k {
-	case kindAbsent:
-		return "no value"
-	case kindNumber:
-		return "a number"
-	case kindText:
-		return "text"
-	case kindBool:
-		return "a true/false value"
-	case kindList:
-		return "a list"
-	case kindMap:
-		return "a map"
-	}
-	return "a value that is not a number, text, a true/false value, a list or a map"
-}
 
 var jsonNumberType = reflect.TypeFor[json.Number]()
 
@@ -98,24 +83,7 @@ func operandOf(arg reflect.Value) operand {
 	if !v.IsValid() || isNil {
 		return operand{kind: kindAbsent}
 	}
-	if v.Type() == jsonNumberType {
-		return operand{kind: kindNumber, v: v}
-	}
-	switch v.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
-		reflect.Float32, reflect.Float64:
-		return operand{kind: kindNumber, v: v}
-	case reflect.String:
-		return operand{kind: kindText, v: v}
-	case reflect.Bool:
-		return operand{kind: kindBool, v: v}
-	case reflect.Slice, reflect.Array:
-		return operand{kind: kindList, v: v}
-	case reflect.Map:
-		return operand{kind: kindMap, v: v}
-	}
-	return operand{kind: kindOther, v: v}
+	return operand{kind: authoredshape.KindOf(v), v: v}
 }
 
 // numberValue returns a number operand exactly, as a rational, or false where
@@ -181,7 +149,7 @@ func orderNumbers(a, b operand) (order int, unordered bool) {
 // "error calling <name>:" ahead of it.
 func orderingRefusal(a, b operand) error {
 	return fmt.Errorf("cannot compare %s with %s: it orders two numbers or two pieces of text",
-		a.kind.phrase(), b.kind.phrase())
+		a.kind.Phrase(), b.kind.Phrase())
 }
 
 // order answers an ordering comparison: the sign of a against b, refusing a pair
@@ -237,7 +205,7 @@ func equal(a, b operand) (bool, error) {
 // engine's prefix.
 func equalityRefusal(a, b operand) error {
 	return fmt.Errorf("cannot compare %s with %s: it compares a number with a number, text with text, "+
-		"or a true/false value with a true/false value", a.kind.phrase(), b.kind.phrase())
+		"or a true/false value with a true/false value", a.kind.Phrase(), b.kind.Phrase())
 }
 
 // errNoComparand is the refusal of `eq` given one value and nothing to compare it

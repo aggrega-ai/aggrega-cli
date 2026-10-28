@@ -323,8 +323,8 @@ func TestOrderedMap_UnmarshalRejectsNonMappingNode(t *testing.T) {
 	if err == nil {
 		t.Fatal("Unmarshal of sequence node into OrderedMap succeeded, want error")
 	}
-	if !strings.Contains(err.Error(), "expected mapping node") {
-		t.Errorf("error message = %q, want substring \"expected mapping node\"", err.Error())
+	if !strings.Contains(err.Error(), "a list is written where a map is expected") {
+		t.Errorf("error message = %q, want substring \"a list is written where a map is expected\"", err.Error())
 	}
 }
 

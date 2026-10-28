@@ -2062,11 +2062,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// bare engine kind (dispatch grouping, path segment, codec, and the
 		// provider a declared rule matches a pipeline step's plugin against).
 		providerRef := ""
-		providerName := ""
 		if recipe != nil {
 			providerRef = recipe.Spec.Capability
-			providerName = ProviderEngineKind(recipe.Spec.Capability)
 		}
+		// The version is the resolved provider-rendering plugin version behind this
+		// binding, shared with the engine the factory returns for it. Empty when no
+		// provider-rendering plugin version resolves behind the binding. Stamped on
+		// the aggrega.ai/provider-version label and used to pick the dispatch group's
+		// boundary assembler when the group mixes provider versions.
+		providerName, providerVersion := providerIdentity(providerRef, input.ProviderVersion)
 		// The node's target is known now, so the by-value advisories collected at
 		// attachment delivery can be located and joined to the per-node diagnostic
 		// accumulator. Collection order is the delivery order, which is itself
@@ -2075,15 +2079,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			sensitiveByValue[i].Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
 		}
 		state.Diagnostics = append(state.Diagnostics, sensitiveByValue...)
-		// Resolved provider-rendering plugin version behind this binding, shared
-		// with the engine the factory returns for it. Empty when no provider-
-		// rendering plugin version resolves behind the binding. Stamped on the
-		// aggrega.ai/provider-version label and used to pick the dispatch group's
-		// boundary assembler when the group mixes provider versions.
-		providerVersion := ""
-		if input.ProviderVersion != nil {
-			providerVersion = input.ProviderVersion(providerRef)
-		}
 		engine, err := engineFactory(providerRef)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q: selecting its rendering plugin", nodeID))

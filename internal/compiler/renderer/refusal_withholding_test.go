@@ -267,7 +267,7 @@ func TestEvalTemplateDecoded_WithholdsADeclaredValueFromADecodeFailure(t *testin
 			secret: "long-de",
 			// The decoder quotes a short scalar whole and a long one by its first
 			// characters, so the placeholder's opening is what either form shows.
-			want: "cannot unmarshal !!str `" + redact.Placeholder()[:7],
+			want: "text `" + redact.Placeholder()[:7],
 		},
 		{
 			name:   "a declared value whose content breaks the document",

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 )
 
 // bridgeMarkerKey is the compose extension key the compose-bridge FeatureRecipe's
@@ -54,7 +56,7 @@ func injectBridgeGateway(merged map[string]any) error {
 	delete(merged, bridgeMarkerKey)
 	marker, ok := raw.(map[string]any)
 	if !ok {
-		return fmt.Errorf("compose bridge: %s must be a mapping, got %T", bridgeMarkerKey, raw)
+		return fmt.Errorf("compose bridge: %s must be a map, got %s", bridgeMarkerKey, authoredshape.Of(raw))
 	}
 
 	hostField := defaultUpstreamHostField

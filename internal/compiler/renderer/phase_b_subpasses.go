@@ -1053,7 +1053,7 @@ func (p *attachmentPass) render(
 		input.RecordedPins.For(frDocument), item.Identity,
 		ownerProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactLibraries,
-		nodeAnnotations, input.CatalogLookup.ProviderPlugin, frKeys)
+		nodeAnnotations, input.CatalogLookup.ProviderPlugin, input.ProviderVersion, frKeys)
 	if err != nil {
 		return err
 	}
@@ -1582,6 +1582,7 @@ func renderFeatureRecipeFiles(
 	artifactsLibs map[string]types.ArtifactLibrary,
 	annotations types.OrderedMap[string],
 	providerPlugin func(ref string) (types.Plugin, bool, error),
+	providerVersion func(ref string) string,
 	withheld redact.Keys,
 ) ([]EmittedFile, string, error) {
 	// Every document this render emits names THIS FeatureRecipe as the Recipe that
@@ -1602,6 +1603,13 @@ func renderFeatureRecipeFiles(
 	// makes all three kinds answer alike, not what makes one of them work.
 	frNodeCtx.RecipeName = fr.Metadata.Name
 	frNodeCtx.RecipeVersion = fr.Metadata.Version
+	// The provider that renders it is this FeatureRecipe's own, for the same reason
+	// and through the same funnel: the copied context names the provider of the
+	// component it was copied from, and a FeatureRecipe names its own capability —
+	// one attached at a boundary of compose components may render through helm.
+	// Left as copied, every document this render emits would carry the
+	// aggrega.ai/provider label of a provider that did not produce it.
+	frNodeCtx.ProviderName, frNodeCtx.ProviderVersion = providerIdentity(fr.Spec.Capability, providerVersion)
 
 	hasSource := sourceValueDeclared(resolvedSrc)
 	hasWorkload := !fr.Spec.Workload.IsEmpty()

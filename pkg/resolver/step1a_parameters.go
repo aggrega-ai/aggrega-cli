@@ -13,6 +13,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -327,7 +328,7 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 		errs = append(errs, &ResolverError{
 			Entity:  "Aggregate",
 			Field:   fmt.Sprintf(".spec.parameters.%s", path),
-			Message: fmt.Sprintf("parameter %q expected type %s; got %T", path, pc.Type, value),
+			Message: fmt.Sprintf("parameter %q expected type %s; got %s", path, pc.Type, authoredshape.Of(value)),
 			Err:     ErrParameterContractViolation(),
 		})
 		return errs

@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
@@ -398,7 +399,8 @@ func (m *OrderedMap[V]) unmarshalYAMLWithDepth(node *yaml.Node, depth int) error
 		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
 	}
 	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("OrderedMap: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
+		return fmt.Errorf("line %d: %s", node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), authoredshape.Map.Phrase()))
 	}
 	m.keys = make([]string, 0, len(node.Content)/2)
 	m.values = make(map[string]V, len(node.Content)/2)
@@ -409,16 +411,16 @@ func (m *OrderedMap[V]) unmarshalYAMLWithDepth(node *yaml.Node, depth int) error
 
 		var k string
 		if err := keyNode.Decode(&k); err != nil {
-			return fmt.Errorf("OrderedMap: decoding key at line %d: %w", keyNode.Line, err)
+			return fmt.Errorf("line %d: reading a key: %w", keyNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 		}
 
 		if _, exists := m.values[k]; exists {
-			return fmt.Errorf("OrderedMap: duplicate key %q at line %d", k, keyNode.Line)
+			return fmt.Errorf("line %d: duplicate key %q: a key is written once in a map", keyNode.Line, k)
 		}
 
 		v, err := decodeYAMLValue[V](valueNode, depth+1)
 		if err != nil {
-			return fmt.Errorf("OrderedMap: decoding value for key %q at line %d: %w", k, valueNode.Line, err)
+			return fmt.Errorf("under key %q (line %d): %w", k, valueNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 		}
 
 		m.keys = append(m.keys, k)
@@ -450,7 +452,7 @@ func (m OrderedMap[V]) MarshalYAML() (any, error) {
 		}
 		valueNode := &yaml.Node{}
 		if err := valueNode.Encode(m.values[k]); err != nil {
-			return nil, fmt.Errorf("OrderedMap: encoding value for key %q: %w", k, err)
+			return nil, fmt.Errorf("encoding the value of key %q: %w", k, err)
 		}
 		out.Content = append(out.Content, keyNode, valueNode)
 	}
@@ -473,13 +475,13 @@ func (m OrderedMap[V]) MarshalJSON() ([]byte, error) {
 		}
 		keyBytes, err := json.Marshal(k)
 		if err != nil {
-			return nil, fmt.Errorf("OrderedMap: encoding JSON key %q: %w", k, err)
+			return nil, fmt.Errorf("encoding JSON key %q: %w", k, err)
 		}
 		buf.Write(keyBytes)
 		buf.WriteByte(':')
 		valueBytes, err := json.Marshal(m.values[k])
 		if err != nil {
-			return nil, fmt.Errorf("OrderedMap: encoding JSON value for key %q: %w", k, err)
+			return nil, fmt.Errorf("encoding the JSON value of key %q: %w", k, err)
 		}
 		buf.Write(valueBytes)
 	}
@@ -538,35 +540,35 @@ func (m *OrderedMap[V]) unmarshalJSONWithDepth(data []byte, depth int) error {
 
 	tok, err := dec.Token()
 	if err != nil {
-		return fmt.Errorf("OrderedMap: reading JSON opening token: %w", err)
+		return fmt.Errorf("reading the opening of a JSON object: %w", err)
 	}
 	delim, ok := tok.(json.Delim)
 	if !ok || delim != '{' {
-		return fmt.Errorf("OrderedMap: expected JSON object, got token %v", tok)
+		return fmt.Errorf("expected JSON object, found %v", tok)
 	}
 
 	for dec.More() {
 		keyTok, err := dec.Token()
 		if err != nil {
-			return fmt.Errorf("OrderedMap: reading JSON key: %w", err)
+			return fmt.Errorf("reading a JSON key: %w", err)
 		}
 		key, ok := keyTok.(string)
 		if !ok {
-			return fmt.Errorf("OrderedMap: expected string key, got token %v", keyTok)
+			return fmt.Errorf("expected a JSON key written as text, found %v", keyTok)
 		}
 
 		if _, exists := m.values[key]; exists {
-			return fmt.Errorf("OrderedMap: duplicate key %q", key)
+			return fmt.Errorf("duplicate key %q: a key is written once in an object", key)
 		}
 
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
-			return fmt.Errorf("OrderedMap: reading JSON value for key %q: %w", key, err)
+			return fmt.Errorf("reading the JSON value of key %q: %w", key, err)
 		}
 
 		v, err := decodeJSONValue[V](raw, depth+1)
 		if err != nil {
-			return fmt.Errorf("OrderedMap: decoding JSON value for key %q: %w", key, err)
+			return fmt.Errorf("under key %q: %w", key, err)
 		}
 
 		m.keys = append(m.keys, key)
@@ -575,7 +577,7 @@ func (m *OrderedMap[V]) unmarshalJSONWithDepth(data []byte, depth int) error {
 
 	// Consume the closing '}' token.
 	if _, err := dec.Token(); err != nil && err != io.EOF {
-		return fmt.Errorf("OrderedMap: reading JSON closing token: %w", err)
+		return fmt.Errorf("reading the close of a JSON object: %w", err)
 	}
 
 	return nil
@@ -669,7 +671,7 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return zero, fmt.Errorf("OrderedMap: empty JSON value")
+		return zero, fmt.Errorf("a JSON value is empty")
 	}
 
 	switch trimmed[0] {
@@ -707,7 +709,7 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 		valDec.UseNumber()
 		var num json.Number
 		if err := valDec.Decode(&num); err != nil {
-			return zero, fmt.Errorf("OrderedMap: decoding JSON number: %w", err)
+			return zero, fmt.Errorf("reading a JSON number: %w", err)
 		}
 		return any(num).(V), nil
 	}

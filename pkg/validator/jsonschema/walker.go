@@ -11,6 +11,8 @@ import (
 	"text/template"
 
 	"github.com/google/jsonschema-go/jsonschema"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 )
 
 // walk is the pre-walk phase of New. Walks the schema recursively,
@@ -167,7 +169,7 @@ func (a *googleAdapter) collectWhenNode(s *jsonschema.Schema, instancePath []str
 		return &AdapterError{
 			Path:    joinPath(instancePath),
 			Keyword: "x-aggrega-when",
-			Message: fmt.Sprintf("expected string template; got %T", rawTpl),
+			Message: fmt.Sprintf("expected a template written as text; got %s", authoredshape.Of(rawTpl)),
 			Err:     ErrExtensionEval(),
 		}
 	}
@@ -225,7 +227,7 @@ func (a *googleAdapter) collectValidateNode(s *jsonschema.Schema, instancePath [
 		return &AdapterError{
 			Path:    joinPath(instancePath),
 			Keyword: "x-aggrega-validate",
-			Message: fmt.Sprintf("expected string template; got %T", rawTpl),
+			Message: fmt.Sprintf("expected a template written as text; got %s", authoredshape.Of(rawTpl)),
 			Err:     ErrExtensionEval(),
 		}
 	}

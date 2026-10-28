@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -75,19 +76,52 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 
 	// The tree walked is the tree that runs, so the references seeded for are
 	// exactly the references the execution will make.
-	data := map[string]any{"parameters": copyParameterTree(params)}
-	gotmpl.SeedAbsentLeafKeys(data, gotmpl.CollectRootRefs(tmpl.Tree.Root))
+	data := map[string]any{parametersRoot: copyParameterTree(params)}
+	refs := gotmpl.CollectRootRefs(tmpl.Tree.Root)
+	gotmpl.SeedAbsentLeafKeys(data, refs)
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
-			Message: fmt.Sprintf("template execution error: %v", err),
+			Message: undefinedRootReads(refs) + fmt.Sprintf("template execution error: %v", err),
 			Err:     ErrInvalidParameterRef(),
 		}
 	}
 
 	return buf.Bytes(), nil
+}
+
+// parametersRoot is the one root an Aggregate's own text is rendered against: the
+// key the fulfilled parameters sit under in the data the text is executed with.
+const parametersRoot = "parameters"
+
+// undefinedRootReads names, for a failed render, the references the template
+// makes through a root an Aggregate's text does not define — .values, say, written
+// where it means a value a later stage supplies — and states the one root it does
+// define. It returns the empty string when every reference reads .parameters.
+//
+// It exists because the condition's own sentence speaks of a .parameters
+// expression, and a render that failed on a read of another root would otherwise
+// send its reader to look for a parameter: the reference that failed is named
+// here, as the author spelled it, ahead of the template engine's own report.
+//
+// A reference through an undefined root does not always fail the render — one
+// with a single segment reads as nothing — so this is said only once the render
+// has failed, and every such reference is named, since the engine's report
+// locates the failing one while the author may have written several.
+func undefinedRootReads(refs []gotmpl.RootRef) string {
+	var paths []string
+	for _, ref := range refs {
+		if len(ref.Segs) > 0 && ref.Segs[0] != parametersRoot {
+			paths = append(paths, ref.Path)
+		}
+	}
+	if len(paths) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("the template reads %s, and an Aggregate's text defines no root but %s; ",
+		strings.Join(paths, ", "), parametersReferenceRoot)
 }
 
 // parseAggregateTemplate parses an Aggregate's authored text exactly as

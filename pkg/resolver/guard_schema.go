@@ -456,7 +456,7 @@ func pillarConformanceFindings(
 	out := make([]pillarFinding, 0, len(leaves))
 	for _, f := range leaves {
 		reason := f.Message
-		if findingOnSensitiveLeaf(declared, pillar, f.FieldPath) {
+		if findingOnSensitiveLeaf(declared, pillar, f.FieldPath) && !reportsAnAbsentValue(f) {
 			reason = redact.Placeholder()
 		}
 		out = append(out, pillarFinding{path: f.FieldPath, keyword: f.Keyword, reason: reason})
@@ -484,6 +484,20 @@ func findingOnSensitiveLeaf(declared SensitiveLeaves, pillar, fieldPath string) 
 		return false
 	}
 	return declared.Covers(fieldPath)
+}
+
+// reportsAnAbsentValue reports whether a finding is about a value that is not
+// there: a property the schema requires and the instance does not write. Such a
+// finding's sentence names the missing property and nothing else, since there is
+// no value at the position to quote, so it is kept whole even where the position
+// is declared sensitive — replacing it would hide which field is missing while
+// withholding nothing. The finding's path already names the same property, so
+// the sentence adds no key a reader could not see.
+//
+// Every other finding at a sensitive position may quote the value it refused, and
+// is withheld as before.
+func reportsAnAbsentValue(f jsonvalidator.Finding) bool {
+	return f.Keyword == "required"
 }
 
 // leafmostFindings returns the findings whose FieldPath is NOT a strict

@@ -281,7 +281,7 @@ func TestInjectBridgeGateway_MalformedMarkerOrAbsentGatewayHalts(t *testing.T) {
 				"services":      map[string]any{bridgeGatewayService: map[string]any{}},
 				bridgeMarkerKey: "portBase=10000",
 			},
-			wantErr: "must be a mapping",
+			wantErr: "x-aggrega-bridge must be a map, got text",
 		},
 		{
 			name:    "fragment-declares-no-services",

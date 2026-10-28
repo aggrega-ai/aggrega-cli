@@ -69,6 +69,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
@@ -441,7 +442,7 @@ func checkRequest(opts Options) error {
 		switch opts.Value.(type) {
 		case nil, string, bool, int, int32, int64, float32, float64:
 		default:
-			return fmt.Errorf("%w: %T", errValueNotScalar, opts.Value)
+			return fmt.Errorf("%w: given %s", errValueNotScalar, authoredshape.Of(opts.Value))
 		}
 		return nil
 	}
@@ -450,7 +451,7 @@ func checkRequest(opts Options) error {
 	// resolution can act on.
 	ref, ok := opts.Value.(string)
 	if !ok {
-		return fmt.Errorf("%w: %T", errValueNotAReference, opts.Value)
+		return fmt.Errorf("%w: given %s", errValueNotAReference, authoredshape.Of(opts.Value))
 	}
 	if strings.TrimSpace(ref) == "" {
 		return errValueNotAReference
