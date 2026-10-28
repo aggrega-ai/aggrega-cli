@@ -307,6 +307,40 @@ func CauseChain(err error) string {
 	return strings.Join(segments, ": ")
 }
 
+// HeadedCauseChain renders err as CauseChain does, with the short code of the
+// condition err names written into the head, as the terminal's diagnostic carries
+// it: the bracket of the first envelope in the chain — the frame whose category
+// heads the terminal's rendering — becomes `[<category> <code>]`. A chain naming
+// no registered condition renders exactly as CauseChain renders it.
+//
+// It is the one-line form for a surface that reports a stopped run as a sentence
+// rather than as the terminal's multi-line diagnostic — a warning line, a report
+// line — so a reader meeting the failure there can look its condition up as they
+// can from a build's own halt. The code is read off the whole chain and qualified
+// by QualifiedShortCodeOf, the composition the terminal's head reads, so the two
+// surfaces print one token for one condition.
+//
+// The first envelope's bracket is the first occurrence of that bracket in the
+// flattened text, because a frame renders its own text ahead of the frames it
+// wraps. Where that envelope carries no category there is no bracket to write
+// into, and the code opens the line as a bracket of its own, which is how the
+// terminal heads a failure that crossed no categorising boundary.
+func HeadedCauseChain(err error) string {
+	text := CauseChain(err)
+	code := QualifiedShortCodeOf(err)
+	if code == "" {
+		return text
+	}
+	var head *CompilerError
+	if stderrors.As(err, &head) && head != nil && head.category != "" {
+		bracket := "[" + string(head.category) + "]"
+		if i := strings.Index(text, bracket); i >= 0 {
+			return text[:i] + "[" + string(head.category) + " " + code + "]" + text[i+len(bracket):]
+		}
+	}
+	return "[" + code + "] " + text
+}
+
 // Unwrap returns the wrapped inner error so errors.Is and errors.As
 // traverse the chain. Returns nil when no inner error is carried.
 func (e *CompilerError) Unwrap() error {

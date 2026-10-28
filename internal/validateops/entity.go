@@ -1120,7 +1120,7 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 				"  own is not judged here. To render it, build a Release that deploys a",
 				"  component this Recipe implements.",
 				"  Reads: "+strings.Join(reads.paths, ", "))
-			res.Diagnostics = append(res.Diagnostics, indentedLines("  The render stopped: ", cerrors.CauseChain(err))...)
+			res.Diagnostics = append(res.Diagnostics, indentedLines("  The render stopped: ", cerrors.HeadedCauseChain(err))...)
 			res.Valid = true
 			return nil
 		}
@@ -1226,9 +1226,11 @@ func warnFailedAssertion(res *EntityResult, tier string, stop error) {
 
 // assertionWarning is a failed assertion this check reports as a warning.
 //
-// Its text is the stop with every cause beneath it on one line, closed as a
-// sentence, followed by assertionAwaitsRelease, so every surface carrying it says
-// the same thing. The causes are written out because the frame a stop opens with
+// Its text is the stop with every cause beneath it on one line, its head carrying
+// the short code of the condition the assertion raised as a build's halt carries
+// it, closed as a sentence, followed by assertionAwaitsRelease, so every surface
+// carrying it says the same thing and its reader can look the condition up. The
+// causes are written out because the frame a stop opens with
 // may name only the phase that stopped — the Component's assertions — while the
 // assertion and the sentence its author wrote sit further in. Unwrap returns the
 // stop, so every frame beneath it — the key the assertion is written under, the
@@ -1240,7 +1242,7 @@ type assertionWarning struct {
 // Error renders the stop and its causes on one line, then the sentence saying a
 // Release must satisfy the assertion.
 func (w *assertionWarning) Error() string {
-	text := strings.TrimRight(cerrors.CauseChain(w.stop), " \t\n")
+	text := strings.TrimRight(cerrors.HeadedCauseChain(w.stop), " \t\n")
 	if !strings.HasSuffix(text, ".") && !strings.HasSuffix(text, "!") && !strings.HasSuffix(text, "?") {
 		text += "."
 	}

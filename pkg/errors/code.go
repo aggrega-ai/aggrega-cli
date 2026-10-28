@@ -281,6 +281,45 @@ func ShortCodeOf(err error) (string, bool) {
 	return "", false
 }
 
+// QualifiedShortCodeOf returns the short code a diagnostic naming err's condition
+// prints, or the empty string when the chain names no registered condition.
+//
+// A code a PLUGIN raised is qualified by the plugin that raised it —
+// `<plugin>/E0241` rather than `E0241` — because a code is unique only within
+// whoever allocated it. The compiler's own registry refuses a duplicate, so its
+// codes need no qualifier; nothing coordinates two plugin authors, so two guests
+// can publish one code for two unrelated conditions and a reader meeting a bare
+// one could not tell which they had. The compiler's own conditions report no
+// plugin and are therefore unchanged.
+//
+// The two tokens are joined by a solidus, and the code is the LAST segment. That
+// ordering is what makes the pair readable when the identity itself carries
+// separators — a plugin's identity coordinate is already `<type>/<name>`, and an
+// artifact-addressed one carries more — because the code's own shape is fixed at
+// the letter E and four digits, so the segment after the final solidus is always
+// the code and never part of the identity. Every other candidate separator is a
+// character an addressed identity may itself contain, and none of them has the
+// fixed trailing shape to fall back on.
+//
+// It is the one composition of that token, read by every surface that prints a
+// condition's code beside its text — the terminal's head and the one-line form of
+// [HeadedCauseChain] alike — so the two cannot come to qualify a code differently.
+// A chain naming no condition yields the empty string rather than a bare
+// `<plugin>/`: the plugin is recorded on the same value the code is, but the token
+// is composed from two independent chain reads, so the guard is what keeps a
+// future third reader from printing a dangling separator.
+func QualifiedShortCodeOf(err error) string {
+	code, ok := ShortCodeOf(err)
+	if !ok || code == "" {
+		return ""
+	}
+	plugin, ok := RaisingPluginOf(err)
+	if !ok || plugin == "" {
+		return code
+	}
+	return plugin + "/" + code
+}
+
 // MessageOf returns the sentence registered for the first condition in err's
 // chain that carries one, and whether any error in the chain did.
 //

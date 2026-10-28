@@ -328,50 +328,14 @@ func conditionOnlyEnvelope(err error) *cerrors.CompilerError {
 // envelope in it, and the chain walk in ShortCodeOf reaches both — so the code
 // printed is the one the chain names, wherever in the chain it was raised.
 //
-// A code a PLUGIN raised is printed qualified by the plugin that raised it —
-// `<plugin>/E0241` rather than `E0241` — because a code is unique only within
-// whoever allocated it. The compiler's own registry refuses a duplicate, so its
-// codes need no qualifier; nothing coordinates two plugin authors, so two guests
-// can publish one code for two unrelated conditions and a reader meeting a bare
-// one could not tell which they had. The compiler's own conditions report no
-// plugin and are therefore unchanged, which is why this needs no test of where
-// the failure came from beyond the read itself.
+// A code a PLUGIN raised is printed qualified by the plugin that raised it, as
+// cerrors.QualifiedShortCodeOf composes it — the one composition every surface
+// printing a condition's code reads.
 func headShortCode(err error, pos diagnosticPosition) string {
 	if pos != leadingDiagnostic {
 		return ""
 	}
-	code, _ := cerrors.ShortCodeOf(err)
-	return qualifyByRaisingPlugin(err, code)
-}
-
-// qualifyByRaisingPlugin joins the plugin that raised a condition to that
-// condition's short code, and returns code unchanged where no plugin raised it or
-// where there is no code to qualify.
-//
-// The two tokens are joined by a solidus, and the code is the LAST segment. That
-// ordering is what makes the pair readable when the identity itself carries
-// separators — a plugin's identity coordinate is already `<type>/<name>`, and an
-// artifact-addressed one carries more — because the code's own shape is fixed at
-// the letter E and four digits, so the segment after the final solidus is always
-// the code and never part of the identity. Putting the code first and separating
-// the two some other way was the alternative, and it fails on exactly those
-// identities: every candidate separator is a character an addressed identity may
-// itself contain, and none of them has the fixed trailing shape to fall back on.
-//
-// An empty code is returned untouched rather than yielding a bare `<plugin>/`.
-// That case does not arise from a guest failure the host recognised — the plugin
-// is recorded on the same value the code is, and only where both identifiers were
-// reported — but the head is composed from two independent chain reads, so the
-// guard is what keeps a future third reader from printing a dangling separator.
-func qualifyByRaisingPlugin(err error, code string) string {
-	if code == "" {
-		return code
-	}
-	plugin, ok := cerrors.RaisingPluginOf(err)
-	if !ok || plugin == "" {
-		return code
-	}
-	return plugin + "/" + code
+	return cerrors.QualifiedShortCodeOf(err)
 }
 
 // renderCompilerErrorChain renders the head envelope in the documented
