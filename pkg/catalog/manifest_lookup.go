@@ -711,6 +711,17 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 	if key, ok, _ := c.resolvePluginKey(uri); ok {
 		return c.Plugins[key], true
 	}
+	return c.embeddedPluginByURI(uri)
+}
+
+// embeddedPluginByURI is the embedded half of PluginByURI: the Plugin entity among
+// those that ship inside the compiler binary that uri selects, at any plugin type,
+// through the shared three-form version select, on a view with embedded resolution
+// on. It is the one reading of the binary's entities by reference, so the closure
+// lookup's resolution of a pinned workspace-socket attachment
+// (catalogLookup.ResolvePinnedSocketEntity) answers from the binary exactly where
+// the build's plugin lookup does.
+func (c *Catalog) embeddedPluginByURI(uri string) (types.Plugin, bool) {
 	if !c.resolveEmbeddedProviders {
 		return types.Plugin{}, false
 	}

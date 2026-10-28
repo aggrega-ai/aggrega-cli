@@ -287,6 +287,11 @@ type catalogLookup struct {
 // value, instead of a compile error at the value itself.
 var _ closure.RecipeLoaderSource = (*catalogLookup)(nil)
 
+// The pinned-socket resolution is asserted for the same reason: it is reached
+// through closure.ResolvePinnedSocketEntity, which falls back to the general
+// cascade for a lookup lacking it, so a signature drift would otherwise go unseen.
+var _ closure.PinnedSocketEntityResolver = (*catalogLookup)(nil)
+
 // ReuseVerification, when supplied to ClosureLookupWithReuse, makes
 // every Tier-2 cache reuse verify the cached bytes against a prior
 // lockfile's pins before trusting them. A reused entity whose content
@@ -403,6 +408,32 @@ func versionedSlotURI(uri, version string) string {
 }
 
 func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
+	return l.resolveCatalogEntity(ctx, uri, kindHint, false)
+}
+
+// ResolvePinnedSocketEntity resolves the Plugin entity of a workspace-socket
+// attachment the lockfile pins, satisfying closure.PinnedSocketEntityResolver. It is
+// ResolveCatalogEntity's cascade with one tier more: where no catalog directory holds
+// the entity at the version the reference asks for, the entities the binary carries
+// answer it at every plugin type, read through embeddedPluginByURI — the reading the
+// build's plugin lookup (Catalog.PluginByURI) takes of them. So a governance
+// attachment at a transform role naming the binary's own version resolves here as it
+// resolves where a verdict attachment naming it is loaded, and is pinned as an
+// output-shaping attachment the binary carries is pinned.
+//
+// The tier sits where the provider one does — after the local catalog, before the
+// content cache and the registry — which is the order the build's plugin lookup reads
+// the same sources in. A core provider keeps the provider tier's own rule, so the
+// wider tier answers only the types that one leaves to the registry.
+func (l *catalogLookup) ResolvePinnedSocketEntity(ctx context.Context, uri string) (closure.Resolution, error) {
+	return l.resolveCatalogEntity(ctx, uri, pluginEntityKindHint, true)
+}
+
+// resolveCatalogEntity is the one cascade behind ResolveCatalogEntity and
+// ResolvePinnedSocketEntity. everyEmbeddedType admits the binary's entities of every
+// plugin type after the provider tier; without it only core providers resolve from
+// the binary.
+func (l *catalogLookup) resolveCatalogEntity(ctx context.Context, uri, kindHint string, everyEmbeddedType bool) (closure.Resolution, error) {
 	if res, ok, err := l.lookupExternal(uri); err != nil || ok {
 		return res, err
 	}
@@ -419,6 +450,13 @@ func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint 
 	// providers so every other plugin type keeps its full cascade.
 	if res, ok := l.embeddedPluginEntity(uri, kindHint); ok {
 		return res, nil
+	}
+	if everyEmbeddedType {
+		if p, ok := l.catalog.embeddedPluginByURI(uri); ok && plugintype.Type(p.Metadata.PluginType) != plugintype.Provider {
+			if res, ok := embeddedEntityResolution(p); ok {
+				return res, nil
+			}
+		}
 	}
 	// Honor a prior pin: resolve the pinned EXACT version (never float to
 	// list-tags→highest) and verify the resolved bytes against the pin's digest.
@@ -557,7 +595,9 @@ const pluginEntityKindHint = "plugin"
 // NotFound as an unresolvable reference and halts, so reporting a miss here would turn
 // a core provider the binary carries into a hard failure. A non-provider reference,
 // including one whose entity the binary does carry, falls through to the registry
-// cascade exactly as it did before this resolution existed.
+// cascade — save the entity of a pinned workspace-socket attachment, which
+// ResolvePinnedSocketEntity reads from the binary at every type, because the pin
+// sites record such an entity wherever it resolved from.
 func (l *catalogLookup) embeddedPluginEntity(uri, kindHint string) (closure.Resolution, bool) {
 	if kindHint != pluginEntityKindHint {
 		return closure.Resolution{}, false
@@ -574,17 +614,26 @@ func (l *catalogLookup) embeddedPluginEntity(uri, kindHint string) (closure.Reso
 		if hasVersion && requested != p.Metadata.Version {
 			continue
 		}
-		raw, ok := embedded.LookupEntity(identity)
-		if !ok {
-			return closure.Resolution{}, false
-		}
-		return closure.Resolution{
-			ResolvedVersion: p.Metadata.Version,
-			Digest:          oci.DocumentDigest(raw),
-			ResolutionPath:  closure.ResolutionPathEmbedded,
-		}, true
+		return embeddedEntityResolution(p)
 	}
 	return closure.Resolution{}, false
+}
+
+// embeddedEntityResolution is the resolution of a Plugin entity read from the binary:
+// the entity's own version, the digest of the document the binary carries for it, and
+// the from-the-binary path. It is the one description of such a resolution, so the
+// provider tier and the pinned-socket tier report one shape. It reports false when the
+// binary carries no document under the entity's identity.
+func embeddedEntityResolution(p types.Plugin) (closure.Resolution, bool) {
+	raw, ok := embedded.LookupEntity(p.Coordinate())
+	if !ok {
+		return closure.Resolution{}, false
+	}
+	return closure.Resolution{
+		ResolvedVersion: p.Metadata.Version,
+		Digest:          oci.DocumentDigest(raw),
+		ResolutionPath:  closure.ResolutionPathEmbedded,
+	}, true
 }
 
 // ociKindForHint maps a closure KindHint to the catalog kind the OCI location

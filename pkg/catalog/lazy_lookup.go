@@ -3400,7 +3400,31 @@ type lazyClosureLookup struct {
 // value, instead of a compile error at the value itself.
 var _ closure.RecipeLoaderSource = (*lazyClosureLookup)(nil)
 
+// The pinned-socket resolution is reached by assertion too, through
+// closure.ResolvePinnedSocketEntity, which falls back to the general cascade for a
+// lookup lacking it — so without this a signature drift would quietly send every
+// pinned socket entity down that cascade instead of failing to compile here.
+var _ closure.PinnedSocketEntityResolver = (*lazyClosureLookup)(nil)
+
 func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
+	return x.resolveEntity(uri, kindHint, func() (closure.Resolution, error) {
+		return x.base.ResolveCatalogEntity(ctx, uri, kindHint)
+	})
+}
+
+// ResolvePinnedSocketEntity satisfies closure.PinnedSocketEntityResolver over this
+// view: the same local probes ResolveCatalogEntity makes for a Plugin entity
+// reference, then the base's pinned-socket resolution.
+func (x *lazyClosureLookup) ResolvePinnedSocketEntity(ctx context.Context, uri string) (closure.Resolution, error) {
+	return x.resolveEntity(uri, pluginEntityKindHint, func() (closure.Resolution, error) {
+		return closure.ResolvePinnedSocketEntity(ctx, x.base, uri)
+	})
+}
+
+// resolveEntity is the one composition behind both entity resolutions of this view:
+// the local Component and Feature probes routed by kindHint, then base, then the
+// local half of the reason a reference every tier missed did not resolve.
+func (x *lazyClosureLookup) resolveEntity(uri, kindHint string, base func() (closure.Resolution, error)) (closure.Resolution, error) {
 	// The closure walker invokes this from pipeline code outside any
 	// LazyLookup method, and it re-enters the lookup's lock-free
 	// internals (resolveComponentForClosure / the recipe-shell base, which
@@ -3422,7 +3446,7 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindH
 			return res, err
 		}
 	}
-	res, err := x.base.ResolveCatalogEntity(ctx, uri, kindHint)
+	res, err := base()
 	if err == nil && res.NotFound && res.UnsatisfiedPin == nil {
 		res.UnsatisfiedPin = x.l.localVersionRefusal(uri, kindHint)
 	}

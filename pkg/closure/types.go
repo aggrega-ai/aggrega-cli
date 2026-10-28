@@ -439,6 +439,39 @@ type Lookup interface {
 	ResolvePlugin(ctx context.Context, uri, version string) (Resolution, error)
 }
 
+// PinnedSocketEntityResolver is the optional Lookup capability that resolves the
+// Plugin entity of a workspace-socket attachment the lockfile pins — a governance
+// attachment at a transform role — rather than a reference read from catalog
+// content.
+//
+// It differs from ResolveCatalogEntity in one tier: where no catalog directory holds
+// the entity at the version the reference asks for, the entities that ship inside
+// the compiler binary answer it at every plugin type, through the same reading the
+// build's plugin lookup takes of them, so a transform attachment naming the binary's
+// own version resolves exactly as a verdict attachment naming it does. The general
+// cascade keeps that tier to core providers, because it also serves the references
+// whose entities a pull declines to record when the binary carries them; a pinned
+// socket entity is recorded wherever it resolved from, so the wider tier changes no
+// decline here.
+//
+// Read it through ResolvePinnedSocketEntity, which falls back to ResolveCatalogEntity
+// for a Lookup that does not implement it.
+type PinnedSocketEntityResolver interface {
+	ResolvePinnedSocketEntity(ctx context.Context, uri string) (Resolution, error)
+}
+
+// ResolvePinnedSocketEntity resolves the Plugin entity a pinned workspace-socket
+// attachment names: through lookup's PinnedSocketEntityResolver capability where it
+// has one, and otherwise as any other Plugin entity reference is resolved. It is the
+// one way the closure walk and the build's reconstruction of the socket rows resolve
+// such an entity, so the two cannot come to read it from different sources.
+func ResolvePinnedSocketEntity(ctx context.Context, lookup Lookup, uri string) (Resolution, error) {
+	if r, ok := lookup.(PinnedSocketEntityResolver); ok {
+		return r.ResolvePinnedSocketEntity(ctx, uri)
+	}
+	return lookup.ResolveCatalogEntity(ctx, uri, pluginKindHint)
+}
+
 // Resolution is the common output shape for catalog-entity and
 // Wasm-plugin lookups: the resolved version + content digest +
 // resolution-path diagnostic tag. NotFound signals that the URI

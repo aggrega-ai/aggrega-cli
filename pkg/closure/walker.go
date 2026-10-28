@@ -98,6 +98,10 @@ type pendingRef struct {
 	// the URI's collection site (e.g. a Manifest mapping value's position).
 	// First non-empty hint wins; later references to the same URI keep it.
 	kindHint string
+	// pinnedSocket marks the Plugin entity of a workspace-socket attachment the
+	// lockfile pins, which resolves through ResolvePinnedSocketEntity rather than
+	// as a reference read from catalog content.
+	pinnedSocket bool
 }
 
 // pendingLibrary collects per-library-URI consumer→fragment
@@ -365,12 +369,17 @@ func (s *walkState) addBoundaryFeatures(features types.OrderedMap[types.Boundary
 // altering the output, and the linter and importer sockets act on authoring input.
 // None of them shape the rendered bytes the closure exists to make reproducible, so
 // none belongs on the pinned axis.
+//
+// Each entity recorded here resolves through ResolvePinnedSocketEntity, so a version
+// only the compiler binary carries — its own release's — resolves from the binary,
+// as the same reference attached at a verdict role does where the build loads it.
 func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 	record := func(uri, refPath string) {
 		if uri == "" {
 			return
 		}
 		s.addEntityKind(uri, refPath, pluginKindHint)
+		s.entities[uri].pinnedSocket = true
 	}
 	for _, p := range cfg.Plugins.TransformGovernanceRefs() {
 		record(p.URI, ".aggrega-config.yaml.plugins.governance")
@@ -583,13 +592,18 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		// A sub-aggregate reference resolves through the dedicated aggregate
 		// registry tier (bare-name capable), not the generic catalog-entity
 		// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
-		// Every other entity passes its KindHint to the catalog-entity resolver so
-		// a registry-backed pull can bind the bare identity to its OCI location.
+		// A pinned workspace-socket entity resolves through the socket resolution
+		// (see ResolvePinnedSocketEntity). Every other entity passes its KindHint to
+		// the catalog-entity resolver so a registry-backed pull can bind the bare
+		// identity to its OCI location.
 		var res Resolution
 		var err error
-		if pending.kindHint == aggregateKindHint {
+		switch {
+		case pending.kindHint == aggregateKindHint:
 			res, err = lookup.ResolveAggregate(ctx, uri)
-		} else {
+		case pending.pinnedSocket:
+			res, err = ResolvePinnedSocketEntity(ctx, lookup, uri)
+		default:
 			res, err = lookup.ResolveCatalogEntity(ctx, uri, pending.kindHint)
 		}
 		// Both failures carry the reference and its kind hint alongside the

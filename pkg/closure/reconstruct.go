@@ -106,8 +106,9 @@ func DescendPinnedAxes(
 // lockfile.
 //
 // entityURIs is the set of socket plugin ENTITY URIs (<socket>/<name>:<version>)
-// the lockfile pins. Each is resolved through the pinned cache (the Lookup carries
-// a nil puller, so no registry fetch), pinned onto the catalog-entity axis with
+// the lockfile pins. Each is resolved through ResolvePinnedSocketEntity — the
+// resolution the closure walk gave the same attachment — over the pinned cache (the
+// Lookup carries a nil puller, so no registry fetch), pinned onto the catalog-entity axis with
 // the plugin kind hint, then descended to its .wasm artifact on the plugin axis.
 // A URI already present (a mutator entity ComputeClosure recorded on the entity
 // axis) is not duplicated — its referenced-from unions and its kind hint is kept
@@ -160,7 +161,7 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 	const refPath = "release plugin socket"
 	entityPaths := make(map[string]string, len(sorted))
 	for _, entityURI := range sorted {
-		res, err := lookup.ResolveCatalogEntity(ctx, entityURI, pluginKindHint)
+		res, err := ResolvePinnedSocketEntity(ctx, lookup, entityURI)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve workspace-socket plugin entity %q: %w", entityURI, err)
 		}

@@ -180,8 +180,9 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	cfg := workspaceconfig.Default()
 	// A label-transform governance attachment references a Plugin ENTITY URI.
 	// Because a label-transform plugin rewrites node labels and shapes the rendered
-	// output bytes, its entity rides the catalog-entity axis (resolved via
-	// ResolveCatalogEntity) and is pinned in the closure; its .wasm artifact is
+	// output bytes, its entity rides the catalog-entity axis (resolved through
+	// ResolvePinnedSocketEntity, which this fake answers from ResolveCatalogEntity)
+	// and is pinned in the closure; its .wasm artifact is
 	// pinned later at pull time by the pipeline-plugin descent. So ComputeClosure
 	// records the entity in c.Entities, not c.Plugins.
 	const transformPluginEntity = "core/governance/aggrega-inject-baseline:1.0.0"
