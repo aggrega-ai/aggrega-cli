@@ -40,14 +40,21 @@ type bridgeResolved struct {
 }
 
 // resolveBridge is the single derivation both halves call. It selects the edges
-// that cross a compose network seam (resolved network names differ — never a
-// raw-namespace compare), assigns each a gateway listen port via the shared
+// whose two endpoints are assembled into one compose file and sit on different
+// networks there (resolved network names differ — never a raw-namespace
+// compare), assigns each a gateway listen port via the shared
 // assignBridgePorts rule, and returns them sorted by stable key (Invariant 8).
 // One derivation, two consumers (gateway listen + consumer rewrite) ⇒ they agree
 // per edge, including portBase-reassigned collisions.
 func resolveBridge(specs []bridgeSpec, portBase int) []bridgeResolved {
 	var bridged []bridgeSpec
 	for _, s := range specs {
+		// A gateway relays only inside the one file it is assembled into, so an edge
+		// whose endpoints are assembled into two files is not one it can bridge: its
+		// consumer keeps the target's own name.
+		if s.SrcPath != s.TgtPath {
+			continue
+		}
 		if deriveNodeNetworkName(s.SrcNS, s.SrcPath) == deriveNodeNetworkName(s.TgtNS, s.TgtPath) {
 			continue
 		}

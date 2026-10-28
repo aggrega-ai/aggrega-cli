@@ -15,22 +15,27 @@ import (
 )
 
 // bridgePlacementRow places the two endpoints of one edge — web uses db on port
-// 5432 — and states whether the edge crosses a network seam.
+// 5432 — and states whether the bridge relays it: only an edge whose endpoints
+// are assembled into one file and sit on different networks there.
 type bridgePlacementRow struct {
 	name                     string
 	srcNS, tgtNS             string
 	srcBoundary, tgtBoundary string
 	srcAssembly, tgtAssembly string
-	crosses                  bool
+	bridged                  bool
 }
 
 // bridgePlacementRows are the placements both bridge halves are read over. The
 // endpoints' boundary paths differ in every row, so a half that read them instead
-// of the assembly paths would see a crossing in the rows that have none.
+// of the assembly paths would see a crossing in the rows that have none. An edge
+// whose endpoints are assembled into two files is never bridged, whatever its
+// networks, because a gateway relays only inside the one file it is assembled
+// into.
 var bridgePlacementRows = []bridgePlacementRow{
 	{"unannotated, two boundaries assembled into one file", "", "", "bridge/frontend", "bridge/backend", "bridge/compose", "bridge/compose", false},
-	{"unannotated, assembled into two files", "", "", "apart/one", "apart/two", "apart/left", "apart/right", true},
+	{"unannotated, assembled into two files", "", "", "apart/one", "apart/two", "apart/left", "apart/right", false},
 	{"two namespaces, one file", "frontend", "backend", "bridge/frontend", "bridge/backend", "bridge/compose", "bridge/compose", true},
+	{"two namespaces, two files", "frontend", "backend", "apart/one", "apart/two", "apart/left", "apart/right", false},
 	{"one namespace, two files", "app", "app", "apart/one", "apart/two", "apart/left", "apart/right", false},
 }
 
@@ -45,8 +50,7 @@ func placedBridgeEdge(r bridgePlacementRow) types.EnrichedEdge {
 
 // TestBridgeConsumerRewrite_ReadsEachEndpointsAssemblyPath drives the consumer
 // half through its entry point. A consumer is rewritten to the gateway exactly
-// when its edge crosses a network seam, and an unannotated edge crosses one only
-// when its endpoints are assembled into different files.
+// when its edge is bridged; otherwise it keeps the target's own name.
 func TestBridgeConsumerRewrite_ReadsEachEndpointsAssemblyPath(t *testing.T) {
 	t.Parallel()
 	for _, r := range bridgePlacementRows {
@@ -57,7 +61,7 @@ func TestBridgeConsumerRewrite_ReadsEachEndpointsAssemblyPath(t *testing.T) {
 				t.Fatalf("ComputeBridgeConsumerEnvOverrides: %v", err)
 			}
 			var want map[string]map[string]string
-			if r.crosses {
+			if r.bridged {
 				want = map[string]map[string]string{"web": {"DB_HOST": "aggrega-gw:5432"}}
 			}
 			if !reflect.DeepEqual(got, want) {
@@ -70,9 +74,9 @@ func TestBridgeConsumerRewrite_ReadsEachEndpointsAssemblyPath(t *testing.T) {
 // TestBridgeGateway_ReadsEachEndpointsAssemblyPath drives the gateway half through
 // the sourced render the bridge's FeatureRecipe renders by, with the edge
 // forwarded the way its values mapping forwards it — the edge's own JSON. Where
-// the edge crosses a seam the gateway is configured and joins the two networks
-// the assembler places the endpoints on; where it does not, no gateway
-// configuration is written and the gateway joins no network of its own.
+// the edge is bridged the gateway is configured and joins the two networks the
+// assembler places the endpoints on; where it is not, no gateway configuration
+// is written and the gateway joins no network of its own.
 func TestBridgeGateway_ReadsEachEndpointsAssemblyPath(t *testing.T) {
 	t.Parallel()
 	for _, r := range bridgePlacementRows {
@@ -104,9 +108,9 @@ func TestBridgeGateway_ReadsEachEndpointsAssemblyPath(t *testing.T) {
 			}
 			gw := doc.Services[bridgeGatewayService].Networks
 			_, configured := doc.Configs[bridgeConfigName]
-			if !r.crosses {
+			if !r.bridged {
 				if configured || len(gw) != 0 {
-					t.Errorf("no seam is crossed, yet the gateway is configured (%v) or joins %v", configured, gw)
+					t.Errorf("the edge is not bridged, yet the gateway is configured (%v) or joins %v", configured, gw)
 				}
 				return
 			}
