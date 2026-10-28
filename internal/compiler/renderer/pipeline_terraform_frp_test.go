@@ -159,6 +159,63 @@ func TestPipelineTerraformFrp_ByteFaithfulTwoPatches(t *testing.T) {
 	}
 }
 
+// TestPipelineTerraformFrp_EveryFileKeepsTheFormatItsProducerDeclared proves a
+// pipeline run leaves each of the node's files carrying the format its producer
+// declared for it — the patched JSON body and the native-HCL sibling no patch
+// reached alike. The executor hands this set back as the node's files, and the
+// render policies choose a parser by each file's format, so a run that dropped it
+// would leave a policy reading a .tf body the provider declared as native
+// Terraform with no format at all. The origin and intermediate marking are held
+// with it: the fold-back rebuilds the bytes and nothing else.
+func TestPipelineTerraformFrp_EveryFileKeepsTheFormatItsProducerDeclared(t *testing.T) {
+	t.Parallel()
+
+	own := []EmittedFile{
+		{Name: "main.tf.json", Origin: EmitOriginArtifactsInline, Body: prettyJSON(t, `{"resource":{"aws_db_instance":{"main":{"instance_class":"db.t3.micro"}}}}`), Format: "json"},
+		{Name: "main.tf", Origin: EmitOriginArtifactsImport, Body: []byte("resource \"aws_db_instance\" \"main\" {\n  instance_class = \"db.t3.micro\"\n}\n"), Format: "hcl"},
+		{Name: "notes.txt", Origin: EmitOriginSource, Body: []byte("no format declared\n")},
+	}
+
+	out := frp.FRPStepOutput{Patches: []frp.JSONPatchOp{{
+		Scope: frp.DocumentScopeOwn,
+		Key:   "main.tf.json",
+		Op:    "replace",
+		Path:  "/resource/aws_db_instance/main/instance_class",
+		Value: "db.t3.small",
+	}}}
+
+	res, err := runNodePipelineWithInvoker(context.Background(), oneStep(),
+		own, nil, false, "terraform", "",
+		renderctx.RenderContext{}, &types.TemplateContext{}, redact.Keys{},
+		newStockYAMLCodec(2), newStockYAMLCodec(2),
+		cannedInvoker(t, out), "node")
+	if err != nil {
+		t.Fatalf("expected a clean run; got halt: %v", err)
+	}
+	if got := fileByName(t, res.Own, "main.tf.json"); bytes.Equal(got, own[0].Body) {
+		t.Fatalf("main.tf.json was not patched, so the patched-file half of this test exercised nothing")
+	}
+
+	got := make(map[string]EmittedFile, len(res.Own))
+	for _, f := range res.Own {
+		got[f.Name] = f
+	}
+	for _, want := range own {
+		g, ok := got[want.Name]
+		if !ok {
+			t.Errorf("%q absent from the pipeline's result set", want.Name)
+			continue
+		}
+		if g.Format != want.Format {
+			t.Errorf("%q leaves the pipeline with format %q, want the %q its producer declared", want.Name, g.Format, want.Format)
+		}
+		if g.Origin != want.Origin || g.Intermediate != want.Intermediate {
+			t.Errorf("%q leaves the pipeline as (origin %v, intermediate %v), want (origin %v, intermediate %v)",
+				want.Name, g.Origin, g.Intermediate, want.Origin, want.Intermediate)
+		}
+	}
+}
+
 // TestPipelineTerraformFrp_NativeHCLOpaqueHalts proves a PATCH against a
 // native-HCL body — which the codec carves opaque (no RFC-6902-addressable
 // tree) — halts the build with the ErrPipelinePatchTargetNotStructured Loud

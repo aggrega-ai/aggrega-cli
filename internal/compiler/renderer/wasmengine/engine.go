@@ -482,6 +482,13 @@ func (e *Engine) SynthesizeWorkload(
 // (renderer.RenderIsIntermediate): a fragment-merging provider (compose) marks its
 // artifacts intermediate; a flat-output (helm, terraform) or nesting (helm-chart)
 // provider marks them false.
+//
+// Each placed file keeps the format the guest declared for it, empty where it
+// declared none. The declaration is the guest's alone — this adapter supplies
+// none of its own — and it travels with the file to the render policies, which
+// choose a parser by it ahead of the file's extension, so a file a Recipe
+// authored is read as the guest declared it, exactly as a file the guest
+// rendered from a source is.
 func (e *Engine) EmitArtifacts(
 	ctx context.Context,
 	proj renderer.ArtifactsProjection,
@@ -514,6 +521,7 @@ func (e *Engine) EmitArtifacts(
 			Origin:       origins.For(f.Path),
 			Body:         f.Content,
 			Intermediate: intermediate,
+			Format:       f.Format,
 		})
 	}
 	return emitted, nil

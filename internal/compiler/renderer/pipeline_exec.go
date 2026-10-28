@@ -86,19 +86,15 @@ type DeferredPatch struct {
 // entirely (no addressable units): such a file passes through verbatim. A
 // unit the codec produced may itself be opaque (no Tree); a PATCH against an
 // opaque unit halts in the walk as a not-structured target.
+//
+// file is the whole emitted record, held by value so the working copy never
+// aliases the caller's slice. It is the record itself rather than a chosen
+// subset of its fields, so whatever the record carries beside its bytes — the
+// format its producer declared included — comes back out of the fold-back
+// without being named here.
 type pipelineFile struct {
-	file  pipelineFile0
+	file  EmittedFile
 	units []frp.Unit
-}
-
-// pipelineFile0 is the EmittedFile fields the executor carries through the
-// fold-back: the original name, body, intermediate flag, and origin. Held by
-// value so the working copy never aliases the caller's slice.
-type pipelineFile0 struct {
-	Name         string
-	Body         []byte
-	Origin       EmitOrigin
-	Intermediate bool
 }
 
 // runNodePipeline executes a node's pipeline steps over the keyed document set
@@ -873,7 +869,7 @@ func buildScopeDocs(codec frp.Codec, files []EmittedFile) ([]pipelineFile, types
 	out := make([]pipelineFile, 0, len(files))
 	var docs types.OrderedMap[frp.Unit]
 	for _, f := range files {
-		pf := pipelineFile{file: pipelineFile0{Name: f.Name, Body: f.Body, Origin: f.Origin, Intermediate: f.Intermediate}}
+		pf := pipelineFile{file: f}
 		units, err := codec.Segment(f.Name, f.Body)
 		if err != nil {
 			// The codec produced no addressable units: retain verbatim. Only
@@ -896,7 +892,9 @@ func buildScopeDocs(codec frp.Codec, files []EmittedFile) ([]pipelineFile, types
 // patched units the codec edits the addressed byte-spans surgically and
 // preserves every untouched byte; a file with no patched unit passes through
 // verbatim. A PATCH that addressed an opaque (non-structured) token surfaces
-// as the renderer's not-structured Loud Guardrail.
+// as the renderer's not-structured Loud Guardrail. Every file keeps the rest of
+// its record — its name, origin, intermediate marking and the format its
+// producer declared — whether or not a patch reached it.
 //
 // A codec's reassembly notice is located at the node and names the file it was
 // raised for as the element it concerns, so a reader that renders no text can
@@ -939,7 +937,9 @@ func foldPatchesBack(
 				})
 			}
 		}
-		out = append(out, EmittedFile{Name: pf.file.Name, Origin: pf.file.Origin, Body: body, Intermediate: pf.file.Intermediate})
+		rebuilt := pf.file
+		rebuilt.Body = body
+		out = append(out, rebuilt)
 	}
 	return out, warnings, nil
 }
