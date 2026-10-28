@@ -400,8 +400,14 @@ func sortedStringKeys(m map[string]string) []string {
 // would otherwise be misparsed (so the spliced line round-trips to the same
 // string). Provenance values are simple identifiers / paths / versions; the
 // conservative rule double-quotes anything not matching a safe plain scalar.
+//
+// A value is written plain only when it holds none of the characters YAML gives a
+// meaning to AND it reads back as the string it is. The second test is what keeps
+// a value such as a sync wave's "3", or "true", "null" or "1.0", from being read as
+// a number, a boolean or a null: written plain, a Kubernetes API server refuses it
+// as an annotation or label value, which must be a string.
 func yamlScalar(v string) string {
-	if v != "" && v == strings.TrimSpace(v) && !strings.ContainsAny(v, ":#{}[]&*!|>'\"%@`,\n") {
+	if v != "" && v == strings.TrimSpace(v) && !strings.ContainsAny(v, ":#{}[]&*!|>'\"%@`,\n") && plainReadsAsString(v) {
 		return v
 	}
 	b, err := yaml.Marshal(v)
@@ -409,4 +415,15 @@ func yamlScalar(v string) string {
 		return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
 	}
 	return strings.TrimRight(string(b), "\n")
+}
+
+// plainReadsAsString reports whether v, written as a plain YAML scalar, reads
+// back as the string v.
+func plainReadsAsString(v string) bool {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(v), &doc); err != nil || len(doc.Content) != 1 {
+		return false
+	}
+	n := doc.Content[0]
+	return n.Kind == yaml.ScalarNode && n.ShortTag() == "!!str" && n.Value == v
 }
