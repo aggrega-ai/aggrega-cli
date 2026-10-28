@@ -247,7 +247,7 @@
     },
     {
       "name": "unresolvable-reference-collects-the-referring-path",
-      "why": "What an unresolvable target declares is unknown, so naming the referring property is the most precise declaration available and the only one that cannot under-report. The property map beside the reference still yields no reachable leaf on either side.",
+      "why": "What an unresolvable target declares is unknown, so naming the referring property is the most precise declaration available and the only one that cannot under-report. The property map beside the reference is read as declared properties, so its marked leaf is collected below the referring path as well.",
       "schema": {
         "values": {
           "c": {
@@ -256,7 +256,24 @@
           }
         }
       },
-      "expect": { "values": ["c"] }
+      "expect": { "values": ["c", "c.inner"] }
+    },
+    {
+      "name": "properties-beside-a-reference-declare-below-the-referring-node",
+      "why": "Keys written beside a reference are compact form, read as they would be on the same node without it, so a property map beside a reference that resolves declares below the referring path.",
+      "schema": {
+        "values": {
+          "$defs": { "Credential": { "type": "object" } },
+          "c": {
+            "$ref": "#/$defs/Credential",
+            "properties": {
+              "pw": { "type": "string", "sensitive": true },
+              "host": { "type": "string" }
+            }
+          }
+        }
+      },
+      "expect": { "values": ["c.pw"] }
     },
     {
       "name": "composition-sibling-properties-are-not-walked",
@@ -315,19 +332,70 @@
       "expect": {}
     },
     {
-      "name": "escape-mapping-body-declares-nothing-at-its-own-node",
-      "why": "An escaped body is embedded as authored JSON Schema, so its own key is not the marker.",
+      "name": "escape-mapping-body-declares-at-its-own-node",
+      "why": "Every mapping inside an escaped body is a keyword node, and a compact-form keyword written there keeps its compact-form meaning, so a marker on the body's own node declares the node carrying the escape.",
       "schema": {
         "values": { "x": { "$jsonschema": { "type": "string", "sensitive": true } } }
       },
-      "expect": {}
+      "expect": { "values": ["x"] }
     },
     {
       "name": "escape-mapping-body-nested-leaf-declares",
-      "why": "Children inside an escaped body are dispatched normally, so a nested compact leaf still declares.",
+      "why": "A property map inside an escaped body is read as one, so a marked leaf in it declares below the node carrying the escape.",
       "schema": {
         "values": {
           "x": { "$jsonschema": { "properties": { "pw": { "type": "string", "sensitive": true } } } }
+        }
+      },
+      "expect": { "values": ["x.pw"] }
+    },
+    {
+      "name": "escape-mapping-body-reads-properties-beside-a-composition",
+      "why": "Inside an escaped body nothing is classified by its shape: a property map beside a composition keyword is the node's own property map, where the same spelling outside an escape is not walked.",
+      "schema": {
+        "values": {
+          "x": {
+            "$jsonschema": {
+              "allOf": [{ "type": "object" }],
+              "properties": { "pw": { "type": "string", "sensitive": true } }
+            }
+          }
+        }
+      },
+      "expect": { "values": ["x.pw"] }
+    },
+    {
+      "name": "escape-mapping-body-marker-beside-a-reference-declares",
+      "why": "A reference inside an escaped body is a keyword node like any other, so a marker beside it declares the node carrying the escape.",
+      "schema": {
+        "values": {
+          "x": {
+            "$jsonschema": {
+              "$defs": { "C": { "type": "string" } },
+              "$ref": "#/$defs/C",
+              "sensitive": true
+            }
+          }
+        }
+      },
+      "expect": { "values": ["x"] }
+    },
+    {
+      "name": "reference-target-inside-an-escape-body-is-read-as-json-schema",
+      "why": "A definition authored inside an escaped body is read the way the body is, so a property map beside a composition in that definition is walked when a reference reaches it.",
+      "schema": {
+        "values": {
+          "x": {
+            "$jsonschema": {
+              "$defs": {
+                "C": {
+                  "allOf": [{ "type": "object" }],
+                  "properties": { "pw": { "type": "string", "sensitive": true } }
+                }
+              },
+              "$ref": "#/$defs/C"
+            }
+          }
         }
       },
       "expect": { "values": ["x.pw"] }
@@ -503,10 +571,17 @@
       "guestReadable": false
     },
     {
-      "name": "reference-pillar-with-sibling-properties-is-unreadable-in-the-guest",
-      "why": "A reference carrying a sibling property map. The compiler compiles that map as compact-form content and nests the result, so the names it exposes are the compiled wrapper's keys rather than the authored property. Pinned as measured; the plugin reports unknown.",
+      "name": "reference-pillar-with-sibling-properties-exposes-them-and-is-unreadable-in-the-guest",
+      "why": "A reference carrying a sibling property map. The map is read as the pillar's own properties, so the compiler exposes the authored names; the reference target shapes the contract too and its properties are not among them, so the plugin reports unknown rather than a set it knows to be partial.",
       "schema": {"provides": {"$ref": "#/$defs/Contract", "properties": {"endpoint": {"type": "string"}}}, "$defs": {"Contract": {"type": "object"}}},
-      "expectKeys": ["additionalProperties", "properties", "type"],
+      "expectKeys": ["endpoint"],
+      "guestReadable": false
+    },
+    {
+      "name": "escaped-body-with-a-composition-is-unreadable-in-the-guest",
+      "why": "A composition inside an escaped body is read as one keyword beside the body's own property map, so the compiler exposes that map alone; the branches carry properties too, so the plugin reports unknown here as it does for a composition on the pillar node.",
+      "schema": {"provides": {"$jsonschema": {"allOf": [{"properties": {"endpoint": {"type": "string"}}}], "properties": {"model": {"type": "string"}}}}},
+      "expectKeys": ["model"],
       "guestReadable": false
     },
     {

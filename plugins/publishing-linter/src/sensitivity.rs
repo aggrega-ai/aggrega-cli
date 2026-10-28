@@ -51,6 +51,16 @@
 //! and a reference target both compose onto the property carrying them,
 //! so a declaration found through either is collected at that property's
 //! own path rather than at a path inside the branch or the definition.
+//! A property map written beside a reference is the referring node's own,
+//! exactly as it would be on the same node without the reference.
+//!
+//! An escaped JSON Schema body is read the way the compiler reads it:
+//! nothing inside it is classified by its shape. Every mapping in a schema
+//! position there is a keyword node — a compact-form keyword such as
+//! `sensitive` keeps its meaning, and a `properties:` map is a property map
+//! wherever it is written — so the walk carries whether it is inside a body
+//! down to every node it reaches, and a reference target is read in the
+//! context of the scope it was found in.
 //!
 //! Two shapes are deliberately not followed, and both are the same line
 //! the compiler's reader draws. An array's element type is not a property
@@ -215,7 +225,19 @@ pub fn declared_sensitive_leaves(schema: &Value) -> DeclaredSensitiveLeaves {
         // scopes: a definitions block authored at either place stays where it
         // was authored, so a pointer written beneath it resolves only when the
         // node it sits on is in scope.
-        walk_scope(node, "", &[schema], &[], &mut collected, &mut blocked);
+        let root_scope = [Scope {
+            node: schema,
+            in_escape: false,
+        }];
+        walk_scope(
+            node,
+            "",
+            false,
+            &root_scope,
+            &[],
+            &mut collected,
+            &mut blocked,
+        );
         if let Some(dest) = out.pillar_mut(pillar) {
             dest.extend(collected);
         }
@@ -259,31 +281,36 @@ pub fn slot_declares_sensitive(slot: &Value) -> bool {
 ///     property. An empty set is a real answer: it says the entity
 ///     declares no contract on that axis.
 ///   - `None` — the pillar's own node is a shape this reader cannot
-///     enumerate: a reference, whose target is merged in before the
-///     compiler sees it and is therefore unreachable here; a composition,
-///     whose branches carry the properties; or an escaped body authored as
-///     YAML text, which needs a parser this crate does not carry. `None`
-///     means unknown, never empty, so a caller that must not be wrong
-///     stays silent rather than reading silence as an absent contract.
+///     enumerate: a reference, whose target contributes to the contract
+///     beside whatever property map is written next to it; a composition,
+///     whose branches carry properties — on the pillar node, or inside an
+///     escaped body where it is one keyword beside the body's own property
+///     map; or an escaped body authored as YAML text, which needs a parser
+///     this crate does not carry. `None` means unknown, never empty, so a
+///     caller that must not be wrong stays silent rather than reading
+///     silence as an absent contract.
 pub fn pillar_property_names(schema: &Value, pillar: &str) -> Option<BTreeSet<String>> {
     let Some(node) = schema.as_object().and_then(|root| root.get(pillar)) else {
         return Some(BTreeSet::new());
     };
-    let Some(obj) = node.as_object() else {
+    if !node.is_object() {
         return Some(BTreeSet::new());
-    };
+    }
     // An escaped body replaces the node it sits on, exactly as it does in the
-    // sensitivity walk: a body authored as a mapping is read on as authored
-    // JSON Schema, and a body authored as YAML text cannot be opened here.
-    let (obj, shape) = match shape_of(obj) {
-        Shape::Escape => match obj.get("$jsonschema") {
-            Some(Value::Object(body)) => (body, Shape::Passthrough),
-            _ => return None,
-        },
-        other => (obj, other),
+    // sensitivity walk: a body authored as a mapping is read on, and a body
+    // authored as YAML text cannot be opened here.
+    let Opened::Node { obj, in_escape, .. } = open_escapes(node, false) else {
+        return None;
     };
+    let shape = shape_of(obj, in_escape);
+    // An explicit mode settles the reading on its own, so only an unmoded
+    // node is withheld for composing; outside a body such a node already
+    // classifies as a composition.
+    let composes =
+        BRANCH_LIST_KEYWORDS.iter().any(|k| obj.contains_key(*k)) && !obj.contains_key("$mode");
     match shape {
         Shape::Reference | Shape::Composition => None,
+        _ if composes => None,
         _ => Some(
             child_properties(obj, shape)
                 .into_iter()
@@ -300,11 +327,14 @@ pub fn pillar_property_names(schema: &Value, pillar: &str) -> Option<BTreeSet<St
 enum Shape {
     /// An escaped JSON Schema body replaces this node.
     Escape,
-    /// A reference; a marker beside it lands on the referring node.
+    /// A reference. Every other key of the node is read as it would be
+    /// without the reference: a marker beside it lands on the referring
+    /// node, and a property map beside it is the node's own.
     Reference,
     /// A composition; a marker beside it lands on the composing node.
     Composition,
-    /// A constraint leaf, which may still carry a property map.
+    /// A keyword node: a constraint leaf, which may still carry a property
+    /// map, and every mapping inside an escaped body.
     CompactConstraint,
     /// Authored JSON Schema, where `sensitive` is ordinary content
     /// rather than the compact-form marker.
@@ -313,7 +343,11 @@ enum Shape {
     ImplicitObject,
 }
 
-fn shape_of(obj: &Map<String, Value>) -> Shape {
+/// `shape_of` classifies one authored mapping as the compiler's dispatch
+/// does. `in_escape` says whether the mapping sits inside an escaped body,
+/// where the compiler runs no shape heuristic: past an explicit mode, a
+/// nested escape and a reference, such a mapping is a keyword node.
+fn shape_of(obj: &Map<String, Value>, in_escape: bool) -> Shape {
     // An explicit mode overrides the content-shape heuristic and is read
     // first, exactly as the compiler reads it. A mode value that is not
     // one of the two spellings halts compilation, so an entity carrying
@@ -331,6 +365,9 @@ fn shape_of(obj: &Map<String, Value>) -> Shape {
     }
     if obj.contains_key("$ref") {
         return Shape::Reference;
+    }
+    if in_escape {
+        return Shape::CompactConstraint;
     }
     if obj.contains_key("allOf") || obj.contains_key("anyOf") || obj.contains_key("oneOf") {
         return Shape::Composition;
@@ -365,14 +402,67 @@ fn declares_marker(obj: &Map<String, Value>, shape: Shape) -> bool {
     }
 }
 
+/// What a node reads as once every escaped body on it has been opened.
+enum Opened<'a> {
+    /// The mapping read in the node's place, the value it is (pushed as a
+    /// reference scope), and whether it sits inside an escaped body.
+    Node {
+        obj: &'a Map<String, Value>,
+        value: &'a Value,
+        in_escape: bool,
+    },
+    /// An escaped body authored as YAML text, which this crate cannot open.
+    Text,
+    /// Neither a mapping nor an escape this reader can read.
+    Nothing,
+}
+
+/// `open_escapes` replaces a node by the escaped body it carries, as the
+/// compiler does, repeatedly for a body that is itself an escape. A body
+/// authored as a mapping is read on, inside an escape from then on; a body
+/// authored as YAML text cannot be opened here.
+fn open_escapes(node: &Value, in_escape: bool) -> Opened<'_> {
+    let mut value = node;
+    let mut in_escape = in_escape;
+    loop {
+        let Some(obj) = value.as_object() else {
+            return Opened::Nothing;
+        };
+        if shape_of(obj, in_escape) != Shape::Escape {
+            return Opened::Node {
+                obj,
+                value,
+                in_escape,
+            };
+        }
+        match obj.get("$jsonschema") {
+            Some(body @ Value::Object(_)) => {
+                value = body;
+                in_escape = true;
+            }
+            Some(Value::String(_)) => return Opened::Text,
+            _ => return Opened::Nothing,
+        }
+    }
+}
+
+/// One enclosing node a pointer may resolve against, and whether that node
+/// sits inside an escaped body — which is how a target found under it is
+/// read, since the compiler compiled the target where it was authored.
+#[derive(Clone, Copy)]
+struct Scope<'a> {
+    node: &'a Value,
+    in_escape: bool,
+}
+
 /// `push_scope` returns a new scope stack with `node` appended, copying
 /// rather than extending in place. The copy is load-bearing: sibling
 /// branches of one node each extend the same stack, and an in-place
 /// append would let one branch's entry land in the slot another branch is
 /// about to write.
-fn push_scope<'a>(scopes: &[&'a Value], node: &'a Value) -> Vec<&'a Value> {
+fn push_scope<'a>(scopes: &[Scope<'a>], node: &'a Value, in_escape: bool) -> Vec<Scope<'a>> {
     let mut out = scopes.to_vec();
-    out.push(node);
+    out.push(Scope { node, in_escape });
     out
 }
 
@@ -389,35 +479,37 @@ fn push_scope<'a>(scopes: &[&'a Value], node: &'a Value) -> Vec<&'a Value> {
 /// so a pillar node's own composition or reference is unreached on both
 /// sides.
 ///
+/// `in_escape` is carried to every node the walk reaches below an escaped
+/// body, through properties and branches alike; a reference target takes
+/// the flag of the scope that resolved it instead.
+///
 /// `refs` is the stack of pointers in flight. A pointer that revisits a
 /// target already in flight stops rather than recursing forever.
 fn walk_scope<'a>(
     node: &'a Value,
     prefix: &str,
-    scopes: &[&'a Value],
+    in_escape: bool,
+    scopes: &[Scope<'a>],
     refs: &[String],
     out: &mut BTreeSet<String>,
     blocked: &mut BTreeSet<String>,
 ) {
-    let Some(obj) = node.as_object() else {
-        return;
-    };
-    let shape = shape_of(obj);
-
     // An escaped body replaces the node it sits on. A body authored as a
     // mapping is read on; a body authored as YAML text cannot be opened
     // here, and that is reported rather than read as an absence.
-    let (obj, shape, scope_node) = match shape {
-        Shape::Escape => match obj.get("$jsonschema") {
-            Some(body @ Value::Object(body_obj)) => (body_obj, Shape::Passthrough, body),
-            Some(Value::String(_)) => {
-                blocked.insert(prefix.to_string());
-                return;
-            }
-            _ => return,
-        },
-        other => (obj, other, node),
+    let (obj, scope_node, in_escape) = match open_escapes(node, in_escape) {
+        Opened::Node {
+            obj,
+            value,
+            in_escape,
+        } => (obj, value, in_escape),
+        Opened::Text => {
+            blocked.insert(prefix.to_string());
+            return;
+        }
+        Opened::Nothing => return,
     };
+    let shape = shape_of(obj, in_escape);
 
     if !prefix.is_empty() && declares_marker(obj, shape) {
         out.insert(prefix.to_string());
@@ -425,7 +517,7 @@ fn walk_scope<'a>(
 
     // The node joins the scope stack before any descent so a definitions
     // block it carries is visible to the pointers written beneath it.
-    let inner = push_scope(scopes, scope_node);
+    let inner = push_scope(scopes, scope_node, in_escape);
 
     for (name, child) in child_properties(obj, shape) {
         let path = if prefix.is_empty() {
@@ -433,7 +525,7 @@ fn walk_scope<'a>(
         } else {
             format!("{prefix}.{name}")
         };
-        walk_scope(child, &path, &inner, refs, out, blocked);
+        walk_scope(child, &path, in_escape, &inner, refs, out, blocked);
     }
 
     if prefix.is_empty() {
@@ -443,13 +535,13 @@ fn walk_scope<'a>(
     for keyword in BRANCH_LIST_KEYWORDS {
         if let Some(branches) = obj.get(*keyword).and_then(Value::as_array) {
             for branch in branches {
-                walk_scope(branch, prefix, &inner, refs, out, blocked);
+                walk_scope(branch, prefix, in_escape, &inner, refs, out, blocked);
             }
         }
     }
     for keyword in BRANCH_NODE_KEYWORDS {
         if let Some(branch) = obj.get(*keyword) {
-            walk_scope(branch, prefix, &inner, refs, out, blocked);
+            walk_scope(branch, prefix, in_escape, &inner, refs, out, blocked);
         }
     }
 
@@ -475,7 +567,15 @@ fn walk_scope<'a>(
     };
     let mut next = refs.to_vec();
     next.push(reference.clone());
-    walk_scope(target, prefix, &inner, &next, out, blocked);
+    walk_scope(
+        target.node,
+        prefix,
+        target.in_escape,
+        &inner,
+        &next,
+        out,
+        blocked,
+    );
 }
 
 /// `in_flight` reports whether a pointer is already being expanded.
@@ -508,17 +608,20 @@ fn pointer_segments(reference: &str) -> Option<Vec<String>> {
 
 /// Resolves an in-document reference against a stack of enclosing scopes,
 /// nearest first, and returns `None` when no scope holds the pointed-to
-/// node.
+/// node. The node found carries the escape flag of the scope that held it.
 ///
 /// Nearest-first matters because a definitions block is authored on the
 /// node whose properties use it rather than hoisted to the document root,
 /// so the innermost scope holding the pointer's own first segment is the
 /// one an author wrote it against.
-fn resolve_pointer<'a>(reference: &str, scopes: &[&'a Value]) -> Option<&'a Value> {
+fn resolve_pointer<'a>(reference: &str, scopes: &[Scope<'a>]) -> Option<Scope<'a>> {
     let segments = pointer_segments(reference)?;
     for scope in scopes.iter().rev() {
-        if let Some(node) = walk_pointer(scope, &segments) {
-            return Some(node);
+        if let Some(node) = walk_pointer(scope.node, &segments) {
+            return Some(Scope {
+                node,
+                in_escape: scope.in_escape,
+            });
         }
     }
     None
@@ -552,39 +655,54 @@ fn walk_pointer<'a>(scope: &'a Value, segments: &[String]) -> Option<&'a Value> 
 /// Folding the two together would make the path walk's revisit rule depend
 /// on its own result.
 ///
-/// It does not open an escaped body, so a declaration reachable only
-/// through a YAML text block inside a recursive target is invisible to it
+/// It opens an escaped body authored as a mapping, as the path walk does.
+/// A body authored as YAML text cannot be opened, so a declaration
+/// reachable only through one inside a recursive target is invisible to it
 /// on this side.
-fn ref_target_declares_sensitive(reference: &str, scopes: &[&Value], refs: &[String]) -> bool {
+fn ref_target_declares_sensitive(reference: &str, scopes: &[Scope<'_>], refs: &[String]) -> bool {
     if in_flight(refs, reference) {
         return false;
     }
     let Some(target) = resolve_pointer(reference, scopes) else {
         return true;
     };
-    let inner = push_scope(scopes, target);
     let mut next = refs.to_vec();
     next.push(reference.to_string());
-    node_declares_sensitive(target, &inner, &next)
+    node_declares_sensitive(target.node, target.in_escape, scopes, &next)
 }
 
-fn node_declares_sensitive(node: &Value, scopes: &[&Value], refs: &[String]) -> bool {
-    let Some(obj) = node.as_object() else {
+/// `node_declares_sensitive` reports whether `node`, or anything reachable
+/// from it, declares sensitivity. The node joins the scope stack itself —
+/// as the escaped body it carries, where it carries one — so a pointer
+/// written beneath it resolves against it.
+fn node_declares_sensitive(
+    node: &Value,
+    in_escape: bool,
+    scopes: &[Scope<'_>],
+    refs: &[String],
+) -> bool {
+    let Opened::Node {
+        obj,
+        value,
+        in_escape,
+    } = open_escapes(node, in_escape)
+    else {
         return false;
     };
-    let shape = shape_of(obj);
+    let shape = shape_of(obj, in_escape);
     if declares_marker(obj, shape) {
         return true;
     }
+    let inner = push_scope(scopes, value, in_escape);
     for (_, child) in child_properties(obj, shape) {
-        if node_declares_sensitive(child, &push_scope(scopes, child), refs) {
+        if node_declares_sensitive(child, in_escape, &inner, refs) {
             return true;
         }
     }
     for keyword in BRANCH_LIST_KEYWORDS {
         if let Some(branches) = obj.get(*keyword).and_then(Value::as_array) {
             for branch in branches {
-                if node_declares_sensitive(branch, &push_scope(scopes, branch), refs) {
+                if node_declares_sensitive(branch, in_escape, &inner, refs) {
                     return true;
                 }
             }
@@ -592,13 +710,13 @@ fn node_declares_sensitive(node: &Value, scopes: &[&Value], refs: &[String]) -> 
     }
     for keyword in BRANCH_NODE_KEYWORDS {
         if let Some(branch) = obj.get(*keyword) {
-            if node_declares_sensitive(branch, &push_scope(scopes, branch), refs) {
+            if node_declares_sensitive(branch, in_escape, &inner, refs) {
                 return true;
             }
         }
     }
     if let Some(Value::String(reference)) = obj.get("$ref") {
-        return ref_target_declares_sensitive(reference, scopes, refs);
+        return ref_target_declares_sensitive(reference, &inner, refs);
     }
     false
 }
@@ -610,7 +728,9 @@ fn node_declares_sensitive(node: &Value, scopes: &[&Value], refs: &[String]) -> 
 /// an array's element type is reached by neither reader.
 fn child_properties(obj: &Map<String, Value>, shape: Shape) -> Vec<(&String, &Value)> {
     match shape {
-        Shape::CompactConstraint | Shape::Passthrough => obj
+        // A reference node is a keyword node like a constraint leaf, so a
+        // property map written beside the reference is its own.
+        Shape::CompactConstraint | Shape::Passthrough | Shape::Reference => obj
             .get("properties")
             .and_then(Value::as_object)
             .map(|props| props.iter().collect())
@@ -622,6 +742,9 @@ fn child_properties(obj: &Map<String, Value>, shape: Shape) -> Vec<(&String, &Va
             .iter()
             .filter(|(k, _)| k.as_str() != "$defs" && k.as_str() != "definitions")
             .collect(),
-        Shape::Reference | Shape::Composition | Shape::Escape => Vec::new(),
+        // A property map beside a composition keyword is not one the
+        // compiler emits as the node's own, outside an escaped body; inside
+        // one, a composing node is a keyword node and never reaches here.
+        Shape::Composition | Shape::Escape => Vec::new(),
     }
 }

@@ -71,7 +71,7 @@ const sensitivityParityGuestHalf = "../../plugins/publishing-linter/tests/sensit
 // disagree with itself, and disagreement is the signal. When the fixture
 // changes, both copies move, and a run that updates only one is exactly the
 // half-verified state this pins.
-const sensitivityParityFixtureRevision = "29c12bd61856f53b"
+const sensitivityParityFixtureRevision = "e167c0ee91c5720f"
 
 type sensitivityParityCases struct {
 	LeafCases []struct {
@@ -251,8 +251,15 @@ func TestSensitivityParityFixtureCoversEveryDivergenceShape(t *testing.T) {
 		"only-boolean-true-declares",
 		// Authored JSON Schema, where the same key is content and not a marker.
 		"explicit-jsonschema-mode-declares-nothing",
-		"escape-mapping-body-declares-nothing-at-its-own-node",
+		// An escaped body, where no mapping is classified by its shape: every
+		// one is a keyword node, so the marker keeps its meaning at the body's
+		// own node, beside a reference and inside a definition the body holds,
+		// and a property map beside a composition is the node's own.
+		"escape-mapping-body-declares-at-its-own-node",
 		"escape-mapping-body-nested-leaf-declares",
+		"escape-mapping-body-reads-properties-beside-a-composition",
+		"escape-mapping-body-marker-beside-a-reference-declares",
+		"reference-target-inside-an-escape-body-is-read-as-json-schema",
 		// The one declared divergence: a body only a YAML parser can open.
 		"escape-text-body-is-unreadable-in-the-guest",
 		// A declaration INSIDE a composing branch, which lands on the
@@ -277,6 +284,9 @@ func TestSensitivityParityFixtureCoversEveryDivergenceShape(t *testing.T) {
 		// A pointer nothing resolves, where withholding the referring path is
 		// the only reading that cannot under-report.
 		"unresolvable-reference-collects-the-referring-path",
+		// A property map written beside a reference, which is the referring
+		// node's own.
+		"properties-beside-a-reference-declare-below-the-referring-node",
 		// The shapes the walk deliberately does not descend into.
 		"composition-sibling-properties-are-not-walked",
 		"array-items-are-not-walked",
@@ -348,7 +358,10 @@ func TestProvidesPillarKeyParityAgainstSharedFixture(t *testing.T) {
 		// The reference forms, whose compiled answer is not what an author
 		// would predict from the authored text.
 		"reference-pillar-is-unreadable-in-the-guest",
-		"reference-pillar-with-sibling-properties-is-unreadable-in-the-guest",
+		"reference-pillar-with-sibling-properties-exposes-them-and-is-unreadable-in-the-guest",
+		// A composition inside an escaped body, which the compiler reads as one
+		// keyword beside the body's own property map.
+		"escaped-body-with-a-composition-is-unreadable-in-the-guest",
 		// One case per list-valued composition keyword, because the three are a
 		// set and a reader can handle one and miss another.
 		"all-of-pillar-is-unreadable-in-the-guest",
