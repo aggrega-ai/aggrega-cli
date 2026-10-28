@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -313,7 +314,7 @@ func loadDeprecationBatch(path string) ([]deprecationBatchEntry, error) {
 	}
 	var entries []deprecationBatchEntry
 	if err := yaml.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("parse batch file %q: %w", path, err)
+		return nil, fmt.Errorf("parse batch file %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	return entries, nil
 }

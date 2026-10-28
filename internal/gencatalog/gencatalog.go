@@ -23,6 +23,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
@@ -507,7 +508,7 @@ func loadOverlayFile(path string) (types.Plugin, error) {
 	}
 	var overlay types.Plugin
 	if err := yaml.Unmarshal(raw, &overlay); err != nil {
-		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: parse overlay %s: %w", path, err)
+		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: parse overlay %s: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, raw))
 	}
 	return overlay, nil
 }

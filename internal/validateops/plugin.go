@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -97,7 +98,7 @@ func ValidatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 		Kind string `yaml:"kind"`
 	}
 	if err := yaml.Unmarshal(data, &preamble); err != nil {
-		return res, fmt.Errorf("parse YAML preamble in %q: %w", entityPath, err)
+		return res, fmt.Errorf("parse YAML preamble in %q: %w", entityPath, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	kind, ok := knownEntityKind(preamble.Kind)
 	if !ok || kind != envelope.KindPlugin {

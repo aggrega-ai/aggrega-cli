@@ -295,6 +295,56 @@ func TestDescribeYAMLDecodeErrorIn_NamesTheFieldTheValueWasWrittenUnder(t *testi
 	})
 }
 
+// TestDescribeYAMLDecodeErrorIn_NamesAKeyWrittenAsAListOrAMap holds the
+// decoder's refusal of a non-text key — spelled as a Go value, with no line — to
+// the key's line, the field holding it and its shape. One fault per row, and a
+// document showing no such key leaves the refusal as it was.
+func TestDescribeYAMLDecodeErrorIn_NamesAKeyWrittenAsAListOrAMap(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{"a key written as a list", "services:\n  web:\n    depends_on:\n      ? [db]\n      : {condition: x}\n",
+			"line 4 (services.web.depends_on): reading a key: a list is written where text is expected"},
+		{"a key written as a map", "services:\n  web:\n    labels:\n      ? {a: 1}\n      : x\n",
+			"line 4 (services.web.labels): reading a key: a map is written where text is expected"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var into map[string]any
+			raw := yaml.Unmarshal([]byte(tc.doc), &into)
+			if raw == nil || !strings.HasPrefix(raw.Error(), invalidMapKeyPrefix) {
+				t.Fatalf("the row needs the decoder's non-text-key refusal; got %v", raw)
+			}
+			got := DescribeYAMLDecodeErrorIn(raw, []byte(tc.doc))
+			if got.Error() != tc.want {
+				t.Errorf("got  %q\nwant %q", got.Error(), tc.want)
+			}
+			for _, leak := range []string{"interface {}", "invalid map key"} {
+				if strings.Contains(got.Error(), leak) {
+					t.Errorf("%q still carries %q", got, leak)
+				}
+			}
+			if !errors.Is(got, raw) {
+				t.Errorf("the reworded report no longer unwraps to the decoder's error: %v", got)
+			}
+		})
+	}
+
+	t.Run("a document showing no such key leaves the refusal as it was", func(t *testing.T) {
+		t.Parallel()
+		var into map[string]any
+		doc := "services:\n  web:\n    depends_on:\n      ? [db]\n      : x\n"
+		raw := yaml.Unmarshal([]byte(doc), &into)
+		if got := DescribeYAMLDecodeErrorIn(raw, []byte("a: 1\n")); got != raw {
+			t.Errorf("got %v, want the decoder's own refusal unchanged", got)
+		}
+	})
+}
+
 // kindName is a type of its own over text, the way a request field is often
 // declared.
 type kindName string

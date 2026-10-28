@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
@@ -131,7 +132,7 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 		Kind string `yaml:"kind"`
 	}
 	if err := yaml.Unmarshal(data, &preamble); err != nil {
-		return res, fmt.Errorf("parse YAML preamble in %q: %w", path, err)
+		return res, fmt.Errorf("parse YAML preamble in %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	if preamble.Kind == "" {
 		return res, fmt.Errorf("couldn't determine entity kind from %q; expected an apiVersion/kind preamble", path)

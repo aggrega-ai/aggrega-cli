@@ -15,6 +15,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -190,7 +191,15 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	if err := dec.Decode(&header); err != nil && !errors.Is(err, io.EOF) {
-		return "", "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q", label))
+		// A field of the wrong shape is refused naming the line, the field and the
+		// two shapes, read against the file's own bytes, rather than the type the
+		// header decodes into. The sentence is carried in the refusal's own message
+		// rather than as a cause beneath it: what crosses to the host renders every
+		// cause in the chain, and the reworded sentence keeps the decoder's own
+		// report beneath it.
+		return "", "", cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: label},
+			fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q: %s", label, authoredshape.DescribeYAMLDecodeErrorIn(err, data)),
+			nil, nil)
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {

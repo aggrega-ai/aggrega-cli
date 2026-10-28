@@ -307,13 +307,28 @@ func DescribeYAMLDecodeError(err error) error {
 // shape. Where the document holds no such value, or more than one — two values of
 // one shape written on one line — the entry names the line alone rather than
 // guess between them.
+//
+// It also rewords the decoder's refusal of a key written as a list or a map where
+// the decode reads keys as text, which the decoder spells as the Go value it built
+// from the key and with no line: the key is found in the document and named by its
+// line, the field holding it and the shape it was written in —
+// `line 6 (services.web.depends_on): reading a key: a list is written where text is
+// expected`. Where the document shows no such key, that refusal is returned as it is.
 func DescribeYAMLDecodeErrorIn(err error, document []byte) error {
-	if _, ok := err.(*yaml.TypeError); !ok {
+	_, isTypeError := err.(*yaml.TypeError)
+	nonTextKey := err != nil && strings.HasPrefix(err.Error(), invalidMapKeyPrefix)
+	if !isTypeError && !nonTextKey {
 		return err
 	}
 	var root yaml.Node
 	if yaml.Unmarshal(document, &root) != nil {
 		return describeYAMLDecodeError(err, nil)
+	}
+	if nonTextKey {
+		if message := describeNonTextKey(&root, ""); message != "" {
+			return &describedDecodeError{message: message, cause: err}
+		}
+		return err
 	}
 	fields := map[fieldSite][]string{}
 	collectFieldSites(&root, "", fields)
@@ -324,6 +339,49 @@ func DescribeYAMLDecodeErrorIn(err error, document []byte) error {
 		}
 		return paths[0]
 	})
+}
+
+// invalidMapKeyPrefix opens the decoder's refusal of a key it cannot read as text
+// where it builds a map keyed by text.
+const invalidMapKeyPrefix = "yaml: invalid map key: "
+
+// describeNonTextKey names the first key in the document, in document order,
+// written as a list or a map: its line, the field holding it, and its shape. It
+// returns "" when the document holds none.
+func describeNonTextKey(n *yaml.Node, path string) string {
+	switch n.Kind {
+	case yaml.DocumentNode:
+		for _, c := range n.Content {
+			if m := describeNonTextKey(c, path); m != "" {
+				return m
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := n.Content[i]
+			if key.Kind == yaml.SequenceNode || key.Kind == yaml.MappingNode {
+				where := "line " + strconv.Itoa(key.Line)
+				if path != "" {
+					where += " (" + path + ")"
+				}
+				return where + ": reading a key: " + WrittenWhereExpected(OfYAMLNode(key), Text.Phrase())
+			}
+			child := key.Value
+			if path != "" {
+				child = path + "." + child
+			}
+			if m := describeNonTextKey(n.Content[i+1], child); m != "" {
+				return m
+			}
+		}
+	case yaml.SequenceNode:
+		for i, c := range n.Content {
+			if m := describeNonTextKey(c, path+"["+strconv.Itoa(i)+"]"); m != "" {
+				return m
+			}
+		}
+	}
+	return ""
 }
 
 // fieldSite is where a value sits as the decoder reports it: its line and the

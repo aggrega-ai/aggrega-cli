@@ -12,6 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/yamlsplice"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -76,7 +77,7 @@ func Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 
 	var entity types.Plugin
 	if err := yaml.Unmarshal(data, &entity); err != nil {
-		return res, fmt.Errorf("%s: parse entity %s: %w", command, entityPath, err)
+		return res, fmt.Errorf("%s: parse entity %s: %w", command, entityPath, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 
 	derived, err := wasm.DeriveHostFunctions(entityPath, wasmBytes)

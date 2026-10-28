@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -211,6 +212,11 @@ func (d DependsOn) MarshalYAML() (any, error) {
 // UnmarshalYAML accepts both compose forms, so a fragment this package emitted
 // and a fragment authored by hand both round-trip into the same shape. Mapping
 // entries are read in document order, which is the order they were emitted in.
+//
+// Its refusals name what the author wrote — the line, the service an entry is
+// written under, the shape written and the shape the position takes — through
+// the same words every other refusal of an authored shape uses, never the
+// program's own types.
 func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 	d.entries = nil
 	switch node.Kind {
@@ -218,7 +224,7 @@ func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 		for _, item := range node.Content {
 			var service string
 			if err := item.Decode(&service); err != nil {
-				return fmt.Errorf("depends_on: decoding entry at line %d: %w", item.Line, err)
+				return fmt.Errorf("depends_on: %w", authoredshape.DescribeYAMLDecodeError(err))
 			}
 			d.Require(service, "")
 		}
@@ -227,18 +233,38 @@ func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			var service string
 			if err := node.Content[i].Decode(&service); err != nil {
-				return fmt.Errorf("depends_on: decoding key at line %d: %w", node.Content[i].Line, err)
+				return fmt.Errorf("depends_on: reading a key: %w", authoredshape.DescribeYAMLDecodeError(err))
 			}
 			var body dependsOnBody
-			if err := node.Content[i+1].Decode(&body); err != nil {
-				return fmt.Errorf("depends_on: decoding entry %q at line %d: %w", service, node.Content[i+1].Line, err)
+			if err := decodeEntryBody(node.Content[i+1], &body); err != nil {
+				return fmt.Errorf("depends_on: under key %q: %w", service, err)
 			}
 			d.Require(service, body.Condition)
 		}
 		return nil
 	default:
-		return fmt.Errorf("depends_on: expected a sequence or a mapping, got kind %d at line %d", node.Kind, node.Line)
+		return fmt.Errorf("depends_on: line %d: %s", node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), listOrMap))
 	}
+}
+
+// listOrMap is the shape a field taking either compose form takes.
+const listOrMap = "a list or a map"
+
+// decodeEntryBody decodes the body of one long-form entry — a map, or nothing at
+// all — into body, refusing any other shape as one written where a map is
+// expected rather than by the type the body decodes into, which names nothing the
+// author wrote.
+func decodeEntryBody(node *yaml.Node, body any) error {
+	resolved := node
+	for resolved != nil && resolved.Kind == yaml.AliasNode {
+		resolved = resolved.Alias
+	}
+	if resolved != nil && resolved.Kind != yaml.MappingNode && resolved.ShortTag() != "!!null" {
+		return fmt.Errorf("line %d: %s", node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(resolved), authoredshape.Map.Phrase()))
+	}
+	return authoredshape.DescribeYAMLDecodeError(node.Decode(body))
 }
 
 // dependsOnBody is the body of one long-form depends_on entry as the field
@@ -422,7 +448,8 @@ func (m ServiceModels) MarshalYAML() (any, error) {
 
 // UnmarshalYAML accepts both compose forms and records which one was written.
 // Mapping entries are read in document order. An entry whose body is empty or
-// null grants the model with Compose's own variable names.
+// null grants the model with Compose's own variable names. Its refusals read as
+// depends_on's do.
 func (m *ServiceModels) UnmarshalYAML(node *yaml.Node) error {
 	m.entries = nil
 	m.long = false
@@ -431,7 +458,7 @@ func (m *ServiceModels) UnmarshalYAML(node *yaml.Node) error {
 		for _, item := range node.Content {
 			var name string
 			if err := item.Decode(&name); err != nil {
-				return fmt.Errorf("models: decoding entry at line %d: %w", item.Line, err)
+				return fmt.Errorf("models: %w", authoredshape.DescribeYAMLDecodeError(err))
 			}
 			m.entries = append(m.entries, serviceModelEntry{name: name})
 		}
@@ -441,17 +468,18 @@ func (m *ServiceModels) UnmarshalYAML(node *yaml.Node) error {
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			var name string
 			if err := node.Content[i].Decode(&name); err != nil {
-				return fmt.Errorf("models: decoding key at line %d: %w", node.Content[i].Line, err)
+				return fmt.Errorf("models: reading a key: %w", authoredshape.DescribeYAMLDecodeError(err))
 			}
 			var binding ServiceModelBinding
-			if err := node.Content[i+1].Decode(&binding); err != nil {
-				return fmt.Errorf("models: decoding entry %q at line %d: %w", name, node.Content[i+1].Line, err)
+			if err := decodeEntryBody(node.Content[i+1], &binding); err != nil {
+				return fmt.Errorf("models: under key %q: %w", name, err)
 			}
 			m.entries = append(m.entries, serviceModelEntry{name: name, binding: binding})
 		}
 		return nil
 	default:
-		return fmt.Errorf("models: expected a sequence or a mapping, got kind %d at line %d", node.Kind, node.Line)
+		return fmt.Errorf("models: line %d: %s", node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), listOrMap))
 	}
 }
 

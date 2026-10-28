@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -490,7 +491,7 @@ func inspectPath(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, pat
 		Kind       string `yaml:"kind"`
 	}
 	if err := yaml.Unmarshal(data, &preamble); err != nil {
-		return fmt.Errorf("parse YAML preamble in %q: %w", path, err)
+		return fmt.Errorf("parse YAML preamble in %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	if preamble.Kind == "" {
 		return fmt.Errorf("couldn't determine entity kind from %q; expected apiVersion/kind preamble", path)

@@ -50,6 +50,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -123,9 +124,17 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 			fmt.Sprintf("compose: node %q %s %s", nodeID, origin, refusal))
 	}
 
+	// A value of the wrong shape is refused in the author's words — the line, the
+	// field it was written under and the two shapes — read against the fragment's
+	// own bytes, rather than by the type it decodes into. The sentence is carried
+	// in the refusal's own message rather than as a cause beneath it: what crosses
+	// to the host renders every cause in the chain, and the reworded sentence keeps
+	// the decoder's own report beneath it.
 	var frag ComposeFile
 	if err := doc.Decode(&frag); err != nil {
-		return ComposeFile{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q %s: parse", nodeID, origin))
+		return ComposeFile{}, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			fmt.Sprintf("compose: node %q %s: parse: %s", nodeID, origin, authoredshape.DescribeYAMLDecodeErrorIn(err, body)),
+			nil, nil)
 	}
 	return frag, nil
 }
