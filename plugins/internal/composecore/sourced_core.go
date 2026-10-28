@@ -89,10 +89,8 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 			// A key written as a list or a map is refused in the author's words —
 			// its line, the field holding it and its shape — read against the
 			// source's own bytes, rather than as the Go value the decoder built.
-			// The sentence is carried in the refusal's own message rather than as a
-			// cause beneath it: what crosses to the host renders every cause in the
-			// chain, and the reworded sentence keeps the decoder's own report
-			// beneath it.
+			// The sentence is carried in the refusal's own message, as the one
+			// statement of what went wrong at this decode.
 			return SourcedRender{}, cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: sourcePath},
 				fmt.Sprintf("compose: node %q: parse source %q: %s", nodeCtx.NodeID, sourcePath, authoredshape.DescribeYAMLDecodeErrorIn(err, baseComposeBytes)),
 				nil, nil)

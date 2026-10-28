@@ -127,8 +127,8 @@ func TestDescribeYAMLDecodeError_ReportsWhatWasWrittenAndWhatIsExpected(t *testi
 				}
 			}
 			var te *yaml.TypeError
-			if !errors.As(got, &te) {
-				t.Errorf("the reworded error must still unwrap to the decoder's report")
+			if errors.As(got, &te) || errors.Unwrap(got) != nil {
+				t.Errorf("the reworded error must wrap nothing, so no surface rendering its causes reaches the decoder's report")
 			}
 		})
 	}
@@ -272,8 +272,8 @@ func TestDescribeYAMLDecodeErrorIn_NamesTheFieldTheValueWasWrittenUnder(t *testi
 				}
 			}
 			var te *yaml.TypeError
-			if !errors.As(got, &te) {
-				t.Errorf("the reworded report no longer unwraps to the decoder's error: %v", got)
+			if errors.As(got, &te) || errors.Unwrap(got) != nil {
+				t.Errorf("the reworded report still wraps the decoder's error: %v", got)
 			}
 		})
 	}
@@ -328,8 +328,8 @@ func TestDescribeYAMLDecodeErrorIn_NamesAKeyWrittenAsAListOrAMap(t *testing.T) {
 					t.Errorf("%q still carries %q", got, leak)
 				}
 			}
-			if !errors.Is(got, raw) {
-				t.Errorf("the reworded report no longer unwraps to the decoder's error: %v", got)
+			if errors.Is(got, raw) || errors.Unwrap(got) != nil {
+				t.Errorf("the reworded report still wraps the decoder's error: %v", got)
 			}
 		})
 	}
@@ -398,8 +398,8 @@ func TestDescribeJSONDecodeError_NamesTheFieldAndTheShapes(t *testing.T) {
 				}
 			}
 			var te *json.UnmarshalTypeError
-			if !errors.As(got, &te) {
-				t.Errorf("the reworded report no longer unwraps to the decoder's error: %v", got)
+			if errors.As(got, &te) || errors.Unwrap(got) != nil {
+				t.Errorf("the reworded report still wraps the decoder's error: %v", got)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
@@ -57,7 +58,8 @@ func (e *MappingEntry) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	if value.Kind != yaml.ScalarNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrMappingEntryNotScalar(), value.Kind, value.Line)
+		return fmt.Errorf("%w: line %d: %s", ErrMappingEntryNotScalar(), value.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(value), authoredshape.Text.Phrase()))
 	}
 	e.Body = value.Value
 	return nil

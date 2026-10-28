@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
@@ -69,15 +70,16 @@ func (e *ArtifactLibraryEntry) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrArtifactLibraryEntryShape(), value.Kind, value.Line)
+		return fmt.Errorf("%w: line %d: %s", ErrArtifactLibraryEntryShape(), value.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(value), authoredshape.Map.Phrase()))
 	}
 	files := OrderedMap[string]{}
 	for i := 0; i+1 < len(value.Content); i += 2 {
 		keyNode := value.Content[i]
 		valNode := value.Content[i+1]
 		if valNode.Kind != yaml.ScalarNode {
-			return fmt.Errorf("%w: file %q body must be a string scalar (got kind %d at line %d)",
-				ErrArtifactLibraryEntryShape(), keyNode.Value, valNode.Kind, valNode.Line)
+			return fmt.Errorf("%w: file %q: line %d: %s", ErrArtifactLibraryEntryShape(), keyNode.Value, valNode.Line,
+				authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(valNode), authoredshape.Text.Phrase()))
 		}
 		files.Set(keyNode.Value, valNode.Value)
 	}

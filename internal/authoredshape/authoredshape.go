@@ -290,8 +290,11 @@ var decodeMismatch = regexp.MustCompile("^line ([0-9]+): cannot unmarshal (!!\\S
 // quotes compares them as before. An entry the decoder words some other way is
 // kept as it was written.
 //
-// The original error is what the result unwraps to, so a caller asking whether a
-// failure is a decode failure still finds it.
+// The reworded error is the whole report: it wraps nothing, so a surface that
+// renders an error together with every cause beneath it — as the editor's
+// diagnostics do — renders the reworded sentence and stops there, rather than
+// printing the decoder's own report after it. A caller that needs to know a decode
+// failed asks the decoder's error before rewording it.
 func DescribeYAMLDecodeError(err error) error {
 	return describeYAMLDecodeError(err, nil)
 }
@@ -326,7 +329,7 @@ func DescribeYAMLDecodeErrorIn(err error, document []byte) error {
 	}
 	if nonTextKey {
 		if message := describeNonTextKey(&root, ""); message != "" {
-			return &describedDecodeError{message: message, cause: err}
+			return &describedDecodeError{message: message}
 		}
 		return err
 	}
@@ -452,7 +455,7 @@ func describeYAMLDecodeError(err error, fieldAt func(line, tag string) string) e
 		}
 		entries[i] = where + ": " + WrittenWhereExpected(ofYAMLTag(m[2])+m[3], OfGoType(m[4]))
 	}
-	return &describedDecodeError{message: strings.Join(entries, "; "), cause: te}
+	return &describedDecodeError{message: strings.Join(entries, "; ")}
 }
 
 // DescribeJSONDecodeError rewords a JSON decoder's report of a value it could not
@@ -465,7 +468,8 @@ func describeYAMLDecodeError(err error, fieldAt func(line, tag string) string) e
 // nothing to whoever wrote the JSON. The field it names is kept, as the path of
 // keys the value was sent under.
 //
-// The original error is what the result unwraps to.
+// The reworded error is the whole report and wraps nothing, for the reason
+// DescribeYAMLDecodeError gives.
 func DescribeJSONDecodeError(err error) error {
 	var te *json.UnmarshalTypeError
 	if !errors.As(err, &te) || te == nil {
@@ -475,7 +479,7 @@ func DescribeJSONDecodeError(err error) error {
 	if te.Field != "" {
 		message = strconv.Quote(te.Field) + ": " + message
 	}
-	return &describedDecodeError{message: message, cause: err}
+	return &describedDecodeError{message: message}
 }
 
 // ofJSONValue names the shape a JSON decoder reports having found, from the word
@@ -520,12 +524,12 @@ func ofReflectType(t reflect.Type) string {
 	return "a value"
 }
 
-// describedDecodeError carries the reworded report and the decoder's own error
-// beneath it.
+// describedDecodeError is a reworded report. It deliberately carries no cause and
+// has no Unwrap: a surface rendering every cause beneath an error would otherwise
+// print the decoder's own report — the Go types and tags the rewording exists to
+// keep from the author — after the sentence that replaced it.
 type describedDecodeError struct {
 	message string
-	cause   error
 }
 
 func (e *describedDecodeError) Error() string { return e.message }
-func (e *describedDecodeError) Unwrap() error { return e.cause }

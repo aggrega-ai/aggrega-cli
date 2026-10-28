@@ -193,10 +193,8 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 	if err := dec.Decode(&header); err != nil && !errors.Is(err, io.EOF) {
 		// A field of the wrong shape is refused naming the line, the field and the
 		// two shapes, read against the file's own bytes, rather than the type the
-		// header decodes into. The sentence is carried in the refusal's own message
-		// rather than as a cause beneath it: what crosses to the host renders every
-		// cause in the chain, and the reworded sentence keeps the decoder's own
-		// report beneath it.
+		// header decodes into. The sentence is carried in the refusal's own message,
+		// as the one statement of what went wrong at this decode.
 		return "", "", cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: label},
 			fmt.Sprintf("helmchart sourced: parse Chart.yaml in %q: %s", label, authoredshape.DescribeYAMLDecodeErrorIn(err, data)),
 			nil, nil)

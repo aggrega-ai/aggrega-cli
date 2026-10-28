@@ -127,9 +127,8 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 	// A value of the wrong shape is refused in the author's words — the line, the
 	// field it was written under and the two shapes — read against the fragment's
 	// own bytes, rather than by the type it decodes into. The sentence is carried
-	// in the refusal's own message rather than as a cause beneath it: what crosses
-	// to the host renders every cause in the chain, and the reworded sentence keeps
-	// the decoder's own report beneath it.
+	// in the refusal's own message, as the one statement of what went wrong at
+	// this decode.
 	var frag ComposeFile
 	if err := doc.Decode(&frag); err != nil {
 		return ComposeFile{}, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},

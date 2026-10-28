@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 )
 
 // unmarshalImportable implements the shared "string scalar OR {$import:
@@ -62,7 +64,8 @@ func unmarshalImportable(node *yaml.Node, sentinel error) (inline, importTarget 
 		}
 		return "", valNode.Value, nil
 	default:
-		return "", "", fmt.Errorf("%w: got kind %d at line %d", sentinel, node.Kind, node.Line)
+		return "", "", fmt.Errorf("%w: line %d: %s", sentinel, node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), "text or a map"))
 	}
 }
 

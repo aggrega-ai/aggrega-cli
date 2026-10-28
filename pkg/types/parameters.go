@@ -6,6 +6,7 @@ package types
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
@@ -69,7 +70,8 @@ func (p *ParametersBlock) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	}
 	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrParametersShape(), node.Kind, node.Line)
+		return fmt.Errorf("%w: line %d: %s", ErrParametersShape(), node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), authoredshape.Map.Phrase()))
 	}
 	// Check whether the mapping declares $import:.
 	hasImport := false
