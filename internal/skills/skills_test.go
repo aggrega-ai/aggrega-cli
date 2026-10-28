@@ -24,15 +24,16 @@ const committedRepository = "repository"
 //
 // 🔴 PLANTED DEFECT: add a line to aggrega/SKILL.md without regenerating, and
 // this test reddens on repository/skills/aggrega/SKILL.md; delete
-// repository/README.md, and it reddens naming that file as missing.
+// repository/README.md or repository/LICENSE, and it reddens naming that file
+// as missing.
 func TestTheCommittedRepositoryCopyMatchesTheEmbeddedSkills(t *testing.T) {
-	want, err := RepositoryFiles()
+	want, err := RepositoryFiles(".")
 	if err != nil {
 		t.Fatalf("generate the repository tree: %v", err)
 	}
-	if len(want) < 2 {
-		t.Fatalf("the generated tree holds %d file(s); it holds a README and at least one skill file, so the "+
-			"comparison below would prove nothing", len(want))
+	if len(want) < 3 {
+		t.Fatalf("the generated tree holds %d file(s); it holds a README, the licence and at least one skill "+
+			"file, so the comparison below would prove nothing", len(want))
 	}
 	got, err := ReadRepository(committedRepository)
 	if err != nil {
@@ -40,10 +41,141 @@ func TestTheCommittedRepositoryCopyMatchesTheEmbeddedSkills(t *testing.T) {
 	}
 	if diffs := DiffRepository(want, got); len(diffs) != 0 {
 		t.Fatalf("the committed copy of the skills repository at internal/skills/%s differs from what the "+
-			"embedded skills generate; run `go generate ./internal/skills` and commit the result:\n  %s",
+			"generator writes; run `go generate ./internal/skills` and commit the result:\n  %s",
 			committedRepository, strings.Join(diffs, "\n  "))
 	}
 }
+
+// moduleRootLicense is the module's LICENSE as this package's folder reaches
+// it: the package sits two folders below the module root. The path, file name
+// included, is written out rather than found the way the generator finds it, so
+// the test below compares the generator's licence with one it did not read.
+var moduleRootLicense = filepath.Join("..", "..", "LICENSE")
+
+// publishedLicense is where the published repository carries its licence: at
+// its root, under the name a code host and a reader look for. Written out for
+// the same reason as moduleRootLicense.
+const publishedLicense = "LICENSE"
+
+// TestThePublishedRepositoryCarriesTheModuleLicense holds the published
+// repository's LICENSE to the module's own, byte for byte, in the tree the
+// generator writes and in the committed copy publishing takes. The module's
+// LICENSE is read from inside the module, so the test cache tracks it and a
+// change to it runs this test again.
+//
+// 🔴 PLANTED DEFECT: make RepositoryFiles write the licence with a byte added,
+// or read a file other than LICENSE at the module root, and the generated half
+// reddens; delete repository/LICENSE, or change one byte of it, and the
+// committed half reddens.
+func TestThePublishedRepositoryCarriesTheModuleLicense(t *testing.T) {
+	want, err := os.ReadFile(moduleRootLicense)
+	if err != nil {
+		t.Fatalf("read the module's licence at %s: %v", moduleRootLicense, err)
+	}
+	if len(bytes.TrimSpace(want)) == 0 {
+		t.Fatalf("the module's licence at %s is empty, so the comparisons below would prove nothing", moduleRootLicense)
+	}
+
+	files, err := RepositoryFiles(".")
+	if err != nil {
+		t.Fatalf("generate the repository tree: %v", err)
+	}
+	var generated []byte
+	for _, f := range files {
+		if f.Path == publishedLicense {
+			generated = f.Content
+		}
+	}
+	switch {
+	case generated == nil:
+		t.Errorf("the generated tree carries no %s", publishedLicense)
+	case !bytes.Equal(generated, want):
+		t.Errorf("the generated %s is not the bytes of the module's licence at %s", publishedLicense, moduleRootLicense)
+	}
+
+	committed, err := os.ReadFile(filepath.Join(committedRepository, publishedLicense))
+	switch {
+	case err != nil:
+		t.Errorf("the committed copy carries no %s (%v); run `go generate ./internal/skills` and commit the result",
+			publishedLicense, err)
+	case !bytes.Equal(committed, want):
+		t.Errorf("the committed %s/%s is not the bytes of the module's licence at %s; run `go generate "+
+			"./internal/skills` and commit the result", committedRepository, publishedLicense, moduleRootLicense)
+	}
+}
+
+// TestTheLicenseIsReadOnlyFromThisModule drives the licence lookup through each
+// of its outcomes in scratch folders: found from a folder nested in this
+// module's root, and refused for a folder of another module, a module root with
+// no licence or an empty one, and a folder no module holds.
+func TestTheLicenseIsReadOnlyFromThisModule(t *testing.T) {
+	own, err := ownModule()
+	if err != nil {
+		t.Fatalf("ownModule: %v", err)
+	}
+	const text = "the licence text\n"
+	for _, tc := range []struct {
+		name    string
+		goMod   string // the go.mod written at the scratch root; "" writes none
+		license *string
+		want    string // the licence returned, when wantErr is ""
+		wantErr string
+	}{
+		{name: "this module", goMod: "module " + own + "\n\ngo 1.24\n", license: ptr(text), want: text},
+		{name: "this module, quoted", goMod: "// a comment\nmodule \"" + own + "\" // trailing\n", license: ptr(text), want: text},
+		{name: "another module", goMod: "module example.com/other\n", license: ptr(text), wantErr: `declares the module "example.com/other"`},
+		{name: "no licence", goMod: "module " + own + "\n", wantErr: "read the licence of " + own},
+		{name: "an empty licence", goMod: "module " + own + "\n", license: ptr(" \n"), wantErr: "is empty"},
+		{name: "no module", wantErr: "no go.mod at or above"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if tc.goMod == "" && hasGoModAbove(root) {
+				t.Skipf("a go.mod sits above the scratch folder %s, so no folder here is outside every module", root)
+			}
+			if tc.goMod != "" {
+				writeScratch(t, filepath.Join(root, "go.mod"), tc.goMod)
+			}
+			if tc.license != nil {
+				writeScratch(t, filepath.Join(root, licenseFile), *tc.license)
+			}
+			nested := filepath.Join(root, "internal", "skills")
+			if err := os.MkdirAll(nested, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := moduleLicense(nested)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("moduleLicense error = %v, want one carrying %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("moduleLicense: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("moduleLicense = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// hasGoModAbove reports whether a go.mod sits in dir or any folder above it.
+func hasGoModAbove(dir string) bool {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+func ptr(s string) *string { return &s }
 
 // TestDiffRepositoryNamesEveryKindOfDifference drives the comparison the guard
 // above relies on to each of its findings, so the guard's silence means the
@@ -58,9 +190,9 @@ func TestDiffRepositoryNamesEveryKindOfDifference(t *testing.T) {
 		{"identical", []File{{Path: "a.md", Content: []byte("a")}, {Path: "b.md", Content: []byte("b")}}, nil},
 		{"missing", []File{{Path: "a.md", Content: []byte("a")}}, []string{"b.md is missing"}},
 		{"extra", []File{{Path: "a.md", Content: []byte("a")}, {Path: "b.md", Content: []byte("b")}, {Path: "c.md", Content: []byte("c")}},
-			[]string{"c.md is there and no skill writes it"}},
+			[]string{"c.md is there and the generator does not write it"}},
 		{"changed", []File{{Path: "a.md", Content: []byte("a")}, {Path: "b.md", Content: []byte("B")}},
-			[]string{"b.md differs from what the embedded skills generate"}},
+			[]string{"b.md differs from what the generator writes"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := DiffRepository(want, tc.got)

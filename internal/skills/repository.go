@@ -11,7 +11,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -20,15 +22,30 @@ import (
 // discovers skills in.
 const repositorySkillsDir = "skills"
 
+// licenseFile is the name of the licence file at the root of this package's
+// module, and of the copy at the root of the published repository.
+const licenseFile = "LICENSE"
+
 // RepositoryFiles returns the whole tree of the public skills repository, in
-// lexical path order: a README, and each shipped skill's files beneath
-// skills/<name>/ exactly as Files returns them.
-func RepositoryFiles() ([]File, error) {
+// lexical path order: a README, the licence, and each shipped skill's files
+// beneath skills/<name>/ exactly as Files returns them.
+//
+// The licence is this package's module's own LICENSE file, byte for byte, read
+// from the root of the module that holds the folder from, so the published
+// skills carry the terms of the source they are generated from and no second
+// copy of the licence text is kept anywhere. from is any folder inside the
+// module: the generator passes its working directory, which is the module root
+// when it is run from there and this package's folder under go generate.
+func RepositoryFiles(from string) ([]File, error) {
 	readme, err := repositoryReadme()
 	if err != nil {
 		return nil, err
 	}
-	out := []File{{Path: "README.md", Content: readme}}
+	license, err := moduleLicense(from)
+	if err != nil {
+		return nil, err
+	}
+	out := []File{{Path: "README.md", Content: readme}, {Path: licenseFile, Content: license}}
 	for _, name := range skillNames {
 		files, err := Files(name)
 		if err != nil {
@@ -43,11 +60,11 @@ func RepositoryFiles() ([]File, error) {
 }
 
 // WriteRepository makes the folder dir hold exactly the tree RepositoryFiles
-// returns: every file written, and every other file beneath dir removed along
-// with any folder left empty, because the tree is generated as a whole and a
-// file a skill no longer has must not be published.
-func WriteRepository(dir string) error {
-	files, err := RepositoryFiles()
+// returns for from: every file written, and every other file beneath dir
+// removed along with any folder left empty, because the tree is generated as a
+// whole and a file a skill no longer has must not be published.
+func WriteRepository(dir, from string) error {
+	files, err := RepositoryFiles(from)
 	if err != nil {
 		return err
 	}
@@ -168,12 +185,89 @@ func DiffRepository(want, got []File) []string {
 		case !inGot:
 			out = append(out, p+" is missing")
 		case !inWant:
-			out = append(out, p+" is there and no skill writes it")
+			out = append(out, p+" is there and the generator does not write it")
 		case !bytes.Equal(w, g):
-			out = append(out, p+" differs from what the embedded skills generate")
+			out = append(out, p+" differs from what the generator writes")
 		}
 	}
 	return out
+}
+
+// moduleLicense returns the bytes of the LICENSE file at the root of the module
+// holding the folder from.
+//
+// The root is the nearest folder at or above from that holds a go.mod, and that
+// go.mod must declare the module this package belongs to: run from a folder of
+// any other module, or from outside every module, it refuses rather than read a
+// licence that is not this module's.
+func moduleLicense(from string) ([]byte, error) {
+	start, err := filepath.Abs(from)
+	if err != nil {
+		return nil, err
+	}
+	want, err := ownModule()
+	if err != nil {
+		return nil, err
+	}
+	for dir := start; ; {
+		mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+		switch {
+		case err == nil:
+			if got := declaredModule(mod); got != want {
+				return nil, fmt.Errorf("the nearest go.mod at or above %s, in %s, declares the module %q; the skills "+
+					"repository's licence is read from the root of %s, so run the generator from inside that module",
+					start, dir, got, want)
+			}
+			license, err := os.ReadFile(filepath.Join(dir, licenseFile))
+			if err != nil {
+				return nil, fmt.Errorf("read the licence of %s: %w", want, err)
+			}
+			if len(bytes.TrimSpace(license)) == 0 {
+				return nil, fmt.Errorf("the licence of %s, %s, is empty", want, filepath.Join(dir, licenseFile))
+			}
+			return license, nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return nil, err
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return nil, fmt.Errorf("no go.mod at or above %s; the skills repository's licence is read from the root "+
+				"of %s, so run the generator from inside that module", start, want)
+		}
+		dir = parent
+	}
+}
+
+// ownModule returns the path of the module this package belongs to, taken from
+// the package's own import path rather than written out, so it cannot name a
+// module other than the one the package is compiled from.
+func ownModule() (string, error) {
+	pkg := reflect.TypeOf(File{}).PkgPath()
+	module, ok := strings.CutSuffix(pkg, "/internal/skills")
+	if !ok {
+		return "", fmt.Errorf("the skills package's import path %q does not end in /internal/skills, so its module "+
+			"cannot be named", pkg)
+	}
+	return module, nil
+}
+
+// declaredModule returns the module path a go.mod file declares on its module
+// line, or "" when it has none.
+func declaredModule(mod []byte) string {
+	for _, line := range strings.Split(string(mod), "\n") {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i]
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 || fields[0] != "module" {
+			continue
+		}
+		if unquoted, err := strconv.Unquote(fields[1]); err == nil {
+			return unquoted
+		}
+		return fields[1]
+	}
+	return ""
 }
 
 // repositoryReadme renders the README of the public skills repository.
@@ -222,6 +316,7 @@ func repositoryReadme() ([]byte, error) {
 	b.WriteString("Every file in this repository is generated from the skills built into the `aggrega` binary,\n")
 	b.WriteString("whose source is [aggrega-ai/aggrega-cli](https://github.com/aggrega-ai/aggrega-cli), and a\n")
 	b.WriteString("tag here names the Aggrega release the files were generated from. A change to a skill is made\n")
-	b.WriteString("there; an edit made here is replaced the next time the files are generated.\n")
+	b.WriteString("there; an edit made here is replaced the next time the files are generated.\n\n")
+	b.WriteString("The skills are released under the same licence as Aggrega's source, in [LICENSE](" + licenseFile + ").\n")
 	return []byte(b.String()), nil
 }

@@ -2,9 +2,11 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Command genrepository writes the tree of the public skills repository from
-// the skills built into the aggrega binary.
+// the skills built into the aggrega binary, with the module's LICENSE file at
+// its root.
 //
-// Run it with:
+// Run it from inside the aggrega-cli module, whose LICENSE it reads from the
+// module root above its working directory:
 //
 //	go run ./internal/skills/genrepository -out <folder>
 //
@@ -29,7 +31,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: genrepository -out <folder>")
 		os.Exit(2)
 	}
-	if err := skills.WriteRepository(*out); err != nil {
+	if err := skills.WriteRepository(*out, "."); err != nil {
 		fmt.Fprintln(os.Stderr, "genrepository:", err)
 		os.Exit(1)
 	}
