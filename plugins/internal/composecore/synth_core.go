@@ -942,7 +942,7 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //   - Workload.PodSecurityContext.RunAsUser → user (overridden by container
 //     SecurityContext.RunAsUser if set), with RunAsGroup joined to it; a
 //     RunAsGroup authored without RunAsUser has no uid to join and renders no
-//     user
+//     user, and one beside a container user carrying no group renders in no user
 //   - Workload.PodSecurityContext.FSGroup and SupplementalGroups → no
 //     equivalent in the compose service model
 //   - Workload.HostNetwork                 → network_mode: host
@@ -960,7 +960,8 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 // serviceAccount, replicas, runtimeClassName, priorityClassName,
 // imagePullSecrets, dnsPolicy, dnsConfig.options, podSecurityContext.fsGroup,
 // podSecurityContext.supplementalGroups, and podSecurityContext.runAsGroup
-// authored without runAsUser — is dropped with an unsupported-field warning.
+// authored without runAsUser or beside a main container that sets its own
+// runAsUser and no runAsGroup — is dropped with an unsupported-field warning.
 // Returns one diagnostic per authored-and-dropped field, in a deterministic order.
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.Diagnostic {
 	applyPodUser(svc, w)
@@ -1025,7 +1026,7 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 		if len(psc.SupplementalGroups) > 0 {
 			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.supplementalGroups"))
 		}
-		if psc.RunAsGroup != nil && psc.RunAsUser == nil {
+		if psc.RunAsGroup != nil && (psc.RunAsUser == nil || mainContainerSetsUserWithoutGroup(w)) {
 			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.runAsGroup"))
 		}
 	}
@@ -1042,6 +1043,24 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 			"the workload's own service runs on the node's network while each init container's service joins the boundary network in its own right"))
 	}
 	return diags
+}
+
+// mainContainerSetsUserWithoutGroup reports whether the main container's own
+// security context sets runAsUser and leaves runAsGroup unset. Its user then wins
+// over the pod's (see applyPodUser) and is rendered without a group, so a
+// pod-level runAsGroup reaches no part of the service — where a pod would run that
+// container under the pod's group.
+//
+// A container that sets a group of its own is not this case: its group replaces
+// the pod's, as it does in a pod, and nothing the author wrote is left out.
+func mainContainerSetsUserWithoutGroup(w *types.Workload) bool {
+	name, ok := pickMainContainerName(w)
+	if !ok {
+		return false
+	}
+	c, _ := w.Containers.Get(name)
+	sc := c.SecurityContext
+	return sc != nil && sc.RunAsUser != nil && sc.RunAsGroup == nil
 }
 
 // applyPodUser sets the compose service user from the pod-level security
