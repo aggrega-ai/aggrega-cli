@@ -239,8 +239,8 @@ func evalSelfInjectValue(name, tmplText string, siCtx SelfInjectContext, withhel
 		missingKey: missingKeyZero,
 		category:   cerrors.DeveloperError,
 		failed: func(stage templateEvalStage, err error) error {
-			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: name},
-				fmt.Sprintf("template %q %s", name, stage))
+			return cerrors.Wrap(valueTemplateRunFailure(stage, err), cerrors.DeveloperError,
+				cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q %s", name, stage))
 		},
 	}.run()
 }

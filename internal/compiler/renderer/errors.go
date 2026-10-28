@@ -72,6 +72,32 @@ var errProvidesEvaluation = cerrors.Register("provides-evaluation-failed", cerro
 		"failed is in the cause it wraps."),
 })
 
+// ErrValueTemplateExecutionFailed is the condition a value template carries when
+// it fails while it runs: the template parsed and every root it reads is one its
+// context defines, and the engine then stopped — a field read through a value that
+// is absent, a function handed a value it does not take, a comparison between two
+// values of different kinds. It is raised at the one point every value template's
+// evaluation reports a failed run through, so each surface rendering a value
+// template carries it, with the template's name and the engine's own reason
+// beneath it. A template that does not parse is not this condition.
+//
+// A failure that already carries a registered condition keeps that condition: a
+// template function that names its own fault is the more specific report, and this
+// one is raised only where nothing else named the failure. A Recipe's provides
+// template that fails is reported as ErrProvidesEvaluation, which carries the
+// evaluation's report as text and names the node and the key.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrValueTemplateExecutionFailed()).
+func ErrValueTemplateExecutionFailed() error { return errValueTemplateExecutionFailed }
+
+var errValueTemplateExecutionFailed = cerrors.Register("value-template-execution-failed", cerrors.Meta{
+	ShortCode: "E0364",
+	Message:   "a value template failed while it ran",
+	RulePlace: cerrors.NotARule("A value template could not be evaluated, so it produced no value. It reports that " +
+		"evaluating the template became impossible rather than a rule that refused content, and what " +
+		"failed is in the cause it wraps."),
+})
+
 func ErrSelfInjectKeyCollision() error { return errSelfInjectKeyCollision }
 
 var errSelfInjectKeyCollision = cerrors.Register("self-inject-key-collision", cerrors.Meta{

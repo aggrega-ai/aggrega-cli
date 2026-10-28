@@ -524,10 +524,26 @@ func valueTemplate(name, tmplText string, scope templateScope, leftDelim, rightD
 		rightDelim: rightDelim,
 		missingKey: missingKeyZero,
 		failed: func(stage templateEvalStage, err error) error {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name},
-				fmt.Sprintf("template %q %s", name, stage))
+			return cerrors.Wrap(valueTemplateRunFailure(stage, err), cerrors.CatalogError,
+				cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q %s", name, stage))
 		},
 	}
+}
+
+// valueTemplateRunFailure joins a value template's failed run to the condition
+// such a run carries, ErrValueTemplateExecutionFailed, keeping the engine's
+// failure as the cause beneath it. Every value surface's failure wrap calls it, so
+// the condition is decided once rather than by each surface.
+//
+// A failed parse is returned as it is, because the condition names a template
+// that ran. So is a failure already naming a condition: the condition read off a
+// chain is the first one found, and joining this one ahead of it would report the
+// specific fault as the general one.
+func valueTemplateRunFailure(stage templateEvalStage, err error) error {
+	if _, named := cerrors.CodeOf(err); stage != stageExecute || named {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrValueTemplateExecutionFailed(), err)
 }
 
 // pathTemplateDirectoryScope is the reference set a `directory:` path template is
