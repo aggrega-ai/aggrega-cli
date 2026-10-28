@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -28,7 +29,7 @@ func renderWorkloadLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWor
 	}
 	var lib types.WorkloadLibrary
 	if err := yaml.Unmarshal(data, &lib); err != nil {
-		return fmt.Errorf("parse WorkloadLibrary at %q: %w", path, err)
+		return fmt.Errorf("parse WorkloadLibrary at %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	name := lib.Metadata.Name
 

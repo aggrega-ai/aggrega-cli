@@ -173,3 +173,192 @@ func TestOfYAMLNode_NamesTheShapeANodeWasWrittenIn(t *testing.T) {
 		}
 	}
 }
+
+// TestOfGoType_AStructSpelledInFullIsAMap covers the decoder's spelling of an
+// anonymous struct, which carries the program's field list and is a map to the
+// author.
+func TestOfGoType_AStructSpelledInFullIsAMap(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{`struct { Name string "yaml:\"name\""; Version string "yaml:\"version\"" }`, "a map"},
+		{"*struct {}", "a map"},
+		{"[]struct { A int }", "a list of maps"},
+	}
+	for _, tc := range cases {
+		if got := OfGoType(tc.in); got != tc.want {
+			t.Errorf("OfGoType(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// decoderText is what a reworded report must no longer carry: the decoders' own
+// phrasing and the program's types.
+var decoderText = []string{"cannot unmarshal", "!!", "Go struct field", "Go value", "json:", "struct {"}
+
+// TestDescribeYAMLDecodeErrorIn_NamesTheFieldTheValueWasWrittenUnder holds the
+// field naming to the document the decode read, one row per way a field is
+// found or deliberately not named.
+func TestDescribeYAMLDecodeErrorIn_NamesTheFieldTheValueWasWrittenUnder(t *testing.T) {
+	t.Parallel()
+	type header struct {
+		Metadata struct {
+			Name string `yaml:"name"`
+		} `yaml:"metadata"`
+	}
+	type spec struct {
+		Spec struct {
+			Replicas int `yaml:"replicas"`
+		} `yaml:"spec"`
+	}
+	type items struct {
+		Items []int `yaml:"items"`
+	}
+	type pair struct {
+		A struct {
+			X int `yaml:"x"`
+			Y int `yaml:"y"`
+		} `yaml:"a"`
+	}
+	cases := []struct {
+		name    string
+		doc     string
+		into    func() any
+		want    string
+		notWant string
+	}{
+		{
+			name: "a map field written as a list",
+			doc:  "apiVersion: x\nkind: K\nmetadata:\n  - a\n",
+			into: func() any { return &header{} },
+			want: "line 4 (metadata): a list is written where a map is expected",
+		},
+		{
+			name: "a nested number written as text",
+			doc:  "spec:\n  replicas: abc\n",
+			into: func() any { return &spec{} },
+			want: "line 2 (spec.replicas): text `abc` is written where a number is expected",
+		},
+		{
+			name: "a list item written as text",
+			doc:  "items:\n  - 1\n  - abc\n",
+			into: func() any { return &items{} },
+			want: "line 3 (items[1]): text `abc` is written where a number is expected",
+		},
+		{
+			name:    "two values of one shape on one line name the line alone",
+			doc:     "a: {x: abc, y: def}\n",
+			into:    func() any { return &pair{} },
+			want:    "line 1: text `abc` is written where a number is expected; line 1: text `def` is written where a number is expected",
+			notWant: "(a.",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw := yaml.Unmarshal([]byte(tc.doc), tc.into())
+			if raw == nil {
+				t.Fatalf("decoding %q succeeded; the row needs a mismatch", tc.doc)
+			}
+			got := DescribeYAMLDecodeErrorIn(raw, []byte(tc.doc))
+			if got.Error() != tc.want {
+				t.Errorf("got  %q\nwant %q", got.Error(), tc.want)
+			}
+			if tc.notWant != "" && strings.Contains(got.Error(), tc.notWant) {
+				t.Errorf("%q names a field it cannot tell apart from another", got)
+			}
+			for _, leak := range decoderText {
+				if strings.Contains(got.Error(), leak) {
+					t.Errorf("%q still carries %q", got, leak)
+				}
+			}
+			var te *yaml.TypeError
+			if !errors.As(got, &te) {
+				t.Errorf("the reworded report no longer unwraps to the decoder's error: %v", got)
+			}
+		})
+	}
+
+	t.Run("a document that does not parse names the line alone", func(t *testing.T) {
+		t.Parallel()
+		raw := yaml.Unmarshal([]byte("spec:\n  replicas: abc\n"), &spec{})
+		got := DescribeYAMLDecodeErrorIn(raw, []byte("spec: : [\n"))
+		if want := "line 2: text `abc` is written where a number is expected"; got.Error() != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("another error passes through unchanged", func(t *testing.T) {
+		t.Parallel()
+		own := errors.New("not a decode mismatch")
+		if got := DescribeYAMLDecodeErrorIn(own, []byte("a: 1\n")); got != own {
+			t.Errorf("another error must pass through unchanged: %v", got)
+		}
+	})
+}
+
+// kindName is a type of its own over text, the way a request field is often
+// declared.
+type kindName string
+
+// TestDescribeJSONDecodeError_NamesTheFieldAndTheShapes holds the JSON rewording
+// to the field the value was sent under and the two shapes, one row per shape of
+// mismatch.
+func TestDescribeJSONDecodeError_NamesTheFieldAndTheShapes(t *testing.T) {
+	t.Parallel()
+	type kind struct {
+		Kind string `json:"kind"`
+	}
+	type nested struct {
+		A struct {
+			B int `json:"b"`
+		} `json:"a"`
+	}
+	type named struct {
+		K kindName `json:"k"`
+	}
+	type list struct {
+		Xs []string `json:"xs"`
+	}
+	cases := []struct {
+		name string
+		doc  string
+		into func() any
+		want string
+	}{
+		{"a number sent as text's field", `{"kind": 5}`, func() any { return &kind{} }, `"kind": a number is written where text is expected`},
+		{"a nested field", `{"a": {"b": "x"}}`, func() any { return &nested{} }, `"a.b": text is written where a number is expected`},
+		{"a field of a type of its own over text", `{"k": true}`, func() any { return &named{} }, `"k": a true/false value is written where text is expected`},
+		{"a list field sent a number", `{"xs": 1}`, func() any { return &list{} }, `"xs": a number is written where a list of text values is expected`},
+		{"the whole object sent as a list", `[1]`, func() any { return &kind{} }, `a list is written where a map is expected`},
+		{"a map sent where text goes", `{"kind": {}}`, func() any { return &kind{} }, `"kind": a map is written where text is expected`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw := json.Unmarshal([]byte(tc.doc), tc.into())
+			if raw == nil {
+				t.Fatalf("decoding %s succeeded; the row needs a mismatch", tc.doc)
+			}
+			got := DescribeJSONDecodeError(raw)
+			if got.Error() != tc.want {
+				t.Errorf("got  %q\nwant %q", got.Error(), tc.want)
+			}
+			for _, leak := range decoderText {
+				if strings.Contains(got.Error(), leak) {
+					t.Errorf("%q still carries %q", got, leak)
+				}
+			}
+			var te *json.UnmarshalTypeError
+			if !errors.As(got, &te) {
+				t.Errorf("the reworded report no longer unwraps to the decoder's error: %v", got)
+			}
+		})
+	}
+
+	t.Run("a syntax error passes through unchanged", func(t *testing.T) {
+		t.Parallel()
+		raw := json.Unmarshal([]byte(`{"kind":`), &kind{})
+		if got := DescribeJSONDecodeError(raw); got != raw {
+			t.Errorf("a syntax error must pass through unchanged: %v", got)
+		}
+	})
+}

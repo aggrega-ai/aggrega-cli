@@ -12,6 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
@@ -175,7 +176,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	}
 	var header pinnedEntityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return Result{}, Plan{}, fmt.Errorf("parse %s: %w", opts.EntityPath, err)
+		return Result{}, Plan{}, fmt.Errorf("parse %s: %w", opts.EntityPath, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	if header.Kind == "" {
 		return Result{}, Plan{}, fmt.Errorf("%s: missing kind field", opts.EntityPath)

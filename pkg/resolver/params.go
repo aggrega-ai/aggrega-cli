@@ -15,6 +15,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -242,7 +243,7 @@ func LoadParametersImport(workspaceRoot, anchor, releaseFile, ref string) (map[s
 		return nil, &ResolverError{
 			Entity:  "Release",
 			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
-			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
+			Message: fmt.Sprintf("failed to unmarshal YAML: %v", authoredshape.DescribeYAMLDecodeErrorIn(err, data)),
 			Err:     ErrYAMLLoad(),
 		}
 	}

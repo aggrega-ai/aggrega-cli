@@ -20,12 +20,14 @@ import (
 // ErrOrderedMapDecodeDepthExceeded fires when nested object recursion in
 // UnmarshalJSON or UnmarshalYAML exceeds orderedMapDecodeMaxDepth, guarding
 // against pathological input that would otherwise blow the call stack.
-// Wrapped via fmt.Errorf at the emission site with the offending depth.
+// Wrapped via fmt.Errorf at the emission site with the depth the document is
+// read to, so the sentence the author reads names the limit their document
+// crossed.
 func ErrOrderedMapDecodeDepthExceeded() error { return errOrderedMapDecodeDepthExceeded }
 
 var errOrderedMapDecodeDepthExceeded = cerrors.Register("document-nesting-depth-exceeded", cerrors.Meta{
 	ShortCode: "E0192",
-	Message:   "OrderedMap: decode depth exceeded",
+	Message:   "a document nests too many levels deep",
 	RulePlace: cerrors.NotARule("A document's nested-object recursion exceeded the bound the decoder applies to keep " +
 		"pathological input off the call stack. The bound belongs to the decoder and is applied while " +
 		"the document is being read, so what it reports is a decode that was stopped."),
@@ -396,7 +398,7 @@ func (m *OrderedMap[V]) UnmarshalYAML(node *yaml.Node) error {
 // Mirrors unmarshalJSONWithDepth's structure on the YAML path.
 func (m *OrderedMap[V]) unmarshalYAMLWithDepth(node *yaml.Node, depth int) error {
 	if depth > orderedMapDecodeMaxDepth {
-		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
+		return fmt.Errorf("%w: it is read at most %d levels deep", ErrOrderedMapDecodeDepthExceeded(), orderedMapDecodeMaxDepth)
 	}
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: %s", node.Line,
@@ -524,7 +526,7 @@ func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
 // construction.
 func (m *OrderedMap[V]) unmarshalJSONWithDepth(data []byte, depth int) error {
 	if depth > orderedMapDecodeMaxDepth {
-		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
+		return fmt.Errorf("%w: it is read at most %d levels deep", ErrOrderedMapDecodeDepthExceeded(), orderedMapDecodeMaxDepth)
 	}
 
 	m.keys = make([]string, 0)
@@ -650,7 +652,7 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 	var zero V
 
 	if depth > orderedMapDecodeMaxDepth {
-		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
+		return zero, fmt.Errorf("%w: it is read at most %d levels deep", ErrOrderedMapDecodeDepthExceeded(), orderedMapDecodeMaxDepth)
 	}
 
 	if vImplementsJSONUnmarshaler[V]() {
@@ -745,7 +747,7 @@ func decodeYAMLValue[V any](valueNode *yaml.Node, depth int) (V, error) {
 	var zero V
 
 	if depth > orderedMapDecodeMaxDepth {
-		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
+		return zero, fmt.Errorf("%w: it is read at most %d levels deep", ErrOrderedMapDecodeDepthExceeded(), orderedMapDecodeMaxDepth)
 	}
 
 	if vImplementsYAMLUnmarshaler[V]() {

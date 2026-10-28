@@ -18,8 +18,10 @@ package authoredshape
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -154,12 +156,16 @@ func ofYAMLTag(tag string) string {
 // it holds and a named type by its own name in words, so a field expecting
 // []VolumeMount reads as "a list of volume mounts" — the name the author wrote
 // the field under, in the singular or the plural.
+//
+// A struct the decoder spells out in full rather than by a name — a header read
+// into an anonymous struct — is a map to the author: the decoder fills it from a
+// map's keys, and its spelling is the program's field list, which no author wrote.
 func OfGoType(goType string) string {
 	t := strings.TrimLeft(goType, "*")
 	switch {
 	case strings.HasPrefix(t, "[]"):
 		return "a list of " + plural(t[2:])
-	case strings.HasPrefix(t, "map["), strings.Contains(t, "OrderedMap["):
+	case strings.HasPrefix(t, "map["), strings.Contains(t, "OrderedMap["), isStructLiteral(t):
 		return Map.Phrase()
 	}
 	if k, ok := builtinKind(t); ok {
@@ -178,7 +184,7 @@ func plural(element string) string {
 	switch {
 	case strings.HasPrefix(t, "[]"):
 		return "lists"
-	case strings.HasPrefix(t, "map["), strings.Contains(t, "OrderedMap["):
+	case strings.HasPrefix(t, "map["), strings.Contains(t, "OrderedMap["), isStructLiteral(t):
 		return "maps"
 	}
 	if k, ok := builtinKind(t); ok {
@@ -201,6 +207,12 @@ func plural(element string) string {
 		return words[:len(words)-1] + "ies"
 	}
 	return words + "s"
+}
+
+// isStructLiteral reports whether a type is spelled as a struct written out in
+// full, the way a decoder names an anonymous struct.
+func isStructLiteral(t string) bool {
+	return strings.HasPrefix(t, "struct {") || strings.HasPrefix(t, "struct{")
 }
 
 // builtinKind answers for Go's predeclared types and the empty interface.
@@ -281,6 +293,88 @@ var decodeMismatch = regexp.MustCompile("^line ([0-9]+): cannot unmarshal (!!\\S
 // The original error is what the result unwraps to, so a caller asking whether a
 // failure is a decode failure still finds it.
 func DescribeYAMLDecodeError(err error) error {
+	return describeYAMLDecodeError(err, nil)
+}
+
+// DescribeYAMLDecodeErrorIn is DescribeYAMLDecodeError for a decode of a whole
+// document whose bytes the caller holds. Each entry also names the field the
+// value was written under, as a path of keys from the top of the document, so
+// the author reads which field took the wrong shape as well as the line it is
+// on: `line 4 (metadata): a list is written where a map is expected`.
+//
+// The decoder reports a line and the tag of what it found there, not a field, so
+// the field is found in the document: the one value on that line written in that
+// shape. Where the document holds no such value, or more than one — two values of
+// one shape written on one line — the entry names the line alone rather than
+// guess between them.
+func DescribeYAMLDecodeErrorIn(err error, document []byte) error {
+	if _, ok := err.(*yaml.TypeError); !ok {
+		return err
+	}
+	var root yaml.Node
+	if yaml.Unmarshal(document, &root) != nil {
+		return describeYAMLDecodeError(err, nil)
+	}
+	fields := map[fieldSite][]string{}
+	collectFieldSites(&root, "", fields)
+	return describeYAMLDecodeError(err, func(line, tag string) string {
+		paths := fields[fieldSite{line: line, tag: tag}]
+		if len(paths) != 1 {
+			return ""
+		}
+		return paths[0]
+	})
+}
+
+// fieldSite is where a value sits as the decoder reports it: its line and the
+// tag its shape resolved to.
+type fieldSite struct {
+	line string
+	tag  string
+}
+
+// collectFieldSites records, for every value under a key or in a list, the path
+// it was written under, keyed by its line and tag. A path is the keys from the
+// top of the document joined with dots, with a list item's position in brackets.
+func collectFieldSites(n *yaml.Node, path string, out map[fieldSite][]string) {
+	switch n.Kind {
+	case yaml.DocumentNode:
+		for _, c := range n.Content {
+			collectFieldSites(c, path, out)
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			child := n.Content[i].Value
+			if path != "" {
+				child = path + "." + child
+			}
+			recordFieldSite(n.Content[i+1], child, out)
+			collectFieldSites(n.Content[i+1], child, out)
+		}
+	case yaml.SequenceNode:
+		for i, c := range n.Content {
+			child := path + "[" + strconv.Itoa(i) + "]"
+			recordFieldSite(c, child, out)
+			collectFieldSites(c, child, out)
+		}
+	}
+}
+
+// recordFieldSite records one value's path under its line and tag. An alias is
+// passed over: the decoder reports the line of the content it points at, which
+// is recorded where that content is written.
+func recordFieldSite(n *yaml.Node, path string, out map[fieldSite][]string) {
+	if n.Kind == yaml.AliasNode {
+		return
+	}
+	site := fieldSite{line: strconv.Itoa(n.Line), tag: n.ShortTag()}
+	out[site] = append(out[site], path)
+}
+
+// describeYAMLDecodeError is the one rewording both describers share. fieldAt,
+// when it is set, names the field a value on a line was written under, or ""
+// where it cannot say.
+func describeYAMLDecodeError(err error, fieldAt func(line, tag string) string) error {
 	te, ok := err.(*yaml.TypeError)
 	if !ok || te == nil {
 		return err
@@ -292,9 +386,80 @@ func DescribeYAMLDecodeError(err error) error {
 			entries[i] = entry
 			continue
 		}
-		entries[i] = "line " + m[1] + ": " + WrittenWhereExpected(ofYAMLTag(m[2])+m[3], OfGoType(m[4]))
+		where := "line " + m[1]
+		if fieldAt != nil {
+			if field := fieldAt(m[1], m[2]); field != "" {
+				where += " (" + field + ")"
+			}
+		}
+		entries[i] = where + ": " + WrittenWhereExpected(ofYAMLTag(m[2])+m[3], OfGoType(m[4]))
 	}
 	return &describedDecodeError{message: strings.Join(entries, "; "), cause: te}
+}
+
+// DescribeJSONDecodeError rewords a JSON decoder's report of a value it could not
+// place — `json: cannot unmarshal number into Go struct field params.kind of type
+// string` — as the field the value was sent under, the shape it was written in
+// and the shape the field takes: `"kind": a number is written where text is
+// expected`. Every other error is returned as it is.
+//
+// The decoder names the Go struct and the Go type it was filling, which say
+// nothing to whoever wrote the JSON. The field it names is kept, as the path of
+// keys the value was sent under.
+//
+// The original error is what the result unwraps to.
+func DescribeJSONDecodeError(err error) error {
+	var te *json.UnmarshalTypeError
+	if !errors.As(err, &te) || te == nil {
+		return err
+	}
+	message := WrittenWhereExpected(ofJSONValue(te.Value), ofReflectType(te.Type))
+	if te.Field != "" {
+		message = strconv.Quote(te.Field) + ": " + message
+	}
+	return &describedDecodeError{message: message, cause: err}
+}
+
+// ofJSONValue names the shape a JSON decoder reports having found, from the word
+// it reports it by.
+func ofJSONValue(value string) string {
+	switch {
+	case value == "string":
+		return Text.Phrase()
+	case value == "number", strings.HasPrefix(value, "number "):
+		return Number.Phrase()
+	case value == "bool":
+		return Bool.Phrase()
+	case value == "array":
+		return List.Phrase()
+	case value == "object":
+		return Map.Phrase()
+	}
+	return Other.Phrase()
+}
+
+// ofReflectType names the shape a field of type t takes. A type of its own over a
+// predeclared one takes what its underlying type takes, and a struct is filled
+// from a JSON object, so it takes a map.
+func ofReflectType(t reflect.Type) string {
+	if t == nil {
+		return "a value"
+	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Slice, reflect.Array:
+		return "a list of " + plural(t.Elem().String())
+	case reflect.Map, reflect.Struct:
+		return Map.Phrase()
+	case reflect.Interface:
+		return "a value"
+	}
+	if k := KindOf(reflect.Zero(t)); k != Other {
+		return k.Phrase()
+	}
+	return "a value"
 }
 
 // describedDecodeError carries the reworded report and the decoder's own error

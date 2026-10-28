@@ -18,6 +18,7 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -792,7 +793,8 @@ func yamlToLinterJSON(yamlBytes []byte) (json.RawMessage, lintEntityHeader, erro
 	}
 	var header lintEntityHeader
 	if err := yaml.Unmarshal(yamlBytes, &header); err != nil {
-		return nil, lintEntityHeader{}, fmt.Errorf("yaml header unmarshal: %w", err)
+		return nil, lintEntityHeader{}, fmt.Errorf("read the document's kind and metadata: %w",
+			authoredshape.DescribeYAMLDecodeErrorIn(err, yamlBytes))
 	}
 	cleaned := convertYAMLMaps(raw)
 	withoutParameterValues(cleaned, header.Kind)

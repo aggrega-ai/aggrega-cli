@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"go.yaml.in/yaml/v3"
@@ -68,28 +69,23 @@ func UnloadableDocument(path string, data []byte, readErr error, header any) err
 		header = &documentHeader{}
 	}
 	if err := yaml.Unmarshal(data, header); err != nil {
-		return unloadableDocumentError(path, unloadableDocumentReason(err))
+		return unloadableDocumentError(path, unloadableDocumentReason(err, data))
 	}
 	return nil
 }
 
 // unloadableDocumentReason says why a document that declares the envelope did
 // not load: the parser's own message where its YAML does not parse, and where it
-// parses but does not decode into the header, each line the decoder gave up on
-// with what it found there. The decoder ends each of those with the Go type it
-// was decoding into, which names nothing an author wrote, so that part is left
-// out.
-func unloadableDocumentReason(err error) string {
+// parses but does not decode into the header, each line the decoder gave up on,
+// the field written there, the shape it was written in and the shape the
+// envelope takes at that field — in the author's words rather than the decoder's,
+// which end with the Go type it was decoding into.
+func unloadableDocumentReason(err error, data []byte) string {
 	var typeErr *yaml.TypeError
 	if !errors.As(err, &typeErr) {
 		return "failed to unmarshal YAML: " + err.Error()
 	}
-	found := make([]string, 0, len(typeErr.Errors))
-	for _, e := range typeErr.Errors {
-		before, _, _ := strings.Cut(e, " into ")
-		found = append(found, before)
-	}
-	return "failed to decode the envelope: " + strings.Join(found, "; ")
+	return "failed to decode the envelope: " + authoredshape.DescribeYAMLDecodeErrorIn(typeErr, data).Error()
 }
 
 // UnloadableDocumentsHalt is the halt a whole-catalog check raises after its

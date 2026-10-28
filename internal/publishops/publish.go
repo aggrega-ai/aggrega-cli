@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
@@ -535,7 +536,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	}
 	var header pushEntityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
-		return PushResult{}, fmt.Errorf("parse %s: %w", cfg.EntityPath, err)
+		return PushResult{}, fmt.Errorf("parse %s: %w", cfg.EntityPath, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	if header.Kind == "" {
 		return PushResult{}, fmt.Errorf("%s: missing kind field", cfg.EntityPath)

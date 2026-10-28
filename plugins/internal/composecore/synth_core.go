@@ -100,7 +100,8 @@ func SynthesizeWorkloadCore(
 
 	// Unsupported-field diagnostics accumulate here in a deterministic order: per
 	// container in author order (that container's dropped extended resources,
-	// then its `as: env` attachment placeholders, then its runAsNonRoot), then
+	// then its `as: env` attachment placeholders, then its dropped security
+	// fields), then
 	// the main container's pod-level drops, then the same per-container entries
 	// for each init container in authored order, then the per-volume entries — a
 	// dropped size, a reduced-fidelity variant, and an unmounted declaration each
@@ -150,7 +151,9 @@ func SynthesizeWorkloadCore(
 		diags = append(diags, cdiags...)
 
 		// Apply pod-level fields onto the main service only — sidecars share
-		// the main's network namespace and pod-level identity.
+		// the main's network namespace. The pod's user identity is the one
+		// pod-level setting every service carries, and translateContainer
+		// applies it to each.
 		if isMain {
 			diags = append(diags, applyPodLevelFieldsToService(&svc, w)...)
 		}
@@ -346,11 +349,14 @@ const (
 // it must stay the same on both so one authored workload yields one set of
 // container names everywhere.
 //
-// Pod-level configuration is deliberately not applied. An init service is a
-// non-main service, and this synthesizer applies pod-level fields to the main
-// service only; a third policy would be a new rule with nothing behind it, and
-// re-running the pod-level pass per init container would also repeat every
-// pod-level diagnostic once per init container.
+// Pod-level configuration other than the pod's user identity is deliberately not
+// applied. An init service is a non-main service, and this synthesizer applies
+// pod-level fields to the main service only; a third policy would be a new rule
+// with nothing behind it, and re-running the pod-level pass per init container
+// would also repeat every pod-level diagnostic once per init container. The user
+// identity is the exception, applied by translateContainer to every service: a
+// pod's runAsUser and runAsGroup are the identity each of its containers runs as,
+// init containers included.
 func synthesizeInitServices(
 	frag *ComposeFile,
 	w *types.Workload,
@@ -601,10 +607,14 @@ func translateContainer(
 		}
 	}
 
-	// Container security primitives that compose supports.
+	// Container security primitives that compose supports, then the pod's user
+	// identity wherever the container sets no user of its own — every container
+	// of a pod runs as the pod's user unless it names its own, so every service
+	// does, whatever its role.
 	if c.SecurityContext != nil {
 		diags = append(diags, applyContainerSecurityContext(&svc, c.SecurityContext)...)
 	}
+	applyPodUser(&svc, w)
 
 	// Sidecar services share the main service's network namespace. An init
 	// service must not — see roleInit.
@@ -907,8 +917,10 @@ func resolveHTTPProbePort(ports types.OrderedMap[types.PortSpec]) (int, error) {
 //   - runAsUser / runAsGroup  → user (formatted as "<uid>:<gid>" or "<uid>")
 //
 // runAsNonRoot and allowPrivilegeEscalation are not mapped; an authored value of
-// either is dropped with an unsupported-field warning. Returns one diagnostic per
-// authored-and-dropped field.
+// either is dropped with an unsupported-field warning. So is a runAsGroup written
+// without a runAsUser beside it: compose's user names a user before any group, so
+// a group alone has nothing to join, and the group the author wrote reaches no
+// part of the service. Returns one diagnostic per authored-and-dropped field.
 func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityContext) []renderctx.Diagnostic {
 	if sc.ReadOnlyRootFilesystem != nil {
 		svc.ReadOnly = *sc.ReadOnlyRootFilesystem
@@ -926,6 +938,9 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 	}
 
 	var diags []renderctx.Diagnostic
+	if sc.RunAsGroup != nil && sc.RunAsUser == nil {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "runAsGroup"))
+	}
 	if sc.RunAsNonRoot != nil {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "runAsNonRoot"))
 	}
@@ -939,10 +954,10 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 // the main compose service. Compose's surface is much narrower than K8s pod;
 // only fields with direct equivalents are applied:
 //
-//   - Workload.PodSecurityContext.RunAsUser → user (overridden by container
-//     SecurityContext.RunAsUser if set), with RunAsGroup joined to it; a
-//     RunAsGroup authored without RunAsUser has no uid to join and renders no
-//     user, and one beside a container user carrying no group renders in no user
+//   - Workload.PodSecurityContext.RunAsUser and RunAsGroup → user, on every
+//     service rather than this one alone, and so by translateContainer through
+//     applyPodUser; what this function owns is the warning for the group where
+//     it reaches no service
 //   - Workload.PodSecurityContext.FSGroup and SupplementalGroups → no
 //     equivalent in the compose service model
 //   - Workload.HostNetwork                 → network_mode: host
@@ -960,12 +975,11 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 // serviceAccount, replicas, runtimeClassName, priorityClassName,
 // imagePullSecrets, dnsPolicy, dnsConfig.options, podSecurityContext.fsGroup,
 // podSecurityContext.supplementalGroups, and podSecurityContext.runAsGroup
-// authored without runAsUser or beside a main container that sets its own
-// runAsUser and no runAsGroup — is dropped with an unsupported-field warning.
-// Returns one diagnostic per authored-and-dropped field, in a deterministic order.
+// authored without runAsUser or beside a container or init container that sets
+// its own runAsUser and no runAsGroup — is dropped with an unsupported-field
+// warning. Returns one diagnostic per authored-and-dropped field, in a
+// deterministic order.
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.Diagnostic {
-	applyPodUser(svc, w)
-
 	// terminationGracePeriodSeconds → stop_grace_period ("<n>s").
 	if w.TerminationGracePeriodSeconds != nil {
 		svc.StopGracePeriod = fmt.Sprintf("%ds", *w.TerminationGracePeriodSeconds)
@@ -1026,7 +1040,7 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 		if len(psc.SupplementalGroups) > 0 {
 			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.supplementalGroups"))
 		}
-		if psc.RunAsGroup != nil && (psc.RunAsUser == nil || mainContainerSetsUserWithoutGroup(w)) {
+		if psc.RunAsGroup != nil && (psc.RunAsUser == nil || aContainerSetsUserWithoutGroup(w)) {
 			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "podSecurityContext.runAsGroup"))
 		}
 	}
@@ -1045,26 +1059,36 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 	return diags
 }
 
-// mainContainerSetsUserWithoutGroup reports whether the main container's own
-// security context sets runAsUser and leaves runAsGroup unset. Its user then wins
-// over the pod's (see applyPodUser) and is rendered without a group, so a
-// pod-level runAsGroup reaches no part of the service — where a pod would run that
-// container under the pod's group.
+// aContainerSetsUserWithoutGroup reports whether any container or init container
+// of the workload sets runAsUser in its own security context and leaves
+// runAsGroup unset. That container's user then wins over the pod's (see
+// applyPodUser) and is rendered without a group, so a pod-level runAsGroup
+// reaches no part of its service — where a pod would run that container under the
+// pod's group.
 //
 // A container that sets a group of its own is not this case: its group replaces
 // the pod's, as it does in a pod, and nothing the author wrote is left out.
-func mainContainerSetsUserWithoutGroup(w *types.Workload) bool {
-	name, ok := pickMainContainerName(w)
-	if !ok {
-		return false
+func aContainerSetsUserWithoutGroup(w *types.Workload) bool {
+	setsUserWithoutGroup := func(sc *types.ContainerSecurityContext) bool {
+		return sc != nil && sc.RunAsUser != nil && sc.RunAsGroup == nil
 	}
-	c, _ := w.Containers.Get(name)
-	sc := c.SecurityContext
-	return sc != nil && sc.RunAsUser != nil && sc.RunAsGroup == nil
+	for _, c := range w.Containers.All() {
+		if setsUserWithoutGroup(c.SecurityContext) {
+			return true
+		}
+	}
+	for _, c := range w.InitContainers {
+		if setsUserWithoutGroup(c.SecurityContext) {
+			return true
+		}
+	}
+	return false
 }
 
-// applyPodUser sets the compose service user from the pod-level security
-// context, unless a container-level User already won.
+// applyPodUser sets a compose service's user from the pod-level security
+// context, unless the container's own user already won. It runs for every
+// service a workload renders to — main, sidecar and init alike — because a pod's
+// user identity is the identity each of its containers runs as.
 func applyPodUser(svc *Service, w *types.Workload) {
 	if svc.User != "" {
 		return // container-level User wins

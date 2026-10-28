@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 )
@@ -614,7 +615,7 @@ func workspaceFrom(raw json.RawMessage) (string, error) {
 		if json.Unmarshal(raw, &probe) != nil {
 			return "", nil
 		}
-		return "", fmt.Errorf("the `workspaceRoot` parameter must be a string: %w", err)
+		return "", fmt.Errorf("the `workspaceRoot` parameter must be a string: %w", authoredshape.DescribeJSONDecodeError(err))
 	}
 	return params.WorkspaceRoot, nil
 }

@@ -15,6 +15,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -163,7 +164,7 @@ func renderPluginFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, p
 	}
 	var wp types.Plugin
 	if err := yaml.Unmarshal(data, &wp); err != nil {
-		return fmt.Errorf("parse Plugin at %q: %w", path, err)
+		return fmt.Errorf("parse Plugin at %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	identifier := identifierVersion(wp.Metadata.Name, wp.Metadata.Version)
 

@@ -198,7 +198,7 @@ func TestWholeCatalogScopesHaltOnEveryAggregaDocumentTheyCannotLoad(t *testing.T
 			filepath.Join("component", "broken.yaml"),
 			"mapping values are not allowed",
 			filepath.Join("component", "listed.yaml"),
-			"cannot unmarshal",
+			"a list is written where a map is expected",
 		} {
 			if !strings.Contains(chain, want) {
 				t.Errorf("%s halted without naming %q:\n%s", name, want, chain)

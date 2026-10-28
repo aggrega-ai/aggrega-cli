@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -29,7 +30,7 @@ func renderMappingLibraryFile(_ context.Context, _ *workspaceconfig.ResolvedWork
 	}
 	var lib types.MappingLibrary
 	if err := yaml.Unmarshal(data, &lib); err != nil {
-		return fmt.Errorf("parse MappingLibrary at %q: %w", path, err)
+		return fmt.Errorf("parse MappingLibrary at %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	name := lib.Metadata.Name
 

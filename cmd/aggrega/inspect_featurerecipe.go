@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -30,7 +31,7 @@ func renderFeatureRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWork
 	}
 	var fr types.FeatureRecipe
 	if err := yaml.Unmarshal(data, &fr); err != nil {
-		return fmt.Errorf("parse FeatureRecipe at %q: %w", path, err)
+		return fmt.Errorf("parse FeatureRecipe at %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	identifier := identifierVersion(fr.Metadata.Name, fr.Metadata.Version)
 

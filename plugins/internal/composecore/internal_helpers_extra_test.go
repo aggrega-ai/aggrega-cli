@@ -220,10 +220,10 @@ func TestApplyContainerSecurityContext_EveryField(t *testing.T) {
 	}
 }
 
-// TestApplyPodLevelFieldsToService_EveryBranch pins the precedence:
-// container-level User wins; pod-level RunAsUser fills when container-
-// level absent; nil-PSC → no-op.
-func TestApplyPodLevelFieldsToService_EveryBranch(t *testing.T) {
+// TestApplyPodUser_EveryBranch pins the precedence: container-level User
+// wins; pod-level RunAsUser fills when container-level absent; nil-PSC →
+// no-op.
+func TestApplyPodUser_EveryBranch(t *testing.T) {
 	t.Parallel()
 	runAsUser := 1000
 	runAsGroup := 2000
@@ -233,7 +233,7 @@ func TestApplyPodLevelFieldsToService_EveryBranch(t *testing.T) {
 	w := &types.Workload{
 		PodSecurityContext: &types.PodSecurityContext{RunAsUser: &runAsUser},
 	}
-	applyPodLevelFieldsToService(&svc, w)
+	applyPodUser(&svc, w)
 	if svc.User != "preset:override" {
 		t.Errorf("container-level User should win; got %q", svc.User)
 	}
@@ -241,7 +241,7 @@ func TestApplyPodLevelFieldsToService_EveryBranch(t *testing.T) {
 	// Nil PodSecurityContext → no-op.
 	svc = Service{}
 	w = &types.Workload{}
-	applyPodLevelFieldsToService(&svc, w)
+	applyPodUser(&svc, w)
 	if svc.User != "" {
 		t.Errorf("nil PSC should not set User; got %q", svc.User)
 	}
@@ -249,7 +249,7 @@ func TestApplyPodLevelFieldsToService_EveryBranch(t *testing.T) {
 	// Nil RunAsUser inside PSC → no-op.
 	svc = Service{}
 	w = &types.Workload{PodSecurityContext: &types.PodSecurityContext{}}
-	applyPodLevelFieldsToService(&svc, w)
+	applyPodUser(&svc, w)
 	if svc.User != "" {
 		t.Errorf("nil RunAsUser should not set User; got %q", svc.User)
 	}
@@ -262,7 +262,7 @@ func TestApplyPodLevelFieldsToService_EveryBranch(t *testing.T) {
 			RunAsGroup: &runAsGroup,
 		},
 	}
-	applyPodLevelFieldsToService(&svc, w)
+	applyPodUser(&svc, w)
 	if svc.User != "1000:2000" {
 		t.Errorf("PSC with group = %q; want 1000:2000", svc.User)
 	}
@@ -272,7 +272,7 @@ func TestApplyPodLevelFieldsToService_EveryBranch(t *testing.T) {
 	w = &types.Workload{
 		PodSecurityContext: &types.PodSecurityContext{RunAsUser: &runAsUser},
 	}
-	applyPodLevelFieldsToService(&svc, w)
+	applyPodUser(&svc, w)
 	if svc.User != "1000" {
 		t.Errorf("PSC without group = %q; want 1000", svc.User)
 	}

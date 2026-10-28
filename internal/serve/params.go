@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 )
 
 // decodeParams decodes a request's params into dst, refusing any field dst does
@@ -71,11 +73,13 @@ func paramSent(req *jsonRPCRequest, name string) bool {
 	return sent
 }
 
-// decodeParamsValue performs the decode itself, wrapping the shape fault the way
-// every handler already reports one.
+// decodeParamsValue performs the decode itself. A value of the wrong shape is
+// reported as the field it was sent under, the shape it was sent in and the
+// shape the field takes — never as the program's params type, which a client
+// cannot see.
 func decodeParamsValue(raw json.RawMessage, dst any) error {
 	if err := json.Unmarshal(raw, dst); err != nil {
-		return err
+		return authoredshape.DescribeJSONDecodeError(err)
 	}
 	return nil
 }

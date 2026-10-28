@@ -135,23 +135,29 @@ func TestPortSpec_TransportMarshalsAsTheMappingForm(t *testing.T) {
 // fault, so a row cannot start passing because some other refusal fired first.
 func TestPortSpec_RefusesWhatTheSchemaRefuses(t *testing.T) {
 	t.Parallel()
+	// The YAML refusal is read by the author of the document, so it names what
+	// they wrote; the JSON one is read on the render-payload crossing only, so it
+	// is held to the refusal alone.
 	cases := []struct {
-		name    string
-		yamlDoc string
-		jsonDoc string
-		wantIn  string
+		name     string
+		yamlDoc  string
+		jsonDoc  string
+		wantYAML string
+		wantJSON string
 	}{
 		{
-			name:    "a key the mapping form does not declare",
-			yamlDoc: "dns:\n  port: 53\n  transport: UDP\n",
-			jsonDoc: `{"dns":{"port":53,"transport":"UDP"}}`,
-			wantIn:  "unexpected key",
+			name:     "a key the mapping form does not declare",
+			yamlDoc:  "dns:\n  port: 53\n  transport: UDP\n",
+			jsonDoc:  `{"dns":{"port":53,"transport":"UDP"}}`,
+			wantYAML: `line 3: unexpected key "transport"; a port is a number, or a map of port and protocol`,
+			wantJSON: "unexpected key",
 		},
 		{
-			name:    "a sequence is neither a number nor a mapping",
-			yamlDoc: "dns:\n  - 53\n",
-			jsonDoc: `{"dns":[53]}`,
-			wantIn:  "PortSpec",
+			name:     "a sequence is neither a number nor a mapping",
+			yamlDoc:  "dns:\n  - 53\n",
+			jsonDoc:  `{"dns":[53]}`,
+			wantYAML: "line 2: a list is written where a number or a map is expected; a port is a number, or a map of port and protocol",
+			wantJSON: "PortSpec",
 		},
 	}
 	for _, tc := range cases {
@@ -161,15 +167,99 @@ func TestPortSpec_RefusesWhatTheSchemaRefuses(t *testing.T) {
 			err := yaml.Unmarshal([]byte(tc.yamlDoc), &fromYAML)
 			if err == nil {
 				t.Errorf("yaml: accepted %q", tc.yamlDoc)
-			} else if !strings.Contains(err.Error(), tc.wantIn) {
-				t.Errorf("yaml: error %q does not mention %q", err, tc.wantIn)
+			} else if !strings.Contains(err.Error(), tc.wantYAML) {
+				t.Errorf("yaml: error %q does not mention %q", err, tc.wantYAML)
+			} else if strings.Contains(err.Error(), "PortSpec") {
+				t.Errorf("yaml: error %q names the program's type, which the author never wrote", err)
 			}
 			var fromJSON OrderedMap[PortSpec]
 			err = json.Unmarshal([]byte(tc.jsonDoc), &fromJSON)
 			if err == nil {
 				t.Errorf("json: accepted %q", tc.jsonDoc)
-			} else if !strings.Contains(err.Error(), tc.wantIn) {
-				t.Errorf("json: error %q does not mention %q", err, tc.wantIn)
+			} else if !strings.Contains(err.Error(), tc.wantJSON) {
+				t.Errorf("json: error %q does not mention %q", err, tc.wantJSON)
+			}
+		})
+	}
+}
+
+// TestPortAndResourceRefusalsNameWhatTheAuthorWrote holds every refusal a port or
+// a resource quantity raises while a Workload is read to the author's words: the
+// key, the line, the shape written and the shape the position takes, and neither
+// the program's own type names nor the decoder's text. One fault per row.
+func TestPortAndResourceRefusalsNameWhatTheAuthorWrote(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		doc  string
+		into func() any
+		want string
+	}{
+		{
+			name: "a port written as text",
+			doc:  "http: abc\n",
+			into: func() any { return &OrderedMap[PortSpec]{} },
+			want: `under key "http" (line 1): line 1: text ` + "`abc`" + ` is written where a number is expected; a port is a number, or a map of port and protocol`,
+		},
+		{
+			name: "a port number written as text",
+			doc:  "http:\n  port: abc\n",
+			into: func() any { return &OrderedMap[PortSpec]{} },
+			want: `under key "http" (line 2): under key "port" (line 2): line 2: text ` + "`abc`" + ` is written where a number is expected`,
+		},
+		{
+			name: "a protocol written as a list",
+			doc:  "http:\n  port: 80\n  protocol: [TCP]\n",
+			into: func() any { return &OrderedMap[PortSpec]{} },
+			want: `under key "http" (line 2): under key "protocol" (line 3): line 3: a list is written where text is expected`,
+		},
+		{
+			name: "a port mapping key written as a list",
+			doc:  "http:\n  ? [port]\n  : 80\n",
+			into: func() any { return &OrderedMap[PortSpec]{} },
+			want: `under key "http" (line 2): line 2: reading a key: line 2: a list is written where text is expected`,
+		},
+		{
+			name: "a resource quantity written as a list",
+			doc:  "cpu: [1]\n",
+			into: func() any { return &ResourceList{} },
+			want: `under key "cpu" (line 1): line 1: a list is written where text is expected`,
+		},
+		{
+			name: "a resource key written as a list",
+			doc:  "? [cpu]\n: 1\n",
+			into: func() any { return &ResourceList{} },
+			want: `line 1: reading a key: line 1: a list is written where text is expected`,
+		},
+		{
+			name: "resources written as a list",
+			doc:  "- 1\n",
+			into: func() any { return &ResourceList{} },
+			want: `line 1: a list is written where a map is expected`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("decoding panicked: %v", r)
+					}
+				}()
+				err = yaml.Unmarshal([]byte(tc.doc), tc.into())
+			}()
+			if err == nil {
+				t.Fatalf("accepted %q", tc.doc)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not say %q", err, tc.want)
+			}
+			for _, leak := range []string{"PortSpec", "ResourceList", "cannot unmarshal", "!!"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("error %q carries %q, which names nothing the author wrote", err, leak)
+				}
 			}
 		})
 	}

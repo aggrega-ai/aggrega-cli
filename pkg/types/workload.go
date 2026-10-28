@@ -29,6 +29,8 @@ import (
 	"io"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 )
 
 //go:generate go run ../../internal/tools/typegen workload_gen.go
@@ -158,12 +160,16 @@ func (w *Workload) ContainerPortsByName() map[string]PortSpec {
 // declare, is an error rather than a silent drop — the schema refuses both, and
 // a codec that accepted what the schema refuses would make the typed entry
 // point disagree with the authored one.
+//
+// Its errors are read by the author of the document the port is written in, so
+// they name the key and the shapes that author wrote, in the same form the
+// ordered map around a port names its own keys, and never this type.
 func (p *PortSpec) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
 		var n int
 		if err := node.Decode(&n); err != nil {
-			return fmt.Errorf("PortSpec: decoding port number at line %d: %w", node.Line, err)
+			return fmt.Errorf("%w; %s", authoredshape.DescribeYAMLDecodeError(err), portShapes)
 		}
 		p.Port = n
 		return nil
@@ -172,30 +178,35 @@ func (p *PortSpec) UnmarshalYAML(node *yaml.Node) error {
 			keyNode, valNode := node.Content[i], node.Content[i+1]
 			var key string
 			if err := keyNode.Decode(&key); err != nil {
-				return fmt.Errorf("PortSpec: decoding key at line %d: %w", keyNode.Line, err)
+				return fmt.Errorf("line %d: reading a key: %w", keyNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 			}
 			switch key {
 			case "port":
 				var n int
 				if err := valNode.Decode(&n); err != nil {
-					return fmt.Errorf("PortSpec.port at line %d: %w", valNode.Line, err)
+					return fmt.Errorf("under key %q (line %d): %w", key, valNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 				}
 				p.Port = n
 			case "protocol":
 				var s string
 				if err := valNode.Decode(&s); err != nil {
-					return fmt.Errorf("PortSpec.protocol at line %d: %w", valNode.Line, err)
+					return fmt.Errorf("under key %q (line %d): %w", key, valNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 				}
 				p.Protocol = s
 			default:
-				return fmt.Errorf("PortSpec: unexpected key %q at line %d; a port is a number, or a mapping of port and protocol", key, keyNode.Line)
+				return fmt.Errorf("line %d: unexpected key %q; %s", keyNode.Line, key, portShapes)
 			}
 		}
 		return nil
 	default:
-		return fmt.Errorf("PortSpec: expected a port number or a mapping of port and protocol, got node kind %d at line %d", node.Kind, node.Line)
+		return fmt.Errorf("line %d: %s; %s", node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), "a number or a map"), portShapes)
 	}
 }
+
+// portShapes is the guidance a refused port closes with: the two shapes a port
+// is written in.
+const portShapes = "a port is a number, or a map of port and protocol"
 
 // UnmarshalJSON mirrors UnmarshalYAML on the render-payload crossing: a JSON
 // number decodes to the port, a JSON object to the port and its protocol.
@@ -431,19 +442,23 @@ type ResourceList struct {
 
 // UnmarshalYAML decodes a mapping node, routing cpu and memory to the typed
 // fields and every other key into Extended preserving author order.
+//
+// Its errors name the key and the shapes the author wrote, in the same form the
+// ordered map names its own keys, and never this type.
 func (r *ResourceList) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("ResourceList: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
+		return fmt.Errorf("line %d: %s", node.Line,
+			authoredshape.WrittenWhereExpected(authoredshape.OfYAMLNode(node), authoredshape.Map.Phrase()))
 	}
 	for i := 0; i < len(node.Content); i += 2 {
 		keyNode, valNode := node.Content[i], node.Content[i+1]
 		var key string
 		if err := keyNode.Decode(&key); err != nil {
-			return fmt.Errorf("ResourceList: decoding key at line %d: %w", keyNode.Line, err)
+			return fmt.Errorf("line %d: reading a key: %w", keyNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 		}
 		var val string
 		if err := valNode.Decode(&val); err != nil {
-			return fmt.Errorf("ResourceList.%s at line %d: %w", key, valNode.Line, err)
+			return fmt.Errorf("under key %q (line %d): %w", key, valNode.Line, authoredshape.DescribeYAMLDecodeError(err))
 		}
 		switch key {
 		case "cpu":

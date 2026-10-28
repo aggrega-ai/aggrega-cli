@@ -64,7 +64,7 @@ func TestUnloadableDocumentAnswersEachShape(t *testing.T) {
 			name:       "the envelope with a header that does not decode",
 			data:       "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  - name: core/listed\nspec: {}\n",
 			unloadable: true,
-			reason:     "failed to decode the envelope: line 4: cannot unmarshal !!seq",
+			reason:     "failed to decode the envelope: line 4 (metadata): a list is written where a map is expected",
 		},
 		{
 			name:       "a file that could not be read",
@@ -124,8 +124,10 @@ func TestUnloadableDocumentAnswersEachShape(t *testing.T) {
 			if !strings.Contains(got.Error(), tc.reason) {
 				t.Errorf("the answer does not say %q: %v", tc.reason, got)
 			}
-			if strings.Contains(got.Error(), "struct {") {
-				t.Errorf("the answer names the Go type the decoder read into, which no author wrote: %v", got)
+			for _, decoderText := range []string{"struct {", "cannot unmarshal", "!!seq"} {
+				if strings.Contains(got.Error(), decoderText) {
+					t.Errorf("the answer carries the decoder's own text %q, which names nothing an author wrote: %v", decoderText, got)
+				}
 			}
 		})
 	}

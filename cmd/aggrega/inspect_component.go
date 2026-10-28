@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -28,7 +29,7 @@ func renderComponentFile(_ context.Context, _ *workspaceconfig.ResolvedWorkspace
 	}
 	var comp types.Component
 	if err := yaml.Unmarshal(data, &comp); err != nil {
-		return fmt.Errorf("parse Component at %q: %w", path, err)
+		return fmt.Errorf("parse Component at %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
 	identifier := identifierVersion(comp.Metadata.Name, comp.Metadata.Version)
 	if comp.Metadata.Name == "" {
