@@ -12,8 +12,7 @@ localSourceDigests:
     digest: sha256:a56232cfeb4be6d682102d33f8ce000f08ea803d3111ed717078b9e7243ad6ab
 ignore:
   plugin:
-    ref: provider/helm:0.8.2-3-g3bec31e8
-    digest: sha256:f5291d20db6cd9b02b3b9b6d0c14550f34ef8980210ae7ee29a80e9fbf7a0e30
+    name: provider/helm
     patterns:
       - .git/
       - .hg/

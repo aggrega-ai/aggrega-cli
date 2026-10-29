@@ -24,7 +24,9 @@ import (
 // chosen differently — which matters only if that plugin needs a file the recorded
 // rules left out, and then the build says so itself, naming the file.
 //
-// Each advisory names both plugins and the difference. The recorded side is the
+// Each advisory names both plugins and the difference: the recorded plugin by the
+// name the lock records, which carries no version, and the serving plugin by its
+// entity reference. The recorded side is the
 // plugin block of the lock beside the entity — the author's own lock for an entity
 // in one of this workspace's catalog directories, and the lock a publication
 // carried for one resolved from a registry — and a section recording no plugin is
@@ -91,10 +93,10 @@ func ignoreRuleDifference(document, kind, name, capability string, authored bool
 	if err != nil || !ok {
 		return "", false
 	}
-	recordedRef, recordedPatterns, recordedFiles := "no plugin", []string(nil), []string(nil)
+	recordedPlugin, recordedPatterns, recordedFiles := "no plugin", []string(nil), []string(nil)
 	if lock.Ignore.Plugin != nil {
 		p := lock.Ignore.Plugin
-		recordedRef, recordedPatterns, recordedFiles = p.Ref, p.Patterns, p.Files
+		recordedPlugin, recordedPatterns, recordedFiles = p.Name, p.Patterns, p.Files
 	}
 	var herePatterns, hereFiles []string
 	if served.Ignore != nil {
@@ -106,7 +108,7 @@ func ignoreRuleDifference(document, kind, name, capability string, authored bool
 	line := fmt.Sprintf("warning: %s %q was pinned under the ignore rules of %s (%s), and the plugin serving %q in "+
 		"this workspace, %s, declares %s. Its files are the ones the recorded rules kept, and a build here reads "+
 		"those; where %s needs a file they left out, its build fails naming that file",
-		kind, name, recordedRef, describeRules(recordedPatterns, recordedFiles), capability, served.Ref,
+		kind, name, recordedPlugin, describeRules(recordedPatterns, recordedFiles), capability, served.Ref,
 		describeRules(herePatterns, hereFiles), served.Ref)
 	if authored {
 		line += fmt.Sprintf(". Running `aggrega pin` on it records the rules of %s instead", served.Ref)

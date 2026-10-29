@@ -34,8 +34,7 @@ func TestThePinStepRecordsItsRulesAndTheHoldAppliesThem(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "chart", "notes.bak"), "old\n")
 	writeFile(t, filepath.Join(dir, ".aggregaignore"), "*.bak\n")
 
-	served := catalog.ServingProvider{Ref: "provider/example:1.0.0",
-		Digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+	served := catalog.ServingProvider{Name: "provider/example", Ref: "provider/example:1.0.0",
 		Ignore: &types.PluginSourceIgnore{Patterns: []string{".git/"}}}
 	asked := 0
 	serving := func(capability string) (catalog.ServingProvider, bool, error) {
@@ -76,7 +75,7 @@ func TestThePinStepRecordsItsRulesAndTheHoldAppliesThem(t *testing.T) {
 		t.Errorf("pinned %q; want %q — the plugin's .git/ and the author's *.bak leave the rest out", pinned, want)
 	}
 	wantIgnore := &types.IgnoreRules{
-		Plugin: &types.IgnorePlugin{Ref: served.Ref, Digest: served.Digest, Patterns: []string{".git/"}},
+		Plugin: &types.IgnorePlugin{Name: served.Name, Patterns: []string{".git/"}},
 		Rules: []types.IgnoreRule{
 			{Pattern: ".git/", Within: "chart", From: types.IgnoreRuleFromPlugin},
 			{Pattern: "*.bak", Within: ".", From: ".aggregaignore"},

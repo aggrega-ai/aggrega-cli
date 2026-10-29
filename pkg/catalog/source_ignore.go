@@ -9,20 +9,20 @@ import (
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // ServingProvider is the provider plugin that serves a capability in a
-// workspace, as the pin step records it beside an entity: the plugin's entity
-// reference and the digest of its entity document, and the ignore rules it
-// declares for a source it renders.
+// workspace: its name, which the pin step records beside an entity, its entity
+// reference, which a reader is shown, and the ignore rules it declares for a
+// source it renders.
 type ServingProvider struct {
+	// Name is the plugin's `<pluginType>/<name>`, with no version. It is what
+	// the pin step records, so pinning again under another release of the same
+	// plugin records the same name.
+	Name string
 	// Ref is the plugin's entity reference, `<pluginType>/<name>:<version>`.
 	Ref string
-	// Digest is the digest of the plugin's entity document, as this view reads it.
-	Digest string
 	// Ignore is what the plugin declares its ecosystem never ships beside a
 	// source, and nil where it declares nothing.
 	Ignore *types.PluginSourceIgnore
@@ -51,37 +51,11 @@ func (c *Catalog) servingProvider(capability string, bindings map[string]string)
 	if err != nil || !ok {
 		return ServingProvider{}, false, err
 	}
-	digest, err := c.pluginEntityDigest(p)
-	if err != nil {
-		return ServingProvider{}, false, err
-	}
 	return ServingProvider{
+		Name:   p.Coordinate(),
 		Ref:    p.Coordinate() + ":" + p.Metadata.Version,
-		Digest: digest,
 		Ignore: p.Spec.Provider.Contract.SourceIgnore,
 	}, true, nil
-}
-
-// pluginEntityDigest returns the digest of the entity document the resolution
-// served p from: the binary's own copy for a plugin built into it, and otherwise
-// the row this catalog takes for the entity it indexed.
-func (c *Catalog) pluginEntityDigest(p types.Plugin) (string, error) {
-	if c.resolveEmbeddedProviders {
-		if _, embeddedCoordinate := embeddedCoordinates()[p.Coordinate()]; embeddedCoordinate {
-			raw, ok := embedded.LookupEntity(p.Coordinate())
-			if ok {
-				return oci.DocumentDigest(raw), nil
-			}
-		}
-	}
-	return c.entityRowDigest("Plugin", entityIndexKey(p.Coordinate(), p.Metadata.Version))
-}
-
-// embeddedCoordinates is the set of plugin coordinates the binary carries an
-// entity for.
-func embeddedCoordinates() map[string]struct{} {
-	_, coords := embeddedPluginEntities()
-	return coords
 }
 
 // ComposeIgnore builds the ignore section the pin step records for the Recipe or
@@ -120,7 +94,7 @@ func ComposeIgnore(path string, serving func() (*ServingProvider, error)) (*type
 	var plugin *types.IgnorePlugin
 	if served != nil {
 		declared = served.Ignore
-		plugin = &types.IgnorePlugin{Ref: served.Ref, Digest: served.Digest}
+		plugin = &types.IgnorePlugin{Name: served.Name}
 		if declared != nil {
 			plugin.Patterns = append([]string(nil), declared.Patterns...)
 			plugin.Files = append([]string(nil), declared.Files...)

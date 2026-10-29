@@ -88,13 +88,17 @@ type IgnoreRules struct {
 }
 
 // IgnorePlugin is the plugin an entity's ignore rules were composed from: its
-// entity reference and the digest of its entity document, and the patterns and
-// ignore-file names it declared.
+// name, `<pluginType>/<name>` with no version, and the patterns and ignore-file
+// names it declared.
+//
+// It records no version and no digest of the plugin. Nothing a reading of the
+// source directory does depends on which release of the plugin declared the
+// rules — every reading applies the recorded rules — so a lock pinned again
+// under another release whose rules are the same is byte-identical.
 //
 // Defined in entity-lock-v1alpha1.schema.json#/properties/ignore/properties/plugin.
 type IgnorePlugin struct {
-	Ref      string   `json:"ref" yaml:"ref"`
-	Digest   string   `json:"digest" yaml:"digest"`
+	Name     string   `json:"name" yaml:"name"`
 	Patterns []string `json:"patterns,omitempty" yaml:"patterns,omitempty"`
 	Files    []string `json:"files,omitempty" yaml:"files,omitempty"`
 }
