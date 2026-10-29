@@ -6,7 +6,7 @@ entities:
         - manifest.spec.mappings.components.type.core/devtool/adminer
     - uri: compose/compose-bridge-fr:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:76ecd338a3027d6856831e6538709b70849b4e2a9a3a6f877d7c463c05315fa7
+      digest: sha256:d71e4049ef9acbf7cea5cfb694b2306ce49844d05f2fc0630acbfab7bfe49f2b
       referenced_from:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
     - uri: compose/postgres:1.0.0
@@ -16,7 +16,7 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/compose-bridge:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:5e14e9850061af4b31af30446e3dcfe4c06ed8dc69c6b4659b4c03857e0e2d1e
+      digest: sha256:5e29f7cdc339bd0f23fb6ea1ac891395d1210707c4aeaf81a6c9a9a13c9a1af4
       referenced_from:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
         - release.spec.boundaries.bridge.features.gateway.type
@@ -56,7 +56,7 @@ release_documents:
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:76fafe9f7c5e97309862a5b81348fee43a198312b565a15eaeb7a7894b023635
+      digest: sha256:42229c361ec193fe0a3a7dc68f745dc2790bf882157cd518b677748cc0362696
       consumers:
         - consumer_uri: BaseComponents
           fragments:

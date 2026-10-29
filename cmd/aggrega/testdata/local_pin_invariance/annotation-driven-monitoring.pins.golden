@@ -53,7 +53,7 @@ release_documents:
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:76fafe9f7c5e97309862a5b81348fee43a198312b565a15eaeb7a7894b023635
+      digest: sha256:42229c361ec193fe0a3a7dc68f745dc2790bf882157cd518b677748cc0362696
       consumers:
         - consumer_uri: BaseComponents
           fragments:
