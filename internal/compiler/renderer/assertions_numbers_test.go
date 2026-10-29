@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // TestEvaluateAssertion_NumbersCompareAcrossKinds pins the assertion surface's
@@ -75,6 +76,105 @@ func TestEvaluateAssertion_NumbersCompareAcrossKinds(t *testing.T) {
 				if !strings.Contains(err.Error(), ".values.") {
 					t.Errorf("the refusal does not carry the path it read: %q", err.Error())
 				}
+			}
+		})
+	}
+}
+
+// assertionNumbers is the authored numbers both surfaces are handed, each as its
+// text, the way a build carries a Component's or a Recipe's own values.
+var assertionNumbers = [][2]string{
+	{"zero", "0"}, {"one", "1"}, {"tenth", "0.1"}, {"e7", "1e-7"}, {"huge", "1e+21"},
+}
+
+func assertionNumbersContexts() (*types.TemplateContext, AssertionContext) {
+	ordered := types.OrderedMap[any]{}
+	plain := map[string]any{}
+	for _, kv := range assertionNumbers {
+		ordered.Set(kv[0], json.Number(kv[1]))
+		plain[kv[0]] = json.Number(kv[1])
+	}
+	return &types.TemplateContext{Context: types.ContextBlock{InstanceID: "db"}, Values: ordered},
+		AssertionContext{Values: plain}
+}
+
+// An assertion reads an authored number exactly as a value template does: the
+// same condition comes to the same outcome on both surfaces, a zero is false to
+// `if` and empty to `default`, an authored decimal equals the same literal, and a
+// number turned into text prints in its shortest decimal form.
+func TestEvaluateAssertion_ReadsAnAuthoredNumberAsAValueTemplateDoes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		cond string
+		want string
+	}{
+		{`.values.zero`, "false"},
+		{`not .values.zero`, "true"},
+		{`empty .values.zero`, "true"},
+		{`eq (.values.zero | default 7) 7`, "true"},
+		{`eq .values.zero 0`, "true"},
+		{`eq .values.tenth 0.1`, "true"},
+		{`lt .values.tenth 0.1`, "false"},
+		{`eq .values.one 1.0`, "true"},
+		{`eq (printf "%v" .values.e7) "0.0000001"`, "true"},
+		{`eq (printf "%d" .values.one) "1"`, "true"},
+		{`eq (toString .values.huge) "1000000000000000000000"`, "true"},
+		// Presence is still told apart from emptiness by the presence helpers.
+		{`hasKey .values "zero"`, "true"},
+		{`eq (optional .values "zero" 9) 0`, "true"},
+		{`eq .values.one "1"`, "refused: cannot compare a number with text"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.cond, func(t *testing.T) {
+			t.Parallel()
+			valueCtx, assertionCtx := assertionNumbersContexts()
+			out, err := EvalTemplate("t", `{{ if `+tc.cond+` }}true{{ else }}false{{ end }}`, valueCtx, redact.Keys{})
+			valueSide := comparisonOutcome(t, err, out, false)
+			aerr := EvaluateAssertion("t", `{{ if `+tc.cond+` }}{{ fail "true" }}{{ end }}`, assertionCtx, redact.Keys{})
+			assertionSide := comparisonOutcome(t, aerr, "", true)
+			if !strings.HasPrefix(assertionSide, tc.want) {
+				t.Errorf("assertion: got %q, want %q", assertionSide, tc.want)
+			}
+			if valueSide != assertionSide {
+				t.Errorf("the two surfaces disagree: value template %q, assertion %q", valueSide, assertionSide)
+			}
+		})
+	}
+}
+
+// An authored 0 passes a check written with `with` or `if`, which read it as
+// empty, and is refused by one written with `hasKey`, which asks whether the
+// author wrote the key at all; a number an assertion prints in its sentence
+// prints in its shortest decimal form.
+func TestEvaluateAssertion_AnAuthoredZeroIsEmptyAndStillPresent(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		body    string
+		wantMsg string // empty: the assertion passes
+	}{
+		{"with passes a zero", `{{ with optional .values "zero" "" }}{{ fail (printf "zero is %v" .) }}{{ end }}`, ""},
+		{"if passes a zero", `{{ if optional .values "zero" "" }}{{ fail "zero is set" }}{{ end }}`, ""},
+		{"hasKey refuses a zero", `{{ if hasKey .values "zero" }}{{ fail (printf "zero is %v" .values.zero) }}{{ end }}`, "zero is 0"},
+		{"hasKey passes an absent key", `{{ if hasKey .values "absent" }}{{ fail "absent is set" }}{{ end }}`, ""},
+		{"a decimal prints whole", `{{ fail (printf "e7 is %v, huge is %v" .values.e7 .values.huge) }}`, "e7 is 0.0000001, huge is 1000000000000000000000"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, ctx := assertionNumbersContexts()
+			err := EvaluateAssertion("t", tc.body, ctx, redact.Keys{})
+			if tc.wantMsg == "" {
+				if err != nil {
+					t.Fatalf("want the assertion to pass, got %v", err)
+				}
+				return
+			}
+			if !AssertionCalledFail(err) {
+				t.Fatalf("want the assertion to call fail, got %v", err)
+			}
+			if !strings.HasSuffix(err.Error(), tc.wantMsg) {
+				t.Errorf("message %q, want it to end %q", err.Error(), tc.wantMsg)
 			}
 		})
 	}

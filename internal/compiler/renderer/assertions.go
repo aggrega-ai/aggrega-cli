@@ -69,6 +69,12 @@ type AssertionRecipeContext struct {
 // through index does not help either: index of a map key the map does not
 // hold halts naming the key, on this surface as on every other.)
 //
+// It reads every number the context carries as a number, exactly as a value
+// template does: `if`, `with`, `not`, `empty` and `default` take a zero as empty,
+// a number prints in its shortest decimal form, and an authored decimal equals the
+// same number written in the body. Telling an authored 0 from an absent key is the
+// presence helpers' job, `hasKey` and `optional`.
+//
 // Its eq, ne, lt, le, gt and ge compare numbers by value whatever kind carries
 // them, and refuse a number against text naming both kinds; the bindings and
 // their full behaviour are [gotmpl.AssertionComparisons].
@@ -92,9 +98,10 @@ func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.
 	// defines is readable from an assertion. What it contributes is two things.
 	// fail is the one function that exists only here, because an assertion is the
 	// only surface whose purpose is to halt the build rather than to produce text.
-	// And its comparisons read every number as a number: an assertion's job is to
-	// judge authored values, which reach it as numbers the engine's own
-	// comparisons treat as text — see gotmpl.AssertionComparisons.
+	// And it reads every number as a number through the one reading the value
+	// surface uses — the numbers field below — and compares with the comparison set
+	// the value surface installs, so an author's number means the same thing in an
+	// assertion as in a value template.
 	funcs := gotmpl.AssertionComparisons()
 	funcs["fail"] = func(msg string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrAssertionFailed(), msg)
@@ -104,6 +111,7 @@ func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.
 		text:       body,
 		scope:      templateScope{}.with(ctx, withheld),
 		missingKey: missingKeyError,
+		numbers:    true,
 		extraFuncs: funcs,
 		failed: func(stage templateEvalStage, err error) error {
 			if stage == stageParse {

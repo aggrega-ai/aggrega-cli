@@ -229,9 +229,10 @@ func TestSelfInjectValue_ReadsAnAuthoredNumberAsANumber(t *testing.T) {
 	}
 }
 
-// The reading is confined to the execution that made it: the caller's context
-// still carries each number as its text, so a surface reading numbers as their
-// text — an assertion — is handed exactly what it always was.
+// The reading is confined to the execution that made it: after a value template
+// and an assertion have both read the caller's numbers as numbers, the caller's
+// context still carries each one as its text, so the next evaluation is handed
+// exactly what the first one was.
 func TestValueTemplate_NumbersAsNumbersLeavesTheContextAlone(t *testing.T) {
 	t.Parallel()
 	ctx := numbersFixture()
@@ -244,10 +245,14 @@ func TestValueTemplate_NumbersAsNumbersLeavesTheContextAlone(t *testing.T) {
 			t.Errorf("values.%s is %T after an evaluation; the caller's context must be untouched", k, v)
 		}
 	}
+	assertionValues := map[string]any{"zero": json.Number("0")}
 	err := EvaluateAssertion("t", `{{ if .values.zero }}{{ fail "an authored 0 reads as true here" }}{{ end }}`,
-		AssertionContext{Values: map[string]any{"zero": json.Number("0")}}, redact.Keys{})
-	if !AssertionCalledFail(err) {
-		t.Errorf("an assertion reads an authored number as its text, so its 0 is true; got %v", err)
+		AssertionContext{Values: assertionValues}, redact.Keys{})
+	if err != nil {
+		t.Errorf("an assertion reads an authored number as a number, so its 0 is false; got %v", err)
+	}
+	if v, isText := assertionValues["zero"].(json.Number); !isText || v != "0" {
+		t.Errorf("values.zero is %T %v after an assertion; the caller's context must be untouched", assertionValues["zero"], assertionValues["zero"])
 	}
 	if err != nil && !errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("unexpected error: %v", err)

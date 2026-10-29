@@ -64,8 +64,8 @@ type templateEval struct {
 	// missingKey is the surface's missing-key policy; empty is missingKeyZero.
 	missingKey templateMissingKey
 	// numbers hands every number the context carries to the template as a number
-	// rather than as its text; see numbersAsNumbers. The value surfaces set it,
-	// through valueTemplate.
+	// rather than as its text; see numbersAsNumbers. The value surfaces set it
+	// through valueTemplate, and the assertion surface in EvaluateAssertion.
 	numbers bool
 	// category is the authoring domain a diagnostic raised here is charged to,
 	// which is what decides whether the author is sent to the Recipe or to the

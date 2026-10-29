@@ -23,10 +23,10 @@ import (
 // keeps the engine's.
 //
 // They differ from the engine's in one respect: every number is a number. A
-// value an author wrote reaches an assertion as a [json.Number], which the engine
-// treats as text, while a number written in the template itself arrives as an
-// integer or a floating-point value, and the engine refuses to compare across
-// those kinds at all — an integer with a decimal included. So `lt
+// number an author wrote reaches a template as an integer or a decimal of its own
+// kind, while a number written in the template itself arrives as an integer or a
+// floating-point value, and the engine refuses to compare across those kinds at
+// all — an integer with a decimal included. So `lt
 // .values.replicas 2` either stops the evaluation or, against a quoted literal,
 // compares digits as text. Here two numbers compare by
 // value whatever kind carries them — exactly, so 3 equals 3.0 and 10 is greater
