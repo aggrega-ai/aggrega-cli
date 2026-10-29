@@ -243,6 +243,14 @@ type BoundaryFRState struct {
 	// edge views, and each view carries its endpoints' assembly paths from here.
 	// Nil in a render that computed none, which leaves every assembly path empty.
 	assemblyPaths map[string]string
+
+	// ownAssemblyPaths is the render's one answer to where each boundary-scope
+	// attachment's own output is assembled, keyed exactly as Files is
+	// ([assemblyPathsByBoundaryFR]). It rides beside assemblyPaths for the same
+	// reason: both boundary-scope renders build the attachment's boundary view, and
+	// the view carries its own assembly path from here. Nil in a render that
+	// computed none, which leaves the view's assembly path empty.
+	ownAssemblyPaths map[boundaryFRKey]string
 }
 
 // consumerEnvOverride is one boundary-scope attachment's override of one
@@ -521,7 +529,7 @@ func dispatchBoundaryScopeFR(
 	//       empty per the Release pillar-split). Shared with the pre-loop
 	//       provides pre-pass so both evaluate against an identical context.
 	feat, _ := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
-	frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, frInstance, key, graph, release, boundaryAnnotations, boundaryFRState.assemblyPaths)
+	frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, frInstance, key, graph, release, boundaryAnnotations, boundaryFRState.assemblyPaths, boundaryFRState.ownAssemblyPaths[key])
 	if err != nil {
 		return err
 	}
@@ -821,6 +829,9 @@ func buildBoundaryFRRenderCtx(boundaryPath string, parameters map[string]any, bo
 // pillar-split (Aggregate authors values; Release authors infra). Shared by the
 // pre-loop provides pre-pass and the Phase B.6 dispatch so both evaluate the
 // FR's templates against an identical context.
+//
+// ownAssemblyPath is where this attachment's own output is assembled
+// ([assemblyPathsByBoundaryFR]); the boundary view carries it as its assembly path.
 func buildBoundaryFRTemplateContext(
 	allProvides NodeProvides,
 	fr *types.FeatureRecipe,
@@ -830,8 +841,9 @@ func buildBoundaryFRTemplateContext(
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 	assemblyPaths map[string]string,
+	ownAssemblyPath string,
 ) (*types.TemplateContext, error) {
-	boundaryCtx, err := buildBoundaryContext(allProvides, key.BoundaryPath, graph, release, boundaryAnnotations, assemblyPaths)
+	boundaryCtx, err := buildBoundaryContext(allProvides, key.BoundaryPath, graph, release, boundaryAnnotations, assemblyPaths, ownAssemblyPath)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: build context for boundary %q", frInstance, key.BoundaryPath))
 	}
@@ -905,7 +917,7 @@ func PrepopulateBoundaryScopeProvides(
 				continue
 			}
 			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
-			frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, instName, key, graph, release, boundaryAnnotations, state.assemblyPaths)
+			frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, instName, key, graph, release, boundaryAnnotations, state.assemblyPaths, state.ownAssemblyPaths[key])
 			if err != nil {
 				return err
 			}
@@ -1131,6 +1143,9 @@ func evaluateBoundaryFRTemplates(
 //
 //   - Path: boundaryPath as given — the Release boundary path, never the
 //     evaluated directory its output is assembled under.
+//   - AssemblyPath: assemblyPath as given — the directory the attachment's own
+//     output is assembled into, the path of the dispatch key the routing places
+//     that output under ([boundaryFRDispatch]).
 //   - BoundaryName: the last segment of the boundary path (the map key
 //     in release.spec.boundaries).
 //   - Components: every node in the boundary subtree (recursive),
@@ -1152,7 +1167,8 @@ func evaluateBoundaryFRTemplates(
 //
 // assemblyPaths is the render's one answer to where each node's output is
 // assembled ([assemblyPathsByNode]); an endpoint it holds nothing for carries an
-// empty assembly path.
+// empty assembly path. assemblyPath is the attachment's own answer
+// ([assemblyPathsByBoundaryFR]); empty where there is none.
 func buildBoundaryContext(
 	allProvides NodeProvides,
 	boundaryPath string,
@@ -1160,6 +1176,7 @@ func buildBoundaryContext(
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 	assemblyPaths map[string]string,
+	assemblyPath string,
 ) (*types.BoundaryContext, error) {
 	if release == nil {
 		return nil, cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, "internal error while building a boundary render context: no Release was supplied", nil, nil)
@@ -1171,6 +1188,7 @@ func buildBoundaryContext(
 
 	bc := &types.BoundaryContext{
 		Path:         boundaryPath,
+		AssemblyPath: assemblyPath,
 		BoundaryName: parts[len(parts)-1],
 	}
 	if bc.BoundaryName == "" && len(parts) > 1 {

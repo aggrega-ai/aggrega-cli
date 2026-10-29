@@ -608,8 +608,16 @@ type StepOutput struct {
 // receives .boundary.* in templates instead of .context.*. Population happens
 // at feature rendering's boundary-scope dispatch branch; component-scope FRs leave the
 // pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
+//
+// Path names the Release boundary the FeatureRecipe is attached to; AssemblyPath
+// names the directory, relative to the build's output directory, that the
+// attachment's own output is assembled into — the dispatch path the render routes
+// that output under. It equals an edge's SourceAssemblyPath or TargetAssemblyPath
+// exactly when that endpoint is assembled into the same file. Carried as opaque
+// data; the core does not interpret it.
 type BoundaryContext struct {
 	Path                           string                    `json:"path" yaml:"path"`
+	AssemblyPath                   string                    `json:"assembly_path,omitempty" yaml:"assembly_path,omitempty"`
 	BoundaryName                   string                    `json:"boundary_name" yaml:"boundary_name"`
 	Components                     OrderedMap[ComponentInfo] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 	InternalUsesEdges              []EnrichedEdge            `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty"`

@@ -96,6 +96,65 @@ func TestAssemblyPaths_AreTheDispatchPathsThePerNodeLoopEvaluates(t *testing.T) 
 	}
 }
 
+// TestBoundaryFRAssemblyPath_IsTheRoutingsOwnDispatchPath attaches a
+// boundary-scope compose FeatureRecipe at both of the fixture's boundaries and
+// reads, for each attachment, the dispatch key the routing places its output
+// under and the assembly path its own boundary view carries — the view built
+// through the same builder, from the same answer, the provides pre-pass and the
+// dispatch build it from. The two must be one value: as written, where the
+// attachment assembles into the file its boundary's components do, and where the
+// boundary's subDirectory is templated on the component, so the attachment's own
+// identity decides its directory and no component's path can stand in for it.
+func TestBoundaryFRAssemblyPath_IsTheRoutingsOwnDispatchPath(t *testing.T) {
+	t.Parallel()
+	rel, graph, input, _, dirEvals, perBoundary := assemblyFixture(t)
+	for _, boundary := range []string{"bridge", "apart"} {
+		inner := types.OrderedMap[types.IRBoundaryFeature]{}
+		inner.Set("gateway", types.IRBoundaryFeature{Type: "example/gateway:1.0.0"})
+		graph.Spec.BoundaryFeatures.Set(boundary, inner)
+	}
+	fr := &types.FeatureRecipe{}
+	fr.Metadata.Name = "gateway-fr"
+	fr.Spec.Capability = "compose"
+	fr.Spec.ExecutionScope = executionScopeBoundary
+	lookup := RecipeLookup{FeatureRecipe: func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
+		return fr, instanceName == "gateway" && featureType == "example/gateway:1.0.0"
+	}}
+	own := assemblyPathsByBoundaryFR(graph, lookup, input, dirEvals, perBoundary)
+
+	for _, tc := range []struct {
+		boundary, want string
+	}{
+		{"bridge", "bridge/compose"},
+		{"apart", "apart/" + boundaryFRNodePrefix + "gateway"},
+	} {
+		key := boundaryFRKey{BoundaryPath: tc.boundary, FRInstance: "gateway"}
+		routed, eval, err := boundaryFRDispatch(key, fr, input, dirEvals, perBoundary)
+		if err != nil {
+			t.Fatalf("%s: the routing's evaluation: %v", tc.boundary, err)
+		}
+		if routed.Path != eval.path || routed.Provider != "compose" {
+			t.Errorf("%s: routing key %+v does not carry its evaluation's path %q under the compose provider", tc.boundary, routed, eval.path)
+		}
+		frCtx, err := buildBoundaryFRTemplateContext(nil, fr, "gateway", key, graph, rel, perBoundary, nil, own[key])
+		if err != nil {
+			t.Fatalf("%s: the attachment's view: %v", tc.boundary, err)
+		}
+		if got := frCtx.Boundary.AssemblyPath; got != routed.Path {
+			t.Errorf("%s: the view's assembly path %q, the routing places the output at %q", tc.boundary, got, routed.Path)
+		}
+		if routed.Path != tc.want {
+			t.Errorf("%s: routed to %q, want %q", tc.boundary, routed.Path, tc.want)
+		}
+		if frCtx.Boundary.Path != tc.boundary {
+			t.Errorf("%s: the view's boundary path %q, want the Release boundary %q", tc.boundary, frCtx.Boundary.Path, tc.boundary)
+		}
+	}
+	if len(own) != 2 {
+		t.Errorf("answers for %d attachment(s), want 2: %v", len(own), own)
+	}
+}
+
 // TestAssemblyPaths_EdgeViewsCarryEachEndpointsOwn builds each boundary's view and
 // reads the edge's two endpoints: the boundary paths stay the Release boundary
 // paths, and the assembly paths are each endpoint's own — one path for two
@@ -114,7 +173,7 @@ func TestAssemblyPaths_EdgeViewsCarryEachEndpointsOwn(t *testing.T) {
 		{"bridge", "adminer", "db", "bridge/frontend", "bridge/backend", "bridge/compose", "bridge/compose"},
 		{"apart", "left", "right", "apart", "apart", "apart/left", "apart/right"},
 	} {
-		view, err := buildBoundaryContext(nil, tc.boundary, graph, rel, perBoundary, paths)
+		view, err := buildBoundaryContext(nil, tc.boundary, graph, rel, perBoundary, paths, "")
 		if err != nil {
 			t.Fatalf("the view of boundary %q: %v", tc.boundary, err)
 		}

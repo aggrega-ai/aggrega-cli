@@ -118,7 +118,7 @@ func TestCallerPlacement_IsTheCallersOwnOnEveryViewThatShowsIt(t *testing.T) {
 					tc.caller, inbound.SourceNamespace, inbound.SourceBoundaryPath, tc.wantNamespace, tc.wantPath)
 			}
 
-			view, err := buildBoundaryContext(nil, tc.wantPath, graph, rel, perBoundary, nil)
+			view, err := buildBoundaryContext(nil, tc.wantPath, graph, rel, perBoundary, nil, "")
 			if err != nil {
 				t.Fatalf("the view of boundary %q: %v", tc.wantPath, err)
 			}

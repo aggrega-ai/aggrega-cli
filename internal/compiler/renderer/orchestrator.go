@@ -1440,6 +1440,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// per-node loop runs, before the boundary-scope pre-pass below builds the edge
 	// views that carry it to a provider.
 	boundaryFRState.assemblyPaths = assemblyPathsByNode(graph, nodeRecipes, input, boundaryDirEvals, perBoundaryAnnotations)
+	// Where each boundary-scope attachment's own output is assembled, answered by
+	// the evaluation the routing after the per-node loop places that output with.
+	boundaryFRState.ownAssemblyPaths = assemblyPathsByBoundaryFR(graph, recipeLookup, input, boundaryDirEvals, perBoundaryAnnotations)
 
 	// Provides pre-pass: evaluate every boundary-scope FeatureRecipe's
 	// provides before the per-node loop so a per-component consumer's uses
@@ -2820,49 +2823,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if !ok {
 			continue
 		}
-		// Bare engine kind for the {{ .capability }} path segment and the dispatch
-		// grouping; the FR's files were already rendered through its version-pinned
-		// engine upstream, so no engine resolution happens here.
-		frProvider := ProviderEngineKind(fr.Spec.Capability)
-		// Compute the dispatch path for this boundary-scope FR. The FR is
-		// attached at the boundary level (no per-component BoundaryInfra
-		// entry), so look up the boundary's authored directory/subDirectory
-		// directly from the Release tree and synthesize a BoundaryInfra
-		// for computeFinalPath. Operator-authored templates on the boundary
-		// thus drive the FR's dispatch path the same way they drive
-		// per-component dispatch paths.
-		var parameters map[string]any
-		if input.ResolveResult != nil {
-			parameters = input.ResolveResult.Parameters
-		}
-		var bi *resolver.BoundaryInfra
-		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
-			parts := strings.Split(key.BoundaryPath, "/")
-			if b, ok := findBoundaryAtPath(input.ResolveResult.Release.Spec.Boundaries, parts); ok {
-				bi = &resolver.BoundaryInfra{
-					BoundaryPath: key.BoundaryPath,
-					Directory:    b.Directory,
-					SubDirectory: b.SubDirectory,
-					SyncWave:     b.SyncWave,
-				}
-			}
-		}
-		// Use the FR's provider for the {{ .capability }} substitution
-		// instead of any per-component provider.
-		//
-		// The identity handed to the path evaluation is the instance-only marker, and
-		// it stays that way deliberately. It reaches the author-facing `.component_id`
-		// path-template variable, so the value here is one an operator's own
-		// `subDirectory:` template may read — and it is what decides which dispatch
-		// group this contribution joins. Two boundaries whose declared directories
-		// evaluate alike are MEANT to feed one group; sending them to two by
-		// disambiguating this value would not separate two contributors, it would
-		// separate two groups and take the whole question off the table.
-		pathEval, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+		// The dispatch path for this boundary-scope FR, from the boundary's own
+		// authored directory: and subDirectory: with the FR's bare engine kind as
+		// the capability segment — the FR's files were already rendered through its
+		// version-pinned engine upstream, so no engine resolution happens here. The
+		// evaluation is the one the attachment's boundary view read its assembly path
+		// from before any template ran (boundaryFRDispatch), so the directory a
+		// template was told and the directory the output is routed to cannot differ.
+		dKey, pathEval, err := boundaryFRDispatch(key, fr, input, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope FR %q path eval", key.FRInstance))
 		}
-		dKey := dispatchKey{Path: pathEval.path, Provider: frProvider}
 		// Both coordinates the author wrote, through the one home that spells this
 		// contributor's dispatch identity — the same call the render that produced
 		// these files made for the same tuple, so the identity the group holds this
@@ -2940,7 +2911,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// capability its own FeatureRecipe names. Resolving it cannot fail for a
 		// provider this render already rendered through, so a failure here is an
 		// injection fault rather than an authoring one and is reported as it arrives.
-		frEngineForPlacement, ferr := engineFactory(frProvider)
+		frEngineForPlacement, ferr := engineFactory(dKey.Provider)
 		if ferr != nil {
 			return nil, cerrors.Wrap(ferr, cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope attachment %q: selecting the plugin its output is placed by", key.FRInstance))
 		}

@@ -4,6 +4,9 @@
 package renderer
 
 import (
+	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -68,6 +71,95 @@ func assemblyPathsByNode(
 			continue
 		}
 		out[nodeID] = key.Path
+	}
+	return out
+}
+
+// boundaryFRDispatch evaluates where one boundary-scope FeatureRecipe
+// attachment's output is routed: the dispatch key its output joins, and the
+// evaluation that key's path was composed from. It is the one evaluation of that
+// placement, read by the routing that places the attachment's output after the
+// per-node loop and by the attachment's own boundary view before any of its
+// templates is evaluated, so the directory a template reads as
+// .boundary.assembly_path and the directory the output lands in are one value.
+//
+// The attachment is attached at the boundary rather than placed per component,
+// so its placement is the boundary's own authored directory: and subDirectory:,
+// read from the Release tree, with the FeatureRecipe's bare engine kind as the
+// capability segment. The identity handed to the path evaluation is the
+// instance-only marker, which is what an operator's subDirectory: template reads
+// as .component_id, and what decides which dispatch group this contribution
+// joins. Two boundaries whose declared directories evaluate alike are meant to
+// feed one group, so the value stays instance-only rather than carrying the
+// boundary path.
+func boundaryFRDispatch(
+	key boundaryFRKey,
+	fr *types.FeatureRecipe,
+	input RendererInput,
+	boundaryDirEvals map[string]string,
+	perBoundaryAnnotations map[string]types.OrderedMap[string],
+) (dispatchKey, dispatchPathEvaluation, error) {
+	var parameters map[string]any
+	var bi *resolver.BoundaryInfra
+	if input.ResolveResult != nil {
+		parameters = input.ResolveResult.Parameters
+		if input.ResolveResult.Release != nil {
+			if b, ok := findBoundaryAtPath(input.ResolveResult.Release.Spec.Boundaries, strings.Split(key.BoundaryPath, "/")); ok {
+				bi = &resolver.BoundaryInfra{
+					BoundaryPath: key.BoundaryPath,
+					Directory:    b.Directory,
+					SubDirectory: b.SubDirectory,
+					SyncWave:     b.SyncWave,
+				}
+			}
+		}
+	}
+	provider := ProviderEngineKind(fr.Spec.Capability)
+	eval, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, provider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+	if err != nil {
+		return dispatchKey{}, dispatchPathEvaluation{}, err
+	}
+	return dispatchKey{Path: eval.path, Provider: provider}, eval, nil
+}
+
+// assemblyPathsByBoundaryFR answers, for every boundary-scope FeatureRecipe
+// attachment of the graph, the directory its own output is assembled into: the
+// path of the dispatch key [boundaryFRDispatch] routes it under. The attachment's
+// boundary view carries the answer as its assembly path, which is what lets the
+// FeatureRecipe tell a connection whose endpoints are assembled into its own file
+// from one whose endpoints are assembled elsewhere.
+//
+// It is answered once, before any template is evaluated, because the
+// boundary-scope provides pre-pass builds the boundary view ahead of the per-node
+// loop. An attachment no FeatureRecipe binds, one whose FeatureRecipe is not
+// boundary-scope, and one whose path evaluation fails have no answer here, and
+// their view carries an empty assembly path: the routing evaluates the same
+// placement for every attachment that rendered and halts on that same failure
+// before any output is placed.
+func assemblyPathsByBoundaryFR(
+	graph *types.IRGraph,
+	recipeLookup RecipeLookup,
+	input RendererInput,
+	boundaryDirEvals map[string]string,
+	perBoundaryAnnotations map[string]types.OrderedMap[string],
+) map[boundaryFRKey]string {
+	if graph == nil || recipeLookup.FeatureRecipe == nil {
+		return nil
+	}
+	out := map[boundaryFRKey]string{}
+	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
+		for instName, bf := range feats.All() {
+			fr, ok := recipeLookup.FeatureRecipe(instName, bf.Type)
+			if !ok || fr.Spec.ExecutionScope != executionScopeBoundary {
+				continue
+			}
+			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
+			dKey, _, err := boundaryFRDispatch(key, fr, input, boundaryDirEvals, perBoundaryAnnotations)
+			if err != nil {
+				continue
+			}
+			out[key] = dKey.Path
+		}
 	}
 	return out
 }
