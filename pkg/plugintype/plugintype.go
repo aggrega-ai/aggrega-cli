@@ -253,7 +253,6 @@ var entries = []Entry{
 			exportname.Reassemble,
 			exportname.NameBound,
 			exportname.RenderedName,
-			exportname.BoundaryEnvOverrides,
 			exportname.LinkPublish,
 			exportname.LinkResolve,
 		},

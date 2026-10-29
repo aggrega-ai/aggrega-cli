@@ -32,8 +32,6 @@ var (
 	NameBoundExport = listedExport(plugintype.Provider, "name_bound")
 	// RenderedNameExport is rendered_name, a host export of the provider plugin type.
 	RenderedNameExport = listedExport(plugintype.Provider, "rendered_name")
-	// BoundaryEnvOverridesExport is boundary_env_overrides, a host export of the provider plugin type.
-	BoundaryEnvOverridesExport = listedExport(plugintype.Provider, "boundary_env_overrides")
 	// LinkPublishExport is link_publish, a host export of the provider plugin type.
 	LinkPublishExport = listedExport(plugintype.Provider, "link_publish")
 	// LinkResolveExport is link_resolve, a host export of the provider plugin type.

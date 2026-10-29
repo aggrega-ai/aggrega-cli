@@ -251,14 +251,6 @@ func TestHostGuestWireParity_ConditionalMapHeadMatchesBody(t *testing.T) {
 			populated:   rendercore.SubChart{InstanceID: "a", Values: anyMap},
 			conditional: []string{"values"},
 		},
-		{
-			// The empty form of this one declares zero pairs, which is the edge
-			// the head encoding is most likely to get wrong.
-			name:        "BoundaryEnvOverridesInput",
-			empty:       rendercore.BoundaryEnvOverridesInput{},
-			populated:   rendercore.BoundaryEnvOverridesInput{Infra: anyMap},
-			conditional: []string{"infra"},
-		},
 	}
 
 	for _, c := range cases {

@@ -63,12 +63,6 @@ func TestOrderedValuesDecodeIdenticallyOnBothLegs(t *testing.T) {
 			bothLegs(t, in, &a, &b)
 			return a.Values, b.Values
 		}},
-		{"a boundary's infra", func(t *testing.T) (types.OrderedMap[any], types.OrderedMap[any]) {
-			in := BoundaryEnvOverridesInput{Infra: values}
-			var a, b BoundaryEnvOverridesInput
-			bothLegs(t, in, &a, &b)
-			return a.Infra, b.Infra
-		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

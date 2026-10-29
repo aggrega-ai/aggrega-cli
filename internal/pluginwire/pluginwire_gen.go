@@ -34,7 +34,6 @@ import (
 // Sorted by export name and then payload shape.
 var entries = []entry{
 	{export: "assemble_boundary", shape: "AssembleBoundaryInput", encode: encodeAssembleBoundaryInput, output: "AssembleBoundaryOutput", newOutput: newAssembleBoundaryOutput},
-	{export: "boundary_env_overrides", shape: "BoundaryEnvOverridesInput", encode: encodeBoundaryEnvOverridesInput, output: "BoundaryEnvOverridesOutput", newOutput: newBoundaryEnvOverridesOutput},
 	{export: "carve", shape: "CarveInput", encode: encodeCarveInput, output: "CarveOutput", newOutput: newCarveOutput},
 	{export: "import", shape: "ImportInput", encode: encodeImportInput, output: "ImportOutput", newOutput: newImportOutput},
 	{export: "link_publish", shape: "LinkPublishInput", encode: encodeLinkPublishInput, output: "LinkPublishOutput", newOutput: newLinkPublishOutput},
@@ -57,16 +56,6 @@ var entries = []entry{
 // re-emits it in the canonical binary encoding.
 func encodeAssembleBoundaryInput(text []byte) ([]byte, error) {
 	var v rendercore.AssembleBoundaryInput
-	if err := json.Unmarshal(text, &v); err != nil {
-		return nil, err
-	}
-	return v.EncodeCBOR()
-}
-
-// encodeBoundaryEnvOverridesInput reads an authored text payload into that shape and
-// re-emits it in the canonical binary encoding.
-func encodeBoundaryEnvOverridesInput(text []byte) ([]byte, error) {
-	var v rendercore.BoundaryEnvOverridesInput
 	if err := json.Unmarshal(text, &v); err != nil {
 		return nil, err
 	}
@@ -226,12 +215,6 @@ func encodeRenderPolicyInput(text []byte) ([]byte, error) {
 // newAssembleBoundaryOutput returns an empty value of that shape for a guest's answer
 // to be decoded into.
 func newAssembleBoundaryOutput() wasm.GuestOutputCBOR { return new(rendercore.AssembleBoundaryOutput) }
-
-// newBoundaryEnvOverridesOutput returns an empty value of that shape for a guest's answer
-// to be decoded into.
-func newBoundaryEnvOverridesOutput() wasm.GuestOutputCBOR {
-	return new(rendercore.BoundaryEnvOverridesOutput)
-}
 
 // newCarveOutput returns an empty value of that shape for a guest's answer
 // to be decoded into.

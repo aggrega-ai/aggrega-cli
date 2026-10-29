@@ -7,16 +7,15 @@ package exportname
 // declares, and the exports the host calls only when the guest's describe()
 // declares them.
 const (
-	RenderNode           = "render_node"
-	ValidateNodeInput    = "validate_node_input"
-	AssembleBoundary     = "assemble_boundary"
-	Carve                = "carve"
-	Reassemble           = "reassemble"
-	NameBound            = "name_bound"
-	RenderedName         = "rendered_name"
-	BoundaryEnvOverrides = "boundary_env_overrides"
-	LinkPublish          = "link_publish"
-	LinkResolve          = "link_resolve"
+	RenderNode        = "render_node"
+	ValidateNodeInput = "validate_node_input"
+	AssembleBoundary  = "assemble_boundary"
+	Carve             = "carve"
+	Reassemble        = "reassemble"
+	NameBound         = "name_bound"
+	RenderedName      = "rendered_name"
+	LinkPublish       = "link_publish"
+	LinkResolve       = "link_resolve"
 )
 
 // The linter plugin type's default rule-evaluation export, called when a linter
