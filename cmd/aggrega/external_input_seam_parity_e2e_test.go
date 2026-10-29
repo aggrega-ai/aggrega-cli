@@ -101,6 +101,7 @@ package main
 // it; what it says is that they emit the same artifacts.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -754,10 +755,11 @@ func renderThroughServeDaemon(t *testing.T, root string) map[string]string {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the daemon: %v", err)
 	}

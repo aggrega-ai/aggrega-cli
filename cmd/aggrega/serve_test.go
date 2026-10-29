@@ -231,8 +231,12 @@ func framedFor(t *testing.T, cmd *exec.Cmd, id int, method string, params any) [
 	return framed(id, method, withRoot)
 }
 
-// readOneResponse reads one Content-Length-framed response from r and
+// readOneResponse reads one Content-Length-framed response from br and
 // decodes it into a map keyed by field name.
+//
+// A caller wraps each daemon stream in ONE buffered reader for the stream's
+// whole life and passes that same reader to every read: the bytes it buffered
+// past one message belong to the next, and a fresh reader per call drops them.
 //
 // The duration is a LIVENESS CEILING, never a performance budget. It
 // separates "the daemon answered" from "the daemon will never answer" and
@@ -253,7 +257,7 @@ func framedFor(t *testing.T, cmd *exec.Cmd, id int, method string, params any) [
 // and shares it across those reads: computing it per read would vary the
 // bound within a single exchange, and a bound that differs between reads
 // is one nobody can reason about from the failure text.
-func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[string]any {
+func readOneResponse(t *testing.T, br *bufio.Reader, deadline time.Duration) map[string]any {
 	t.Helper()
 	type result struct {
 		body map[string]any
@@ -261,7 +265,6 @@ func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[stri
 	}
 	ch := make(chan result, 1)
 	go func() {
-		br := bufio.NewReader(r)
 		contentLength := -1
 		for {
 			line, err := br.ReadString('\n')
@@ -282,6 +285,10 @@ func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[stri
 				}
 				contentLength = n
 			}
+		}
+		if contentLength < 0 {
+			ch <- result{err: fmt.Errorf("a frame carried no Content-Length header")}
+			return
 		}
 		body := make([]byte, contentLength)
 		if _, err := io.ReadFull(br, body); err != nil {
@@ -319,6 +326,68 @@ func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[stri
 			"runner's deadline still far off — the daemon is hung or deadlocked; this bound is not "+
 			"a performance budget", deadline)
 		return nil
+	}
+}
+
+// TestReadOneResponseKeepsBytesBufferedPastOneMessage pins the contract
+// readOneResponse states: messages already waiting together on a stream come
+// back one per call, in order, over the one buffered reader the caller holds. A
+// reader made afresh per call buffers the second message along with the first
+// and drops it, so the second call finds the stream exhausted and fails at once.
+//
+// Every message is in the stream before the first read, which is the case a
+// daemon produces when it pushes a notification and then answers within one
+// read of its output. Nothing here waits on a clock: the ceiling passed below
+// is only the helper's liveness bound, and an in-memory stream never reaches it.
+func TestReadOneResponseKeepsBytesBufferedPastOneMessage(t *testing.T) {
+	t.Parallel()
+
+	notification := map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "aggrega/publishDiagnostics",
+		"params":  map[string]any{"file": "release.lock", "diagnostics": []any{}},
+	}
+	answer := map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"graph": "g"}}
+	// Larger than the reader's default buffer, so the first message spans several
+	// reads: the row pins that it comes back whole and the message after it still
+	// arrives.
+	largeAnswer := map[string]any{"jsonrpc": "2.0", "id": 2, "result": map[string]any{
+		"graph": strings.Repeat("x", 3*4096),
+	}}
+
+	cases := []struct {
+		name     string
+		messages []map[string]any
+	}{
+		{name: "a notification and the answer after it", messages: []map[string]any{notification, answer}},
+		{name: "a message larger than the buffer, then another", messages: []map[string]any{largeAnswer, answer}},
+		{name: "three messages", messages: []map[string]any{notification, notification, answer}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var stream []byte
+			for _, msg := range tc.messages {
+				body, err := json.Marshal(msg)
+				if err != nil {
+					t.Fatalf("marshal %v: %v", msg, err)
+				}
+				stream = append(stream, fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))...)
+				stream = append(stream, body...)
+			}
+			br := bufio.NewReader(bytes.NewReader(stream))
+			ceiling := responseLivenessCeiling(t)
+			for i, msg := range tc.messages {
+				got := readOneResponse(t, br, ceiling)
+				// Both sides are compared as encoded JSON, which orders map keys and
+				// spells a number the same whether it decoded as an int or a float.
+				want, _ := json.Marshal(msg)
+				gotJSON, _ := json.Marshal(got)
+				if !bytes.Equal(gotJSON, want) {
+					t.Fatalf("message %d of %d: got %s; want %s", i+1, len(tc.messages), gotJSON, want)
+				}
+			}
+		})
 	}
 }
 
@@ -398,10 +467,11 @@ func TestServeLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
@@ -563,10 +633,11 @@ func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
@@ -695,10 +766,11 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -60,6 +61,7 @@ func TestServeHandshakeReportsTheVersionCommandsVersion(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
+	stdout := bufio.NewReader(stdoutR)
 	// Closing both ends is what lets a daemon still running when the test fails
 	// return: a read of standard input ends, and a write of standard output fails.
 	t.Cleanup(func() {
@@ -85,13 +87,13 @@ func TestServeHandshakeReportsTheVersionCommandsVersion(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("write the initialize request: %v", err)
 	}
-	resp := readOneResponse(t, stdoutR, ceiling)
+	resp := readOneResponse(t, stdout, ceiling)
 
 	// The end of standard input is the end of the session, and the daemon exits
 	// cleanly on it. Anything else it writes is drained so that no write blocks on
 	// a pipe nobody reads.
 	_ = stdinW.Close()
-	go func() { _, _ = io.Copy(io.Discard, stdoutR) }()
+	go func() { _, _ = io.Copy(io.Discard, stdout) }()
 	// The ceiling is a LIVENESS bound, never a performance budget: it separates a
 	// daemon that exits from one that never will.
 	select {

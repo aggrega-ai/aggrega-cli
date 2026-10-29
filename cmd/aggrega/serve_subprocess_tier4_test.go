@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,10 +79,11 @@ func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}

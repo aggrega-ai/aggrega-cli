@@ -16,6 +16,7 @@ package main
 // reaches one. The source drafts an Aggregate and a Release naming no Manifest.
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"os"
@@ -116,10 +117,11 @@ func sessionImport(t *testing.T, bin, root string, params map[string]any) (strin
 	if err != nil {
 		t.Fatalf("language server input: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("language server output: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {

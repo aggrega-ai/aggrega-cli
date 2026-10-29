@@ -23,6 +23,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,10 +99,11 @@ spec:
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
@@ -270,10 +272,11 @@ spec:
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
@@ -434,10 +437,11 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}

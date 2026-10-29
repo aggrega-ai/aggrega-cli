@@ -23,6 +23,7 @@ package main
 // test off the developer's own caches.
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"os/exec"
@@ -119,10 +120,11 @@ func cacheResultViaDaemon(t *testing.T, bin, ws, method string, params map[strin
 	if err != nil {
 		t.Fatalf("daemon stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("daemon stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the daemon: %v", err)
 	}

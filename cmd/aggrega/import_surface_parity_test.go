@@ -14,6 +14,7 @@ package main
 // module is read from the workspace's content cache.
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"maps"
@@ -160,10 +161,11 @@ func importViaLanguageServer(t *testing.T, bin, root string) {
 	if err != nil {
 		t.Fatalf("language server input: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("language server output: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {

@@ -86,10 +86,11 @@ func draftViaDaemon(t *testing.T, bin string, kinds []string) map[string]string 
 	if err != nil {
 		t.Fatalf("daemon stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("daemon stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the daemon: %v", err)
 	}
@@ -418,10 +419,11 @@ func TestTheDaemonDraftsWithoutTouchingTheWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the daemon: %v", err)
 	}

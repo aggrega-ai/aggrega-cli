@@ -25,15 +25,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -339,10 +335,11 @@ func assertDaemonGraphAndBuild(t *testing.T, root string) {
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
+	stdout := bufio.NewReader(stdoutPipe)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the daemon: %v", err)
 	}
@@ -351,11 +348,10 @@ func assertDaemonGraphAndBuild(t *testing.T, root string) {
 		_ = cmd.Wait()
 	})
 	ceiling := responseLivenessCeiling(t)
-	frames := &daemonFrames{r: bufio.NewReader(stdout)}
 	if _, err := stdin.Write(framed(1, "aggrega/initialize", map[string]any{})); err != nil {
 		t.Fatalf("write initialize: %v", err)
 	}
-	if resp := frames.next(t, ceiling); resp["error"] != nil {
+	if resp := readOneResponse(t, stdout, ceiling); resp["error"] != nil {
 		t.Fatalf("initialize failed: %+v", resp)
 	}
 	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/irGraph", map[string]any{"release": "release.yaml"})); err != nil {
@@ -363,7 +359,7 @@ func assertDaemonGraphAndBuild(t *testing.T, root string) {
 	}
 	var published []string
 	for i := 0; i < 50; i++ {
-		msg := frames.next(t, ceiling)
+		msg := readOneResponse(t, stdout, ceiling)
 		if msg["id"] == nil {
 			if msg["method"] == "aggrega/publishDiagnostics" {
 				raw, _ := json.Marshal(msg["params"])
@@ -390,7 +386,7 @@ func assertDaemonGraphAndBuild(t *testing.T, root string) {
 	}
 	var result map[string]any
 	for i := 0; i < 50 && result == nil; i++ {
-		msg := frames.next(t, ceiling)
+		msg := readOneResponse(t, stdout, ceiling)
 		if msg["id"] == nil {
 			continue
 		}
@@ -408,70 +404,5 @@ func assertDaemonGraphAndBuild(t *testing.T, root string) {
 	}
 	if tree := readRenderedTree(t, outDir); len(tree) == 0 {
 		t.Fatalf("the daemon's build wrote nothing under %s", outDir)
-	}
-}
-
-// daemonFrames reads the daemon's Content-Length-framed messages off ONE
-// buffered reader for the whole exchange. The graph request pushes its
-// diagnostics and then answers, and the two can arrive in a single read; a
-// fresh buffer per message would keep the first frame and drop whatever the
-// read had buffered past it, so the answer would never arrive.
-type daemonFrames struct{ r *bufio.Reader }
-
-// next returns the next framed message. The duration is a liveness ceiling, as
-// for readOneResponse: it separates an answer from a hang and budgets nothing.
-func (d *daemonFrames) next(t *testing.T, ceiling time.Duration) map[string]any {
-	t.Helper()
-	type result struct {
-		msg map[string]any
-		err error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		length := -1
-		for {
-			line, err := d.r.ReadString('\n')
-			if err != nil {
-				ch <- result{err: fmt.Errorf("read header: %w", err)}
-				return
-			}
-			line = strings.TrimRight(line, "\r\n")
-			if line == "" {
-				break
-			}
-			if v, ok := strings.CutPrefix(line, "Content-Length:"); ok {
-				n, perr := strconv.Atoi(strings.TrimSpace(v))
-				if perr != nil {
-					ch <- result{err: fmt.Errorf("parse content-length: %w", perr)}
-					return
-				}
-				length = n
-			}
-		}
-		if length < 0 {
-			ch <- result{err: fmt.Errorf("a frame carried no Content-Length header")}
-			return
-		}
-		body := make([]byte, length)
-		if _, err := io.ReadFull(d.r, body); err != nil {
-			ch <- result{err: fmt.Errorf("read body: %w", err)}
-			return
-		}
-		var msg map[string]any
-		if err := json.Unmarshal(body, &msg); err != nil {
-			ch <- result{err: fmt.Errorf("unmarshal: %w (body: %s)", err, body)}
-			return
-		}
-		ch <- result{msg: msg}
-	}()
-	select {
-	case r := <-ch:
-		if r.err != nil {
-			t.Fatalf("read a daemon frame: %v", r.err)
-		}
-		return r.msg
-	case <-time.After(ceiling):
-		t.Fatalf("no daemon frame within the liveness ceiling of %s; this bound is not a performance budget", ceiling)
-		return nil
 	}
 }
