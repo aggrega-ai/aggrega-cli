@@ -327,6 +327,46 @@ type ContributorDirectory struct {
 	Segment string
 }
 
+// AttachmentOutputRouting is where the render sent the output of one
+// attachment a boundary declares on itself: the dispatch group the output
+// joined, whether any of it was pre-assembly fragments handed to that
+// group's assembler rather than files placed at a position of their own,
+// and whether that group is handed to an assembler at all.
+//
+// It is one fact rather than several because no part of it answers
+// anything alone. Fragments are written only by the assembler that folds
+// them, so a reader holding the fragments without the group's assembly
+// cannot say whether they reach a file, and a reader holding the group's
+// assembly without the fragments cannot say whether this attachment had
+// anything for it to fold. The group's coordinates travel with the pair
+// because they are what a finding about the attachment names as the place
+// its output went.
+type AttachmentOutputRouting struct {
+	// AssemblyPath is the evaluated dispatch path of the group the
+	// attachment's output joined: the boundary's own path declaration,
+	// evaluated for the attachment.
+	AssemblyPath string
+
+	// Provider is the provider that group is keyed by, which is the capability
+	// the attachment's FeatureRecipe names.
+	Provider string
+
+	// Fragments reports whether any of the attachment's output was
+	// pre-assembly fragments, handed to the group's assembler to fold rather
+	// than placed as files of their own. It states what the output was and
+	// nothing that follows from it: whether the fragments reach a file is the
+	// group's assembly, which is the other half of the record.
+	Fragments bool
+
+	// GroupAssembles reports whether the group the output joined is handed to
+	// an assembler: its elected engine can carry an assembly out and the group
+	// has a path to assemble at. It is read from the one decision of which
+	// branch a group is finalized by, so it is the answer the finalization
+	// acts on rather than a second reading of the election. It is false for a
+	// group no engine was elected for, which is a group no component reached.
+	GroupAssembles bool
+}
+
 // InjectDelivery is one delivery a node's injection pipe carries or was
 // asked to carry: the mechanism and the key it is delivered under,
 // whatever attachment asked for it, and whether a value actually arrived.
@@ -6352,9 +6392,10 @@ type EmittedView interface {
 // keyed by, the boundaries that fed each and the path declarations they
 // evaluated, what each group's elected engine declared about combining and
 // naming that group's output, the contributors each group places under a
-// directory of their own, and the names each group's contributors declared
-// they derived inside their own output — all of it complete before any
-// group assembles.
+// directory of their own, the group each boundary-level attachment's
+// output joined, and the names each group's contributors declared they
+// derived inside their own output — all of it complete before any group
+// assembles.
 //
 // It embeds EmittedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -6592,6 +6633,37 @@ type DispatchedView interface {
 	// Keyed by (assembly-path, provider); read from
 	// renderer.pendingDispatch.nodeProducer.
 	AssemblyGroupContributorDirectories(assemblyPath string, provider string) []ContributorDirectory
+
+	// BoundaryAttachmentOutputRouting is where the render sent the output of
+	// one attachment a boundary declares on itself — the dispatch group it
+	// joined, whether any of it was pre-assembly fragments, and whether that
+	// group is handed to an assembler — and false where the render routed no
+	// output for that attachment.
+	//
+	// Such an attachment renders once for the boundary, and its output joins
+	// the dispatch group the boundary's own path declaration evaluates to for
+	// it. That group is a different group from any component's wherever the
+	// declaration evaluates differently for the attachment than for every
+	// component — a boundary whose components sit in nested boundaries of
+	// their own directory, say — and a group no component joined elects no
+	// engine to assemble it. Fragments reach a file only through the assembler
+	// that folds them, so this is the fact that says whether an attachment's
+	// fragments are written anywhere.
+	//
+	// It is keyed by the attachment rather than by the group because the
+	// attachment is what an operator wrote and can move: the group is
+	// evaluated output, and a finding about it has nowhere in the Release to
+	// point. It is complete once every contribution has been sorted into its
+	// group, which is the same point the election is, and before any group is
+	// bound or written.
+	//
+	// False is the answer for an attachment whose FeatureRecipe renders per
+	// component and for a coordinate the render routed nothing for: neither
+	// joined a group for a rule to ask about.
+	//
+	// Keyed by (boundary, attachment); read from
+	// renderer.pendingDispatch.intermediates.
+	BoundaryAttachmentOutputRouting(boundary string, attachment string) (AttachmentOutputRouting, bool)
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact

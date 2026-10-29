@@ -23,6 +23,20 @@ type dispatchedStageAxes interface {
 	constraint.AssemblyGroupProviderEnumerator
 }
 
+// dispatchedStageAttachmentAxes is every axis a rule declared over where a
+// boundary-scope attachment's output was sorted is invoked once per: the
+// boundaries holding such an attachment, and the attachments at each.
+//
+// It is a set of its own rather than a widening of the group axes, because the
+// two answer different questions. A group is evaluated output that nothing in the
+// Release names, while an attachment is written there; a rule whose finding an
+// operator acts on by moving an attachment is asked once per attachment, and the
+// group it joined is a fact it reads.
+type dispatchedStageAttachmentAxes interface {
+	constraint.BoundaryEnumerator
+	constraint.BoundaryAttachmentEnumerator
+}
+
 // runDispatchedStageRules invokes the rules declared over how a build grouped its
 // rendered nodes, and returns what they raised as the render's own halt.
 //
@@ -44,7 +58,10 @@ type dispatchedStageAxes interface {
 // claims is not — there is nothing in the Release document to correct, and the
 // remedy is to serve the provider through a plugin that offers both, which makes
 // it a fault of the translation. So each reading is rendered under its own
-// attribution rather than under one that would be wrong for some of them.
+// attribution rather than under one that would be wrong for some of them. A rule
+// about a boundary-scope attachment whose fragments joined a group nothing
+// assembles is the operator's again: the attachment and the directory it shares
+// are both written in the Release.
 //
 // Two readings sharing a category are still two readings, because the envelope a
 // halt opens with names what was read. One envelope covering both would have to
@@ -61,8 +78,9 @@ func runDispatchedStageRules(
 	ctx context.Context,
 	view constraint.DispatchedView,
 	coordinates dispatchedStageAxes,
+	attachments dispatchedStageAttachmentAxes,
 ) error {
-	if view == nil || coordinates == nil {
+	if view == nil || coordinates == nil || attachments == nil {
 		return nil
 	}
 	raised, err := constraint.RunOnAssemblyPathProviders(
@@ -98,6 +116,18 @@ func runDispatchedStageRules(
 	}
 	if halt := objectionsAsTranslationHalt(
 		raised, "dispatch groups whose provider offers no boundary assembler",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnBoundaryAttachments(
+		ctx.Err, attachments, attachments, view,
+		BoundaryAttachmentFragmentsReachAnAssembler,
+	)
+	if err != nil {
+		return err
+	}
+	if halt := objectionsAsOpsHalt(
+		raised, "boundary-level Features whose output is routed to a dispatch path nothing assembles",
 	); halt != nil {
 		return halt
 	}

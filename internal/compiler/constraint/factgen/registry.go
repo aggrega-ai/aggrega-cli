@@ -192,7 +192,8 @@ var stages = []stageDecl{
 			"each group is keyed by, the boundaries that fed each and the path " +
 			"declarations they evaluated, what each group's elected engine " +
 			"declared about combining and naming that group's output, the " +
-			"contributors each group places under a directory of their own, and " +
+			"contributors each group places under a directory of their own, " +
+			"the group each boundary-level attachment's output joined, and " +
 			"the names each group's contributors declared they derived inside " +
 			"their own output — all of it complete before any group assembles",
 		// Producing this stage's facts renders every node, which calls the
@@ -385,6 +386,28 @@ var records = []recordDecl{
 			{Name: "ContributorKind", Type: "string", Doc: "ContributorKind is what that contributor is in authoring terms, either a component or a feature, which is what says where its name is written."},
 			{Name: "ContributorScope", Type: "string", Doc: "ContributorScope is the further authored coordinate that completes the contributor's identity: the attachment key a component carries, or the path of the boundary a feature is attached at, and empty for a component's own render."},
 			{Name: "Segment", Type: "string", Doc: "Segment is the directory segment the group places the contributor's files under, composed from those coordinates by the one composition of a contributor's directory."},
+		},
+	},
+	{
+		Name: "AttachmentOutputRouting",
+		Doc: "AttachmentOutputRouting is where the render sent the output of one " +
+			"attachment a boundary declares on itself: the dispatch group the output " +
+			"joined, whether any of it was pre-assembly fragments handed to that " +
+			"group's assembler rather than files placed at a position of their own, " +
+			"and whether that group is handed to an assembler at all.\n\nIt is one " +
+			"fact rather than several because no part of it answers anything alone. " +
+			"Fragments are written only by the assembler that folds them, so a " +
+			"reader holding the fragments without the group's assembly cannot say " +
+			"whether they reach a file, and a reader holding the group's assembly " +
+			"without the fragments cannot say whether this attachment had anything " +
+			"for it to fold. The group's coordinates travel with the pair because " +
+			"they are what a finding about the attachment names as the place its " +
+			"output went.",
+		Fields: []recordField{
+			{Name: "AssemblyPath", Type: "string", Doc: "AssemblyPath is the evaluated dispatch path of the group the attachment's output joined: the boundary's own path declaration, evaluated for the attachment."},
+			{Name: "Provider", Type: "string", Doc: "Provider is the provider that group is keyed by, which is the capability the attachment's FeatureRecipe names."},
+			{Name: "Fragments", Type: "bool", Doc: "Fragments reports whether any of the attachment's output was pre-assembly fragments, handed to the group's assembler to fold rather than placed as files of their own. It states what the output was and nothing that follows from it: whether the fragments reach a file is the group's assembly, which is the other half of the record."},
+			{Name: "GroupAssembles", Type: "bool", Doc: "GroupAssembles reports whether the group the output joined is handed to an assembler: its elected engine can carry an assembly out and the group has a path to assemble at. It is read from the one decision of which branch a group is finalized by, so it is the answer the finalization acts on rather than a second reading of the election. It is false for a group no engine was elected for, which is a group no component reached."},
 		},
 	},
 	{
@@ -7023,6 +7046,39 @@ var facts = []factDecl{
 			"coordinates by the composition the placement itself reads, so a rule " +
 			"over it reads the directory the build would create rather than a " +
 			"second composition of it.",
+	},
+	{
+		Name:        "boundary-attachment-output-routing",
+		Stage:       "dispatched",
+		SourceField: "renderer.pendingDispatch.intermediates",
+		Subject:     []string{"boundary", "attachment"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(AttachmentOutputRouting, bool)",
+		Doc: "BoundaryAttachmentOutputRouting is where the render sent the output " +
+			"of one attachment a boundary declares on itself — the dispatch group it " +
+			"joined, whether any of it was pre-assembly fragments, and whether that " +
+			"group is handed to an assembler — and false where the render routed no " +
+			"output for that attachment.\n\nSuch an attachment renders once for the " +
+			"boundary, and its output joins the dispatch group the boundary's own " +
+			"path declaration evaluates to for it. That group is a different group " +
+			"from any component's wherever the declaration evaluates differently for " +
+			"the attachment than for every component — a boundary whose components " +
+			"sit in nested boundaries of their own directory, say — and a group no " +
+			"component joined elects no engine to assemble it. Fragments reach a " +
+			"file only through the assembler that folds them, so this is the fact " +
+			"that says whether an attachment's fragments are written anywhere.\n\nIt " +
+			"is keyed by the attachment rather than by the group because the " +
+			"attachment is what an operator wrote and can move: the group is " +
+			"evaluated output, and a finding about it has nowhere in the Release " +
+			"to point. It is complete once every contribution has been sorted into " +
+			"its group, which is the same point the election is, and before any " +
+			"group is bound or written.\n\nFalse is the answer for an attachment " +
+			"whose FeatureRecipe renders per component and for a coordinate the " +
+			"render routed nothing for: neither joined a group for a rule to ask " +
+			"about.",
 	},
 
 	// ---------------------------------------------------------------- rendered

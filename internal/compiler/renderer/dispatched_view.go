@@ -57,6 +57,10 @@ type assemblyGroupFacts interface {
 	// AssemblyGroupContributorDirectories are the contributors the group places
 	// under a directory of their own, each with its segment.
 	AssemblyGroupContributorDirectories(assemblyPath string, provider string) []constraint.ContributorDirectory
+
+	// BoundaryAttachmentOutputRouting is where the output of one attachment a
+	// boundary declares on itself was sent, and false where none was routed.
+	BoundaryAttachmentOutputRouting(boundary string, attachment string) (constraint.AttachmentOutputRouting, bool)
 }
 
 // assemblyGroups answers those facts from the render's own group attribution.
@@ -186,6 +190,20 @@ func (a assemblyGroups) AssemblyGroupContributorDirectories(
 	assemblyPath string, provider string,
 ) []constraint.ContributorDirectory {
 	return a.result.groupContributorDirectories(assemblyPath, provider)
+}
+
+// BoundaryAttachmentOutputRouting returns where the output of one attachment a
+// boundary declares on itself was sent: the group it joined, whether any of it
+// was pre-assembly fragments, and whether that group is handed to an assembler.
+//
+// It is the result's own reader verbatim. The record is taken where the
+// attachment's output is sorted into its group, and whether the group assembles
+// is read from the one decision of which branch a group is finalized by, so the
+// answer a rule reads here is the one the finalization acts on.
+func (a assemblyGroups) BoundaryAttachmentOutputRouting(
+	boundary string, attachment string,
+) (constraint.AttachmentOutputRouting, bool) {
+	return a.result.boundaryAttachmentOutputRouting(boundary, attachment)
 }
 
 // dispatchedView presents, as named facts, how a build's rendered nodes were

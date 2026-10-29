@@ -3287,6 +3287,13 @@ func (RenderedViewBase) AssemblyGroupContributorDirectories(assemblyPath string,
 	panic("this view does not carry assembly-group-contributor-directories, which is read from renderer.pendingDispatch.nodeProducer")
 }
 
+// BoundaryAttachmentOutputRouting panics. This view does not carry
+// boundary-attachment-output-routing, which is read from
+// renderer.pendingDispatch.intermediates.
+func (RenderedViewBase) BoundaryAttachmentOutputRouting(boundary string, attachment string) (AttachmentOutputRouting, bool) {
+	panic("this view does not carry boundary-attachment-output-routing, which is read from renderer.pendingDispatch.intermediates")
+}
+
 // AggregateDocumentFacts are the document-stage facts an Aggregate
 // carries.
 //
@@ -3745,6 +3752,7 @@ type DispatchedStageFacts interface {
 	AssemblyGroupDerivedNames(assemblyPath string, provider string) []DerivedNameDeclaration
 	AssemblyGroupBoundaryPathDeclarations(assemblyPath string, provider string) []BoundaryPathDeclaration
 	AssemblyGroupContributorDirectories(assemblyPath string, provider string) []ContributorDirectory
+	BoundaryAttachmentOutputRouting(boundary string, attachment string) (AttachmentOutputRouting, bool)
 }
 
 // RenderedStageFacts are the facts the rendered stage declares itself, and

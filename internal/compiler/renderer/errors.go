@@ -982,6 +982,50 @@ var errBoundaryAssemblerMissing = cerrors.Register("boundary-assembly-not-provid
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrBoundaryContributionNotAssembled is the Loud Guardrail halt raised when a
+// Feature attached at a Release boundary, whose FeatureRecipe renders once for
+// the boundary, hands pre-assembly fragments to a dispatch group that nothing
+// assembles.
+//
+// Such a Feature's output joins the dispatch group the boundary's own `directory:`
+// and `subDirectory:` evaluate to for it, and a provider that folds its group's
+// output into one document writes those fragments only through that group's
+// assembler. A group is assembled by the engine elected from the components that
+// joined it, so a group no component joined has none — which is where a Feature
+// attached at a boundary lands when the boundary's components sit in nested
+// boundaries of their own directory, or in a sub-directory of their own. Its
+// fragments would then be written nowhere, and the build would look as though it
+// succeeded. The build halts instead.
+//
+// It is the twin of ErrBoundaryAssemblerMissing, which halts where a group's
+// elected provider claims an assembly its plugin cannot perform; this one halts
+// where no assembly happens because nothing was elected to perform one. A group
+// whose assembler is bound and folds none of the Feature's fragments is outside
+// it, and so is a Feature whose output is placed as files of its own, which are
+// written whether or not the group is assembled.
+//
+// It is raised by BoundaryAttachmentFragmentsReachAnAssembler, once per offending
+// attachment, positioned at the attachment's entry under the boundary's
+// `features:` in the Release. The diagnostic names the boundary, the Feature
+// instance, the dispatch path the output was routed to and the provider; the
+// remedy is to attach the Feature at a boundary whose own output path also
+// receives that boundary's components, or to give the boundary's components a
+// directory the Feature's output shares. Category: OPS_ERROR, because both
+// remedies are edits to the Release. Match with
+// errors.Is(err, ErrBoundaryContributionNotAssembled()).
+func ErrBoundaryContributionNotAssembled() error { return errBoundaryContributionNotAssembled }
+
+var errBoundaryContributionNotAssembled = cerrors.Register("boundary-contribution-not-assembled", cerrors.Meta{
+	ShortCode: "E0365",
+	Message:   "boundary-level Feature's output is routed to a dispatch path nothing assembles",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
+// boundaryContributionAdvice is the remedy a boundary-level Feature whose output
+// reaches no assembly names.
+const boundaryContributionAdvice = "attach the Feature at a boundary whose output path also receives its " +
+	"components, or give the boundary's components the directory the Feature's output is routed to"
+
 // ErrArtifactContentMismatch is the Loud Guardrail halt raised when an
 // artifact's imported file ($import) has drifted from the content digest
 // recorded for it in the entity.lock beside the Recipe or FeatureRecipe that

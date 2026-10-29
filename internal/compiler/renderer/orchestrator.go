@@ -240,6 +240,18 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	directories *groupDirectories
+
+	// attachmentRoutings is the render's retained record of where each
+	// boundary-scope attachment's output went and whether the group it joined is
+	// handed to an assembler.
+	//
+	// It is published here for the reason the election is: the groups are the
+	// render's own working state and are dropped when the render returns, while the
+	// presentation of the grouping outlives it.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	attachmentRoutings *boundaryAttachmentRoutings
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -2815,7 +2827,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// contributions in the dispatch group's per-node maps. Both authored
 	// coordinates are carried, because either alone is shared by contributors
 	// an author can tell apart.
-	for key, files := range boundaryFRState.Files {
+	//
+	// The contributions are visited in the order the Release declares the
+	// attachments ([boundaryFRRoutingOrder]), never in the order the record of
+	// their output happens to hold them: what this loop appends to — the dispatch
+	// groups first heard of here, and each group's contributing boundaries and path
+	// declarations — reads back in visiting order, so a run-dependent walk would make
+	// those orders a property of the run rather than of the input.
+	//
+	// Where each attachment's output went is recorded as it is routed, from the
+	// key and the fragments the routing acts on, so the rule asking whether those
+	// fragments reach an assembler reads the routing rather than a second
+	// derivation of it.
+	boundaryRouteOrder := boundaryFRRoutingOrder(graph.Spec.BoundaryFeatures, boundaryFRState.Files)
+	boundaryRoutes := make(map[boundaryFRKey]boundaryAttachmentRoute, len(boundaryRouteOrder))
+	for _, key := range boundaryRouteOrder {
+		files := boundaryFRState.Files[key]
 		// Look up the FR by walking the release; the FR's provider is
 		// what determines the dispatch path's provider component.
 		feat, found := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, key.FRInstance)
@@ -2996,6 +3023,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if len(intermediates) > 0 {
 			dispatch[dKey].intermediates[syntheticNodeID] = append(dispatch[dKey].intermediates[syntheticNodeID], intermediates...)
 		}
+		boundaryRoutes[key] = boundaryAttachmentRoute{group: dKey, fragments: len(intermediates) > 0}
 		if len(placedOwn) > 0 {
 			dispatch[dKey].placed[syntheticNodeID] = append(dispatch[dKey].placed[syntheticNodeID], placedOwn...)
 			// Named among the group's children, for the same reason the
@@ -3117,6 +3145,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// written.
 	result.directories = newGroupDirectories(dispatch, orderedDispatch, releaseNameOf(input))
 
+	// Record where each boundary-scope attachment's output went and whether the
+	// group it joined is handed to an assembler. The second half is complete only
+	// now — a group's election is a function of every component that joined it —
+	// and the rule declared over the grouping reads it below, so fragments no
+	// assembler would fold halt the build before any group assembles or anything is
+	// written.
+	result.attachmentRoutings = newBoundaryAttachmentRoutings(boundaryRoutes, dispatch)
+
 	// Present how the grouping came out, with the facts complete earlier answered
 	// by the presentation built before the node walk.
 	result.DispatchedView = newDispatchedView(
@@ -3124,7 +3160,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	)
 
 	// The rules declared over the grouping are invoked here, against the directory
-	// and provider axes the attribution just recorded.
+	// and provider axes the attribution just recorded, and against the boundary
+	// attachments whose output the routing above sorted into a group.
 	//
 	// The enumeration is checked for absence here rather than inside: an absent one
 	// held behind the axis interface is a present value that answers nothing, and a
@@ -3137,7 +3174,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// subjects the two stages are invoked over from being walked two ways.
 	groupAxes := newAssemblyGroupCoordinates(result, releaseFileOf(input.ResolveResult))
 	if groupAxes != nil {
-		if err := runDispatchedStageRules(ctx, result.DispatchedView, groupAxes); err != nil {
+		routedAttachments := newRoutedBoundaryAttachments(
+			releaseFileOf(input.ResolveResult), boundaryRouteOrder, boundaryRoutes,
+		)
+		if err := runDispatchedStageRules(ctx, result.DispatchedView, groupAxes, routedAttachments); err != nil {
 			return nil, err
 		}
 	}
@@ -3146,8 +3186,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// contributing node has been grouped: the engine of the highest resolved
 	// provider version in the group, ties broken by node-processing order. It never
 	// falls back to a lower-version engine that happens to assemble — a group whose
-	// elected engine cannot assemble is left unbound, and the rule declared over the
-	// grouping has already halted the build if that group's provider claimed one.
+	// elected engine cannot assemble is left unbound, and the rules declared over the
+	// grouping have already halted the build if that group's provider claimed one or
+	// a boundary-scope attachment handed it fragments.
 	for _, key := range orderedDispatch {
 		selectBoundaryAssembler(dispatch[key])
 	}
@@ -3746,7 +3787,11 @@ func buildNodeRenderContext(
 // serving it offers is not decided here: it is a declared rule over the grouping,
 // read from the two facts the election records and raised before any group is
 // bound, so a build that would emit unassembled fragments has already halted by
-// the time this runs.
+// the time this runs. A group left unbound that holds fragments a boundary-scope
+// attachment handed it is the same loss with nothing elected to claim anything,
+// and the rule over where that attachment's output went has halted the build for
+// it too, so an unbound group reaches the flat finalization only where it holds
+// no such fragments.
 func selectBoundaryAssembler(pd *pendingDispatch) {
 	if a, ok := groupAssemblerEngine(pd).(BoundaryAssembler); ok {
 		pd.assembler = a

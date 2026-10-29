@@ -182,6 +182,66 @@ var AssemblyGroupProviderHasItsDeclaredAssembler = constraint.Check[
 	},
 }
 
+// BoundaryAttachmentFragmentsReachAnAssembler reports each attachment a boundary
+// declares on itself whose output includes pre-assembly fragments and joined a
+// dispatch group that is not handed to an assembler.
+//
+// A provider that folds its group's output into one document writes a fragment
+// only through the assembler that folds it, and a group's assembler is the engine
+// elected from the components that joined it. An attachment a boundary declares
+// renders once for the boundary and joins the group the boundary's own path
+// declaration evaluates to for it — so where no component evaluates to the same
+// group, nothing is elected, the group is written flat, and the attachment's
+// fragments reach no file while the build looks as though it succeeded. That is a
+// Loud Guardrail case rather than a warning one: the output is content the author
+// declared, and nothing downstream records that it is missing.
+//
+// It is the twin of the rule over a group whose elected provider claims an
+// assembly its plugin cannot perform. That rule reads the elected engine's claim,
+// and a group nothing was elected for has none, so a group holding only a
+// boundary-level attachment's fragments is invisible to it; this rule reads the
+// attachment instead, which is why it is keyed by the attachment rather than the
+// group.
+//
+// It reads one fact and needs every half of it. Fragments alone cannot say whether
+// they reach a file, and the group's assembly alone cannot say whether this
+// attachment had anything for it to fold: an attachment whose output was placed as
+// files of its own is written whether or not its group assembles, and is not
+// refused. Whether the group assembles is the answer the group's finalization acts
+// on, recorded when the contributions were sorted, so the rule and the
+// finalization cannot disagree about a group's branch. Its coverage bound is that
+// answer: a group that IS handed to an assembler, which then folds none of the
+// attachment's fragments, is outside it.
+//
+// It is invoked once per attachment the render routed output for, positioned at
+// the attachment's own entry in the Release — the one place an operator moves it
+// or changes the directory it shares. Its detail captions every value: the
+// boundary, the Feature instance, the dispatch path its output was routed to and
+// the provider, because the path is evaluated output that the locator cannot name.
+var BoundaryAttachmentFragmentsReachAnAssembler = constraint.Check[
+	constraint.DispatchedView,
+	constraint.BoundaryAttachmentSubject,
+]{
+	Sentinel: ErrBoundaryContributionNotAssembled(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.BoundaryAttachmentSubject,
+	) []constraint.Objection {
+		routing, routed := v.BoundaryAttachmentOutputRouting(s.BoundaryPath(), s.AttachmentName())
+		if !routed || !routing.Fragments || routing.GroupAssembles {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrBoundaryContributionNotAssembled(), boundaryContributionAdvice,
+			constraint.Captioned("boundary", s.BoundaryPath()),
+			constraint.Captioned("feature", s.AttachmentName()),
+			constraint.Captioned("dispatch path", routing.AssemblyPath),
+			constraint.Captioned("provider", routing.Provider),
+		)}
+	},
+}
+
 // AssemblyGroupBoundariesAgreeOnAssemblyName reports each boundary feeding a
 // dispatch group whose provider names the group's assembly from a boundary
 // annotation, requires that name to be one value, and whose boundaries resolved it
