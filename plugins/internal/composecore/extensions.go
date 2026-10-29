@@ -8,7 +8,9 @@
 // ComposeFile and Service decode and encode themselves so that their extension
 // members travel with them: the decode keeps each member in the order the mapping
 // writes it, and the encode writes them after every key the type models, in that
-// order. Nothing reads what a member holds. Inside a model's body an extension
+// order. Nothing reads what a member holds, with one exception: the merge takes a
+// service's x-aggrega-networks-of member off the service and resolves it (see
+// resolveNetworksOf in networks_of.go). Inside a model's body an extension
 // member is carried by the body's own inline map, which is why only these two
 // types hold one.
 //
@@ -85,6 +87,18 @@ func (e *Extensions) add(key string, value *yaml.Node) {
 		return
 	}
 	e.entries = append(e.entries, extensionEntry{key: key, value: value})
+}
+
+// take removes the member held under key and returns its value, reporting
+// whether one was held. The members after it keep their order.
+func (e *Extensions) take(key string) (*yaml.Node, bool) {
+	for i, entry := range e.entries {
+		if entry.key == key {
+			e.entries = append(e.entries[:i:i], e.entries[i+1:]...)
+			return entry.value, true
+		}
+	}
+	return nil, false
 }
 
 // decodeExtensions reads the extension members of mapping in document order. A

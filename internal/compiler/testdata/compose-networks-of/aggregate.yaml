@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: compose-networks-of
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/server
+      uses:
+        databases:
+          db:
+            target: db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host
+                - in: DB_PORT
+                  from: port
+    db:
+      type: core/datastore/mariadb
+      values:
+        database: app

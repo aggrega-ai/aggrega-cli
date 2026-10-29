@@ -23,6 +23,13 @@
 //     does not accept rather than substituting for it, so two identities reach
 //     one network only where they are the same identity. Every service joins its
 //     author-boundary's network.
+//   - Networks a service names. A service carrying the extension member
+//     x-aggrega-networks-of, a list of component ids, joins the network each
+//     named component is placed on, sorted and ahead of its own network, and the
+//     member is stripped from the assembled file. An id naming no component
+//     that contributes to this file halts with ErrPluginRequiredInputUnresolved;
+//     a member that is not a list of strings, or one beside network_mode, halts
+//     with ErrPluginCannotExpressInput (see networks_of.go).
 //   - Service collisions. If two different nodes contribute services of
 //     the same name, AssembleBoundaryCore returns TRANSLATION_ERROR naming
 //     every contributing (boundary, nodeID, serviceName) tuple. A service
@@ -58,8 +65,8 @@
 //     reference travels with its service. Nothing here reads what a model is.
 //   - Top-level extension members (keys beginning x-). Every fragment's members
 //     union the same way and under the same conflict rule. A service's own
-//     members travel with its service.
-//     Nothing here reads what a member holds.
+//     members travel with its service, x-aggrega-networks-of aside (above).
+//     Nothing here reads what any other member holds.
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute services to this dispatch group, record an ungated
 //     dependency on the target service on the source service. It joins
@@ -205,21 +212,38 @@ func AssembleBoundaryCore(
 	}
 	sort.Strings(allNodeIDs)
 
-	// Determine the network for each node: read its annotation, fall
-	// back to a per-boundary default. The namespace annotation is
-	// per-component (set during the boundary annotation cascade), so
-	// we read it directly per-node.
-	networkNameByNode := map[string]string{}
-	for _, nid := range allNodeIDs {
-		ann := nodeAnnotations[nid]
-		networkNameByNode[nid] = deriveNodeNetworkName(ann[rendercore.AnnotationNamespace], boundaryPath)
-	}
-
+	// Every node's fragments are decoded before any is merged, because a service
+	// naming components in x-aggrega-networks-of is resolved against every node
+	// contributing to this file, which a node earlier in name order may name
+	// before the walk reaches it.
+	fragmentsByNode := make(map[string][]nodeFragment, len(allNodeIDs))
 	for _, nid := range allNodeIDs {
 		fragments, err := parseNodeFragments(nid, intermediatesByNode[nid])
 		if err != nil {
 			return nil, nil, err
 		}
+		fragmentsByNode[nid] = fragments
+	}
+
+	// Determine the network for each node contributing a fragment: read its
+	// annotation, fall back to a per-boundary default. The namespace annotation
+	// is per-component (set during the boundary annotation cascade), so we read
+	// it directly per-node. A node contributing no fragment holds no entry, so
+	// the map is exactly the placement of the nodes this file holds — the one
+	// lookup x-aggrega-networks-of resolves through.
+	networkNameByNode := map[string]string{}
+	for _, nid := range allNodeIDs {
+		if len(fragmentsByNode[nid]) == 0 {
+			continue
+		}
+		ann := nodeAnnotations[nid]
+		networkNameByNode[nid] = deriveNodeNetworkName(ann[rendercore.AnnotationNamespace], boundaryPath)
+	}
+
+	var networksOf networksOfFindings
+
+	for _, nid := range allNodeIDs {
+		fragments := fragmentsByNode[nid]
 		if len(fragments) == 0 {
 			continue
 		}
@@ -279,11 +303,23 @@ func AssembleBoundaryCore(
 			}
 		}
 
-		// Services: collision-detect, then merge with the network attached.
-		for svcName, svc := range nodeServices {
+		// Services: collision-detect, then merge with the networks attached.
+		// Walked in name order so the findings of x-aggrega-networks-of are
+		// reported in the same order whatever the map holds.
+		svcNames := make([]string, 0, len(nodeServices))
+		for svcName := range nodeServices {
+			svcNames = append(svcNames, svcName)
+		}
+		sort.Strings(svcNames)
+		for _, svcName := range svcNames {
+			svc := nodeServices[svcName]
 			contribsByService[svcName] = append(contribsByService[svcName], party)
 			boundaryByService[svcName] = networkName
 			waveByService[svcName] = nodeSyncWave[nid]
+
+			// The networks of the components the service names, ahead of its
+			// own, which is appended below.
+			resolveNetworksOf(&svc, svcName, networkName, networkNameByNode, &networksOf)
 
 			// Append the network to the service's networks list. A service
 			// that already carries a network_mode keeps it instead, because
@@ -323,6 +359,12 @@ func AssembleBoundaryCore(
 		return nil, nil, err
 	}
 	if err := checkModelReferences(merged); err != nil {
+		return nil, nil, err
+	}
+	// Every x-aggrega-networks-of member was a list of strings, on a service
+	// with no network_mode, naming only components this file holds, or the
+	// build halts.
+	if err := networksOf.halt(boundaryPath); err != nil {
 		return nil, nil, err
 	}
 

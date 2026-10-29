@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: compose-networks-of
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      features:
+        agent:
+          type: test/networks-agent:1.0.0
+      boundaries:
+        services-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "services"
+          components:
+            api: {}
+        data-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "data"
+          components:
+            db: {}

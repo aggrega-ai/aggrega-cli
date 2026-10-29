@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: test/networks-agent
+  version: 1.0.0
+  description: >
+    A boundary-wide agent service joining the networks of the components the
+    boundary's uses edges connect.
+spec:
+  schema:
+    values:
+      $ref: "BaseComponents#/schemas/BaseFeatureParameter"

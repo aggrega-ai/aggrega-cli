@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: networks-agent-fr
+  version: 1.0.0
+  description: >
+    Writes one agent service for its boundary, naming in x-aggrega-networks-of
+    both endpoints of every uses edge inside the boundary, read from the
+    boundary view rather than written out.
+spec:
+  capability: compose
+  implements: test/networks-agent:1.0.0
+  executionScope: boundary
+  artifacts:
+    networks-agent.yaml: |
+      {{- $ids := list }}
+      {{- range $edge := .boundary.internal_uses_edges }}
+      {{- $ids = append $ids $edge.source }}
+      {{- $ids = append $ids $edge.target }}
+      {{- end }}
+      services:
+        networks-agent:
+          image: busybox:1
+          x-aggrega-networks-of: {{ $ids | toJson }}
