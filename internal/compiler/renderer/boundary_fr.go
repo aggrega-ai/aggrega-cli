@@ -310,10 +310,17 @@ func NewBoundaryFRState() *BoundaryFRState {
 }
 
 // boundaryScopeFRScope is the reference set a boundary-scope FR template is
-// checked against. The universe is types.TemplateContext — the same type a
-// boundary-scope FR evaluates against, with .boundary populated and the
-// per-component pillars left zero — so the roots the check admits are derived
-// from that type rather than enumerated here.
+// checked against — every inline field the recipe evaluates once for its boundary.
+// The universe is types.TemplateContext — the same type a boundary-scope FR
+// evaluates against, with .boundary populated and the per-component pillars left
+// zero — so the roots the check admits are derived from that type rather than
+// enumerated here.
+//
+// The recipe's injectMapping is not such a field. It runs once per consuming
+// component, on that component's context, where these pillars are set and
+// .boundary is not, so it is checked against [injectMappingScope], the scope its
+// evaluation reads; [boundaryScopeFRFieldScope] says which of the two a field
+// takes.
 //
 // The surface declares one narrowing: the pillars that are zero at boundary
 // scope. Each is a deliberately kept exclusion, because the type carries the
@@ -396,7 +403,7 @@ func BoundaryScopeFRTemplateFields(fr *types.FeatureRecipe) []BoundaryScopeFRTem
 		out = append(out, BoundaryScopeFRTemplateField{Label: label, Text: text, AuthoredKeys: keys})
 	}
 	add("valuesMapping", fr.Spec.ValuesMapping.Inline, "valuesMapping")
-	add("injectMapping", fr.Spec.InjectMapping, "injectMapping")
+	add(featureRecipeFieldInjectMapping, fr.Spec.InjectMapping, featureRecipeFieldInjectMapping)
 	add("workload", fr.Spec.Workload.Inline, "workload")
 	for k, v := range fr.Spec.Artifacts.All() {
 		add("artifacts["+k+"]", v.Inline, "artifacts", k)
@@ -412,6 +419,32 @@ func BoundaryScopeFRTemplateFields(fr *types.FeatureRecipe) []BoundaryScopeFRTem
 		add("pipeline["+step.ID+"].with", step.With, "pipeline", step.ID, "with")
 	}
 	return out
+}
+
+// featureRecipeFieldInjectMapping is the authored key a FeatureRecipe writes its
+// injectMapping under, and the label [BoundaryScopeFRTemplateFields] presents that
+// field by. It is a constant because two sites spell it: the enumeration that
+// builds the label, and [boundaryScopeFRFieldScope], which recognises the label to
+// pick the field's scope. A spelling written out at each would agree on the day it
+// was written and drift afterwards, and a mapping the reading stopped recognising
+// would be judged against the boundary scope it is never evaluated in.
+const featureRecipeFieldInjectMapping = "injectMapping"
+
+// boundaryScopeFRFieldScope returns the scope one inline template field of a
+// boundary-scope FeatureRecipe is evaluated against, given the label the field is
+// enumerated under.
+//
+// A boundary-scope FeatureRecipe's templates run in two scopes. The injectMapping
+// runs once per consuming component and reads [injectMappingScope], the scope its
+// evaluation reads; every other field runs once for the boundary and reads
+// [boundaryScopeFRScope]. Answering from the declaration each field is evaluated
+// against, rather than from a set kept here, is what keeps the admission and the
+// evaluation of a field from disagreeing about what it may read.
+func boundaryScopeFRFieldScope(field string) templateScope {
+	if field == featureRecipeFieldInjectMapping {
+		return injectMappingScope
+	}
+	return boundaryScopeFRScope
 }
 
 // boundaryScopeFRTemplateFault names what one boundary-scope FeatureRecipe
@@ -430,14 +463,16 @@ const (
 	// one would describe the author's mistake wrongly.
 	boundaryScopeFRTemplateUnparsed
 
-	// boundaryScopeFRTemplatePerComponentPillar is a field naming a root this
-	// surface excludes — a pillar the context type carries for the per-component
-	// path, which holds nothing when the recipe renders once for a boundary.
+	// boundaryScopeFRTemplatePerComponentPillar is a field evaluated once for the
+	// boundary naming a root that surface excludes — a pillar the context type
+	// carries for the per-component path, which holds nothing when the recipe
+	// renders once for a boundary.
 	boundaryScopeFRTemplatePerComponentPillar
 
-	// boundaryScopeFRTemplateUnknownRoot is a field naming a reference the render
-	// context does not define at all: a stale root, or a mistyped key beneath a
-	// closed pillar such as .boundary.
+	// boundaryScopeFRTemplateUnknownRoot is a field naming a reference its scope
+	// does not define: a stale root, a mistyped key beneath a closed pillar such as
+	// .boundary, or — in the injectMapping, which runs per consuming component — a
+	// read of .boundary, which no consuming component's context carries.
 	boundaryScopeFRTemplateUnknownRoot
 )
 
@@ -463,17 +498,28 @@ type boundaryScopeFRTemplateRef struct {
 // disagreement would surface as one author being told two different things about
 // one template.
 //
+// field is the label the field is enumerated under, and it selects the scope the
+// text is checked against through [boundaryScopeFRFieldScope]: the injectMapping is
+// judged against the scope it is evaluated in, per consuming component, and every
+// other field against the boundary scope.
+//
 // The reference set is collected by the UNDER-collecting walk, through the scope
 // itself. That direction is the one an allow-list may use: it attributes a
 // reference only where the spelling names a pillar unambiguously, so a field read
 // inside a rebound range body — which names a field of the element rather than a
 // pillar — is not counted, and legal authoring is not refused.
-func classifyBoundaryScopeFRTemplate(text string) boundaryScopeFRTemplateRef {
+//
+// A refused root is a per-component pillar only where the boundary scope's own
+// narrowing names it. The injectMapping's scope refuses .boundary instead, and that
+// read is classed as a reference its scope does not define: the remedy for it is
+// not to rewrite against the boundary pillars, which is what the per-component
+// pillar finding tells an author.
+func classifyBoundaryScopeFRTemplate(field, text string) boundaryScopeFRTemplateRef {
 	tree, err := gotmpl.ParseTree(text, "{{", "}}")
 	if err != nil {
 		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateUnparsed}
 	}
-	v := boundaryScopeFRScope.check(tree)
+	v := boundaryScopeFRFieldScope(field).check(tree)
 	switch {
 	case v == nil:
 		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateAdmitted}

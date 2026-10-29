@@ -2413,10 +2413,14 @@ var BoundaryAttachmentLocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 // the field identity in structure, and a field whose declaration somebody forgot
 // is then silently ungated with nothing able to report the omission.
 //
-// One rule serves them all because one reference set does: within this owner
-// the render context is one type, so what a template on any of these fields may
-// name is one question with one answer. That is the condition to check before
-// this shape is reached for again, not a property every owner has.
+// One rule serves them all even though two reference sets do: every field the
+// recipe evaluates once for its boundary is checked against the boundary scope,
+// and its injectMapping — which runs once per consuming component — against the
+// scope that evaluation reads. The rule does not hold either set; it hands the
+// field and its authored text to the shared classification, which selects the set
+// the render itself applies to that field. Only the boundary scope narrows away
+// per-component pillars, so only a field checked against it can commit this
+// rule's finding.
 //
 // # Why the execution scope is read and not assumed
 //
@@ -2455,7 +2459,7 @@ var BoundaryAttachmentTemplateReadsNoPerComponentPillar = constraint.Check[
 		if v.BoundaryAttachmentExecutionScope(s.BoundaryPath(), s.AttachmentName()) != executionScopeBoundary {
 			return nil
 		}
-		ref := classifyBoundaryScopeFRTemplate(v.BoundaryAttachmentAuthoredTemplateText(
+		ref := classifyBoundaryScopeFRTemplate(s.TemplateField(), v.BoundaryAttachmentAuthoredTemplateText(
 			s.BoundaryPath(), s.AttachmentName(), s.TemplateField(),
 		))
 		if ref.Fault != boundaryScopeFRTemplatePerComponentPillar {
@@ -2473,16 +2477,18 @@ var BoundaryAttachmentTemplateReadsNoPerComponentPillar = constraint.Check[
 
 // BoundaryAttachmentTemplateReadsOnlyDefinedReferences reports each inline
 // template field of a boundary-scope attachment's FeatureRecipe that names a
-// reference the render context does not define at all.
+// reference the scope that field is evaluated in does not define.
 //
 // It is a separate identity from the rule above for the reason the locals pair
 // are separate: the two describe different mistakes. That one names a field that
 // EXISTS and carries nothing here, so the author rewrites the reference against
-// the pillars this surface populates; this one names a reference that exists
-// nowhere — a stale root, or a mistyped key beneath a closed pillar — which no
-// rewriting against a scope will fix and which would otherwise render as an empty
-// value in the emitted output. The two share their whole body and differ in which
-// fault they report, so a field carries at most one of them.
+// the pillars this surface populates; this one names a reference its field's
+// scope does not define — a stale root, a mistyped key beneath a closed pillar,
+// or a read of .boundary in the injectMapping, which runs per consuming component
+// where nothing sets it — which no rewriting against the boundary pillars will
+// fix and which would otherwise render as an empty value or fail while the
+// template runs. The two share their whole body and differ in which fault they
+// report, so a field carries at most one of them.
 //
 // It reads the execution scope and ends on an attachment that is not boundary
 // scope, for the reason stated on the rule above.
@@ -2505,7 +2511,7 @@ var BoundaryAttachmentTemplateReadsOnlyDefinedReferences = constraint.Check[
 		if v.BoundaryAttachmentExecutionScope(s.BoundaryPath(), s.AttachmentName()) != executionScopeBoundary {
 			return nil
 		}
-		ref := classifyBoundaryScopeFRTemplate(v.BoundaryAttachmentAuthoredTemplateText(
+		ref := classifyBoundaryScopeFRTemplate(s.TemplateField(), v.BoundaryAttachmentAuthoredTemplateText(
 			s.BoundaryPath(), s.AttachmentName(), s.TemplateField(),
 		))
 		if ref.Fault != boundaryScopeFRTemplateUnknownRoot {

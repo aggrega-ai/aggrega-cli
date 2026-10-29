@@ -202,12 +202,15 @@ func TestTheTemplateFieldRulesAreReachedAndTheirObjectionsHalt(t *testing.T) {
 			field:  "valuesMapping",
 		},
 		{
-			name:   "a per-component pillar in injectMapping",
+			// The injectMapping runs per consuming component, so its finding is the
+			// boundary view it reads and no consuming component's context carries,
+			// never a per-component pillar.
+			name:   "the boundary view in injectMapping",
 			block:  "injectMapping",
-			text:   "PORT: {{ .inject.PORT }}",
-			want:   ErrFRTemplateInvalidField(),
-			other:  ErrTemplateUnknownRoot(),
-			detail: ".inject.PORT",
+			text:   "PATH: {{ .boundary.path }}",
+			want:   ErrTemplateUnknownRoot(),
+			other:  ErrFRTemplateInvalidField(),
+			detail: ".boundary.path",
 			field:  "injectMapping",
 		},
 		{

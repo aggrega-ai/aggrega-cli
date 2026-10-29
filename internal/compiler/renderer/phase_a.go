@@ -12,6 +12,31 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// injectMappingScope is the reference set a FeatureRecipe's injectMapping is
+// checked against, whatever the recipe's execution scope. The universe is
+// types.TemplateContext — the type the mapping is evaluated against, once per
+// consuming component, on that component's context with the attachment's own
+// values, infra and locals and the attachment instance named — so the roots the
+// check admits are derived from that type rather than enumerated here.
+//
+// The surface declares one narrowing:
+//
+//   - boundary — the view a boundary-scope FeatureRecipe's other templates read is
+//     populated only where the recipe renders once for its boundary. A mapping runs
+//     per consumer, where nothing populates it, so a read of it is refused rather
+//     than resolved to nothing.
+//
+// It is the ONE declaration of what a mapping may read, and both sites that judge a
+// mapping read it: the evaluation below, and the rule over a boundary-scope
+// FeatureRecipe's inline template fields, which checks a mapping before anything is
+// evaluated. A second list kept beside either would be free to admit what the other
+// refuses, and a mapping would then be refused a read its context holds, or admitted
+// one its context never sets.
+var injectMappingScope = templateScope{
+	data:    &types.TemplateContext{},
+	exclude: []string{"boundary"},
+}
+
 // FeatureRecipeRef pairs an attachment instance name with its resolved
 // FeatureRecipe.
 //
@@ -80,6 +105,13 @@ type InjectMappingDelivery struct {
 // values/infra, and .attachment_name names the attachment instance being resolved.
 // .context.instance_id remains the host component throughout, so an injectMapping
 // reads the same two denotations an attachment's locals do.
+//
+// That holds for a FeatureRecipe rendering once for a boundary as much as for one
+// rendering per component: a mapping runs once per consuming component either way,
+// on that component's context. So every mapping is checked against the one scope
+// [injectMappingScope] declares, and a read of .boundary — which no consuming
+// component's context carries — halts with ErrTemplateUnknownRoot naming the roots
+// a mapping may read.
 //
 // A FeatureRecipe's own .locals resolve against that attachment-scoped view
 // before its injectMapping runs, through the same evaluator the attachment's
@@ -182,12 +214,14 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, frLocals)
 
-		// Evaluate injectMapping with the feature-scoped context
-		output, err := EvalTemplate(
+		output, err := evalValueTemplate(
 			fmt.Sprintf("injectMapping[%s/%s]", ref.InstanceName, ref.FeatureRecipe.Metadata.Name),
 			tmplText,
-			&featureCtx,
-			withheld.forAttachment(ref.InstanceName, pillarsFound, ref.FeatureRecipe.Spec.Locals),
+			injectMappingScope.with(
+				&featureCtx,
+				withheld.forAttachment(ref.InstanceName, pillarsFound, ref.FeatureRecipe.Spec.Locals),
+			),
+			"{{", "}}",
 		)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,

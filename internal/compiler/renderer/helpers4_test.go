@@ -312,38 +312,70 @@ func TestEvaluateBoundaryFRTemplates_LocalsError(t *testing.T) {
 // It is asserted against the classification rather than against a refusal,
 // because the classification is what has one home. Which identity a given fault
 // commits, and what the resulting halt says, is the declared rules' own proof.
+//
+// The field column is part of the input because the classification selects the
+// scope by field: the injectMapping rows read the same pillars the others do and
+// are classified the other way round.
 func TestBoundaryScopeFRTemplateClassificationBranches(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name string
-		text string
-		want boundaryScopeFRTemplateFault
+		name  string
+		field string
+		text  string
+		want  boundaryScopeFRTemplateFault
 	}{
 		{
-			name: "a reference this surface populates",
-			text: "{{ .boundary.boundary_name }}",
-			want: boundaryScopeFRTemplateAdmitted,
+			name:  "a reference this surface populates",
+			field: "provides[dsn]",
+			text:  "{{ .boundary.boundary_name }}",
+			want:  boundaryScopeFRTemplateAdmitted,
 		},
 		{
-			name: "a pillar carried for the per-component path",
-			text: "{{ .context.inject.env.K }}",
-			want: boundaryScopeFRTemplatePerComponentPillar,
+			name:  "a pillar carried for the per-component path",
+			field: "provides[dsn]",
+			text:  "{{ .context.inject.env.K }}",
+			want:  boundaryScopeFRTemplatePerComponentPillar,
 		},
 		{
 			// The boundary pillar is a closed struct, so the admitted keys come
 			// from its own fields and a typo beneath it is a reference that
 			// exists nowhere rather than one this surface excludes.
-			name: "a mistyped key beneath a closed pillar",
-			text: "{{ .boundary.name }}",
-			want: boundaryScopeFRTemplateUnknownRoot,
+			name:  "a mistyped key beneath a closed pillar",
+			field: "provides[dsn]",
+			text:  "{{ .boundary.name }}",
+			want:  boundaryScopeFRTemplateUnknownRoot,
 		},
 		{
-			name: "a field that is not a template at all",
-			text: "{{ .boundary.name ", // unterminated action
-			want: boundaryScopeFRTemplateUnparsed,
+			name:  "a field that is not a template at all",
+			field: "provides[dsn]",
+			text:  "{{ .boundary.name ", // unterminated action
+			want:  boundaryScopeFRTemplateUnparsed,
+		},
+		{
+			// The injectMapping runs per consuming component, so the pillar the
+			// row above refuses is the one it reads.
+			name:  "a consumer's pillar in the injectMapping",
+			field: featureRecipeFieldInjectMapping,
+			text:  "{{ .context.inject.env.K }}",
+			want:  boundaryScopeFRTemplateAdmitted,
+		},
+		{
+			// And the boundary view the first row admits is one no consuming
+			// component's context carries: a reference its scope does not define,
+			// never a per-component pillar.
+			name:  "the boundary view in the injectMapping",
+			field: featureRecipeFieldInjectMapping,
+			text:  "{{ .boundary.path }}",
+			want:  boundaryScopeFRTemplateUnknownRoot,
+		},
+		{
+			name:  "a guard on the boundary view in the injectMapping",
+			field: featureRecipeFieldInjectMapping,
+			text:  "{{ if .boundary }}yes{{ end }}",
+			want:  boundaryScopeFRTemplateUnknownRoot,
 		},
 	} {
-		if got := classifyBoundaryScopeFRTemplate(tc.text).Fault; got != tc.want {
+		if got := classifyBoundaryScopeFRTemplate(tc.field, tc.text).Fault; got != tc.want {
 			t.Errorf("%s classified as fault %d; want %d", tc.name, got, tc.want)
 		}
 	}

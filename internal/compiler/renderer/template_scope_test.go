@@ -28,6 +28,7 @@ import (
 var templateScopes = map[string]templateScope{
 	"providesScope":                 providesScope,
 	"boundaryScopeFRScope":          boundaryScopeFRScope,
+	"injectMappingScope":            injectMappingScope,
 	"pathTemplateDirectoryScope":    pathTemplateDirectoryScope,
 	"pathTemplateSubDirectoryScope": pathTemplateSubDirectoryScope,
 	"selfInjectScope":               selfInjectScope,

@@ -1443,6 +1443,14 @@ func attachmentRenderSequence(
 // it: Phase B.6 does for the templates producing the attachment's own resources,
 // and Phase A's injectMapping, whose output lands on the host's delivery pipe,
 // never does.
+//
+// It leaves .boundary as the host's context holds it, which is unset: the boundary
+// view is built only where a boundary-scope FeatureRecipe renders once for its
+// boundary. A boundary-scope recipe's injectMapping is evaluated on this copy all
+// the same, once per consuming component, so it reads that component's context and
+// never a boundary view — which is why every injectMapping is checked against
+// [injectMappingScope], the one scope that refuses .boundary, whatever the
+// recipe's execution scope.
 func attachmentFRContext(tmplCtx *types.TemplateContext, instanceName string, values, infra types.OrderedMap[any]) types.TemplateContext {
 	frCtx := *tmplCtx // shallow copy; callers overwrite the per-family pillars
 	frCtx.Values = values
