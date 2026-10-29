@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -961,12 +962,23 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// compiles the Release, and its checks are entitled to assume every reference
 	// already resolved: a type no catalog holds would otherwise reach them and be
 	// reported as a disagreement inside the compiler — or, written as a ./ path,
-	// be drawn as though it named something. Beyond its verdict, the one thing read
-	// from it is the lockfile it loaded beside the Release, which the governance
-	// composition below reconstructs the transform attachments from.
+	// be drawn as though it named something. Beyond its verdict, what is read from
+	// it is the lockfile it loaded beside the Release, which the governance
+	// composition below reconstructs the transform attachments from, and the view
+	// it pinned with that lockfile, which resolves those attachments' plugins.
 	deps, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogDirs)
 	if err != nil {
 		return err
+	}
+	// With a lockfile, the transform attachments below come from it and name their
+	// plugin by bare coordinate, which only the record can turn into an entity and
+	// bytes: the entity a pull acquired sits in the cache under the version the
+	// record pinned, and the bytes in the slot its pin addresses. So a Plugin
+	// entity is looked up as a build looks it up — over the catalog directories and
+	// the entities the record pins — and the record and its pins are handed to the
+	// graph build below, as a build hands them to its own.
+	if deps.lockfile != nil {
+		catalogLookup.Plugin = deps.view.PluginByURI
 	}
 
 	// Build the graph through the one entry that produces one, so what this
@@ -1003,14 +1015,16 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			// is nothing to reconstruct from, and the live list stands as authored.
 			WorkspaceConfig: compilerops.ComposeGovernanceAttachments(&wsCfg, deps.lockfile),
 			WorkspaceRoot:   wsRoot,
-			// A pinned claim over an empty set, and both halves are deliberate.
-			// This command inspects a workspace whose plugins a recorded closure
-			// IS meant to govern, so the claim is the true one and a pin-free
-			// source would state the opposite. It holds none of those pins yet,
-			// because this path reads the catalog without the record — so an
-			// unrecorded-identity advisory is raised for every guest it resolves,
-			// which is the honest report of that gap rather than a silence.
-			PluginPins: pluginpath.RecordedPins(pluginpath.PinMaps{}),
+			// The record and the pins it holds, as a build of the same Release
+			// takes them, so a plugin resolves here to the bytes it resolves to
+			// there. The claim is a pinned one even where no lockfile exists yet:
+			// this command inspects a workspace whose plugins a recorded closure IS
+			// meant to govern, so a pin-free source would state the opposite, and
+			// an unrecorded-identity advisory is raised for every guest resolved
+			// with nothing recorded, which is the honest report of that gap rather
+			// than a silence.
+			Lockfile:   deps.lockfile,
+			PluginPins: pluginpath.RecordedPins(lockfile.PluginPins(deps.lockfile, releasePath)),
 		},
 		catalogLookup,
 		recipeLookup,

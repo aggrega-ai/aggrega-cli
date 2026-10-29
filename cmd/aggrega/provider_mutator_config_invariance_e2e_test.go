@@ -129,13 +129,12 @@ func artifactsEqual(a, b map[string][]byte) bool {
 // lockfile) confirms the flipped live binding WOULD have halted the render, so
 // the invariance is load-bearing.
 func TestIntegration_ProviderConfigInvariance_Serve(t *testing.T) {
-	providerWasm := ensureRenderProviderWasm(t)
-
 	const (
 		capability  = "stellar"
 		pluginCoord = "provider/render-custom"
 		pluginURI   = pluginCoord + ":1.0.0"
 	)
+	providerWasm := ensureRenderProviderWasm(t, capability)
 	host := startRegistry(t, nil)
 	localProvider := customDimensionCatalog(t, host, capability)
 	catDirs := []string{localProvider}
@@ -262,12 +261,12 @@ func TestIntegration_MutatorConfigInvariance_Serve(t *testing.T) {
 // proof the earlier characterization guarded: the frozen build no longer drifts.
 func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing.T) {
 	t.Run("provider", func(t *testing.T) {
-		providerWasm := ensureRenderProviderWasm(t)
 		const (
 			capability  = "stellar"
 			pluginCoord = "provider/render-custom"
 			pluginURI   = pluginCoord + ":1.0.0"
 		)
+		providerWasm := ensureRenderProviderWasm(t, capability)
 		host := startRegistry(t, nil)
 		localProvider := customDimensionCatalog(t, host, capability)
 		catDirs := []string{localProvider}
@@ -307,12 +306,12 @@ func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing
 // pinned content rather than copying the recorded digest, so a moved pin surfaces.
 func TestIntegration_RegistrySocketFrozenBuild_TamperedPinStillDrifts(t *testing.T) {
 	t.Run("provider", func(t *testing.T) {
-		providerWasm := ensureRenderProviderWasm(t)
 		const (
 			capability  = "stellar"
 			pluginCoord = "provider/render-custom"
 			pluginURI   = pluginCoord + ":1.0.0"
 		)
+		providerWasm := ensureRenderProviderWasm(t, capability)
 		host := startRegistry(t, nil)
 		localProvider := customDimensionCatalog(t, host, capability)
 		catDirs := []string{localProvider}

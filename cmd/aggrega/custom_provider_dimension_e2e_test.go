@@ -21,9 +21,9 @@
 // bytes are "rendered-node:<node-id>". That fixed, provider-distinctive content
 // is the observable witness that the PULLED guest rendered, not an embedded
 // provider (whose output is docker-compose / a helm chart, never that string).
-// Its describe() self-reports capabilities ["parity"], but render routing keys
-// on the Plugin ENTITY's declared capabilities, not describe() — so the same
-// .wasm is published under whatever custom capability the fixture recipe binds.
+// Render routing keys on the Plugin ENTITY's listed capabilities, and publish
+// admits a list naming only capabilities describe() reports, so each test builds
+// the guest reporting the capability its entity lists (custom, or a core one).
 package main
 
 import (
@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -46,22 +47,28 @@ import (
 // provider-distinctive witness that the PULLED custom guest rendered a node.
 const renderedNodePrefix = "rendered-node:"
 
-// ensureRenderProviderWasm builds a minimal custom provider render guest and
-// returns its .wasm path. The committed go render fixture
-// (aggrega-pdk/go/examples/render) renders one node to a file whose bytes are
-// "rendered-node:<node-id>" — the provider-distinctive witness this suite needs
-// — but its describe() declares no ProviderContract, so it supports no recipe
-// input kind and the orchestrator's input-kind gate rejects every recipe routed
-// to it. This helper copies that example to a scratch module (leaving the
-// original untouched) and patches its describe() to declare
-// InputKinds.Synthesized so the guest accepts the fixture's synthesized
-// (workload-bearing) recipe, then builds it with the go toolchain (GOOS=wasip1).
+// ensureRenderProviderWasm builds a minimal custom provider render guest whose
+// describe() reports exactly the given capabilities, and returns its .wasm path.
+// The committed go render fixture (aggrega-pdk/go/examples/render) renders one
+// node to a file whose bytes are "rendered-node:<node-id>" — the
+// provider-distinctive witness this suite needs — but its describe() declares
+// no ProviderContract, so it supports no recipe input kind and the
+// orchestrator's input-kind gate rejects every recipe routed to it, and it
+// reports only its own ["parity"] capability, which publish would refuse to
+// list under any other name. This helper copies that example to a scratch
+// module (leaving the original untouched) and patches its describe() to declare
+// InputKinds.Synthesized, so the guest accepts the fixture's synthesized
+// (workload-bearing) recipe, and to report the capabilities the caller's entity
+// lists; then builds it with the go toolchain (GOOS=wasip1).
 //
 // Paths resolve relative to the ORIGINAL cwd, so a caller invokes it BEFORE any
 // t.Chdir into a temp workspace. A build-tool-absent failure fails loudly (the
 // go toolchain runs the surrounding test, so it is present).
-func ensureRenderProviderWasm(t *testing.T) string {
+func ensureRenderProviderWasm(t *testing.T, capabilities ...string) string {
 	t.Helper()
+	if len(capabilities) == 0 {
+		t.Fatal("ensureRenderProviderWasm: name the capabilities the guest reports; publish admits an entity listing only those")
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -98,6 +105,18 @@ func ensureRenderProviderWasm(t *testing.T) string {
 			}
 			out = strings.Replace(out, anchor,
 				"\t\tContract:     &aggrega.ProviderContract{InputKinds: aggrega.InputKinds{Synthesized: true, ArtifactsStandalone: true}},\n"+anchor, 1)
+			// Report the capabilities the published entity lists in place of the
+			// example's own.
+			const capsAnchor = "\t\tCapabilities: []string{\"parity\"},\n"
+			if !strings.Contains(out, capsAnchor) {
+				t.Fatalf("render example main.go capability shape changed; patch anchor %q absent", capsAnchor)
+			}
+			quoted := make([]string, len(capabilities))
+			for i, c := range capabilities {
+				quoted[i] = strconv.Quote(c)
+			}
+			out = strings.Replace(out, capsAnchor,
+				"\t\tCapabilities: []string{"+strings.Join(quoted, ", ")+"},\n", 1)
 		}
 		if werr := os.WriteFile(filepath.Join(scratch, name), []byte(out), 0o644); werr != nil {
 			t.Fatalf("write scratch %s: %v", name, werr)
@@ -123,11 +142,12 @@ func ensureRenderProviderWasm(t *testing.T) string {
 // publishProviderPluginEntity publishes the render-node-go provider guest to the
 // in-process registry as a REAL kind:Plugin entity (ONE consolidated manifest:
 // the entity YAML the config blob, the .wasm an inline layer) declaring the
-// supplied served capabilities. metadata.name is the bare leaf of socketName
-// (e.g. "render-custom" for "provider/render-custom"); pluginType is provider;
-// the sole authored export is render_node, which the guest's describe()
-// self-reports, so the publish-time cross-check passes. Returns the .wasm
-// content digest the consumer pins at pull.
+// supplied served capabilities, each of which the guest's describe() must report
+// (build it with ensureRenderProviderWasm naming the same list). metadata.name is
+// the bare leaf of socketName (e.g. "render-custom" for "provider/render-custom");
+// pluginType is provider; the sole authored export is render_node, which the
+// guest's describe() self-reports, so the publish-time cross-check passes.
+// Returns the .wasm content digest the consumer pins at pull.
 func publishProviderPluginEntity(t *testing.T, host, socketName, version, pluginPath string, capabilities []string) string {
 	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -338,8 +358,8 @@ func renderedSnippet(t *testing.T, dir string) string {
 // runs from real invocations (pull + hermetic build) and inspects the REAL
 // rendered output.
 func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
-	// Resolve the provider .wasm fixture BEFORE any chdir (paths walk up from cwd).
-	providerWasm := ensureRenderProviderWasm(t)
+	// Each sub-test builds its provider .wasm fixture BEFORE any chdir (paths walk
+	// up from cwd), reporting the capability its entity lists.
 
 	// ── Points 1-3: a CUSTOM dimension no embedded provider serves ──────────────
 	t.Run("points_1_3_pull_pin_render", func(t *testing.T) {
@@ -348,6 +368,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 			pluginCoord = "provider/render-custom"
 			pluginURI   = pluginCoord + ":1.0.0"
 		)
+		providerWasm := ensureRenderProviderWasm(t, capability)
 		host := startRegistry(t, nil)
 		localProvider := customDimensionCatalog(t, host, capability)
 		catDirs := []string{localProvider}
@@ -409,6 +430,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 			pluginCoord = "provider/render-custom"
 			pluginURI   = pluginCoord + ":1.0.0"
 		)
+		providerWasm := ensureRenderProviderWasm(t, capability)
 		host := startRegistry(t, nil)
 		localProvider := customDimensionCatalog(t, host, capability)
 		catDirs := []string{localProvider}
@@ -448,6 +470,7 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 			pluginCoord = "provider/render-helm-override"
 			pluginURI   = pluginCoord + ":1.0.0"
 		)
+		providerWasm := ensureRenderProviderWasm(t, capability)
 		host := startRegistry(t, nil)
 
 		// A fixture Component + helm Recipe pushed to the registry. Nothing local
