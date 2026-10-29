@@ -164,9 +164,9 @@ type Config struct {
 	// SkipSignatureVerification is the global, loud opt-out: when true,
 	// signature verification is disabled across every registry, including
 	// the mandatory hub baseline. It exists for break-glass and
-	// development scenarios and is never silent — every pull logs a
-	// prominent warning naming that verification was globally disabled.
-	// Defaults to false.
+	// development scenarios and is never silent: a pull that verifies
+	// artifacts fetched from a registry warns that verification was
+	// globally disabled. Defaults to false.
 	SkipSignatureVerification bool `yaml:"skip_signature_verification"`
 }
 

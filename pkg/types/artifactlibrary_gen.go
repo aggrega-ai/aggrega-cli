@@ -24,7 +24,7 @@ type ArtifactLibraryMetadata struct {
 	Version string `json:"version" yaml:"version"`
 	// Description A concise summary of what the library covers.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	// Labels Author-declared labels. The compiler does not interpret label values; labels are metadata for discovery + hub UI surfacing.
+	// Labels Author-declared labels. The compiler is content-neutral and does not interpret label values: they are opaque metadata, carried for whatever reads the library to match on.
 	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 	// Annotations Author-declared annotations. Same opaque-metadata posture as labels.
 	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`

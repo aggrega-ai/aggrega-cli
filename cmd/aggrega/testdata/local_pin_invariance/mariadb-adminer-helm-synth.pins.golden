@@ -1,17 +1,17 @@
 entities:
     - uri: aggregate
       resolved_version: ""
-      digest: sha256:57b7fb957925cd6ad8e1ff2668340c5dba44144231c155ea3bfd976fefe26f07
+      digest: sha256:aca436551b8d1c36dbcb25941e48806279baaffb526a408f6f9fce6609b558cb
       referenced_from:
         - release.spec.aggregate
     - uri: core/datastore/mariadb
       resolved_version: 1.0.0
-      digest: sha256:f80b7af406ef6b028747198a26de119f836c4e22a23a1b6af2f59a51d5de0211
+      digest: sha256:4226f6f3d1f1d61a6eac318a084694d92feaff4e6977c06a28232c2f085406c8
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
     - uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:f80b7af406ef6b028747198a26de119f836c4e22a23a1b6af2f59a51d5de0211
+      digest: sha256:4226f6f3d1f1d61a6eac318a084694d92feaff4e6977c06a28232c2f085406c8
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
@@ -26,12 +26,12 @@ entities:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
       resolved_version: 1.0.0
-      digest: sha256:6df3ca900a05fff1011cdecb8982f8151ec8c1a6fcaac65c25786e986c5a1936
+      digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.features.user_password.type
     - uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:6df3ca900a05fff1011cdecb8982f8151ec8c1a6fcaac65c25786e986c5a1936
+      digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - uri: core/secret-value
@@ -61,7 +61,7 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: helm/provided-secret:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:1df151df9de6cce5fdbeb3e2184819eef912c022b86fb9b07832299f744cea8b
+      digest: sha256:d956dfedbf85a54f06c7ff422a058c12d3d3007b0831ffa939e526ecb79d7259
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - uri: manifest-helm-synth

@@ -43,8 +43,8 @@
 // carrying a credential of its own is refused as its document is read and
 // reaches no clone. Over SSH, go-git authenticates through the SSH agent
 // and no netrc file is read. No gitconfig credential helper is read. The adapter passes
-// spec.URL through to git.CloneContext unchanged, so any URL shape go-git
-// accepts works (https://, ssh://, git+ssh://, git://).
+// spec.URL through to git.PlainCloneContext unchanged, so the URL shapes go-git accepts
+// work (https://, http://, ssh://, git://); git+ssh:// is not one of them.
 package gitrepo
 
 import (
