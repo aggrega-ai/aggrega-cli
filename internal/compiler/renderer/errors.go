@@ -753,13 +753,13 @@ var errPathTemplateInvalidField = cerrors.Register("path-template-invalid-field"
 // dispatch validates an FR's templates, before any of them renders — not
 // at Recipe load, which never parses them. It fires when a
 // FeatureRecipe with spec.executionScope: boundary references a
-// per-component-only field in any of its templates (workload,
-// injectMapping, provides, valuesMapping, artifacts). Boundary-scope
-// FRs use .boundary.* pillars in place of .context.* / .workload /
-// .attachment_name; references to per-component fields are flagged at
-// parse time so the runtime never has to defend against shape
-// mismatches. Category: CATALOG_ERROR (catalog-authored FR
-// references invalid context for its scope).
+// per-component-only field in a template it evaluates once for the
+// boundary — any but its injectMapping, which runs in each component's
+// context and is checked against it. Those templates use .boundary.* in
+// place of .context.* / .workload / .attachment_name, and a reference to
+// a per-component field is flagged at parse time so the runtime never has
+// to defend against shape mismatches. Category: CATALOG_ERROR
+// (catalog-authored FR references invalid context for its scope).
 func ErrFRTemplateInvalidField() error { return errFRTemplateInvalidField }
 
 var errFRTemplateInvalidField = cerrors.Register("featurerecipe-template-invalid-field", cerrors.Meta{

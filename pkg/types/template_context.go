@@ -602,12 +602,12 @@ type StepOutput struct {
 	Outputs OrderedMap[string] `json:"outputs" yaml:"outputs"`
 }
 
-// BoundaryContext is the boundary-scope view assembled by the compiler when
-// evaluating a FeatureRecipe with spec.executionScope: boundary. It replaces
-// the per-component .context block: an FR with executionScope: boundary
-// receives .boundary.* in templates instead of .context.*. Population happens
-// at feature rendering's boundary-scope dispatch branch; component-scope FRs leave the
-// pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
+// BoundaryContext is the boundary-scope view the compiler assembles for the
+// templates a FeatureRecipe with spec.executionScope: boundary runs once for the
+// boundary, which read .boundary.* in place of .context.*; its injectMapping is
+// evaluated per component against that component's context. Population happens
+// at feature rendering's boundary-scope dispatch branch; component-scope FRs
+// leave the pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
 //
 // Path names the Release boundary the FeatureRecipe is attached to; AssemblyPath
 // names the directory, relative to the build's output directory, that the
