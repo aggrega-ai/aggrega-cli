@@ -118,9 +118,15 @@ inside the plugin is distinguishable from a failure of aggrega itself.`,
 				return err
 			}
 
+			// The guest is loaded under the memory ceiling a describe uses rather
+			// than the build-time default, because this is the command that runs a
+			// guest outside any build: it applies no authored runtime limit that could
+			// raise the cap, and the largest built-in provider guests declare more
+			// memory than the default admits.
 			spec := wasm.PluginSpec{
-				Path: pluginPath,
-				Name: filepath.Base(pluginPath),
+				Path:           pluginPath,
+				Name:           filepath.Base(pluginPath),
+				MaxMemoryPages: wasm.DescribeMaxMemoryPages,
 			}
 
 			if len(args) == 1 {

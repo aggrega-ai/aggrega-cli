@@ -17,8 +17,10 @@ const DefaultMaxMemoryPages uint32 = 1024
 // carries no explicit limit. The platform default cap is generous for a running
 // render but too small to instantiate the largest built-in provider guests for a
 // describe() call, so describe-time paths raise the ceiling to the value the
-// provider catalog entities themselves declare. It is a describe-time convenience
-// only — the render path applies each plugin's own authored limits.
+// provider catalog entities themselves declare. The run-local command, which
+// runs a guest outside any build and applies no authored limit, loads under it
+// too. It never reaches a build: the render path applies each plugin's
+// own authored limits.
 const DescribeMaxMemoryPages uint32 = 4096
 
 // DefaultTimeoutMs is the platform default cap on a single plugin Call's GUEST

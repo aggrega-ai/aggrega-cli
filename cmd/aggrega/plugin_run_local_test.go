@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -461,5 +462,137 @@ func TestRunLocal_BinaryWireExportRejectsMalformedPayload(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not valid JSON") {
 		t.Fatalf("refusal should name the authoring surface; got %v", err)
+	}
+}
+
+// TestRunLocal_LoadsUnderTheDescribeMemoryCeiling proves the ceiling run-local
+// loads a guest under: the one a describe uses, not a build's default. The parse
+// guest is rewritten to declare a minimum memory above the build default and
+// within the describe ceiling, and run-local still runs it and prints its answer;
+// the same guest declaring a minimum above the describe ceiling is refused, so the
+// ceiling is that one and not an unbounded load.
+func TestRunLocal_LoadsUnderTheDescribeMemoryCeiling(t *testing.T) {
+	t.Parallel()
+	original, err := os.ReadFile(wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm"))
+	if err != nil {
+		t.Fatalf("read the parse guest: %v", err)
+	}
+
+	aboveDefault := wasm.DefaultMaxMemoryPages + 64
+	if aboveDefault > wasm.DescribeMaxMemoryPages {
+		t.Fatalf("no room between the build default (%d pages) and the describe ceiling (%d pages) for this test",
+			wasm.DefaultMaxMemoryPages, wasm.DescribeMaxMemoryPages)
+	}
+
+	t.Run("above the build default and within the describe ceiling, it runs", func(t *testing.T) {
+		t.Parallel()
+		guest := guestDeclaringMemory(t, original, aboveDefault)
+		out, err := runLocal(t, "--plugin", guest, "--export", "parse", "--with", parsePayload)
+		if err != nil {
+			t.Fatalf("a guest declaring %d memory pages should load under the describe ceiling of %d; got %v",
+				aboveDefault, wasm.DescribeMaxMemoryPages, err)
+		}
+		if want := wantParseResponse(t); out != want {
+			t.Fatalf("guest bytes = %x; want %x", out, want)
+		}
+	})
+
+	t.Run("above the describe ceiling, it is refused", func(t *testing.T) {
+		t.Parallel()
+		guest := guestDeclaringMemory(t, original, wasm.DescribeMaxMemoryPages+1)
+		_, err := runLocal(t, "--plugin", guest, "--export", "parse", "--with", parsePayload)
+		if err == nil {
+			t.Fatalf("a guest declaring more memory than the describe ceiling of %d pages should be refused",
+				wasm.DescribeMaxMemoryPages)
+		}
+		if !strings.Contains(err.Error(), strconv.FormatUint(uint64(wasm.DescribeMaxMemoryPages), 10)) {
+			t.Fatalf("the refusal should name the describe ceiling of %d pages; got %v", wasm.DescribeMaxMemoryPages, err)
+		}
+	})
+}
+
+// guestDeclaringMemory writes a copy of the module wasmBytes whose one defined
+// memory declares minPages as its minimum, and returns the copy's path. The
+// memory section is re-encoded rather than patched in place, because the minimum
+// is a variable-length integer and a larger value can need more bytes. A maximum
+// the module declared is kept, raised to minPages where it is lower, so the
+// rewritten module stays valid.
+func guestDeclaringMemory(t *testing.T, wasmBytes []byte, minPages uint32) string {
+	t.Helper()
+	const memorySectionID = 5
+	if len(wasmBytes) < 8 {
+		t.Fatalf("not a WebAssembly module: %d bytes", len(wasmBytes))
+	}
+	out := append([]byte(nil), wasmBytes[:8]...)
+	found := false
+	for i := 8; i < len(wasmBytes); {
+		id := wasmBytes[i]
+		size, n := readULEB(t, wasmBytes[i+1:])
+		body := wasmBytes[i+1+n : i+1+n+int(size)]
+		next := i + 1 + n + int(size)
+		if id != memorySectionID {
+			out = append(out, wasmBytes[i:next]...)
+			i = next
+			continue
+		}
+		count, n := readULEB(t, body)
+		if count != 1 {
+			t.Fatalf("the guest defines %d memories; this rewrite handles exactly one", count)
+		}
+		flags := body[n]
+		_, m := readULEB(t, body[n+1:])
+		section := appendULEB([]byte{1, flags}, uint64(minPages))
+		switch flags {
+		case 0x00:
+		case 0x01:
+			maxPages, _ := readULEB(t, body[n+1+m:])
+			if maxPages < uint64(minPages) {
+				maxPages = uint64(minPages)
+			}
+			section = appendULEB(section, maxPages)
+		default:
+			t.Fatalf("the guest's memory carries limit flags %#x; this rewrite handles only a plain minimum, with or without a maximum", flags)
+		}
+		out = append(out, memorySectionID)
+		out = appendULEB(out, uint64(len(section)))
+		out = append(out, section...)
+		found = true
+		i = next
+	}
+	if !found {
+		t.Fatal("the guest defines no memory to rewrite")
+	}
+	path := filepath.Join(t.TempDir(), "guest.wasm")
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatalf("write the rewritten guest: %v", err)
+	}
+	return path
+}
+
+// readULEB decodes one unsigned LEB128 integer from the start of b, returning the
+// value and the number of bytes it occupied.
+func readULEB(t *testing.T, b []byte) (uint64, int) {
+	t.Helper()
+	var v uint64
+	for i, shift := 0, uint(0); i < len(b) && shift < 64; i, shift = i+1, shift+7 {
+		v |= uint64(b[i]&0x7f) << shift
+		if b[i]&0x80 == 0 {
+			return v, i + 1
+		}
+	}
+	t.Fatal("truncated LEB128 integer in the guest module")
+	return 0, 0
+}
+
+// appendULEB appends v to b as an unsigned LEB128 integer.
+func appendULEB(b []byte, v uint64) []byte {
+	for {
+		c := byte(v & 0x7f)
+		v >>= 7
+		if v != 0 {
+			b = append(b, c|0x80)
+			continue
+		}
+		return append(b, c)
 	}
 }
