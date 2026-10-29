@@ -1464,7 +1464,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// per-node Phase B.6 dispatch (which renders the FR's files) reads the same
 	// evaluation back. See PrepopulateBoundaryScopeProvides.
 	if input.ResolveResult != nil {
-		if err := PrepopulateBoundaryScopeProvides(ctx, graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, input.CatalogLookup, allProvides, engineFactory, boundaryFRState, readers.feature); err != nil {
+		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, input.CatalogLookup, allProvides, boundaryFRState, readers.feature); err != nil {
 			return nil, err
 		}
 	}
@@ -1884,12 +1884,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// and governing declaration belong to the same node, so it is read against
 		// this node's declarations rather than a target's or an attachment's.
 		selfInjectKeys := selfInjectWithheld(node.SelfInject, declared.Provides, declared.Values, declared.Infra)
-		// The boundary consumer-env channel's values are computed inside a provider
-		// guest and carried here uninterpreted, so the host can see which keys
-		// arrived and not what any of them was computed from. That is the untraced
-		// condition itself rather than an unwired route, so the keys feed the
-		// fail-safe argument rather than a reading that could not exist.
-		untracedKeys := boundaryEnvUntraced(boundaryFRState.ConsumerEnvOverrides[nodeID])
+		// Every route that puts a key on this node's pipe is one of the routes
+		// named above, each read where its provenance is visible, so no key arrives
+		// untraced and the untraced argument is empty.
 		nodeKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
 			return redact.NodeKeys(
 				declared.Values, declared.Infra,
@@ -1897,7 +1894,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				crossNode,
 				injectMapping,
 				selfInjectKeys,
-				untracedKeys,
+				nil,
 				derived)
 		}
 		// Two sets come out of the one assembly, and they are one set: the set a
@@ -2058,25 +2055,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// state's copy, which is what this replaces.
 		mappedKeys := injectMappingWithheld(mappedDelivery, attachmentLeaves)
 		state.Redact, state.Withheld = nodeSets(mappedKeys)
-		// Boundary->component env channel. The overrides a boundary-scope FR
-		// emitted for this consumer (computed in the pre-loop) are a third route
-		// by which an attachment delivers: they join the node's record after every
-		// mapping's, attributed to the attachment that produced them, and the rule
-		// declared over that record is asked before they are applied — so an
-		// override writing a key another attachment delivered halts, naming both,
-		// while one writing a key the component's own block or a connection
-		// delivered rewrites that one entry. Gated on map membership, so
-		// non-named consumers are untouched; a targeted overwrite of exactly the
-		// named keys.
-		producers := boundaryFRState.ConsumerEnvOverrideProducers[nodeID]
-		injectDeliveries = append(injectDeliveries, consumerEnvOverrideDeliveries(producers)...)
-		input.hydrated.recordNodeInjectDeliveries(nodeID, injectDeliveries)
-		if err := runBoundaryEnvOverrideDeliveryRule(
-			ctx.Err, result.HydratedView, releaseFileOf(input.ResolveResult), producers,
-		); err != nil {
-			return nil, err
-		}
-		applyConsumerEnvOverrides(&tmplCtx.Context.Inject, boundaryFRState.ConsumerEnvOverrides[nodeID])
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
 		// after FR injectMapping rewrites.
 		state.capture(trace.PassPhaseA, "", tmplCtx)

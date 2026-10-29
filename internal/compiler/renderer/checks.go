@@ -954,22 +954,19 @@ type takenInjectClaim struct {
 //     output does not carry — and such a key makes no claim at all, because the
 //     merge sets every key the output carries, an empty value included. A mapping
 //     writing an empty value under a key has therefore delivered under it: the
-//     empty value replaced whatever stood there. The override route is the
-//     mapping route's case again: an override sets every key it names, so a key
-//     it does not name makes no claim.
+//     empty value replaced whatever stood there.
 //
-// What holds a key differs between an attachment's own inject block and the two
-// routes that rewrite the pipe after every block has delivered — its
-// FeatureRecipe's mapping, and the environment override a boundary-scope
-// attachment's FeatureRecipe computes for the component — and that difference is
-// the whole of what separates them. Against a claim an attachment's own inject
-// block makes, any earlier delivery holds the key — the component's own block,
-// one of its connections, or another attachment's block. Against a claim a
+// What holds a key differs between an attachment's own inject block and the route
+// that rewrites the pipe after every block has delivered — its FeatureRecipe's
+// mapping — and that difference is the whole of what separates them. Against a
+// claim an attachment's own inject block makes, any earlier delivery holds the
+// key — the component's own block, one of its connections, or another
+// attachment's block. Against a claim a
 // rewrite makes, only an earlier delivery by a DIFFERENT attachment holds it,
 // by any of that attachment's routes. A rewrite of what the component's own
 // block or one of its connections delivered is interception, which is what a
-// mapping is for and what the compose bridge's override does to a consumer's
-// host variable; and a rewrite of what its own attachment delivered is that
+// mapping is for and what the compose bridge's mapping does to a consumer's host
+// variable; and a rewrite of what its own attachment delivered is that
 // attachment transforming its own delivery, which displaces nothing anyone else
 // wrote.
 //
@@ -1014,17 +1011,16 @@ func firstOtherThan(attachments []string, excluded string) string {
 	return ""
 }
 
-// rewritesThePipe reports whether a delivery was made by one of the two routes
-// that write over the pipe once every inject block has delivered — an
-// attachment's FeatureRecipe mapping, or a boundary-scope attachment's
-// environment override — rather than by an inject block.
+// rewritesThePipe reports whether a delivery was made by the route that writes
+// over the pipe once every inject block has delivered — an attachment's
+// FeatureRecipe mapping — rather than by an inject block.
 //
 // It is the one place the walk above decides which holding rule a claim takes,
-// so a route added later is classified here or nowhere, and the two rules
-// reading the rewrite routes cannot come to classify a delivery differently from
-// the walk that decided it.
+// so a route added later is classified here or nowhere, and the rule reading the
+// rewrite route cannot come to classify a delivery differently from the walk
+// that decided it.
 func rewritesThePipe(delivery constraint.InjectDelivery) bool {
-	return delivery.ThroughMapping || delivery.ThroughBoundaryEnvOverride
+	return delivery.ThroughMapping
 }
 
 // AttachmentInjectKeyNotDeliveredByAnotherSource reports each delivery key one
@@ -1049,11 +1045,10 @@ func rewritesThePipe(delivery constraint.InjectDelivery) bool {
 // about whichever came first.
 //
 // Which claims collide is decided by [takenInjectClaims], the walk this rule
-// shares with the rules over an attachment's mapping and a boundary-scope
-// attachment's environment override; this rule reports the claims the
-// attachment's own block made. It is asked before any mapping renders, which is
-// all a block's claim needs: every block delivers before any mapping or override
-// does, so nothing either delivers can come ahead of a block's claim.
+// shares with the rule over an attachment's mapping; this rule reports the claims
+// the attachment's own block made. It is asked before any mapping renders, which
+// is all a block's claim needs: every block delivers before any mapping does, so
+// nothing a mapping delivers can come ahead of a block's claim.
 //
 // # What the detail names
 //
@@ -1101,9 +1096,8 @@ var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
 //
 // An attachment delivers into its component's pipe by its own inject block and by
 // its FeatureRecipe's mapping, whose delivery key is a template rendered against
-// the attachment's own values and infra (an attachment a boundary declares has a
-// third route, read by the rule beside this one). Two attachments
-// arriving at one key by any pairing of those routes leave the component reading
+// the attachment's own values and infra. Two attachments arriving at one key by
+// any pairing of those routes leave the component reading
 // whichever was merged last, and the merge is last-wins by construction — so a
 // credential one attachment delivered would be presented under another's with
 // nothing in the build saying so. The build halts instead, naming both
@@ -1121,10 +1115,9 @@ var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
 // immediately after every attachment's mapping has rendered and before anything
 // reads the rewritten pipe. The rendered keys exist only from that point, so it
 // is the earliest the question is answerable. Which claims collide is decided by
-// [takenInjectClaims], the one walk this rule shares with the rules over an
-// attachment's own block and a boundary-scope attachment's environment override;
-// this rule reports the claims the attachment's mapping made. Each colliding key
-// is its own objection.
+// [takenInjectClaims], the one walk this rule shares with the rule over an
+// attachment's own block; this rule reports the claims the attachment's mapping
+// made. Each colliding key is its own objection.
 //
 // # What the detail names
 //
@@ -1160,85 +1153,6 @@ var AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment = constraint.Check
 				constraint.Captioned("attachment", s.AttachmentName()),
 				constraint.Captioned("delivered first by attachment", claim.HeldBy),
 			))
-		}
-		return out
-	},
-}
-
-// BoundaryAttachmentEnvOverrideKeyNotDeliveredByAnotherAttachment reports each
-// delivery key the environment override a boundary-scope attachment computes for
-// a component writes that a different attachment on that component already
-// delivered.
-//
-// An attachment a boundary declares, whose FeatureRecipe runs once for the
-// boundary, can deliver into the pipes of the components it reaches by a third
-// route: its rendering plugin computes, from the boundary's connections, an
-// environment override for each component it names, and the override is applied
-// after every injectMapping has rendered. Writing over a key another attachment
-// delivered — by that attachment's own inject block, its mapping, or its own
-// override — would silently replace that attachment's delivery, exactly as a
-// mapping would. The build halts instead, naming both attachments and the
-// component, and the author resolves it by giving the other attachment a key of
-// its own or by removing one of them.
-//
-// An override of a key the component's own block or one of its connections
-// delivered is not reported. That is interception, and it is what the channel
-// exists for: the compose bridge rewrites the host variable a consumer's
-// connection delivered so the consumer reaches its target through the gateway.
-// The rule reads no value and no meaning; which surface made the earlier
-// delivery is the whole of what separates the two.
-//
-// # Where it is invoked and what it reads
-//
-// It is invoked once per boundary attachment whose override names the component
-// the render's node walk has reached, after every mapping's deliveries have been
-// recorded and before the override is applied — the overrides are computed before
-// the walk begins, so this is the first point the deliveries they write over all
-// exist. It is positioned at the attachment's own entry in the Release, the one
-// place an operator edits it: the attachment reaches many components and is
-// written once.
-//
-// It reads every component the attachment reaches and, for each, the record of
-// that component's deliveries through [takenInjectClaims] — the one walk every
-// rule over the record shares, under the holding rule the walk gives a mapping —
-// and reports the claims made through the override. A component the walk has not
-// reached yet has no record and contributes nothing, and one it reached earlier was
-// asked about then, so asking at each component finds that component's claims
-// and no other's.
-//
-// # What the detail names
-//
-// The delivery key stands bare, as on the sibling rules, and the mechanism is
-// captioned for the reason they give. The attachment is named as well as located,
-// for the reason the mapping rule gives; the component is named because the
-// locator names the attachment, which reaches many components; and the attachment
-// that delivered first is named because it is written somewhere the locator does
-// not reach, by the name it carries on that component.
-var BoundaryAttachmentEnvOverrideKeyNotDeliveredByAnotherAttachment = constraint.Check[
-	constraint.HydratedView,
-	constraint.BoundaryAttachmentSubject,
-]{
-	Sentinel: ErrBoundaryEnvOverrideKeyCollision(),
-	Severity: constraint.SeverityFatal,
-	Run: func(
-		v constraint.HydratedView,
-		s constraint.BoundaryAttachmentSubject,
-	) []constraint.Objection {
-		var out []constraint.Objection
-		for _, node := range v.BoundaryAttachmentReachedNodes(s.BoundaryPath(), s.AttachmentName()) {
-			for _, claim := range takenInjectClaims(v.NodeInjectDeliveries(node), s.AttachmentName()) {
-				if !claim.ThroughBoundaryEnvOverride {
-					continue
-				}
-				out = append(out, s.RaiseWith(
-					ErrBoundaryEnvOverrideKeyCollision(),
-					constraint.Uncaptioned(claim.DeliveryKey),
-					constraint.Captioned("mechanism", claim.Mechanism),
-					constraint.Captioned("attachment", s.AttachmentName()),
-					constraint.Captioned("on component", node),
-					constraint.Captioned("delivered first by attachment", claim.HeldBy),
-				))
-			}
 		}
 		return out
 	},

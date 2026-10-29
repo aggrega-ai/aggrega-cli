@@ -142,34 +142,6 @@ var errAttachmentInjectMappingKeyCollision = cerrors.Register("attachment-inject
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrBoundaryEnvOverrideKeyCollision is the halt raised when the environment
-// override a boundary-scope attachment's FeatureRecipe computes for a component
-// writes a delivery key that a different attachment on that component already
-// delivered — through that attachment's own inject block, through its
-// FeatureRecipe's injectMapping, or through another boundary-scope attachment's
-// override. The override is applied after every injectMapping, so it would
-// silently replace whatever the other attachment delivered there.
-//
-// It is a sibling of ErrAttachmentInjectMappingKeyCollision rather than a
-// widening of it, because the registered wording of that one names an
-// attachment's injectMapping, which an override is not. Both are raised by one
-// walk over one record of the component's deliveries, so they cannot disagree
-// about which delivery holds a key.
-//
-// An override rewriting a key the component's own inject block or one of its
-// connections' inject blocks delivered is not this condition: that is
-// interception, and the override replaces that one entry — which is what the
-// compose bridge does to a consumer's host variable.
-// Category: OPS_ERROR. Match with
-// errors.Is(err, ErrBoundaryEnvOverrideKeyCollision()).
-func ErrBoundaryEnvOverrideKeyCollision() error { return errBoundaryEnvOverrideKeyCollision }
-
-var errBoundaryEnvOverrideKeyCollision = cerrors.Register("boundary-env-override-key-collision", cerrors.Meta{
-	ShortCode: "E0322",
-	Message:   "duplicate delivery key across two attachments: the environment override a boundary-scope attachment computes for a component writes a key another attachment already delivered",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
-})
-
 func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 
 var errUnmappedCustomMechanism = cerrors.Register("custom-mechanism-has-no-mapping", cerrors.Meta{

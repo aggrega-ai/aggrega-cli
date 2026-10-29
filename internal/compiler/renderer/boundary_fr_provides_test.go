@@ -76,7 +76,7 @@ func TestBoundaryScopeFRProvides_ResolvesThroughUsesEdge(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, nil, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, resolver.CatalogLookup{}, nil, state, nil); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 	// The pre-pass populated the boundary-scope FR's provides before any
@@ -126,7 +126,7 @@ func TestBoundaryScopeFRProvides_SameTypeTwiceDisambiguates(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, nil, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, resolver.CatalogLookup{}, nil, state, nil); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, nil, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(graph, release, nil, lookup, resolver.CatalogLookup{}, nil, state, nil); err != nil {
 		t.Fatalf("pre-pass: %v", err)
 	}
 	key := boundaryFRKey{BoundaryPath: "cluster", FRInstance: "db"}

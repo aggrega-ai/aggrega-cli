@@ -167,27 +167,3 @@ func TestSelfInjectWithheld_NothingDeclaredAndNoBlockReadNothing(t *testing.T) {
 		t.Errorf("a node declaring nothing must produce no marking; got %v", got)
 	}
 }
-
-// TestBoundaryEnvUntraced_EveryOverrideKeyIsWithheld is the boundary
-// consumer-env channel's reading. Its values are computed inside a provider guest
-// and carried here uninterpreted, so no per-key attribution exists on the host
-// side and the honest reading is to withhold every key the channel placed.
-func TestBoundaryEnvUntraced_EveryOverrideKeyIsWithheld(t *testing.T) {
-	t.Parallel()
-	got := boundaryEnvUntraced(map[string]string{
-		"ZZ_BRIDGE_SECRET": "s3cret",
-		"ZZ_BRIDGE_HOST":   "db.internal",
-	})
-
-	for _, key := range []string{"ZZ_BRIDGE_SECRET", "ZZ_BRIDGE_HOST"} {
-		if !got["env"][key] {
-			t.Errorf("every override key must be withheld, including %q; got %v", key, got)
-		}
-	}
-	if got["file"]["ZZ_BRIDGE_SECRET"] {
-		t.Errorf("the channel delivers env only; got %v", got)
-	}
-	if boundaryEnvUntraced(nil) != nil {
-		t.Error("a consumer the channel did not name must produce no marking")
-	}
-}

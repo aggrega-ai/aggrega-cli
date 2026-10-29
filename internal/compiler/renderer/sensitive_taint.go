@@ -353,34 +353,6 @@ func selfInjectWithheld(
 	return out
 }
 
-// boundaryEnvUntraced names the env delivery keys a boundary-scope FeatureRecipe
-// put on one consumer's pipe, as keys whose provenance cannot be traced.
-//
-// The channel's values are computed inside a provider guest from the boundary's
-// internal edges and the driving Feature's resolved infra, and the host carries
-// them without interpretation. So the host can see WHICH keys arrived and cannot
-// see what any of them was computed from: a guest free to interpolate a
-// declared-sensitive infra leaf into one override value leaves nothing on the host
-// side that could attribute it to a declaration.
-//
-// That is not a gap in this reading — it is the shape the channel has, and it is
-// exactly the condition the untraced route exists for. Every override key on the
-// consumer's pipe is therefore withheld, which over-withholds a public locator
-// delivered through the same channel and under-withholds nothing. The alternative
-// readings — attributing per key, or reading the guest's output — would require
-// either a provenance the boundary does not carry or an inspection of a rendered
-// value, which is the meaning-inference the compiler must not perform.
-func boundaryEnvUntraced(overrides map[string]string) redact.DeliveryKeys {
-	if len(overrides) == 0 {
-		return nil
-	}
-	keys := make(map[string]bool, len(overrides))
-	for key := range overrides {
-		keys[key] = true
-	}
-	return redact.DeliveryKeys{"env": keys}
-}
-
 // injectMappingWithheld reads which of the delivery keys a FeatureRecipe's own
 // injectMapping put on a node's pipe carry material the attachment's Feature
 // declares sensitive.

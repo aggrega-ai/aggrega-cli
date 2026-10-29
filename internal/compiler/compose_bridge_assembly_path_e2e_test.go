@@ -130,7 +130,10 @@ func TestComposeBridge_ReadsTheNetworkTheAssemblerPlacesEachEndpointOn(t *testin
 			rewritten := 0
 			for _, svc := range shape.Services {
 				for _, v := range svc.Environment {
-					if strings.HasPrefix(v, "aggrega-gw:") {
+					// A rewrite takes one of two forms: "aggrega-gw:<port>" for an
+					// address variable alone, "aggrega-gw" where the connection also
+					// delivers a port variable.
+					if v == "aggrega-gw" || strings.HasPrefix(v, "aggrega-gw:") {
 						rewritten++
 					}
 				}

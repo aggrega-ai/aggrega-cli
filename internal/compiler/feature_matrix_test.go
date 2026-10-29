@@ -188,9 +188,17 @@ func TestFeatureMatrix_ComposeSourcedWithBridge(t *testing.T) {
 			t.Errorf("merged docker-compose.yaml missing service %q:\n%s", want, dc)
 		}
 	}
-	// The boundary->component env channel rewrites the consumer's DB_HOST to the
-	// gateway at the edge-derived port (the db target port, 3306; no collision).
-	if !strings.Contains(dc, "aggrega-gw:3306") {
-		t.Errorf("merged compose missing aggrega-gw:3306 (edge-derived bridge rewrite):\n%s", dc)
+	// The consumer's connection delivers both DB_HOST (from the address field) and
+	// DB_PORT (from port), so the bridge FeatureRecipe's injectMapping rewrites the
+	// two together: the host variable to the gateway's name alone and the port
+	// variable to the gateway's listen port (the db target port, 3306; no
+	// collision). Both are asserted because they are one rewrite — a host variable
+	// written as "aggrega-gw:3306" beside a port variable would hand the consumer a
+	// port twice, and a port variable left at the target's port is wrong as soon
+	// as a collision moves the listen port.
+	for _, want := range []string{"DB_HOST: aggrega-gw\n", `DB_PORT: "3306"`} {
+		if !strings.Contains(dc, want) {
+			t.Errorf("merged compose missing %q (edge-derived bridge rewrite):\n%s", want, dc)
+		}
 	}
 }

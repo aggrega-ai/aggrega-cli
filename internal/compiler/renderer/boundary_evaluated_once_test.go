@@ -117,7 +117,7 @@ func newOnceFixture(fr *types.FeatureRecipe) onceFixture {
 // before its node walk.
 func (f onceFixture) prepass(t *testing.T, state *BoundaryFRState, catalog resolver.CatalogLookup) error {
 	t.Helper()
-	return PrepopulateBoundaryScopeProvides(context.Background(), f.graph, f.release, nil, f.lookup, catalog, nil, nil, state, nil)
+	return PrepopulateBoundaryScopeProvides(f.graph, f.release, nil, f.lookup, catalog, nil, state, nil)
 }
 
 // consumerRead is what one consumer reads of the attachment, through the production

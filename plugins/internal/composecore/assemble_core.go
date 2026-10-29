@@ -585,14 +585,12 @@ func isNetworkNameRune(r rune) bool {
 // network, because both branches encode into the same space. That is a property
 // of which identity is selected rather than of how it is written out.
 //
-// Both the per-node network-assignment loop and the compose-bridge
-// cross-network opt-in filter call THIS function — the network identity is the
-// resolved name, never the raw namespace string — and both pass it the same
-// fallback, the path the node's output is assembled at (the group path here, each
-// endpoint's assembly path on the bridge's edges), so the bridge's "is this edge
-// cross-network?" decision can never drift from where the nodes are actually
-// assigned. Splitting two identities that used to fold together therefore moves
-// an edge between them from same-network to cross-network.
+// Because the derivation is injective and both branches encode into one space,
+// two nodes land on different networks exactly where the identities it selects
+// differ — the namespace where one applies, else the path the node's output is
+// assembled at. A template deciding whether a connection crosses a network seam,
+// as the compose bridge FeatureRecipe does over a boundary's edges, compares those
+// identities and reaches the answer this derivation places the nodes by.
 func deriveNodeNetworkName(namespace, boundaryPath string) string {
 	if namespace != "" {
 		return networkNameEncoding.Segment(namespace)

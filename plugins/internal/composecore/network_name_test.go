@@ -262,43 +262,47 @@ func TestNetworkNameMatchesItsDocumentedExamples(t *testing.T) {
 	}
 }
 
-// TestBridgeSeamFollowsTheDerivationRatherThanTheRawIdentity is the behaviour
-// half of this change, asserted rather than reasoned about.
+// TestNetworksDifferExactlyWhereTheSelectedIdentitiesDiffer pins the property a
+// template comparing two endpoints' networks relies on. Such a template cannot
+// call the derivation, so it compares what the derivation is handed — the
+// namespace where one applies, else the assembly path — and that comparison
+// agrees with comparing the derived names only because the derivation is
+// injective and both branches encode into one space. The compose bridge
+// FeatureRecipe decides which connections cross a network seam that way, so a
+// derivation that folded two identities together would put both ends on one
+// network while the bridge still relayed between them.
 //
-// The same derivation names a node's network and decides whether an edge crosses
-// a network seam, so writing an identity out instead of folding it does not only
-// move emitted names: an edge whose two ends used to meet on one network only
-// BECAUSE of the fold now crosses a seam, and the compose bridge is what carries
-// it. An injective derivation can only split ends that previously compared
-// equal, never merge ends that did not, so the last row is the direction that
-// must stay put.
-func TestBridgeSeamFollowsTheDerivationRatherThanTheRawIdentity(t *testing.T) {
+// Each row asserts both readings: the derived names differ exactly where the
+// selected identities differ, and that answer is the one the row expects. The
+// last two rows are the direction an injective derivation must never move.
+func TestNetworksDifferExactlyWhereTheSelectedIdentitiesDiffer(t *testing.T) {
 	t.Parallel()
+	selected := func(namespace, assemblyPath string) string {
+		if namespace != "" {
+			return namespace
+		}
+		return assemblyPath
+	}
 	for _, tc := range []struct {
 		scenario       string
 		srcNS, srcPath string
 		tgtNS, tgtPath string
-		wantBridged    bool
+		wantDiffer     bool
 	}{
 		{"ends differing only in case", "Prod", "", "prod", "", true},
 		{"ends differing only in a separator a fold would substitute for", "a/b", "", "a_b", "", true},
 		{"one end with no identity at all against one spelling the old literal", "", "", "default", "", true},
+		{"one end placed by its namespace, the other by a different assembly path", "frontend", "bridge/compose", "", "bridge/compose", true},
+		{"a namespace and an assembly path spelled alike", "bridge", "x", "", "bridge", false},
 		{"ends carrying the same identity", "prod", "", "prod", "", false},
 		{"ends with no identity at all", "", "", "", "", false},
 	} {
-		spec := bridgeSpec{
-			Source: "consumer", Target: "producer", Socket: "db",
-			SrcNS: tc.srcNS, SrcPath: tc.srcPath,
-			TgtNS: tc.tgtNS, TgtPath: tc.tgtPath,
-			UpstreamHost: "producer", TargetPort: 5432,
-		}
-		resolved := resolveBridge([]bridgeSpec{spec}, 10000)
-		if bridged := len(resolved) == 1; bridged != tc.wantBridged {
-			t.Errorf("%s: source network %q, target network %q — bridged = %v, want %v",
-				tc.scenario,
-				deriveNodeNetworkName(tc.srcNS, tc.srcPath),
-				deriveNodeNetworkName(tc.tgtNS, tc.tgtPath),
-				bridged, tc.wantBridged)
+		src := deriveNodeNetworkName(tc.srcNS, tc.srcPath)
+		tgt := deriveNodeNetworkName(tc.tgtNS, tc.tgtPath)
+		identitiesDiffer := selected(tc.srcNS, tc.srcPath) != selected(tc.tgtNS, tc.tgtPath)
+		if namesDiffer := src != tgt; namesDiffer != identitiesDiffer || namesDiffer != tc.wantDiffer {
+			t.Errorf("%s: source network %q, target network %q — names differ = %v, selected identities differ = %v, want %v",
+				tc.scenario, src, tgt, namesDiffer, identitiesDiffer, tc.wantDiffer)
 		}
 	}
 }

@@ -689,10 +689,10 @@ type Derived struct {
 // mechanism and then by delivery key, which is the shape the delivery pipe is
 // displayed in and therefore not alias-keyed; a delivery key identifies exactly
 // one entry within its mechanism on a node. Two inject blocks claiming one key
-// halt the build, and so does an attachment's injectMapping, or a boundary-scope
-// attachment's environment override, writing a key another attachment delivered;
-// the rewrites that do not halt are those writing a key the component's own block
-// or a connection delivered, and they replace the entry rather than add a second.
+// halt the build, and so does an attachment's injectMapping writing a key another
+// attachment delivered; the rewrites that do not halt are those writing a key the
+// component's own block or a connection delivered, and they replace the entry
+// rather than add a second.
 //
 // The two are grouped rather than passed as two bare maps for the same reason
 // Derived is: they are read from the same edges by the same declaration lookup,

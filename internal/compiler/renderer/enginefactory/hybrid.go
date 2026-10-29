@@ -41,8 +41,8 @@ type engineCloser interface {
 // render adapter, so the render behavior is identical across the two tiers.
 //
 // A routed Wasm engine reports its behaviour — input kinds, boundary-assembly
-// mode, codec, and optional exports (source resolution, sub-chart assembly,
-// boundary env overrides) — from its own describe() self-report, so the compiler
+// mode, codec, and optional exports (source resolution, sub-chart assembly) —
+// from its own describe() self-report, so the compiler
 // carries no per-provider host holder for a standard provider. The Wasm engine
 // loads through sharedLoader (one compilation cache warmed once per build) and
 // resolves its bytes through pluginLookup (the entity-fronted artifact cascade),

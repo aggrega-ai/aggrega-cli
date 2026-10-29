@@ -15,7 +15,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // omitsSource declares two units of every kind an entry can name, and nothing in
@@ -515,39 +514,4 @@ func TestOmits_AWithheldFieldIsNeverQuoted(t *testing.T) {
 			t.Errorf("the halt quotes a withheld field, or does not carry %q:\n%v", want, err)
 		}
 	})
-}
-
-// TestOmits_TheMatchRunsBeforeTheGatewayIsAdded holds the order against the bridge
-// gateway, the one thing a sourced render adds to the document. An entry naming the
-// gateway's generated config counts zero, because the config is added after the
-// entries are matched; and an entry leaving out the gateway service the bridge
-// mounts that config into stops the render on the bridge's own halt rather than
-// emitting a gateway with nothing to run it.
-func TestOmits_TheMatchRunsBeforeTheGatewayIsAdded(t *testing.T) {
-	t.Parallel()
-
-	marker := bridgeMarkerFor([]map[string]any{
-		bridgeMarkerEdge("web", "db", "backend", "frontend", "backend",
-			map[string]string{"host": "db", "port": "5432"}),
-	}, nil)
-	values := map[string]any{bridgeMarkerKey: marker}
-
-	rendered, doc, err := renderOmitting(t, bridgeGatewayFragment, values, omitEntries("config/"+bridgeConfigName))
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if !slices.Equal(rendered.Omitted, []int{0}) {
-		t.Errorf("an entry matched the config the gateway adds after the match: counts %v, want [0]", rendered.Omitted)
-	}
-	if keys, _ := sectionKeys(doc, "configs"); !slices.Equal(keys, []string{bridgeConfigName}) {
-		t.Errorf("configs %v, want the gateway's own", keys)
-	}
-
-	// A second service keeps the services section in place once the gateway is
-	// left out, so the halt is the one naming the missing gateway.
-	withNeighbour := bridgeGatewayFragment + "  other:\n    image: busybox:1\n"
-	_, _, err = renderOmitting(t, withNeighbour, values, omitEntries("service/"+bridgeGatewayService))
-	if err == nil || !strings.Contains(cerrors.CauseChain(err), `gateway service "aggrega-gw" not present in the rendered fragment`) {
-		t.Errorf("leaving the gateway service out: got %v, want the bridge's halt naming the missing gateway", err)
-	}
 }

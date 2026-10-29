@@ -28,8 +28,9 @@ import (
 // runs the real pipeline with the CLI build's Options — including
 // resolution-completeness. The bridge feature `core/compose-bridge` therefore
 // resolves to its real shipped FeatureRecipe (loaded from aggrega-hub below),
-// which renders the gateway service and rewrites the consumer's DB_HOST — the
-// rendered output this test asserts on, not a hand-built graph.
+// whose own templates compute the bridge table, render the gateway's
+// configuration and rewrite the consumer's DB_HOST through its injectMapping —
+// the rendered output this test asserts on, not a hand-built graph.
 //
 // Fixture shape: parent boundary "cluster" attaches the bridge; child
 // "services-net" holds api, child "data-net" holds db + cache (both
@@ -80,8 +81,9 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 		}
 	}
 
-	// Assertion 3: the gateway's compiler-generated nginx stream config is
-	// delivered as a mounted compose config (not a base64 command), carries the
+	// Assertion 3: the gateway's nginx stream config, which the FeatureRecipe's
+	// values write, is delivered as a mounted compose config (not a base64
+	// command), carries the
 	// Docker DNS resolver, and has one server per bridged edge with deferred
 	// per-edge resolution (set $uN <host>:<port>; proxy_pass $uN). The port
 	// collision falls back to portBase: db and cache both provide port 5432;
@@ -120,8 +122,8 @@ func TestComposeBridge_CatalogDriven_E2E(t *testing.T) {
 	// Assertion 5: the relay path is complete — aggrega-gw joins the consumer's
 	// network AND the targets' network, matched by NAME against the components'
 	// actual assigned networks (not merely "has two networks"). This proves the
-	// projection's network derivation agrees with the assembler's placement;
-	// without the match the gateway has networks that don't relay.
+	// FeatureRecipe's choice of bridged edges agrees with the assembler's
+	// placement; without the match the gateway has networks that don't relay.
 	nets := parseServiceNetworks(t, merged)
 	gw := nets["aggrega-gw"]
 	if len(gw) == 0 {
@@ -181,8 +183,9 @@ func TestComposeBridge_Deterministic(t *testing.T) {
 }
 
 // bridgeStreamConfigContent pulls the inline content of the aggrega-gw-nginx
-// top-level compose config — the gateway's compiler-generated nginx stream
-// config, mounted as a file rather than delivered as a base64 command.
+// top-level compose config — the gateway's nginx stream config the
+// FeatureRecipe writes, mounted as a file rather than delivered as a base64
+// command.
 func bridgeStreamConfigContent(t *testing.T, compose string) string {
 	t.Helper()
 	var doc struct {

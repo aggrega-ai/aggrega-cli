@@ -21,12 +21,6 @@
 // host writes those bytes verbatim and runs no serializer, so the guest's
 // serialization is the on-disk output.
 //
-// The guest also implements the boundary_env_overrides export: from a boundary's
-// internal uses edges and the driving feature's infra it computes the
-// per-consumer environment overrides that route cross-network consumer endpoints
-// through the compose gateway, returning the map the host applies to each named
-// consumer's injected env.
-//
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o compose-provider.wasm ./plugins/compose-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
 // the first export, so the Go runtime is initialized before render_node.)
@@ -44,7 +38,7 @@ import (
 )
 
 // descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
-// the render_node, assemble_boundary, and boundary_env_overrides exports,
+// the render_node and assemble_boundary exports,
 // compatibility with the compose provider engine, and its plugin-level
 // render-behavior contract (the input kinds it renders, its boundary-merge
 // assembly and its honouring of omit entries). The host reads it once at load
@@ -53,8 +47,7 @@ import (
 // listing and asks the host to pack it, so render_node declares the
 // aggrega_pack_source host function it imports; the host cross-checks this
 // declaration against the functions the guest actually imports. The
-// assemble_boundary and boundary_env_overrides exports work from payloads and
-// import no host function.
+// assemble_boundary export works from payloads and imports no host function.
 //
 // aggrega.MarshalDescriptor folds the build-provenance version and commit into
 // the metadata when the Go linker stamps them at build time; a plain build
@@ -78,12 +71,6 @@ func descriptor() aggrega.PluginDescriptor {
 				InputPattern: "b",
 				Stability:    "experimental",
 				Description:  "merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml",
-			},
-			{
-				Name:         "boundary_env_overrides",
-				InputPattern: "b",
-				Stability:    "experimental",
-				Description:  "computes per-consumer environment overrides that route a boundary's cross-network consumer endpoints through the compose gateway",
 			},
 		},
 		Contract: &aggrega.ProviderContract{
@@ -119,8 +106,7 @@ func describe() int32 {
 //
 // The out-of-band channel remains for the one failure the in-band channel cannot
 // carry: an output the guest could not serialize, where there is no envelope to
-// report on. boundary_env_overrides keeps it for every failure, because its
-// output shape declares no failure channel at all.
+// report on.
 
 //go:wasmexport render_node
 func renderNode() int32 {
@@ -183,29 +169,6 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 	return assembleBoundaryFromInput(in)
-}
-
-//go:wasmexport boundary_env_overrides
-func boundaryEnvOverrides() int32 {
-	var in rendercore.BoundaryEnvOverridesInput
-	if err := in.DecodeCBOR(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-
-	overrides, err := composecore.ComputeBridgeConsumerEnvOverrides(in.InternalUsesEdges, in.Infra)
-	if err != nil {
-		pdk.SetError(errors.New(rendercore.FailureOf(err).Message))
-		return 1
-	}
-
-	encoded, err := rendercore.BoundaryEnvOverridesOutput{Overrides: overrides}.EncodeCBOR()
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	pdk.Output(encoded)
-	return 0
 }
 
 // assembleBoundaryFromInput reconstructs the compose assemble core's inputs from

@@ -76,8 +76,6 @@ type (
 	ArtifactsProjection        = rendercore.ArtifactsProjection
 	AssembleBoundaryInput      = rendercore.AssembleBoundaryInput
 	AssembleBoundaryOutput     = rendercore.AssembleBoundaryOutput
-	BoundaryEnvOverridesInput  = rendercore.BoundaryEnvOverridesInput
-	BoundaryEnvOverridesOutput = rendercore.BoundaryEnvOverridesOutput
 	CarveInput                 = rendercore.CarveInput
 	CarveOutput                = rendercore.CarveOutput
 	DerivedNameVerdict         = rendercore.DerivedNameVerdict

@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -58,7 +57,6 @@ type crossBoundaryLinks struct {
 	stampErr     map[string]error
 	aliases      map[linkTriple]string
 	placeholders map[string]linkRead
-	byDelivered  map[string]string
 	read         map[linkTriple]map[string]bool
 }
 
@@ -68,7 +66,6 @@ func newCrossBoundaryLinks() *crossBoundaryLinks {
 		stampErr:     map[string]error{},
 		aliases:      map[linkTriple]string{},
 		placeholders: map[string]linkRead{},
-		byDelivered:  map[string]string{},
 		read:         map[linkTriple]map[string]bool{},
 	}
 }
@@ -290,7 +287,6 @@ func (l *crossBoundaryLinks) stampProvides(link linkTriple, alias string, provid
 		placeholder := rendercore.CrossBoundaryLinkReadPlaceholder(link.source, link.target, link.socket, key)
 		delivered := rendercore.CrossBoundaryLinkSentinel(link.source, link.target, link.socket, key)
 		l.placeholders[placeholder] = linkRead{link: link, alias: alias, key: key, value: value, delivered: delivered}
-		l.byDelivered[delivered] = placeholder
 		out.Set(key, placeholder)
 	}
 	return out
@@ -544,128 +540,6 @@ func sortedSet(set map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// envOverridesOverLinkReads drives a boundary-scope FeatureRecipe's consumer-env
-// channel over edge views that may carry read placeholders, holding the plugin
-// computing the overrides to the same rule a template is held to: it may only copy
-// a value it reads off a linked edge.
-//
-// The read placeholders never leave the host, so the plugin is handed the edges
-// twice — once with each placeholder in the delivery form the provider later
-// rewrites, once with the real values — and the first answer, each delivery
-// placeholder written back to its value, must equal the second. When it does, the
-// first answer is the one applied, and each key whose delivery placeholder it
-// carries is recorded as read. Edges carrying no read placeholder reach the
-// plugin once, exactly as they are.
-func (l *crossBoundaryLinks) envOverridesOverLinkReads(
-	edges []types.EnrichedEdge,
-	surface string,
-	call func([]types.EnrichedEdge) (map[string]map[string]string, error),
-) (map[string]map[string]string, error) {
-	var present []string
-	if l != nil {
-		found := map[string]bool{}
-		for _, edge := range edges {
-			for _, value := range edge.Provides.All() {
-				l.collectPlaceholders(value, found)
-			}
-		}
-		present = sortedSet(found)
-	}
-	if len(present) == 0 {
-		return call(edges)
-	}
-	leaving := func(except string) []types.EnrichedEdge {
-		return l.edgesWith(edges, func(placeholder string) string {
-			if placeholder == except {
-				return l.placeholders[placeholder].delivered
-			}
-			return l.placeholders[placeholder].value
-		})
-	}
-	delivered := l.edgesWith(edges, func(placeholder string) string { return l.placeholders[placeholder].delivered })
-	out, outErr := call(delivered)
-	realOut, realErr := call(leaving(""))
-	if outErr != nil && realErr != nil {
-		return nil, realErr
-	}
-	deliveredOf := make([]string, 0, len(present))
-	for _, placeholder := range present {
-		deliveredOf = append(deliveredOf, l.placeholders[placeholder].delivered)
-	}
-	if outErr == nil && realErr == nil && reflect.DeepEqual(l.writeBackOverrides(out, deliveredOf), realOut) {
-		var read []string
-		for _, placeholder := range present {
-			if overridesCarry(out, l.placeholders[placeholder].delivered) {
-				read = append(read, placeholder)
-			}
-		}
-		l.record(read)
-		return out, nil
-	}
-	var involved []string
-	for _, placeholder := range present {
-		o, err := call(leaving(placeholder))
-		differs := (err == nil) != (realErr == nil) ||
-			(err == nil && !reflect.DeepEqual(l.writeBackOverrides(o, []string{l.placeholders[placeholder].delivered}), realOut))
-		if differs {
-			involved = append(involved, placeholder)
-		}
-	}
-	if len(involved) == 0 {
-		involved = present
-	}
-	return nil, l.notCopiedError(surface, surface, involved)
-}
-
-// edgesWith copies edge views with each read placeholder in their provides
-// replaced by what form returns for it.
-func (l *crossBoundaryLinks) edgesWith(edges []types.EnrichedEdge, form func(placeholder string) string) []types.EnrichedEdge {
-	out := make([]types.EnrichedEdge, len(edges))
-	for i, edge := range edges {
-		var provides types.OrderedMap[string]
-		for key, value := range edge.Provides.All() {
-			if _, isPlaceholder := l.placeholders[value]; isPlaceholder {
-				value = form(value)
-			}
-			provides.Set(key, value)
-		}
-		edge.Provides = provides
-		out[i] = edge
-	}
-	return out
-}
-
-// writeBackOverrides returns a copy of a consumer-env answer with each given
-// delivery placeholder replaced by the value it stands for.
-func (l *crossBoundaryLinks) writeBackOverrides(overrides map[string]map[string]string, delivered []string) map[string]map[string]string {
-	if overrides == nil {
-		return nil
-	}
-	out := make(map[string]map[string]string, len(overrides))
-	for node, envs := range overrides {
-		copied := make(map[string]string, len(envs))
-		for name, value := range envs {
-			for _, d := range delivered {
-				value = strings.ReplaceAll(value, d, l.placeholders[l.byDelivered[d]].value)
-			}
-			copied[name] = value
-		}
-		out[node] = copied
-	}
-	return out
-}
-
-func overridesCarry(overrides map[string]map[string]string, token string) bool {
-	for _, envs := range overrides {
-		for _, value := range envs {
-			if strings.Contains(value, token) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // onDemandDispatchKey derives a node's dispatch key by evaluating the pure path

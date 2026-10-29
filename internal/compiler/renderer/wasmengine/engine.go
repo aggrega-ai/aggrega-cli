@@ -99,7 +99,6 @@ var (
 	_ renderer.NodeInputValidator             = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer            = (*Engine)(nil)
 	_ renderer.ArtifactsEmitter               = (*Engine)(nil)
-	_ renderer.BoundaryEnvOverrider           = (*Engine)(nil)
 	_ renderer.NameBounder                    = (*Engine)(nil)
 	_ renderer.RenderedNameReporter           = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter       = (*Engine)(nil)
@@ -870,48 +869,6 @@ func (e *Engine) invokeValidate(ctx context.Context, input renderer.RenderNodeIn
 		diags = append(diags, renderer.Diagnostic{Severity: abi.SeverityWarn, Message: w})
 	}
 	return diags, nil
-}
-
-// BoundaryEnvOverrides drives the guest's optional boundary_env_overrides export
-// to compute per-consumer environment overrides from a boundary's internal uses
-// edges and the driving feature's resolved infra, returning the map keyed
-// consumer-nodeID -> {envVar: value}. It is advertised-only: a guest that does
-// not declare the export in describe() is never invoked, and this returns a nil
-// map and no error, so the host applies no overrides for that provider. The
-// computation lives entirely in the guest; the host projects the edge context in
-// and applies the returned overrides. AssemblerEngine embeds *Engine and
-// inherits this method.
-func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error) {
-	export := wasm.BoundaryEnvOverridesExport
-	desc, err := e.describeContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !advertisesExport(desc, export) {
-		return nil, nil
-	}
-
-	plugin, release, err := e.acquireInstance(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-
-	input := renderer.BoundaryEnvOverridesInput{InternalUsesEdges: internalUsesEdges, Infra: infra}
-	payload, err := input.EncodeCBOR()
-	if err != nil {
-		return nil, fmt.Errorf("encode boundary_env_overrides input: %w", err)
-	}
-	raw, err := wasm.InvokeExport(ctx, plugin, *desc, export, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	var out renderer.BoundaryEnvOverridesOutput
-	if err := wasm.DecodeGuestOutputCBOR(export.Name(), raw, &out); err != nil {
-		return nil, err
-	}
-	return out.Overrides, nil
 }
 
 // NameBound drives the guest's optional name_bound export to ask whether a

@@ -60,8 +60,7 @@ type SourcedRender struct {
 
 // RenderSourcedCore parses the base compose bytes, deep-merges the values dict
 // on top, leaves out the units the node's omit entries name, injects the
-// compose-bridge gateway (no-op for non-bridge renders) and the aggrega.ai/*
-// provenance labels, and emits an Intermediate=true compose-fragment for the
+// aggrega.ai/* provenance labels, and emits an Intermediate=true compose-fragment for the
 // boundary merger to consume. sourcePath is the operator-facing source identifier
 // threaded through only for diagnostics so the parse-error messages match the
 // source the host read.
@@ -108,17 +107,11 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 
 	merged := deepMergeOverlay(base, values)
 	// The omit entries see the document the overlay produced, so a unit the values
-	// added is left out like one the source declared, and run before the gateway
-	// and the labels below, so nothing the render adds is ever matched.
+	// added is left out like one the source declared, and run before the labels
+	// below, so nothing the render adds is ever matched.
 	omitted, err := leaveOut(merged, nodeCtx.Omits, nodeCtx.NodeID)
 	if err != nil {
 		return SourcedRender{}, err
-	}
-	// compose-bridge: when the fragment carries the bridge marker, generate the
-	// gateway's nginx stream config and mount it as a compose config, then strip
-	// the marker. No-op for every non-bridge sourced render.
-	if err := injectBridgeGateway(merged); err != nil {
-		return SourcedRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: bridge gateway", nodeCtx.NodeID))
 	}
 	origins := buildSingleOriginMap(merged, nodeCtx)
 	injectAggregaLabelsIntoServices(merged, origins)

@@ -1005,6 +1005,10 @@ var retiredShortCodes = []retirement{
 	{"E0245", "The condition this number named was withdrawn, and no build reports it."},
 	{"E0249", "The condition this number named was withdrawn, and no build reports it."},
 	{"E0258", "The condition this number named was withdrawn, and no build reports it."},
+	{"E0322", "It named a value a Feature attached to a boundary computed for a component's environment " +
+		"under a key another attachment had already delivered. A Feature attached to a boundary delivers " +
+		"into a component only through its FeatureRecipe's injectMapping, and a mapping writing a key " +
+		"another attachment delivered is reported under `E0318`."},
 }
 
 // retiredIndex keys [retiredShortCodes] for the lookup [Register] performs.

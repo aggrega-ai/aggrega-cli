@@ -53,13 +53,11 @@ package renderer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -210,31 +208,6 @@ type BoundaryFRState struct {
 	// re-derived. An absent entry reads as false.
 	ValuesReachAssembly map[boundaryFRKey]bool
 
-	// ConsumerEnvOverrides carries per-consumer environment overrides a
-	// boundary-scope FeatureRecipe's resource-gen emits, keyed
-	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
-	// consumer's entries to that consumer's injected env after Phase A, over
-	// whatever the component's own block or one of its connections delivered
-	// under those keys. The channel is generic: it carries opaque string values
-	// and does not interpret them.
-	//
-	// It is the merged answer and keeps no producer; which attachment wrote each
-	// key is ConsumerEnvOverrideProducers, written beside it by the same merge.
-	ConsumerEnvOverrides map[string]map[string]string
-
-	// ConsumerEnvOverrideProducers carries, per consumer node, every
-	// boundary-scope attachment whose override names that node — in the order
-	// the overrides were produced — with the keys each one overrides there.
-	//
-	// It exists because the merged map above cannot say who wrote a key, and that
-	// is the whole of what decides whether an override is interception or a
-	// collision: rewriting a key the component's own block or a connection
-	// delivered is the channel's purpose, while rewriting a key another attachment
-	// delivered would silently replace that attachment's delivery. Recording it at
-	// the merge, rather than recovering it afterwards, is what keeps the
-	// attribution the answer the merge actually applied.
-	ConsumerEnvOverrideProducers map[string][]consumerEnvOverride
-
 	// links is the render's one classification of the uses edges the
 	// cross-boundary link pass wires, and its record of what templates read off
 	// them. It rides on this state because the state is what both boundary-scope
@@ -275,60 +248,18 @@ type boundaryFREvaluation struct {
 	Provides types.OrderedMap[string]
 }
 
-// consumerEnvOverride is one boundary-scope attachment's override of one
-// consumer's environment: the attachment that produced it, and the keys it
-// overrides there in the order they are applied.
-type consumerEnvOverride struct {
-	// producer is the attachment, as the boundary it is declared on and the name
-	// it is declared under.
-	producer boundaryFRKey
-
-	// envVars are the keys the override names, sorted — the order the overrides
-	// are applied in, since the channel carries no author order of its own.
-	envVars []string
-}
-
-// consumerEnvOverrideDeliveries reads the deliveries the boundary-scope overrides
-// of one consumer make on its pipe, each attributed to the attachment that
-// produced it and marked as made through an environment override, in production
-// order and then in the order each override's keys are applied.
-//
-// Each override is read as a pipe of its own through the one walk every pipe is
-// read by, as a mapping's overlay is, rather than by a second walk that agrees
-// with it today. Every delivery is marked delivered, because the override sets
-// every key it names.
-func consumerEnvOverrideDeliveries(overrides []consumerEnvOverride) []constraint.InjectDelivery {
-	var out []constraint.InjectDelivery
-	for _, override := range overrides {
-		var overlay types.InjectPipe
-		for _, envVar := range override.envVars {
-			overlay.Env.Set(envVar, "")
-		}
-		deliveries := pipeDeliveries(overlay)
-		for i := range deliveries {
-			deliveries[i].Attachment = override.producer.FRInstance
-			deliveries[i].ThroughBoundaryEnvOverride = true
-		}
-		out = append(out, deliveries...)
-	}
-	return out
-}
-
 // NewBoundaryFRState returns a fresh state instance ready for population.
 func NewBoundaryFRState() *BoundaryFRState {
 	return &BoundaryFRState{
-		Dedup:                map[boundaryFRKey]bool{},
-		Evaluations:          map[boundaryFRKey]boundaryFREvaluation{},
-		evaluationsMade:      map[boundaryFRKey]int{},
-		Files:                map[boundaryFRKey][]EmittedFile{},
-		ComponentIDs:         map[boundaryFRKey]string{},
-		Values:               map[boundaryFRKey]map[string]any{},
-		ValuesReachAssembly:  map[boundaryFRKey]bool{},
-		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
-		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
-		ConsumerEnvOverrides: map[string]map[string]string{},
-
-		ConsumerEnvOverrideProducers: map[string][]consumerEnvOverride{},
+		Dedup:               map[boundaryFRKey]bool{},
+		Evaluations:         map[boundaryFRKey]boundaryFREvaluation{},
+		evaluationsMade:     map[boundaryFRKey]int{},
+		Files:               map[boundaryFRKey][]EmittedFile{},
+		ComponentIDs:        map[boundaryFRKey]string{},
+		Values:              map[boundaryFRKey]map[string]any{},
+		ValuesReachAssembly: map[boundaryFRKey]bool{},
+		DerivedKeys:         map[boundaryFRKey]types.OrderedMap[[]string]{},
+		DerivedKeyRepeats:   map[boundaryFRKey][]derivedKeyRepeat{},
 	}
 }
 
@@ -966,24 +897,18 @@ func buildBoundaryFRTemplateContext(
 // once rather than once per consumer. catalogLookup is what the contract is read
 // from; a lookup with no Feature reader declares no contract.
 //
-// ctx is the build's own. The template evaluation below is host-side and observes
-// nothing, but the optional boundary-to-consumer env channel crosses into the
-// provider guest, and a guest call whose context ends unwinds rather than being
-// noticed only once the guest next returns. So ending the build ends that
-// crossing rather than leaving it to finish for a render nobody is waiting for.
+// The evaluation is host-side template work and crosses into no plugin.
 //
 // declared answers what each boundary attachment's Feature declares sensitive, so
 // a failing locals or provides template reports without such a value; nil declares
 // nothing.
 func PrepopulateBoundaryScopeProvides(
-	ctx context.Context,
 	graph *types.IRGraph,
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 	recipeLookup RecipeLookup,
 	catalogLookup resolver.CatalogLookup,
 	allProvides NodeProvides,
-	engineFactory EngineFactory,
 	state *BoundaryFRState,
 	declared func(featureType string) resolver.SensitiveLeaves,
 ) error {
@@ -1007,129 +932,9 @@ func PrepopulateBoundaryScopeProvides(
 				featureProvidesContractOf(catalogLookup, bf.Type)); err != nil {
 				return err
 			}
-			// Generic boundary->component env channel: if the FR's provider
-			// engine implements the optional override capability, let it
-			// produce per-consumer env overrides from the boundary's internal
-			// uses edges and the driving feature's infra. The channel is
-			// provider-agnostic — it stores whatever opaque string values the
-			// engine returns; it does not interpret them. Production lives in the
-			// provider guest, not here: the host projects the edge context and the
-			// guest computes the overrides. The host still applies each named
-			// consumer's overrides into that consumer's render context, once the
-			// rule over that consumer's deliveries has found no key another
-			// attachment delivered — which is why the merge is told which
-			// attachment produced them.
-			if engineFactory != nil && frCtx.Boundary != nil {
-				eng, engErr := engineFactory(fr.Spec.Capability)
-				if engErr != nil {
-					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: selecting its rendering plugin", instName))
-				}
-				if ov, ok := eng.(BoundaryEnvOverrider); ok {
-					// An edge the link pass wires carries read placeholders in its
-					// provides; they reach the plugin only in the delivery form, and
-					// the plugin is held to copying them (envOverridesOverLinkReads).
-					overrides, ovErr := state.links.envOverridesOverLinkReads(frCtx.Boundary.InternalUsesEdges,
-						fmt.Sprintf("consumer env overrides of boundary-scope FeatureRecipe %q", instName),
-						func(edges []types.EnrichedEdge) (map[string]map[string]string, error) {
-							return ov.BoundaryEnvOverrides(ctx, edges, frCtx.Infra)
-						})
-					if ovErr != nil {
-						// The copy-only halt is the FeatureRecipe author's to act on and
-						// already names the surface, so it is returned as raised rather
-						// than charged to the plugin.
-						if errors.Is(ovErr, ErrCrossBoundaryLinkValueNotCopied()) {
-							return ovErr
-						}
-						return cerrors.Wrap(ovErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q consumer env overrides", instName))
-					}
-					mergeConsumerEnvOverrides(state, key, overrides)
-				}
-			}
 		}
 	}
 	return nil
-}
-
-// BoundaryEnvOverrider is the optional capability a provider engine implements
-// to drive the boundary->component env channel. Given a boundary's internal uses
-// edges and the driving feature's resolved infra, it returns per-consumer
-// environment overrides keyed consumer-nodeID -> {envVar: value}. The channel
-// applies each named consumer's entries to that consumer's injected env after
-// Phase A, and halts instead where an entry names a key a different attachment
-// on that consumer delivered. The contract is provider-agnostic: the values are opaque strings the
-// orchestrator carries without interpretation, and a provider whose guest does
-// not advertise the channel returns an empty map. The computation lives in the
-// provider guest; the host projects the edge context in and applies the returned
-// overrides.
-type BoundaryEnvOverrider interface {
-	BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []types.EnrichedEdge, infra types.OrderedMap[any]) (map[string]map[string]string, error)
-}
-
-// applyConsumerEnvOverrides sets each override key into inject.Env and rebuilds
-// inject.All. The overrides arrive as a plain map from the provider-agnostic
-// BoundaryConsumerEnvOverrider boundary, which carries no author order — so the
-// sorted-key application here is the determinism mechanism for any genuinely-new
-// Env key (Invariant 8), NOT a substitution for an OrderedMap order that exists
-// upstream (there is none to drive from). An existing key is updated in place
-// (OrderedMap.Set preserves position). It is a targeted overwrite of exactly
-// the override keys — other Env keys, and inject.File / inject.Arg, are left
-// byte-identical. What stood under an override key is the component's own or a
-// connection's delivery: a key another attachment delivered halts the build
-// before this runs, by the rule over the consumer's deliveries. A nil/empty
-// override map is a no-op (non-named consumers are untouched). Rebuilding
-// inject.All matches the inject-rehydrate tail.
-func applyConsumerEnvOverrides(inject *types.InjectPipe, overrides map[string]string) {
-	if inject == nil || len(overrides) == 0 {
-		return
-	}
-	keys := make([]string, 0, len(overrides))
-	for k := range overrides {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		inject.Env.Set(k, overrides[k])
-	}
-	inject.All = buildInjectAll(*inject)
-}
-
-// mergeConsumerEnvOverrides merges one producer's per-consumer env-override map
-// into state.ConsumerEnvOverrides, and records beside it which attachment the
-// producer is and which keys it overrides on each consumer.
-//
-// Per (nodeID, envVar) the later writer stands in the merged map. That is a
-// precedence only between two overrides one attachment produced — an attachment
-// declared under one name at two nested boundaries reaches each component as one
-// attachment — because two different attachments overriding one key on one
-// consumer is refused before the merged map is applied. The record is what that
-// refusal reads, so the producer is taken here rather than recovered later.
-//
-// Callers iterate boundary FRs in graph.Spec.BoundaryFeatures order, which is
-// deterministic, so both the merged map and each consumer's list of producers are
-// deterministic; a producer's own keys are recorded sorted, the order they are
-// applied in.
-func mergeConsumerEnvOverrides(state *BoundaryFRState, producer boundaryFRKey, overrides map[string]map[string]string) {
-	if state == nil || len(overrides) == 0 {
-		return
-	}
-	for nodeID, envs := range overrides {
-		dest, ok := state.ConsumerEnvOverrides[nodeID]
-		if !ok {
-			dest = map[string]string{}
-			state.ConsumerEnvOverrides[nodeID] = dest
-		}
-		envVars := make([]string, 0, len(envs))
-		for k, v := range envs {
-			dest[k] = v
-			envVars = append(envVars, k)
-		}
-		if len(envVars) == 0 {
-			continue
-		}
-		sort.Strings(envVars)
-		state.ConsumerEnvOverrideProducers[nodeID] = append(state.ConsumerEnvOverrideProducers[nodeID],
-			consumerEnvOverride{producer: producer, envVars: envVars})
-	}
 }
 
 // evaluateBoundaryFRTemplates makes the one evaluation of a boundary-scope FR's
