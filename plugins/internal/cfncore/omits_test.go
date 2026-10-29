@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // omitsTemplate declares two resources of one Type and a third of another, and
@@ -271,7 +271,7 @@ func TestLeaveOutSourced_AnEntryWithANamespaceIsRefused(t *testing.T) {
 	entries := resourceOmits("AWS::SQS::Queue/Queue", "AWS::S3::Bucket/Logs")
 	entries[1].Entry.Namespace = "prod"
 	_, counts, err := LeaveOutSourced(oneTemplate(t, omitsTemplate), false, entries, "app")
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("got %v, want the refusal of an entry naming a namespace", err)
 	}
 	if counts != nil {
@@ -291,7 +291,7 @@ func TestLeaveOutSourced_AnEntryWithASubchartIsRefused(t *testing.T) {
 	entries := resourceOmits("AWS::SQS::Queue/Queue", "AWS::S3::Bucket/Logs")
 	entries[1].Entry.Subchart = "operator"
 	_, counts, err := LeaveOutSourced(oneTemplate(t, omitsTemplate), false, entries, "app")
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("got %v, want the refusal of an entry naming a subchart", err)
 	}
 	if counts != nil {
@@ -375,7 +375,7 @@ func TestLeaveOutSourced_ARemainingReferenceToALeftOutResourceHalts(t *testing.T
 				t.Fatalf("the control leaving the unreferenced queue out: %v", err)
 			}
 			_, counts, err := LeaveOutSourced(files, false, resourceOmits("AWS::S3::Bucket/Logs"), "app")
-			if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+			if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 				t.Fatalf("got %v (counts %v), want the halt on the remaining reference", err, counts)
 			}
 			for _, want := range []string{
@@ -457,7 +457,7 @@ func TestLeaveOutSourced_EveryRemainingReferenceIsReportedInOneOrder(t *testing.
 		SourcedFile{Path: "a.yaml", Content: []byte("Resources:\n  Alpha:\n    Type: AWS::SQS::Queue\n    Properties:\n      Name: !Sub \"${Logs}\"\n")},
 	)
 	_, _, err := LeaveOutSourced(files, true, resourceOmits("AWS::S3::Bucket/Logs"), "app")
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("got %v, want the halt", err)
 	}
 	const res = `resource "Logs" (type "AWS::S3::Bucket")`
@@ -486,7 +486,7 @@ func TestLeaveOutSourced_AWithheldFieldIsNeverQuoted(t *testing.T) {
 
 	t.Run("a namespace", func(t *testing.T) {
 		_, _, err := LeaveOutSourced(oneTemplate(t, omitsTemplate), false, withheld("prod"), "app")
-		if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 			t.Fatalf("got %v, want the namespace refusal", err)
 		}
 		placeholder := redact.Placeholder()
@@ -499,7 +499,7 @@ func TestLeaveOutSourced_AWithheldFieldIsNeverQuoted(t *testing.T) {
 		files := oneTemplate(t, omitsReferring+
 			"Outputs:\n  Out:\n    Value: !Sub [\"${Logs}\", {Logs: !Ref Logs}]\n")
 		_, _, err := LeaveOutSourced(files, false, withheld(""), "app")
-		if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 			t.Fatalf("got %v, want the reference halt", err)
 		}
 		placeholder := redact.Placeholder()

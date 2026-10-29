@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package featurerecipe_pipeline
+package stepwalk
 
 import (
 	"context"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"strings"
 	"testing"
 
@@ -19,13 +20,13 @@ import (
 // into this pipeline: after the walk, `.steps` holds only this pipeline's own
 // step id, and a step's `with` referencing the foreign id resolves to nothing.
 func TestWalk_StepsChannelIsolatedPerPipeline(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 
 	var ownOut types.OrderedMap[any]
 	ownOut.Set("k", "from-mine")
 
 	inv := newScripted()
-	inv.outputs["mine"] = FRPStepOutput{Outputs: ownOut}
+	inv.outputs["mine"] = frp.FRPStepOutput{Outputs: ownOut}
 
 	// The eval stub resolves the step's `with`: it reports whether the foreign
 	// entry is visible in the live context at evaluation time. If isolation

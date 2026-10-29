@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -52,7 +53,7 @@ func TestGuestReturnedError(t *testing.T) {
 // wording — leaving a diagnostic whose code resolves to one sentence and whose
 // text says another.
 func TestGuestReturnedError_ReportedConditionStandsOverTheHostCondition(t *testing.T) {
-	chosen := conditionReport(t, ErrPluginCannotExpressInput(), "the occurrence's own clause")
+	chosen := conditionReport(t, plugincondition.ErrPluginCannotExpressInput(), "the occurrence's own clause")
 
 	err := GuestReturnedError("provider/example-provider", "render_node", chosen)
 	if got, ok := cerrors.CodeOf(err); !ok || got != chosen.Code {
@@ -70,7 +71,7 @@ func TestGuestReturnedError_ReportedConditionStandsOverTheHostCondition(t *testi
 	// and the reader looking the code up is told something the line did not say.
 	// It is read off the identity rather than written out here, so the wording
 	// still has exactly one home.
-	if !strings.Contains(err.Error(), ErrPluginCannotExpressInput().Error()) {
+	if !strings.Contains(err.Error(), plugincondition.ErrPluginCannotExpressInput().Error()) {
 		t.Errorf("the error no longer carries the chosen condition's registered sentence, so the code in "+
 			"the head and the sentence beside it name different conditions, got %q", err.Error())
 	}
@@ -142,7 +143,7 @@ func TestGuestReturnedError_TwoPluginsOneCodeStayDistinguishable(t *testing.T) {
 		second = "provider/another-provider"
 	)
 
-	failure := conditionReport(t, ErrPluginCannotExpressInput(), "the occurrence's own clause")
+	failure := conditionReport(t, plugincondition.ErrPluginCannotExpressInput(), "the occurrence's own clause")
 	sharedCode, sharedShort := failure.Code, failure.ShortCode
 	errFirst := GuestReturnedError(first, "render_node", failure)
 	errSecond := GuestReturnedError(second, "render_node", failure)

@@ -15,6 +15,7 @@ import (
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline/stepwalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -228,7 +229,7 @@ func runNodePipelineWithInvoker(
 	withheld redact.Keys,
 	ownCodec frp.Codec,
 	hostCodec frp.Codec,
-	invoke frp.StepInvoker,
+	invoke stepwalk.StepInvoker,
 	nodeID string,
 ) (pipelineResult, error) {
 	res := pipelineResult{Own: own}
@@ -262,11 +263,11 @@ func runNodePipelineWithInvoker(
 	eval := func(name, text string, data any) (string, error) {
 		return EvalTemplate(name, text, data, withheld)
 	}
-	readWith := frp.EvaluateWithThrough(func(name, text string, data any, dst *types.OrderedMap[any]) (error, error) {
+	readWith := stepwalk.EvaluateWithThrough(func(name, text string, data any, dst *types.OrderedMap[any]) (error, error) {
 		_, evalErr, decodeErr := EvalTemplateDecoded(name, text, data, withheld, dst)
 		return evalErr, decodeErr
 	})
-	walkRes, werr := frp.Walk(ctx, docs, steps, withholdStepInputRefusal(invoke, withheld), withCtx, renderCtx, eval, readWith)
+	walkRes, werr := stepwalk.Walk(ctx, docs, steps, withholdStepInputRefusal(invoke, withheld), withCtx, renderCtx, eval, readWith)
 	if werr != nil {
 		return pipelineResult{}, mapWalkError(werr, nodeID, len(host) > 0)
 	}
@@ -464,8 +465,8 @@ func splitBoundaryPath(bp string) []string {
 // validates the descriptor), invoke the step's named export, and close the
 // plugin. It mirrors the publishing-linter's dispatch precedent; loading per
 // step is acceptable (batch amortisation is a follow-on).
-func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
-	return func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, frp.OutputsCheck, error) {
+func newStepInvoker(lookup pluginpath.Lookup) stepwalk.StepInvoker {
+	return func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, stepwalk.OutputsCheck, error) {
 		resolved, err := lookup(step.Plugin)
 		if err != nil {
 			return nil, nil, err
@@ -574,11 +575,11 @@ func (e *stepInputRefused) withheld() error {
 // the value wherever the step's `with` template reads a datum withheld names. A
 // refusal of a step whose `with` reads none, and every other failure, pass through
 // as invoke returned them.
-func withholdStepInputRefusal(invoke frp.StepInvoker, withheld redact.Keys) frp.StepInvoker {
+func withholdStepInputRefusal(invoke stepwalk.StepInvoker, withheld redact.Keys) stepwalk.StepInvoker {
 	if !withheld.AnyWithheld() {
 		return invoke
 	}
-	return func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, frp.OutputsCheck, error) {
+	return func(ctx context.Context, step types.PipelineStep, input types.OrderedMap[any], payload []byte) ([]byte, stepwalk.OutputsCheck, error) {
 		raw, checkOutputs, err := invoke(ctx, step, input, payload)
 		var refused *stepInputRefused
 		if err != nil && errors.As(err, &refused) && templateReadsWithheld(step.With, withheld) {
@@ -611,7 +612,7 @@ func validateStepOutput(export wasm.PluginExport, outputs types.OrderedMap[any],
 // per-export declarations. Reading the descriptor is itself a guest call, so a
 // reader that asks crosses to the guest, and one that does not asks nothing.
 //
-// It is separate from frp.StepInvoker because the two answer different
+// It is separate from stepwalk.StepInvoker because the two answer different
 // questions: the invoker runs an export and hides the descriptor, while a reader
 // of what a plugin declared about itself needs the descriptor and runs nothing.
 //

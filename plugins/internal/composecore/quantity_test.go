@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/quantity"
 )
@@ -249,7 +249,7 @@ func TestTranslateComposeResources_NVIDIAGPURefusals(t *testing.T) {
 			if err == nil {
 				t.Fatal("the faulty GPU count was written")
 			}
-			if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+			if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 				t.Errorf("expected the value-not-representable condition, got %v", err)
 			}
 			msg := err.Error()
@@ -343,7 +343,7 @@ func TestTranslateComposeResourcesRefusals(t *testing.T) {
 			if err == nil {
 				t.Fatal("the faulty quantity converted")
 			}
-			if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+			if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 				t.Errorf("expected the value-not-representable condition, got %v", err)
 			}
 			msg := err.Error()

@@ -15,6 +15,7 @@ import (
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline/stepwalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -483,7 +484,7 @@ func TestFRPStepOutput_ReusesRendererDiagnostic(t *testing.T) {
 // the internal test package must avoid.
 func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 	var received []byte
-	invoke := func(_ context.Context, _ types.PipelineStep, _ types.OrderedMap[any], payload []byte) ([]byte, frp.OutputsCheck, error) {
+	invoke := func(_ context.Context, _ types.PipelineStep, _ types.OrderedMap[any], payload []byte) ([]byte, stepwalk.OutputsCheck, error) {
 		received = payload
 		raw, err := frp.FRPStepOutput{}.EncodeCBOR()
 		return raw, nil, err
@@ -502,7 +503,7 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 	eval := func(name, text string, data any) (string, error) {
 		return renderer.EvalTemplate(name, text, data, redact.Keys{})
 	}
-	_, err := frp.Walk(context.Background(), docs, steps, invoke, withCtx, renderer.RenderContext{}, eval)
+	_, err := stepwalk.Walk(context.Background(), docs, steps, invoke, withCtx, renderer.RenderContext{}, eval)
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
 	}

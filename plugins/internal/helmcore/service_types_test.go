@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -130,7 +130,7 @@ func TestSynthesizeWorkload_LoopbackServiceHalts(t *testing.T) {
 			if err == nil {
 				t.Fatalf("a Loopback service entry rendered on helm; files: %v", emittedFileNames(files))
 			}
-			if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+			if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 				t.Fatalf("halt does not carry the value-not-representable condition: %v", err)
 			}
 			if len(files) != 0 {

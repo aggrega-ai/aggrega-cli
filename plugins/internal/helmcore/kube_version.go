@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"helm.sh/helm/v4/pkg/chart/common"
 )
@@ -63,7 +63,7 @@ func renderKubeVersion(nodeCtx rendercore.NodeRenderContext) (common.KubeVersion
 		if nodeCtx.BoundaryPath != "" {
 			where = fmt.Sprintf("node %q in boundary %q", nodeCtx.NodeID, nodeCtx.BoundaryPath)
 		}
-		return common.KubeVersion{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return common.KubeVersion{}, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("helm: %s: annotation %s: %q is not a Kubernetes version a chart can be rendered for: %v; "+
 				"write the version of the cluster the chart deploys to, such as \"1.31\" or \"v1.31.2\", "+

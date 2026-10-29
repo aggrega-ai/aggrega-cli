@@ -11,7 +11,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -216,7 +216,7 @@ func TestSynthesizeWorkload_LoopbackUnspellableTransportHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("a Loopback entry naming a transport compose cannot spell rendered without error")
 	}
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Errorf("halt does not carry the value-not-representable condition: %v", err)
 	}
 	if want := "compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express"; !strings.Contains(errorChainText(err), want) {

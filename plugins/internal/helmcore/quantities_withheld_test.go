@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/quantity"
 )
@@ -58,7 +58,7 @@ func TestSynthesizeWorkload_AMarkedWorkloadsQuantityRefusalQuotesNoValue(t *test
 				if err == nil {
 					t.Fatalf("the refused quantity %q built (marked %v)", tc.value, marked)
 				}
-				if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+				if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 					t.Errorf("expected the value-not-representable condition, got %v", err)
 				}
 				if len(files) != 0 {

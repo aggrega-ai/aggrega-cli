@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -254,7 +254,7 @@ func TestRenderAll_CloudFormationReferenceToABoundParameterFromAnotherComponentH
 	t.Parallel()
 
 	_, err := renderCfnCrossRef(t, "Stage: dev\n")
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("another component referencing a bound parameter: got %v, want the assembly's halt", err)
 	}
 	chain := cerrors.CauseChain(err)
@@ -298,7 +298,7 @@ func TestRenderAll_CloudFormationMappedKeyNamingNoParameterHalts(t *testing.T) {
 	t.Parallel()
 
 	_, err := renderCfnBind(t, "StageNmae: prod\n")
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("a mapped key naming no parameter: got %v, want the guest's halt", err)
 	}
 	if chain := cerrors.CauseChain(err); !strings.Contains(chain, `"StageNmae"`) || !strings.Contains(chain, `"StageName"`) {

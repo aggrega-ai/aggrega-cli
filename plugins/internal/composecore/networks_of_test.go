@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // networksOfBoundaryPath is the path the test file is assembled at, which is
@@ -185,50 +185,50 @@ func TestComposeAssemble_NetworksOfHalts(t *testing.T) {
 		{
 			name:      "an id naming no component of the file",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of: [adminer, elsewhere]\n",
-			condition: wasm.ErrPluginRequiredInputUnresolved(),
+			condition: plugincondition.ErrPluginRequiredInputUnresolved(),
 			wantParts: []string{`service "probe-agent" names "elsewhere" in x-aggrega-networks-of`, `docker-compose.yaml at "bridge"`},
 		},
 		{
 			name:      "an id of a contributor that contributes no fragment",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of: [ghost]\n",
 			extra:     true,
-			condition: wasm.ErrPluginRequiredInputUnresolved(),
+			condition: plugincondition.ErrPluginRequiredInputUnresolved(),
 			wantParts: []string{`service "probe-agent" names "ghost" in x-aggrega-networks-of`, `docker-compose.yaml at "bridge"`},
 		},
 		{
 			name:      "a scalar",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of: db\n",
-			condition: wasm.ErrPluginCannotExpressInput(),
+			condition: plugincondition.ErrPluginCannotExpressInput(),
 			wantParts: []string{`service "probe-agent"`, "x-aggrega-networks-of as something other than a list of strings"},
 		},
 		{
 			name:      "a mapping",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of: {db: true}\n",
-			condition: wasm.ErrPluginCannotExpressInput(),
+			condition: plugincondition.ErrPluginCannotExpressInput(),
 			wantParts: []string{`service "probe-agent"`, "x-aggrega-networks-of as something other than a list of strings"},
 		},
 		{
 			name:      "a null",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of:\n",
-			condition: wasm.ErrPluginCannotExpressInput(),
+			condition: plugincondition.ErrPluginCannotExpressInput(),
 			wantParts: []string{`service "probe-agent"`, "x-aggrega-networks-of as something other than a list of strings"},
 		},
 		{
 			name:      "a list holding a number",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of: [db, 7]\n",
-			condition: wasm.ErrPluginCannotExpressInput(),
+			condition: plugincondition.ErrPluginCannotExpressInput(),
 			wantParts: []string{`service "probe-agent"`, "x-aggrega-networks-of as something other than a list of strings"},
 		},
 		{
 			name:      "a list holding a list",
 			service:   "  probe-agent:\n    image: busybox:1\n    x-aggrega-networks-of: [[db]]\n",
-			condition: wasm.ErrPluginCannotExpressInput(),
+			condition: plugincondition.ErrPluginCannotExpressInput(),
 			wantParts: []string{`service "probe-agent"`, "x-aggrega-networks-of as something other than a list of strings"},
 		},
 		{
 			name:      "beside network_mode",
 			service:   "  probe-agent:\n    image: busybox:1\n    network_mode: host\n    x-aggrega-networks-of: [db]\n",
-			condition: wasm.ErrPluginCannotExpressInput(),
+			condition: plugincondition.ErrPluginCannotExpressInput(),
 			wantParts: []string{`service "probe-agent"`, `x-aggrega-networks-of beside network_mode "host"`},
 		},
 	} {

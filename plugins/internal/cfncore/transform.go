@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -234,7 +234,7 @@ func assembleTransform(contributors []*transformContributor) (any, bool, error) 
 func transformDisposition(contributors, declaring []*transformContributor) error {
 	all := contributorList(contributors)
 	refuse := func(transform, why string) error {
-		return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("cloudformation-provider: the assembled stack of %s cannot carry the transform %q, declared by %s: %s",
 				all, transform, contributorList(declaringOf(declaring, transform)), why))
@@ -334,7 +334,7 @@ func transformUnion(declaring []*transformContributor) ([]string, error) {
 		for _, b := range names {
 			forward, backward := orderedBy[pair{a, b}], orderedBy[pair{b, a}]
 			if a < b && len(forward) > 0 && len(backward) > 0 {
-				return nil, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+				return nil, cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 					cerrors.TranslationError, cerrors.SourceLocation{},
 					fmt.Sprintf("cloudformation-provider: the transforms %q and %q are ordered both ways — %q before %q by %s, and %q before %q by %s — and the assembled stack's Transform runs them in one order; declare them in one order",
 						a, b, a, b, joinPhrases(forward), b, a, joinPhrases(backward)))
@@ -369,7 +369,7 @@ func transformUnion(declaring []*transformContributor) ([]string, error) {
 					left = append(left, fmt.Sprintf("%q", n))
 				}
 			}
-			return nil, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+			return nil, cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 				cerrors.TranslationError, cerrors.SourceLocation{},
 				fmt.Sprintf("cloudformation-provider: the components' orders of the transforms %s cannot all hold at once, and the assembled stack's Transform runs them in one order; declare them in one order across the components", joinPhrases(left)))
 		}

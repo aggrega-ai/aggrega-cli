@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -57,8 +57,8 @@ func TestTheDaemonBuildRefusesAKubernetesVersionTheParserRefuses(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatalf("the daemon rendered a chart for the unparsable Kubernetes version \"one.two\"\nwire:\n%s", pushed)
 	}
-	code, _ := cerrors.CodeOf(wasm.ErrPluginValueNotRepresentable())
-	shortCode, _ := cerrors.ShortCodeOf(wasm.ErrPluginValueNotRepresentable())
+	code, _ := cerrors.CodeOf(plugincondition.ErrPluginValueNotRepresentable())
+	shortCode, _ := cerrors.ShortCodeOf(plugincondition.ErrPluginValueNotRepresentable())
 	for _, want := range []string{`"code":"` + code + `"`, `"shortCode":"` + shortCode + `"`} {
 		if !strings.Contains(pushed, want) {
 			t.Errorf("the refusal does not carry the value-not-representable condition (%s):\n%s", want, pushed)

@@ -100,7 +100,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
@@ -935,7 +935,7 @@ func mappingToValue(n *yaml.Node) (map[string]any, error) {
 		keyNode := n.Content[i]
 		key := keyNode.Value
 		if earlier, taken := firstLine[key]; taken {
-			return nil, cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
+			return nil, cerrors.Wrap(plugincondition.ErrPluginOutputNameCollision(),
 				cerrors.TranslationError, cerrors.SourceLocation{},
 				fmt.Sprintf("cloudformation-provider: one mapping key is written more than once: the key %q is written at line %d and again at line %d; a mapping holds one value per key, so one of the two bodies would be dropped — remove one, or rename one so each key is written once", key, earlier, keyNode.Line))
 		}
@@ -1243,7 +1243,7 @@ func (l *outputNameLedger) err() error {
 		}
 		clauses = append(clauses, fmt.Sprintf("%s reach the Output name %q", joinPhrases(phrases), name))
 	}
-	return cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
+	return cerrors.Wrap(plugincondition.ErrPluginOutputNameCollision(),
 		cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("cloudformation-provider: two entries an author wrote reach one stack Output name: %s; an Output name is built by encoding the component and the entry into the letters and digits a logical id admits, rather than by dropping what it does not, so two entries an author wrote apart stay apart — renaming either end clears the build", strings.Join(clauses, "; ")))
 }

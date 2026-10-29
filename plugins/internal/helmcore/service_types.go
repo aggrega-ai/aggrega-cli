@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -33,7 +33,7 @@ func checkServiceTypes(w *types.Workload, nodeID string) error {
 		if svc.Type != rendercore.WorkloadServiceTypeLoopback {
 			continue
 		}
-		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("helm: node %q: services.%s: type %q publishes the service's ports on the host's loopback address only, "+
 				"and a Kubernetes Service has no type that does; declare ClusterIP to keep the ports inside the cluster, "+

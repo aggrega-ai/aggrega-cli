@@ -15,7 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -385,7 +385,7 @@ func TestSynthesizeWorkload_HTTPProbeNoPort_Errors(t *testing.T) {
 	// input compose could not resolve. Both are asserted: the condition alone is
 	// shared with every other unresolved-input halt this core raises, so a green
 	// on it would no longer tell this failure from those.
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Errorf("expected the unresolved-required-input condition, got %v", err)
 	}
 	if want := "probe http: requires at least one container port; container declares none"; !strings.Contains(errorChainText(err), want) {
@@ -550,7 +550,7 @@ func TestSynthesizeWorkload_UnsupportedFormsHalt(t *testing.T) {
 		w.Containers.Set("main", c)
 
 		_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-		if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 			t.Errorf("form %q: expected the cannot-express condition; got %v", form, err)
 		}
 		if want := "compose cannot express this workload form"; !strings.Contains(err.Error(), want) {
@@ -613,7 +613,7 @@ func TestSynthesizeWorkload_LifecycleHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Errorf("expected the cannot-express condition, got %v", err)
 	}
 	if want := "compose has no lifecycle-hook primitive; container declares lifecycle hooks"; !strings.Contains(errorChainText(err), want) {
@@ -632,7 +632,7 @@ func TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Errorf("expected the value-not-representable condition, got %v", err)
 	}
 	for _, want := range []string{
@@ -658,7 +658,7 @@ func TestSynthesizeWorkload_InitContainerQuantityHaltNamesItsPosition(t *testing
 	}}
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Fatalf("expected the value-not-representable condition, got %v", err)
 	}
 	if want := "initContainers[0].resources.requests.cpu"; !strings.Contains(errorChainText(err), want) {
@@ -715,7 +715,7 @@ func TestSynthesizeWorkload_EnvFromHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Errorf("expected the cannot-express condition, got %v", err)
 	}
 	if want := "compose has no env-from-object primitive; container declares envFrom"; !strings.Contains(errorChainText(err), want) {

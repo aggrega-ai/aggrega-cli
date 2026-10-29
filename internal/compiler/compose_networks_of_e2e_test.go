@@ -22,7 +22,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -122,7 +122,7 @@ func TestComposeNetworksOf_ComponentInAnotherFileHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("the Release naming a component assembled into another file built; want a halt")
 	}
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("got %s; want the refusal of an id naming no component of the file", cerrors.CauseChain(err))
 	}
 	chain := cerrors.CauseChain(err)

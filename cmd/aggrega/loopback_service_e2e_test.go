@@ -15,7 +15,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
@@ -231,7 +231,7 @@ func TestLoopbackServiceEntryThroughTheBuild(t *testing.T) {
 			t.Fatal("a Loopback service entry built on helm; a Kubernetes Service cannot bind to a host's loopback address")
 		}
 		printed := formatCompilerError(err)
-		if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+		if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 			t.Fatalf("the build's error does not name the value-not-representable condition:\n%s", printed)
 		}
 		want := `services.local: type "Loopback" publishes the service's ports on the host's loopback address only, ` +

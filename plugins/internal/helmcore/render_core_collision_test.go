@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 )
 
@@ -58,7 +58,7 @@ func TestHelmEngine_Sourced_DistinctContentCollisionHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a collision error when two distinct resources derive one output filename")
 	}
-	if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+	if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
 		t.Fatalf("error does not carry the output-name-collision condition: %v", err)
 	}
 	// The halt must name both source templates and the output path — and the

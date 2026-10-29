@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // modelFragment is one contributor's compose fragment, authored as text so the
@@ -211,7 +211,7 @@ func TestComposeAssemble_UndeclaredModelReferenceHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("assemble accepted a reference to a model nothing declares; want a halt")
 	}
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("error = %v, want it to carry the unresolved-required-input condition", err)
 	}
 	for _, want := range []string{

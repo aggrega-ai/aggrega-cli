@@ -36,6 +36,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -953,7 +954,7 @@ func TestCloudFormationTwoBoundary_EdgeReadHalts(t *testing.T) {
 			in: func(t *testing.T) pipelinetest.Input {
 				return cfnEdgeReadInput(t, "release-edge-read.yaml", "edge-read-interpolated")
 			},
-			condition: wasm.ErrPluginValueNotRepresentable(),
+			condition: plugincondition.ErrPluginValueNotRepresentable(),
 			want: []string{
 				`cross-boundary link resolve for uses edge "app-b" -> "db"`,
 				`cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key "host" on socket "database"`,

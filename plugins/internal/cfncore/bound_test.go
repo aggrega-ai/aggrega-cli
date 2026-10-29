@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // boundSource is the template a sourced node's binding left behind: every
@@ -97,10 +97,10 @@ func TestAssembleStackRefusesReferencesToBoundParameters(t *testing.T) {
 				return
 			}
 			if err == nil {
-				t.Fatalf("the stack assembled; want a halt under %v", wasm.ErrPluginRequiredInputUnresolved())
+				t.Fatalf("the stack assembled; want a halt under %v", plugincondition.ErrPluginRequiredInputUnresolved())
 			}
-			if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
-				t.Fatalf("the assembly halted under %v; want %v", err, wasm.ErrPluginRequiredInputUnresolved())
+			if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
+				t.Fatalf("the assembly halted under %v; want %v", err, plugincondition.ErrPluginRequiredInputUnresolved())
 			}
 			for _, want := range tc.wantText {
 				if !strings.Contains(err.Error(), want) {

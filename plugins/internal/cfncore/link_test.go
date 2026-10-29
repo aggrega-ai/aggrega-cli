@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -273,7 +273,7 @@ func TestLinkResolveInterpolatedSentinelHalts(t *testing.T) {
 	files := []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack("jdbc://" + sentinel + ":5432")}}
 
 	_, err := LinkResolve(edge, pub.Handle, files)
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Fatalf("want the value-not-representable condition, got %v", err)
 	}
 	// The condition names the kind; the sentence is what still says an
@@ -287,7 +287,7 @@ func TestLinkResolveMissingConsumerStackHalts(t *testing.T) {
 	edge := testLinkEdge(nil, nil)
 	pub, _ := LinkPublish(edge, nil)
 	_, err := LinkResolve(edge, pub.Handle, nil)
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("want the unresolved-required-input condition, got %v", err)
 	}
 	if want := "cross-boundary link resolve received no consumer stack template"; !strings.Contains(err.Error(), want) {
@@ -329,7 +329,7 @@ func TestLinkPublishRefusesShadowedExportName(t *testing.T) {
 	if err == nil {
 		t.Fatal("LinkPublish accepted an authored export name that shadows a derived one")
 	}
-	if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+	if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
 		t.Fatalf("want the output-name-collision condition, got %v", err)
 	}
 	if want := "an export name a cross-boundary link derives is already declared by another Outputs entry in the same stack"; !strings.Contains(err.Error(), want) {
@@ -573,7 +573,7 @@ func TestLinkPublishRefusesAnotherExportAtItsOwnOutput(t *testing.T) {
 			if err == nil {
 				t.Fatalf("LinkPublish accepted an Export the link did not write at its own output; got %+v", out)
 			}
-			if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+			if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
 				t.Fatalf("want the output-name-collision condition, got %v", err)
 			}
 			for _, want := range []string{
@@ -835,7 +835,7 @@ func TestLinkResolveHaltsOnAnInterpolatedIntrinsicReadKey(t *testing.T) {
 	}
 	files := []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack("jdbc://" + sentinelFor("host") + ":5432")}}
 	_, err = LinkResolve(edge, pub.Handle, files)
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Fatalf("want the value-not-representable condition, got %v", err)
 	}
 	if want := `cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key "host" on socket "database"`; !strings.Contains(err.Error(), want) {
@@ -850,7 +850,7 @@ func TestLinkHaltsOnAReadKeyTheEdgeDoesNotCarry(t *testing.T) {
 	edge := readLinkEdge(t, false, []string{"replica"}, "host", "orders.internal.example")
 	check := func(t *testing.T, err error) {
 		t.Helper()
-		if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 			t.Fatalf("want the unresolved-required-input condition, got %v", err)
 		}
 		for _, want := range []string{`provides key "replica"`, `component "api"`, `socket "database"`, `component "orders-db" provides no such key`} {

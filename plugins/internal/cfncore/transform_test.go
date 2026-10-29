@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // Fragments the Transform rows assemble. Each contributes a resource under its own
@@ -101,7 +101,7 @@ func TestAssembleStackTransform(t *testing.T) {
 			name: "SAM written before language extensions contradicts the documented order and halts",
 			fragments: []string{"Transform: [AWS::Serverless-2016-10-31, AWS::LanguageExtensions]\n" +
 				strings.TrimPrefix(samFragment, "Transform: AWS::Serverless-2016-10-31\n"), plainFragment},
-			wantErr:  wasm.ErrPluginRequiredInputUnresolved(),
+			wantErr:  plugincondition.ErrPluginRequiredInputUnresolved(),
 			wantText: []string{"AWS::LanguageExtensions", "AWS::Serverless-2016-10-31", "documented order"},
 		},
 		{
@@ -113,7 +113,7 @@ func TestAssembleStackTransform(t *testing.T) {
 		{
 			name:      "language extensions beside another contributor's SAM is refused",
 			fragments: []string{samFragment, plainFragment, languageExtensionsFragment},
-			wantErr:   wasm.ErrPluginCannotExpressInput(),
+			wantErr:   plugincondition.ErrPluginCannotExpressInput(),
 			wantText:  []string{"AWS::LanguageExtensions", `component "gamma"`, `component "alpha"`},
 		},
 		{
@@ -122,7 +122,7 @@ func TestAssembleStackTransform(t *testing.T) {
 				"Transform: [AWS::SecretsManager-2024-09-16, AWS::Serverless-2016-10-31]\nResources:\n  A:\n    Type: AWS::SNS::Topic\n",
 				"Transform: [AWS::Serverless-2016-10-31, AWS::SecretsManager-2024-09-16]\nResources:\n  B:\n    Type: AWS::SNS::Topic\n",
 			},
-			wantErr:  wasm.ErrPluginRequiredInputUnresolved(),
+			wantErr:  plugincondition.ErrPluginRequiredInputUnresolved(),
 			wantText: []string{`component "alpha"`, `component "beta"`, "AWS::SecretsManager-2024-09-16", "AWS::Serverless-2016-10-31"},
 		},
 		{
@@ -133,19 +133,19 @@ func TestAssembleStackTransform(t *testing.T) {
 		{
 			name:      "a custom macro beside another contributor is refused",
 			fragments: []string{"Transform: AccountMacro\n" + plainFragment, "Resources:\n  Other:\n    Type: AWS::SNS::Topic\n"},
-			wantErr:   wasm.ErrPluginCannotExpressInput(),
+			wantErr:   plugincondition.ErrPluginCannotExpressInput(),
 			wantText:  []string{`"AccountMacro"`, `component "alpha"`, `component "beta"`},
 		},
 		{
 			name:      "AWS::CodeDeployBlueGreen is refused even alone",
 			fragments: []string{"Transform: [AWS::CodeDeployBlueGreen]\n" + plainFragment},
-			wantErr:   wasm.ErrPluginCannotExpressInput(),
+			wantErr:   plugincondition.ErrPluginCannotExpressInput(),
 			wantText:  []string{"AWS::CodeDeployBlueGreen", "Outputs"},
 		},
 		{
 			name:      "AWS::Include, written as a mapping, is refused even alone",
 			fragments: []string{"Transform:\n  Name: AWS::Include\n  Parameters:\n    Location: s3://bucket/snippet.yaml\n" + plainFragment},
-			wantErr:   wasm.ErrPluginCannotExpressInput(),
+			wantErr:   plugincondition.ErrPluginCannotExpressInput(),
 			wantText:  []string{"AWS::Include"},
 		},
 		{
@@ -154,7 +154,7 @@ func TestAssembleStackTransform(t *testing.T) {
 				samFragment + "Globals:\n  Function:\n    Timeout: 30\n",
 				"Resources:\n  Other:\n    Type: AWS::Serverless::Function\n    Properties:\n      Runtime: python3.12\n      Handler: index.handler\n      InlineCode: x\n",
 			},
-			wantErr:  wasm.ErrPluginCannotExpressInput(),
+			wantErr:  plugincondition.ErrPluginCannotExpressInput(),
 			wantText: []string{"Globals", `component "alpha"`, `component "beta"`},
 		},
 		{
@@ -163,7 +163,7 @@ func TestAssembleStackTransform(t *testing.T) {
 				samFragment + "        \n" + "      Events:\n        Upload:\n          Type: S3\n          Properties:\n            Bucket: !Ref Store\n            Events: s3:ObjectCreated:*\n",
 				plainFragment,
 			},
-			wantErr:  wasm.ErrPluginCannotExpressInput(),
+			wantErr:  plugincondition.ErrPluginCannotExpressInput(),
 			wantText: []string{`"Upload"`, `"Store"`, `component "beta"`},
 		},
 	} {

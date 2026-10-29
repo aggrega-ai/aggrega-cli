@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -147,7 +147,7 @@ func TestSynthesizeWorkload_EveryEmittedQuantityIsChecked(t *testing.T) {
 			if err == nil {
 				t.Fatalf("the malformed %s built; the manifests carry it verbatim", c.path)
 			}
-			if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+			if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 				t.Errorf("expected the value-not-representable condition, got %v", err)
 			}
 			if len(files) != 0 {

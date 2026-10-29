@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -65,7 +65,7 @@ func TestComposeAssemble_ConfigMapVolumeMissingArtifactHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("assemble accepted a configmap volume with no declared config; want a halt")
 	}
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("error = %v, want it to carry the unresolved-required-input condition", err)
 	}
 	for _, want := range []string{

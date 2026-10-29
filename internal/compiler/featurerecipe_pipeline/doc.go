@@ -48,11 +48,11 @@
 // the operations have to be legible to the host that applies them, where a
 // mutator's do not. Two guest contracts, two shapes, on purpose.
 //
-// This package also owns the runtime that speaks the ABI. [Walk] builds the
-// keyed document set, evaluates each step's `with` (and its optional `when`
-// gate), dispatches each Wasm guest, applies the returned patches to the
-// named documents, restores the set by snapshot on a failed step, and
-// accumulates the side effects. The renderer drives [Walk] for every Recipe
-// and FeatureRecipe `pipeline:` at render time. The reference plugins
-// exercise this contract; few third-party guests target it yet.
+// This package also owns the apply engine: [ApplyPatches] applies returned
+// patches to the named documents by scope and key. The runtime that walks a
+// pipeline — evaluating each step, dispatching its Wasm guest and restoring the
+// set on a failed step — is the stepwalk package beside it, because provider
+// guests link this package and must not link the host's plugin loader that
+// walk reads. The reference plugins exercise this contract; few third-party
+// guests target it yet.
 package featurerecipe_pipeline

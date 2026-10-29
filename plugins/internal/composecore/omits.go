@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -153,13 +153,13 @@ func omitKindOf(entry rendercore.ResolvedOmit, nodeID string) (omitKind, error) 
 	kindText := rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind)
 	nameText := rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name)
 	if entry.Entry.Namespace != "" {
-		return omitKind{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		return omitKind{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("compose: an omits entry (kind %s, name %s) names namespace %s, and a compose file has no namespaces: %s; remove the namespace from the entry",
 				kindText, nameText, rendercore.OmitFieldText(entry.Entry.Namespace, entry.Withheld.Namespace), omitKindsAccepted()))
 	}
 	if entry.Entry.Subchart != "" {
-		return omitKind{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		return omitKind{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("compose: an omits entry (kind %s, name %s) names subchart %s, and a compose file has no subcharts: %s; remove the subchart from the entry",
 				kindText, nameText, rendercore.OmitFieldText(entry.Entry.Subchart, entry.Withheld.Subchart), omitKindsAccepted()))
@@ -169,7 +169,7 @@ func omitKindOf(entry rendercore.ResolvedOmit, nodeID string) (omitKind, error) 
 			return k, nil
 		}
 	}
-	return omitKind{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+	return omitKind{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("compose: an omits entry (name %s) names kind %s: %s",
 			nameText, kindText, omitKindsAccepted()))
@@ -268,7 +268,7 @@ func requireNoReferenceToLeftOut(doc map[string]any, left leftOutUnits, nodeID s
 	if len(findings) == 0 {
 		return nil
 	}
-	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("compose: what an omits entry left out is still named by the file: %s; compose refuses a file naming a service, a volume or a config it does not declare: leave out what names it as well, change the reference through valuesMapping, or remove the entry",
 			strings.Join(findings, "; ")))

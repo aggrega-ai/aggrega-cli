@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -91,7 +91,7 @@ func refuseReferencesToBoundParameters(nodes []NodeFragment, decoded [][]map[str
 		phrases = append(phrases, fmt.Sprintf("component %s's template %s references parameter %s, which the valuesMapping of a Recipe or FeatureRecipe rendering for %s binds",
 			strconv.Quote(f.node), strconv.Quote(f.file), strconv.Quote(f.parameter), componentPhrase(boundBy[f.parameter])))
 	}
-	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("cloudformation-provider: a parameter a sourced template's binding filled is still referenced from elsewhere in the assembled stack: %s; binding a parameter removes its declaration from the source that declares it, and no template in the stack declares it any more, so the reference names nothing CloudFormation can resolve: reference what the binding component publishes instead, declare the parameter in the template that references it, or remove the key from the valuesMapping",
 			strings.Join(phrases, "; ")))

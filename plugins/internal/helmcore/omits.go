@@ -12,7 +12,7 @@ import (
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -184,7 +184,7 @@ func unknownSubchartErr(entry rendercore.ResolvedOmit, charts []renderedChart, n
 	if len(rendered) > 0 {
 		renders = "the subcharts it renders are " + strings.Join(rendered, ", ")
 	}
-	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("helm: node %q: an omits entry (kind %s, name %s) names subchart %s, and the chart renders no subchart of that name: %s; name one of those, or give the entry a when that applies it only where that subchart renders",
 			nodeID,

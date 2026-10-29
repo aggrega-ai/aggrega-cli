@@ -101,7 +101,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 )
@@ -759,7 +759,7 @@ func checkConfigReferences(merged ComposeFile) error {
 	if len(unresolved) == 0 {
 		return nil
 	}
-	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input: configmap volume requires a file emitted via the Recipe's artifacts: input; none found", strings.Join(unresolved, "; ")))
 }
@@ -793,7 +793,7 @@ func checkModelReferences(merged ComposeFile) error {
 	if len(unresolved) == 0 {
 		return nil
 	}
-	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("compose AssembleBoundary: %s; no contributor at this assembly path declares it: declare each one as a top-level models: entry in a compose fragment at the same assembly path, or remove the reference", strings.Join(unresolved, "; ")))
 }

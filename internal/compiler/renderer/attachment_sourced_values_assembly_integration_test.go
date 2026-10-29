@@ -16,7 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -211,7 +211,7 @@ func TestRenderAll_CloudFormationReferenceToAParameterAnAttachmentsBindingFilled
 		t.Run(scope.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := renderAttachmentCfnStack(t, sourceDir, "Stage: dev\n", scope.boundaryScope)
-			if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+			if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 				t.Fatalf("the host referencing a parameter its attachment's binding filled: got %v, want the assembly's halt", err)
 			}
 			chain := cerrors.CauseChain(err)

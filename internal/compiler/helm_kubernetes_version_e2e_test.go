@@ -22,7 +22,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -131,7 +131,7 @@ func TestHelmKubernetesVersion_AVersionTheParserRefusesHaltsTheBuild(t *testing.
 		t.Fatal("a chart rendered for the unparsable version \"one.two\"; want the build to halt")
 	}
 	chain := cerrors.CauseChain(err)
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Fatalf("the build halted for a different reason than the unparsable version: %s", chain)
 	}
 	for _, want := range []string{

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -244,7 +244,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "a key naming no parameter halts naming the key and what the template declares",
 			body:       bindTemplate,
 			input:      BindInput{Mapped: true, Values: mappedValues("BuckName", "zq-unknown-literal")},
-			wantErr:    wasm.ErrPluginRequiredInputUnresolved(),
+			wantErr:    plugincondition.ErrPluginRequiredInputUnresolved(),
 			wantText:   []string{`"BuckName"`, `template "template.yaml" declares`, `"BucketName"`, `"Zones"`},
 			wantAbsent: []string{"zq-unknown-literal"},
 		},
@@ -252,7 +252,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "a literal outside the parameter's AllowedValues halts",
 			body:       bindTemplate,
 			input:      BindInput{Mapped: true, Values: mappedValues("Stage", "staging")},
-			wantErr:    wasm.ErrPluginValueNotRepresentable(),
+			wantErr:    plugincondition.ErrPluginValueNotRepresentable(),
 			wantText:   []string{`"Stage"`, "AllowedValues"},
 			wantAbsent: []string{"staging"},
 		},
@@ -260,7 +260,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "a NoEcho parameter refuses a literal",
 			body:       "Parameters:\n  Token:\n    Type: String\n    NoEcho: true\nResources:\n  Topic:\n    Type: AWS::SNS::Topic\n    Properties:\n      DisplayName: !Ref Token\n",
 			input:      BindInput{Mapped: true, Values: mappedValues("Token", "s3cr3t")},
-			wantErr:    wasm.ErrPluginValueNotRepresentable(),
+			wantErr:    plugincondition.ErrPluginValueNotRepresentable(),
 			wantText:   []string{`"Token"`, "NoEcho", "dynamic reference"},
 			wantAbsent: []string{"s3cr3t"},
 		},
@@ -295,7 +295,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "with the whole values marked, every literal binding is refused by name",
 			body:       bindTemplate,
 			input:      BindInput{Mapped: true, SensitiveValues: true, Values: mappedValues("BucketName", "zq-bucket-literal", "Kept", "zq-kept-literal")},
-			wantErr:    wasm.ErrPluginValueNotRepresentable(),
+			wantErr:    plugincondition.ErrPluginValueNotRepresentable(),
 			wantText:   []string{`"BucketName"`, `"Kept"`},
 			wantAbsent: []string{"zq-bucket-literal", "zq-kept-literal"},
 		},
@@ -303,7 +303,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "a dynamic reference is refused where its parameter is referenced in Outputs",
 			body:       bindTemplate,
 			input:      BindInput{Mapped: true, Values: mappedValues("BucketName", "{{resolve:ssm:/zq-dynref/path}}")},
-			wantErr:    wasm.ErrPluginValueNotRepresentable(),
+			wantErr:    plugincondition.ErrPluginValueNotRepresentable(),
 			wantText:   []string{`"BucketName"`, "Outputs"},
 			wantAbsent: []string{"/zq-dynref/path"},
 		},
@@ -311,7 +311,7 @@ func TestBindSourced(t *testing.T) {
 			name:     "a rule reading a bound parameter through Fn::ValueOf halts",
 			body:     "Parameters:\n  Vpc:\n    Type: AWS::EC2::VPC::Id\nRules:\n  Tagged:\n    Assertions:\n      - Assert:\n          Fn::EachMemberEquals: [{Fn::ValueOf: [Vpc, Tags.Team]}, platform]\nResources:\n  Group:\n    Type: AWS::EC2::SecurityGroup\n    Properties:\n      VpcId: !Ref Vpc\n",
 			input:    BindInput{Mapped: true, Values: mappedValues("Vpc", "vpc-0abc")},
-			wantErr:  wasm.ErrPluginCannotExpressInput(),
+			wantErr:  plugincondition.ErrPluginCannotExpressInput(),
 			wantText: []string{`"Tagged"`, `"Vpc"`, "Fn::ValueOf"},
 		},
 		{
@@ -321,7 +321,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "a rule reading two bound parameters through Fn::ValueOf halts naming the first in sorted order",
 			body:       "Parameters:\n  Alpha:\n    Type: AWS::EC2::VPC::Id\n  Zeta:\n    Type: AWS::EC2::VPC::Id\nRules:\n  Tagged:\n    RuleCondition:\n      Fn::Equals: [{Fn::ValueOf: [Zeta, Tags.Env]}, prod]\n    Assertions:\n      - Assert:\n          Fn::EachMemberEquals: [{Fn::ValueOf: [Alpha, Tags.Team]}, platform]\nResources:\n  Group:\n    Type: AWS::EC2::SecurityGroup\n    Properties:\n      VpcId: !Ref Alpha\n      Description: !Ref Zeta\n",
 			input:      BindInput{Mapped: true, Values: mappedValues("Zeta", "vpc-0zeta", "Alpha", "vpc-0alpha")},
-			wantErr:    wasm.ErrPluginCannotExpressInput(),
+			wantErr:    plugincondition.ErrPluginCannotExpressInput(),
 			wantText:   []string{`"Tagged"`, `parameter "Alpha"`, "Fn::ValueOf"},
 			wantAbsent: []string{`"Zeta"`},
 		},
@@ -329,7 +329,7 @@ func TestBindSourced(t *testing.T) {
 			name:       "a list bound to a parameter named as an Fn::Sub variable halts",
 			body:       "Parameters:\n  Zones:\n    Type: CommaDelimitedList\nResources:\n  Topic:\n    Type: AWS::SNS::Topic\n    Properties:\n      DisplayName: !Sub \"${Zones}\"\n",
 			input:      BindInput{Mapped: true, Values: mappedValues("Zones", []any{"a", "b"})},
-			wantErr:    wasm.ErrPluginValueNotRepresentable(),
+			wantErr:    plugincondition.ErrPluginValueNotRepresentable(),
 			wantText:   []string{`"Zones"`, "Fn::Sub"},
 			wantAbsent: []string{},
 		},
@@ -468,7 +468,7 @@ func TestBindSourcedBindsEveryTemplateOfTheSource(t *testing.T) {
 			name: "a sibling template's rule reading the bound parameter through Fn::ValueOf halts",
 			files: []SourcedFile{declaring, {Path: "b.yaml", Content: []byte(
 				"Rules:\n  Tagged:\n    Assertions:\n      - Assert:\n          Fn::Equals: [{Fn::ValueOf: [Stage, Tags.Env]}, prod]\nResources:\n  TopicB:\n    Type: AWS::SNS::Topic\n")}},
-			wantErr:  wasm.ErrPluginCannotExpressInput(),
+			wantErr:  plugincondition.ErrPluginCannotExpressInput(),
 			wantText: []string{`"Tagged"`, `template "b.yaml"`, `parameter "Stage"`},
 		},
 		{
@@ -476,7 +476,7 @@ func TestBindSourcedBindsEveryTemplateOfTheSource(t *testing.T) {
 			files: []SourcedFile{declaring, {Path: "b.yaml", Content: []byte(
 				"Resources:\n  TopicB:\n    Type: AWS::SNS::Topic\nOutputs:\n  Shown:\n    Value: !Ref Stage\n")}},
 			value:    "{{resolve:ssm:/zq-dynref/stage}}",
-			wantErr:  wasm.ErrPluginValueNotRepresentable(),
+			wantErr:  plugincondition.ErrPluginValueNotRepresentable(),
 			wantText: []string{`parameter "Stage"`, `template "b.yaml"`, "Outputs"},
 		},
 	} {

@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // TestComposeProfiles_SurviveTheSourcedRenderAndTheMerge drives a sourced compose
@@ -93,7 +93,7 @@ func TestDecodeFragment_RefusesAKeyTheTypesDoNotCarry(t *testing.T) {
 			if err == nil {
 				t.Fatalf("decode accepted a fragment writing %q", tc.key)
 			}
-			if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+			if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 				t.Errorf("refusal does not carry the cannot-express condition: %v", err)
 			}
 			msg := err.Error()
@@ -164,7 +164,7 @@ func TestDecodeFragment_RefusesANetworkTheFragmentDeclares(t *testing.T) {
 			if err == nil {
 				t.Fatal("decode accepted a fragment declaring a network of its own")
 			}
-			if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+			if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 				t.Errorf("refusal does not carry the cannot-express condition: %v", err)
 			}
 			msg := err.Error()
@@ -195,7 +195,7 @@ func TestDecodeFragment_OneRefusalNamesNetworksAndKeys(t *testing.T) {
 	if err == nil {
 		t.Fatal("decode accepted two network entries and an uncarried key")
 	}
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Errorf("refusal does not carry the cannot-express condition: %v", err)
 	}
 	msg := err.Error()
@@ -236,7 +236,7 @@ func TestComposeAssemble_AFragmentNetworkHaltsTheMerge(t *testing.T) {
 	t.Parallel()
 
 	_, err := assembleOne(t, modelFragment("alpha", "services:\n  web:\n    image: a\nnetworks:\n  back: {}\n"))
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("got %v, want the cannot-express refusal of a fragment's own network", err)
 	}
 	if !strings.Contains(err.Error(), `node "alpha" fragment "alpha.compose-fragment.yaml" declares a network of its own under networks:, "back" at networks.back,`) {

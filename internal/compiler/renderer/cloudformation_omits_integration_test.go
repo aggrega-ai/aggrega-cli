@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -285,12 +285,12 @@ func TestRenderAll_CloudFormationOmitsRemainingRefHalts(t *testing.T) {
 
 	_, err := renderCfnOmits(t, templates, []types.OmitEntry{{Kind: "AWS::S3::Bucket", Name: "Logs"}}, false)
 	requireCloudFormationNotRefusedForTheContract(t, err)
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("leaving out a bucket another still names: got %v, want the provider's halt on the remaining reference", err)
 	}
 	chain := cerrors.CauseChain(err)
 	for _, want := range []string{
-		wasm.ErrPluginRequiredInputUnresolved().Error(),
+		plugincondition.ErrPluginRequiredInputUnresolved().Error(),
 		`cloudformation-provider: what an omits entry left out is still named by the source's templates: ` +
 			`template "store.yaml" names resource "Logs" (type "AWS::S3::Bucket") by Ref at /Resources/Store/Properties/LoggingConfiguration/DestinationBucketName`,
 	} {

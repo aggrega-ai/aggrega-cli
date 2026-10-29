@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -51,8 +51,8 @@ func TestBuildToolRefusesAKubernetesVersionTheParserRefuses(t *testing.T) {
 	if entry == nil {
 		t.Fatalf("the refusal carries no structured entry:\n%s", text)
 	}
-	code, _ := cerrors.CodeOf(wasm.ErrPluginValueNotRepresentable())
-	shortCode, _ := cerrors.ShortCodeOf(wasm.ErrPluginValueNotRepresentable())
+	code, _ := cerrors.CodeOf(plugincondition.ErrPluginValueNotRepresentable())
+	shortCode, _ := cerrors.ShortCodeOf(plugincondition.ErrPluginValueNotRepresentable())
 	if entry.Code != code || entry.ShortCode != shortCode {
 		t.Errorf("the entry names %q / %q; the condition is %q / %q", entry.Code, entry.ShortCode, code, shortCode)
 	}

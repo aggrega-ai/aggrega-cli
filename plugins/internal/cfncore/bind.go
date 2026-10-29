@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -225,7 +225,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 		if len(declared) == 0 {
 			declared = append(declared, "the source carries no template")
 		}
-		return nil, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+		return nil, cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("cloudformation-provider: the Recipe's or FeatureRecipe's valuesMapping writes %s, and no template of the source declares a parameter of that name: %s; a sourced template takes values only through the parameters it declares, so rename the key to the parameter it is meant for, or remove it from the valuesMapping",
 				pluralKeys(unknown), strings.Join(declared, "; ")))
@@ -288,7 +288,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 				continue
 			}
 			if site := unresolvedDynamicReferenceSite(t.doc, name); site != "" {
-				return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+				return nil, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 					cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 					fmt.Sprintf("cloudformation-provider: the value bound to parameter %q is a dynamic reference, and template %q references the parameter in %s, where CloudFormation does not resolve a dynamic reference or shows it to whoever reads the stack; bind an intrinsic function instead, or leave the parameter unbound for a deploy-time value",
 						name, t.path, site))
@@ -337,7 +337,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 
 	if len(sensitiveLiterals) > 0 {
 		sort.Strings(sensitiveLiterals)
-		return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return nil, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("cloudformation-provider: the Recipe's or FeatureRecipe's valuesMapping reads a value declared sensitive, so a literal it produces is refused, and %s would write a literal into the template as it stands; bind each to a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function, or leave it unbound for a deploy-time value",
 				pluralParameters(sensitiveLiterals)))
@@ -359,7 +359,7 @@ var boundSections = []string{sectionResources, sectionOutputs, sectionConditions
 // intrinsic pass either way.
 func refuseSensitiveBinding(name, path string, b boundValue, decl map[string]any, in BindInput, sensitiveLiterals *[]string) error {
 	if truthy(decl[parameterNoEcho]) && b.literal() {
-		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("cloudformation-provider: parameter %q of template %q is declared NoEcho, and the value bound to it would be written into the template as it stands; bind a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function instead, or leave the parameter unbound for a deploy-time value",
 				name, path))
@@ -387,7 +387,7 @@ func parameterValue(name, path string, b boundValue, decl map[string]any) (any, 
 	}
 	typ, _ := decl[parameterType].(string)
 	notRepresentable := func(why string) error {
-		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("cloudformation-provider: parameter %q of template %q is of type %s, and %s", name, path, typeText(typ), why))
 	}
@@ -438,7 +438,7 @@ func parameterValue(name, path string, b boundValue, decl map[string]any) (any, 
 // evaluate, so it is left for CloudFormation to check, as an intrinsic is.
 func checkConstraints(name, path, typ string, members []string, decl map[string]any) error {
 	violated := func(constraint string) error {
-		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("cloudformation-provider: the value bound to parameter %q of template %q does not satisfy its %s, which CloudFormation would refuse when the stack deploys; bind a value the parameter admits",
 				name, path, constraint))
@@ -518,7 +518,7 @@ func refuseRuleNamingBound(doc map[string]any, path string, values map[string]an
 			}
 		})
 		if found != "" {
-			return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+			return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("cloudformation-provider: rule %q of template %q reads parameter %q through Fn::ValueOf, which names a declared parameter by its logical ID, and binding the parameter removes its declaration from the source; leave the parameter unbound so the rule can read it at deploy",
 					rule, path, found))
@@ -679,7 +679,7 @@ func bindSub(arg any, values map[string]any, path, nodeID string) (any, error) {
 	}
 	for _, variable := range added {
 		if _, isList := values[variable].([]any); isList {
-			return nil, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+			return nil, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("cloudformation-provider: template %q names parameter %q as an Fn::Sub variable, which substitutes one string, and the value bound to it is a list; bind it where a list is accepted, or leave the parameter unbound",
 					path, variable))

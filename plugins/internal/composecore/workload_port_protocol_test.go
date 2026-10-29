@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -87,7 +87,7 @@ func TestSynthesizeWorkload_UnspellableTransportHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("a published port declaring a transport compose cannot spell rendered without error")
 	}
-	if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 		t.Errorf("halt does not carry the value-not-representable condition: %v", err)
 	}
 	// The condition is shared with every other unrepresentable value this core

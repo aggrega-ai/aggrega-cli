@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -39,7 +39,7 @@ func TestHelmOmitsSubchart_LeavesOutOneSubchartsCopyAndKeepsTheOther(t *testing.
 	t.Parallel()
 
 	_, err := pipelinetest.BuildE(t, helmOmitsSubchartInput("release.yaml"))
-	if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+	if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
 		t.Fatalf("the control did not halt on two copies at one name, so the cell below proves nothing: %v", err)
 	}
 	for _, want := range []string{"charts/operator/crds/widgets.yaml", "charts/catalog/crds/widgets.yaml"} {
@@ -81,7 +81,7 @@ func TestHelmOmitsSubchart_AnEntryNamingASubchartTheChartDoesNotRenderHalts(t *t
 	t.Parallel()
 
 	_, err := pipelinetest.BuildE(t, helmOmitsSubchartInput("release-unknown-subchart.yaml"))
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("got %v; want the refusal of an entry naming a subchart the chart does not render", err)
 	}
 	chain := cerrors.CauseChain(err)
@@ -119,7 +119,7 @@ func TestHelmOmitsSubchart_TheHaltKeepsItsSentenceWhereTheInputMarksAValueSensit
 	t.Run("the unknown-subchart halt", func(t *testing.T) {
 		t.Parallel()
 		_, err := pipelinetest.BuildE(t, input("release-unknown-subchart.yaml"))
-		if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 			t.Fatalf("got %v; want the refusal of an entry naming a subchart the chart does not render", err)
 		}
 		chain := cerrors.CauseChain(err)

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline/stepwalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
@@ -49,7 +50,7 @@ func TestPipelineStep_TypeScriptStepKeepsTheAuthoredOrder(t *testing.T) {
 	}
 	withCtx := &types.TemplateContext{}
 
-	if _, err := frp.Walk(context.Background(), frp.DocumentSet{Own: own}, steps, newStepInvoker(lookup),
+	if _, err := stepwalk.Walk(context.Background(), frp.DocumentSet{Own: own}, steps, newStepInvoker(lookup),
 		withCtx, renderctx.RenderContext{}, eval); err != nil {
 		t.Fatalf("Walk: %v", err)
 	}

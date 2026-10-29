@@ -15,7 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -175,12 +175,12 @@ func TestRenderAll_ComposeOmitsRemainingDependsOnHalts(t *testing.T) {
 
 	_, err := renderComposeOmits(t, source, []types.OmitEntry{{Kind: "service", Name: "db"}})
 	requireNotRefusedForTheContract(t, err)
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("leaving out a service another still depends on: got %v, want the provider's halt on the remaining reference", err)
 	}
 	chain := cerrors.CauseChain(err)
 	for _, want := range []string{
-		wasm.ErrPluginRequiredInputUnresolved().Error(),
+		plugincondition.ErrPluginRequiredInputUnresolved().Error(),
 		`compose: what an omits entry left out is still named by the file: service "web" names service "db" at depends_on[0]`,
 	} {
 		if !strings.Contains(chain, want) {

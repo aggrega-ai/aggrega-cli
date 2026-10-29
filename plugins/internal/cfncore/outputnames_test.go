@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // These tests cover what keeps something an author wrote from disappearing from
@@ -236,7 +236,7 @@ func TestOutputNameLedgerAdmitsOneEntryRestated(t *testing.T) {
 			// core reports, so the Output-name collision is identified by its
 			// own sentence as well — otherwise a merge refusal, which carries
 			// the same condition, would read as this one.
-			if errors.Is(err, wasm.ErrPluginOutputNameCollision()) &&
+			if errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) &&
 				strings.Contains(err.Error(), "two entries an author wrote reach one stack Output name") {
 				t.Fatalf("one entry name restated was read as two entries colliding: %v", err)
 			}
@@ -281,7 +281,7 @@ func TestTheRetainedLedgerReportsEveryCollisionDeterministically(t *testing.T) {
 	if first == nil {
 		t.Fatal("the ledger reported nothing for two names each reached by two entries")
 	}
-	if !errors.Is(first, wasm.ErrPluginOutputNameCollision()) {
+	if !errors.Is(first, plugincondition.ErrPluginOutputNameCollision()) {
 		t.Fatalf("report does not carry the output-name-collision condition: %v", first)
 	}
 	if want := "two entries an author wrote reach one stack Output name"; !strings.Contains(first.Error(), want) {
@@ -396,7 +396,7 @@ func TestDuplicateMappingKeyRefused(t *testing.T) {
 				if err == nil {
 					t.Fatalf("%s accepted a fragment writing %q twice; one of the two bodies is gone", probe.where, tc.wantKey)
 				}
-				if !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+				if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
 					t.Fatalf("%s halt does not carry the output-name-collision condition: %v", probe.where, err)
 				}
 				msg := err.Error()

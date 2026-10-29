@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/quantity"
 )
@@ -86,7 +86,7 @@ func TestTranslateComposeResources_AMarkedWorkloadQuotesNoValue(t *testing.T) {
 				if err == nil {
 					t.Fatalf("the faulty quantity converted (marked %v)", marked)
 				}
-				if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+				if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 					t.Errorf("expected the value-not-representable condition, got %v", err)
 				}
 				msg := err.Error()

@@ -13,8 +13,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // omitsSource declares two units of every kind an entry can name, and nothing in
@@ -188,7 +188,7 @@ func TestOmits_AnEntryNamingAKindComposeDoesNotDeclareIsRefused(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			_, _, err := renderOmitting(t, omitsSource, nil, omitEntries("service/db", kind+"/web"))
-			if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+			if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 				t.Fatalf("got %v, want the condition naming a construct the provider cannot express", err)
 			}
 			for _, want := range []string{
@@ -211,7 +211,7 @@ func TestOmits_AnEntryWithANamespaceIsRefused(t *testing.T) {
 	entries := omitEntries("service/db")
 	entries[0].Entry.Namespace = "prod"
 	_, _, err := renderOmitting(t, omitsSource, nil, entries)
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("got %v, want the condition naming a construct the provider cannot express", err)
 	}
 	for _, want := range []string{
@@ -232,7 +232,7 @@ func TestOmits_AnEntryWithASubchartIsRefused(t *testing.T) {
 	entries := omitEntries("service/db")
 	entries[0].Entry.Subchart = "operator"
 	_, _, err := renderOmitting(t, omitsSource, nil, entries)
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("got %v, want the condition naming a construct the provider cannot express", err)
 	}
 	for _, want := range []string{
@@ -365,7 +365,7 @@ func TestOmits_ARemainingReferenceToALeftOutUnitHalts(t *testing.T) {
 			t.Parallel()
 			source := referenceSource(tc.webBody) + tc.jobs
 			_, _, err := renderOmitting(t, source, nil, omitEntries(tc.entry))
-			if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+			if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 				t.Fatalf("got %v, want the halt on a reference to what an entry left out", err)
 			}
 			for _, want := range []string{
@@ -422,7 +422,7 @@ jobs:
     volumes_from: [db]
 `
 	_, _, err := renderOmitting(t, source, nil, omitEntries("service/db", "volume/data", "config/app"))
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("got %v, want the halt on a reference to what an entry left out", err)
 	}
 	want := `service "alpha" names service "db" at depends_on[0]; ` +
@@ -483,7 +483,7 @@ func TestOmits_AWithheldFieldIsNeverQuoted(t *testing.T) {
 		t.Parallel()
 		entries := []rendercore.ResolvedOmit{{Entry: rendercore.OmitEntry{Kind: "service", Name: secret, Namespace: secret}, Withheld: withheld}}
 		_, _, err := renderOmitting(t, omitsSource, nil, entries)
-		if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 			t.Fatalf("got %v, want the refusal of a namespace", err)
 		}
 		if strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "names namespace "+redact.Placeholder()) {
@@ -494,7 +494,7 @@ func TestOmits_AWithheldFieldIsNeverQuoted(t *testing.T) {
 		t.Parallel()
 		entries := []rendercore.ResolvedOmit{{Entry: rendercore.OmitEntry{Kind: secret, Name: secret}, Withheld: withheld}}
 		_, _, err := renderOmitting(t, omitsSource, nil, entries)
-		if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 			t.Fatalf("got %v, want the refusal of a kind", err)
 		}
 		if strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "(name "+redact.Placeholder()+") names kind "+redact.Placeholder()) {
@@ -506,7 +506,7 @@ func TestOmits_AWithheldFieldIsNeverQuoted(t *testing.T) {
 		source := strings.ReplaceAll(referenceSource("    depends_on: [db]\n"), "db", secret)
 		entries := []rendercore.ResolvedOmit{{Entry: rendercore.OmitEntry{Kind: "service", Name: secret}, Withheld: withheld}}
 		_, _, err := renderOmitting(t, source, nil, entries)
-		if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 			t.Fatalf("got %v, want the halt on a reference to what the entry left out", err)
 		}
 		want := `service "web" names ` + redact.Placeholder() + " " + redact.Placeholder() + " at depends_on[0]"

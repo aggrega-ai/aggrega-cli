@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -37,7 +38,7 @@ func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 	// written out, so this test cannot come to assert a spelling the registration
 	// does not carry. The conditions a plugin may choose are the compiler's own,
 	// so there is an accessor to read them from.
-	chosen := wasm.ErrPluginCannotExpressInput()
+	chosen := plugincondition.ErrPluginCannotExpressInput()
 	guestCode, ok := cerrors.CodeOf(chosen)
 	if !ok {
 		t.Fatal("the chosen condition reports no descriptive code, so this test asserts nothing")
@@ -114,7 +115,7 @@ func TestTwoPluginsReportingOneCodePrintDistinguishableHeads(t *testing.T) {
 
 	// Read off the condition rather than written out, so this cannot come to
 	// assert a spelling the registration does not carry.
-	chosen := wasm.ErrPluginCannotExpressInput()
+	chosen := plugincondition.ErrPluginCannotExpressInput()
 	sharedCode, ok := cerrors.CodeOf(chosen)
 	if !ok {
 		t.Fatal("the chosen condition reports no descriptive code, so neither report below names a condition")

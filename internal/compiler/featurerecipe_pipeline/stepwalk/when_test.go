@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package featurerecipe_pipeline
+package stepwalk
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"testing"
 	"text/template"
 
@@ -54,11 +55,11 @@ func errOnWhen(whenText string) TemplateEvaluator {
 // pass-through: the guest is never invoked and the next step sees the pre-skip
 // tree (the skipped step contributed no patch).
 func TestWalk_WhenFalseSkipsPassThrough(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
 	// If s1 ran it would overwrite x; it must not run.
-	inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "SHOULD_NOT_APPEAR")}}
-	inv.outputs["s2"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "final")}}
+	inv.outputs["s1"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "SHOULD_NOT_APPEAR")}}
+	inv.outputs["s2"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "final")}}
 	steps := []types.PipelineStep{
 		{ID: "s1", Plugin: "p", Function: "f", When: "false"},
 		{ID: "s2", Plugin: "p", Function: "f"},
@@ -84,10 +85,10 @@ func TestWalk_WhenFalseSkipsPassThrough(t *testing.T) {
 // TestWalk_WhenTrueAndAbsentRun proves a truthy `when` and an absent `when`
 // both run the step normally.
 func TestWalk_WhenTrueAndAbsentRun(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
-	inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "1")}}
-	inv.outputs["s2"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "add", "/y", "2")}}
+	inv.outputs["s1"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "1")}}
+	inv.outputs["s2"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "add", "/y", "2")}}
 	steps := []types.PipelineStep{
 		{ID: "s1", Plugin: "p", Function: "f", When: "true"}, // explicit truthy
 		{ID: "s2", Plugin: "p", Function: "f"},               // absent when
@@ -108,10 +109,10 @@ func TestWalk_WhenTrueAndAbsentRun(t *testing.T) {
 // TestWalk_WhenFalseNoPrecedingEntry proves a skipped step leaves no
 // PrecedingStep entry for a downstream step to observe.
 func TestWalk_WhenFalseNoPrecedingEntry(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
-	inv.outputs["s1"] = FRPStepOutput{SideEffects: []SideEffect{{Kind: "emit_file", File: &SideEffectFile{Path: "f.txt", Content: "c"}}}}
-	inv.outputs["s2"] = FRPStepOutput{}
+	inv.outputs["s1"] = frp.FRPStepOutput{SideEffects: []frp.SideEffect{{Kind: "emit_file", File: &frp.SideEffectFile{Path: "f.txt", Content: "c"}}}}
+	inv.outputs["s2"] = frp.FRPStepOutput{}
 	steps := []types.PipelineStep{
 		{ID: "s1", Plugin: "plugin-one", Function: "f", When: "false"},
 		{ID: "s2", Plugin: "plugin-two", Function: "f"},
@@ -135,7 +136,7 @@ func TestWalk_WhenFalseNoPrecedingEntry(t *testing.T) {
 // warning, while a falsy-when optional step is simply skipped before execution.
 func TestWalk_WhenComposesWithOptional(t *testing.T) {
 	// Case A: when:"true" + optional:true + fails -> soft-fail warning.
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
 	inv.fail["s1"] = errors.New("guest trap")
 	res, err := Walk(context.Background(), docs,
@@ -168,14 +169,14 @@ func TestWalk_WhenComposesWithOptional(t *testing.T) {
 // TestWalk_WhenErrorHaltsEvenOptional proves a `when` that render-errors halts
 // the walk loudly with ErrPipelineStepFailed, independent of Optional.
 func TestWalk_WhenErrorHaltsEvenOptional(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
 	whenText := "{{ .broken"
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", When: whenText, Optional: true}}
 
 	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, errOnWhen(whenText))
-	if !errors.Is(err, ErrPipelineStepFailed()) {
-		t.Fatalf("err = %v, want ErrPipelineStepFailed", err)
+	if !errors.Is(err, frp.ErrPipelineStepFailed()) {
+		t.Fatalf("err = %v, want frp.ErrPipelineStepFailed", err)
 	}
 	if _, ran := inv.received["s1"]; ran {
 		t.Errorf("guest invoked despite a when-render error")
@@ -186,12 +187,12 @@ func TestWalk_WhenErrorHaltsEvenOptional(t *testing.T) {
 // `when` is a no-op: the result document set is byte-identical to a walk where
 // the step is genuinely absent from the slice.
 func TestWalk_WhenSkipDeterministicVsAbsent(t *testing.T) {
-	mk := func() DocumentSet { return DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)} }
+	mk := func() frp.DocumentSet { return frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)} }
 	s2 := types.PipelineStep{ID: "s2", Plugin: "p", Function: "f"}
 
 	invA := newScripted()
-	invA.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "unused")}}
-	invA.outputs["s2"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "1")}}
+	invA.outputs["s1"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "unused")}}
+	invA.outputs["s2"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "1")}}
 	withSkip, err := Walk(context.Background(), mk(),
 		[]types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", When: "false"}, s2},
 		invA.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
@@ -200,7 +201,7 @@ func TestWalk_WhenSkipDeterministicVsAbsent(t *testing.T) {
 	}
 
 	invB := newScripted()
-	invB.outputs["s2"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "1")}}
+	invB.outputs["s2"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "1")}}
 	absent, err := Walk(context.Background(), mk(),
 		[]types.PipelineStep{s2},
 		invB.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
@@ -224,13 +225,13 @@ func TestWalk_WhenReadsTemplateContext(t *testing.T) {
 	}
 	newInv := func() *scriptedInvoker {
 		inv := newScripted()
-		inv.outputs["s1"] = FRPStepOutput{Patches: []JSONPatchOp{patch(DocumentScopeOwn, "a.yaml", "replace", "/x", "ran")}}
+		inv.outputs["s1"] = frp.FRPStepOutput{Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "a.yaml", "replace", "/x", "ran")}}
 		return inv
 	}
 
 	// AttachmentName == "go" -> gate truthy -> step runs.
 	invRun := newInv()
-	resRun, err := Walk(context.Background(), DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}, mkSteps(),
+	resRun, err := Walk(context.Background(), frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}, mkSteps(),
 		invRun.invoke, &types.TemplateContext{AttachmentName: "go"}, renderctx.RenderContext{}, realTemplateEval)
 	if err != nil {
 		t.Fatalf("Walk (gate truthy): %v", err)
@@ -241,7 +242,7 @@ func TestWalk_WhenReadsTemplateContext(t *testing.T) {
 
 	// AttachmentName != "go" -> gate falsy -> step skipped.
 	invSkip := newInv()
-	resSkip, err := Walk(context.Background(), DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}, mkSteps(),
+	resSkip, err := Walk(context.Background(), frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}, mkSteps(),
 		invSkip.invoke, &types.TemplateContext{AttachmentName: "stop"}, renderctx.RenderContext{}, realTemplateEval)
 	if err != nil {
 		t.Fatalf("Walk (gate falsy): %v", err)

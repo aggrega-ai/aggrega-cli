@@ -12,7 +12,7 @@ import (
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -146,7 +146,7 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 			strings.Join(shadowed, "; ")))
 	}
 	if len(refusals) > 0 {
-		return rendercore.LinkPublishOutput{}, cerrors.Wrap(wasm.ErrPluginOutputNameCollision(),
+		return rendercore.LinkPublishOutput{}, cerrors.Wrap(plugincondition.ErrPluginOutputNameCollision(),
 			cerrors.TranslationError, cerrors.SourceLocation{}, strings.Join(refusals, "; and "))
 	}
 	out := rendercore.LinkPublishOutput{Handle: handle}
@@ -194,7 +194,7 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	}
 	stack, ok := findStackFile(consumerFiles)
 	if !ok {
-		return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+		return rendercore.LinkResolveOutput{}, cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			"cloudformation-provider: cross-boundary link resolve received no consumer stack template")
 	}
@@ -215,7 +215,7 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 		sentinel := rendercore.CrossBoundaryLinkSentinel(edge.Source.Node, edge.Target.Node, edge.Socket, outputKey)
 		paths, interpolated := findSentinelPaths(doc, sentinel)
 		if len(interpolated) > 0 {
-			return rendercore.LinkResolveOutput{}, cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+			return rendercore.LinkResolveOutput{}, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 				cerrors.TranslationError, cerrors.SourceLocation{},
 				fmt.Sprintf("cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference: output key %q on socket %q", outputKey, edge.Socket))
 		}
@@ -344,7 +344,7 @@ func linkedKeys(edge rendercore.LinkEdge) (edgeLinkKeys, error) {
 		carried[key] = true
 		text, ok := edge.Provides.Get(key)
 		if !ok {
-			return edgeLinkKeys{}, cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+			return edgeLinkKeys{}, cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 				cerrors.TranslationError, cerrors.SourceLocation{},
 				fmt.Sprintf("cloudformation-provider: cross-boundary link lists provides key %q as read by component %q off its edge on socket %q, but component %q provides no such key",
 					key, edge.Source.Node, edge.Socket, edge.Target.Node))

@@ -24,7 +24,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -139,12 +139,12 @@ func stringList(value *yaml.Node) ([]string, bool) {
 // the file is assembled at, which the unresolved halt names.
 func (f networksOfFindings) halt(assembledAt string) error {
 	if len(f.unreadable) > 0 {
-		return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("compose AssembleBoundary: %s", strings.Join(f.unreadable, "; ")))
 	}
 	if len(f.unresolved) > 0 {
-		return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+		return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 			cerrors.TranslationError, cerrors.SourceLocation{},
 			fmt.Sprintf("compose AssembleBoundary: %s; no component by that id is assembled into the %s at %q, so it has no network in this file: name only components assembled into the same file, or remove the id",
 				strings.Join(f.unresolved, "; "), AssembledOutputFile, assembledAt))

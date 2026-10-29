@@ -52,7 +52,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -104,7 +104,7 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 		}
 	}
 	if n := len(withContent); n > 1 {
-		return ComposeFile{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		return ComposeFile{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("compose: node %q %s holds %d YAML documents, and the merge reads a fragment as one compose file, so every document after the first would be left out of the assembled file: write the fragment as one document, or give each document an artifacts: entry of its own", nodeID, origin, n))
 	}
@@ -120,7 +120,7 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 	}
 	w.walk(root, composeFileType, "")
 	if refusal := w.refusal(); refusal != "" {
-		return ComposeFile{}, cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+		return ComposeFile{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("compose: node %q %s %s", nodeID, origin, refusal))
 	}

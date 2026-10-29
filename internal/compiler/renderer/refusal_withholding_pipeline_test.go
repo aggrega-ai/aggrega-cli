@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline/stepwalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -32,8 +33,8 @@ var stepInputContract = json.RawMessage(`{"type":"object","properties":{"origin"
 
 // contractInvoker runs the real input-contract check over whatever the step's
 // `with` rendered, and never reaches a guest: every row it serves refuses there.
-func contractInvoker() frp.StepInvoker {
-	return func(_ context.Context, step types.PipelineStep, input types.OrderedMap[any], _ []byte) ([]byte, frp.OutputsCheck, error) {
+func contractInvoker() stepwalk.StepInvoker {
+	return func(_ context.Context, step types.PipelineStep, input types.OrderedMap[any], _ []byte) ([]byte, stepwalk.OutputsCheck, error) {
 		if err := validateStepInput(wasm.PluginExport{Input: stepInputContract}, input, step); err != nil {
 			return nil, nil, err
 		}

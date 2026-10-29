@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // slotDeclaringCatalog copies the validate fixture catalog and, unless bare,
@@ -115,7 +115,7 @@ func TestValidateRecipeDeclinesARequiredAttachmentSlot(t *testing.T) {
 			lacks: []string{unfilled, "credential, audit"}},
 		{name: "a fault of the Recipe's own is still caught beside a declined slot",
 			recipeEdit:    statefulWithoutHeadless,
-			wantCondition: wasm.ErrPluginRequiredInputUnresolved(),
+			wantCondition: plugincondition.ErrPluginRequiredInputUnresolved(),
 			wantSentence:  noHeadless,
 			carries:       []string{declinedLine, "Resolution: valid", "Render: not completed in isolation"},
 			lacks:         []string{unfilled, "Render: 2 artifact(s)"}},

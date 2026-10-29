@@ -14,7 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -494,7 +494,7 @@ func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 	// Both arms of the governing-Service halt raise one condition — it names the
 	// kind — so the sentence is what still tells "none found" from "more than
 	// one", which is the whole distinction this test and its neighbour draw.
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("expected the unresolved-required-input condition; got %v", err)
 	}
 	if want := "synthesized StatefulSet has no headless governing Service"; !strings.Contains(err.Error(), want) {
@@ -519,7 +519,7 @@ func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
 	w.Services.Set("db2", h2)
 
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("postgres"))
-	if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("expected the unresolved-required-input condition; got %v", err)
 	}
 	if want := "synthesized StatefulSet has more than one headless Service"; !strings.Contains(err.Error(), want) {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline/stepwalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -20,13 +21,13 @@ import (
 // token; a /host op from a hostless step). The executor body
 // (runNodePipelineWithInvoker) is the same one the production path runs — only
 // the invoker is canned — so these tests assert the real halt behaviour.
-func cannedInvoker(t *testing.T, out frp.FRPStepOutput) frp.StepInvoker {
+func cannedInvoker(t *testing.T, out frp.FRPStepOutput) stepwalk.StepInvoker {
 	t.Helper()
 	raw, err := out.EncodeCBOR()
 	if err != nil {
 		t.Fatalf("encode canned output: %v", err)
 	}
-	return func(_ context.Context, _ types.PipelineStep, _ types.OrderedMap[any], _ []byte) ([]byte, frp.OutputsCheck, error) {
+	return func(_ context.Context, _ types.PipelineStep, _ types.OrderedMap[any], _ []byte) ([]byte, stepwalk.OutputsCheck, error) {
 		return raw, nil, nil
 	}
 }

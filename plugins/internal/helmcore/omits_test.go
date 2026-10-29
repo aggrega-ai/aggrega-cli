@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"helm.sh/helm/v4/pkg/chart/common"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
@@ -339,7 +339,7 @@ const subchartCRDFile = "om-customresourcedefinition-widgets-example-com.yaml"
 func TestOmits_ASubchartNamesWhereTheDocumentCameFrom(t *testing.T) {
 	t.Parallel()
 
-	if _, err := renderSubchartOmitChart(t, nil); !errors.Is(err, wasm.ErrPluginOutputNameCollision()) {
+	if _, err := renderSubchartOmitChart(t, nil); !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
 		t.Fatalf("the chart rendered with nothing left out gave %v; want the halt on two documents at one name, "+
 			"which is the render these rows leave one copy out of", err)
 	}
@@ -475,7 +475,7 @@ func TestOmits_AnEntryNamingASubchartTheChartDoesNotRenderHalts(t *testing.T) {
 			entries := []renderer.ResolvedOmit{{Entry: keep, Position: 0}, tc.entry}
 			entries[1].Position = 1
 			got, err := renderSubchartOmitChart(t, entries)
-			if !errors.Is(err, wasm.ErrPluginRequiredInputUnresolved()) {
+			if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 				t.Fatalf("got files %v and error %v; want the refusal of an entry naming a subchart the chart does not render",
 					sortedFileKeys(got.Files), err)
 			}

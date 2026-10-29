@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // probeComponent declares three infra fields the probe Recipe reads or could:
@@ -163,7 +163,7 @@ func TestValidateRecipeRenderOutcomes(t *testing.T) {
 			form:          "stateful",
 			wantErr:       true,
 			wantText:      "requires a headless governing Service",
-			wantCondition: wasm.ErrPluginRequiredInputUnresolved(),
+			wantCondition: plugincondition.ErrPluginRequiredInputUnresolved(),
 			reportCarries: []string{"Resolution: valid", "Render: not completed in isolation"},
 		},
 	}

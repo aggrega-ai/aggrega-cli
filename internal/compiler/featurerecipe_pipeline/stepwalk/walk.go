@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package featurerecipe_pipeline
+package stepwalk
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
@@ -23,8 +24,8 @@ import (
 const stepSkippedCode = "pipeline-step-skipped"
 
 // StepInvoker invokes one pipeline step's guest export with the encoded
-// [FRPStepInput] payload — the canonical binary encoding the step's guest reads —
-// and returns the guest's raw [FRPStepOutput] bytes. The caller binds this to the
+// [frp.FRPStepInput] payload — the canonical binary encoding the step's guest reads —
+// and returns the guest's raw [frp.FRPStepOutput] bytes. The caller binds this to the
 // shared describe() gate's authored-export invocation (resolving and loading the
 // plugin upstream); the walk reaches the guest only through this seam, so it
 // carries no plugin-resolution or loading concern and is unit-testable with a stub
@@ -97,8 +98,8 @@ func EvaluateWithThrough(evaluate WithEvaluator) WalkOption {
 // (an optional step that soft-failed) contributes nothing here because its
 // snapshot is restored and its ops are dropped.
 type WalkResult struct {
-	Documents   DocumentSet
-	SideEffects []SideEffect
+	Documents   frp.DocumentSet
+	SideEffects []frp.SideEffect
 	Warnings    []renderctx.Diagnostic
 	AppliedOps  AppliedOps
 }
@@ -108,20 +109,20 @@ type WalkResult struct {
 // input: the caller's codec edits the byte-spans the ops address rather than
 // diffing the patched tree against the original.
 type AppliedOps struct {
-	Own  map[string][]JSONPatchOp
-	Host map[string][]JSONPatchOp
+	Own  map[string][]frp.JSONPatchOp
+	Host map[string][]frp.JSONPatchOp
 }
 
-func (a *AppliedOps) record(scope, key string, op JSONPatchOp) {
+func (a *AppliedOps) record(scope, key string, op frp.JSONPatchOp) {
 	switch scope {
-	case DocumentScopeHost:
+	case frp.DocumentScopeHost:
 		if a.Host == nil {
-			a.Host = map[string][]JSONPatchOp{}
+			a.Host = map[string][]frp.JSONPatchOp{}
 		}
 		a.Host[key] = append(a.Host[key], op)
 	default:
 		if a.Own == nil {
-			a.Own = map[string][]JSONPatchOp{}
+			a.Own = map[string][]frp.JSONPatchOp{}
 		}
 		a.Own[key] = append(a.Own[key], op)
 	}
@@ -145,7 +146,7 @@ func (a *AppliedOps) record(scope, key string, op JSONPatchOp) {
 //
 // withCtx is the standard Recipe template context the `with` body evaluates
 // against; the caller builds it. renderCtx is threaded into every step's
-// [FRPStepInput.Context]. eval is the template evaluator the walk renders
+// [frp.FRPStepInput.Context]. eval is the template evaluator the walk renders
 // each step's `with` body through — injected as a seam (the caller passes
 // the renderer's EvalTemplate) so this package never imports the renderer
 // and the renderer can call Walk without an import cycle; a test supplies a
@@ -154,7 +155,7 @@ func (a *AppliedOps) record(scope, key string, op JSONPatchOp) {
 // set, or enforce provider compatibility — those are the caller's.
 func Walk(
 	ctx context.Context,
-	docs DocumentSet,
+	docs frp.DocumentSet,
 	steps []types.PipelineStep,
 	invoke StepInvoker,
 	withCtx *types.TemplateContext,
@@ -166,9 +167,9 @@ func Walk(
 	for _, opt := range opts {
 		opt(&chosen)
 	}
-	var sideEffects []SideEffect
+	var sideEffects []frp.SideEffect
 	var warnings []renderctx.Diagnostic
-	var preceding []PrecedingStep
+	var preceding []frp.PrecedingStep
 	var applied AppliedOps
 
 	// Operate on a private copy so the walk never mutates the caller's set
@@ -220,7 +221,7 @@ func Walk(
 			// `when`/`with` predicate halts regardless of Optional. Optional
 			// tolerates a runtime step failure; it does not tolerate a violated
 			// declared contract.
-			if step.Optional && !errors.Is(err, ErrPipelineContractViolation()) {
+			if step.Optional && !errors.Is(err, frp.ErrPipelineContractViolation()) {
 				warnings = append(warnings, renderctx.Diagnostic{
 					Severity: abi.SeverityWarn,
 					Code:     stepSkippedCode,
@@ -239,7 +240,7 @@ func Walk(
 		}
 
 		sideEffects = append(sideEffects, stepEffects...)
-		preceding = append(preceding, PrecedingStep{
+		preceding = append(preceding, frp.PrecedingStep{
 			Index:       i,
 			PluginURI:   step.Plugin,
 			SideEffects: stepEffects,
@@ -254,7 +255,7 @@ func Walk(
 		if step.ID != "" && stepOutputs.Len() > 0 {
 			out, err := toStepOutput(stepOutputs)
 			if err != nil {
-				return WalkResult{}, fmt.Errorf("%w: step %q (index %d) record outputs: %w", ErrPipelineStepFailed(), step.ID, i, err)
+				return WalkResult{}, fmt.Errorf("%w: step %q (index %d) record outputs: %w", frp.ErrPipelineStepFailed(), step.ID, i, err)
 			}
 			withCtx.Steps.Set(step.ID, out)
 		}
@@ -274,22 +275,22 @@ func Walk(
 // the walk-level record consistent with the restored set.
 func runStep(
 	ctx context.Context,
-	docs *DocumentSet,
+	docs *frp.DocumentSet,
 	step types.PipelineStep,
 	index int,
-	preceding []PrecedingStep,
+	preceding []frp.PrecedingStep,
 	invoke StepInvoker,
 	withCtx *types.TemplateContext,
 	renderCtx renderctx.RenderContext,
 	eval TemplateEvaluator,
 	opts walkOptions,
-) ([]SideEffect, []renderctx.Diagnostic, []JSONPatchOp, types.OrderedMap[any], error) {
+) ([]frp.SideEffect, []renderctx.Diagnostic, []frp.JSONPatchOp, types.OrderedMap[any], error) {
 	stepInput, err := evalWith(step, withCtx, eval, opts)
 	if err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed(), step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", frp.ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
-	payload, err := FRPStepInput{
+	payload, err := frp.FRPStepInput{
 		Documents:      *docs,
 		StepInput:      stepInput,
 		Context:        renderCtx,
@@ -297,21 +298,21 @@ func runStep(
 		PrecedingSteps: preceding,
 	}.EncodeCBOR()
 	if err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) marshal input: %w", ErrPipelineStepFailed(), step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) marshal input: %w", frp.ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	raw, checkOutputs, err := invoke(ctx, step, stepInput, payload)
 	if err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed(), step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", frp.ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	// The recipe names the function each step runs, so the export the answer came
 	// back from is the step's own, with the pipeline-step type's export as the
 	// default a step naming none would run — the same name the invocation used.
 	export := wasm.AuthoredExportName(wasm.StepExport, step.Function)
-	var out FRPStepOutput
+	var out frp.FRPStepOutput
 	if err := wasm.DecodeGuestOutputCBOR(export, raw, &out); err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", frp.ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	// The returned outputs are checked against the export's declared output
@@ -321,12 +322,12 @@ func runStep(
 	// contract even where the guest also reported a failure.
 	if checkOutputs != nil {
 		if err := checkOutputs(out.Outputs); err != nil {
-			return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed(), step.ID, index, err)
+			return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", frp.ErrPipelineStepFailed(), step.ID, index, err)
 		}
 	}
 
 	if gerr := wasm.GuestReturnedError(step.Plugin, export, wasm.GuestFailure{Message: out.Error}); gerr != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, gerr)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", frp.ErrPipelineStepFailed(), step.ID, index, gerr)
 	}
 
 	// A severity the shared diagnostic contract does not declare is a violated
@@ -337,16 +338,16 @@ func runStep(
 	// tolerate output the host cannot route.
 	if serr := wasm.GuestDiagnosticSeverities(step.Plugin, export, out.Diagnostics); serr != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w: %w",
-			ErrPipelineStepFailed(), step.ID, index, serr, ErrPipelineContractViolation())
+			frp.ErrPipelineStepFailed(), step.ID, index, serr, frp.ErrPipelineContractViolation())
 	}
 
 	for _, d := range out.Diagnostics {
 		if d.Severity == abi.SeverityHalt {
-			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed(), step.ID, index, d.Message)
+			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", frp.ErrPipelineStepFailed(), step.ID, index, d.Message)
 		}
 	}
 
-	if err := ApplyPatches(docs, out.Patches); err != nil {
+	if err := frp.ApplyPatches(docs, out.Patches); err != nil {
 		return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("step %q (index %d): %w", step.ID, index, err)
 	}
 
@@ -365,7 +366,7 @@ func stepEnabled(step types.PipelineStep, index int, withCtx *types.TemplateCont
 	}
 	rendered, err := eval(fmt.Sprintf("pipeline-step[%s].when", step.ID), step.When, withCtx)
 	if err != nil {
-		return false, fmt.Errorf("%w: step %q (index %d) `when`: %w", ErrPipelineStepFailed(), step.ID, index, err)
+		return false, fmt.Errorf("%w: step %q (index %d) `when`: %w", frp.ErrPipelineStepFailed(), step.ID, index, err)
 	}
 	return truthy.Bool(rendered), nil
 }
@@ -450,64 +451,6 @@ func stringifyStepOutput(v any) (string, error) {
 	}
 }
 
-// ApplyPatches applies each returned patch to the unit it addresses by scope
-// and key. RFC-6902 application runs through the stock [Applier] over the
-// unit's tree-view; the applier is the single home of the ABI→engine
-// operation mapping (a [JSONPatchOp] becomes a jsonpatch.Op there and only
-// there), so this function carries no engine import beyond the seam.
-//
-// docs is mutated in place: a patched unit's Tree is replaced with the
-// applied result. An absent (scope, key) target returns
-// [ErrPipelineTargetAbsent]; a patch against an opaque unit (the codec gave
-// it no tree-view) returns [ErrPipelineTargetOpaque]; any engine rejection
-// propagates wrapped. On error docs may be partially mutated; the caller's
-// snapshot restore makes rollback whole-step.
-//
-// It is the single home of the (scope, key)-addressed apply and its
-// opaque/absent target checks, shared by the step walk and by any caller that
-// applies a set of pre-resolved ops to an addressable document set.
-func ApplyPatches(docs *DocumentSet, ops []JSONPatchOp) error {
-	var applier StockApplier
-	for _, op := range ops {
-		root, err := scopeRoot(docs, op.Scope)
-		if err != nil {
-			return err
-		}
-
-		unit, ok := root.Get(op.Key)
-		if !ok {
-			return fmt.Errorf("%w: scope %q key %q", ErrPipelineTargetAbsent(), op.Scope, op.Key)
-		}
-		if !unit.Structured() {
-			return fmt.Errorf("%w: scope %q key %q", ErrPipelineTargetOpaque(), op.Scope, op.Key)
-		}
-
-		newTree, err := applier.Apply(unit.Tree, []JSONPatchOp{op})
-		if err != nil {
-			return fmt.Errorf("%w: scope %q key %q: %w", ErrPipelineStepFailed(), op.Scope, op.Key, err)
-		}
-		unit.Tree = newTree
-		root.Set(op.Key, unit)
-	}
-	return nil
-}
-
-// scopeRoot returns the unit root a patch scope addresses. An unknown scope
-// is a step failure. Host-scope availability (a host root exists only for a
-// component-scope FeatureRecipe attached to a host) is the caller's concern;
-// here an addressed-but-empty host root simply yields an absent-target on
-// Get.
-func scopeRoot(docs *DocumentSet, scope string) (*types.OrderedMap[Unit], error) {
-	switch scope {
-	case DocumentScopeOwn:
-		return &docs.Own, nil
-	case DocumentScopeHost:
-		return &docs.Host, nil
-	default:
-		return nil, fmt.Errorf("%w: unknown patch scope %q", ErrPipelineStepFailed(), scope)
-	}
-}
-
 // snapshotDocumentSet returns a deep, order-preserving copy of the set so a
 // failing step can be rolled back to its pre-step state byte-for-byte. Each
 // unit's Tree and Bytes are []byte; the copy must duplicate the backing
@@ -515,8 +458,8 @@ func scopeRoot(docs *DocumentSet, scope string) (*types.OrderedMap[Unit], error)
 // copy would alias the original and defeat the rollback. A generic
 // OrderedMap clone is deliberately not used: it would shallow-copy the unit
 // values and silently alias their byte slices.
-func snapshotDocumentSet(ds DocumentSet) DocumentSet {
-	return DocumentSet{
+func snapshotDocumentSet(ds frp.DocumentSet) frp.DocumentSet {
+	return frp.DocumentSet{
 		Own:  cloneUnitMap(ds.Own),
 		Host: cloneUnitMap(ds.Host),
 	}
@@ -524,10 +467,10 @@ func snapshotDocumentSet(ds DocumentSet) DocumentSet {
 
 // cloneUnitMap copies a keyed unit map in author order, duplicating each
 // unit's Tree and Bytes so the copy aliases nothing in the source.
-func cloneUnitMap(src types.OrderedMap[Unit]) types.OrderedMap[Unit] {
-	var out types.OrderedMap[Unit]
+func cloneUnitMap(src types.OrderedMap[frp.Unit]) types.OrderedMap[frp.Unit] {
+	var out types.OrderedMap[frp.Unit]
 	for k, u := range src.All() {
-		out.Set(k, Unit{
+		out.Set(k, frp.Unit{
 			Token:     u.Token,
 			Bytes:     cloneBytes(u.Bytes),
 			MediaType: u.MediaType,

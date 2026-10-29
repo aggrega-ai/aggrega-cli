@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package featurerecipe_pipeline
+package stepwalk
 
 import (
 	"context"
 	"encoding/json"
+	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"strings"
 	"testing"
 
@@ -20,14 +21,14 @@ import (
 // reference by reading the live template context the walk mutates, so the test
 // exercises the real per-node context pointer, not a stand-in.
 func TestWalk_StepsChannelCrossStepDataFlow(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 
 	var aOut types.OrderedMap[any]
 	aOut.Set("k", "from-A")
 
 	inv := newScripted()
-	inv.outputs["A"] = FRPStepOutput{Outputs: aOut}
-	inv.outputs["B"] = FRPStepOutput{}
+	inv.outputs["A"] = frp.FRPStepOutput{Outputs: aOut}
+	inv.outputs["B"] = frp.FRPStepOutput{}
 
 	// The eval stub resolves B's `with` against the context the walk hands it —
 	// proving A's output was recorded into .steps before B evaluated.
@@ -77,14 +78,14 @@ func TestWalk_StepsChannelCrossStepDataFlow(t *testing.T) {
 // with no outputs. A rolled-back optional step is covered by the applied-ops
 // test; here the focus is the empty-ID and no-outputs guards.
 func TestWalk_StepsChannelSkips(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 
 	var out types.OrderedMap[any]
 	out.Set("k", "v")
 
 	inv := newScripted()
-	inv.outputs[""] = FRPStepOutput{Outputs: out} // empty-ID step: no channel entry
-	inv.outputs["has-id"] = FRPStepOutput{}       // no outputs: no channel entry
+	inv.outputs[""] = frp.FRPStepOutput{Outputs: out} // empty-ID step: no channel entry
+	inv.outputs["has-id"] = frp.FRPStepOutput{}       // no outputs: no channel entry
 
 	steps := []types.PipelineStep{
 		{ID: "", Plugin: "p", Function: "f"},
@@ -105,7 +106,7 @@ func TestWalk_StepsChannelSkips(t *testing.T) {
 // optional step records no outputs — the channel reflects only committed
 // steps, mirroring the applied-ops record.
 func TestWalk_StepsChannelRolledBackStepDropsOutputs(t *testing.T) {
-	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	docs := frp.DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 
 	var out types.OrderedMap[any]
 	out.Set("k", "should-not-appear")
@@ -113,9 +114,9 @@ func TestWalk_StepsChannelRolledBackStepDropsOutputs(t *testing.T) {
 	inv := newScripted()
 	// Optional step returns outputs but its patch targets an absent unit, so it
 	// soft-fails and rolls back — its outputs must not reach the channel.
-	inv.outputs["opt"] = FRPStepOutput{
+	inv.outputs["opt"] = frp.FRPStepOutput{
 		Outputs: out,
-		Patches: []JSONPatchOp{patch(DocumentScopeOwn, "missing.yaml", "add", "/k", "v")},
+		Patches: []frp.JSONPatchOp{patch(frp.DocumentScopeOwn, "missing.yaml", "add", "/k", "v")},
 	}
 	steps := []types.PipelineStep{{ID: "opt", Plugin: "p", Function: "f", Optional: true}}
 

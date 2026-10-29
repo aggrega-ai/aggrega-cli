@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 )
 
 // extensionFragment writes extension members at the top level and on a service,
@@ -215,7 +215,7 @@ func TestDecodeFragment_RefusesAFragmentOfSeveralDocuments(t *testing.T) {
 			if err == nil {
 				t.Fatal("decode accepted a fragment holding several documents")
 			}
-			if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+			if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 				t.Errorf("refusal does not carry the cannot-express condition: %v", err)
 			}
 			msg := err.Error()
@@ -239,7 +239,7 @@ func TestComposeAssemble_AFragmentOfSeveralDocumentsHaltsTheMerge(t *testing.T) 
 	t.Parallel()
 
 	_, err := assembleOne(t, modelFragment("alpha", "services:\n  one:\n    image: a\n---\nservices:\n  two:\n    image: a\n"))
-	if !errors.Is(err, wasm.ErrPluginCannotExpressInput()) {
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("got %v, want the cannot-express refusal of a fragment of several documents", err)
 	}
 	if !strings.Contains(err.Error(), `node "alpha" fragment "alpha.compose-fragment.yaml" holds 2 YAML documents`) {

@@ -18,7 +18,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"helm.sh/helm/v4/pkg/chart/common"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
@@ -253,7 +253,7 @@ func TestRenderChart_AKubernetesVersionTheParserRefusesHalts(t *testing.T) {
 			if err == nil {
 				t.Fatalf("a chart rendered for the unparsable version %q; files: %v", value, sortedFileKeys(files))
 			}
-			if !errors.Is(err, wasm.ErrPluginValueNotRepresentable()) {
+			if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
 				t.Fatalf("the halt does not carry the value-not-representable condition: %v", err)
 			}
 			if len(files) != 0 {

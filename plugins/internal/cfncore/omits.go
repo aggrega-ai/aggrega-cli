@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -145,7 +145,7 @@ func refuseOmitNamespace(entry rendercore.ResolvedOmit, nodeID string) error {
 	if entry.Entry.Namespace == "" {
 		return nil
 	}
-	return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+	return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("cloudformation-provider: an omits entry (kind %s, name %s) names namespace %s, and a CloudFormation template has no namespaces: %s; remove the namespace from the entry",
 			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),
@@ -160,7 +160,7 @@ func refuseOmitSubchart(entry rendercore.ResolvedOmit, nodeID string) error {
 	if entry.Entry.Subchart == "" {
 		return nil
 	}
-	return cerrors.Wrap(wasm.ErrPluginCannotExpressInput(),
+	return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
 		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("cloudformation-provider: an omits entry (kind %s, name %s) names subchart %s, and a CloudFormation template has no subcharts: %s; remove the subchart from the entry",
 			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),
@@ -319,7 +319,7 @@ func requireNoReferenceToLeftOut(templates []remainingTemplate, left leftOutReso
 	if len(findings) == 0 {
 		return nil
 	}
-	return cerrors.Wrap(wasm.ErrPluginRequiredInputUnresolved(),
+	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
 		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("cloudformation-provider: what an omits entry left out is still named by the source's templates: %s; CloudFormation refuses a template naming a resource it does not declare: leave out what names it as well, or remove the entry",
 			strings.Join(findings, "; ")))

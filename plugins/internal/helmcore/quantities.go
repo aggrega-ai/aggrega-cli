@@ -6,7 +6,7 @@ package helmcore
 import (
 	"fmt"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/quantity"
@@ -116,7 +116,7 @@ func checkQuantity(value, path, nodeID string, withhold bool) error {
 		if withhold {
 			err = quantity.Withhold(err)
 		}
-		return cerrors.Wrap(wasm.ErrPluginValueNotRepresentable(),
+		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
 			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("helm: node %q: %s: %v; %s", nodeID, path, err, quantity.Shape))
 	}
