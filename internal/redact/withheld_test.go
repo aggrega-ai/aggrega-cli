@@ -96,9 +96,8 @@ func parityKeys() Keys {
 				}},
 			},
 		},
-		DeliveryKeys{"file": {"token.txt": true}},
+		DeliveryKeys{"file": {"token.txt": true}, "env": {"DB_PASSWORD": true}},
 		DeliveryKeys{"custom": {"SECRET_HEADER": true}},
-		DeliveryKeys{"env": {"DB_PASSWORD": true}},
 		Derived{Locals: map[string]bool{"dsn": true}, Source: map[string]bool{"url": true}},
 	)
 }
@@ -217,7 +216,7 @@ func TestSubstituteTree_RefusalWidening(t *testing.T) {
 // node's Component declares.
 func ownDeclarationsKeys() Keys {
 	keys := NodeKeys(map[string]bool{"admin_token": true}, nil, types.OrderedMap[types.IRFeatureEntry]{},
-		CrossNode{}, nil, nil, nil, Derived{})
+		CrossNode{}, nil, nil, Derived{})
 	keys.Features = map[string]AttachmentKeys{"admin_key": {
 		Values:   map[string]bool{"origin": true, "rotation.token": true},
 		Infra:    map[string]bool{"rotation_token": true},

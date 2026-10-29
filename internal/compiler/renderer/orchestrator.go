@@ -1884,9 +1884,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// and governing declaration belong to the same node, so it is read against
 		// this node's declarations rather than a target's or an attachment's.
 		selfInjectKeys := selfInjectWithheld(node.SelfInject, declared.Provides, declared.Values, declared.Infra)
-		// Every route that puts a key on this node's pipe is one of the routes
-		// named above, each read where its provenance is visible, so no key arrives
-		// untraced and the untraced argument is empty.
 		nodeKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
 			return redact.NodeKeys(
 				declared.Values, declared.Infra,
@@ -1894,7 +1891,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				crossNode,
 				injectMapping,
 				selfInjectKeys,
-				nil,
 				derived)
 		}
 		// Two sets come out of the one assembly, and they are one set: the set a

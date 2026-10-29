@@ -187,7 +187,7 @@ func TestEvalTemplate_WithholdsAConnectionAttachmentsDeclaredLeaf(t *testing.T) 
 	keys := redact.NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{},
 		redact.CrossNode{Attachments: map[string]map[string]redact.AttachmentKeys{
 			"gpt": {"credential": {Values: map[string]bool{"origin": true}}},
-		}}, nil, nil, nil, redact.Derived{})
+		}}, nil, nil, redact.Derived{})
 
 	cases := []struct {
 		name          string

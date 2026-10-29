@@ -270,9 +270,8 @@ func TestWorkloadReadsWithheld_PerRootAndDepth(t *testing.T) {
 		taintFixtureInfra(),
 		types.OrderedMap[types.IRFeatureEntry]{},
 		redact.CrossNode{Provides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}}},
-		nil,
-		nil,
 		redact.DeliveryKeys{"env": {"DATABASE_PASSWORD": true}},
+		nil,
 		redact.Derived{Locals: map[string]bool{"zzDsn": true}})
 
 	cases := []struct {

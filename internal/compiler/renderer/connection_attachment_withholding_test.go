@@ -122,7 +122,7 @@ func TestWorkloadReadsWithheld_ConnectionAttachments(t *testing.T) {
 				Provides: map[string]bool{"password": true},
 			}},
 		}},
-		nil, nil, nil, redact.Derived{})
+		nil, nil, redact.Derived{})
 
 	cases := []struct {
 		name     string

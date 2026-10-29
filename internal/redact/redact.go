@@ -232,7 +232,7 @@ type DeliveryKeys map[string]map[string]bool
 // existing: no package outside this one can mark a delivery key at all, so a
 // route added later has to arrive as an argument to the one constructor. What that
 // cannot force is the plumbing of a route into that constructor in the first
-// place; the untraced argument is what covers a key no route accounted for.
+// place, so a route added later owes its own reading and its own test.
 //
 // Locals and Source name DERIVED withholding rather than declared: a template
 // output computed from a declared-sensitive datum lands under a key nobody
@@ -722,8 +722,10 @@ type CrossNode struct {
 // What the compiler enforces is that no argument may be silently dropped, not that
 // every route in the pipeline is wired to one: a route added upstream and never
 // plumbed here compiles cleanly, which is how the routes now named below were each
-// found by probing rather than by a gate. The untraced argument is the standing
-// answer to that residual — see its bullet.
+// found by probing rather than by a gate. So every route reports the delivery keys
+// it withholds at its own site, where its provenance is visible, and a route added
+// later owes this assembly an argument of its own, a reading at its own site and a
+// test proving that reading.
 //
 // declaredValues and declaredInfra are the leaf paths the host Component's
 // schema declares sensitive, read through the single authored-declaration
@@ -731,7 +733,7 @@ type CrossNode struct {
 // declared-sensitive datum, read from the authored template text by the one walk
 // that performs that reading.
 //
-// FIVE arguments carry delivery routes, one per route, and that is why they are
+// FOUR arguments carry delivery routes, one per route, and that is why they are
 // separate parameters rather than fields of one struct: a route left out of this
 // signature is a compile error at the call site, where a field left unset on a
 // struct would be an empty map nobody notices — which is the exact shape of every
@@ -755,13 +757,6 @@ type CrossNode struct {
 //     the declaration that governs it belong to the SAME node, which is why a
 //     reading that only looked outward across edges and attachments left it in the
 //     clear.
-//   - untraced supplies delivery keys no route could account for. They are
-//     withheld, which is the same direction the reading of a template takes when a
-//     reference cannot be resolved: over-withholding costs a reader one value they
-//     must find another way, while under-withholding prints a secret. It is the
-//     assembly's fail-safe for a route whose provenance the host cannot see, since
-//     no compiler mechanism can force a route that exists in the pipeline to be
-//     plumbed to this call.
 //
 // A node's set therefore spans several owners: its own declarations, the
 // declarations of every node it consumes across an edge, and those of every
@@ -781,15 +776,15 @@ type CrossNode struct {
 // an attachment handles secret material; it does not say which of its leaves
 // do, and treating it as if it did would print the placeholder over a
 // referenceable credential's name and key — public locators an author left
-// unmarked on purpose. Where a route is hard to trace the untraced argument is the
-// sanctioned conservatism, and it is per-key.
+// unmarked on purpose. Where a route's reading cannot attribute per key, the
+// conservatism belongs in that route's own reading, which over-withholds its own
+// keys rather than another route's.
 func NodeKeys(
 	declaredValues, declaredInfra map[string]bool,
 	attachments types.OrderedMap[types.IRFeatureEntry],
 	crossNode CrossNode,
 	injectMapping DeliveryKeys,
 	selfInject DeliveryKeys,
-	untraced DeliveryKeys,
 	derived Derived,
 ) Keys {
 	keys := Keys{}
@@ -833,7 +828,7 @@ func NodeKeys(
 			}
 		}
 	}
-	for _, route := range []DeliveryKeys{crossNode.Inject, injectMapping, selfInject, untraced} {
+	for _, route := range []DeliveryKeys{crossNode.Inject, injectMapping, selfInject} {
 		for mechanism, deliveries := range route {
 			for deliveryKey := range deliveries {
 				keys.markDelivery(mechanism, deliveryKey)

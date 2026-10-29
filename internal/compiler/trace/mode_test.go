@@ -51,7 +51,6 @@ func TestModeKeysWithholdsByDefaultAndEmptiesWhenUnredacted(t *testing.T) {
 		redact.CrossNode{},
 		redact.DeliveryKeys{"env": {"DATABASE_PASSWORD": true}},
 		nil,
-		nil,
 		redact.Derived{
 			Locals: map[string]bool{"dsn": true},
 			Source: map[string]bool{redact.WholeSourceKey: true},

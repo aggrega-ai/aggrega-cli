@@ -64,7 +64,7 @@ func connectionKeys() Keys {
 				}},
 			},
 		},
-		nil, nil, nil, Derived{})
+		nil, nil, Derived{})
 }
 
 // TestUses_WithholdsAConnectionAttachmentsDeclaredData is the applier half for the
@@ -296,7 +296,7 @@ func TestNodeKeys_KeepsOnlyConnectionAttachmentsThatDeclareSomething(t *testing.
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			keys := NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{},
-				CrossNode{Attachments: c.attachments}, nil, nil, nil, Derived{})
+				CrossNode{Attachments: c.attachments}, nil, nil, Derived{})
 			if keys.Empty() != c.wantEmpty || keys.AnyWithheld() == c.wantEmpty {
 				t.Errorf("Empty()=%v AnyWithheld()=%v, want empty=%v", keys.Empty(), keys.AnyWithheld(), c.wantEmpty)
 			}
