@@ -140,12 +140,13 @@ func localsParitySurfaces() []localsParitySurface {
 				fr.Spec.Locals = locals
 				fr.Spec.Provides.Set("echo", "{{ .locals."+observedKey+" }}")
 				frCtx := &types.TemplateContext{Locals: types.OrderedMap[string]{}}
-				state := &BoundaryFRState{Provides: map[boundaryFRKey]map[string]any{}}
+				state := NewBoundaryFRState()
 				key := boundaryFRKey{BoundaryPath: "infra", FRInstance: "mon"}
-				if err := evaluateBoundaryFRTemplates(fr, "mon", frCtx, state, key, redact.Keys{}); err != nil {
+				if err := evaluateBoundaryFRTemplates(fr, "mon", frCtx, state, key, redact.Keys{}, featureProvidesContract{}); err != nil {
 					return "", err
 				}
-				v, _ := state.Provides[key]["echo"].(string)
+				made := state.Evaluations[key]
+				v, _ := made.Provides.Get("echo")
 				return v, nil
 			},
 		},
@@ -322,9 +323,9 @@ func TestLocalsContract_BoundaryScopeChainedLocalsResolve(t *testing.T) {
 		Locals:   types.OrderedMap[string]{},
 		Boundary: &types.BoundaryContext{Path: "prod/edge", BoundaryName: "edge"},
 	}
-	state := &BoundaryFRState{Provides: map[boundaryFRKey]map[string]any{}}
+	state := NewBoundaryFRState()
 	key := boundaryFRKey{BoundaryPath: "prod/edge", FRInstance: "gw"}
-	if err := evaluateBoundaryFRTemplates(fr, "gw", frCtx, state, key, redact.Keys{}); err != nil {
+	if err := evaluateBoundaryFRTemplates(fr, "gw", frCtx, state, key, redact.Keys{}, featureProvidesContract{}); err != nil {
 		t.Fatalf("chained boundary-scope locals must resolve: %v", err)
 	}
 
@@ -341,7 +342,8 @@ func TestLocalsContract_BoundaryScopeChainedLocalsResolve(t *testing.T) {
 	}
 	// The provides entry reads the last link of the chain, so it is the end-to-end
 	// observation: a value assembled across three locals reaching published output.
-	gotProvides, _ := state.Provides[key]["endpoint"].(string)
+	made := state.Evaluations[key]
+	gotProvides, _ := made.Provides.Get("endpoint")
 	if gotProvides != "https://edge-gateway.edge.svc.cluster.local:8443" {
 		t.Errorf("provides[endpoint] = %q — the chain did not reach published output", gotProvides)
 	}

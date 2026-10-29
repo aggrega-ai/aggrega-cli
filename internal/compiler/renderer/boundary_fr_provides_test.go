@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -75,14 +76,14 @@ func TestBoundaryScopeFRProvides_ResolvesThroughUsesEdge(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, nil, nil, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, nil, state, nil); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 	// The pre-pass populated the boundary-scope FR's provides before any
 	// node render.
-	prov, ok := state.Provides[boundaryFRKey{BoundaryPath: "cluster", FRInstance: "db"}]
-	if !ok || prov["dsn"] != "db.internal:5432" {
-		t.Fatalf("pre-pass provides = %v (ok=%v); want dsn=db.internal:5432", prov, ok)
+	made, ok := state.Evaluations[boundaryFRKey{BoundaryPath: "cluster", FRInstance: "db"}]
+	if dsn, _ := made.Provides.Get("dsn"); !ok || dsn != "db.internal:5432" {
+		t.Fatalf("pre-pass provides = %v (ok=%v); want dsn=db.internal:5432", made.Provides, ok)
 	}
 
 	// Headline: the consumer's uses edge resolves the boundary-scope provided value.
@@ -125,7 +126,7 @@ func TestBoundaryScopeFRProvides_SameTypeTwiceDisambiguates(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, nil, nil, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, nil, state, nil); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 
@@ -138,10 +139,9 @@ func TestBoundaryScopeFRProvides_SameTypeTwiceDisambiguates(t *testing.T) {
 	}
 }
 
-// TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch proves the pre-pass
-// and the Phase B.6 dispatch evaluate a boundary-scope FR's provides identically
-// (they share buildBoundaryFRTemplateContext + evaluateBoundaryFRTemplates), so
-// the double-eval (pre-pass plus dispatch) cannot diverge.
+// TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch proves the Phase B.6
+// dispatch reads the pre-pass's evaluation of a boundary-scope FR's provides back
+// rather than making a second one, so the two cannot diverge.
 func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	t.Parallel()
 	fr := boundaryScopeProvidesFR()
@@ -159,13 +159,14 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, nil, nil, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, nil, state, nil); err != nil {
 		t.Fatalf("pre-pass: %v", err)
 	}
 	key := boundaryFRKey{BoundaryPath: "cluster", FRInstance: "db"}
-	prePass := state.Provides[key]["dsn"]
+	preMade := state.Evaluations[key]
+	prePass, _ := preMade.Provides.Get("dsn")
 
-	// Run the Phase B.6 dispatch for the same FR; it re-evaluates the provides.
+	// Run the Phase B.6 dispatch for the same FR; it reads the provides back.
 	var captured any
 	factory := func(string) (Provider, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	if err := dispatchBoundaryScopeFR(
@@ -174,8 +175,12 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 	); err != nil {
 		t.Fatalf("dispatchBoundaryScopeFR: %v", err)
 	}
-	if dispatched := state.Provides[key]["dsn"]; dispatched != prePass {
+	afterDispatch := state.Evaluations[key]
+	if dispatched, _ := afterDispatch.Provides.Get("dsn"); dispatched != prePass {
 		t.Errorf("provides diverged: pre-pass=%q dispatch=%q", prePass, dispatched)
+	}
+	if made := state.evaluationsMade[key]; made != 1 {
+		t.Errorf("the pre-pass and the dispatch made %d evaluations; want the one the pre-pass made", made)
 	}
 	if prePass != "db.internal:5432" {
 		t.Errorf("provides = %q; want db.internal:5432", prePass)

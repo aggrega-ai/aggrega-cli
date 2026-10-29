@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -119,7 +120,7 @@ func TestBoundaryConsumerEnvChannel_PopulatesViaEngineHook(t *testing.T) {
 			"api": {"FOO_ADDR": "svc-x:1234"},
 		}}, nil
 	}
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, nil, factory, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, factory, state, nil); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 

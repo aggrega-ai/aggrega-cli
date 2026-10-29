@@ -59,6 +59,11 @@ import (
 // attachment's provides read as .context.rendered_name; empty where none was
 // reported. It is passed rather than looked up so the caller's one answer is the
 // one every attachment surface reads.
+//
+// An attachment whose FeatureRecipe renders once for its boundary resolves its
+// inject block against the one evaluation of its provides that boundary made,
+// read from boundaryFR through the cascade lookup from the node's boundary path —
+// the value [ResolveAttachmentProvides] reads too — and is never evaluated here.
 func ResolveAttachmentInject(
 	inject *types.InjectPipe,
 	graph *types.IRGraph,
@@ -66,6 +71,7 @@ func ResolveAttachmentInject(
 	recipeLookup RecipeLookup,
 	onSensitiveByValue func(attachment, mechanism, deliveryKey string),
 	declared func(featureType string) resolver.SensitiveLeaves,
+	boundaryFR *BoundaryFRState,
 ) ([]constraint.InjectDelivery, error) {
 	// The deliveries already standing in the pipe are read FIRST, before any
 	// attachment delivers into it. They are the component's own and its
@@ -80,6 +86,10 @@ func ResolveAttachmentInject(
 		inject.All = buildInjectAll(*inject)
 		return deliveries, nil
 	}
+	var consumerBoundaryPath string
+	if node, found := graph.Spec.Nodes.Get(nodeID); found {
+		consumerBoundaryPath = node.BoundaryPath
+	}
 	for instanceName, entry := range entries.All() {
 		if entry.Inject.Len() == 0 {
 			continue
@@ -88,9 +98,14 @@ func ResolveAttachmentInject(
 		if !found {
 			continue
 		}
-		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, hostRenderedName, entry, declaredLeavesOf(declared, entry.Type))
-		if err != nil {
-			return deliveries, err
+		made, boundary, _ := boundaryScopeAttachmentEvaluation(fr, boundaryFR, consumerBoundaryPath, instanceName)
+		provided := made.Provides
+		if !boundary {
+			var err error
+			provided, err = evalAttachmentFRProvides(fr, instanceName, nodeID, hostRenderedName, entry, declaredLeavesOf(declared, entry.Type))
+			if err != nil {
+				return deliveries, err
+			}
 		}
 		deliveries = append(deliveries, deliverAttachmentInjectKeys(
 			inject, instanceName, entry.Inject, provided, entry.SensitiveInject, onSensitiveByValue)...)
@@ -296,6 +311,46 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID, hos
 	return provided, nil
 }
 
+// featureProvidesContract is the provides contract the Feature an attachment
+// names declares — the keys its realizer must publish — together with the
+// Feature's type, which a refusal names. It is read once per attachment, by
+// [featureProvidesContractOf], and enforced where the attachment's provides are
+// evaluated: per consumer for a FeatureRecipe rendering per component, once at
+// the boundary attachment for one rendering once for its boundary. The zero
+// value declares nothing.
+type featureProvidesContract struct {
+	keys    map[string]bool
+	feature string
+}
+
+// featureProvidesContractOf reads the provides contract of the Feature named by
+// featureType from the catalog. A lookup with no Feature reader, or a Feature the
+// catalog does not hold, declares nothing.
+func featureProvidesContractOf(catalogLookup resolver.CatalogLookup, featureType string) featureProvidesContract {
+	if catalogLookup.Feature == nil {
+		return featureProvidesContract{}
+	}
+	feat, found := catalogLookup.Feature(featureType)
+	if !found {
+		return featureProvidesContract{}
+	}
+	return featureProvidesContract{
+		keys:    resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries),
+		feature: featureType,
+	}
+}
+
+// enforce halts when produced omits a key the contract declares, through
+// [enforceProvidesContract]. location is the halt's source location and
+// contextPrefix locates the binding; realizer is the pre-quoted descriptor of the
+// FeatureRecipe that produced the provides.
+func (c featureProvidesContract) enforce(produced types.OrderedMap[string], location, contextPrefix, realizer string) error {
+	if len(c.keys) == 0 {
+		return nil
+	}
+	return enforceProvidesContract(c.keys, produced, location, contextPrefix, realizer, fmt.Sprintf("Feature %q", c.feature))
+}
+
 // enforceProvidesContract halts when a realizer's produced provides bag omits
 // any key the abstract entity declares as its output contract. The contract is
 // structural key-presence — subset-required, superset-permitted: every declared
@@ -362,7 +417,17 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 // hostRenderedName is the name the node's own provider reported for it — what an
 // attachment's provides read as .context.rendered_name — and empty where none was
 // reported, as for [ResolveAttachmentInject].
-func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID, hostRenderedName string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup, declared func(featureType string) resolver.SensitiveLeaves) (map[string]types.OrderedMap[string], error) {
+//
+// An attachment whose FeatureRecipe renders once for its boundary is not evaluated
+// here. Its provides were evaluated once, at boundary scope, before the node walk,
+// and this reads that evaluation through the cascade lookup from consumerBoundaryPath
+// — the boundary path of the node the attachments are resolved for — in boundaryFR,
+// so every consumer the boundary holds reads the one value a uses edge carrying the
+// attachment reads too. Its Feature's provides contract was enforced on that
+// evaluation, at the boundary attachment, and is not enforced again per consumer. A
+// nil boundaryFR holds no evaluation, and such an attachment then carries no
+// provides.
+func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID, hostRenderedName string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup, declared func(featureType string) resolver.SensitiveLeaves, boundaryFR *BoundaryFRState, consumerBoundaryPath string) (map[string]types.OrderedMap[string], error) {
 	if recipeLookup.FeatureRecipe == nil || attachments.Len() == 0 {
 		return nil, nil
 	}
@@ -375,22 +440,22 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 		if !found || fr == nil {
 			continue
 		}
+		if made, boundary, evaluated := boundaryScopeAttachmentEvaluation(fr, boundaryFR, consumerBoundaryPath, instanceName); boundary {
+			if evaluated {
+				out[instanceName] = made.Provides
+			}
+			continue
+		}
 		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, hostRenderedName, entry, declaredLeavesOf(declared, entry.Type))
 		if err != nil {
 			return nil, err
 		}
 		// Producer-fulfilment: the bound FeatureRecipe must publish every provides
 		// key the attachment's Feature declares as its output contract.
-		if catalogLookup.Feature != nil {
-			if feat, ffound := catalogLookup.Feature(entry.Type); ffound {
-				contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
-				if err := enforceProvidesContract(contract, provided, nodeID,
-					fmt.Sprintf("node %q attachment %q", nodeID, instanceName),
-					fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name),
-					fmt.Sprintf("Feature %q", entry.Type)); err != nil {
-					return nil, err
-				}
-			}
+		if err := featureProvidesContractOf(catalogLookup, entry.Type).enforce(provided, nodeID,
+			fmt.Sprintf("node %q attachment %q", nodeID, instanceName),
+			fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name)); err != nil {
+			return nil, err
 		}
 		out[instanceName] = provided
 	}

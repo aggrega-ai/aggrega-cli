@@ -48,6 +48,12 @@ var injectMappingScope = templateScope{
 type FeatureRecipeRef struct {
 	InstanceName  string
 	FeatureRecipe *types.FeatureRecipe
+
+	// boundaryLocals, for a FeatureRecipe that renders once for its boundary, is
+	// the locals that boundary's one evaluation resolved — the value Phase A hands
+	// the injectMapping, in place of an evaluation for this consumer. Empty for
+	// every other FeatureRecipe, whose locals Phase A evaluates per consumer.
+	boundaryLocals types.OrderedMap[string]
 }
 
 // InjectMappingDelivery records what one attachment's FeatureRecipe injectMapping
@@ -119,7 +125,10 @@ type InjectMappingDelivery struct {
 // surface reads them. The resolved entries merge over the base Recipe's
 // evaluated locals, the FeatureRecipe winning on a key collision. A local
 // whose template fails halts the build; it does not reach the delivery pipe as
-// unevaluated text.
+// unevaluated text. A FeatureRecipe rendering once for its boundary is the one
+// exception to where its locals come from, not to the merge: they were evaluated
+// once at boundary scope, where .boundary is set, and the ref carries that
+// evaluation's resolved locals, so this evaluates none of them per consumer.
 //
 // The authored-mechanism set is collected once from ctx.InjectRaw — the
 // immutable Developer intent populated by BuildInjectPipe — so every
@@ -202,15 +211,19 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			vals, inf = attachment.Values, attachment.Infra
 		}
 		featureCtx := attachmentFRContext(ctx, ref.InstanceName, vals, inf)
-		frLocals, err := EvaluateFeatureRecipeLocals(
-			ref.FeatureRecipe, ref.InstanceName, ctx.Context.InstanceID, ctx.Context.RenderedName,
-			featureCtx.Values, featureCtx.Infra,
-			withheld.leaves(ref.InstanceName, pillarsFound),
-		)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError,
-				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
-				fmt.Sprintf("feature %q (recipe %q) locals", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+		frLocals := ref.boundaryLocals
+		if ref.FeatureRecipe.Spec.ExecutionScope != executionScopeBoundary {
+			var err error
+			frLocals, err = EvaluateFeatureRecipeLocals(
+				ref.FeatureRecipe, ref.InstanceName, ctx.Context.InstanceID, ctx.Context.RenderedName,
+				featureCtx.Values, featureCtx.Infra,
+				withheld.leaves(ref.InstanceName, pillarsFound),
+			)
+			if err != nil {
+				return nil, cerrors.Wrap(err, cerrors.CatalogError,
+					cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
+					fmt.Sprintf("feature %q (recipe %q) locals", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+			}
 		}
 		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, frLocals)
 

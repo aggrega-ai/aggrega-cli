@@ -260,31 +260,30 @@ func TestEvalPathTemplate_HappyAndParseError(t *testing.T) {
 	}
 }
 
-// TestResolveBoundaryScopeFRProvides_NilStateAndCascade pins nil-state
+// TestResolveBoundaryScopeFREvaluation_NilStateAndCascade pins nil-state
 // guard and the path-ancestor walk.
-func TestResolveBoundaryScopeFRProvides_NilStateAndCascade(t *testing.T) {
+func TestResolveBoundaryScopeFREvaluation_NilStateAndCascade(t *testing.T) {
 	t.Parallel()
 	// Nil state.
-	got, ok := resolveBoundaryScopeFRProvides(nil, "infra/web", "fr1")
-	if ok || got != nil {
-		t.Errorf("nil state should be (nil, false); got (%v, %v)", got, ok)
+	got, ok := resolveBoundaryScopeFREvaluation(nil, "infra/web", "fr1")
+	if ok || got.Provides.Len() != 0 {
+		t.Errorf("nil state should resolve nothing; got (%v, %v)", got, ok)
 	}
 
 	// Populated state with ancestor match.
-	state := &BoundaryFRState{
-		Provides: map[boundaryFRKey]map[string]any{
-			{BoundaryPath: "infra", FRInstance: "fr1"}: {"host": "ancestor"},
-		},
-	}
-	got, ok = resolveBoundaryScopeFRProvides(state, "infra/web/leaf", "fr1")
-	if !ok || got["host"] != "ancestor" {
+	state := NewBoundaryFRState()
+	var provides types.OrderedMap[string]
+	provides.Set("host", "ancestor")
+	state.Evaluations[boundaryFRKey{BoundaryPath: "infra", FRInstance: "fr1"}] = boundaryFREvaluation{Provides: provides}
+	got, ok = resolveBoundaryScopeFREvaluation(state, "infra/web/leaf", "fr1")
+	if host, _ := got.Provides.Get("host"); !ok || host != "ancestor" {
 		t.Errorf("ancestor match: ok=%v got=%v", ok, got)
 	}
 
 	// No match anywhere.
-	got, ok = resolveBoundaryScopeFRProvides(state, "other/path", "fr1")
-	if ok || got != nil {
-		t.Errorf("no match should be (nil, false); got (%v, %v)", got, ok)
+	got, ok = resolveBoundaryScopeFREvaluation(state, "other/path", "fr1")
+	if ok || got.Provides.Len() != 0 {
+		t.Errorf("no match should resolve nothing; got (%v, %v)", got, ok)
 	}
 }
 

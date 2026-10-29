@@ -263,7 +263,7 @@ func TestTmplCtxInfra_Populated(t *testing.T) {
 }
 
 // TestEvaluateBoundaryFRTemplates_LocalsAndProvides pins the success
-// path: locals + provides both evaluate; state.Provides is populated
+// path: locals + provides both evaluate; state.Evaluations is populated
 // at the key.
 func TestEvaluateBoundaryFRTemplates_LocalsAndProvides(t *testing.T) {
 	t.Parallel()
@@ -273,18 +273,20 @@ func TestEvaluateBoundaryFRTemplates_LocalsAndProvides(t *testing.T) {
 	fr.Spec.Provides.Set("P1", "{{ .values.something }}")
 	frCtx := &types.TemplateContext{}
 	frCtx.Values.Set("something", "computed")
-	state := &BoundaryFRState{
-		Provides: map[boundaryFRKey]map[string]any{},
-	}
+	state := NewBoundaryFRState()
 	key := boundaryFRKey{BoundaryPath: "infra", FRInstance: "fr-i"}
-	if err := evaluateBoundaryFRTemplates(fr, "fr-i", frCtx, state, key, redact.Keys{}); err != nil {
+	if err := evaluateBoundaryFRTemplates(fr, "fr-i", frCtx, state, key, redact.Keys{}, featureProvidesContract{}); err != nil {
 		t.Fatalf("eval: %v", err)
 	}
 	if frCtx.Locals.Len() != 1 {
 		t.Errorf("locals not populated; got %v", frCtx.Locals)
 	}
-	if state.Provides[key]["P1"] != "computed" {
-		t.Errorf("provides not populated; got %v", state.Provides[key])
+	made := state.Evaluations[key]
+	if got, _ := made.Provides.Get("P1"); got != "computed" {
+		t.Errorf("provides not populated; got %v", made.Provides)
+	}
+	if got, _ := made.Locals.Get("L1"); got != "literal-value" {
+		t.Errorf("locals not stored with the evaluation; got %v", made.Locals)
 	}
 }
 
@@ -296,9 +298,9 @@ func TestEvaluateBoundaryFRTemplates_LocalsError(t *testing.T) {
 	fr.Metadata.Name = "test-fr"
 	fr.Spec.Locals.Set("bad", "{{ .missing | required \"forced fail\" }}")
 	frCtx := &types.TemplateContext{}
-	state := &BoundaryFRState{Provides: map[boundaryFRKey]map[string]any{}}
+	state := NewBoundaryFRState()
 	key := boundaryFRKey{BoundaryPath: "p", FRInstance: "i"}
-	err := evaluateBoundaryFRTemplates(fr, "i", frCtx, state, key, redact.Keys{})
+	err := evaluateBoundaryFRTemplates(fr, "i", frCtx, state, key, redact.Keys{}, featureProvidesContract{})
 	if err == nil {
 		t.Errorf("expected error from required-fail template")
 	}

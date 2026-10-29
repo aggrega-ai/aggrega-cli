@@ -41,13 +41,13 @@
 //      instance, never for the synthetic node id below: that id is a
 //      dispatch marker, and the characters it opens and joins with are
 //      refused in a path.
-//   4. Consumer resolution: when a per-component consumer references
-//      .context.uses.<feat>.<provided> for a feat whose FR has
-//      executionScope: boundary, the inject-rehydration path consults
-//      state.Provides via cascade-aware lookup (see
-//      resolveBoundaryScopeFRProvides). The cascade walks from the
-//      consumer's BoundaryPath up to the boundary holding the FR
-//      attachment.
+//   4. Consumer resolution: a boundary-scope FR's locals and provides are
+//      evaluated once for its boundary, and every consumer the boundary holds
+//      reads that one evaluation — the inject-rehydration path for a uses edge
+//      the attachment carries, and .features.<attachment>.provides and the
+//      .locals its injectMapping reads — through one cascade-aware lookup
+//      (see resolveBoundaryScopeFREvaluation), which walks from the
+//      consumer's BoundaryPath up to the boundary holding the FR attachment.
 
 package renderer
 
@@ -130,17 +130,23 @@ type boundaryFRKey struct {
 // subsequent encounters of the same key skip the FR — the FR has already
 // run once for that boundary.
 //
-// Provides stores the resolved provides for each (boundary, FR-instance)
-// tuple; consumers reference these via cascade walk during inject pre-
-// hydration.
+// Evaluations stores the one evaluation of each (boundary, FR-instance)
+// tuple's locals and provides; every consumer the boundary holds reads it
+// through the cascade walk ([resolveBoundaryScopeFREvaluation]).
 //
 // Files captures the boundary-scope FR's emitted output for routing at
 // finalization (Intermediate=true → per-(path, provider) BoundaryAssembler;
 // Intermediate=false → per-boundary features/<instance>/ disk write).
 type BoundaryFRState struct {
-	Dedup    map[boundaryFRKey]bool
-	Provides map[boundaryFRKey]map[string]any
-	Files    map[boundaryFRKey][]EmittedFile
+	Dedup       map[boundaryFRKey]bool
+	Evaluations map[boundaryFRKey]boundaryFREvaluation
+	Files       map[boundaryFRKey][]EmittedFile
+
+	// evaluationsMade counts, per tuple, the evaluations of its locals and
+	// provides that were made rather than read back. Nothing in the render reads
+	// it: it is the instrument the proof that a tuple is evaluated once for the
+	// whole build reads, kept on the state so a parallel test reads its own count.
+	evaluationsMade map[boundaryFRKey]int
 
 	// DerivedKeys carries every derived name each boundary-scope FeatureRecipe is
 	// answerable for — the names its guest declares, plus the component identity
@@ -253,6 +259,22 @@ type BoundaryFRState struct {
 	ownAssemblyPaths map[boundaryFRKey]string
 }
 
+// boundaryFREvaluation is the one evaluation of a boundary-scope FeatureRecipe's
+// locals and provides for one (boundary, FR-instance) tuple, both in the order the
+// FeatureRecipe declares them.
+//
+// It is made once, against the boundary-scope context, and read wherever the
+// attachment's locals or provides are read: by the boundary's own render, by
+// every consumer the boundary holds at .features.<attachment>.provides and at the
+// .locals its injectMapping reads, by an authored inject block on the attachment,
+// and by a uses edge the attachment carries. A second evaluation per consumer
+// would be a second value — and one that could not read .boundary at all, since a
+// consumer's context does not carry it.
+type boundaryFREvaluation struct {
+	Locals   types.OrderedMap[string]
+	Provides types.OrderedMap[string]
+}
+
 // consumerEnvOverride is one boundary-scope attachment's override of one
 // consumer's environment: the attachment that produced it, and the keys it
 // overrides there in the order they are applied.
@@ -296,7 +318,8 @@ func consumerEnvOverrideDeliveries(overrides []consumerEnvOverride) []constraint
 func NewBoundaryFRState() *BoundaryFRState {
 	return &BoundaryFRState{
 		Dedup:                map[boundaryFRKey]bool{},
-		Provides:             map[boundaryFRKey]map[string]any{},
+		Evaluations:          map[boundaryFRKey]boundaryFREvaluation{},
+		evaluationsMade:      map[boundaryFRKey]int{},
 		Files:                map[boundaryFRKey][]EmittedFile{},
 		ComponentIDs:         map[boundaryFRKey]string{},
 		Values:               map[boundaryFRKey]map[string]any{},
@@ -539,13 +562,13 @@ func classifyBoundaryScopeFRTemplate(field, text string) boundaryScopeFRTemplate
 //  1. Build the boundary-scope TemplateContext via buildBoundaryContext.
 //  2. Read the boundary's BoundaryFeature attachment for the FR instance
 //     to populate .infra and .values.
-//  3. Evaluate FR locals + valuesMapping + provides against the boundary-
-//     scope context.
+//  3. Read the FR's one locals and provides evaluation for the tuple — the
+//     provides pre-pass made it before any consumer read it, so it is read
+//     back here rather than made again — and evaluate valuesMapping against
+//     the boundary-scope context carrying those locals.
 //  4. Dispatch to the FR's engine.Render with the resolved values.
 //  5. Classify emitted files by Intermediate flag; record into state.Files
 //     for routing at orchestrator finalization.
-//  6. Record provides into state.Provides for downstream consumer
-//     resolution.
 //
 // What the recipe's own inline templates may reference is decided before any of
 // this, by the rules declared over those fields — so nothing here re-decides it.
@@ -573,7 +596,8 @@ func dispatchBoundaryScopeFR(
 ) error {
 	// 1-3. Build the FR-scoped TemplateContext (.boundary + .infra, .values
 	//       empty per the Release pillar-split). Shared with the pre-loop
-	//       provides pre-pass so both evaluate against an identical context.
+	//       provides pre-pass, so the templates evaluated here read the locals
+	//       the pre-pass resolved on a context built from the same inputs.
 	feat, _ := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
 	frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, frInstance, key, graph, release, boundaryAnnotations, boundaryFRState.assemblyPaths, boundaryFRState.ownAssemblyPaths[key])
 	if err != nil {
@@ -585,8 +609,11 @@ func dispatchBoundaryScopeFR(
 	// render evaluates is withheld by.
 	withheld := boundaryFRKeys(fr, declaredLeavesOf(input.declaredFeatureLeaves, feat.Type))
 
-	// 5. Evaluate FR locals + valuesMapping + provides.
-	if err := evaluateBoundaryFRTemplates(fr, frInstance, frCtx, boundaryFRState, key, withheld); err != nil {
+	// The FR's locals and provides, read back from the one evaluation the
+	// pre-pass made against a context built from the same inputs; the locals land
+	// on frCtx for the templates below.
+	if err := evaluateBoundaryFRTemplates(fr, frInstance, frCtx, boundaryFRState, key, withheld,
+		featureProvidesContractOf(input.CatalogLookup, feat.Type)); err != nil {
 		return err
 	}
 
@@ -921,17 +948,23 @@ func buildBoundaryFRTemplateContext(
 	return frCtx, nil
 }
 
-// PrepopulateBoundaryScopeProvides evaluates every boundary-scope FeatureRecipe's
-// provides ahead of the per-node render loop, storing them in
-// state.Provides keyed by (owning-boundary-path, instance). A per-component
-// consumer's uses edge resolves a boundary-scope FR's provided values from this
-// state during Phase A inject rehydration; without the pre-pass those provides
-// are written only at Phase B.6 — after the consumer's Phase A — and resolve
-// silently empty. The pre-pass is idempotent with the Phase B.6 dispatch: both
-// share buildBoundaryFRTemplateContext + evaluateBoundaryFRTemplates and the
-// validation cache, so a boundary-scope FR's provides evaluate identically
-// whether read here or overwritten at dispatch. Walks graph.Spec.BoundaryFeatures
-// (the un-folded projection), so no Release re-walk.
+// PrepopulateBoundaryScopeProvides makes the one evaluation of every
+// boundary-scope FeatureRecipe's locals and provides ahead of the per-node render
+// loop, storing it in state.Evaluations keyed by (owning-boundary-path,
+// instance). It runs before any consumer reads it: a consumer's uses edge carrying
+// the attachment during inject rehydration, the consumer's
+// .features.<attachment>.provides and an authored inject block on the attachment
+// when the node's attachments are resolved, and the .locals the attachment's
+// injectMapping reads in Phase A. The Phase B.6 dispatch reads the same evaluation
+// back rather than making a second one: both build their context through
+// buildBoundaryFRTemplateContext from the same inputs, so the dispatch's
+// valuesMapping and source read the locals this evaluation resolved. Walks
+// graph.Spec.BoundaryFeatures (the un-folded projection), so no Release re-walk.
+//
+// The Feature's provides contract is enforced on that one evaluation, positioned
+// at the boundary attachment, so a FeatureRecipe that omits a declared key halts
+// once rather than once per consumer. catalogLookup is what the contract is read
+// from; a lookup with no Feature reader declares no contract.
 //
 // ctx is the build's own. The template evaluation below is host-side and observes
 // nothing, but the optional boundary-to-consumer env channel crosses into the
@@ -948,6 +981,7 @@ func PrepopulateBoundaryScopeProvides(
 	release *types.Release,
 	boundaryAnnotations map[string]types.OrderedMap[string],
 	recipeLookup RecipeLookup,
+	catalogLookup resolver.CatalogLookup,
 	allProvides NodeProvides,
 	engineFactory EngineFactory,
 	state *BoundaryFRState,
@@ -969,7 +1003,8 @@ func PrepopulateBoundaryScopeProvides(
 			}
 			state.links.stampBoundaryLinkReads(frCtx)
 			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key,
-				boundaryFRKeys(fr, declaredLeavesOf(declared, bf.Type))); err != nil {
+				boundaryFRKeys(fr, declaredLeavesOf(declared, bf.Type)),
+				featureProvidesContractOf(catalogLookup, bf.Type)); err != nil {
 				return err
 			}
 			// Generic boundary->component env channel: if the FR's provider
@@ -1097,10 +1132,22 @@ func mergeConsumerEnvOverrides(state *BoundaryFRState, producer boundaryFRKey, o
 	}
 }
 
-// evaluateBoundaryFRTemplates evaluates a boundary-scope FR's locals and
-// provides templates against the FR-scoped context, storing the resolved
-// provides into state.Provides under key (provides feed the cross-boundary
-// consumer cascade, a boundary-FR-specific concern).
+// evaluateBoundaryFRTemplates makes the one evaluation of a boundary-scope FR's
+// locals and provides templates for key, against the FR-scoped context, and
+// stores it in state.Evaluations; the resolved locals are set on frCtx either
+// way.
+//
+// The evaluation is made once for the whole build. A call for a key already
+// evaluated reads the stored evaluation back — its locals onto frCtx — and
+// evaluates nothing, so the provides pre-pass and the feature-rendering dispatch,
+// which both reach here for one key against contexts built from the same inputs,
+// hold one value between them rather than two that agree. Every consumer the
+// boundary holds reads that same stored value through
+// [resolveBoundaryScopeFREvaluation].
+//
+// contract is the provides contract of the Feature the attachment names. It is
+// enforced on the evaluation as it is made, positioned at the boundary attachment,
+// so a missing key halts once rather than once per consumer.
 //
 // The locals resolve through evaluateLocalsInOrder — the one home of the locals
 // contract — so an entry may read an earlier sibling and a forward or unknown
@@ -1134,7 +1181,12 @@ func evaluateBoundaryFRTemplates(
 	state *BoundaryFRState,
 	key boundaryFRKey,
 	withheld redact.Keys,
+	contract featureProvidesContract,
 ) error {
+	if made, ok := state.Evaluations[key]; ok {
+		frCtx.Locals = made.Locals
+		return nil
+	}
 	resolvedLocals, err := evaluateLocalsInOrder(
 		fr.Spec.Locals,
 		boundaryScopeFRScope,
@@ -1166,18 +1218,26 @@ func evaluateBoundaryFRTemplates(
 		return err
 	}
 
-	// Evaluate provides — store into state.Provides for cascade-aware
-	// consumer resolution. Uses the same EvalTemplate (Sprig-enabled,
-	// missingkey=zero) as per-component FR provides today.
-	provided := map[string]any{}
+	// Evaluate provides in the order the FeatureRecipe declares them, which is the
+	// order every consumer reads them in. Uses the same EvalTemplate (Sprig-enabled,
+	// missingkey=zero) as per-component FR provides.
+	provided := types.OrderedMap[string]{}
 	for k, tmplText := range fr.Spec.Provides.All() {
 		out, err := EvalTemplate("fr-provides["+frInstance+"."+k+"]", tmplText, frCtx, withheld)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q provides[%q]", frInstance, k))
 		}
-		provided[k] = out
+		provided.Set(k, out)
 	}
-	state.Provides[key] = provided
+	if err := contract.enforce(provided, key.BoundaryPath,
+		fmt.Sprintf("boundary %q attachment %q", key.BoundaryPath, frInstance),
+		fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name)); err != nil {
+		return err
+	}
+	state.Evaluations[key] = boundaryFREvaluation{Locals: resolvedLocals, Provides: provided}
+	if state.evaluationsMade != nil {
+		state.evaluationsMade[key]++
+	}
 	return nil
 }
 
@@ -1511,37 +1571,70 @@ func lookupBoundaryFeatureAttachment(boundaryFeatures types.OrderedMap[types.Ord
 	return inner.Get(frInstance)
 }
 
-// resolveBoundaryScopeFRProvides walks the consumer's BoundaryPath up the
-// boundary tree to find the boundary holding the FR-instance attachment;
-// returns the resolved provides values + true on first match.
+// resolveBoundaryScopeFREvaluation walks the consumer's BoundaryPath up the
+// boundary tree to find the boundary holding the FR-instance attachment, and
+// returns that boundary's one evaluation of the attachment's locals and provides
+// + true on first match.
 //
 // Cascade walk: split consumer's boundary path on "/"; iterate from full
-// path back to root; at each level, check state.Provides for
+// path back to root; at each level, check state.Evaluations for
 // (level, frInstance). Return on first hit.
 //
-// RehydrateInjectFromProvides calls this for a per-component uses edge
-// whose OriginFeature names a boundary-scope FeatureRecipe: the edge
-// carries OriginFeatureInstance (the per-attachment instance name that
-// disambiguates two attachments of the same FR type on one boundary),
-// the FR's boundary scope is confirmed via RecipeLookup, and the
-// resolved provides are merged over the per-component targetProvides
-// feeding resolveInjectKeys. A consumer boundary path with no matching
-// attachment resolves nothing, so the merge is a no-op and the
-// per-component allProvides path is unchanged.
-func resolveBoundaryScopeFRProvides(
+// It is the one lookup every consumer-side reader of a boundary-scope
+// attachment goes through, so they all read the same value:
+//
+//   - RehydrateInjectFromProvides, for a per-component uses edge whose
+//     OriginFeature names a boundary-scope FeatureRecipe: the edge carries
+//     OriginFeatureInstance (the per-attachment instance name that
+//     disambiguates two attachments of the same FR type on one boundary), the
+//     FR's boundary scope is confirmed via RecipeLookup, and the resolved
+//     provides are merged over the per-component targetProvides feeding
+//     resolveInjectKeys;
+//   - ResolveAttachmentProvides, for the consumer's
+//     .features.<attachment>.provides, and ResolveAttachmentInject, for an
+//     inject block authored on the attachment;
+//   - resolveFeatureRecipes, for the .locals the attachment's injectMapping
+//     reads in Phase A.
+//
+// A consumer boundary path with no matching attachment resolves nothing.
+func resolveBoundaryScopeFREvaluation(
 	state *BoundaryFRState,
 	consumerBoundaryPath, frInstance string,
-) (map[string]any, bool) {
+) (boundaryFREvaluation, bool) {
 	if state == nil {
-		return nil, false
+		return boundaryFREvaluation{}, false
 	}
 	parts := strings.Split(consumerBoundaryPath, "/")
 	for i := len(parts); i > 0; i-- {
 		candidate := strings.Join(parts[:i], "/")
 		key := boundaryFRKey{BoundaryPath: candidate, FRInstance: frInstance}
-		if provides, ok := state.Provides[key]; ok {
-			return provides, true
+		if made, ok := state.Evaluations[key]; ok {
+			return made, true
 		}
 	}
-	return nil, false
+	return boundaryFREvaluation{}, false
+}
+
+// boundaryScopeAttachmentEvaluation answers, for one attachment a consumer
+// carries, whether its FeatureRecipe renders once for its boundary and, if so,
+// the one evaluation the boundary holding it made. A consumer's attachment
+// surfaces ask it before evaluating anything, so none of them evaluates a
+// boundary-scope FeatureRecipe's locals or provides itself.
+//
+// boundary is true for every boundary-scope FeatureRecipe; found is false where
+// no boundary holding the consumer has an evaluation for the instance, which a
+// render reaches only where no boundary declares the attachment — a build the
+// rule over a boundary-scope attachment's declaration refuses before the node
+// walk — or where no boundary-scope pre-pass ran. Such an attachment reads no
+// locals and no provides rather than being evaluated per consumer.
+func boundaryScopeAttachmentEvaluation(
+	fr *types.FeatureRecipe,
+	state *BoundaryFRState,
+	consumerBoundaryPath, instanceName string,
+) (made boundaryFREvaluation, boundary, found bool) {
+	if fr == nil || fr.Spec.ExecutionScope != executionScopeBoundary {
+		return boundaryFREvaluation{}, false, false
+	}
+	made, found = resolveBoundaryScopeFREvaluation(state, consumerBoundaryPath, instanceName)
+	return made, true, found
 }

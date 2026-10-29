@@ -125,7 +125,7 @@ func TestResolveFeatureRecipes_CredentialAttachmentGetsAPhaseARef(t *testing.T) 
 		},
 	}
 
-	refs := resolveFeatureRecipes("db", map[string][]string{"db": {"root-password"}}, graph, lookup)
+	refs := resolveFeatureRecipes("db", map[string][]string{"db": {"root-password"}}, graph, lookup, nil)
 	if len(refs) != 1 {
 		t.Fatalf("len(refs) = %d, want 1", len(refs))
 	}
@@ -141,11 +141,11 @@ func TestResolveFeatureRecipes_CredentialAttachmentGetsAPhaseARef(t *testing.T) 
 func TestResolveFeatureRecipes_NoAttachmentsOrLookup(t *testing.T) {
 	t.Parallel()
 	graph := &types.IRGraph{}
-	if refs := resolveFeatureRecipes("db", map[string][]string{"db": {"x"}}, graph, RecipeLookup{}); refs != nil {
+	if refs := resolveFeatureRecipes("db", map[string][]string{"db": {"x"}}, graph, RecipeLookup{}, nil); refs != nil {
 		t.Errorf("nil FeatureRecipe lookup should yield no refs, got %d", len(refs))
 	}
 	lookup := RecipeLookup{FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false }}
-	if refs := resolveFeatureRecipes("absent", map[string][]string{}, graph, lookup); refs != nil {
+	if refs := resolveFeatureRecipes("absent", map[string][]string{}, graph, lookup, nil); refs != nil {
 		t.Errorf("node with no attachments should yield no refs, got %d", len(refs))
 	}
 }

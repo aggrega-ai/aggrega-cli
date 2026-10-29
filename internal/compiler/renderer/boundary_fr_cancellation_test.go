@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -63,7 +64,7 @@ func TestTheBuildsContextReachesTheBoundaryOverrideCrossing(t *testing.T) {
 	state := NewBoundaryFRState()
 	factory := func(string) (Provider, error) { return engine, nil }
 
-	if err := PrepopulateBoundaryScopeProvides(ctx, graph, release, nil, lookup, nil, factory, state, nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(ctx, graph, release, nil, lookup, resolver.CatalogLookup{}, nil, factory, state, nil); err != nil {
 		t.Fatalf("PrepopulateBoundaryScopeProvides: %v", err)
 	}
 	if engine.calls != 1 {
@@ -89,7 +90,7 @@ func TestAWithdrawnBuildsOverrideCrossingSeesTheWithdrawal(t *testing.T) {
 	}
 
 	live := &contextRecordingOverrideEngine{}
-	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, nil, factory(live), NewBoundaryFRState(), nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(context.Background(), graph, release, nil, lookup, resolver.CatalogLookup{}, nil, factory(live), NewBoundaryFRState(), nil); err != nil {
 		t.Fatalf("the live control failed: %v", err)
 	}
 	if live.seen == nil || live.seen.Err() != nil {
@@ -101,7 +102,7 @@ func TestAWithdrawnBuildsOverrideCrossingSeesTheWithdrawal(t *testing.T) {
 	stop()
 
 	stopped := &contextRecordingOverrideEngine{}
-	if err := PrepopulateBoundaryScopeProvides(withdrawn, graph, release, nil, lookup, nil, factory(stopped), NewBoundaryFRState(), nil); err != nil {
+	if err := PrepopulateBoundaryScopeProvides(withdrawn, graph, release, nil, lookup, resolver.CatalogLookup{}, nil, factory(stopped), NewBoundaryFRState(), nil); err != nil {
 		t.Fatalf("the withdrawn build failed for an unrelated reason: %v", err)
 	}
 	if stopped.seen == nil || stopped.seen.Err() == nil {

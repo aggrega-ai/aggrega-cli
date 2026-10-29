@@ -1444,13 +1444,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// the evaluation the routing after the per-node loop places that output with.
 	boundaryFRState.ownAssemblyPaths = assemblyPathsByBoundaryFR(graph, recipeLookup, input, boundaryDirEvals, perBoundaryAnnotations)
 
-	// Provides pre-pass: evaluate every boundary-scope FeatureRecipe's
-	// provides before the per-node loop so a per-component consumer's uses
-	// edge can resolve them during Phase A inject rehydration. The per-node
-	// Phase B.6 dispatch (which renders the FR's files) re-evaluates the same
-	// provides idempotently. See PrepopulateBoundaryScopeProvides.
+	// Provides pre-pass: make the one evaluation of every boundary-scope
+	// FeatureRecipe's locals and provides before the per-node loop, so every
+	// consumer reads it — a uses edge carrying the attachment during inject
+	// rehydration, .features.<attachment>.provides and an inject block authored on
+	// the attachment, and the .locals its injectMapping reads in Phase A. The
+	// per-node Phase B.6 dispatch (which renders the FR's files) reads the same
+	// evaluation back. See PrepopulateBoundaryScopeProvides.
 	if input.ResolveResult != nil {
-		if err := PrepopulateBoundaryScopeProvides(ctx, graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, allProvides, engineFactory, boundaryFRState, readers.feature); err != nil {
+		if err := PrepopulateBoundaryScopeProvides(ctx, graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, input.CatalogLookup, allProvides, engineFactory, boundaryFRState, readers.feature); err != nil {
 			return nil, err
 		}
 	}
@@ -1784,7 +1786,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		injectDeliveries, err := ResolveAttachmentInject(&inject, graph, nodeID, renderedNames[nodeID], recipeLookup,
 			func(attachment, mechanism, deliveryKey string) {
 				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
-			}, readers.feature)
+			}, readers.feature, boundaryFRState)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment inject", nodeID))
 		}
@@ -1811,9 +1813,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// generated resource derive from one evaluation (no drift). Resolution also
 		// halts a bound FeatureRecipe that does not fulfil its Feature's provides
 		// contract. It reads nothing the template context carries, so it runs
-		// first and the context is assembled with the bag already in hand.
+		// first and the context is assembled with the bag already in hand. An
+		// attachment whose FeatureRecipe renders once for its boundary is read from
+		// that boundary's one evaluation, made by the pre-pass above, and its
+		// contract was enforced there.
 		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
-		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, renderedNames[nodeID], recipeLookup, input.CatalogLookup, readers.feature)
+		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, renderedNames[nodeID], recipeLookup, input.CatalogLookup, readers.feature, boundaryFRState, node.BoundaryPath)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment provides", nodeID))
 		}
@@ -1995,7 +2000,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// rewrites, and is held to copying it.
 		stampCrossBoundaryLinkReads(tmplCtx, nodeID, graph, crossLinks)
 
-		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
+		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup, boundaryFRState)
 		attachmentLeaves := func(instanceName string) resolver.SensitiveLeaves {
 			entry, ok := attachments.Get(instanceName)
 			if !ok {
@@ -3483,11 +3488,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 // FeatureRecipe by its Type. It is the single source both Phase A and Phase B.6
 // draw their sequence from, so the two phases cannot disagree on order. An
 // attachment whose FeatureRecipe is not found is skipped.
+//
+// A ref whose FeatureRecipe renders once for its boundary carries the locals of
+// that boundary's one evaluation, read from boundaryFR through the cascade lookup
+// from the node's boundary path, so Phase A hands its injectMapping the locals the
+// boundary resolved rather than evaluating them for this consumer.
 func resolveFeatureRecipes(
 	nodeID string,
 	featureOrder map[string][]string,
 	graph *types.IRGraph,
 	recipeLookup RecipeLookup,
+	boundaryFR *BoundaryFRState,
 ) []FeatureRecipeRef {
 	order, ok := featureOrder[nodeID]
 	if !ok || recipeLookup.FeatureRecipe == nil {
@@ -3497,6 +3508,11 @@ func resolveFeatureRecipes(
 	fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
 	if !ok {
 		return nil
+	}
+
+	var consumerBoundaryPath string
+	if node, found := graph.Spec.Nodes.Get(nodeID); found {
+		consumerBoundaryPath = node.BoundaryPath
 	}
 
 	var refs []FeatureRecipeRef
@@ -3509,10 +3525,14 @@ func resolveFeatureRecipes(
 		if !found {
 			continue
 		}
-		refs = append(refs, FeatureRecipeRef{
+		ref := FeatureRecipeRef{
 			InstanceName:  instanceName,
 			FeatureRecipe: fr,
-		})
+		}
+		if made, boundary, _ := boundaryScopeAttachmentEvaluation(fr, boundaryFR, consumerBoundaryPath, instanceName); boundary {
+			ref.boundaryLocals = made.Locals
+		}
+		refs = append(refs, ref)
 	}
 	return refs
 }

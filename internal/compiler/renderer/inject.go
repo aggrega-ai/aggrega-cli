@@ -4,7 +4,6 @@
 package renderer
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -91,18 +90,13 @@ func RehydrateInjectFromProvides(
 		// boundary accumulator by instance and merge over targetProvides.
 		if edge.OriginFeature != "" && edge.OriginFeatureInstance != "" && boundaryFRState != nil && recipeLookup.FeatureRecipe != nil {
 			if fr, found := recipeLookup.FeatureRecipe(edge.OriginFeatureInstance, edge.OriginFeature); found && fr.Spec.ExecutionScope == executionScopeBoundary {
-				if bprov, hit := resolveBoundaryScopeFRProvides(boundaryFRState, consumerBoundaryPath, edge.OriginFeatureInstance); hit {
+				if made, hit := resolveBoundaryScopeFREvaluation(boundaryFRState, consumerBoundaryPath, edge.OriginFeatureInstance); hit {
 					merged := types.OrderedMap[string]{}
 					for k, v := range targetProvides.All() {
 						merged.Set(k, v)
 					}
-					bkeys := make([]string, 0, len(bprov))
-					for k := range bprov {
-						bkeys = append(bkeys, k)
-					}
-					sort.Strings(bkeys)
-					for _, k := range bkeys {
-						merged.Set(k, fmt.Sprint(bprov[k]))
+					for k, v := range made.Provides.All() {
+						merged.Set(k, v)
 					}
 					targetProvides = merged
 					ok = true
