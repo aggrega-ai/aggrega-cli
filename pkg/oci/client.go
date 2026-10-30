@@ -398,7 +398,7 @@ func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool,
 	}
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
-		return false, nil, fmt.Errorf("oci: %w", credentialfailure.Unreadable(registryHost, "", err))
+		return false, nil, credentialfailure.Unreadable(registryHost, "", err)
 	}
 	return registryhost.IsLoopback(registryHost), &auth.Client{
 		Client:     httpClient,

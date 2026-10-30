@@ -5,7 +5,6 @@ package oci
 
 import (
 	"context"
-	"fmt"
 
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
@@ -28,7 +27,7 @@ func storeCredential(store *credentials.DynamicStore) auth.CredentialFunc {
 	return func(ctx context.Context, hostport string) (auth.Credential, error) {
 		cred, err := read(ctx, hostport)
 		if err != nil {
-			return auth.EmptyCredential, fmt.Errorf("oci: %w", credentialfailure.Unreadable(hostport, configPath, err))
+			return auth.EmptyCredential, credentialfailure.Unreadable(hostport, configPath, err)
 		}
 		return cred, nil
 	}
