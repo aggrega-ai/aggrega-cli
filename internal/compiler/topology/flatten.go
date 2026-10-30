@@ -76,6 +76,24 @@ type flattenResult struct {
 	// absent from Nodes: it was never composed, so nothing else can collide with
 	// it.
 	DeclaringSubsystems types.OrderedMap[[]string]
+	// ModuleDocuments is the document of every sub-module the composition brought
+	// in, in the order Modules lists the modules, with the parameter context each
+	// was resolved under.
+	//
+	// It is carried because a module's document exists nowhere else once flattening
+	// has merged its components into the composition: the rules over what an
+	// authoring document declares are asked of the Aggregate before flattening, and
+	// a module's document is loaded only here. A rule asked of the module's own
+	// declarations reads it from this record rather than loading the module again.
+	ModuleDocuments []loadedModule
+}
+
+// loadedModule is one sub-module's own document, as flattening loaded it.
+type loadedModule struct {
+	// document is the module's Aggregate, normalized as flattening walked it.
+	document types.NormalizedAggregate
+	// parameters is the parameter context the module resolved under.
+	parameters map[string]any
 }
 
 // ModuleDeclaration is one sub-module the composition brought in: the dotted
@@ -287,7 +305,12 @@ func flattenAggregate(
 			// recursion cannot be entered without the guarantee. A loader that
 			// already normalized — every production one loads through the parse
 			// core, which does — hands back the identical value.
-			childResult, err := flattenAggregate(types.Normalize(childAgg), childPrefix, "", childSourceFile, loader, childVisited, depth+1, childParams)
+			childDocument := types.Normalize(childAgg)
+			result.ModuleDocuments = append(result.ModuleDocuments, loadedModule{
+				document:   childDocument,
+				parameters: childParams,
+			})
+			childResult, err := flattenAggregate(childDocument, childPrefix, "", childSourceFile, loader, childVisited, depth+1, childParams)
 			if err != nil {
 				return nil, err
 			}
@@ -315,6 +338,7 @@ func flattenAggregate(
 				result.FeatureAttachments[id] = append(result.FeatureAttachments[id], feats...)
 			}
 			result.Modules = append(result.Modules, childResult.Modules...)
+			result.ModuleDocuments = append(result.ModuleDocuments, childResult.ModuleDocuments...)
 			// Walk the child's own encounter order rather than a plain-map range,
 			// so the merged set's order stays derived from authoring rather than
 			// from Go's map iteration.

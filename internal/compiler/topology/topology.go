@@ -827,7 +827,18 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	}
 
 	if cfg.ResolveResult != nil {
-		if subErrs := guardSubAggregateNodes(flat, edges, cfg); len(subErrs) > 0 {
+		subErrs := guardSubAggregateNodes(flat, edges, cfg)
+		// The rules over what an authoring document declares, asked of each
+		// sub-module's own document — the half of those rules the reading of the
+		// Aggregate before flattening could not ask, because a module's document is
+		// loaded only here. Their findings join the sub-aggregate group: both are the
+		// module-side counterpart of a check the Aggregate's own components meet.
+		moduleErrs, err := guardModuleDocuments(ctx.Err, flat, cfg.CatalogLookup)
+		if err != nil {
+			return nil, err
+		}
+		subErrs = append(subErrs, moduleErrs...)
+		if len(subErrs) > 0 {
 			// Return the fully-built topology alongside the halt: the graph is
 			// complete at this final guard, and a resilient-inspection caller
 			// that tolerates the catalog-view-inconsistency class needs the
@@ -1182,7 +1193,106 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	}
 
 	errs = append(errs, guardSubAggregateReleaseEdges(flat, release, catalog)...)
+	errs = append(errs, guardSubAggregateReleaseAttachmentSockets(flat, release, catalog)...)
 	return errs
+}
+
+// guardSubAggregateReleaseAttachmentSockets asks the attachment socket rule of
+// every attachment the Release writes against a component a sub-module
+// contributed: an attachment may only name a socket the Feature it attaches
+// declares.
+//
+// The rule over the Release's per-component attachments is asked before
+// flattening, of the components the Aggregate declares. A sub-module's
+// component is not among them — the Release reaches it through a routing entry
+// or by the identifier the composition gives it, neither of which names a
+// component the Aggregate declares — so without this the Release could wire an
+// invented socket on a module's component and the edge would be drawn. The
+// comparison is reached through the resolver's exported validator, the one the
+// module's own attachments are measured with above, so an attachment is judged
+// by one standard whichever document wrote it.
+//
+// Only the per-component entries are read. A boundary-wide attachment is the
+// Release's own scope, measured once per boundary by the rule over that scope
+// whatever the boundary holds, so reading it here would report it again for
+// every module component the boundary places.
+//
+// Nodes are walked in flattened author order, and each node's boundary chain
+// outer to inner, so the findings are deterministic.
+func guardSubAggregateReleaseAttachmentSockets(
+	flat *flattenResult,
+	release *types.Release,
+	catalog resolver.CatalogLookup,
+) []*resolver.ResolverError {
+	if release == nil || catalog.Feature == nil {
+		return nil
+	}
+	entity := releaseEntityName(release)
+
+	var errs []*resolver.ResolverError
+	for nodeID, node := range flat.Nodes.All() {
+		if node.SourceAggregate == "" {
+			continue // a component the Aggregate declares meets the rule before flattening
+		}
+		current := release.Spec.Boundaries
+		for _, part := range splitScopePath(node.BoundaryPath) {
+			boundary, ok := current.Get(part)
+			if !ok {
+				break
+			}
+			components := types.BoundaryComponents(boundary)
+			if entry, ok := components.Get(nodeID); ok {
+				for name, feat := range entry.Features.All() {
+					if feat.Uses.Len() == 0 {
+						continue
+					}
+					errs = append(errs, resolver.ValidateFeatureUsesAgainstSchema(
+						entity, fmt.Sprintf(".%s.features[%q].uses", nodeID, name),
+						feat.Uses, feat.Type, catalog)...)
+				}
+			}
+			current = boundary.Boundaries
+		}
+	}
+	return errs
+}
+
+// guardModuleDocuments asks the resolver's rules over an authoring document's own
+// declarations of every sub-module's document the composition brought in, in the
+// order the composition recorded them.
+//
+// It is the module half of the pass the resolver asks of the Aggregate before
+// flattening: that pass reads the documents a build is handed, and a module's
+// document is loaded only by flattening. Which rules it asks, and why those, is
+// [resolver.RunModuleGuards]'s to state; this decides only that every module the
+// composition holds is asked, and with the parameter context it resolved under.
+//
+// A module the composition imports more than once is asked once per import,
+// because each import may resolve its document under different parameters. A
+// declaration both imports share is then one fault reported twice in identical
+// words, so a finding identical to one already reported is dropped: the document
+// and the key it names are the same, and so is the edit that fixes it.
+func guardModuleDocuments(
+	cancelled func() error,
+	flat *flattenResult,
+	catalog resolver.CatalogLookup,
+) ([]*resolver.ResolverError, error) {
+	var errs []*resolver.ResolverError
+	reported := map[string]bool{}
+	for _, module := range flat.ModuleDocuments {
+		found, err := resolver.RunModuleGuards(cancelled, module.document, catalog, module.parameters)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range found {
+			if reported[f.Error()] {
+				continue
+			}
+			reported[f.Error()] = true
+			errs = append(errs, f)
+		}
+	}
+	return errs, nil
 }
 
 // releaseEntityName renders the Release document a finding in this package
