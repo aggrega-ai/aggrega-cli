@@ -89,6 +89,11 @@ func SynthesizeWorkloadCore(
 		// analog. The endpoint reaches consumers through the recipe's provides —
 		// the injection contract — so compose emits no fragment for the reference
 		// node itself: nothing on the node's own inject pipe reaches a byte here.
+		// An attachment carrying material declared sensitive would therefore be
+		// accepted and reach nothing, so it halts instead.
+		if err := refuseSensitiveAttachmentsAtReference(nodeCtx); err != nil {
+			return nil, nil, err
+		}
 		return nil, nil, nil
 	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
 		// supported
@@ -237,6 +242,38 @@ func SynthesizeWorkloadCore(
 			Intermediate: true,
 		},
 	}, diags, nil
+}
+
+// refuseSensitiveAttachmentsAtReference halts a reference node that carries an
+// attachment marked sensitive. Compose realizes a reference workload as no
+// service at all, so whatever the attachment delivers onto the node's own inject
+// pipe reaches no emitted byte; accepting it would let a build succeed while a
+// credential it was told to deliver is absent from the output.
+//
+// The marking is read as the node's attachments carry it — the attachment's
+// Feature declares a sensitive leaf, or the slot it fills declares sensitive
+// material — and nothing is read from a value or a name. An attachment carrying
+// no marking is left alone, so a reference node with no sensitive attachment
+// renders exactly as before. Every marked attachment is named, in the order the
+// node carries them, and no value of any of them reaches the sentence.
+func refuseSensitiveAttachmentsAtReference(nodeCtx rendercore.NodeRenderContext) error {
+	var named []string
+	for name, att := range nodeCtx.Attachments.All() {
+		if att.Sensitive {
+			named = append(named, fmt.Sprintf("%q (%s)", name, att.Type))
+		}
+	}
+	if len(named) == 0 {
+		return nil
+	}
+	noun, pronoun := "attachment", "it"
+	if len(named) > 1 {
+		noun, pronoun = "attachments", "them"
+	}
+	return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
+		cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		fmt.Sprintf("compose: node %q is a reference workload, which compose realizes as no service, so the %s %s carrying material declared sensitive would reach no emitted file: attach %s to the component that calls %q instead",
+			nodeCtx.NodeID, noun, strings.Join(named, ", "), pronoun, nodeCtx.NodeID))
 }
 
 // mountedVolumeNames returns the set of volume names some container of the

@@ -368,9 +368,14 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 // entry is rebuilt with every field withheld, and the render core quotes no
 // withheld field in a refusal, so no field of a marked entry reaches a text this
 // guest returns.
+// The node's attachments are carried over as the projection hands them, each
+// with its sensitivity marking: the synthesis core reads them at a reference
+// node, which compose realizes as no service, to refuse an attachment carrying
+// material declared sensitive rather than accept one no emitted byte carries.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
 		NodeID:            in.Node.ID,
+		Attachments:       in.Node.Features,
 		Omits:             rendercore.ResolvedOmitsOf(in.Omits),
 		SensitiveValues:   in.Node.SensitiveValues,
 		SensitiveWorkload: in.WorkloadProjection != nil && in.WorkloadProjection.SensitiveWorkload,

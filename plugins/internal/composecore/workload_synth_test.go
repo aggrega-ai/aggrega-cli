@@ -778,6 +778,136 @@ func TestSynthesizeWorkload_ReferenceEmitsNoFragment(t *testing.T) {
 	}
 }
 
+// TestSynthesizeWorkload_ReferenceRefusesASensitiveAttachment proves that a
+// reference node, which compose realizes as no service, halts on an attachment
+// marked sensitive rather than accepting a credential no emitted byte carries —
+// and that the halt reaches nothing else: an unmarked attachment on a reference
+// node still emits no fragment and no error, and a marked attachment on a node
+// that renders a service changes none of its bytes.
+//
+// Each row carries one fault or none. The halting rows match the condition
+// through its accessor and assert the sentence names the node, every marked
+// attachment and its Feature type, and none of the unmarked ones.
+func TestSynthesizeWorkload_ReferenceRefusesASensitiveAttachment(t *testing.T) {
+	t.Parallel()
+
+	reference := func() *types.Workload {
+		return &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "reference", Endpoint: "https://api.example.com"}
+	}
+	entry := func(featureType string, sensitive bool) types.IRFeatureEntry {
+		return types.IRFeatureEntry{Type: featureType, Binding: types.AttachmentBindingFree, Sensitive: sensitive}
+	}
+	withAttachments := func(nodeID string, names []string, entries []types.IRFeatureEntry) renderer.NodeRenderContext {
+		ctx := nodeCtxFor(nodeID)
+		for i, name := range names {
+			ctx.Attachments.Set(name, entries[i])
+		}
+		return ctx
+	}
+
+	cases := []struct {
+		name      string
+		workload  *types.Workload
+		ctx       renderer.NodeRenderContext
+		wantHalt  bool
+		wantNamed []string
+		notNamed  []string
+	}{
+		{
+			name:      "a sensitive attachment under a free name on a reference node halts",
+			workload:  reference(),
+			ctx:       withAttachments("vendor", []string{"vendor_token"}, []types.IRFeatureEntry{entry("core/secret-value", true)}),
+			wantHalt:  true,
+			wantNamed: []string{`node "vendor"`, `"vendor_token" (core/secret-value)`, "compose realizes as no service", `the component that calls "vendor"`},
+		},
+		{
+			name:     "every sensitive attachment is named and an unmarked one is not",
+			workload: reference(),
+			ctx: withAttachments("vendor", []string{"first_token", "tracing", "second_token"}, []types.IRFeatureEntry{
+				entry("core/secret-value", true), entry("core/otel", false), entry("core/secret-provided", true),
+			}),
+			wantHalt:  true,
+			wantNamed: []string{`attachments "first_token" (core/secret-value), "second_token" (core/secret-provided)`, "attach them"},
+			notNamed:  []string{"tracing"},
+		},
+		{
+			name:     "an unmarked attachment on a reference node emits nothing and halts nothing",
+			workload: reference(),
+			ctx:      withAttachments("vendor", []string{"tracing"}, []types.IRFeatureEntry{entry("core/otel", false)}),
+		},
+		{
+			name:     "a reference node with no attachment emits nothing and halts nothing",
+			workload: reference(),
+			ctx:      nodeCtxFor("vendor"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var (
+				files []rendercore.EmittedFile
+				err   error
+			)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("SynthesizeWorkloadCore panicked: %v", r)
+					}
+				}()
+				files, _, err = SynthesizeWorkloadCore(tc.workload, tc.ctx)
+			}()
+			if !tc.wantHalt {
+				if err != nil {
+					t.Fatalf("expected no halt, got %v", err)
+				}
+				if len(files) != 0 {
+					t.Fatalf("expected no fragment for a reference workload, got %d files", len(files))
+				}
+				return
+			}
+			if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+				t.Fatalf("expected the cannot-express condition, got %v", err)
+			}
+			if len(files) != 0 {
+				t.Errorf("a halting render returned %d files", len(files))
+			}
+			text := errorChainText(err)
+			for _, want := range tc.wantNamed {
+				if !strings.Contains(text, want) {
+					t.Errorf("the halt does not say %q.\n  got: %s", want, text)
+				}
+			}
+			for _, absent := range tc.notNamed {
+				if strings.Contains(text, absent) {
+					t.Errorf("the halt names the unmarked attachment %q.\n  got: %s", absent, text)
+				}
+			}
+		})
+	}
+
+	// A marked attachment on a node that renders a service is not this refusal's
+	// subject: its fragment is byte-identical to the same node with no attachment.
+	t.Run("a sensitive attachment on a non-reference node renders byte-identically", func(t *testing.T) {
+		t.Parallel()
+		bare, _, err := SynthesizeWorkloadCore(minimalWorkload(), nodeCtxFor("api"))
+		if err != nil {
+			t.Fatalf("SynthesizeWorkloadCore (no attachment): %v", err)
+		}
+		marked, _, err := SynthesizeWorkloadCore(minimalWorkload(),
+			withAttachments("api", []string{"db_password"}, []types.IRFeatureEntry{entry("core/secret-value", true)}))
+		if err != nil {
+			t.Fatalf("SynthesizeWorkloadCore (marked attachment): %v", err)
+		}
+		if len(bare) != 1 || len(marked) != 1 {
+			t.Fatalf("expected one fragment each, got %d and %d", len(bare), len(marked))
+		}
+		if string(bare[0].Body) != string(marked[0].Body) {
+			t.Errorf("a marked attachment changed a non-reference fragment\n--- without ---\n%s\n--- with ---\n%s", bare[0].Body, marked[0].Body)
+		}
+	})
+}
+
 // TestSynthesizeWorkload_EndpointRequiresReferenceForm — an endpoint on a
 // non-reference form halts on the shared companion validation.
 func TestSynthesizeWorkload_EndpointRequiresReferenceForm(t *testing.T) {
