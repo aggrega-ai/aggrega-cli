@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: connection-marking-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: connection-marking-app
+  manifest: connection-marking-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        app:
+          # The operator sizes the developer-declared connection; api_key is a
+          # leaf the socket's infraSchema declares sensitive, pool_size is left to
+          # its declared default.
+          uses:
+            databases:
+              main:
+                infra:
+                  api_key: conn-infra-plaintext
+        store: {}

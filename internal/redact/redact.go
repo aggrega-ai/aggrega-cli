@@ -249,6 +249,13 @@ type DeliveryKeys map[string]map[string]bool
 // provides sub-map is covered by it; an edge's per-connection values and infra
 // are a different pillar with a different owner.
 //
+// UsesConnections names that different pillar: the leaves of each connection's
+// own values and infra the edge's marking names, which the per-edge contract the
+// CONSUMING component declares on the socket governs. It is keyed by alias, as
+// the edge is displayed, and read from the graph's edge rather than from any
+// declaration, so a display of the connection withholds exactly the leaves the
+// graph withholds.
+//
 // UsesAttachments names the declarations of the Features attached ON a
 // connection, which the edge displays under its features entry. Each is governed
 // by its own Feature's schema — the same declarations that govern an attachment
@@ -284,6 +291,7 @@ type Keys struct {
 	Locals            map[string]bool
 	Source            map[string]bool
 	UsesProvides      map[string]map[string]bool
+	UsesConnections   map[string]ConnectionKeys
 	UsesAttachments   map[string]map[string]AttachmentKeys
 	ConnectionSockets map[string]string
 	Features          map[string]AttachmentKeys
@@ -322,7 +330,8 @@ func (a AttachmentKeys) Any() bool {
 func (k Keys) AnyWithheld() bool {
 	return len(k.Values) > 0 || len(k.Infra) > 0 || len(k.inject) > 0 ||
 		len(k.Locals) > 0 || len(k.Source) > 0 || len(k.UsesProvides) > 0 ||
-		len(k.UsesAttachments) > 0 || len(k.Features) > 0 || len(k.Provides) > 0
+		len(k.UsesConnections) > 0 || len(k.UsesAttachments) > 0 || len(k.Features) > 0 ||
+		len(k.Provides) > 0
 }
 
 // Empty reports whether the set names nothing and no projection is displayed
@@ -572,7 +581,8 @@ func Source(in any, keys map[string]bool) any {
 // edge's own field order and every entry that is not withheld.
 //
 // It is the one applier whose input is governed by declarations entities OTHER
-// than the displayed node made, and an edge carries two such kinds of data.
+// than the displayed node made, and an edge carries two such kinds of data —
+// and a third, its own configuration, governed by the displayed node's socket.
 //
 // Its target's resolved provides, governed by the target Component's schema. A
 // value the target declared sensitive would otherwise print in the clear on a
@@ -589,23 +599,32 @@ func Source(in any, keys map[string]bool) any {
 // is. Withholding is keyed by alias and slot, so the same Feature written on two
 // connections resolves per connection.
 //
-// It is a method rather than a free function so the two halves cannot be applied
-// apart: every surface displaying the uses map reaches both through this one
-// call, and none can withhold an edge's provides while showing its attachments.
+// The connection's own values and infra, authored on the edge rather than
+// published by the target or declared by a Feature, so neither half above
+// governs them: the per-edge contract the consuming component declares on the
+// socket does, and the leaves it covers arrive as the edge's own marking. A
+// covered leaf is withheld the way a node's own pillar is, keeping its key, and
+// withholding is keyed by alias.
 //
-// An edge's per-connection values and infra are authored on the edge rather than
-// published by the target or declared by a Feature, so neither half governs them.
+// It is a method rather than a free function so the three cannot be applied
+// apart: every surface displaying the uses map reaches all of them through this
+// one call, and none can withhold an edge's provides while showing its
+// attachments or its configuration.
 //
-// The input is never mutated. When neither half names anything the input is
-// returned as-is.
+// The input is never mutated. When none of the three names anything the input
+// is returned as-is.
 func (k Keys) Uses(in types.OrderedMap[types.EnrichedEdge]) types.OrderedMap[types.EnrichedEdge] {
-	if (len(k.UsesProvides) == 0 && len(k.UsesAttachments) == 0) || in.Len() == 0 {
+	if (len(k.UsesProvides) == 0 && len(k.UsesAttachments) == 0 && len(k.UsesConnections) == 0) || in.Len() == 0 {
 		return in
 	}
 	out := types.OrderedMap[types.EnrichedEdge]{}
 	for alias, edge := range in.All() {
 		if keys := k.UsesProvides[alias]; len(keys) > 0 && edge.Provides.Len() > 0 {
 			edge.Provides = replaceFlat(edge.Provides, keys)
+		}
+		if keys, ok := k.UsesConnections[alias]; ok {
+			edge.Values = Pillar(edge.Values, keys.Values)
+			edge.Infra = Pillar(edge.Infra, keys.Infra)
 		}
 		if slots := k.UsesAttachments[alias]; len(slots) > 0 && edge.Features.Len() > 0 {
 			edge.Features = connectionAttachments(edge.Features, slots)
@@ -707,10 +726,17 @@ type Derived struct {
 // delivery key one of those attachments marks needs nothing from it: that
 // marking is already on the attachment's graph entry, which the attachments
 // argument of NodeKeys folds in with every other attachment the node holds.
+//
+// Connections is the fourth thing an edge carries into the display: the
+// connection's own values and infra, keyed by alias, naming the leaves the edge's
+// marking names. Those are governed by the consuming node's socket rather than
+// by another entity, and they travel here because they are read off the same
+// edges and displayed under the same alias.
 type CrossNode struct {
 	Provides    map[string]map[string]bool
 	Inject      DeliveryKeys
 	Attachments map[string]map[string]AttachmentKeys
+	Connections map[string]ConnectionKeys
 }
 
 // NodeKeys assembles one node's redaction set from the upstream facts, each read
@@ -745,9 +771,10 @@ type CrossNode struct {
 //   - crossNode supplies what the TARGET of each uses edge declares — read
 //     through the same authored-declaration reader, against the target's type
 //     rather than the node's — both as published provides and as the consumer
-//     delivery keys the edge's `inject` mapping routes them onto; and what the
+//     delivery keys the edge's `inject` mapping routes them onto; what the
 //     Feature of each attachment written on a connection declares, read through
-//     the reader every attachment's declarations come from.
+//     the reader every attachment's declarations come from; and the leaves of each
+//     connection's own configuration the edge's marking names.
 //   - injectMapping supplies the delivery keys a FeatureRecipe's own
 //     `injectMapping` put on the pipe on behalf of a slot that declares no
 //     delivery of its own. Such a slot has no `inject` mapping to read, so the
@@ -796,6 +823,18 @@ func NodeKeys(
 	}
 	if len(crossNode.Provides) > 0 {
 		keys.UsesProvides = crossNode.Provides
+	}
+	// Only a connection whose marking names something is kept, for the reason the
+	// attachment loop below gives: an empty entry would make the set read as
+	// withholding something while it withholds nothing.
+	for alias, marked := range crossNode.Connections {
+		if !marked.Any() {
+			continue
+		}
+		if keys.UsesConnections == nil {
+			keys.UsesConnections = map[string]ConnectionKeys{}
+		}
+		keys.UsesConnections[alias] = marked
 	}
 	// Only a slot whose Feature declares something is kept, so a connection
 	// carrying nothing declared leaves the set exactly as empty as a build without

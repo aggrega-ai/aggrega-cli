@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/marked-consumer
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  usesSchema:
+    # The per-connection contract declares one values leaf sensitive, one more
+    # sensitive with a default the author never writes, and one infra leaf
+    # sensitive, each beside a readable sibling.
+    databases:
+      selector: "component.aggrega.ai/type=stateful-server"
+      inject: ["env"]
+      valueSchema:
+        endpoint: { type: string }
+        token: { type: string, sensitive: true }
+        seed: { type: string, sensitive: true, default: "conn-default-plaintext" }
+      infraSchema:
+        pool_size: { type: integer, default: 10 }
+        api_key: { type: string, sensitive: true }
+    # The control socket declares a leaf of the SAME name readable.
+    caches:
+      required: false
+      selector: "component.aggrega.ai/type=stateful-server"
+      valueSchema:
+        token: { type: string }
+  schema:
+    provides:
+      host: { type: string, required: true }

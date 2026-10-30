@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: connection-marking-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/marked-consumer: marked-consumer-recipe:1.0.0
+        core/marked-store: marked-store-recipe:1.0.0

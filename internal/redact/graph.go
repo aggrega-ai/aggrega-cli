@@ -31,11 +31,15 @@ const (
 // rather than agreeing only for as long as two readings of the declarations
 // happen to agree.
 //
-// Three surfaces carry authored pillar data and each is covered: a node's own
-// values and infra, an attachment's payloads, and a boundary attachment's
-// infra. A node whose markings are empty has its payloads passed through
-// untouched, so a graph declaring no sensitivity emits the bytes it emitted
-// before this existed.
+// Four surfaces carry authored pillar data and each is covered: a node's own
+// values and infra, an attachment's payloads, a boundary attachment's infra,
+// and a connection's values and infra. A connection's configuration sits in two
+// positions — the edge's own payloads, and the consuming node's authored `uses`
+// entry for the same connection, which carries the values as written — and
+// both are withheld by the one marking the edge carries, so neither can show
+// what the other withholds. A node, edge or entry whose marking is empty is
+// passed through untouched, so a graph declaring no sensitivity emits the bytes
+// it emitted before this existed.
 //
 // The command line calls it when it prints the graph, the daemon when it
 // answers a request for the graph, and the governance socket when it hands the
@@ -66,7 +70,118 @@ func Graph(in *types.IRGraph) *types.IRGraph {
 	out.Spec.InfraMapping = rawPillars(in.Spec.InfraMapping, in.Spec.Nodes, infraPillar)
 	out.Spec.FeatureValuesMapping = attachmentPillars(in.Spec.FeatureValuesMapping)
 	out.Spec.BoundaryFeatures = boundaryPillars(in.Spec.BoundaryFeatures)
+	out.Spec.Edges = edgePillars(in.Spec.Edges)
+	out.Spec.Nodes = authoredConnectionValues(in.Spec.Nodes, in.Spec.Edges)
 	return &out
+}
+
+// ConnectionKeys names, for one connection, the leaves of its values and infra
+// the edge's own marking names, each keyed by the flat-dotted path from its
+// pillar root — the spelling Pillar and the template coordinates read.
+type ConnectionKeys struct {
+	Values map[string]bool
+	Infra  map[string]bool
+}
+
+// Any reports whether the marking names any leaf of either pillar.
+func (c ConnectionKeys) Any() bool {
+	return len(c.Values) > 0 || len(c.Infra) > 0
+}
+
+// ConnectionOf returns the leaves one edge's marking names, split by pillar. It
+// is how a surface displaying a connection's configuration somewhere other than
+// in the graph — a template's view of the connection — reads the same marking
+// this package withholds the graph by, so the two surfaces withhold the same
+// leaves of the same connection.
+func ConnectionOf(edge types.IREdge) ConnectionKeys {
+	return ConnectionKeys{
+		Values: pillarPaths(edge.SensitivePayloadLeaves, valuesPillar),
+		Infra:  pillarPaths(edge.SensitivePayloadLeaves, infraPillar),
+	}
+}
+
+// edgePillars withholds inside every edge's values and infra, reading each
+// edge's own marking. An edge list naming no leaf is returned as it is; any
+// other is copied, because the edges are values in a slice the input shares.
+func edgePillars(in []types.IREdge) []types.IREdge {
+	marked := false
+	for _, e := range in {
+		if len(e.SensitivePayloadLeaves) > 0 {
+			marked = true
+			break
+		}
+	}
+	if !marked {
+		return in
+	}
+	out := make([]types.IREdge, len(in))
+	for i, e := range in {
+		keys := ConnectionOf(e)
+		e.Values = PillarStructured(e.Values, keys.Values, WithheldDeclared)
+		e.Infra = PillarStructured(e.Infra, keys.Infra, WithheldDeclared)
+		out[i] = e
+	}
+	return out
+}
+
+// authoredConnectionValues withholds inside the values each node's authored
+// `uses` block writes for a connection, reading the marking of the edge that
+// connection drew. The block is the author's text rather than the resolved
+// payload, so every leaf it writes is a leaf the edge carries — an authored
+// value wins over a declared default — and the edge's marking names each one the
+// socket's contract declares sensitive.
+//
+// The edge is found by the node it starts at, the socket and the alias: a built
+// node's connections never share an alias, so the three name one connection. An
+// entry whose connection drew no edge carries no marking, and the configuration
+// it writes was measured against no contract; it is shown as written.
+//
+// Only a node whose block writes values for a marked connection is copied, and
+// only that entry's values are replaced, so every other byte of the block is the
+// one the author wrote.
+func authoredConnectionValues(nodes types.OrderedMap[types.IRNode], edges []types.IREdge) types.OrderedMap[types.IRNode] {
+	marked := map[string]map[string]bool{}
+	for _, e := range edges {
+		if keys := ConnectionOf(e); len(keys.Values) > 0 {
+			marked[e.Source+"\x00"+e.Socket+"\x00"+e.Alias] = keys.Values
+		}
+	}
+	if len(marked) == 0 || nodes.Len() == 0 {
+		return nodes
+	}
+	out := types.OrderedMap[types.IRNode]{}
+	for nodeID, node := range nodes.All() {
+		node.Uses = withheldUses(nodeID, node.Uses, marked)
+		out.Set(nodeID, node)
+	}
+	return out
+}
+
+// withheldUses returns one node's authored `uses` block with each marked
+// connection's values withheld, or the block itself when no entry it writes is
+// marked.
+func withheldUses(nodeID string, uses types.OrderedMap[types.UsesSocketValue], marked map[string]map[string]bool) types.OrderedMap[types.UsesSocketValue] {
+	carries := false
+	for socket, sv := range uses.All() {
+		for alias, entry := range sv.Verbose.All() {
+			if entry.Values.Len() > 0 && len(marked[nodeID+"\x00"+socket+"\x00"+alias]) > 0 {
+				carries = true
+			}
+		}
+	}
+	if !carries {
+		return uses
+	}
+	out := types.OrderedMap[types.UsesSocketValue]{}
+	for socket, sv := range uses.All() {
+		copied := types.UsesSocketValue{Compact: sv.Compact}
+		for alias, entry := range sv.Verbose.All() {
+			entry.Values = PillarStructured(entry.Values, marked[nodeID+"\x00"+socket+"\x00"+alias], WithheldDeclared)
+			copied.Verbose.Set(alias, entry)
+		}
+		out.Set(socket, copied)
+	}
+	return out
 }
 
 // pillarPaths selects, from one pillar-prefixed coordinate list, the leaf paths

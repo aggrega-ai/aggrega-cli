@@ -50,7 +50,8 @@ import (
 // carry their order on the wire in two different ways, which is the subject of
 // TestHostWireIR_AuthorOrderSurvivesInEveryOrderPreservingContainer. It also
 // carries an attachment written on the node's connection, so the connection that
-// attachment names crosses the wire on both sides.
+// attachment names crosses the wire on both sides, and the connection's own
+// per-leaf marking, so the edge's one structurally encoded list does too.
 func irFixture(t *testing.T) types.IRGraph {
 	t.Helper()
 
@@ -129,6 +130,9 @@ func irFixture(t *testing.T) types.IRGraph {
 			"ZED", om[string](t, "PGPORT", "port"),
 			"AYE", om[string](t, "PGHOST", "host"),
 		),
+		// The connection's own marking, one coordinate from each pillar, out of
+		// sorted order so a codec that sorted the sequence changes the bytes.
+		SensitivePayloadLeaves: []string{"values.zulu", "infra.instance_class"},
 	}
 
 	return types.IRGraph{
@@ -288,6 +292,12 @@ func TestHostGuestWireParity_IRGraph(t *testing.T) {
 	}
 	if obs.Connection != nil {
 		t.Errorf("the decoded attachment of the node's own block gained a connection: %+v", obs.Connection)
+	}
+	if len(rt.Spec.Edges) != 1 {
+		t.Fatalf("decoded %d edges, want 1", len(rt.Spec.Edges))
+	}
+	if got, want := rt.Spec.Edges[0].SensitivePayloadLeaves, []string{"values.zulu", "infra.instance_class"}; !sameKeys(got, want) {
+		t.Errorf("decoded connection marking = %v, want %v in the order it was written", got, want)
 	}
 	credential, ok := entry.Get("primary.credential")
 	if !ok {

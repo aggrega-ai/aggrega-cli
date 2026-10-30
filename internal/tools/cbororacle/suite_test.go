@@ -269,6 +269,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.IRSpec](t, "IRSpecAttachmentRealization", false)
 	vec[abi.IRNode](t, "IRNodeSensitivePayloadLeaves", false)
 	vec[abi.IRBoundaryFeature](t, "IRBoundaryFeatureSensitivePayloadLeaves", false)
+	// A connection's own marking. The member it adds is a list of text strings,
+	// which the reference encoder writes the same way and leaves out when empty, so
+	// it stays anchored.
+	vec[abi.IREdge](t, "IREdgeSensitivePayloadLeaves", false)
 	vec[abi.AssembleBoundaryInput](t, "AssembleBoundaryInput", false)
 	vec[abi.AssembleBoundaryOutput](t, "AssembleBoundaryOutput", false)
 	vec[abi.LinkPublishInput](t, "LinkPublishInput", false)

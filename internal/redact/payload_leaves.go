@@ -10,9 +10,10 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 // pillar-prefixed coordinate: values.<path> or infra.<path>.
 //
 // It is the ONE home for the per-leaf marking. The graph builder asks it for the
-// three places a graph carries pillar data — a merged attachment's own values
+// four places a graph carries pillar data — a merged attachment's own values
 // and infra, a node's values and infra against its Component's declarations,
-// and a boundary attachment's infra against its Feature's — and the
+// a boundary attachment's infra against its Feature's, and a connection's values
+// and infra against the per-edge contract its socket declares — and the
 // label-transform input asks it for each node's declared values before handing
 // them to a guest. Each caller supplies the payloads and the declarations; the
 // rule joining them lives only here, so a surface added later cannot come to

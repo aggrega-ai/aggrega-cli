@@ -33,6 +33,11 @@ type NodeBaseContext struct {
 	// connection's values and its attachments from, and what the declarations
 	// withholding those attachments from a failure's text are read over.
 	connections types.OrderedMap[types.EnrichedEdge]
+
+	// connectionsMarked is, by alias, the leaves of each connection's own values
+	// and infra the graph's edge marks — what withholds a connection's
+	// configuration from a failure's text, read off the same graph the entries are.
+	connectionsMarked map[string]redact.ConnectionKeys
 }
 
 // ExtractNodeBaseContext reads the IR graph at the given nodeID and
@@ -100,6 +105,7 @@ func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext
 	projection := AssembleEnrichedUses(nodeID, graph, nil, nil)
 	own, _ := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID, nil, &projection)
 	out.connections = projection
+	out.connectionsMarked = connectionsWithheld(nodeID, graph)
 
 	uses := make(map[string]any)
 	for _, e := range graph.Spec.Edges {
@@ -171,19 +177,33 @@ func assertionAttachments(attachments types.OrderedMap[types.TemplateAttachment]
 // The declarations are read by usesWithheld over the projection this view's
 // entries were read from — the reading a render context's connections are
 // withheld by, through the same Feature reader — and placed under each
-// connection's socket, which is where this view shows a connection. A connection
-// whose attachments declare nothing leaves keys as they were.
+// connection's socket, which is where this view shows a connection.
+//
+// The connection's own values are widened the same way: an assertion quoting a
+// leaf the edge's marking names at .uses.<socket>.<alias>.values reports without
+// it, as a Recipe template quoting it at .context.uses.<alias>.values does. A
+// connection whose attachments declare nothing and whose configuration the edge
+// marks nothing of leaves keys as they were.
 func (b NodeBaseContext) withConnectionDeclarations(keys redact.Keys, feature func(featureType string) resolver.SensitiveLeaves) redact.Keys {
 	declared := usesWithheld(b.connections, nil, feature).Attachments
-	if len(declared) == 0 {
+	if len(declared) == 0 && len(b.connectionsMarked) == 0 {
 		return keys
 	}
-	sockets := make(map[string]string, len(declared))
+	sockets := make(map[string]string, len(declared)+len(b.connectionsMarked))
 	for alias := range declared {
 		edge, _ := b.connections.Get(alias)
 		sockets[alias] = edge.Socket
 	}
-	keys.UsesAttachments = declared
+	for alias := range b.connectionsMarked {
+		edge, _ := b.connections.Get(alias)
+		sockets[alias] = edge.Socket
+	}
+	if len(declared) > 0 {
+		keys.UsesAttachments = declared
+	}
+	if len(b.connectionsMarked) > 0 {
+		keys.UsesConnections = b.connectionsMarked
+	}
 	keys.ConnectionSockets = sockets
 	return keys
 }

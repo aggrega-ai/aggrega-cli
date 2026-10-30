@@ -1870,6 +1870,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		crossNode := usesWithheld(tmplCtx.Context.Uses, func(componentType string) map[string]bool {
 			return readers.component(componentType).Provides
 		}, readers.feature)
+		// A connection's own values and infra ride the same edges into the display
+		// under the same alias, governed by this node's socket rather than by the
+		// target; the leaves covered are read off the graph's edge marking.
+		crossNode.Connections = connectionsWithheld(nodeID, graph)
 		// Read from the bound Recipe as the catalog held it, before anything replaced
 		// the local copy's source with the resolved value: the reading is over
 		// authored template text, and resolved text carries no reference to read.

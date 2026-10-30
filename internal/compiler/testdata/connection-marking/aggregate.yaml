@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: connection-marking-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/marked-consumer
+      uses:
+        # The socket's contract declares token sensitive and endpoint readable;
+        # seed is left to its declared default.
+        databases:
+          main:
+            target: store
+            values:
+              endpoint: store.internal
+              token: conn-token-plaintext
+        # The same leaf name on a socket whose contract declares it readable.
+        caches:
+          control:
+            target: store
+            values:
+              token: control-token-plaintext
+    store:
+      type: core/marked-store

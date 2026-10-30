@@ -270,6 +270,40 @@ func usesWithheld(
 	return out
 }
 
+// connectionsWithheld reads, per connection a node draws, the leaves of the
+// connection's own values and infra the graph's edge marks — the configuration
+// the per-edge contract the node's Component declares on the socket covers.
+//
+// It is a reading of the graph, not of any declaration: the marking was computed
+// once, when the graph was built, from the contract the connection was validated
+// against, and the graph's own withholding reads the same marking. So a template's
+// view of a connection withholds exactly the leaves the graph withholds of it, and
+// no surface comes to a different answer by reading the contract a second time.
+//
+// It is keyed by the alias each connection is displayed under, the key the
+// render context's uses map is built with, and an edge marking nothing is left
+// out, so a node whose connections carry nothing declared yields nil.
+func connectionsWithheld(nodeID string, graph *types.IRGraph) map[string]redact.ConnectionKeys {
+	if graph == nil {
+		return nil
+	}
+	var out map[string]redact.ConnectionKeys
+	for _, edge := range graph.Spec.Edges {
+		if edge.Source != nodeID {
+			continue
+		}
+		marked := redact.ConnectionOf(edge)
+		if !marked.Any() {
+			continue
+		}
+		if out == nil {
+			out = map[string]redact.ConnectionKeys{}
+		}
+		out[connectionAlias(edge)] = marked
+	}
+	return out
+}
+
 // selfInjectWithheld reads which of the delivery keys a node's OWN
 // component-level self-inject put on its pipe carry material that node's
 // Component declares sensitive.

@@ -1446,6 +1446,9 @@ func (t IREdge) appendCBOR(dst []byte) ([]byte, error) {
 	if t.OriginFeatureInstance != "" {
 		n++
 	}
+	if len(t.SensitivePayloadLeaves) != 0 {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	if t.Alias != "" {
 		dst = appendCBORTextString(dst, "alias")
@@ -1496,6 +1499,14 @@ func (t IREdge) appendCBOR(dst []byte) ([]byte, error) {
 	if t.OriginFeatureInstance != "" {
 		dst = appendCBORTextString(dst, "origin_feature_instance")
 		dst = appendCBORTextString(dst, t.OriginFeatureInstance)
+	}
+	if len(t.SensitivePayloadLeaves) != 0 {
+		dst = appendCBORTextString(dst, "sensitive_payload_leaves")
+		dst = appendCBORHead(dst, 4, uint64(len(t.SensitivePayloadLeaves)))
+		for i := range t.SensitivePayloadLeaves {
+			ev := t.SensitivePayloadLeaves[i]
+			dst = appendCBORTextString(dst, ev)
+		}
 	}
 	return dst, nil
 }
@@ -1596,6 +1607,24 @@ func (t *IREdge) decodeCBOR(dec *cborDec) error {
 					return err
 				}
 			}
+		case "sensitive_payload_leaves":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.SensitivePayloadLeaves = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -1612,7 +1641,7 @@ func (t *IREdge) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *IREdge) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "source", "target", "socket", "alias", "socket_declaration", "origin_feature", "origin_feature_instance", "origin_release", "values", "infra", "inject"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "source", "target", "socket", "alias", "socket_declaration", "origin_feature", "origin_feature_instance", "origin_release", "values", "infra", "inject", "sensitive_payload_leaves"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

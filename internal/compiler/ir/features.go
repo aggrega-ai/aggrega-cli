@@ -1745,10 +1745,12 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 // block it was built from, so a leaf standing at a schema-declared default is
 // named alongside one an author wrote.
 //
-// Its three subjects are the three places the graph carries pillar data: a
+// Its four subjects are the four places the graph carries pillar data: a
 // merged attachment's own values and infra, a node's values and infra against
-// its Component's declarations, and a boundary attachment's infra against its
-// Feature's. The rule joining payload and declarations is
+// its Component's declarations, a boundary attachment's infra against its
+// Feature's, and a connection's values and infra against the per-edge contract
+// the consuming component declares on the socket. The rule joining payload and
+// declarations is
 // [redact.DeclaredLeaves], asked through [resolver.SensitiveLeaves.Covers] — the
 // same rule the label-transform input withholds a node's values by — so this
 // function only adapts the declarations to it and decides nothing itself.

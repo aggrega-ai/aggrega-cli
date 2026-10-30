@@ -309,7 +309,9 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	// The graph a policy plugin receives is the one the printed graph shows:
 	// every leaf the graph's own sensitivity markings name — an attachment's
 	// values and infra, whatever scope or connection it was written on, a
-	// boundary attachment's infra, and a node's own values and infra — arrives
+	// boundary attachment's infra, a node's own values and infra, and a
+	// connection's values and infra, on its edge and in its node's authored
+	// `uses` entry — arrives
 	// as the withheld marker rather than as the value an author wrote. What a
 	// policy reasons on stays readable: each attachment's type, resolved version,
 	// labels, catalog annotations, binding, connection, realization and origin, the

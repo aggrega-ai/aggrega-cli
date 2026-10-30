@@ -182,6 +182,36 @@ func DeclaredSensitiveLeaves(compiled compactform.Schema) SensitiveLeaves {
 	return out
 }
 
+// DeclaredSocketSensitiveLeaves reads which leaves of a connection's
+// configuration a socket's per-edge contract declares sensitive: the contract the
+// CONSUMING component type declares under spec.usesSchema.<socket>, valueSchema
+// for the values pillar and infraSchema for the infra pillar. Provides is always
+// empty, because a socket's contract describes the configuration the consumer
+// writes for a connection and never what the target publishes.
+//
+// Each pillar is compiled through the one home for compiling a socket's
+// contract — the compile the per-edge conformance gate and the declared-defaults
+// materialisation read — and the declarations are read out of it by
+// DeclaredSensitiveLeaves, the reader every entity's declarations come from. So a
+// leaf is declared on a connection on exactly the reading it would be declared on
+// a component, and this function adds nothing but the choice of contract.
+//
+// A component type the catalog does not hold, a socket it does not declare, a
+// pillar the socket declares no contract for, and a contract that does not
+// compile each contribute nothing to that pillar — the last is reported where
+// contracts are resolved, not here, exactly as it is for the defaults the same
+// compile materialises.
+func DeclaredSocketSensitiveLeaves(catalog CatalogLookup, compType, socket string) SensitiveLeaves {
+	out := SensitiveLeaves{}
+	if compiled, ok := CompileSocketPillarSchema(catalog, compType, socket, "values"); ok {
+		out.Values = DeclaredSensitiveLeaves(compiled).Values
+	}
+	if compiled, ok := CompileSocketPillarSchema(catalog, compType, socket, "infra"); ok {
+		out.Infra = DeclaredSensitiveLeaves(compiled).Infra
+	}
+	return out
+}
+
 // pillarPropertyMap is one property map a pillar declares, with the reference
 // scopes in force where it was declared and the pointers followed to reach it.
 type pillarPropertyMap struct {

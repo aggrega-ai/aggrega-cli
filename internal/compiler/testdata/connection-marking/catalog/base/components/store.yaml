@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/marked-store
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "stateful-server"
+spec:
+  inject: ["env"]
+  schema:
+    # The target declares a leaf named like the consumer's connection leaves on
+    # its OWN values. It governs the target's own data, never the configuration a
+    # consumer writes for a connection to it.
+    values:
+      token: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

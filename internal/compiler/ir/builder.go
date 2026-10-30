@@ -497,12 +497,26 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		}
 		return d
 	}
+	// What each socket's per-edge contract declares sensitive, keyed like the
+	// defaults above: by the consuming component's type and the socket, both
+	// pillars in one answer because the marking names leaves of both.
+	socketSensitive := map[string]resolver.SensitiveLeaves{}
+	sensitiveFor := func(componentType, socket string) resolver.SensitiveLeaves {
+		key := componentType + "\x00" + socket
+		declared, cached := socketSensitive[key]
+		if !cached {
+			declared = resolver.DeclaredSocketSensitiveLeaves(cfg.CatalogLookup, componentType, socket)
+			socketSensitive[key] = declared
+		}
+		return declared
+	}
 	for _, e := range topo.Edges {
 		edgeValues, edgeInfra := e.Values, e.Infra
 		var sourceComponentType string
 		if src, ok := topo.Nodes.Get(e.Source); ok && src != nil {
 			sourceComponentType = src.ComponentType
 		}
+		var edgeSensitive []string
 		if cfg.CatalogLookup.Component != nil && sourceComponentType != "" {
 			if defs := defaultsFor(sourceComponentType, e.Socket, "values"); defs.Len() > 0 {
 				edgeValues = mergeSchemaDefaults(e.Values, defs)
@@ -510,19 +524,30 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			if defs := defaultsFor(sourceComponentType, e.Socket, "infra"); defs.Len() > 0 {
 				edgeInfra = mergeSchemaDefaults(e.Infra, defs)
 			}
+			// The connection's per-leaf marking, over the same two payloads the
+			// edge goes on to carry — defaults included, for the reason the node's
+			// marking reads its filled payloads — against the contract the
+			// CONSUMING component declares on the socket, which is the contract both
+			// payloads were validated against. The target's declarations govern
+			// what the target publishes, never what its consumer writes for the
+			// connection, so they are not read here. A Feature-drawn edge reads the
+			// same contract: a Feature's socket cannot declare a per-edge one, so
+			// the consuming component's is the only declaration there is.
+			edgeSensitive = derivePayloadSensitiveLeaves(edgeValues, edgeInfra, sensitiveFor(sourceComponentType, e.Socket))
 		}
 		irEdge := types.IREdge{
-			Source:                e.Source,
-			Target:                e.Target,
-			Socket:                e.Socket,
-			Alias:                 e.Alias,
-			SocketDeclaration:     declarationFor(sourceComponentType, e.OriginFeature, e.Socket),
-			OriginFeature:         e.OriginFeature,
-			OriginFeatureInstance: e.OriginFeatureInstance,
-			OriginRelease:         e.OriginRelease,
-			Values:                edgeValues,
-			Infra:                 edgeInfra,
-			Inject:                convertInjectBlock(e.Inject),
+			Source:                 e.Source,
+			Target:                 e.Target,
+			Socket:                 e.Socket,
+			Alias:                  e.Alias,
+			SocketDeclaration:      declarationFor(sourceComponentType, e.OriginFeature, e.Socket),
+			OriginFeature:          e.OriginFeature,
+			OriginFeatureInstance:  e.OriginFeatureInstance,
+			OriginRelease:          e.OriginRelease,
+			Values:                 edgeValues,
+			Infra:                  edgeInfra,
+			Inject:                 convertInjectBlock(e.Inject),
+			SensitivePayloadLeaves: edgeSensitive,
 		}
 		irEdges = append(irEdges, irEdge)
 	}

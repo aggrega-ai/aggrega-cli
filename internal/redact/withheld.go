@@ -31,9 +31,10 @@ const (
 // coordinates returns every datum the set names, spelled as the dotted path a
 // template reads it by: values.<leaf>, infra.<leaf>, locals.<name>, source or
 // source.<field>, context.inject.<mechanism>.<key>, context.uses.<alias>.provides.<key>,
+// context.uses.<alias>.values.<leaf> and context.uses.<alias>.infra.<leaf>,
 // context.uses.<alias>.features.<slot>.<pillar>… — and, where the set names the
-// connection's socket, uses.<socket>.<alias>.features.<slot>.<pillar>… —
-// features.<name>.<pillar>… and provides.<key>.
+// connection's socket, the same connection's values, infra and features beneath
+// uses.<socket>.<alias> — features.<name>.<pillar>… and provides.<key>.
 //
 // It is the ONE statement of where in a template's data each kind of entry in the
 // set sits, and both questions asked of a set in those terms read it: whether a
@@ -80,6 +81,12 @@ func (k Keys) coordinates() map[string]bool {
 	for alias, declared := range k.UsesProvides {
 		addPaths(out, uses+"."+alias+"."+rootProvides, declared)
 	}
+	for alias, marked := range k.UsesConnections {
+		addConnection(out, uses+"."+alias, marked)
+		if socket := k.ConnectionSockets[alias]; socket != "" {
+			addConnection(out, keyUses+"."+socket+"."+alias, marked)
+		}
+	}
 	for alias, slots := range k.UsesAttachments {
 		socket := k.ConnectionSockets[alias]
 		for slot, declared := range slots {
@@ -97,6 +104,13 @@ func addPaths(out map[string]bool, prefix string, paths map[string]bool) {
 	for path := range paths {
 		out[prefix+"."+path] = true
 	}
+}
+
+// addConnection adds the coordinates one connection's marking names in its own
+// values and infra, beneath the position the connection is read at.
+func addConnection(out map[string]bool, at string, marked ConnectionKeys) {
+	addPaths(out, at+"."+rootValues, marked.Values)
+	addPaths(out, at+"."+rootInfra, marked.Infra)
 }
 
 // addAttachment adds the coordinates one attachment's Feature declares, beneath

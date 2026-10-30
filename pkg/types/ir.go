@@ -365,6 +365,34 @@ type IREdge struct {
 	Values OrderedMap[any]                `json:"values,omitempty,omitzero"`
 	Infra  OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
+	// SensitivePayloadLeaves names the leaves Values and Infra carry that the
+	// socket they are written against declares sensitive, each as the
+	// pillar-prefixed dotted path the datum occupies — "values.<path>" or
+	// "infra.<path>". It is the field [IRNode] carries for the same concept, at a
+	// different position: the node's names the node's own data against its
+	// Component's schema, this one names the connection's configuration.
+	//
+	// The declaration read is the per-edge contract the CONSUMING component — the
+	// edge's source — declares on the socket: valueSchema for Values, infraSchema
+	// for Infra, the contract both payloads are validated against. The target's
+	// declarations play no part, because what the target publishes is a different
+	// datum from the configuration its consumer writes for the connection.
+	//
+	// The subject is the payload the edge carries rather than the block it was
+	// built from, so a leaf standing at a value the contract declares as a default
+	// is named alongside one an author wrote; covering and ordering follow the
+	// node's field exactly, values before infra.
+	//
+	// A surface withholding declared-sensitive values from the graph reads this
+	// field for two positions: the edge's own payloads, and the consuming node's
+	// authored [IRNode.Uses] entry for the same connection, which carries the
+	// values as written.
+	//
+	// Empty when the edge carries no leaf its socket's contract declares
+	// sensitive, and equally when the socket declares no contract this reader
+	// could read. Empty is not permission: a consumer treating it as licence to
+	// display or emit a value in the clear has read it backwards.
+	SensitivePayloadLeaves []string `json:"sensitive_payload_leaves,omitempty"`
 }
 
 // IRFeatureEntry is one attachment on a node in the feature_values_mapping.
