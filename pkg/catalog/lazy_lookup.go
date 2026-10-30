@@ -83,30 +83,32 @@ import (
 // A caller passing none has the conventional directory read as the workspace's own.
 func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller, named ...string) *LazyLookup {
 	return &LazyLookup{
-		workspaceRoot:     workspaceRoot,
-		cacheDir:          cacheDir,
-		catalogDirs:       catalogDirs,
-		puller:            puller,
-		namedDirs:         named,
-		components:        map[string]types.Component{},
-		features:          map[string]types.Feature{},
-		schemaLibraries:   map[string]types.SchemaLibrary{},
-		componentMisses:   map[string]struct{}{},
-		featureMisses:     map[string]struct{}{},
-		componentIndex:    map[string]indexedDocument{},
-		featureIndex:      map[string]indexedDocument{},
-		recipes:           map[string]types.Recipe{},
-		featureRecipes:    map[string]types.FeatureRecipe{},
-		aggregates:        map[string]types.Aggregate{},
-		mappingLibraries:  map[string]types.MappingLibrary{},
-		workloadLibraries: map[string]types.WorkloadLibrary{},
-		artifactLibraries: map[string]types.ArtifactLibrary{},
-		plugins:           map[string]types.Plugin{},
-		recipeSkips:       map[string]error{},
-		announced:         map[string]struct{}{},
-		entityBytes:       map[string][]byte{},
-		origins:           map[string]entityOrigin{},
-		recordedPins:      recipepin.Lookup{},
+		workspaceRoot:       workspaceRoot,
+		cacheDir:            cacheDir,
+		catalogDirs:         catalogDirs,
+		puller:              puller,
+		namedDirs:           named,
+		components:          map[string]types.Component{},
+		features:            map[string]types.Feature{},
+		componentsResolving: map[string]types.Component{},
+		featuresResolving:   map[string]types.Feature{},
+		schemaLibraries:     map[string]types.SchemaLibrary{},
+		componentMisses:     map[string]struct{}{},
+		featureMisses:       map[string]struct{}{},
+		componentIndex:      map[string]indexedDocument{},
+		featureIndex:        map[string]indexedDocument{},
+		recipes:             map[string]types.Recipe{},
+		featureRecipes:      map[string]types.FeatureRecipe{},
+		aggregates:          map[string]types.Aggregate{},
+		mappingLibraries:    map[string]types.MappingLibrary{},
+		workloadLibraries:   map[string]types.WorkloadLibrary{},
+		artifactLibraries:   map[string]types.ArtifactLibrary{},
+		plugins:             map[string]types.Plugin{},
+		recipeSkips:         map[string]error{},
+		announced:           map[string]struct{}{},
+		entityBytes:         map[string][]byte{},
+		origins:             map[string]entityOrigin{},
+		recordedPins:        recipepin.Lookup{},
 	}
 }
 
@@ -503,6 +505,19 @@ type LazyLookup struct {
 	// primitives).
 	components map[string]types.Component
 	features   map[string]types.Feature
+
+	// componentsResolving and featuresResolving hold, for each reference whose
+	// extends chain is being merged right now, the entity as the cascade read it
+	// before any merge. The merge reads a chain's parents through this same
+	// cascade, and the hot cache above is written only once a merge returns, so
+	// a chain that loops leads the cascade back to a reference it is still
+	// merging with nothing remembered yet. Answering that read with the unmerged
+	// entity hands the chain walk a link it has already reached, and the walk
+	// reports the loop instead of each read starting a merge of its own without
+	// end. An entry lives only while its own read holds the lock, so Reset and
+	// SetPins have nothing here to clear.
+	componentsResolving map[string]types.Component
+	featuresResolving   map[string]types.Feature
 
 	// SchemaLibraries resolved by the lazy backing itself (buildSchemaLibraries),
 	// not copied from an eager *Catalog. Cross-library schema `$ref` resolution
@@ -1134,12 +1149,22 @@ func (l *LazyLookup) component(uri string) (types.Component, bool) {
 // nothing read under a context that has ended is kept, because a fetch the
 // caller withdrew from has not learned that the entity is absent, and a chain
 // merged without the parent it was withdrawn from is not the entity's chain.
+//
+// A read of a reference whose own merge is still running is answered with that
+// entity unmerged, as the cascade read it. Only a chain that loops reads a
+// reference while merging it — the merge reads ancestors and nothing else — so
+// the answer reaches the chain walk as a link it has already reached, and the
+// walk reports the loop as the cyclic extends chain it is. An acyclic chain never
+// takes that branch, so what it merges to is untouched by it.
 func (l *LazyLookup) componentContext(ctx context.Context, uri string, registry bool) (types.Component, bool) {
 	if c, ok := l.components[uri]; ok {
 		return c, true
 	}
 	if _, ok := l.componentMisses[uri]; ok {
 		return types.Component{}, false
+	}
+	if c, ok := l.componentsResolving[uri]; ok {
+		return c, true
 	}
 	comp, ok := l.resolveComponentContext(ctx, uri, l.registryTier(registry))
 	if !ok {
@@ -1148,9 +1173,7 @@ func (l *LazyLookup) componentContext(ctx context.Context, uri string, registry 
 		}
 		return types.Component{}, false
 	}
-	merged, vErrs := validator.ResolveComponentExtends(comp, func(parent string) (types.Component, bool) {
-		return l.componentContext(ctx, parent, true)
-	})
+	merged, vErrs := l.mergeComponentChain(ctx, uri, comp)
 	if len(vErrs) > 0 {
 		// The failure names its own entity, kind included, so the line adds no
 		// prefix of its own — one identity per diagnostic, and the same line
@@ -1161,6 +1184,19 @@ func (l *LazyLookup) componentContext(ctx context.Context, uri string, registry 
 		l.components[uri] = merged
 	}
 	return merged, true
+}
+
+// mergeComponentChain merges comp, read for uri, along its extends chain, with
+// uri marked as being merged for as long as the merge runs, so a chain that
+// leads back to uri is answered with comp itself rather than with a merge
+// started afresh (see componentContext). The mark is removed however the merge
+// ends, a panic included, so no later read of uri is answered unmerged.
+func (l *LazyLookup) mergeComponentChain(ctx context.Context, uri string, comp types.Component) (types.Component, []*validator.ValidationError) {
+	l.componentsResolving[uri] = comp
+	defer delete(l.componentsResolving, uri)
+	return validator.ResolveComponentExtends(comp, func(parent string) (types.Component, bool) {
+		return l.componentContext(ctx, parent, true)
+	})
 }
 
 // Feature mirrors Component for the Feature surface. Extends-resolution
@@ -1249,13 +1285,18 @@ func (l *LazyLookup) EntityNames(kind string) []string {
 }
 
 // featureContext mirrors componentContext for the Feature surface, remembering and
-// declining to remember on the same terms.
+// declining to remember on the same terms, and answering a read of a reference
+// whose own merge is still running with that Feature unmerged, for the same
+// reason.
 func (l *LazyLookup) featureContext(ctx context.Context, uri string, registry bool) (types.Feature, bool) {
 	if f, ok := l.features[uri]; ok {
 		return f, true
 	}
 	if _, ok := l.featureMisses[uri]; ok {
 		return types.Feature{}, false
+	}
+	if f, ok := l.featuresResolving[uri]; ok {
+		return f, true
 	}
 	feat, ok := l.resolveFeatureContext(ctx, uri, l.registryTier(registry))
 	if !ok {
@@ -1264,9 +1305,7 @@ func (l *LazyLookup) featureContext(ctx context.Context, uri string, registry bo
 		}
 		return types.Feature{}, false
 	}
-	merged, vErrs := validator.ResolveFeatureExtends(feat, func(parent string) (types.Feature, bool) {
-		return l.featureContext(ctx, parent, true)
-	})
+	merged, vErrs := l.mergeFeatureChain(ctx, uri, feat)
 	if len(vErrs) > 0 {
 		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
 	}
@@ -1274,6 +1313,15 @@ func (l *LazyLookup) featureContext(ctx context.Context, uri string, registry bo
 		l.features[uri] = merged
 	}
 	return merged, true
+}
+
+// mergeFeatureChain mirrors mergeComponentChain for the Feature surface.
+func (l *LazyLookup) mergeFeatureChain(ctx context.Context, uri string, feat types.Feature) (types.Feature, []*validator.ValidationError) {
+	l.featuresResolving[uri] = feat
+	defer delete(l.featuresResolving, uri)
+	return validator.ResolveFeatureExtends(feat, func(parent string) (types.Feature, bool) {
+		return l.featureContext(ctx, parent, true)
+	})
 }
 
 // localComponent is resolveComponentContext with the registry tier closed: the
