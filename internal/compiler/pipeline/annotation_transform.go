@@ -173,33 +173,52 @@ func annotationTargetKey(boundaryPath, componentName string) string {
 // check reads. Each target carries the component's boundary path, name, and the
 // annotations written on the component in every shape an author writes them —
 // see [annotationTargetValues] for why a structured or null value is carried
-// rather than left out. Targets emit in author order via the boundary and
-// component OrderedMaps, so the wire is deterministic.
+// rather than left out.
+//
+// The components are the ones every other walker of the boundary tree reads, on
+// both of a boundary's axes: those it names directly, and those a routing entry
+// names inside the sub-module it routes in, each under the id it carries in the
+// flattened graph ("metrics.query"). That id is the coordinate an injection
+// names, so a plugin addresses a routed component exactly as the graph and its
+// diagnostics spell it. A component a routing entry places without naming it is
+// not listed: its name is not known until the sub-module's document is loaded,
+// which happens after this role runs.
+//
+// Targets emit in author order — per boundary, its own components, then the
+// routed ones in routing order, then its child boundaries — so the wire is
+// deterministic. The confinement set is read off the list once it is built
+// rather than collected beside it, so a coordinate is accepted exactly when it
+// was offered.
 func annotationTargets(release *types.Release) ([]AnnotationTarget, map[string]bool) {
 	var targets []AnnotationTarget
-	set := map[string]bool{}
-	var walk func(path string, b types.Boundary)
-	walk = func(path string, b types.Boundary) {
-		for compName, comp := range b.Components.All() {
-			targets = append(targets, AnnotationTarget{
-				BoundaryPath:  path,
-				ComponentName: compName,
-				Annotations:   annotationTargetValues(comp.Annotations),
-			})
-			set[annotationTargetKey(path, compName)] = true
-		}
-		for childName, child := range b.Boundaries.All() {
-			childPath := childName
-			if path != "" {
-				childPath = path + "/" + childName
-			}
-			walk(childPath, child)
-		}
-	}
-	for name, boundary := range release.Spec.Boundaries.All() {
-		walk(name, boundary)
+	_ = types.WalkInstanceTree(release.Spec.Boundaries, types.BoundaryTree(), "", struct{}{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, struct{}]{
+			Path: joinAnnotationBoundaryPath,
+			Visit: func(comp types.BoundaryComponent, name, path string, _ bool, _ struct{}) error {
+				targets = append(targets, AnnotationTarget{
+					BoundaryPath:  path,
+					ComponentName: name,
+					Annotations:   annotationTargetValues(comp.Annotations),
+				})
+				return nil
+			},
+		})
+	set := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		set[annotationTargetKey(target.BoundaryPath, target.ComponentName)] = true
 	}
 	return targets, set
+}
+
+// joinAnnotationBoundaryPath composes a boundary's slash-separated path from its
+// parent's path and its own name — the spelling a target's boundary path carries
+// and the one [splitBoundaryPathSlash] takes apart. A synthesized boundary is
+// named like any other.
+func joinAnnotationBoundaryPath(parentPath, name string, _ bool) string {
+	if parentPath == "" {
+		return name
+	}
+	return parentPath + "/" + name
 }
 
 // annotationTargetValues projects a component's own annotations into the values
@@ -371,6 +390,11 @@ func setBoundaryInfraAnnotation(rr *resolver.ResolveResult, componentName, key s
 // back up so the mutation persists. A path or component the walk cannot resolve
 // is a no-op — the caller's confinement check has already rejected an unknown
 // coordinate before this runs.
+//
+// The component is read and written on whichever axis of the boundary declares
+// it, so an annotation injected onto a routed component lands on the routing
+// entry that names it — the entry an author would write it on — rather than on a
+// second entry under its qualified id, which would place one component twice.
 func setReleaseComponentAnnotation(release *types.Release, boundaryPath, compName, key string, value *types.AnnotationValue) {
 	segments := splitBoundaryPathSlash(boundaryPath)
 	if len(segments) == 0 {
@@ -390,12 +414,13 @@ func setReleaseComponentAnnotation(release *types.Release, boundaryPath, compNam
 		chain[i] = child
 	}
 	leaf := chain[len(segments)-1]
-	comp, ok := leaf.Components.Get(compName)
+	held := types.BoundaryComponents(leaf)
+	comp, ok := held.Get(compName)
 	if !ok {
 		return
 	}
 	comp.Annotations.Set(key, value)
-	leaf.Components.Set(compName, comp)
+	types.SetBoundaryComponent(&leaf, compName, comp)
 	chain[len(segments)-1] = leaf
 	for i := len(segments) - 1; i > 0; i-- {
 		chain[i-1].Boundaries.Set(segments[i], chain[i])
