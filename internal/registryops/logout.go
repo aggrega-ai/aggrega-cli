@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"oras.land/oras-go/v2/registry/remote/credentials"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/credentialfailure"
 )
 
 // LogoutOptions is what a credential removal decides.
@@ -69,7 +71,9 @@ func Logout(ctx context.Context, opts LogoutOptions) (LogoutResult, error) {
 	if store == nil {
 		s, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 		if err != nil {
-			return res, fmt.Errorf("aggrega logout: credential store: %w", err)
+			// The store's own text can quote what the credential file holds, so the
+			// failure is said in the fixed sentence instead.
+			return res, fmt.Errorf("aggrega logout: %w", credentialfailure.Unreadable(opts.Registry, "", err))
 		}
 		store = s
 	}

@@ -94,7 +94,7 @@ func TestACredentialStoreFailureNamesTheRegistryAndFileButNotTheEntry(t *testing
 			body: func(host string) string {
 				return `{"auths":{"` + host + `":{"auth":` + storePlaceholder + `}}}`
 			},
-			fixed:     "the credential file cannot be read",
+			fixed:     "cannot be read from the credential file (config.json",
 			storeText: "invalid character",
 		},
 	}

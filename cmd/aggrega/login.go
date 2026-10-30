@@ -16,6 +16,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/credentialfailure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -192,7 +193,9 @@ func loginRun(ctx context.Context, cfg loginConfig) error {
 	if store == nil {
 		s, err := credentials.NewStoreFromDocker(credentials.StoreOptions{AllowPlaintextPut: true})
 		if err != nil {
-			return fmt.Errorf("aggrega login: credential store: %w", err)
+			// The store's own text can quote what the credential file holds, so the
+			// failure is said in the fixed sentence instead.
+			return fmt.Errorf("aggrega login: %w", credentialfailure.Unreadable(cfg.Registry, "", err))
 		}
 		store = s
 	}

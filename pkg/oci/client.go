@@ -13,6 +13,7 @@ import (
 	"sort"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/aggrega-ai/aggrega-cli/internal/credentialfailure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -390,14 +391,14 @@ func NewRemoteRegistry(host string, httpClient *http.Client) (*remote.Registry, 
 // A failure of the credential store — opening it here, or reading an entry when a
 // registry asks for a credential — is reported in a fixed sentence naming the
 // registry and the credential file, never in the store's own words, which can
-// quote what the file holds. See credentialStoreError.
+// quote what the file holds. See storeCredential.
 func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client *auth.Client, err error) {
 	if httpClient == nil {
 		return false, nil, fmt.Errorf("oci: nil egress client; obtain the HTTP client from pkg/egress before constructing a remote target")
 	}
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
-		return false, nil, unreadableCredentialFile(registryHost, err)
+		return false, nil, fmt.Errorf("oci: %w", credentialfailure.Unreadable(registryHost, "", err))
 	}
 	return registryhost.IsLoopback(registryHost), &auth.Client{
 		Client:     httpClient,
