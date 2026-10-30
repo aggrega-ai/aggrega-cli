@@ -11,8 +11,8 @@ spec:
           type: core/db
     tier:
       # A subsystem-wide feature inside the sub-aggregate, carrying a uses edge
-      # to a sub-aggregate-root sibling. The root-walk subsystemFeatureUses misses
-      # it today (it walks the root Aggregate's subsystems, not the sub-aggregate's).
+      # to a sub-aggregate-root sibling. It cascades onto the sub-aggregate's own
+      # components beneath this subsystem, read from the sub-aggregate's document.
       features:
         shared:
           type: core/sidecar

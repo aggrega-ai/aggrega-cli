@@ -398,6 +398,11 @@ var (
 	// a sub-Aggregate the build composes.
 	scopeComposedComponent = attachmentScope{authority: authorityComposed, reach: reachComponent}
 
+	// scopeComposedShared is a subsystem-wide attachment declared inside a
+	// sub-Aggregate the build composes, on one of that sub-Aggregate's own
+	// subsystems.
+	scopeComposedShared = attachmentScope{authority: authorityComposed, reach: reachShared}
+
 	// scopeShared is a subsystem-wide (Aggregate) or boundary-wide (Release)
 	// attachment on the composing document.
 	scopeShared = attachmentScope{authority: authorityComposing, reach: reachShared}
@@ -531,17 +536,24 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 //
 // Tier order, with the data sources each tier reads from:
 //
-//   - Tier 1 — Sub-aggregate component features. Already collected into
+//   - Tier 1 — Sub-aggregate features: a module component's own features,
+//     then the features the module's own subsystems attach (outer-to-inner).
+//     The component's own are already collected into
 //     topoResult.FeatureAttachments by the topology builder's
-//     flattenAggregate; iterated here in attachment order.
+//     flattenAggregate and iterated here in attachment order; the subsystem
+//     ones are read by scopeAttachments from the module's own document, in
+//     the loop the root's subsystem features are read in below. Nothing the
+//     composing Aggregate declares reaches a module's component at tiers 2 or
+//     3, so reading them there keeps them directly after the component's own,
+//     within the module's tier.
 //   - Tier 2 — Root Aggregate component features. Same source and the same
-//     loop. A node's component-level attachments come from exactly one
-//     aggregate — the one that declares the component — so a given node is
-//     a Tier 1 node or a Tier 2 node, never both.
+//     loop as a module component's own. A node's component-level attachments
+//     come from exactly one aggregate — the one that declares the component —
+//     so a given node is a Tier 1 node or a Tier 2 node, never both.
 //   - Tier 3 — Root Aggregate subsystem features (outer-to-inner).
-//     rootScopeAttachments walks the node's subsystem path on the root
-//     Aggregate, emitting features at each level in author order, for a node
-//     the root Aggregate declares and for no other.
+//     scopeAttachments walks the node's subsystem path on the root Aggregate,
+//     emitting features at each level in author order, for a node the root
+//     Aggregate declares.
 //   - Tier 4 — Release boundary-wide features (outer-to-inner).
 //     collectBoundaryWideFeatures walks the boundary path on the Release
 //     and reads boundary-level Features. Release contributions to a
@@ -657,12 +669,15 @@ func collectNodeFeatures(
 		}
 	}
 
-	// Tier 3: Root Aggregate subsystem features (outer-to-inner).
+	// Tier 3: Root Aggregate subsystem features (outer-to-inner) — or, for a
+	// module's component, the module's own subsystem features, which complete
+	// tier 1 (see the tier list above for why this slot is that position).
 	// Subsystem.Features carries explicit author-declared feature
 	// attachments only; annotation cascade from a subsystem propagates
 	// to the subsystem's components, not to the subsystem's own Features
-	// map. Tier 3 stays explicit-only.
-	for _, sf := range rootScopeAttachments(topoNode, resolveResult.Aggregate) {
+	// map. The scope tier stays explicit-only.
+	scoped, scopeRank := scopeAttachments(topoNode, topoResult, resolveResult.Aggregate)
+	for _, sf := range scoped {
 		// Recorded before the merge, from the contribution as authored. Each
 		// level of the chain is recorded separately even where two levels
 		// declare the same instance name: the delivery merge adds and replaces
@@ -670,7 +685,7 @@ func collectNodeFeatures(
 		// contributed survives into the merged attachment, and every level that
 		// contributed an out-of-shape one is a separate edit to make.
 		result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
-		owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
+		owner := leafOwner{scope: scopeRank, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
 		result.recordContribution(sf.name, placeFrom(
 			constraint.ContributionSubsystem, explicitProvenance, owner.site, nil,
 			constraint.AttachmentSiteInBlock(constraint.AuthoringDocumentAggregate, owner.site, sf.name, node.SourceFile),
@@ -1780,28 +1795,52 @@ type namedBoundaryFeature struct {
 	connection *types.AttachmentConnection
 }
 
-// rootScopeAttachments is the scope-wide attachments the root Aggregate's
-// subsystems contribute to one node: outer scope first, author order within each
-// scope, each paired with the scope that declared it.
+// scopeAttachments is the scope-wide attachments the subsystems of the document
+// declaring a node contribute to it — outer scope first, author order within each
+// scope, each paired with the scope that declared it — and the rank those
+// contributions take on a contested leaf.
 //
 // It is the one answer to which nodes those scopes reach. The attachment cascade
 // reads it, and so does the record of where each attachment a connection came
 // from was written, so the two cannot disagree about which nodes hold such an
 // attachment.
 //
-// A node an imported Aggregate contributed is reached by none of them. Its
-// subsystem path is relative to the document that declares it — a module's
-// component in the module's own subsystem "tier" carries the path "tier" — so
-// reading that path against the root Aggregate would hand the component whatever
-// the root declares under the same name: an attachment no document declared for
-// it. The node's own document is not read here either, so a scope-wide
-// attachment a module declares inside its own document reaches none of its
-// components through this tier.
-func rootScopeAttachments(topoNode *topology.TopologyNode, root *types.Aggregate) []namedFeature {
-	if topoNode == nil || topoNode.SubsystemPath == "" || root == nil || moduleContributed(topoNode) {
-		return nil
+// The document read is the one that declares the node, because a node's subsystem
+// path is relative to that document: a module's component in the module's own
+// subsystem "tier" carries the path "tier". A component the root Aggregate
+// declares reads the root Aggregate's subsystems. A component a module
+// contributed reads the module's own document, as flattening loaded it for that
+// import, and never the root Aggregate — reading its path against the root would
+// hand it whatever the root declares under the same name, an attachment no
+// document declared for it.
+//
+// The rank follows from which document that is. The root's scopes are the
+// composing document's shared reach. A module's are a composed document's shared
+// reach: below the module's own component attachments, which refine them leaf by
+// leaf, and below every declaration the composing document makes, which a module
+// cannot defeat by choosing a scope of its own.
+//
+// A module whose document the composition did not record contributes nothing,
+// which is the answer for a composition built without flattening a module.
+func scopeAttachments(
+	topoNode *topology.TopologyNode,
+	topo *topology.TopologyResult,
+	root *types.Aggregate,
+) ([]namedFeature, attachmentScope) {
+	if topoNode == nil || topoNode.SubsystemPath == "" {
+		return nil, scopeShared
 	}
-	return collectSubsystemFeatures(types.Normalize(root), topoNode.SubsystemPath)
+	if moduleContributed(topoNode) {
+		document, ok := topo.ModuleDocument(topoNode.SourceAggregate)
+		if !ok {
+			return nil, scopeComposedShared
+		}
+		return collectSubsystemFeatures(document, topoNode.SubsystemPath), scopeComposedShared
+	}
+	if root == nil {
+		return nil, scopeShared
+	}
+	return collectSubsystemFeatures(types.Normalize(root), topoNode.SubsystemPath), scopeShared
 }
 
 // collectSubsystemFeatures implements the per-subsystem cascade level:

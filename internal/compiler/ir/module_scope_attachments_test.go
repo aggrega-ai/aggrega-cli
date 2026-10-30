@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -43,8 +44,19 @@ type scopeFixture struct {
 	// "tiersecret".
 	rootAttaches bool
 	// moduleAttaches is whether the module's own subsystem declares the
-	// attachment "modsecret".
+	// attachment "modsecret". Its values name the module as the document it was
+	// written in, and carry a second leaf, "scope-only", no other declaration
+	// writes.
 	moduleAttaches bool
+	// innerAttaches is whether the module's nested subsystem "inner" declares the
+	// attachment "innersecret".
+	innerAttaches bool
+	// componentAttaches is whether the module's component "store" declares an
+	// attachment of its own, "storeown".
+	componentAttaches bool
+	// componentOverrides is whether "store" declares "modsecret" itself, naming
+	// the component as the place it was written.
+	componentOverrides bool
 }
 
 // scopeComponents is a set of components of one catalog type, in author order.
@@ -72,10 +84,25 @@ func buildScopeComposition(t *testing.T, f scopeFixture) (*topology.TopologyResu
 	t.Helper()
 
 	inner := types.Subsystem{Components: scopeComponents("replica")}
+	if f.innerAttaches {
+		inner.Features.Set("innersecret", scopeAttachmentFrom("module-inner"))
+	}
 	moduleScope := types.Subsystem{Components: scopeComponents("store")}
+	if f.componentAttaches || f.componentOverrides {
+		store, _ := moduleScope.Components.Get("store")
+		if f.componentAttaches {
+			store.Features.Set("storeown", scopeAttachmentFrom("module-component"))
+		}
+		if f.componentOverrides {
+			store.Features.Set("modsecret", scopeAttachmentFrom("component"))
+		}
+		moduleScope.Components.Set("store", store)
+	}
 	moduleScope.Subsystems.Set("inner", inner)
 	if f.moduleAttaches {
-		moduleScope.Features.Set("modsecret", scopeAttachmentFrom("module"))
+		modsecret := scopeAttachmentFrom("module")
+		modsecret.Values.Set("scope-only", "kept")
+		moduleScope.Features.Set("modsecret", modsecret)
 	}
 	moduleSubs := types.OrderedMap[types.Subsystem]{}
 	moduleSubs.Set(f.moduleScope, moduleScope)
@@ -137,7 +164,8 @@ func attachmentNames(graph *types.IRGraph, nodeID string) []string {
 // a scope-wide attachment the importing Aggregate declares reaches the components
 // that Aggregate declares in that scope, and never a module component that only
 // shares the scope's name; and that a module's own scope-wide attachment reaches
-// none of the module's components.
+// the module's components beneath that scope, nested ones included, and never
+// the importer's component sharing the scope's name.
 //
 // Every row first checks the coincidence is really there — the importer's
 // component and the module's component carry the same subsystem path — so a row
@@ -160,22 +188,26 @@ func TestBuildIR_AnImportersScopeAttachmentReachesOnlyTheComponentsItDeclares(t 
 			want:     map[string][]string{"ledger": {"tiersecret"}},
 		},
 		{
-			name:     "a module's own scope attachment reaches none of its components",
+			name:     "a module's own scope attachment reaches the module's components beneath it",
 			fixture:  scopeFixture{moduleScope: "tier", moduleAttaches: true},
 			samePath: true,
-			want:     map[string][]string{},
+			want:     map[string][]string{"sessions.store": {"modsecret"}, "sessions.replica": {"modsecret"}},
 		},
 		{
-			name:     "both declared under one scope name, the importer's stays with its own component",
+			name:     "both declared under one scope name, each stays with its own document's components",
 			fixture:  scopeFixture{moduleScope: "tier", rootAttaches: true, moduleAttaches: true},
 			samePath: true,
-			want:     map[string][]string{"ledger": {"tiersecret"}},
+			want: map[string][]string{
+				"ledger": {"tiersecret"}, "sessions.store": {"modsecret"}, "sessions.replica": {"modsecret"},
+			},
 		},
 		{
-			name:     "the control: a module scope under another name receives nothing either",
+			name:     "the control: a module scope under another name, each attachment reaches its own document's components",
 			fixture:  scopeFixture{moduleScope: "zone", rootAttaches: true, moduleAttaches: true},
 			samePath: false,
-			want:     map[string][]string{"ledger": {"tiersecret"}},
+			want: map[string][]string{
+				"ledger": {"tiersecret"}, "sessions.store": {"modsecret"}, "sessions.replica": {"modsecret"},
+			},
 		},
 	}
 	for _, tc := range cases {
@@ -223,6 +255,15 @@ func TestBuildIR_AnImportersScopeAttachmentReachesOnlyTheComponentsItDeclares(t 
 				if held, ok := entry.Get("tiersecret"); ok {
 					if writtenIn, _ := held.Values.Get("written-in"); writtenIn != "root" {
 						t.Errorf("ledger's tiersecret was written in %v, want the importer's (root)", writtenIn)
+					}
+				}
+			}
+			for _, node := range []string{"sessions.store", "sessions.replica"} {
+				if entry, ok := graph.Spec.FeatureValuesMapping.Get(node); ok {
+					if held, ok := entry.Get("modsecret"); ok {
+						if writtenIn, _ := held.Values.Get("written-in"); writtenIn != "module" {
+							t.Errorf("%s's modsecret was written in %v, want the module's", node, writtenIn)
+						}
 					}
 				}
 			}
@@ -277,5 +318,142 @@ func TestAttachmentOrigins_AModuleComponentIsNeverPositionedInTheImportersScope(
 					tc.node, origin.Site.ScopePath, origin.SourceFile, "tier", scopeRootFile)
 			}
 		})
+	}
+}
+
+// buildScopeGraph builds the graph of one fixture composition, failing the test
+// on a build error and on a panic.
+func buildScopeGraph(t *testing.T, f scopeFixture) *types.IRGraph {
+	t.Helper()
+	topo, res := buildScopeComposition(t, f)
+	var graph *types.IRGraph
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("the graph build panicked: %v", r)
+			}
+		}()
+		graph, _, _, err = buildIR(BuildIRConfig{
+			Topology:      topo,
+			ResolveResult: res,
+			CatalogLookup: testCatalog(),
+		})
+	}()
+	if err != nil {
+		t.Fatalf("graph build: %v", err)
+	}
+	return graph
+}
+
+// leafOf is one value leaf of one attachment a node holds, and whether it is
+// there.
+func leafOf(graph *types.IRGraph, nodeID, attachment, leaf string) (any, bool) {
+	held, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := held.Get(attachment)
+	if !ok {
+		return nil, false
+	}
+	return entry.Values.Get(leaf)
+}
+
+// TestBuildIR_AModuleScopeAttachmentExecutesWithinTheModulesTier proves where a
+// module's own subsystem attachments execute: directly after the module
+// component's own attachments, and outer subsystem before inner — the order the
+// graph records a node's attachments in, which is the order their mappings run.
+func TestBuildIR_AModuleScopeAttachmentExecutesWithinTheModulesTier(t *testing.T) {
+	t.Parallel()
+	graph := buildScopeGraph(t, scopeFixture{
+		moduleScope: "tier", moduleAttaches: true, innerAttaches: true, componentAttaches: true,
+	})
+	for node, want := range map[string][]string{
+		"sessions.store":   {"storeown", "modsecret"},
+		"sessions.replica": {"modsecret", "innersecret"},
+	} {
+		if got := attachmentNames(graph, node); !slices.Equal(got, want) {
+			t.Errorf("attachments on %q = %v, want %v", node, got, want)
+		}
+	}
+}
+
+// TestBuildIR_AModuleComponentRefinesItsSubsystemsAttachmentLeafByLeaf proves the
+// precedence on a contested leaf: an attachment the module's component declares
+// under the same name as one its own subsystem declares wins the leaf both write,
+// and the leaf only the subsystem writes survives — the narrower scope refines
+// the broader one inside the module exactly as it does in the Aggregate.
+func TestBuildIR_AModuleComponentRefinesItsSubsystemsAttachmentLeafByLeaf(t *testing.T) {
+	t.Parallel()
+	graph := buildScopeGraph(t, scopeFixture{moduleScope: "tier", moduleAttaches: true, componentOverrides: true})
+	if got, _ := leafOf(graph, "sessions.store", "modsecret", "written-in"); got != "component" {
+		t.Errorf("store's modsecret written-in = %v, want the component's (component)", got)
+	}
+	if got, _ := leafOf(graph, "sessions.store", "modsecret", "scope-only"); got != "kept" {
+		t.Errorf("store's modsecret scope-only = %v, want the subsystem's leaf kept", got)
+	}
+	// The nested component declares nothing of its own, so the subsystem's value
+	// stands there.
+	if got, _ := leafOf(graph, "sessions.replica", "modsecret", "written-in"); got != "module" {
+		t.Errorf("replica's modsecret written-in = %v, want the subsystem's (module)", got)
+	}
+}
+
+// TestAttachmentScope_AModulesSubsystemRanksBelowItsComponentsAndItsComposer pins
+// the rank a module's own subsystem attachment takes on a contested leaf: below
+// the module's own component attachments, and below every scope of the composing
+// document — the component scope and the shared scope alike — so a module cannot
+// defeat the Aggregate importing it by declaring at a scope of its own. Within the
+// module it outranks nothing it is compared with here.
+//
+// Only the comparison is asserted, because no composing-document contribution
+// reaches a module component's values in a build: the composing Aggregate's
+// scopes do not reach a module's components and the Release writes the other
+// pillar. The rank is what decides such a contest wherever one arises.
+func TestAttachmentScope_AModulesSubsystemRanksBelowItsComponentsAndItsComposer(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		higher attachmentScope
+		lower  attachmentScope
+	}{
+		{"the module's component over its subsystem", scopeComposedComponent, scopeComposedShared},
+		{"the composing document's shared scope over a module's subsystem", scopeShared, scopeComposedShared},
+		{"the composing document's component over a module's subsystem", scopeComponent, scopeComposedShared},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if !tc.higher.outranks(tc.lower) {
+				t.Errorf("%+v does not outrank %+v", tc.higher, tc.lower)
+			}
+			if tc.lower.outranks(tc.higher) {
+				t.Errorf("%+v outranks %+v", tc.lower, tc.higher)
+			}
+		})
+	}
+}
+
+// TestAttachmentOrigins_AModuleScopeAttachmentIsPositionedInTheModulesDocument
+// proves where a connection an attachment of a module's own subsystem draws is
+// recorded as written: the module's own file, at the subsystem that declares the
+// attachment — never the importing document.
+func TestAttachmentOrigins_AModuleScopeAttachmentIsPositionedInTheModulesDocument(t *testing.T) {
+	t.Parallel()
+	topo, res := buildScopeComposition(t, scopeFixture{moduleScope: "tier", moduleAttaches: true})
+	for _, node := range []string{"sessions.store", "sessions.replica"} {
+		topoNode, ok := topo.Nodes.Get(node)
+		if !ok {
+			t.Fatalf("the composition holds no node %q", node)
+		}
+		origin, recorded := attachmentOrigins(node, topoNode, topo, res)["modsecret"]
+		if !recorded {
+			t.Fatalf("%q has no origin for modsecret; want the module's scope", node)
+		}
+		if origin.SourceFile != scopeModuleFile || origin.Site.ScopePath != "tier" ||
+			origin.Document != constraint.AuthoringDocumentAggregate {
+			t.Errorf("%q's modsecret origin = %q in %q (%v), want %q in %q",
+				node, origin.Site.ScopePath, origin.SourceFile, origin.Document, "tier", scopeModuleFile)
+		}
 	}
 }

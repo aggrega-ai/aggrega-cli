@@ -388,7 +388,8 @@ func originOf(
 //
 // It walks the same four declaring tiers the attachment cascade walks, through
 // the same collectors, in the same order — a component's own attachment block,
-// then the Aggregate's scopes outward-in, then the Release's scopes, then
+// then the scopes of the document declaring the component outward-in, then the
+// Release's scopes, then
 // the Release's own entry for the component. Reading them through the same
 // collectors is what keeps this answer and the cascade's per-leaf answer from
 // being two readings free to disagree.
@@ -449,13 +450,21 @@ func attachmentTiers(
 	if res == nil {
 		return out, shared
 	}
-	for _, sf := range rootScopeAttachments(topoNode, res.Aggregate) {
+	// A scope attachment was written in the document declaring the node: the
+	// Aggregate's own file for a component it declares, and the module's file for
+	// a component a module contributed.
+	scopeFile := res.AggregatePath
+	if moduleContributed(topoNode) {
+		scopeFile = topoNode.SourceFile
+	}
+	scoped, _ := scopeAttachments(topoNode, topo, res.Aggregate)
+	for _, sf := range scoped {
 		record(sf.name, constraint.ConnectionOrigin{
 			Kind:       constraint.OriginAttachment,
 			Attachment: sf.name,
 			Site:       constraint.AuthoredSite{ScopePath: sf.scopePath},
 			Document:   constraint.AuthoringDocumentAggregate,
-			SourceFile: res.AggregatePath,
+			SourceFile: scopeFile,
 		})
 	}
 	if res.Release == nil {

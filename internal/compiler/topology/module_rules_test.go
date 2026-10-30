@@ -6,7 +6,6 @@ package topology
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -184,16 +183,35 @@ func TestBuildAsksTheModuleRulesOfEachModuleDocument(t *testing.T) {
 				}
 				return
 			}
-			if !errors.Is(err, tc.want) {
-				t.Fatalf("want %v; got %v", tc.want, err)
-			}
-			for _, part := range []string{"Aggregate mods/data", tc.locator} {
-				if !strings.Contains(err.Error(), part) {
-					t.Errorf("the halt does not name %q: %v", part, err)
-				}
-			}
+			assertFinding(t, err, tc.want, "Aggregate mods/data", tc.locator)
 		})
 	}
+}
+
+// assertFinding asserts the build halted with a grouped refusal holding a finding
+// under the given condition that names the given document and sits at the given
+// key. The group's own rendering carries only a count of its findings, so each
+// finding is read from the group rather than from that rendering.
+func assertFinding(t *testing.T, err error, want error, document, locator string) {
+	t.Helper()
+	if !errors.Is(err, want) {
+		t.Fatalf("want %v; got %v", want, err)
+	}
+	var multi *resolver.MultiResolverError
+	if !errors.As(err, &multi) {
+		t.Fatalf("want a grouped refusal; got %v", err)
+	}
+	var seen []string
+	for _, v := range multi.Violations {
+		if !errors.Is(v, want) {
+			continue
+		}
+		if v.Entity == document && v.Field == locator {
+			return
+		}
+		seen = append(seen, v.Entity+" at "+v.Field)
+	}
+	t.Errorf("no finding under %v names %q at %q; the findings under it name %v", want, document, locator, seen)
 }
 
 // TestBuildAsksTheReleaseAttachmentSocketRuleOfAModuleComponent proves an
@@ -237,14 +255,8 @@ spec:
                   link:
                     target: mod.api
 `))
-	if !errors.Is(err, resolver.ErrUnknownUsesSocket()) {
-		t.Fatalf("want ErrUnknownUsesSocket for a Release attachment wiring an undeclared socket on a module component; got %v", err)
-	}
-	for _, part := range []string{"Release rel", `.mod.api.features["scrape"].uses["invented-socket"]`} {
-		if !strings.Contains(err.Error(), part) {
-			t.Errorf("the halt does not name %q: %v", part, err)
-		}
-	}
+	assertFinding(t, err, resolver.ErrUnknownUsesSocket(),
+		"Release rel", `.mod.api.features["scrape"].uses["invented-socket"]`)
 
 	if err := buildWithModule(t, moduleSpec, release(t, "")); errors.Is(err, resolver.ErrUnknownUsesSocket()) {
 		t.Fatalf("an attachment wiring no socket must not halt under the socket rule; got %v", err)
@@ -277,14 +289,7 @@ func TestBuildAsksTheModuleRulesOfANestedModule(t *testing.T) {
 `,
 		"mods/inner": forbiddenFileDelivery,
 	}, nil)
-	if !errors.Is(err, resolver.ErrSelfInjectForbidden()) {
-		t.Fatalf("want ErrSelfInjectForbidden from the nested module's document; got %v", err)
-	}
-	for _, part := range []string{"Aggregate mods/inner", ".spec.components.api.inject.file"} {
-		if !strings.Contains(err.Error(), part) {
-			t.Errorf("the halt does not name %q: %v", part, err)
-		}
-	}
+	assertFinding(t, err, resolver.ErrSelfInjectForbidden(), "Aggregate mods/inner", ".spec.components.api.inject.file")
 }
 
 // TestBuildReportsAModuleImportedTwiceOnce proves one fault in a module the

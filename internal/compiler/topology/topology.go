@@ -104,6 +104,33 @@ type TopologyResult struct {
 	//
 	// Nil under exactly the condition StageView is nil, and for the same reason.
 	StageCoordinates StageAxes
+
+	// moduleDocuments is the document of every sub-module the composition brought
+	// in, keyed by the dotted prefix its components carry. It is read by lookup
+	// only, through [TopologyResult.ModuleDocument], so no output depends on an
+	// iteration order over it.
+	moduleDocuments map[string]types.NormalizedAggregate
+}
+
+// ModuleDocument returns the document of the sub-module whose components carry
+// the given prefix — a node's [TopologyNode.SourceAggregate] — as flattening
+// loaded it, with the parameters that import resolved it under already applied.
+//
+// A module's own declarations exist nowhere else once its components have been
+// merged into the composition, so a later stage asking what a module declared
+// about a scope of its own — the attachments one of its subsystems carries —
+// reads that document here rather than loading the module a second time. A
+// module imported twice is two entries, one per prefix, because each import may
+// resolve the document under different parameters.
+//
+// Returns false for the empty prefix, which is the Aggregate's own and not a
+// module's, and for a result no flattening produced.
+func (r *TopologyResult) ModuleDocument(prefix string) (types.NormalizedAggregate, bool) {
+	if r == nil || prefix == "" {
+		return types.NormalizedAggregate{}, false
+	}
+	document, ok := r.moduleDocuments[prefix]
+	return document, ok
 }
 
 // StageAxes is every axis a rule over the flattened composition is invoked once
@@ -817,6 +844,10 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		ExportedComponentsDeclared: declaredExports,
 		Pruned:                     flat.Pruned,
 		DeclaringSubsystems:        flat.DeclaringSubsystems,
+		moduleDocuments:            make(map[string]types.NormalizedAggregate, len(flat.ModuleDocuments)),
+	}
+	for _, module := range flat.ModuleDocuments {
+		result.moduleDocuments[module.path] = module.document
 	}
 	// Assigned only when one was built. Storing an absent presentation directly
 	// would leave the field non-nil while the value behind it is not there, so a

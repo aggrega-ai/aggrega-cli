@@ -90,6 +90,9 @@ type flattenResult struct {
 
 // loadedModule is one sub-module's own document, as flattening loaded it.
 type loadedModule struct {
+	// path is the module's dotted prefix, as [ModuleDeclaration.Path] carries it:
+	// the prefix every component the module contributes carries.
+	path string
 	// document is the module's Aggregate, normalized as flattening walked it.
 	document types.NormalizedAggregate
 	// parameters is the parameter context the module resolved under.
@@ -307,6 +310,7 @@ func flattenAggregate(
 			// core, which does — hands back the identical value.
 			childDocument := types.Normalize(childAgg)
 			result.ModuleDocuments = append(result.ModuleDocuments, loadedModule{
+				path:       childPrefix,
 				document:   childDocument,
 				parameters: childParams,
 			})
