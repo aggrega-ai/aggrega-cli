@@ -386,17 +386,22 @@ func NewRemoteRegistry(host string, httpClient *http.Client) (*remote.Registry, 
 // Docker configuration file, with credential-helper delegation honoured — where
 // `aggrega login` and `docker login` write, and no other tool's store. The wiring
 // lives here once so the repository and registry clients cannot diverge.
+//
+// A failure of the credential store — opening it here, or reading an entry when a
+// registry asks for a credential — is reported in a fixed sentence naming the
+// registry and the credential file, never in the store's own words, which can
+// quote what the file holds. See credentialStoreError.
 func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client *auth.Client, err error) {
 	if httpClient == nil {
 		return false, nil, fmt.Errorf("oci: nil egress client; obtain the HTTP client from pkg/egress before constructing a remote target")
 	}
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
-		return false, nil, fmt.Errorf("oci: credential store: %w", err)
+		return false, nil, unreadableCredentialFile(registryHost, err)
 	}
 	return registryhost.IsLoopback(registryHost), &auth.Client{
 		Client:     httpClient,
-		Credential: credentials.Credential(store),
+		Credential: storeCredential(store),
 	}, nil
 }
 
