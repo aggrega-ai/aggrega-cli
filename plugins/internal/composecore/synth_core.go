@@ -558,7 +558,7 @@ func translateContainer(
 
 	// Volume mounts (typed list — VolumeMount carries Name + Path + ReadOnly).
 	// The Workload volume's variant decides the compose primitive.
-	for _, vm := range c.VolumeMounts {
+	for i, vm := range c.VolumeMounts {
 		spec, ok := w.Volumes.Get(vm.Name)
 		if !ok {
 			// Unknown mount target. Schema validation should reject this; the
@@ -574,6 +574,17 @@ func translateContainer(
 		}
 
 		entry := volumeMountEntry(vm, spec, mainServiceName)
+		// A subPath reaches the output on the entry's volume options or the build
+		// halts; there is no third outcome. A mount Compose delivers through a
+		// primitive with no subpath form would otherwise mount the whole volume at
+		// the path, which is a different mount from the one written. The caller
+		// prefixes the node and the container, so the sentence opens at the mount.
+		if vm.SubPath != "" && entry.Volume == nil {
+			return Service{}, nil, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
+				cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+				fmt.Sprintf("%s.volumeMounts[%d] mounts volume %q at %q with subPath %q, and compose delivers that volume as %s, which has no form for mounting part of it: remove subPath from the mount, or mount a persistent volume, whose subPath compose realizes",
+					containerPath, i, vm.Name, vm.Path, vm.SubPath, subpathlessPrimitive(entry.Type)))
+		}
 		switch entry.Type {
 		case volumeRedirectTmpfs:
 			// compose's `tmpfs:` is a top-level service field, not a
@@ -689,6 +700,20 @@ const (
 	volumeRedirectConfig = "config"
 )
 
+// subpathlessPrimitive names, for a mount refused for its subPath, the compose
+// primitive the mount's volume is delivered as.
+func subpathlessPrimitive(entryType string) string {
+	switch entryType {
+	case volumeRedirectTmpfs:
+		return "a tmpfs mount"
+	case volumeRedirectConfig:
+		return "a configs: reference"
+	case "bind":
+		return "a bind mount"
+	}
+	return "a " + entryType + " mount"
+}
+
 // volumeMountEntry produces the compose ServiceVolume entry for a given
 // (VolumeMount, VolumeSpec) pair. Two variants return a redirect marker in the
 // Type field instead of a volumes: entry, and the caller moves each to the
@@ -696,6 +721,12 @@ const (
 // volumeRedirectTmpfs (compose tmpfs is a service field, not a volumes: entry),
 // and a configmap volume returns volumeRedirectConfig carrying the configmap
 // name in Source and the mount path in Target.
+//
+// The mount's subPath is carried on the entry's volume options for the two
+// variants delivered as a compose named volume, which of the mount types emitted
+// here is the only one the Compose Specification gives a subpath. Every other
+// entry leaves the options nil, and the caller refuses a subPath on such an entry
+// rather than mounting the whole volume.
 func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string) ServiceVolume {
 	switch {
 	case spec.Ephemeral != nil:
@@ -733,16 +764,18 @@ func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string
 			Source:   volumeName(nodeID, vm.Name),
 			Target:   vm.Path,
 			ReadOnly: vm.ReadOnly,
+			Volume:   subpathOptions(vm.SubPath),
 		}
 	case spec.PersistentTemplate != nil:
 		// Degraded: same shape as persistent. Compose cannot express
 		// per-replica templating; the warning is documented in the package
-		// godoc and surfaces in the Layer-2 doc.
+		// godoc and in the compose provider reference.
 		return ServiceVolume{
 			Type:     "volume",
 			Source:   volumeName(nodeID, vm.Name),
 			Target:   vm.Path,
 			ReadOnly: vm.ReadOnly,
+			Volume:   subpathOptions(vm.SubPath),
 		}
 	default:
 		// Unrecognised variant — defensive degradation. Schema validation

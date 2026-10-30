@@ -114,7 +114,9 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 		return SourcedRender{}, err
 	}
 	origins := buildSingleOriginMap(merged, nodeCtx)
-	injectAggregaLabelsIntoServices(merged, origins)
+	if err := injectAggregaLabelsIntoServices(merged, origins, nodeCtx.NodeID, sourcePath); err != nil {
+		return SourcedRender{}, err
+	}
 
 	body, err := rendercore.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
 	if err != nil {

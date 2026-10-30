@@ -539,11 +539,33 @@ func (ServiceModels) walkFragmentKeys(w *fragmentKeyWalk, node *yaml.Node, path 
 // ServiceVolume is one entry in a service's volumes: list. Compose's "long
 // form" — the synthesizer always emits long-form for clarity and for fields
 // (read_only, type) that the short form `host:container:mode` cannot express.
+//
+// Volume carries the options Compose defines for a mount of `type: volume`; it is
+// nil, and absent from the emitted entry, wherever no option is set.
 type ServiceVolume struct {
-	Type     string `yaml:"type"` // "bind" or "volume" or "tmpfs"
-	Source   string `yaml:"source,omitempty"`
-	Target   string `yaml:"target"`
-	ReadOnly bool   `yaml:"read_only,omitempty"`
+	Type     string                `yaml:"type"` // "bind" or "volume" or "tmpfs"
+	Source   string                `yaml:"source,omitempty"`
+	Target   string                `yaml:"target"`
+	ReadOnly bool                  `yaml:"read_only,omitempty"`
+	Volume   *ServiceVolumeOptions `yaml:"volume,omitempty"`
+}
+
+// ServiceVolumeOptions is the `volume:` block of a long-form volumes: entry of
+// `type: volume`. Subpath mounts the named directory or file inside the volume at
+// the entry's target instead of the volume root, so two entries naming one volume
+// with two different subpaths see two different parts of it. The Compose
+// Specification gives a bind or tmpfs mount no subpath form.
+type ServiceVolumeOptions struct {
+	Subpath string `yaml:"subpath,omitempty"`
+}
+
+// subpathOptions returns the volume options that mount subPath, or nil for a
+// mount of the whole volume, so an entry with no subPath emits no volume: block.
+func subpathOptions(subPath string) *ServiceVolumeOptions {
+	if subPath == "" {
+		return nil
+	}
+	return &ServiceVolumeOptions{Subpath: subPath}
 }
 
 // Volume is a top-level named volume declaration. Compose top-level volumes

@@ -110,23 +110,30 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 	t.Parallel()
 	ctx := renderer.NodeRenderContext{NodeID: "n", LabelComponentID: "comp"}
 
+	inject := func(doc map[string]any, origins map[string]renderer.NodeRenderContext) {
+		t.Helper()
+		if err := injectAggregaLabelsIntoServices(doc, origins, "n", "src.yaml"); err != nil {
+			t.Fatalf("injectAggregaLabelsIntoServices: %v", err)
+		}
+	}
+
 	// nil doc → no-op (no panic).
-	injectAggregaLabelsIntoServices(nil, map[string]renderer.NodeRenderContext{"web": ctx})
+	inject(nil, map[string]renderer.NodeRenderContext{"web": ctx})
 
 	// Empty origins → no-op.
 	doc := map[string]any{"services": map[string]any{"web": map[string]any{}}}
-	injectAggregaLabelsIntoServices(doc, nil)
+	inject(doc, nil)
 	if _, has := doc["services"].(map[string]any)["web"].(map[string]any)["labels"]; has {
 		t.Errorf("empty origins should leave services untouched")
 	}
 
 	// No services key → no-op.
 	noSvc := map[string]any{"version": "3"}
-	injectAggregaLabelsIntoServices(noSvc, map[string]renderer.NodeRenderContext{"web": ctx})
+	inject(noSvc, map[string]renderer.NodeRenderContext{"web": ctx})
 
 	// services is not a map → no-op.
 	badShape := map[string]any{"services": []any{}}
-	injectAggregaLabelsIntoServices(badShape, map[string]renderer.NodeRenderContext{"web": ctx})
+	inject(badShape, map[string]renderer.NodeRenderContext{"web": ctx})
 
 	// Service not in origins → preserved untouched.
 	docMixed := map[string]any{
@@ -135,7 +142,7 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 			"author-svc": map[string]any{"image": "x"},
 		},
 	}
-	injectAggregaLabelsIntoServices(docMixed, map[string]renderer.NodeRenderContext{
+	inject(docMixed, map[string]renderer.NodeRenderContext{
 		"web": ctx,
 	})
 	svc := docMixed["services"].(map[string]any)
@@ -150,7 +157,7 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 
 	// Service value is not a map → continue (no panic).
 	badSvc := map[string]any{"services": map[string]any{"weird": 42}}
-	injectAggregaLabelsIntoServices(badSvc, map[string]renderer.NodeRenderContext{"weird": ctx})
+	inject(badSvc, map[string]renderer.NodeRenderContext{"weird": ctx})
 
 	// Existing labels (map[string]any with string vals) merged; one written as
 	// null is kept as a null.
@@ -161,7 +168,7 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 			},
 		},
 	}
-	injectAggregaLabelsIntoServices(docWithLabels, map[string]renderer.NodeRenderContext{"web": ctx})
+	inject(docWithLabels, map[string]renderer.NodeRenderContext{"web": ctx})
 	webSvc = docWithLabels["services"].(map[string]any)["web"].(map[string]any)
 	mergedLabels := webSvc["labels"].(map[string]any)
 	if mergedLabels["tier"] != "backend" {
