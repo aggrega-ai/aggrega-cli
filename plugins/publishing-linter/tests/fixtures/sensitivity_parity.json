@@ -29,13 +29,16 @@
     "compiler-side truth, measured from the compiler's own reader.",
     "",
     "`guestReadable` records which side of one line each case sits on. A pillar node",
-    "that is a reference, a composition, or an escaped body authored as YAML text is a",
-    "shape the plugin cannot enumerate: a reference target is merged in before either",
-    "reader sees the entity, a composition carries its properties inside its branches,",
-    "and a text body needs a YAML parser this crate does not have. For those the",
-    "plugin reports UNKNOWN rather than a key set, which is why the divergence is",
-    "recorded here rather than hidden. Every other case is a shape both readers must",
-    "agree on exactly."
+    "that is a reference is read through the definition it points at, with any",
+    "property map written beside the reference read too, when the pointer resolves",
+    "inside the pillar node — the document the compiler compiles that pillar as. A",
+    "reference resolving nowhere inside it, a composition, and an escaped body",
+    "authored as YAML text are shapes the plugin cannot enumerate: the first names a",
+    "target the plugin cannot see, a composition carries its properties inside its",
+    "branches, and a text body needs a YAML parser this crate does not have. For",
+    "those the plugin reports UNKNOWN rather than a key set, which is why the",
+    "divergence is recorded here rather than hidden. Every other case is a shape both",
+    "readers must agree on exactly."
   ],
   "leafCases": [
     {
@@ -410,6 +413,96 @@
       "guestBlindPaths": { "values": ["x"] }
     },
     {
+      "name": "pillar-node-reference-declares-through-its-target",
+      "why": "A pillar whose own node is a reference is read through the definition it points at, so a marked leaf there is collected at its own path below the pillar and an unmarked sibling is not.",
+      "schema": {
+        "values": {
+          "$ref": "#/$defs/Creds",
+          "$defs": {
+            "Creds": {
+              "design": { "type": "string", "sensitive": true },
+              "theme": { "type": "string" }
+            }
+          }
+        }
+      },
+      "expect": { "values": ["design"] }
+    },
+    {
+      "name": "pillar-node-reference-at-the-document-root-resolves-too",
+      "why": "The document root is a reference scope for a pillar node as it is for a property, so the same pointer resolves from the outer scope.",
+      "schema": {
+        "$defs": {
+          "Creds": { "properties": { "secret": { "type": "string", "sensitive": true }, "host": { "type": "string" } } }
+        },
+        "values": { "$ref": "#/$defs/Creds" }
+      },
+      "expect": { "values": ["secret"] }
+    },
+    {
+      "name": "pillar-node-reference-beside-properties-declares-from-both",
+      "why": "A reference on the pillar node composes with a property map written beside it, so a declaration in either is collected.",
+      "schema": {
+        "values": {
+          "$ref": "#/$defs/Creds",
+          "$defs": { "Creds": { "properties": { "token": { "type": "string", "sensitive": true } } } },
+          "properties": {
+            "password": { "type": "string", "sensitive": true },
+            "host": { "type": "string" }
+          }
+        }
+      },
+      "expect": { "values": ["password", "token"] }
+    },
+    {
+      "name": "pillar-node-reference-chain-is-followed",
+      "why": "A target that is itself a reference is followed in turn, and its own property map declares as well.",
+      "schema": {
+        "values": {
+          "$ref": "#/$defs/Outer",
+          "$defs": {
+            "Outer": { "$ref": "#/$defs/Inner", "properties": { "pin": { "type": "string", "sensitive": true } } },
+            "Inner": { "properties": { "key": { "type": "string", "sensitive": true }, "label": { "type": "string" } } }
+          }
+        }
+      },
+      "expect": { "values": ["key", "pin"] }
+    },
+    {
+      "name": "pillar-node-unresolvable-reference-adds-nothing",
+      "why": "A pillar has no path of its own to collect in place of a target nobody can find, so the property map beside the pointer is all that declares.",
+      "schema": {
+        "values": {
+          "$ref": "#/$defs/Missing",
+          "properties": { "pw": { "type": "string", "sensitive": true }, "host": { "type": "string" } }
+        }
+      },
+      "expect": { "values": ["pw"] }
+    },
+    {
+      "name": "pillar-node-self-reference-terminates",
+      "why": "A pointer naming the pillar node itself revisits it, which ends the walk rather than recursing.",
+      "schema": {
+        "values": {
+          "$ref": "#",
+          "properties": { "pw": { "type": "string", "sensitive": true }, "host": { "type": "string" } }
+        }
+      },
+      "expect": { "values": ["pw"] }
+    },
+    {
+      "name": "pillar-node-reference-marker-on-the-pillar-declares-nothing",
+      "why": "No single datum sits at a pillar node, so a marker written there beside the reference declares nothing on either side.",
+      "schema": {
+        "values": {
+          "$ref": "#/$defs/Creds",
+          "sensitive": true,
+          "$defs": { "Creds": { "host": { "type": "string" } } }
+        }
+      },
+      "expect": {}
+    },
+    {
       "name": "pillar-root-as-a-leaf-declares-nothing",
       "why": "A pillar whose own node reads as a leaf exposes no properties, so nothing is collected — the shape an author hits when naming a property `sensitive`.",
       "schema": { "values": { "sensitive": true } },
@@ -564,17 +657,45 @@
       "guestReadable": false
     },
     {
-      "name": "reference-pillar-is-unreadable-in-the-guest",
-      "why": "A pillar that is a bare reference. The compiler leaves the pointer in place and so exposes no property map; the plugin cannot know that and reports unknown rather than guessing empty.",
+      "name": "reference-pillar-exposes-its-target-properties",
+      "why": "A pillar that is a bare reference to a definition authored on the pillar node. The contract is the definition's, so its property names are the published keys on both sides.",
+      "schema": {"provides": {"$ref": "#/$defs/Contract", "$defs": {"Contract": {"properties": {"endpoint": {"type": "string"}}}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "reference-pillar-with-sibling-properties-exposes-both",
+      "why": "A reference carrying a sibling property map. The reference target and the sibling map both shape the contract, so the published keys are the names of both.",
+      "schema": {"provides": {"$ref": "#/$defs/Contract", "$defs": {"Contract": {"properties": {"model": {"type": "string"}}}}, "properties": {"endpoint": {"type": "string"}}}},
+      "expectKeys": ["endpoint", "model"],
+      "guestReadable": true
+    },
+    {
+      "name": "reference-pillar-chain-exposes-every-target",
+      "why": "A target that is itself a reference is followed in turn, nearest definitions block first, and every property map along the chain contributes its names.",
+      "schema": {"provides": {"$ref": "#/$defs/Outer", "$defs": {"Outer": {"$ref": "#/$defs/Inner", "properties": {"model": {"type": "string"}}}, "Inner": {"properties": {"endpoint": {"type": "string"}}}}}},
+      "expectKeys": ["endpoint", "model"],
+      "guestReadable": true
+    },
+    {
+      "name": "self-referencing-pillar-terminates",
+      "why": "A pointer naming the pillar node itself revisits it, which ends the chain; the names are the pillar's own.",
+      "schema": {"provides": {"$ref": "#", "properties": {"endpoint": {"type": "string"}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "reference-pillar-pointing-outside-the-pillar-is-unreadable-in-the-guest",
+      "why": "The compiler compiles a pillar as its own document, so a pointer resolving only against a definitions block beside the pillars finds nothing there and the pillar exposes no name; the plugin cannot see what the pointer names and reports unknown rather than guessing empty.",
       "schema": {"provides": {"$ref": "#/$defs/Contract"}, "$defs": {"Contract": {"properties": {"endpoint": {"type": "string"}}}}},
       "expectKeys": [],
       "guestReadable": false
     },
     {
-      "name": "reference-pillar-with-sibling-properties-exposes-them-and-is-unreadable-in-the-guest",
-      "why": "A reference carrying a sibling property map. The map is read as the pillar's own properties, so the compiler exposes the authored names; the reference target shapes the contract too and its properties are not among them, so the plugin reports unknown rather than a set it knows to be partial.",
-      "schema": {"provides": {"$ref": "#/$defs/Contract", "properties": {"endpoint": {"type": "string"}}}, "$defs": {"Contract": {"type": "object"}}},
-      "expectKeys": ["endpoint"],
+      "name": "reference-pillar-to-a-composition-is-unreadable-in-the-guest",
+      "why": "A reference whose target is a composition. Neither reader enters a pillar's contract through a branch, so the compiler exposes no name; the branches carry properties, so the plugin reports unknown as it does for a composition on the pillar node.",
+      "schema": {"provides": {"$ref": "#/$defs/Contract", "$defs": {"Contract": {"allOf": [{"properties": {"endpoint": {"type": "string"}}}]}}}},
+      "expectKeys": [],
       "guestReadable": false
     },
     {

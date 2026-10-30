@@ -93,7 +93,7 @@ fn load_fixture() -> Value {
 /// copy cannot disagree with itself, and disagreement is the signal.
 /// When the fixture changes, both copies move, and a change that updates
 /// only one is exactly the half-verified state this pins.
-const SENSITIVITY_PARITY_FIXTURE_REVISION: &str = "e167c0ee91c5720f";
+const SENSITIVITY_PARITY_FIXTURE_REVISION: &str = "5813a618835a4855";
 
 fn string_set(v: Option<&Value>) -> BTreeSet<String> {
     v.and_then(Value::as_array)

@@ -448,7 +448,11 @@ func pillarConformanceFindings(
 	// failing leaf plus each ancestor object). Keep only the leaf-most findings
 	// — drop any whose FieldPath is a strict segment-wise prefix of another's —
 	// so one violation maps to one finding while independent violations stay
-	// distinct.
+	// distinct. The reduction reads paths alone, so one independent violation
+	// does not stay distinct: a definition checked whole at the position holding
+	// a reference written beside other keywords is reported at that position, and
+	// a finding beneath it drops that report until the deeper one is fixed. The
+	// pillar still fails, so nothing builds past it.
 	leaves := leafmostFindings(rpt.Findings)
 
 	declared := DeclaredSensitiveLeaves(compiled)
@@ -456,7 +460,9 @@ func pillarConformanceFindings(
 	out := make([]pillarFinding, 0, len(leaves))
 	for _, f := range leaves {
 		reason := f.Message
-		if findingOnSensitiveLeaf(declared, pillar, f.FieldPath) && !reportsAnAbsentValue(f) {
+		reachesDeclared := findingOnSensitiveLeaf(declared, pillar, f.FieldPath) ||
+			findingAboveSensitiveLeaf(declared, pillar, f.FieldPath)
+		if reachesDeclared && !reportsAnAbsentValue(f) {
 			reason = redact.Placeholder()
 		}
 		out = append(out, pillarFinding{path: f.FieldPath, keyword: f.Keyword, reason: reason})
@@ -484,6 +490,30 @@ func findingOnSensitiveLeaf(declared SensitiveLeaves, pillar, fieldPath string) 
 		return false
 	}
 	return declared.Covers(fieldPath)
+}
+
+// findingAboveSensitiveLeaf reports whether a validator finding landed on a
+// position that holds, beneath it, a leaf the entity's schema declares sensitive:
+// the pillar root of a pillar declaring one, or an object above a declared leaf.
+// fieldPath leads with the pillar name, as in findingOnSensitiveLeaf, and a path
+// leading with another pillar's name reports false.
+//
+// A finding at such a position can quote the declared value even though no
+// declaration covers the position itself. Where a reference is written beside
+// other keywords, the validator checks the definition it names whole, at the
+// position holding the reference, and reports a failure inside that definition
+// there — quoting the refused value from beneath. The finding's path then names
+// the holder rather than the leaf, so the upward reading alone lets the value
+// through.
+func findingAboveSensitiveLeaf(declared SensitiveLeaves, pillar, fieldPath string) bool {
+	if fieldPath == pillar {
+		return declared.holdsBeneath(pillar, "")
+	}
+	path, ok := strings.CutPrefix(fieldPath, pillar+".")
+	if !ok || path == "" {
+		return false
+	}
+	return declared.holdsBeneath(pillar, path)
 }
 
 // reportsAnAbsentValue reports whether a finding is about a value that is not
@@ -551,6 +581,12 @@ func isStrictSegmentPrefix(a, b string) bool {
 }
 
 // pillarSubSchema returns compiled.properties.<pillar> as a JSON Schema map.
+//
+// A whole-entity compile nests a pillar one level deeper than a compile of the
+// pillar node alone, so a reader holding a whole-entity schema navigates here
+// first and then reads the pillar node exactly as a reader holding the pillar
+// alone does — through pillarPropertyMaps, the one answer to what a pillar
+// declares.
 func pillarSubSchema(compiled compactform.Schema, pillar string) (map[string]any, bool) {
 	props, ok := compiled["properties"].(map[string]any)
 	if !ok {
@@ -558,27 +594,6 @@ func pillarSubSchema(compiled compactform.Schema, pillar string) (map[string]any
 	}
 	sub, ok := props[pillar].(map[string]any)
 	return sub, ok
-}
-
-// pillarProperties returns the compiled property map of one named pillar inside
-// a whole-entity compiled schema, and false when the schema declares no such
-// pillar or the pillar declares no properties.
-//
-// A whole-entity compile nests a pillar one level deeper than a compile of the
-// pillar node alone — properties -> <pillar> -> properties — so a reader holding
-// a whole-entity schema takes one hop more than a reader holding the pillar
-// alone. It layers on pillarSubSchema rather than repeating its navigation, so
-// the two cannot disagree about where a pillar sits.
-func pillarProperties(compiled compactform.Schema, pillar string) (map[string]any, bool) {
-	sub, ok := pillarSubSchema(compiled, pillar)
-	if !ok {
-		return nil, false
-	}
-	props, ok := sub["properties"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	return props, true
 }
 
 // normalisePillarInstance converts an authored OrderedMap pillar into the

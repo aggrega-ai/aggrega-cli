@@ -40,10 +40,11 @@ func decodeFromEntries(raw any) []fromEntry {
 
 // ComponentProvidesKeys returns the set of declared `provides` keys for a
 // catalog Component — the output contract a realizing Recipe must publish. The
-// keys are the property names of the `provides` pillar in the Component's
-// spec.schema, compiled to JSON Schema 2020-12 via pkg/compactform (the same
-// compile path the provider-base and pillar validators use). A Component with
-// no spec.schema, no `provides` pillar, or a `provides` pillar that compiles to
+// keys are the property names the `provides` pillar in the Component's
+// spec.schema declares, its own and those of a definition an in-document $ref on
+// the pillar node names, compiled to JSON Schema 2020-12 via pkg/compactform (the
+// same compile path the provider-base and pillar validators use). A Component
+// with no spec.schema, no `provides` pillar, or a `provides` pillar that declares
 // no properties yields an empty set. Mirrors FeatureProvidesKeys; both delegate
 // to pillarKeysFromSchema.
 //
@@ -58,8 +59,8 @@ func ComponentProvidesKeys(comp types.Component, libraries map[string]types.Sche
 // it. It reads the pillar exactly as ComponentProvidesKeys reads `provides`:
 // compiled through pkg/compactform, with cross-document $ref expansion against
 // the supplied SchemaLibraries, and empty for a Component declaring no values
-// pillar or one that compiles to no properties. Only the names are read; no
-// value and no default is.
+// pillar or one that declares no properties. Only the names are read; no value
+// and no default is.
 func ComponentValuesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
 	return pillarKeysFromSchema(comp.Spec.Schema, "values", libraries)
 }
@@ -75,6 +76,13 @@ func FeatureProvidesKeys(feat types.Feature, libraries map[string]types.SchemaLi
 // spec.schema node declares (compact-form-aware). Empty when the schema declares
 // no such pillar or the pillar fails to compile (the pillar validator reports
 // that fault).
+//
+// The names are those of every property map the compiled pillar declares, read
+// through pillarPropertyMaps: a pillar written as an in-document reference
+// publishes the names its target declares, and one written as a reference beside
+// a property map publishes the names of both. The pillar is compiled alone, so
+// its own node is the document a pointer on it resolves against — the same
+// document the pillar validator builds from.
 func pillarKeysFromSchema(schema yaml.Node, pillar string, libraries map[string]types.SchemaLibrary) map[string]bool {
 	keys := map[string]bool{}
 	node := &schema
@@ -110,12 +118,10 @@ func pillarKeysFromSchema(schema yaml.Node, pillar string, libraries map[string]
 		// than emitting a second diagnostic for the same fault.
 		return keys
 	}
-	props, ok := compiled["properties"].(compactform.Schema)
-	if !ok {
-		return keys
-	}
-	for k := range props {
-		keys[k] = true
+	for _, declared := range pillarPropertyMaps(compiled, nil) {
+		for k := range declared.properties {
+			keys[k] = true
+		}
 	}
 	return keys
 }

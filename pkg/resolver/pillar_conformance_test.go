@@ -315,43 +315,182 @@ values:
 	}
 }
 
-// TestPillarConformance_WholePillarBehindAReferenceStillEscapes pins the ONE
-// shape the declaration reader still does not reach: a pillar whose own node is a
-// reference, with no `properties` of its own. The reader locates a pillar's
-// declarations through the property map that pillar exposes, so a pillar that
-// exposes none has nothing to walk and the declaration inside the target is never
-// seen.
+// TestPillarConformance_WholePillarBehindAReferenceIsWithheld pins that a
+// declaration reached through a reference is withheld wherever the refusal lands.
+// The declaration reader resolves a reference on the pillar node, and this
+// diagnostic surface withholds a finding on a declared leaf and a finding on a
+// position holding one beneath it. There is no second walk here: both readings
+// ask the declarations the reader collected.
 //
-// It is deliberately an assertion that the leak EXISTS, so the gap is an
-// executable fact rather than a rediscovery. The day the reader learns to resolve
-// a reference on the pillar node itself, this test fails and whoever closes that
-// gap is told this diagnostic surface follows for free. The fix belongs to the
-// reader, once, not to a second walk grown here.
-func TestPillarConformance_WholePillarBehindAReferenceStillEscapes(t *testing.T) {
+// Where the reference is the whole pillar, the validator stands the definition in
+// for the pillar and refuses each failing value at its own path. Where the
+// reference is written beside other keywords — the pillar's own properties, or a
+// property's — it checks the definition whole at the position holding the
+// reference, so a failure inside the definition is reported at that position,
+// quoting the value from beneath it. Every row asserts the declared value appears
+// nowhere in clear text; rows whose undeclared value fails assert that value is
+// still shown, because a withholding that replaced every message would pass a
+// placeholder-only check.
+//
+// The row where both fail beside the pillar's own properties pins a limit rather
+// than a guarantee: the finding at the position holding the reference is an
+// ancestor of the sibling's, and the leaf-most reduction keeps the sibling's alone.
+// The build still halts on it, and the declared leaf's refusal is reported — and
+// withheld — once the sibling conforms, which the row before it shows.
+func TestPillarConformance_WholePillarBehindAReferenceIsWithheld(t *testing.T) {
 	t.Parallel()
-	compiled := compileTestSchema(t, `$defs:
+	const besidePillarProperties = `values:
+  $ref: "#/$defs/Creds"
+  $defs:
+    Creds:
+      properties:
+        marked: { type: string, minLength: 40, sensitive: true }
+  properties:
+    plain: { type: string, minLength: 40 }
+`
+	for _, tc := range []struct {
+		name     string
+		schema   string
+		instance func() types.OrderedMap[any]
+		// declaredAt is the path below the pillar the declaration is collected
+		// at; withheldAt is the field suffix of the finding that must carry the
+		// replacement text, and shownAt the one that must still show the
+		// undeclared value, empty where no such finding is expected.
+		declaredAt, withheldAt, shownAt string
+	}{
+		{
+			name: "definitions on the pillar node",
+			schema: `values:
+  $ref: "#/$defs/Creds"
+  $defs:
+    Creds:
+      marked: { type: string, minLength: 40, sensitive: true }
+      plain:  { type: string, minLength: 40 }
+`,
+			instance:   pillarInstance("marked", "WHOLE-PILLAR-PLAINTEXT", "plain", "SIBLING-IN-THE-CLEAR"),
+			declaredAt: "marked", withheldAt: ".values.marked", shownAt: ".values.plain",
+		},
+		{
+			name: "definitions at the document root",
+			schema: `$defs:
   Creds:
     marked: { type: string, minLength: 40, sensitive: true }
+    plain:  { type: string, minLength: 40 }
 values:
   $ref: "#/$defs/Creds"
-`)
-	if DeclaredSensitiveLeaves(compiled).Any() {
-		t.Fatalf("the declaration reader now resolves a reference on the pillar node. Re-point this test at the shape that still escapes it, or delete it — the withholding below follows the reader and needs no separate change.")
+`,
+			instance:   pillarInstance("marked", "WHOLE-PILLAR-PLAINTEXT", "plain", "SIBLING-IN-THE-CLEAR"),
+			declaredAt: "marked", withheldAt: ".values.marked", shownAt: ".values.plain",
+		},
+		{
+			name:   "beside the pillar's own properties, the declared leaf failing alone",
+			schema: besidePillarProperties,
+			instance: pillarInstance("marked", "WHOLE-PILLAR-PLAINTEXT",
+				"plain", "A-SIBLING-VALUE-LONG-ENOUGH-TO-SATISFY-ITS-BOUND"),
+			declaredAt: "marked", withheldAt: ".values",
+		},
+		{
+			name:       "beside the pillar's own properties, both failing",
+			schema:     besidePillarProperties,
+			instance:   pillarInstance("marked", "WHOLE-PILLAR-PLAINTEXT", "plain", "SIBLING-IN-THE-CLEAR"),
+			declaredAt: "marked", shownAt: ".values.plain",
+		},
+		{
+			name: "beside a property's own properties, the declared leaf failing alone",
+			schema: `values:
+  $defs:
+    Creds:
+      properties:
+        marked: { type: string, minLength: 40, sensitive: true }
+  creds:
+    $ref: "#/$defs/Creds"
+    properties:
+      plain: { type: string }
+`,
+			instance: func() types.OrderedMap[any] {
+				creds := pillarInstance("marked", "WHOLE-PILLAR-PLAINTEXT")()
+				out := types.OrderedMap[any]{}
+				out.Set("creds", creds)
+				return out
+			},
+			declaredAt: "creds.marked", withheldAt: ".values.creds",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			compiled := compileTestSchema(t, tc.schema)
+			declared := DeclaredSensitiveLeaves(compiled)
+			if len(declared.Values) != 1 || !declared.Values[tc.declaredAt] {
+				t.Fatalf("the declaration behind the reference must be collected at %q, and only there; got %v",
+					tc.declaredAt, declared.Values)
+			}
+			errs := ValidatePillarConformance(compiled, "values", tc.instance(), nil,
+				"Aggregate demo", `.spec.components["svc"]`, "the Component schema")
+			if len(errs) == 0 {
+				t.Fatalf("the fixture must violate its schema; it produced no finding")
+			}
+			var withheld, shown bool
+			for _, e := range errs {
+				if strings.Contains(e.Message, "WHOLE-PILLAR-PLAINTEXT") {
+					t.Errorf("the declared value reaches the diagnostic in plaintext: %v", e)
+				}
+				if tc.withheldAt != "" && strings.HasSuffix(e.Field, tc.withheldAt) &&
+					strings.Contains(e.Message, redact.Placeholder()) {
+					withheld = true
+				}
+				if tc.shownAt != "" && strings.HasSuffix(e.Field, tc.shownAt) &&
+					strings.Contains(e.Message, "SIBLING-IN-THE-CLEAR") {
+					shown = true
+				}
+			}
+			if tc.withheldAt != "" && !withheld {
+				t.Errorf("no finding at %q carries the replacement text, so the declared leaf's refusal went unreported or unwithheld; got %v",
+					tc.withheldAt, errs)
+			}
+			if tc.shownAt != "" && !shown {
+				t.Errorf("the undeclared value must still be shown at %q; got %v", tc.shownAt, errs)
+			}
+		})
 	}
-	instance := types.OrderedMap[any]{}
-	instance.Set("marked", "WHOLE-PILLAR-PLAINTEXT")
-	errs := ValidatePillarConformance(compiled, "values", instance, nil,
-		"Aggregate demo", `.spec.components["svc"]`, "the Component schema")
-	if len(errs) == 0 {
-		t.Fatalf("the fixture must violate its schema; it produced no finding")
-	}
-	var carried bool
-	for _, e := range errs {
-		if strings.Contains(e.Message, "WHOLE-PILLAR-PLAINTEXT") {
-			carried = true
+}
+
+// pillarInstance builds an authored pillar instance from key-value pairs, in the
+// order given.
+func pillarInstance(pairs ...string) func() types.OrderedMap[any] {
+	return func() types.OrderedMap[any] {
+		out := types.OrderedMap[any]{}
+		for i := 0; i+1 < len(pairs); i += 2 {
+			out.Set(pairs[i], pairs[i+1])
 		}
+		return out
 	}
-	if !carried {
-		t.Errorf("the value no longer reaches the diagnostic. If the reader was widened, update this test; if a second walk was grown here instead, remove it — sensitivity has one home.")
+}
+
+// TestFindingAboveSensitiveLeaf_PathShapes covers the downward reading's path
+// arithmetic directly: a position is reached when a declaration lies strictly
+// beneath it, the pillar root holds every declaration of its pillar, and a path
+// sharing a prefix without sharing a segment is not above anything.
+func TestFindingAboveSensitiveLeaf_PathShapes(t *testing.T) {
+	t.Parallel()
+	declared := SensitiveLeaves{
+		Values: map[string]bool{"creds.adminToken": true},
+		Infra:  map[string]bool{},
+	}
+	for _, tc := range []struct {
+		pillar, path string
+		want         bool
+	}{
+		{"values", "values", true},                   // pillar root holding a declaration
+		{"values", "values.creds", true},             // object above the declared leaf
+		{"values", "values.creds.adminToken", false}, // the leaf itself is the upward reading's
+		{"values", "values.cred", false},             // shares a prefix, not a segment
+		{"values", "values.appName", false},          // unrelated sibling
+		{"values", "infra.creds", false},             // another pillar's path
+		{"infra", "infra", false},                    // a pillar declaring nothing
+		{"provides", "provides", false},              // not validated through this entry
+	} {
+		if got := findingAboveSensitiveLeaf(declared, tc.pillar, tc.path); got != tc.want {
+			t.Errorf("findingAboveSensitiveLeaf(%q, %q) = %v, want %v", tc.pillar, tc.path, got, tc.want)
+		}
 	}
 }

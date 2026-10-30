@@ -62,12 +62,20 @@
 //! down to every node it reaches, and a reference target is read in the
 //! context of the scope it was found in.
 //!
+//! A pillar's own node is entered at the property maps it declares: its own
+//! property map, and — when the pillar node carries a reference — the
+//! property map of the definition that reference resolves to, followed in
+//! turn when that definition is a reference too. A pillar declared wholly
+//! through a reference is therefore read through its target, and one that
+//! writes a property map beside the reference is read through both. No
+//! marker is read on the pillar node itself, since no single datum sits
+//! there.
+//!
 //! Two shapes are deliberately not followed, and both are the same line
 //! the compiler's reader draws. An array's element type is not a property
 //! of the enclosing object, so a marker there has no path any consumer
-//! could look up. A pillar's own node is entered at the property map it
-//! exposes, so a composition or a reference written on the pillar node
-//! itself is not followed on either side.
+//! could look up. A composition written on the pillar node, or on a
+//! definition a pillar reference reaches, is not entered on either side.
 //!
 //! One divergence is real and reported rather than hidden: an escaped
 //! JSON Schema body authored as a YAML text block needs a YAML parser to
@@ -275,21 +283,30 @@ pub fn slot_declares_sensitive(slot: &Value) -> bool {
 /// properties is read. A declaration nested below a property does not add
 /// a name at this level, and neither reader descends for one.
 ///
+/// A pillar node carrying a reference is read through it: the names are
+/// those of the property map written beside the reference together with
+/// those of the definition the reference resolves to, followed in turn
+/// when that definition is a reference too. The pointer is resolved
+/// against the pillar node alone, because the compiler compiles a pillar
+/// as its own document, so a definitions block authored on the pillar node
+/// is the only one it can name.
+///
 /// The two return shapes are different answers and must not be collapsed:
 ///
 ///   - `Some(set)` — the names the pillar exposes, and the set is empty
 ///     when the schema declares no such pillar or the pillar exposes no
 ///     property. An empty set is a real answer: it says the entity
 ///     declares no contract on that axis.
-///   - `None` — the pillar's own node is a shape this reader cannot
-///     enumerate: a reference, whose target contributes to the contract
-///     beside whatever property map is written next to it; a composition,
-///     whose branches carry properties — on the pillar node, or inside an
-///     escaped body where it is one keyword beside the body's own property
-///     map; or an escaped body authored as YAML text, which needs a parser
-///     this crate does not carry. `None` means unknown, never empty, so a
-///     caller that must not be wrong stays silent rather than reading
-///     silence as an absent contract.
+///   - `None` — the pillar's own node, or a definition its reference
+///     reaches, is a shape this reader cannot enumerate: a reference that
+///     resolves nowhere inside the pillar node, whose target is a contract
+///     this reader cannot see; a composition, whose branches carry
+///     properties — on the pillar node, or inside an escaped body where it
+///     is one keyword beside the body's own property map; or an escaped
+///     body authored as YAML text, which needs a parser this crate does not
+///     carry. `None` means unknown, never empty, so a caller that must not
+///     be wrong stays silent rather than reading silence as an absent
+///     contract.
 pub fn pillar_property_names(schema: &Value, pillar: &str) -> Option<BTreeSet<String>> {
     let Some(node) = schema.as_object().and_then(|root| root.get(pillar)) else {
         return Some(BTreeSet::new());
@@ -300,24 +317,61 @@ pub fn pillar_property_names(schema: &Value, pillar: &str) -> Option<BTreeSet<St
     // An escaped body replaces the node it sits on, exactly as it does in the
     // sensitivity walk: a body authored as a mapping is read on, and a body
     // authored as YAML text cannot be opened here.
-    let Opened::Node { obj, in_escape, .. } = open_escapes(node, false) else {
+    let Opened::Node {
+        obj,
+        value,
+        in_escape,
+    } = open_escapes(node, false)
+    else {
         return None;
     };
-    let shape = shape_of(obj, in_escape);
-    // An explicit mode settles the reading on its own, so only an unmoded
-    // node is withheld for composing; outside a body such a node already
-    // classifies as a composition.
-    let composes =
-        BRANCH_LIST_KEYWORDS.iter().any(|k| obj.contains_key(*k)) && !obj.contains_key("$mode");
-    match shape {
-        Shape::Reference | Shape::Composition => None,
-        _ if composes => None,
-        _ => Some(
+    let mut names = BTreeSet::new();
+    // The pillar node is the whole document a pointer on it resolves against.
+    let mut scopes = vec![Scope {
+        node: value,
+        in_escape,
+    }];
+    let mut refs: Vec<String> = Vec::new();
+    let (mut obj, mut in_escape) = (obj, in_escape);
+    loop {
+        let shape = shape_of(obj, in_escape);
+        // An explicit mode settles the reading on its own, so only an unmoded
+        // node is withheld for composing; outside a body such a node already
+        // classifies as a composition.
+        let composes =
+            BRANCH_LIST_KEYWORDS.iter().any(|k| obj.contains_key(*k)) && !obj.contains_key("$mode");
+        if shape == Shape::Composition || composes {
+            return None;
+        }
+        names.extend(
             child_properties(obj, shape)
                 .into_iter()
-                .map(|(name, _)| name.clone())
-                .collect(),
-        ),
+                .map(|(name, _)| name.clone()),
+        );
+        let Some(Value::String(reference)) = obj.get("$ref") else {
+            return Some(names);
+        };
+        // A pointer already followed ends the chain, as it does on the
+        // compiler's side: the names reached so far are the whole answer.
+        if in_flight(&refs, reference) {
+            return Some(names);
+        }
+        let target = resolve_pointer(reference, &scopes)?;
+        refs.push(reference.clone());
+        let Opened::Node {
+            obj: next,
+            value,
+            in_escape: next_in_escape,
+        } = open_escapes(target.node, target.in_escape)
+        else {
+            return None;
+        };
+        scopes.push(Scope {
+            node: value,
+            in_escape: next_in_escape,
+        });
+        obj = next;
+        in_escape = next_in_escape;
     }
 }
 
@@ -474,11 +528,14 @@ fn push_scope<'a>(scopes: &[Scope<'a>], node: &'a Value, in_escape: bool) -> Vec
 /// the path; a branch or reference descent keeps it, because both compose
 /// onto the object carrying them.
 ///
-/// `prefix` is empty at a pillar root, where no marker is read and where
-/// neither a composition nor a reference on the pillar node itself is
-/// followed — the compiler enters a pillar at the property map it exposes,
-/// so a pillar node's own composition or reference is unreached on both
-/// sides.
+/// `prefix` is empty at a pillar root, where no marker is read and no
+/// composition is entered. A reference on the pillar node is followed, with
+/// the target read as a pillar root in turn: the compiler enters a pillar at
+/// the property maps it declares, and a pillar reference's target declares
+/// them as much as the pillar node does. A pointer that resolves nowhere, or
+/// revisits one already followed, collects nothing there — no single datum
+/// sits at a pillar root to stand in for the target, as the referring
+/// property does below one.
 ///
 /// `in_escape` is carried to every node the walk reaches below an escaped
 /// body, through properties and branches alike; a reference target takes
@@ -530,6 +587,26 @@ fn walk_scope<'a>(
     }
 
     if prefix.is_empty() {
+        let Some(Value::String(reference)) = obj.get("$ref") else {
+            return;
+        };
+        if in_flight(refs, reference) {
+            return;
+        }
+        let Some(target) = resolve_pointer(reference, &inner) else {
+            return;
+        };
+        let mut next = refs.to_vec();
+        next.push(reference.clone());
+        walk_scope(
+            target.node,
+            prefix,
+            target.in_escape,
+            &inner,
+            &next,
+            out,
+            blocked,
+        );
         return;
     }
 

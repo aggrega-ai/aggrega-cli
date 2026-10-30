@@ -71,7 +71,7 @@ const sensitivityParityGuestHalf = "../../plugins/publishing-linter/tests/sensit
 // disagree with itself, and disagreement is the signal. When the fixture
 // changes, both copies move, and a run that updates only one is exactly the
 // half-verified state this pins.
-const sensitivityParityFixtureRevision = "e167c0ee91c5720f"
+const sensitivityParityFixtureRevision = "5813a618835a4855"
 
 type sensitivityParityCases struct {
 	LeafCases []struct {
@@ -287,6 +287,18 @@ func TestSensitivityParityFixtureCoversEveryDivergenceShape(t *testing.T) {
 		// A property map written beside a reference, which is the referring
 		// node's own.
 		"properties-beside-a-reference-declare-below-the-referring-node",
+		// A pillar whose own node is a reference, read through its target from
+		// a definitions block at either scope, composed with a property map
+		// beside it, followed along a chain, and the three ways the pillar-level
+		// walk ends without a target to read: a pointer nobody resolves, one
+		// naming the pillar itself, and a marker on the pillar node.
+		"pillar-node-reference-declares-through-its-target",
+		"pillar-node-reference-at-the-document-root-resolves-too",
+		"pillar-node-reference-beside-properties-declares-from-both",
+		"pillar-node-reference-chain-is-followed",
+		"pillar-node-unresolvable-reference-adds-nothing",
+		"pillar-node-self-reference-terminates",
+		"pillar-node-reference-marker-on-the-pillar-declares-nothing",
 		// The shapes the walk deliberately does not descend into.
 		"composition-sibling-properties-are-not-walked",
 		"array-items-are-not-walked",
@@ -355,10 +367,16 @@ func TestProvidesPillarKeyParityAgainstSharedFixture(t *testing.T) {
 		// open, and the text form only a YAML parser can.
 		"escaped-mapping-body-exposes-its-properties",
 		"escaped-text-body-is-unreadable-in-the-guest",
-		// The reference forms, whose compiled answer is not what an author
-		// would predict from the authored text.
-		"reference-pillar-is-unreadable-in-the-guest",
-		"reference-pillar-with-sibling-properties-exposes-them-and-is-unreadable-in-the-guest",
+		// The reference forms: a pillar read through the definition it points
+		// at, composed with a property map beside it, followed along a chain
+		// and ended by a revisit; and the two a reader cannot enumerate — a
+		// pointer naming nothing inside the pillar, and a target that composes.
+		"reference-pillar-exposes-its-target-properties",
+		"reference-pillar-with-sibling-properties-exposes-both",
+		"reference-pillar-chain-exposes-every-target",
+		"self-referencing-pillar-terminates",
+		"reference-pillar-pointing-outside-the-pillar-is-unreadable-in-the-guest",
+		"reference-pillar-to-a-composition-is-unreadable-in-the-guest",
 		// A composition inside an escaped body, which the compiler reads as one
 		// keyword beside the body's own property map.
 		"escaped-body-with-a-composition-is-unreadable-in-the-guest",

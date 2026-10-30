@@ -55,13 +55,43 @@ func (s SensitiveLeaves) Covers(coordinate string) bool {
 	if !ok {
 		return false
 	}
-	switch pillar {
-	case "values":
-		return types.PathCoveredBy(path, s.Values)
-	case "infra":
-		return types.PathCoveredBy(path, s.Infra)
+	return types.PathCoveredBy(path, s.withheldPillar(pillar))
+}
+
+// holdsBeneath reports whether a declared path lies strictly beneath a position
+// in one pillar: the position is an object holding, somewhere inside it, data
+// this entity's schema declares sensitive. path is the flat-dotted path from the
+// pillar root, and the empty path is the pillar root itself, which holds every
+// declaration the pillar makes.
+//
+// It is the downward half of what Covers answers upward, and a surface needs it
+// wherever something reports a whole position at once. A report at a position
+// may reproduce the value written there, and that value contains the values
+// beneath it, so a declaration below the position reaches the report even though
+// it does not cover the position itself. Matching is segment-wise, as in Covers:
+// a declaration at dbPasswordExtra does not lie beneath db.
+//
+// Only values and infra are read, for the reason Covers gives.
+func (s SensitiveLeaves) holdsBeneath(pillar, path string) bool {
+	for declared := range s.withheldPillar(pillar) {
+		if path == "" || strings.HasPrefix(declared, path+".") {
+			return true
+		}
 	}
 	return false
+}
+
+// withheldPillar returns the declared set of one pillar whose authored data a
+// surface withholds, and nil for any other pillar name. It is the one statement
+// of which pillars those are, read by both directions of the covering question.
+func (s SensitiveLeaves) withheldPillar(pillar string) map[string]bool {
+	switch pillar {
+	case "values":
+		return s.Values
+	case "infra":
+		return s.Infra
+	}
+	return nil
 }
 
 // DeclaredSensitiveLeaves reads the sensitivity declarations out of an entity's
@@ -91,6 +121,13 @@ func (s SensitiveLeaves) Covers(coordinate string) bool {
 // Beside and inside are distinct positions, and both are collected. Reading only
 // the beside case leaves every inside declaration silently uncollected while the
 // reader looks complete.
+//
+// A pillar is entered at the property maps it declares, which pillarPropertyMaps
+// enumerates: the pillar node's own `properties`, and those of the node an
+// in-document `$ref` written on the pillar node resolves to. So a pillar declared
+// wholly through a reference is read through its target, and one that writes a
+// property map beside the reference is read through both. A marker on the pillar
+// node itself declares nothing, since no single datum sits there.
 //
 // Every branch keyword the compiled vocabulary admits is descended, because
 // under-collecting prints a datum an author asked to be withheld while
@@ -134,21 +171,76 @@ func DeclaredSensitiveLeaves(compiled compactform.Schema) SensitiveLeaves {
 		{"infra", out.Infra},
 		{"provides", out.Provides},
 	} {
-		props, ok := pillarProperties(compiled, pillar.name)
+		pillarNode, ok := pillarSubSchema(compiled, pillar.name)
 		if !ok {
 			continue
 		}
-		// The pillar node joins the document root as a reference scope: a
-		// definitions block authored inside a pillar is emitted on that node
-		// rather than at the root, so a pointer written beside it resolves only
-		// when the node it sits on is in scope.
-		scopes := []map[string]any{compiled}
-		if pillarNode, found := pillarSubSchema(compiled, pillar.name); found {
-			scopes = pushScope(scopes, pillarNode)
+		for _, declared := range pillarPropertyMaps(pillarNode, []map[string]any{compiled}) {
+			collectSensitiveLeafPaths(declared.properties, "", declared.scopes, declared.refs, pillar.dest)
 		}
-		collectSensitiveLeafPaths(props, "", scopes, nil, pillar.dest)
 	}
 	return out
+}
+
+// pillarPropertyMap is one property map a pillar declares, with the reference
+// scopes in force where it was declared and the pointers followed to reach it.
+type pillarPropertyMap struct {
+	properties map[string]any
+	scopes     []map[string]any
+	refs       []string
+}
+
+// pillarPropertyMaps returns every property map one compiled pillar node
+// declares: the node's own `properties`, then — when the node carries an
+// in-document `$ref` — the `properties` of the node that reference resolves to,
+// and so on along the references each target carries in turn. It is the one
+// answer to "what does this pillar declare", read by the sensitivity reader and
+// by the reader of the key names a pillar publishes, so the two cannot come to
+// different answers about the same pillar.
+//
+// A reference on the pillar node composes with a property map written beside it:
+// a value under the pillar must satisfy both, so both declare. Each map is
+// returned on its own rather than merged into one, because the two may declare
+// the same name differently, and a reader asking what is declared must see both
+// declarations rather than whichever was written last.
+//
+// The pointer resolves against scopes nearest first, with the pillar node itself
+// nearest: a definitions block authored on the pillar node is the one its pointer
+// was written against. A caller holding a whole-entity compile passes the
+// document root as the outer scope; a caller holding a compile of the pillar
+// alone passes none, and the pillar node is then the whole document.
+//
+// A pointer no scope resolves contributes nothing beyond the maps already found.
+// There is no path to collect in its place, as an unresolvable reference on a
+// property collects the property: the pillar is the root, not a datum. Such a
+// pillar builds no validator, so it is refused as the catalog loads rather than
+// read here. A pointer revisiting one already followed ends the chain. Only
+// `properties` and `$ref` are read on the pillar node and on each target: a
+// composition keyword there is not entered.
+func pillarPropertyMaps(pillarNode map[string]any, outer []map[string]any) []pillarPropertyMap {
+	var out []pillarPropertyMap
+	var refs []string
+	node := pillarNode
+	scopes := pushScope(outer, node)
+	for {
+		if props, ok := node["properties"].(map[string]any); ok {
+			out = append(out, pillarPropertyMap{properties: props, scopes: scopes, refs: refs})
+		}
+		ref, present := node["$ref"].(string)
+		if !present {
+			return out
+		}
+		if _, cyclic := refcycle.Check(refs, ref); cyclic {
+			return out
+		}
+		target, resolved := resolvePointer(ref, scopes)
+		if !resolved {
+			return out
+		}
+		refs = refcycle.Push(refs, ref)
+		node = target
+		scopes = pushScope(scopes, target)
+	}
 }
 
 // branchListKeywords are the composition keywords whose value is an array of
