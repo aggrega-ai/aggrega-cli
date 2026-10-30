@@ -86,9 +86,9 @@ func SynthesizeWorkloadCore(
 	switch rendercore.NormalizeWorkloadForm(w.Form) {
 	case rendercore.WorkloadFormReference:
 		// A reference workload has no compute, and compose has no ExternalName
-		// analog. The endpoint (and optional credential) reach consumers through
-		// the recipe's provides — the injection contract — so compose emits no
-		// fragment for the reference node itself.
+		// analog. The endpoint reaches consumers through the recipe's provides —
+		// the injection contract — so compose emits no fragment for the reference
+		// node itself: nothing on the node's own inject pipe reaches a byte here.
 		return nil, nil, nil
 	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
 		// supported
