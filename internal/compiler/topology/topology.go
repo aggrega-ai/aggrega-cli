@@ -514,15 +514,16 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 
 	// 3. Populate boundary paths from resolver.
 	//
-	// A component the Release placed by routing its whole sub-module has no entry
-	// of its own in the per-component map, and could not have: the routing entry
-	// named no components, because a sub-module's component names do not exist
-	// until its document is loaded, which is what flattening above just did. This
-	// is therefore the first point at which such a node can be matched to the
-	// placement that covers it, and the match is written back into the
-	// per-component map so every later reader — output directory, sync wave,
-	// annotations, per-node infra — sees a routed component exactly as it sees a
-	// directly-named one, with no routed-axis knowledge of its own.
+	// A build that loads its sub-modules names a routed module's components under
+	// the routing entry before the resolve wires the per-component map (see
+	// [ModuleLoads.PlaceRoutedComponents]), so each already has an entry of its
+	// own. A component that still has none — routed by a resolve that loaded no
+	// module, so the routing entry named no components — is matched here, the
+	// first point at which its node exists, to the placement that covers it, and
+	// the match is written back into the per-component map so every later reader —
+	// output directory, sync wave, annotations, per-node infra — sees a routed
+	// component exactly as it sees a directly-named one, with no routed-axis
+	// knowledge of its own.
 	//
 	// A node whose id the Release names directly keeps that entry: it is the more
 	// specific instruction, and the two cannot disagree about which boundary the

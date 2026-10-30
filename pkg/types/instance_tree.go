@@ -51,11 +51,14 @@ func SubsystemTree() InstanceTreeShape[Subsystem, ComponentInstance] {
 // consumer of this walk therefore sees a routed component exactly as it sees a
 // directly-named one, and gets the routed axis without knowing it exists.
 //
-// A routed sub-module whose entry names no components contributes none here —
-// its component names are not known until the module's document is loaded, which
-// happens after this tree is read. Placing those components is a separate step,
-// keyed on the sub-module each node came from rather than on a name this tree
-// could supply.
+// A routed sub-module's components are known only once the module's document is
+// loaded, so an entry contributes by itself only the components it names. A
+// build loads the module before it reads this tree and names every other
+// component under the routing entry, with an empty body, so the walk reaches it
+// like any other routed component; a resolve that loads no module leaves the
+// entry as written, and the components it does not name are then placed only
+// later, keyed on the sub-module each node came from rather than on a name this
+// tree could supply.
 func BoundaryTree() InstanceTreeShape[Boundary, BoundaryComponent] {
 	return InstanceTreeShape[Boundary, BoundaryComponent]{
 		Children:    func(b Boundary) OrderedMap[Boundary] { return b.Boundaries },

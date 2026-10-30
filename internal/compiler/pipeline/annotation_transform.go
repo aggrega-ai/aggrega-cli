@@ -181,8 +181,8 @@ func annotationTargetKey(boundaryPath, componentName string) string {
 // flattened graph ("metrics.query"). That id is the coordinate an injection
 // names, so a plugin addresses a routed component exactly as the graph and its
 // diagnostics spell it. A component a routing entry places without naming it is
-// not listed: its name is not known until the sub-module's document is loaded,
-// which happens after this role runs.
+// listed too: a build names it under the routing entry, with an empty body, before
+// this role runs.
 //
 // Targets emit in author order — per boundary, its own components, then the
 // routed ones in routing order, then its child boundaries — so the wire is

@@ -57,6 +57,16 @@ type ResolveInputs struct {
 	ReleasePath       string // source-location label only; no I/O
 	ReleaseFile       string // the Release's file as this process opens it; its parameters import is read beside it
 	WorkspaceRoot     string // the workspace the Release is read in; it decides the root its parameters import is held to
+
+	// PlaceRoutedComponents, when set, is handed the Aggregate once it is parsed
+	// and the Release before the boundary contexts are wired from it. It is how a
+	// build names, under a routing entry, the components of the routed sub-module
+	// the entry does not name itself: those exist only in the module's own
+	// document, which the resolve does not load — the caller that holds the
+	// composition's loader does. Whatever it writes into the Release is then read
+	// by every consumer of the boundary tree exactly as an authored entry is. Nil
+	// places nothing.
+	PlaceRoutedComponents func(aggregate types.NormalizedAggregate, release *types.Release)
 }
 
 // ResolveResult carries the artifacts produced by resolution. The result is
@@ -80,12 +90,13 @@ type ResolveResult struct {
 
 	// RoutedAggregateInfra carries the boundary context conferred by each
 	// sub-module a boundary routes in, keyed by that module's dotted prefix. It is
-	// the placement for components no name in the Release reaches: a routing entry
-	// that names none of them is how a Release routes a whole sub-module, and those
-	// components exist only once the module's own document is loaded — after this
-	// result is produced. Flattening resolves each such node against this map and
-	// fills its BoundaryInfra entry, so every consumer of the per-component map
-	// sees a routed component with no further work.
+	// the placement for components no name in the Release reaches. A build that
+	// supplies [ResolveInputs.PlaceRoutedComponents] names a routed module's
+	// components under its routing entry before this result is produced, so they
+	// carry BoundaryInfra entries of their own; where nothing named them — a
+	// resolve with no module loader — flattening resolves each such node against
+	// this map and fills its BoundaryInfra entry, so every consumer of the
+	// per-component map sees a routed component with no further work.
 	RoutedAggregateInfra map[string]*BoundaryInfra
 
 	// BoundaryAnnotations carries the renderer-facing Scalar
@@ -336,6 +347,13 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 		),
 		fmt.Sprintf("Aggregate %s", agg.Metadata.Name),
 	)
+
+	// The components a routing entry routes in without naming them are named under
+	// it first, so the wiring below — and every walk of the boundary tree after
+	// it — reads them as the entries an author could have written.
+	if in.PlaceRoutedComponents != nil && release != nil {
+		in.PlaceRoutedComponents(na, release)
+	}
 
 	// Wire boundary infra (per-component) plus the per-boundary annotations cascade
 	// and the per-routed-module placements. release is already normalized at load;

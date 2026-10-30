@@ -291,6 +291,13 @@ type Inputs struct {
 	// dispatch, when the run was asked for them. Only the entry point sets it, from
 	// [Options.PolicyInputs], so a surface driving a single phase records nothing.
 	policyInputs *PolicyInputs
+
+	// moduleLoads is the build's sub-module loading, which names a routed
+	// module's components under its routing entry before the resolve wires the
+	// boundaries and then hands each loaded document to flattening. Only the graph
+	// entry sets it, from the loader it flattens with, so a surface resolving
+	// without flattening loads no module and names nothing.
+	moduleLoads *topology.ModuleLoads
 }
 
 // Options carries per-invocation flags. IncludeTrace, when true, causes
@@ -902,6 +909,10 @@ func ResolveAndValidate(
 		// the workspace it is read in, which that import is held to.
 		ReleaseFile:   inputs.ReleasePath,
 		WorkspaceRoot: inputs.WorkspaceRoot,
+		// The components a routing entry routes in without naming them, named
+		// under it before the boundaries are wired, through the loader the
+		// flattening below uses. Nil — a resolve with no loader — names nothing.
+		PlaceRoutedComponents: placeRoutedComponents(inputs.moduleLoads),
 	}, func(resolveResult *resolver.ResolveResult) error {
 		// The annotation-transform governance role runs first in the resolve
 		// continuation: it injects annotations onto resolved components before
@@ -1032,6 +1043,15 @@ func releaseSourcePath(in Inputs) string {
 	return catalog.RelativeToWorkspace(in.WorkspaceRoot, in.ReleasePath)
 }
 
+// placeRoutedComponents is the resolve's hook for naming a routed module's
+// components under its routing entry, or nil where the build loads no module.
+func placeRoutedComponents(modules *topology.ModuleLoads) func(types.NormalizedAggregate, *types.Release) {
+	if modules == nil {
+		return nil
+	}
+	return modules.PlaceRoutedComponents
+}
+
 // resolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
 // (parameter interpolation, annotation binding validation + expansion, guards)
 // then topology flatten — and invokes use with the resolved per-component view
@@ -1057,6 +1077,12 @@ func resolveAndFlatten(
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*resolver.ResolveResult, *topology.TopologyResult, []*resolver.ResolverError) error,
 ) error {
+	// One loading of the composition's sub-modules for the whole build: the
+	// resolve reads it to name a routed module's components under its routing
+	// entry, and flattening takes the documents that reading loaded rather than
+	// loading them again.
+	modules := topology.NewModuleLoads(subAggregateLoader)
+	inputs.moduleLoads = modules
 	return ResolveAndValidate(ctx, inputs, catalogLookup, recipeFor, func(resolveResult *resolver.ResolveResult) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1072,7 +1098,7 @@ func resolveAndFlatten(
 		topoResult, err := topology.BuildContext(ctx, topology.BuildConfig{
 			ResolveResult:     resolveResult,
 			CatalogLookup:     catalogLookup,
-			LoadSubAggregate:  subAggregateLoader,
+			LoadSubAggregate:  modules.Loader(),
 			RootAggregateFile: rootAggregateFile,
 		})
 		if err != nil {

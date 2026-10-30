@@ -13,7 +13,9 @@ import "strings"
 // its qualified dotted id. [Boundary.Aggregates] routes a whole sub-module in at
 // once, and names a component — when it names one at all — by the local name it
 // carries inside that module, because inside the module that is the only name it
-// has.
+// has. An entry routes every component of its module whether or not it names
+// it; a build names the rest under the entry once the module is loaded, so the
+// functions here see them as they see the components an author names.
 //
 // This file is the one place those two spellings are reconciled. One traversal,
 // [BoundaryComponentDeclarations], enumerates what the boundary declares; every
@@ -161,9 +163,9 @@ func BoundaryComponents(b Boundary) OrderedMap[BoundaryComponent] {
 //
 // A prefix appears whether or not the routing entry names any component: naming
 // none is how a Release routes a whole module without restating its contents, and
-// that is the routing entry's primary shape rather than a degenerate one. It is
-// therefore the only record of a placement whose components cannot be enumerated
-// until the module's own document is loaded.
+// that is the routing entry's primary shape rather than a degenerate one. Until
+// the module's own document is loaded and its components are named under the
+// entry, it is the only record of that placement.
 func BoundaryRoutedModules(b Boundary) []string {
 	if b.Aggregates.Len() == 0 {
 		return nil

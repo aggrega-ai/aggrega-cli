@@ -102,11 +102,13 @@ func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, m
 // sub-module it routes in, keyed by that module's dotted prefix.
 //
 // The third map exists because a routing entry that names no components is the
-// primary way a Release routes a sub-module, and the names it would need are not
-// available here: a sub-module's components exist only once its own document is
-// loaded, which happens after this walk. So the placement is recorded against the
-// module, and the components it covers are matched up once they are known — by
-// [RoutedInfraFor], against the module each carries.
+// primary way a Release routes a sub-module, and a sub-module's components exist
+// only once its own document is loaded. A build loads it first and names its
+// components under the entry ([ResolveInputs.PlaceRoutedComponents]), so they
+// reach this walk as entries of their own; where nothing loaded the module, the
+// placement is recorded against the module, and the components it covers are
+// matched up once they are known — by [RoutedInfraFor], against the module each
+// carries.
 //
 // Its entries are built from the same boundary scope the per-component entries
 // are, carrying no per-component overrides, because that is exactly what a
