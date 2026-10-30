@@ -3301,11 +3301,14 @@ jobs:
         # which on the persistent self-hosted runner AGGREGA_RUNNER names may
         # be someone else. printf is the shell's own, so it starts no process
         # whose command line carries the credential either.
+        # The request is bounded and retried: an unbounded request waits forever on a stalled connection.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           token_json="$(printf 'Authorization: bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" |
-            curl -sSL -H @- "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore")"
+            curl -sSL --connect-timeout 15 --max-time 60 --retry 5 --retry-delay 5 --retry-all-errors \
+              -H @- "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore")"
           id_token="$(printf '%s' "$token_json" | grep -o '"value":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$id_token" ] || { echo "OIDC: runtime returned no token value" >&2; exit 1; }
           echo "::add-mask::$id_token"
