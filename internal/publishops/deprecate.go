@@ -35,8 +35,10 @@ type DeprecateConfig struct {
 	Replacement string
 	Message     string
 
-	// From, when set, names a batch file of deprecation entries. It is mutually
-	// exclusive with a positional Reference and the single-shot content fields.
+	// From, when set, names a batch file of deprecation entries. Each marker's
+	// reference and content are then read from the file's entries, and Reference and
+	// the single-shot content fields are not read at all; ContentBesideBatch names
+	// the content a caller would be refusing.
 	From string
 
 	// Keyed path.
@@ -292,6 +294,33 @@ func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now
 		marked = append(marked, markedFrom(e.Reference, marker, digest))
 	}
 	return DeprecateResult{Marked: marked}, nil
+}
+
+// ContentBesideBatch names the single-shot marker content a request carries —
+// severity, reason, replacement and message, in that fixed order, so one request
+// always draws one answer — and returns nil when it carries none. A value of only
+// white space counts as absent.
+//
+// A batch file supplies each marker's content from its own entry, so content sent
+// beside one is read by nothing. This is what a surface reads to refuse that
+// combination, naming each field it returns, rather than drop it: a field silently
+// ignored reads to its sender as a field that was honoured, and on a withdrawal the
+// sender would then be wrong about what every consumer is now told. A surface words
+// the refusal in its own vocabulary; which fields count, and in what order, is
+// decided here once.
+func ContentBesideBatch(severity, reason, replacement, message string) []string {
+	var sent []string
+	for _, f := range []struct{ name, value string }{
+		{"severity", severity},
+		{"reason", reason},
+		{"replacement", replacement},
+		{"message", message},
+	} {
+		if strings.TrimSpace(f.value) != "" {
+			sent = append(sent, f.name)
+		}
+	}
+	return sent
 }
 
 // deprecationBatchEntry is one line of a batch file: the reference to

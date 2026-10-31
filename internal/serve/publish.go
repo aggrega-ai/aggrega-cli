@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
 	"github.com/aggrega-ai/aggrega-cli/internal/publishops"
@@ -243,7 +244,8 @@ type signedArtifact struct {
 // Two shapes, and exactly one of them: a single reference with its severity and
 // reason, or `from` naming a batch file relative to the workspace root. The
 // content fields are required in the single shape — nobody is watching, so there
-// is nothing to prompt, and a missing one is refused naming what to send.
+// is nothing to prompt, and a missing one is refused naming what to send — and
+// refused beside `from`, whose file carries each marker's content itself.
 type deprecateArtifactParams struct {
 	Reference     string `json:"reference,omitempty"`
 	Severity      string `json:"severity,omitempty"`
@@ -683,6 +685,15 @@ func (s *Server) deprecateArtifactConfig(params deprecateArtifactParams, progres
 		if params.Reference != "" {
 			return publishops.DeprecateConfig{}, invalidPublicationParam(
 				"deprecateArtifact: from and reference are alternatives; send a batch file or a single reference, not both")
+		}
+		// The batch file carries each marker's content, so content sent beside it is
+		// refused rather than dropped; which fields count is the deprecation
+		// operation's to decide, and only the wording is this surface's.
+		if sent := publishops.ContentBesideBatch(params.Severity, params.Reason, params.Replacement, params.Message); len(sent) > 0 {
+			return publishops.DeprecateConfig{}, invalidPublicationParam(
+				"deprecateArtifact: a batch file supplies each marker's content from its own entries, so " +
+					strings.Join(sent, ", ") + " sent beside from would be ignored; put the content in the file's " +
+					"entries, or send a single reference with its content instead")
 		}
 		resolved, perr := resolveWorkspacePathParam("from", "a batch file",
 			"the request named no batch file", s.workspaceRoot, params.From, nil)

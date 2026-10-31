@@ -284,6 +284,9 @@ func TestPublicationToolsRefuseAMissingSubject(t *testing.T) {
 			`{"reference":"x:1","from":"batch.yaml"}`, "not both"},
 		{"deprecate with content a batch file would override", deprecateArtifactToolName,
 			`{"from":"batch.yaml","severity":"warning"}`, "reads its content from the batch file"},
+		{"deprecate with several fields a batch file would override, named in one fixed order", deprecateArtifactToolName,
+			`{"from":"batch.yaml","message":"m","reason":"r","severity":"warning"}`,
+			"so 'severity', 'reason', 'message' would be ignored"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := callToolRaw(t, s, tc.tool, tc.args)

@@ -10,6 +10,31 @@ import (
 	"testing"
 )
 
+// TestContentBesideBatchNamesEverySentFieldInOneOrder holds which content fields
+// count as sent beside a batch file and the order they are named in, which every
+// surface refusing the combination reads.
+func TestContentBesideBatchNamesEverySentFieldInOneOrder(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                                   string
+		severity, reason, replacement, message string
+		want                                   string
+	}{
+		{"none sent", "", "", "", "", ""},
+		{"white space only counts as absent", " ", "\t", "\n", "  ", ""},
+		{"one field", "", "", "x:2", "", "replacement"},
+		{"every field, in the fixed order", "warning", "r", "x:2", "m", "severity,reason,replacement,message"},
+		{"a later field alone", "", "", "", "m", "message"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := strings.Join(ContentBesideBatch(tc.severity, tc.reason, tc.replacement, tc.message), ",")
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestDeprecationBatchOfTheWrongShapeIsRefusedInTheAuthorsWords holds the refusal
 // of a batch file written in the wrong shape to the line, the field and the two
 // shapes, never the decoder's own phrasing or the program's types. One fault per

@@ -1075,24 +1075,6 @@ func deprecateArtifactInvoke(s *server, ctx context.Context, args json.RawMessag
 	return textResult(renderDeprecateArtifactText(payload), payload)
 }
 
-// contentAlongsideBatch names the marker-content arguments a call sent that a
-// batch file would override, in a fixed order so one call always draws one
-// refusal. It returns the empty string when the call sent none.
-func contentAlongsideBatch(a deprecateArtifactArgs) string {
-	var sent []string
-	for _, f := range []struct{ name, value string }{
-		{"severity", a.Severity},
-		{"reason", a.Reason},
-		{"replacement", a.Replacement},
-		{"message", a.Message},
-	} {
-		if strings.TrimSpace(f.value) != "" {
-			sent = append(sent, "'"+f.name+"'")
-		}
-	}
-	return strings.Join(sent, ", ")
-}
-
 // deprecateArtifactConfig projects the arguments onto the deprecation operation's
 // input contract, returning the corrective text for anything that cannot be turned
 // into one.
@@ -1104,19 +1086,19 @@ func contentAlongsideBatch(a deprecateArtifactArgs) string {
 func (s *server) deprecateArtifactConfig(a deprecateArtifactArgs) (publishops.DeprecateConfig, string) {
 	reference := strings.TrimSpace(a.Reference)
 	from := strings.TrimSpace(a.From)
+	// Content beside a batch file is refused rather than dropped; which arguments
+	// count is decided by the deprecation operation, and only the wording is this
+	// surface's.
+	batchContent := publishops.ContentBesideBatch(a.Severity, a.Reason, a.Replacement, a.Message)
 	switch {
 	case from != "" && reference != "":
 		return publishops.DeprecateConfig{}, deprecateArtifactToolName +
 			" takes 'from' or 'reference', not both: send a batch file or a single reference."
-	// A batch file carries its own content per entry, so content sent alongside it
-	// would be read by nothing. It is refused rather than dropped: an argument
-	// silently ignored reads to a caller as an argument that was honoured, and on a
-	// withdrawal the caller would be wrong about what every consumer is now told.
-	case from != "" && contentAlongsideBatch(a) != "":
+	case from != "" && len(batchContent) > 0:
 		return publishops.DeprecateConfig{}, fmt.Sprintf(
 			"%s reads its content from the batch file, so %s would be ignored: put it in the file's own entry, "+
 				"or send a single 'reference' with its content instead.",
-			deprecateArtifactToolName, contentAlongsideBatch(a))
+			deprecateArtifactToolName, "'"+strings.Join(batchContent, "', '")+"'")
 	case from == "" && reference == "":
 		return publishops.DeprecateConfig{}, deprecateArtifactToolName +
 			" requires a 'reference' — the already-published artifact to withdraw — or 'from' naming a batch file."

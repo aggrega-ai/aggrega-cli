@@ -333,6 +333,60 @@ func TestPublicationMethodsRefuseAMissingSubject(t *testing.T) {
 	}
 }
 
+// TestDeprecateArtifactOnTheDaemonRefusesContentBesideABatchFile pins that marker
+// content sent beside `from` is refused as a malformed request, naming every
+// content field sent, rather than run with the content dropped.
+//
+// The batch file's one entry lacks its reference, so a request that reaches the
+// batch answers that fault instead. The `from alone` row is the control proving
+// the fixture does reach the batch: without the refusal, every content row would
+// answer exactly as it does.
+func TestDeprecateArtifactOnTheDaemonRefusesContentBesideABatchFile(t *testing.T) {
+	t.Parallel()
+	srv, root := publishFixture(t, defaultRegistryWorkspace)
+	batch := "- severity: warning\n  reason: superseded by 2.0.0\n"
+	if err := os.WriteFile(filepath.Join(root, "batch.yaml"), []byte(batch), 0o644); err != nil {
+		t.Fatalf("write the batch file: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		params   map[string]any
+		wantCode int
+		want     string
+	}{
+		{"severity", map[string]any{"from": "batch.yaml", "severity": "warning"},
+			jsonRPCInvalidParams, "so severity sent beside from would be ignored"},
+		{"reason", map[string]any{"from": "batch.yaml", "reason": "superseded"},
+			jsonRPCInvalidParams, "so reason sent beside from would be ignored"},
+		{"replacement", map[string]any{"from": "batch.yaml", "replacement": "x:2"},
+			jsonRPCInvalidParams, "so replacement sent beside from would be ignored"},
+		{"message", map[string]any{"from": "batch.yaml", "message": "move to 2.0.0"},
+			jsonRPCInvalidParams, "so message sent beside from would be ignored"},
+		{"every content field, named in one fixed order", map[string]any{
+			"from": "batch.yaml", "message": "m", "replacement": "x:2", "reason": "r", "severity": "warning",
+		}, jsonRPCInvalidParams, "so severity, reason, replacement, message sent beside from would be ignored"},
+		{"from alone reaches the batch", map[string]any{"from": "batch.yaml"},
+			jsonRPCInternalError, "entry 1 is missing its reference"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := callDaemonMethod(t, srv, "aggrega/deprecateArtifact", tc.params)
+			if resp.Error == nil {
+				t.Fatalf("expected a refusal; got result %s", resp.Result)
+			}
+			if resp.Error.Code != tc.wantCode {
+				t.Errorf("code: got %d (%s), want %d", resp.Error.Code, resp.Error.Message, tc.wantCode)
+			}
+			if !strings.Contains(resp.Error.Message, tc.want) {
+				t.Errorf("got %q, want it to contain %q", resp.Error.Message, tc.want)
+			}
+			if strings.Contains(resp.Error.Message, "--") {
+				t.Errorf("a refusal on this surface must not name a command line flag: %q", resp.Error.Message)
+			}
+		})
+	}
+}
+
 // TestPublicationRefusesWithNoDestinationRegistry pins the one refusal the shared
 // layer would otherwise answer by naming a flag nobody here can pass.
 //
