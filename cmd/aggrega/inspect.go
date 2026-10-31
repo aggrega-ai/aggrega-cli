@@ -835,8 +835,9 @@ func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspa
 }
 
 // renderReleaseFile loads a Release, folds the extends chain it heads, loads
-// the Aggregate and Manifest the folded Release references, runs the build
-// pipeline far enough to produce the IR
+// the Aggregate and Manifest the folded Release references (composing the
+// Manifest's own extends chain), runs the build pipeline far enough to produce
+// the IR
 // (Resolve → ExpandAnnotations → RunGuards → Topology → IR), and
 // prints per-node Feature attachments with provenance brackets:
 //
@@ -956,7 +957,16 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	manifest := manRes.Manifest
+	// The Manifest's own extends chain is composed as a build composes it, so the
+	// mappings a Manifest inherits are in place when the graph below binds each
+	// attachment to its realization. Drawn from the authored Manifest alone, an
+	// attachment whose mapping is inherited would show no realization, though a
+	// build of the same documents renders one. A Manifest extending nothing is
+	// returned unchanged.
+	manifest, err := resolver.ResolveManifestExtends(wsRoot, releaseDir, releasePath, manRes)
+	if err != nil {
+		return fmt.Errorf("compose manifest extends: %w", err)
+	}
 	aggRes, err := resolver.ResolveAggregate(wsRoot, releaseDir, releasePath, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {
 		return fmt.Errorf("load aggregate: %w", err)
