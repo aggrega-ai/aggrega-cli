@@ -79,7 +79,7 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 	// exactly the references the execution will make.
 	data := map[string]any{parametersRoot: copyParameterTree(params)}
 	refs := gotmpl.CollectRootRefs(tmpl.Tree.Root)
-	gotmpl.SeedAbsentLeafKeys(data, refs)
+	gotmpl.SeedAbsentLeafKeys(data, refs, []string{parametersRoot})
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {

@@ -150,6 +150,66 @@ func TestEvalTemplate_IteratedReferenceIsLeftAlone(t *testing.T) {
 	}
 }
 
+// A root read whole that the context defines but holds nothing for renders nothing,
+// as an unset key beneath a root does: the pillars a node may carry nothing for —
+// its workload, its metadata, its attachments, the attachment name — are left out of
+// the delivered context when empty, and a read of one would otherwise print the
+// placeholder text into the artifact. A root holding a value prints as it did, and
+// iterating a root holding nothing still iterates as nothing.
+func TestEvalTemplate_DefinedRootHoldingNothingRendersEmpty(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tmpl string
+		want string
+	}{
+		{`[{{ .workload }}]`, "[]"},
+		{`[{{ $.workload }}]`, "[]"},
+		{`[{{ .metadata }}]`, "[]"},
+		{`[{{ .attachment_name }}]`, "[]"},
+		{`[{{ .features }}]`, "[]"},
+		{`{{ .workload | default "fb" }}`, "fb"},
+		{`{{ if .workload }}y{{ else }}n{{ end }}{{ .workload }}`, "n"},
+		{`{{ range .features }}x{{ else }}none{{ end }}`, "none"},
+		// Positive controls: a root holding a value prints as it always did.
+		{`{{ .values.present }}`, "vp"},
+		{`{{ .provides.present }}`, "pp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tmpl, func(t *testing.T) {
+			t.Parallel()
+			got, err := EvalTemplate("t", tc.tmpl, unsetValueFixture(), redact.Keys{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("rendered %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// One reference written once through $ and once through the dot is one reference,
+// so ranging it in one spelling and reading it in the other iterates an absent list
+// as nothing rather than failing on the empty string a value read would supply.
+func TestEvalTemplate_BothAnchorsShareTheIteratedTreatment(t *testing.T) {
+	t.Parallel()
+	for _, tmpl := range []string{
+		`{{ if false }}{{ .values.absent_list }}{{ end }}{{ range $.values.absent_list }}x{{ end }}`,
+		`{{ if false }}{{ $.values.absent_list }}{{ end }}{{ range .values.absent_list }}x{{ end }}`,
+	} {
+		t.Run(tmpl, func(t *testing.T) {
+			t.Parallel()
+			got, err := EvalTemplate("t", tmpl, unsetValueFixture(), redact.Keys{})
+			if err != nil {
+				t.Fatalf("ranging an absent list must iterate as nothing in either spelling, got: %v", err)
+			}
+			if got != "" {
+				t.Errorf("rendered %q, want the empty string", got)
+			}
+		})
+	}
+}
+
 // A read whose PARENT is absent stays a failure. text/template cannot descend
 // through nothing, and supplying the missing parent so the descent could proceed
 // would trade that loud failure for a silently empty result — the opposite of what

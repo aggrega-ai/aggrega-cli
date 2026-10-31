@@ -43,6 +43,8 @@ func TestRootKeysRead(t *testing.T) {
 			"{{ with .values }}{{ .locals.x }}{{ end }}", nil, true},
 		{"the root's name in a string literal", `{{ printf "%s" ".locals.x" }}`, nil, true},
 		{"a range element's field", "{{ range .values.list }}{{ .locals }}{{ end }}", nil, true},
+		{"a parenthesised root, chained", "{{ (.locals).version }}", []string{"version"}, true},
+		{"a parenthesised root through the root variable, chained", "{{ ($.locals).version }}", []string{"version"}, true},
 
 		// Incomplete: the root is read whole.
 		{"index over the root", `{{ index .locals "version" }}`, nil, false},
@@ -51,6 +53,7 @@ func TestRootKeysRead(t *testing.T) {
 		{"a with body over the root", "{{ with .locals }}{{ .version }}{{ end }}", nil, false},
 		{"the root bound to a variable", "{{ $l := .locals }}{{ $l.version }}", nil, false},
 		{"the root through the root variable, bound", "{{ $l := $.locals }}{{ index $l `v` }}", nil, false},
+		{"a function over the root, chained", "{{ (default dict .locals).version }}", nil, false},
 
 		// Incomplete: the context itself is handed on. Binding it to a variable is
 		// handing it on too, even where every later read through the variable spells

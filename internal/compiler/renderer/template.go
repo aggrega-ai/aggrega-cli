@@ -226,7 +226,11 @@ func (e templateEval) executeData(t *template.Template, refs []gotmpl.RootRef, d
 		e.scope.withheld.SubstituteTree(data)
 	}
 	if e.missingKeyPolicy() == missingKeyZero {
-		gotmpl.SeedAbsentLeafKeys(data, refs)
+		// The roots the scope admits are the roots this surface defines, so a
+		// root read whole that the surface defines and the data leaves nil is
+		// supplied for exactly as an absent key beneath a root is.
+		admitted, _ := e.scope.admittedRoots()
+		gotmpl.SeedAbsentLeafKeys(data, refs, admitted)
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {

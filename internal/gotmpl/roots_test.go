@@ -4,9 +4,11 @@
 package gotmpl
 
 import (
+	"bytes"
 	"sort"
 	"strings"
 	"testing"
+	"text/template"
 	"text/template/parse"
 )
 
@@ -195,7 +197,7 @@ func TestSeedAbsentLeafKeys_SuppliesOnlyWhereTheRulesAllow(t *testing.T) {
 			wantOut: []string{"parameters.nosuch"},
 		},
 		{
-			name:    "a one-segment ROOT reference is left alone",
+			name:    "a one-segment ROOT the surface does not define is left alone",
 			tmpl:    `{{ .parameters }}{{ .undeclared }}`,
 			data:    map[string]any{"parameters": map[string]any{}},
 			wantOut: []string{"undeclared"},
@@ -216,7 +218,7 @@ func TestSeedAbsentLeafKeys_SuppliesOnlyWhereTheRulesAllow(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			SeedAbsentLeafKeys(tc.data, CollectRootRefs(mustParseForRoots(t, tc.tmpl)))
+			SeedAbsentLeafKeys(tc.data, CollectRootRefs(mustParseForRoots(t, tc.tmpl)), nil)
 			for _, path := range tc.wantAt {
 				got, present := lookupPath(tc.data, path)
 				if !present {
@@ -237,7 +239,7 @@ func TestSeedAbsentLeafKeys_SuppliesOnlyWhereTheRulesAllow(t *testing.T) {
 	// The present-leaf case above only asserts an unrelated key stayed absent; pin
 	// the value itself so an overwrite cannot pass.
 	data := map[string]any{"parameters": map[string]any{"filled": "kept"}}
-	SeedAbsentLeafKeys(data, CollectRootRefs(mustParseForRoots(t, `{{ .parameters.filled }}`)))
+	SeedAbsentLeafKeys(data, CollectRootRefs(mustParseForRoots(t, `{{ .parameters.filled }}`)), nil)
 	if got, _ := lookupPath(data, "parameters.filled"); got != "kept" {
 		t.Errorf("a filled leaf must keep its value, got %#v", got)
 	}
@@ -251,12 +253,12 @@ func TestSeedAbsentLeafKeys_SuppliesOnlyWhereTheRulesAllow(t *testing.T) {
 func TestSeedAbsentLeafKeys_SuppliedLeafMakesItsParentTruthy(t *testing.T) {
 	t.Parallel()
 	guardOnly := map[string]any{"parameters": map[string]any{}}
-	SeedAbsentLeafKeys(guardOnly, CollectRootRefs(mustParseForRoots(t, `{{ if .parameters }}yes{{ end }}`)))
+	SeedAbsentLeafKeys(guardOnly, CollectRootRefs(mustParseForRoots(t, `{{ if .parameters }}yes{{ end }}`)), nil)
 	if got := len(guardOnly["parameters"].(map[string]any)); got != 0 {
 		t.Fatalf("a guard alone reads no key, so nothing may be supplied; parent holds %d key(s)", got)
 	}
 	guardAndRead := map[string]any{"parameters": map[string]any{}}
-	SeedAbsentLeafKeys(guardAndRead, CollectRootRefs(mustParseForRoots(t, `{{ if .parameters }}yes{{ end }}{{ .parameters.absent }}`)))
+	SeedAbsentLeafKeys(guardAndRead, CollectRootRefs(mustParseForRoots(t, `{{ if .parameters }}yes{{ end }}{{ .parameters.absent }}`)), nil)
 	if got := len(guardAndRead["parameters"].(map[string]any)); got != 1 {
 		t.Fatalf("reading an absent key must supply it, making the parent non-empty; parent holds %d key(s)", got)
 	}
@@ -272,9 +274,188 @@ func TestSeedAbsentLeafKeys_SuppliedLeafMakesItsParentTruthy(t *testing.T) {
 func TestSeedAbsentLeafKeys_NonMapDataIsDeclined(t *testing.T) {
 	t.Parallel()
 	refs := CollectRootRefs(mustParseForRoots(t, `{{ .parameters.missing }}`))
-	SeedAbsentLeafKeys("not a map", refs)
-	SeedAbsentLeafKeys(nil, refs)
-	SeedAbsentLeafKeys(struct{ Parameters map[string]any }{}, refs)
+	SeedAbsentLeafKeys("not a map", refs, nil)
+	SeedAbsentLeafKeys(nil, refs, nil)
+	SeedAbsentLeafKeys(struct{ Parameters map[string]any }{}, refs, nil)
+}
+
+// One path written through $ and through the dot is one reference: the walk keeps
+// one entry for it, quoting the spelling the template wrote first, and the
+// iteration flag merges across the two spellings exactly as it merges across two
+// occurrences of one spelling.
+func TestCollectRootRefs_BothAnchorsAreOneReference(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		tmpl     string
+		wantPath string
+		iterated bool
+	}{
+		{"dot first, ranged through $", `{{ .values.user }}{{ range $.values.user }}x{{ end }}`, ".values.user", true},
+		{"$ first, ranged through $", `{{ $.values.user }}{{ range $.values.user }}x{{ end }}`, "$.values.user", true},
+		{"ranged through $ first, read through the dot", `{{ range $.values.user }}x{{ end }}{{ .values.user }}`, "$.values.user", true},
+		{"ranged through the dot, read through $", `{{ range .values.user }}x{{ end }}{{ $.values.user }}`, ".values.user", true},
+		{"read both ways, never ranged", `{{ $.values.a }}{{ .values.a }}`, "$.values.a", false},
+		{"inside a rebound body, through $ and an outer alias", `{{ $v := .values }}{{ range .infra.list }}{{ $.values.a }}{{ end }}{{ $v.a }}`, "$.values.a", false},
+	}
+	for _, tc := range cases {
+		var matching []RootRef
+		for _, ref := range CollectRootRefs(mustParseForRoots(t, tc.tmpl)) {
+			if strings.Join(ref.Segs, ".") == strings.TrimPrefix(strings.TrimPrefix(tc.wantPath, "$"), ".") {
+				matching = append(matching, ref)
+			}
+		}
+		if len(matching) != 1 {
+			t.Errorf("%s: %q recorded %d entries for one path, want exactly 1: %v",
+				tc.name, tc.tmpl, len(matching), refPaths(matching))
+			continue
+		}
+		if matching[0].Path != tc.wantPath {
+			t.Errorf("%s: the entry quotes %q, want the first-written spelling %q", tc.name, matching[0].Path, tc.wantPath)
+		}
+		if matching[0].Iterated != tc.iterated {
+			t.Errorf("%s: Iterated = %v, want %v", tc.name, matching[0].Iterated, tc.iterated)
+		}
+	}
+}
+
+// A field chained off a parenthesised single reference names that reference's path
+// extended by the field, on the same terms as the direct spelling — so a check over
+// the direct spelling sees the parenthesised one too. A function applied inside the
+// parentheses still leaves the chained field unnamed.
+func TestCollectRootRefs_ParenthesisedReferenceNamesItsPath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tmpl string
+		want []string
+	}{
+		{`{{ (.locals).absent }}`, []string{".locals.absent"}},
+		{`{{ ($.locals).absent }}`, []string{"$.locals.absent"}},
+		{`{{ ((.locals)).absent }}`, []string{".locals.absent"}},
+		{`{{ (.values).a.b }}`, []string{".values.a.b"}},
+		{`{{ (.).locals.v }}`, []string{".locals.v"}},
+		{`{{ with .metadata }}{{ (.).release_name }}{{ end }}`, []string{".metadata", ".metadata.release_name"}},
+		{`{{ $m := .metadata }}{{ ($m).release_name }}`, []string{".metadata", ".metadata.release_name"}},
+		{`{{ range (.values).list }}{{ . }}{{ end }}`, []string{".values.list"}},
+		{`{{ (default dict .values.tls).ca }}`, []string{".values.tls"}},
+		{`{{ range .values.list }}{{ (.).name }}{{ end }}`, []string{".values.list"}},
+	}
+	for _, tc := range cases {
+		got := refPaths(CollectRootRefs(mustParseForRoots(t, tc.tmpl)))
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%q collected %v, want exactly %v", tc.tmpl, got, tc.want)
+		}
+	}
+	refs := CollectRootRefs(mustParseForRoots(t, `{{ range (.values).list }}{{ . }}{{ end }}`))
+	if len(refs) != 1 || !refs[0].Iterated {
+		t.Errorf("a parenthesised reference ranged over must be one iterated entry, got %+v", refs)
+	}
+}
+
+// The parenthesised spelling of a read of an undeclared local is classified exactly
+// as the direct spelling is, so every surface refusing the direct one through this
+// classification refuses the parenthesised one with the same fault and key.
+func TestClassifyRootKeyReference_ParenthesisedRootReadsAsTheDirectSpelling(t *testing.T) {
+	t.Parallel()
+	declared := []string{"probe"}
+	for _, text := range []string{
+		`{{ .locals.absent }}`,
+		`{{ (.locals).absent }}`,
+		`{{ ($.locals).absent }}`,
+	} {
+		got := ClassifyRootKeyReference(text, "{{", "}}", LocalsContextRoot, declared, declared)
+		if got.Fault != RootKeyUndeclared || got.Key != "absent" {
+			t.Errorf("%s: classified %+v, want an undeclared-key fault on %q", text, got, "absent")
+		}
+	}
+}
+
+// A root read whole that the surface defines but that holds nothing — nil, or left
+// out of the data because nothing was supplied for it — is supplied the empty string,
+// as an absent leaf is. A root the surface does not define, a root holding a value,
+// and a root the template iterates are left exactly as they were.
+func TestSeedAbsentLeafKeys_DefinedRootHoldingNothingIsSupplied(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		tmpl    string
+		data    map[string]any
+		defined []string
+		want    map[string]any // the root's value afterwards; a missing key means absent
+	}{
+		{"defined root left out of the data", `{{ .workload }}`, map[string]any{}, []string{"workload"},
+			map[string]any{"workload": ""}},
+		{"defined root left out, read through $", `{{ $.workload }}`, map[string]any{}, []string{"workload"},
+			map[string]any{"workload": ""}},
+		{"root the data holds as nil", `{{ .workload }}`, map[string]any{"workload": nil}, nil,
+			map[string]any{"workload": ""}},
+		{"root the surface does not define", `{{ .undeclared }}`, map[string]any{}, []string{"workload"},
+			map[string]any{}},
+		{"root holding a value keeps it", `{{ .workload }}`, map[string]any{"workload": "kept"}, []string{"workload"},
+			map[string]any{"workload": "kept"}},
+		{"root the template iterates", `{{ range .features }}{{ . }}{{ end }}`, map[string]any{}, []string{"features"},
+			map[string]any{}},
+		{"root a guard reads", `{{ if .workload }}y{{ end }}`, map[string]any{}, []string{"workload"},
+			map[string]any{"workload": ""}},
+	}
+	for _, tc := range cases {
+		SeedAbsentLeafKeys(tc.data, CollectRootRefs(mustParseForRoots(t, tc.tmpl)), tc.defined)
+		if len(tc.data) != len(tc.want) {
+			t.Errorf("%s: data holds %v, want %v", tc.name, tc.data, tc.want)
+			continue
+		}
+		for key, want := range tc.want {
+			if got, present := tc.data[key]; !present || got != want {
+				t.Errorf("%s: %s = %#v (present %v), want %#v", tc.name, key, got, present, want)
+			}
+		}
+	}
+}
+
+// The outcomes the walk and the seeding exist for, read off the template engine
+// itself under the absent-key policy the value surfaces run with: a defined root
+// holding nothing prints nothing, a path ranged in one spelling and read in the
+// other iterates as nothing instead of failing on a string, and a guarded read of a
+// present value prints the value as it always did.
+func TestSeedAbsentLeafKeys_RenderedOutcomes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		tmpl    string
+		data    map[string]any
+		defined []string
+		want    string
+	}{
+		{"a defined root holding nothing prints nothing", `[{{ .workload }}]`,
+			map[string]any{}, []string{"workload"}, "[]"},
+		{"a nil root prints nothing", `[{{ .workload }}]`,
+			map[string]any{"workload": nil}, nil, "[]"},
+		{"ranged through $ and read through the dot iterates as nothing",
+			`{{ if false }}{{ .values.user }}{{ end }}{{ range $.values.user }}x{{ end }}`,
+			map[string]any{"values": map[string]any{}}, []string{"values"}, ""},
+		{"ranged through the dot and read through $ iterates as nothing",
+			`{{ range .values.user }}x{{ end }}{{ if false }}{{ $.values.user }}{{ end }}`,
+			map[string]any{"values": map[string]any{}}, []string{"values"}, ""},
+		{"a present value prints as it did", `{{ .values.user }}{{ range $.values.list }}-{{ . }}{{ end }}`,
+			map[string]any{"values": map[string]any{"user": "u", "list": []any{"a"}}}, []string{"values"}, "u-a"},
+		{"a guard over a defined root holding nothing stays falsy", `{{ if .workload }}y{{ else }}n{{ end }}{{ .workload }}`,
+			map[string]any{}, []string{"workload"}, "n"},
+	}
+	for _, tc := range cases {
+		tpl, err := template.New(tc.name).Option("missingkey=zero").Parse(tc.tmpl)
+		if err != nil {
+			t.Fatalf("%s: parse: %v", tc.name, err)
+		}
+		SeedAbsentLeafKeys(tc.data, CollectRootRefs(tpl.Tree.Root), tc.defined)
+		var out bytes.Buffer
+		if err := tpl.Execute(&out, tc.data); err != nil {
+			t.Errorf("%s: execution failed: %v", tc.name, err)
+			continue
+		}
+		if out.String() != tc.want {
+			t.Errorf("%s: rendered %q, want %q", tc.name, out.String(), tc.want)
+		}
+	}
 }
 
 func lookupPath(data map[string]any, path string) (any, bool) {

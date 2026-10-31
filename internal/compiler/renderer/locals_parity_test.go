@@ -66,6 +66,23 @@ func localsParityCases() []localsParityCase {
 			locals:   []string{"base", "svc", observedKey, "{{ .locals.bass }}.internal"},
 			sentinel: ErrLocalsUnknownReference(),
 		},
+		{
+			// A parenthesised pillar names the same key the direct spelling names,
+			// so it resolves where that spelling resolves and halts where it halts.
+			name:   "parenthesised backward reference resolves",
+			locals: []string{"base", "svc", observedKey, "{{ (.locals).base }}.internal"},
+			want:   "svc.internal",
+		},
+		{
+			name:     "parenthesised unknown reference halts",
+			locals:   []string{"base", "svc", observedKey, "{{ (.locals).bass }}.internal"},
+			sentinel: ErrLocalsUnknownReference(),
+		},
+		{
+			name:     "parenthesised unknown reference through the root variable halts",
+			locals:   []string{"base", "svc", observedKey, "{{ ($.locals).bass }}.internal"},
+			sentinel: ErrLocalsUnknownReference(),
+		},
 	}
 }
 

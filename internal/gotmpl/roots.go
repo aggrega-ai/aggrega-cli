@@ -4,6 +4,7 @@
 package gotmpl
 
 import (
+	"slices"
 	"strings"
 	"text/template/parse"
 )
@@ -18,6 +19,10 @@ import (
 // alias. That is what lets the aliased and the direct spelling of one reference
 // share a single entry, so the iteration flag below merges across them and a
 // diagnostic names the reference the check actually refused.
+//
+// One reference is one entry whichever way it is anchored: .values.x and $.values.x
+// name the same path, so they share an entry keyed on Segs. Path keeps the spelling
+// the template wrote FIRST, which is the one a diagnostic quotes back.
 //
 // Iterated marks a reference the template iterates over — the operand of a range
 // pipeline — rather than reads as a value. Iteration needs a container where a
@@ -47,6 +52,11 @@ type RootRef struct {
 //     contributes nothing while the inner .values.tls still contributes
 //     "values". This is what keeps a defensively-written optional key from
 //     reading as a reference to a root named "ca".
+//   - a parenthesised expression that is a single reference and nothing more
+//     names exactly the path that reference names, so (.locals).name and
+//     ($.locals).name contribute ".locals.name" and "$.locals.name" exactly as
+//     the direct spelling does. Only a function applied inside the parentheses
+//     leaves the chained fields unnameable, as the bullet above describes.
 //   - inside a range body the dot is the element, so .name there names a field of
 //     that element and contributes nothing; a range's declared key and element
 //     variables name that same unnameable value and contribute nothing either. A
@@ -161,12 +171,18 @@ func CollectRootRefs(tree parse.Node) []RootRef {
 // does not already resolve is therefore left untouched, and so is a chain that
 // resolves to something other than a map.
 //
-// A reference of one segment names a root rather than a key and is left alone. What
-// a surface does about a root it does not define is that surface's own policy —
-// refusing it outright, or letting it resolve to nothing — and seeding one here
-// would silently pre-empt that decision. A root a surface does define is a container
-// in every real use, and supplying an empty string for one is the parent-creation
-// the paragraph above forbids.
+// A reference of one segment names a ROOT read whole, and a root is supplied for
+// only where the surface defines it. definedRoots names the roots the caller's
+// surface defines — the ones its reference check admits — and a root the data
+// itself holds counts as defined as well. A defined root whose value is nil, or which
+// the data leaves out because nothing was supplied for it, reads exactly as an
+// absent leaf does, so it receives the same empty string. A root holding a value
+// keeps it, whatever the value is. A root the surface does NOT define is left alone:
+// what a surface does about such a root is that surface's own policy — refusing it
+// outright, or letting it resolve to nothing — and seeding one here would silently
+// pre-empt that decision. Supplying a root never makes a read beneath it succeed
+// where it failed: a deeper read halts against an empty string as it does against
+// nothing.
 //
 // A reference the template ITERATES is left alone for the same reason from the
 // other direction: range needs a container where a value read needs a scalar, so
@@ -189,13 +205,17 @@ func CollectRootRefs(tree parse.Node) []RootRef {
 // "<no value>" this exists to remove. A guard that means "did the author fill this
 // one field" belongs on the field, where the empty string is falsy as the unset
 // value was.
-func SeedAbsentLeafKeys(data any, refs []RootRef) {
+func SeedAbsentLeafKeys(data any, refs []RootRef, definedRoots []string) {
 	root, ok := data.(map[string]any)
 	if !ok {
 		return
 	}
 	for _, ref := range refs {
-		if len(ref.Segs) < 2 || ref.Iterated {
+		if len(ref.Segs) == 0 || ref.Iterated {
+			continue
+		}
+		if len(ref.Segs) == 1 {
+			seedNilRoot(root, ref.Segs[0], definedRoots)
 			continue
 		}
 		parent := root
@@ -217,9 +237,23 @@ func SeedAbsentLeafKeys(data any, refs []RootRef) {
 	}
 }
 
+// seedNilRoot supplies the empty string for one root read whole, on the terms
+// SeedAbsentLeafKeys states: only a defined root, and only where it holds nothing.
+func seedNilRoot(root map[string]any, name string, definedRoots []string) {
+	value, present := root[name]
+	if present && value != nil {
+		return
+	}
+	if !present && !slices.Contains(definedRoots, name) {
+		return
+	}
+	root[name] = ""
+}
+
 // rootRefs accumulates the walk's result: the references in first-appearance
-// order, and the index each recorded path sits at so a path met twice merges into
-// its existing entry rather than appearing twice.
+// order, and the index each recorded path sits at, keyed on its segments, so a path
+// met twice — in either spelling — merges into its existing entry rather than
+// appearing twice.
 //
 // wholeRoot records that the template handed on the context root itself — a bare
 // dot while the dot is the root, a bare $, or a variable bound to the root. Such a
@@ -443,24 +477,71 @@ func walkRootsArg(arg parse.Node, dot dotPath, vars varPaths, iterated bool, out
 			recordRootRef(out, segs, "."+strings.Join(segs, "."), iterated)
 		}
 	case *parse.ChainNode:
-		// The chained fields hang off the receiver's value, not off the dot;
-		// only the receiver can reach the context root.
+		// The chained fields hang off the receiver's value, not off the dot. Where
+		// the receiver is a parenthesised single reference its value IS a path the
+		// text names, so the chain names that path extended by the chained fields;
+		// otherwise only the receiver can reach the context root.
+		if segs, anchor, ok := chainReceiverPath(a, dot, vars); ok {
+			full := append(append([]string(nil), segs...), a.Field...)
+			recordRootRef(out, full, anchor+strings.Join(full, "."), iterated)
+			return
+		}
 		walkRootsArg(a.Node, dot, vars, iterated, out)
 	case *parse.PipeNode:
 		walkRootsPipe(a, dot, vars, iterated, out)
 	}
 }
 
+// chainReceiverPath returns the root-anchored path a chain's receiver names, and the
+// anchor its spelling starts with, when the receiver is a parenthesised single
+// reference — (.locals) or ($.locals) — whose value is that path and nothing else.
+// ok is false for any other receiver: a function applied inside the parentheses
+// yields what evaluation decides, which no reading of the text can name.
+func chainReceiverPath(ch *parse.ChainNode, dot dotPath, vars varPaths) ([]string, string, bool) {
+	p, isPipe := ch.Node.(*parse.PipeNode)
+	if !isPipe {
+		return nil, "", false
+	}
+	value := pipeDot(p, dot, vars)
+	if !value.known {
+		return nil, "", false
+	}
+	return value.segs, pipeAnchor(p), true
+}
+
+// pipeAnchor is the anchor a single-reference pipeline's spelling starts with: "$."
+// where the reference is written through $, "." for every other spelling.
+func pipeAnchor(p *parse.PipeNode) string {
+	if p == nil || len(p.Cmds) != 1 || p.Cmds[0] == nil || len(p.Cmds[0].Args) != 1 {
+		return "."
+	}
+	switch a := p.Cmds[0].Args[0].(type) {
+	case *parse.PipeNode:
+		return pipeAnchor(a)
+	case *parse.VariableNode:
+		if len(a.Ident) > 0 && a.Ident[0] == "$" {
+			return "$."
+		}
+	}
+	return "."
+}
+
+// recordRootRef records one reference, merging it into the entry already recorded
+// for the same path. The entry is keyed on the segments rather than on the
+// spelling, so a path written once through $ and once through the dot is one
+// reference: the spelling met first stays the entry's Path, and the iteration flag
+// merges across both.
 func recordRootRef(out *rootRefs, segs []string, path string, iterated bool) {
 	if len(segs) == 0 || segs[0] == "" {
 		return
 	}
-	if at, ok := out.seen[path]; ok {
+	key := strings.Join(segs, "\x00")
+	if at, ok := out.seen[key]; ok {
 		// A path read as a value in one place and iterated in another is iterated:
 		// the position that needs a container is the binding one.
 		out.refs[at].Iterated = out.refs[at].Iterated || iterated
 		return
 	}
-	out.seen[path] = len(out.refs)
+	out.seen[key] = len(out.refs)
 	out.refs = append(out.refs, RootRef{Segs: segs, Path: path, Iterated: iterated})
 }
