@@ -13,8 +13,9 @@ import (
 
 // ValidateAuthoredAnnotations asks the rules over every annotation entry either
 // authoring document declares, and refuses the build when any of them names a
-// subkey its binding does not route, routes through a pillar its own document may
-// not use, or carries a value the Feature its binding targets does not admit.
+// subkey its binding does not route, writes a bare value its binding does not
+// route to exactly one path, routes through a pillar its own document may not use,
+// or carries a value the Feature its binding targets does not admit.
 //
 // It presents the documents and names each rule rather than walking the
 // annotations itself: the rules are declared in this package as constraints, so
@@ -118,6 +119,13 @@ func ValidateAuthoredAnnotations(
 		if err := rule(constraint.RunOnAuthoredAnnotations(
 			cancelled, entries, constraint.DocumentView(presented),
 			annotationSubkeyIsRoutedByItsBinding)); err != nil {
+			return err
+		}
+		// The bare-value routing rule reads the value as written, which the
+		// normalized presentation carries, so it is asked against that view.
+		if err := rule(constraint.RunOnAuthoredAnnotations(
+			cancelled, entries, facts,
+			annotationBareValueRoutesThroughOnePath)); err != nil {
 			return err
 		}
 		if err := rule(constraint.RunOnAuthoredAnnotations(

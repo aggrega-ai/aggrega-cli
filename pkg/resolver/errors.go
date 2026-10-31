@@ -197,14 +197,17 @@ var errAnnotationSubkeyNotBound = cerrors.Register("annotation-subkey-not-bound"
 // together; a binding declaring several leaves the value with more than one place
 // to go and no way to choose, and a binding declaring none leaves it nowhere.
 //
-// It is raised as the annotation is expanded into a Feature attachment, on either
-// authoring side, and the finding names the binding's Feature, the paths it
-// declares and the value that could not be placed. A binding declaring no path is
-// refused by the Manifest schema before expansion runs, so a build reaches this
-// condition through the several-paths case. Distinct from
-// ErrAnnotationSubkeyNotBound, which refuses a subkey of a structured value that
-// the binding does not route: that value names where it should go, and this one
-// does not.
+// It is asked over the value an Aggregate or Release author wrote, before any
+// annotation is expanded, beside the rules ErrAnnotationSubkeyNotBound and
+// ErrAnnotationSubkeyNotConforming name, and once per entry as written: a value
+// written on a scope is refused at that scope whether or not a component below
+// takes it up. The finding names the annotation key, the value and the paths the
+// binding declares. A binding declaring no path is refused by the Manifest schema
+// first, so a build reaches this condition through the several-paths case. An
+// empty value writes nothing, so it is refused only where neither pillar list
+// holds exactly one path. Distinct from ErrAnnotationSubkeyNotBound, which refuses
+// a subkey of a structured value that the binding does not route: that value
+// names where it should go, and this one does not.
 func ErrAnnotationScalarNotRoutable() error { return errAnnotationScalarNotRoutable }
 
 var errAnnotationScalarNotRoutable = cerrors.Register("annotation-scalar-not-routable", cerrors.Meta{

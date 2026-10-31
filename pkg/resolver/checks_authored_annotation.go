@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The rules over what an author wrote in an annotation, expressed as constraint
@@ -27,10 +28,11 @@ import (
 //
 // They decide whether, and where, an entry routes through one declared fact
 // rather than each walking the binding's route list — a rule reading the list
-// reads it only to name the routes in its finding — so the rule that a bare value
-// routes through the binding's single declared path, and the tie-break for a path
-// declared under both pillars, have one home and cannot come to be answered two
-// ways.
+// reads it only to name the routes in its finding, or to hand a bare value's
+// routes to the one reading expansion places such a value by — so the rule that a
+// bare value routes through the binding's single declared path, and the tie-break
+// for a path declared under both pillars, have one home and cannot come to be
+// answered two ways.
 
 // annotationSubkeyConformsToTheTargetFeature reports each authored annotation
 // value the target Feature's contract refuses at the pillar and path its binding
@@ -125,8 +127,9 @@ var annotationSubkeyConformsToTheTargetFeature = constraint.Check[
 // It reads the routing through the same lookup its siblings do, so a subkey this
 // rule passes is one the others find a target for. A value written bare carries no
 // subkey and is passed over: whether it routes is a question of the binding's
-// single declared path, which the expansion answers. A key no binding claims is
-// passed over too, for the reason the conformance rule above states.
+// single declared path, which [annotationBareValueRoutesThroughOnePath] answers. A
+// key no binding claims is passed over too, for the reason the conformance rule
+// above states.
 //
 // It reads no contract and no catalog, so it is declared against the narrower view
 // and placed with the side rule, at the earliest point its predicate allows.
@@ -166,6 +169,83 @@ var annotationSubkeyIsRoutedByItsBinding = constraint.Check[
 			ErrAnnotationSubkeyNotBound(),
 			constraint.Uncaptioned(s.AnnotationSubkey()),
 			constraint.Captioned("written under annotation", s.AnnotationKey()),
+			declared,
+		)}
+	},
+}
+
+// annotationBareValueRoutesThroughOnePath reports each annotation value written
+// bare — a string rather than a map of subkeys — that its binding does not route
+// to exactly one path: the presented Manifest declares a binding for the key, and
+// that binding declares several paths across its two pillar lists, or none.
+//
+// A bare value names no subkey, so the binding's paths are all it has to go by,
+// and where they offer more than one place the value cannot be split between them
+// and choosing one would deliver the author's string into a field they did not
+// name. The decision is [bareAnnotationValueRoute]'s, the same reading expansion
+// places a value by, so a value this rule passes is one expansion can place. That
+// is why the rule reads the value as well as the routes: an empty value writes no
+// leaf, and the reading admits it where one pillar list holds a single path.
+//
+// It is asked over the entry as written rather than once per component the entry
+// reaches, so a value written on a scope is refused once, at the line the author
+// typed, whether or not a component below takes it up. A key no binding claims is
+// passed over, for the reason the conformance rule above states, and so is a value
+// written as a map, whose subkeys the routing rule above answers for.
+//
+// The finding names the key, the value and the paths the binding declares, in the
+// order the binding declares them, so the author can see which one they meant and
+// write the value under it.
+var annotationBareValueRoutesThroughOnePath = constraint.Check[
+	constraint.NormalizedView,
+	constraint.AuthoredAnnotationSubject,
+]{
+	Sentinel: ErrAnnotationScalarNotRoutable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.NormalizedView,
+		s constraint.AuthoredAnnotationSubject,
+	) []constraint.Objection {
+		if s.AnnotationSubkey() != "" {
+			return nil
+		}
+		routes, bound := v.AnnotationBindingDeclaredRoutes(s.AnnotationKey())
+		if !bound {
+			return nil
+		}
+		written, present := v.AuthoredAnnotationSubvalue(
+			s.AuthoringDocumentKind(), s.AnnotationScopePath(), s.AnnotationComponentName(),
+			s.AnnotationKey(), s.AnnotationSubkey(),
+		)
+		if !present {
+			return nil
+		}
+		value, bare := written.(string)
+		if !bare {
+			return nil
+		}
+		var maps types.AnnotationBindingMaps
+		paths := make([]string, 0, len(routes))
+		for _, route := range routes {
+			paths = append(paths, route.Path)
+			switch route.Pillar {
+			case bindingRoutePillarInfra:
+				maps.Infra = append(maps.Infra, route.Path)
+			case bindingRoutePillarValues:
+				maps.Values = append(maps.Values, route.Path)
+			}
+		}
+		if _, _, routed := bareAnnotationValueRoute(maps, value); routed {
+			return nil
+		}
+		declared := constraint.Captioned("whose binding declares", "no path")
+		if len(paths) > 0 {
+			declared = constraint.Captioned("whose binding routes", strings.Join(paths, ", "))
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrAnnotationScalarNotRoutable(),
+			constraint.Uncaptioned(s.AnnotationKey()),
+			constraint.Captioned("carrying the bare value", value),
 			declared,
 		)}
 	},

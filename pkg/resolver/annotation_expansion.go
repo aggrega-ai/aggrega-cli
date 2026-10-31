@@ -366,15 +366,13 @@ func annotationSource(file, keyPath string) string {
 // target pillar (Maps.Infra, Maps.Values); only Maps.Infra paths fire
 // on the Release side per the side-vs-pillar invariant.
 //
-// Scalar values route to the binding's single declared path (the
-// scalar-and-multi-map ambiguity check fires for bindings declaring
-// more than one path total). Structured values route per subkey: each
-// subkey looks up its target pillar via Maps.Lookup, gates through
-// side-vs-pillar enforcement (subkey routing to values pillar fails
-// on the Release side), validates the subvalue's Go type against the
-// target Feature's spec.schema at the routed path, and on success
-// writes the leaf value into the synthetic Feature's Infra pillar at
-// the dotted-path leaf.
+// Scalar values route to the binding's single declared path, as
+// [bareAnnotationValueRoute] decides it. Structured values route per subkey: each
+// subkey looks up its target pillar via Maps.Lookup and, where that pillar is
+// infra, writes the leaf value into the synthetic Feature's Infra pillar at
+// the dotted-path leaf. Whether each subkey is routed, lies in the Release's
+// pillar and carries a value the target Feature's schema admits are declared
+// rules asked over the authored entry before expansion runs.
 //
 // Per-subkey errors compose via errors.Join (collect-and-emit-all);
 // the caller sees every authoring problem per build cycle rather
@@ -386,12 +384,6 @@ func annotationSource(file, keyPath string) string {
 // a defensive case — the cascade-flatten step filters opt-outs
 // upstream. The function returns an empty BoundaryFeature with no
 // pillar contributions in that case.
-//
-// Path-target validation against the target Feature's spec.schema
-// runs upstream at catalog load (ValidateAnnotationBindingTargets);
-// this function's per-subkey type validation is the defensive
-// expansion-time backstop for bindings whose paths the load-time
-// check soft-skipped (e.g., paths under a $ref subtree).
 func expandBinding(
 	key string,
 	value *types.AnnotationValue,
@@ -411,12 +403,12 @@ func expandBinding(
 	return expandBindingStructured(out, key, *value, binding, side, feature, cache, sourceLocation)
 }
 
-// expandBindingScalar handles the single-path scalar branch. The
-// binding must declare exactly one path across both pillar lists, or
-// the value is refused as one that does not route. Whether the routed
-// path lies in the authoring side's pillar, and whether the value
-// conforms to the target Feature's schema there, are declared rules
-// asked over the authored entry before expansion runs.
+// expandBindingScalar handles the single-path scalar branch. Whether the
+// value routes at all, whether the routed path lies in the authoring
+// side's pillar, and whether the value conforms to the target Feature's
+// schema there, are declared rules asked over the authored entry before
+// expansion runs; a value that does not route is refused here only on a
+// path that skipped them.
 func expandBindingScalar(
 	out types.BoundaryFeature,
 	key string,
@@ -482,16 +474,18 @@ func expandBindingStructured(
 		pillar, found := binding.Maps.Lookup(subkey)
 		if !found {
 			// A subkey the binding does not route is refused, under its own condition,
-			// by the rule asked over the authored entry before expansion runs, so a
-			// build never reaches this branch with one in place. The refusal stays
-			// rather than a skip because expansion is reachable without that rule —
-			// directly, by a caller that has not asked it — and there an unroutable
-			// value would otherwise be dropped with nothing said.
+			// by the declared check over the authored entry, which every build,
+			// validation and preview asks before expansion runs, so none of them
+			// reaches this branch with one in place. The refusal stays rather than a
+			// skip because expansion is reachable without that check — directly, by a
+			// caller that has not asked it — and there an unroutable value would
+			// otherwise be dropped with nothing said. It names no condition: the
+			// condition is the check's to raise.
 			declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-			errs = append(errs, cerrors.Occurrence(errAnnotationSubkeyNotBound, fmt.Sprintf(
+			errs = append(errs, fmt.Errorf(
 				"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 				subkey, key, sourceLocation, declared,
-			)))
+			))
 			continue
 		}
 		if pillar == "infra" {
@@ -550,13 +544,14 @@ func synthesizeAggregateFeatureFromAnnotation(
 		for subkey, subvalue := range value.Structured.All() {
 			pillar, found := binding.Maps.Lookup(subkey)
 			if !found {
-				// Reached only without the rule over the authored entry, for the
-				// reason the Release-side branch states.
+				// Reached only by a caller that has not asked the declared check over
+				// the authored entry, and named as no condition, for the reasons the
+				// Release-side branch states.
 				declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-				errs = append(errs, cerrors.Occurrence(errAnnotationSubkeyNotBound, fmt.Sprintf(
+				errs = append(errs, fmt.Errorf(
 					"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 					subkey, key, sourceLocation, declared,
-				)))
+				))
 				continue
 			}
 			if pillar == "values" {
@@ -626,45 +621,87 @@ func lookupFeature(catalogLookup CatalogLookup, typeURI string) *types.Feature {
 	return &feat
 }
 
+// bareAnnotationValueRoute returns the path and pillar a value written bare
+// under an annotation routes through, given the paths its binding declares, and
+// whether it routes at all.
+//
+// A bare value names no subkey, so it routes through the binding's single
+// declared path, counted across both pillar lists. A non-empty value meeting a
+// binding that declares several paths does not route: it cannot be split between
+// them, and choosing one would deliver the author's string into a field they did
+// not name. An empty value writes no leaf, so it still routes where one pillar
+// list holds exactly one path — the first of the two checked being infra — and
+// does not route where neither does. A binding declaring no path routes nothing.
+//
+// It is the one reading of that rule. The declared check over the authored entry
+// asks it to decide what to refuse, and the expansion asks it to decide where to
+// write, so the value a build refuses and the value expansion cannot place are
+// the same value by construction rather than by two readings kept in step. Its
+// non-empty case is [bindingSinglePath], which the routing fact answers a bare
+// value's target through.
+func bareAnnotationValueRoute(maps types.AnnotationBindingMaps, value string) (string, string, bool) {
+	if path, pillar, routes := bindingSinglePath(maps); routes {
+		return path, pillar, true
+	}
+	if value != "" || maps.Len() == 0 {
+		return "", "", false
+	}
+	if len(maps.Infra) == 1 {
+		return maps.Infra[0], bindingRoutePillarInfra, true
+	}
+	if len(maps.Values) == 1 {
+		return maps.Values[0], bindingRoutePillarValues, true
+	}
+	return "", "", false
+}
+
+// bindingSinglePath returns the one path a binding declares across both pillar
+// lists, with its pillar, and whether it declares exactly one. It is where a
+// bare value carrying content routes.
+func bindingSinglePath(maps types.AnnotationBindingMaps) (string, string, bool) {
+	if maps.Len() != 1 {
+		return "", "", false
+	}
+	if len(maps.Infra) == 1 {
+		return maps.Infra[0], bindingRoutePillarInfra, true
+	}
+	return maps.Values[0], bindingRoutePillarValues, true
+}
+
 // resolveBindingTarget reads a binding's Maps and returns the dotted-path
-// route plus its target pillar for a scalar annotation value. The binding
-// must declare exactly one path across both pillar lists for scalar
-// routing to be unambiguous; declaring multiple paths paired with a
-// scalar annotation surfaces as the unambiguous-routing error.
+// route plus its target pillar for a scalar annotation value, as
+// [bareAnnotationValueRoute] decides it.
 //
 // An empty annotation value still resolves the (path, pillar) target —
 // the empty value populates no leaf, but the caller may need to know
-// the routing for provenance recording. A binding with zero declared
-// paths is structurally invalid and is rejected at Manifest load by the
-// JSON Schema's minProperties / minItems constraints; this function
-// returns a clear runtime error if the load-time check has been bypassed.
+// the routing for provenance recording.
 //
-// Every refusal here is an occurrence of ErrAnnotationScalarNotRoutable, built
-// through cerrors.Occurrence so its text stays exactly as composed here.
+// A value that does not route is refused under its own condition by the
+// declared check over the authored entry, which every build, validation and
+// preview asks before expansion runs, so no such path reaches this refusal
+// with one in place. The refusal here stays loud rather than becoming a skip
+// because expansion is reachable without that check — directly, by a caller
+// that has not asked it — and there an unplaceable value would otherwise be
+// dropped with nothing said. It names no condition: the condition is the
+// check's to raise, and a second raise site here would be a second home for it.
 func resolveBindingTarget(binding types.AnnotationBinding, value string) (string, string, error) {
-	total := binding.Maps.Len()
-	if total == 0 {
-		return "", "", cerrors.Occurrence(errAnnotationScalarNotRoutable, fmt.Sprintf(
+	if path, pillar, routes := bareAnnotationValueRoute(binding.Maps, value); routes {
+		return path, pillar, nil
+	}
+	switch total := binding.Maps.Len(); {
+	case total == 0:
+		return "", "", fmt.Errorf(
 			"binding for feature %q declares no paths in maps; scalar annotation value cannot route to any subkey",
-			binding.Feature))
-	}
-	if total > 1 && value != "" {
+			binding.Feature)
+	case value != "":
 		paths := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-		return "", "", cerrors.Occurrence(errAnnotationScalarNotRoutable, fmt.Sprintf(
+		return "", "", fmt.Errorf(
 			"binding for feature %q maps multiple subkey paths (%v); scalar annotation value %q cannot route to multiple subkeys unambiguously. Provide separate annotation keys for each path",
-			binding.Feature, paths, value))
+			binding.Feature, paths, value)
+	default:
+		return "", "", fmt.Errorf(
+			"binding for feature %q maps shape is structurally invalid", binding.Feature)
 	}
-	if len(binding.Maps.Infra) == 1 {
-		return binding.Maps.Infra[0], "infra", nil
-	}
-	if len(binding.Maps.Values) == 1 {
-		return binding.Maps.Values[0], "values", nil
-	}
-	// total == 0 covered above; total > 1 covered above; remaining case
-	// is exactly one path across both lists, handled by the two branches.
-	// Defensive fallback for unreachable state.
-	return "", "", cerrors.Occurrence(errAnnotationScalarNotRoutable, fmt.Sprintf(
-		"binding for feature %q maps shape is structurally invalid", binding.Feature))
 }
 
 // writeComponent persists a mutated component back into its containing

@@ -320,7 +320,8 @@ func (v manifestDocumentView) AnnotationBindingDeclaredRoutes(
 // binding declaring several is answered as routing nowhere rather than as
 // routing through whichever came first: the value cannot be split between them,
 // and picking one would deliver an author's single string into a field they did
-// not name.
+// not name. The answer is [bindingSinglePath]'s, the reading expansion places a
+// bare value carrying content by.
 //
 // A subkey the binding's own map does not name is answered the same way, which
 // is one of the two things the second result separates. Whether the key names a
@@ -339,22 +340,15 @@ func (v manifestDocumentView) AnnotationBindingSubkeyTarget(
 		return constraint.AnnotationSubkeyTarget{}, false
 	}
 	if subkey == "" {
-		switch {
-		case declared.Maps.Len() != 1:
+		path, pillar, single := bindingSinglePath(declared.Maps)
+		if !single {
 			return constraint.AnnotationSubkeyTarget{}, false
-		case len(declared.Maps.Infra) == 1:
-			return constraint.AnnotationSubkeyTarget{
-				FeatureType: declared.Feature,
-				Pillar:      bindingRoutePillarInfra,
-				Path:        declared.Maps.Infra[0],
-			}, true
-		default:
-			return constraint.AnnotationSubkeyTarget{
-				FeatureType: declared.Feature,
-				Pillar:      bindingRoutePillarValues,
-				Path:        declared.Maps.Values[0],
-			}, true
 		}
+		return constraint.AnnotationSubkeyTarget{
+			FeatureType: declared.Feature,
+			Pillar:      pillar,
+			Path:        path,
+		}, true
 	}
 	pillar, routed := declared.Maps.Lookup(subkey)
 	if !routed {
