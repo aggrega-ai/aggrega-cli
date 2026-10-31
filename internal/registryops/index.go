@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -955,35 +957,61 @@ func recordFromAnnotations(host, repo, version string, ann map[string]string) (r
 
 // WriteHostIndex writes one file per repository under the host's index
 // directory, plus the host's freshness sibling, under the artifact cache's index
-// subtree. The host directory is rebuilt from scratch — removed then recreated —
-// so the file set on disk is exactly the current record set: a repository that
-// dropped out of the registry leaves no stale file behind. Each per-repo file is
-// deterministic — indented JSON with a trailing newline, ordered slices, and
-// author-order labels — so two builds against the same registry state produce
-// byte-identical files and an identical file set. The timestamp lives only in
-// the freshness sibling file, beside the host directory, so it never perturbs
-// the records.
+// subtree. The host directory is replaced whole, so the file set on disk is
+// exactly the current record set: a repository that dropped out of the registry
+// leaves no stale file behind. Each per-repo file is deterministic — indented
+// JSON with a trailing newline, ordered slices, and author-order labels — so two
+// builds against the same registry state produce byte-identical files and an
+// identical file set. The timestamp lives only in the freshness sibling file,
+// beside the host directory, so it never perturbs the records.
+//
+// The new index is written aside and swapped in, so a process ended at any point
+// of the write, with no chance to clean up after itself, never leaves a partial
+// record set where a reader looks, nor a freshness time beside records it was not
+// written for. The records and the timestamp are first written in full
+// under names of their own beside the host's; then the host's freshness sibling
+// is removed, its directory is moved aside, the new directory takes its name, and
+// the new timestamp takes the sibling's name last. Between any two of those steps
+// a reader of the host's index finds the previous record set with its timestamp
+// or with none, no index at all, or the new record set with no timestamp or with
+// its own. Whatever an ended write left under the names beside the host's is
+// cleared by the host's next write, and a reader never looks there.
 //
 // It is exported so a test can lay out an index fixture through the very writer
 // the product uses, rather than through a second hand-written layout that would
 // agree with it until the day the layout changed.
 func WriteHostIndex(workspaceRoot, cacheDir string, idx HostIndex, now time.Time) error {
 	hostDir := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
-	// The index sits in the workspace's artifact cache, so the directory rebuilt
-	// and the freshness file beside it are held to the root the cache directory
-	// picks before anything is removed or written.
+	stampPath := hostDir + ".updated"
+	staging := hostDir + indexStagingSuffix
+	retired := hostDir + indexRetiredSuffix
+	stagedStamp := hostDir + indexStagedStampSuffix
+	// The index sits in the workspace's artifact cache, so the directory replaced,
+	// the freshness file beside it and every name the new index is laid out under
+	// first are held to the root the cache directory picks before anything is
+	// removed or written.
 	root := writescope.RootForCache(workspaceRoot, cacheDir)
 	if err := writescope.CheckDelete(root, hostDir); err != nil {
 		return err
 	}
-	if err := writescope.CheckWrite(root, hostDir+".updated"); err != nil {
-		return err
+	for _, path := range []string{stampPath, staging, retired, stagedStamp} {
+		if err := writescope.CheckWrite(root, path); err != nil {
+			return err
+		}
 	}
-	if err := os.RemoveAll(hostDir); err != nil {
-		return fmt.Errorf("index reset %s: %w", hostDir, err)
+	// The freshness file is removed before the swap, and a removal would take an
+	// empty directory standing at its name with it, so one is refused here, before
+	// anything changes, as writing the file over it would be.
+	if info, err := os.Lstat(stampPath); err == nil && info.IsDir() {
+		return fmt.Errorf("index timestamp write %s: is a directory", stampPath)
 	}
-	if err := os.MkdirAll(hostDir, 0o755); err != nil {
-		return fmt.Errorf("index mkdir %s: %w", hostDir, err)
+	for _, leftover := range []string{staging, retired, stagedStamp} {
+		if err := indexFS.removeAll(leftover); err != nil {
+			return fmt.Errorf("index reset %s: %w", leftover, err)
+		}
+	}
+	if err := indexFS.mkdirAll(staging, 0o755); err != nil {
+		return fmt.Errorf("index mkdir %s: %w", staging, err)
 	}
 	for _, rec := range idx.Records {
 		data, err := json.MarshalIndent(rec, "", "  ")
@@ -991,16 +1019,65 @@ func WriteHostIndex(workspaceRoot, cacheDir string, idx HostIndex, now time.Time
 			return fmt.Errorf("index marshal %s: %w", rec.Name, err)
 		}
 		data = append(data, '\n')
-		repoPath := oci.IndexRepoPath(workspaceRoot, cacheDir, idx.Host, rec.Name)
-		if err := os.WriteFile(repoPath, data, 0o644); err != nil {
+		// The record's file name is the one the host directory holds it under, so
+		// the directory that takes the host's name carries exactly that layout.
+		repoPath := filepath.Join(staging, filepath.Base(oci.IndexRepoPath(workspaceRoot, cacheDir, idx.Host, rec.Name)))
+		if err := indexFS.writeFile(repoPath, data, 0o644); err != nil {
 			return fmt.Errorf("index write %s: %w", repoPath, err)
 		}
 	}
-
-	base := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
 	stamp := now.Format(time.RFC3339) + "\n"
-	if err := os.WriteFile(base+".updated", []byte(stamp), 0o644); err != nil {
-		return fmt.Errorf("index timestamp write %s: %w", base+".updated", err)
+	if err := indexFS.writeFile(stagedStamp, []byte(stamp), 0o644); err != nil {
+		return fmt.Errorf("index timestamp write %s: %w", stagedStamp, err)
+	}
+
+	// The swap. The previous timestamp goes first, so it never stands beside the
+	// new records; the new one comes last, so it never stands beside the old ones.
+	if err := indexFS.remove(stampPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("index timestamp reset %s: %w", stampPath, err)
+	}
+	if err := indexFS.rename(hostDir, retired); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("index swap: %w", err)
+	}
+	if err := indexFS.rename(staging, hostDir); err != nil {
+		return fmt.Errorf("index swap: %w", err)
+	}
+	if err := indexFS.rename(stagedStamp, stampPath); err != nil {
+		return fmt.Errorf("index timestamp write: %w", err)
+	}
+	if err := indexFS.removeAll(retired); err != nil {
+		return fmt.Errorf("index reset %s: %w", retired, err)
 	}
 	return nil
+}
+
+// The suffixes naming what WriteHostIndex lays out beside a host's index before
+// it takes the host's place: the new record directory, the directory the previous
+// one is moved aside to, and the new timestamp. Each opens with a tilde, a
+// character pathsegment.Encode — which spells every host's name in the index —
+// never writes, so no host's own directory or freshness sibling can carry one of
+// these names, and clearing one never reaches another host's index. Two hosts'
+// names stay apart too: a name with a tilde is a host's spelled name, which holds
+// none, followed by one of these suffixes.
+const (
+	indexStagingSuffix     = "~staging"
+	indexRetiredSuffix     = "~retired"
+	indexStagedStampSuffix = "~updated"
+)
+
+// indexFS is every file-system change WriteHostIndex makes, one field per call.
+// The product never replaces it; it is a variable so a test in this package can
+// end the write between any two changes, as a process ended part-way would.
+var indexFS = struct {
+	removeAll func(path string) error
+	mkdirAll  func(path string, perm os.FileMode) error
+	writeFile func(path string, data []byte, perm os.FileMode) error
+	remove    func(path string) error
+	rename    func(oldPath, newPath string) error
+}{
+	removeAll: os.RemoveAll,
+	mkdirAll:  os.MkdirAll,
+	writeFile: os.WriteFile,
+	remove:    os.Remove,
+	rename:    os.Rename,
 }
