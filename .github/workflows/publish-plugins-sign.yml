@@ -133,7 +133,8 @@ name: Publish and sign core plugins
 #                        and runs what sign-windows runs and nothing else.
 #   sign-macos           Signs the six macOS binaries — the default, debug and
 #                        light ones for darwin/arm64 and darwin/amd64 — with
-#                        Cognitio S.r.l.'s Developer ID Application identity,
+#                        the Developer ID Application identity Apple issued to
+#                        COGNITIO SRL, team N4DSTL8KLH,
 #                        with the hardened runtime and a secure timestamp,
 #                        claiming the entitlements
 #                        packaging/macos/aggrega.entitlements declares, submits
@@ -263,10 +264,10 @@ name: Publish and sign core plugins
 #                        sign-macos succeeded and gave a submission ID: asks
 #                        Apple's notary service, once, with Apple's own
 #                        notarytool info, how that submission stands. Accepted:
-#                        it prints Apple's log and has Gatekeeper accept a
-#                        quarantined copy of each signed binary, as sign-macos
-#                        handed them on, as notarized Developer ID software,
-#                        failing when it does not. In Progress: it warns,
+#                        it prints Apple's log and has Apple's codesign confirm
+#                        that each signed binary, as sign-macos handed them on,
+#                        is signed with the release's Developer ID and is
+#                        notarized, failing when one is not. In Progress: it warns,
 #                        naming the submission and the command that reads it
 #                        later, and passes, since the binaries are published
 #                        signed and macOS fetches each one's ticket online once
@@ -377,14 +378,14 @@ name: Publish and sign core plugins
 # files, as the release renders it, and holds it to winget validate.
 # macos-smoke runs the binaries sign-macos signed, and last checks their
 # signatures: macOS's own codesign must accept each one and report
-# it signed with Cognitio S.r.l.'s Developer ID, with the hardened runtime and a
+# it signed with the Developer ID Application certificate Apple issued to
+# COGNITIO SRL, team N4DSTL8KLH, with the hardened runtime and a
 # secure timestamp, claiming exactly the entitlements the checkout's
 # packaging/macos/aggrega.entitlements declares and never get-task-allow,
 # and each must match sign-macos' SHA-256 list, while the unsigned
 # copies the build wrote are shown refused. Apple may not yet have answered
-# the notarization when macos-smoke runs, so Gatekeeper's acceptance of a
-# quarantined copy of each as notarized Developer ID software is checked in
-# notarization-check, once Apple has accepted it. While macOS signing is off, the
+# the notarization when macos-smoke runs, so each binary's notarization is
+# checked in notarization-check, once Apple has accepted it. While macOS signing is off, the
 # repository variable AGGREGA_MACOS_SIGNING not being true, sign-macos is
 # skipped on every run, macos-smoke runs the unsigned macOS binaries the build
 # wrote, its signature check not applicable, and passes when every other check
@@ -2530,8 +2531,9 @@ jobs:
 
   sign-macos:
     # Signs the six macOS binaries the build job built — the default, debug and
-    # light ones for darwin/arm64 and darwin/amd64 — with Cognitio S.r.l.'s
-    # Developer ID Application identity, so that macOS names who signed them and
+    # light ones for darwin/arm64 and darwin/amd64 — with the Developer ID
+    # Application identity Apple issued to COGNITIO SRL, team N4DSTL8KLH, the
+    # registered legal name, so that macOS names who signed them and
     # can tell that nothing changed them since, and submits them to Apple's
     # notary service, so that, once Apple accepts them, Gatekeeper lets a Mac
     # run one downloaded with a browser. Each is signed with the hardened
@@ -2937,8 +2939,8 @@ jobs:
         # SHA256SUMS beside each target's three binaries, in the form sha256sum
         # writes, in bytewise order of their names: macos-smoke holds the
         # binaries it runs to it, sign-and-publish attaches the binaries only
-        # when they still match it, and notarization-check holds the ones
-        # Gatekeeper assesses to it, so what ships is byte for byte what Apple
+        # when they still match it, and notarization-check holds the ones whose
+        # notarization it checks to it, so what ships is byte for byte what Apple
         # was handed and what ran on macOS. Written after the submission was
         # taken, so no list names bytes Apple was not handed.
         run: |
@@ -3496,7 +3498,7 @@ jobs:
         # signed them and submitted them to Apple: the step above held them to
         # sign-macos' SHA-256 lists, so they are byte for byte the files each
         # macos-smoke run ran and whose signatures it checked, and the files
-        # notarization-check has Gatekeeper assess once Apple accepts them;
+        # whose notarization notarization-check checks once Apple accepts them;
         # while macOS signing is off, they are those files unsigned, as the
         # build job wrote them, held above to its list, and the release notes
         # say they are not signed or notarized.
@@ -4546,11 +4548,12 @@ jobs:
     # an amd64 binary too, through Rosetta 2. It also proves that install.sh
     # installs the default binary there from a folder laid out as the release
     # is, and that macOS accepts each binary's signature, from the Developer ID
-    # of Cognitio S.r.l., with the hardened runtime and a secure timestamp,
+    # Application certificate Apple issued to COGNITIO SRL, team N4DSTL8KLH,
+    # with the hardened runtime and a secure timestamp,
     # claiming exactly the entitlements packaging/macos/aggrega.entitlements
     # declares, on the very bytes sign-macos' SHA-256 list names. Apple may not
-    # have answered the submission yet when this job runs, so it does not ask
-    # Gatekeeper to accept the binaries as notarized; notarization-check does,
+    # have answered the submission yet when this job runs, so it does not
+    # check that the binaries are notarized; notarization-check does,
     # at the end of the run, once Apple has accepted them. Everything it runs
     # comes from the artifacts the build job staged and sign-macos signed for
     # the target, but for the Python, curl and sh the runner image carries; it
@@ -4684,11 +4687,12 @@ jobs:
         # served binary refused with nothing installed; and last the
         # signatures: each binary must match sign-macos' SHA-256 list, macOS's
         # own codesign must accept it and report it signed with the Developer ID
-        # of Cognitio S.r.l., hardened and timestamped, claiming exactly the
+        # Application certificate of COGNITIO SRL, team N4DSTL8KLH, as the smoke
+        # library states it, hardened and timestamped, claiming exactly the
         # entitlements the checkout's entitlements file declares, with the
         # unsigned copy the build wrote shown refused. On a run whose macOS
         # decision is sign, the script is told the notarization is pending,
-        # so Gatekeeper does not assess the signed binaries here, since Apple
+        # so the signed binaries' notarization is not checked here, since Apple
         # may not have accepted them yet: notarization-check does, once it
         # has. On a run whose
         # macOS decision is skip, the script is told the binaries are unsigned:
@@ -4794,13 +4798,20 @@ jobs:
     # fetches each one's ticket online once Apple accepts the submission.
     #
     # It asks once, with Apple's own notarytool info, and polls nothing:
-    #   Accepted     it prints Apple's log of the submission, then has
-    #                Gatekeeper assess a copy of each signed binary, as
-    #                sign-macos handed them on and held to its SHA-256 lists,
-    #                carrying the quarantine mark a browser gives a download:
-    #                spctl must report each accepted with its source Notarized
-    #                Developer ID, or the job fails. This is the check
-    #                macos-smoke leaves to it.
+    #   Accepted     it prints Apple's log of the submission, then holds each
+    #                signed binary, as sign-macos handed them on and held to
+    #                its SHA-256 lists, to Apple's codesign: its first authority
+    #                and its team must be exactly the release's Developer ID,
+    #                and `codesign --verify --strict -vvvv -R=notarized
+    #                --check-notarization` must exit 0 and report the explicit
+    #                requirement satisfied, codesign looking the ticket up
+    #                online; a copy with its signature removed must be refused
+    #                by the same check, so its passes prove something. Any
+    #                failure fails the job. This is the check macos-smoke
+    #                leaves to it. Gatekeeper's spctl --assess is not asked: it
+    #                judges apps, disk images and installer packages, and
+    #                refuses a bare executable as not an app whatever its
+    #                notarization.
     #   In Progress  it writes a warning, in the log and the run's summary,
     #                naming the submission and the notarytool info command that
     #                reads it later, and passes: the binaries are published
@@ -4820,8 +4831,10 @@ jobs:
     # when the step that reads Apple's answer ends, and the key's two
     # identifiers, given as arguments; no other secret, not the run's token,
     # and no permission. It checks nothing out and runs no repository script,
-    # so the Gatekeeper report is held to the two lines the smoke library's
-    # smoke_check_gatekeeper_report holds it to, in a copy written here;
+    # so the expected identity is stated in its env:, in step with the smoke
+    # library's smoke_macos_developer_id and smoke_macos_team, and the
+    # notarization report is held to the lines the library's
+    # smoke_check_notarization_report holds it to, in a copy written here;
     # scripts/check-release-job-isolation.sh refuses the workflow should this
     # job name another Apple secret or run anything but Apple's programs, the
     # shell's own utilities and the artifact download pinned by commit.
@@ -4836,6 +4849,14 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 10
     permissions: {}
+    env:
+      # The certificate name and the team every macOS binary must be signed
+      # with, as Apple issues them, to the registered legal name. The one
+      # statement of them is the smoke library's smoke_macos_developer_id and
+      # smoke_macos_team; this job may run no repository script, so it states
+      # them here too, and a change there is made here.
+      MACOS_DEVELOPER_ID: "Developer ID Application: COGNITIO SRL (N4DSTL8KLH)"
+      MACOS_TEAM: N4DSTL8KLH
     defaults:
       run:
         # The bash macOS ships, as in sign-macos.
@@ -4910,7 +4931,7 @@ jobs:
           case "$status" in
             Accepted)
               print_log
-              echo "notarization-check: Apple accepted submission $SUBMISSION_ID; Gatekeeper assesses the binaries next"
+              echo "notarization-check: Apple accepted submission $SUBMISSION_ID; codesign checks each binary's notarization next"
               printf -- '- macOS notarization: Apple accepted submission `%s`\n' "$SUBMISSION_ID" >> "$GITHUB_STEP_SUMMARY"
               ;;
             "In Progress")
@@ -4945,22 +4966,40 @@ jobs:
           name: macos-binaries-signed-darwin-amd64
           path: ${{ runner.temp }}/notarization-check/signed/darwin-amd64
 
-      - name: Have Gatekeeper accept each binary as notarized
-        # Each target's binaries must match sign-macos' SHA-256 list for it;
-        # then a copy of each, carrying the quarantine mark a browser gives a
-        # download, is assessed by spctl as a program to run, and the report,
-        # printed, must hold a line ending ": accepted" and the line
-        # "source=Notarized Developer ID": the acceptance the smoke library's
-        # smoke_check_gatekeeper_report requires, written here because this job
-        # runs no repository script. Gatekeeper fetches each ticket online.
+      - name: Have codesign confirm each binary's signer and notarization
+        # Each target's binaries must match sign-macos' SHA-256 list for it.
+        # Then, for each, `codesign --display --verbose=2` must report as its
+        # first authority exactly MACOS_DEVELOPER_ID and as its team exactly
+        # MACOS_TEAM; and `codesign --verify --strict -vvvv -R=notarized
+        # --check-notarization`, which looks the ticket up online, must exit 0
+        # with a line ending ": explicit requirement satisfied" and no line
+        # saying the code failed to satisfy it: the lines the smoke library's
+        # smoke_check_notarization_report requires, written here because this
+        # job runs no repository script. Last, a copy of one binary with its
+        # signature removed must be refused by that same check, so its passes
+        # above prove something. Every report is printed.
         if: ${{ steps.outcome.outputs.status == 'Accepted' }}
         run: |
           signed="$RUNNER_TEMP/notarization-check/signed"
-          quarantined="$RUNNER_TEMP/notarization-check/quarantined"
-          /bin/mkdir -p "$quarantined"
-          echo "Gatekeeper on this machine: $(/usr/sbin/spctl --status 2>&1)"
+          reports="$RUNNER_TEMP/notarization-check/reports"
+          /bin/mkdir -p "$reports"
+          # notarized <file> <report>: 0 when codesign reports <file> notarized.
+          notarized() {
+            local rc=0 line satisfied=0 failed=0
+            /usr/bin/codesign --verify --strict -vvvv -R=notarized --check-notarization "$1" > "$2" 2>&1 || rc=$?
+            /bin/cat "$2"
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%$'\r'}"
+              case "$line" in
+                *": explicit requirement satisfied") satisfied=1 ;;
+                *"failed to satisfy"*) failed=1 ;;
+              esac
+            done < "$2"
+            [ "$rc" = 0 ] && [ "$satisfied" = 1 ] && [ "$failed" = 0 ]
+          }
           bad=0
           count=0
+          first=""
           for dir in "$signed"/darwin-*; do
             if ! (cd "$dir" && /usr/bin/shasum -a 256 -c SHA256SUMS); then
               echo "notarization-check: the binaries in ${dir##*/} do not match sign-macos' list of them" >&2
@@ -4970,40 +5009,53 @@ jobs:
             for path in "$dir"/*; do
               name="${path##*/}"
               [ "$name" != SHA256SUMS ] || continue
-              copy="$quarantined/$name"
-              /bin/cp "$path" "$copy"
-              /bin/chmod 0755 "$copy"
-              /usr/bin/xattr -w com.apple.quarantine "0081;$(printf '%08x' "$(/bin/date +%s)");Safari;$(/usr/bin/uuidgen)" "$copy"
-              printf -- '--- %s, quarantined: spctl --assess --type execute\n' "$name"
-              rc=0
-              /usr/sbin/spctl --assess --type execute -vvv "$copy" > "$quarantined/$name.gatekeeper.txt" 2>&1 || rc=$?
-              /bin/cat "$quarantined/$name.gatekeeper.txt"
-              accepted=0
-              notarized=0
+              [ -n "$first" ] || first="$path"
+              printf -- '--- %s: codesign --display\n' "$name"
+              /usr/bin/codesign --display --verbose=2 "$path" > "$reports/$name.codesign.txt" 2>&1 || true
+              /bin/cat "$reports/$name.codesign.txt"
+              authority=""
+              team=""
               while IFS= read -r line || [ -n "$line" ]; do
-                line="${line%$'\r'}"
                 case "$line" in
-                  *": accepted") accepted=1 ;;
-                  "source=Notarized Developer ID") notarized=1 ;;
+                  Authority=*) [ -n "$authority" ] || authority="${line#Authority=}" ;;
+                  TeamIdentifier=*) team="${line#TeamIdentifier=}" ;;
                 esac
-              done < "$quarantined/$name.gatekeeper.txt"
-              if [ "$rc" != 0 ] || [ "$accepted" != 1 ] || [ "$notarized" != 1 ]; then
-                echo "notarization-check: Gatekeeper does not accept the quarantined $name as notarized Developer ID software (spctl exited $rc)" >&2
+              done < "$reports/$name.codesign.txt"
+              if [ "$authority" != "$MACOS_DEVELOPER_ID" ] || [ "$team" != "$MACOS_TEAM" ]; then
+                echo "notarization-check: $name is signed by ${authority:-nobody}, team ${team:-none}, not $MACOS_DEVELOPER_ID, team $MACOS_TEAM" >&2
                 bad=1
                 continue
               fi
-              echo "ok: Gatekeeper accepts $name as notarized Developer ID software"
+              printf -- '--- %s: codesign -R=notarized --check-notarization\n' "$name"
+              if ! notarized "$path" "$reports/$name.notarization.txt"; then
+                echo "notarization-check: codesign does not report $name notarized" >&2
+                bad=1
+                continue
+              fi
+              echo "ok: $name is signed by $MACOS_DEVELOPER_ID and notarized"
               count=$((count + 1))
             done
           done
+          if [ -n "$first" ]; then
+            stripped="$reports/stripped-${first##*/}"
+            /bin/cp "$first" "$stripped"
+            /usr/bin/codesign --remove-signature "$stripped"
+            echo "The same notarization check over a copy of ${first##*/} with its signature removed must refuse it:"
+            if notarized "$stripped" "$reports/stripped.notarization.txt"; then
+              echo "notarization-check: the notarization check accepted an unsigned copy, so its passes above prove nothing" >&2
+              bad=1
+            else
+              echo "ok: the notarization check refuses an unsigned copy"
+            fi
+          fi
           if [ "$bad" != 0 ] || [ "$count" = 0 ]; then
-            echo "::error title=macOS binaries not accepted by Gatekeeper::Apple accepted the submission, but Gatekeeper does not accept every published macOS binary as notarized; the reports are printed above"
+            echo "::error title=macOS binaries not confirmed notarized::Apple accepted the submission, but codesign does not confirm every published macOS binary signed by $MACOS_DEVELOPER_ID and notarized; the reports are printed above"
             exit 1
           fi
-          echo "ok: Gatekeeper accepts all $count macOS binaries as notarized Developer ID software"
+          echo "ok: all $count macOS binaries are signed by $MACOS_DEVELOPER_ID and notarized"
 
       - name: Remove this job's directory
-        # Whatever the steps above did: the binaries, their quarantined copies,
+        # Whatever the steps above did: the binaries, codesign's reports,
         # Apple's answers and the notary key's directory.
         if: ${{ always() }}
         run: |

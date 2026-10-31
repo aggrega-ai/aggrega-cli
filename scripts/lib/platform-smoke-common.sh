@@ -274,6 +274,20 @@
 #     that file to the macOS signing job beside the binaries, and the macOS
 #     smoke run holds what each signed binary claims to it.
 #
+#   smoke_macos_team
+#     Prints the Apple team ID every macOS binary the release carries is signed
+#     under: N4DSTL8KLH.
+#
+#   smoke_macos_developer_id
+#     Prints the common name of the Developer ID Application certificate every
+#     macOS binary the release carries is signed with, as Apple issues it, to
+#     the registered legal name and the team smoke_macos_team prints:
+#     "Developer ID Application: COGNITIO SRL (N4DSTL8KLH)". These two are the
+#     one statement of the macOS signing identity the checks hold a signature
+#     to; the release workflow's notarization-check job, which may run no
+#     repository script, states the same two values in its env:, and a change
+#     here is made there too.
+#
 #   smoke_plist_entitlements <file>
 #     Prints the entitlements the property list in <file> declares, one
 #     "<key>=true" or "<key>=false" line each, in bytewise order of their keys.
@@ -289,14 +303,15 @@
 #     else, a value other than a boolean included, since an entitlement this
 #     reader cannot read is one it cannot hold to anything.
 #
-#   smoke_check_codesign_report <report> <publisher> <entitlements>
+#   smoke_check_codesign_report <report> <authority> <team> <entitlements>
 #     Holds what macOS's codesign says about one file — `codesign --display
 #     --verbose=2 --entitlements - --xml <file>`, its standard output and its
 #     standard error together — to a Developer ID signature a Mac accepts for
-#     distribution from <publisher>: the first Authority line is exactly
-#     "Developer ID Application: <publisher> (<team>)", <team> being ten letters
-#     or digits, so a longer name that merely starts the same way is refused; the
-#     TeamIdentifier line names that same <team>; the CodeDirectory line's flags
+#     distribution from one identity: the first Authority line is exactly
+#     <authority>, as smoke_macos_developer_id prints it, so a longer name that
+#     merely starts the same way is refused, and <authority> must end in
+#     "(<team>)"; <team>, as smoke_macos_team prints it, is ten letters or
+#     digits, and the TeamIdentifier line names exactly it; the CodeDirectory line's flags
 #     include runtime, the hardened runtime notarization requires; a Timestamp
 #     line is present, the secure timestamp notarization requires, where a
 #     signature without one carries "Signed Time" instead; the entitlements the
@@ -309,16 +324,23 @@
 #     prints the authority, the team, the timestamp and the entitlements when
 #     all hold.
 #
-#   smoke_check_gatekeeper_report <report>
-#     Holds what macOS's Gatekeeper assessment says about one file — `spctl
-#     --assess --type execute -vvv <file>`, its standard output and its standard
-#     error together — to an acceptance of notarized Developer ID software: a
-#     line ending ": accepted" and a line "source=Notarized Developer ID".
-#     Returns 1, printing what was found instead, otherwise. The release
-#     workflow's notarization-check job holds its own assessments to the same
-#     two lines in a copy written inline, deliberately: that job holds the
-#     notary key and so may run no repository script, this library included.
-#     A change to what counts as an acceptance here is made there too.
+#   smoke_check_notarization_report <report>
+#     Holds what macOS's codesign says when asked whether one file is notarized
+#     — `codesign --verify --strict -vvvv -R=notarized --check-notarization
+#     <file>`, its standard output and its standard error together, the check
+#     Apple's developer support gives for code that is neither an app, a disk
+#     image nor an installer package, a bare executable among it — to a
+#     notarized file: a line ending ": explicit requirement satisfied", and no
+#     line saying the code failed to satisfy the requirement. codesign looks
+#     the file's ticket up online. Gatekeeper's spctl --assess judges an app,
+#     a disk image or an installer package, and refuses a bare executable as
+#     not an app whatever its notarization, so it is not asked here. The
+#     caller also holds codesign's exit status to 0. Returns 1, printing what
+#     was found instead, otherwise. The release workflow's notarization-check
+#     job holds its own reports to the same lines in a copy written inline,
+#     deliberately: that job holds the notary key and so may run no repository
+#     script, this library included. A change to what counts as notarized here
+#     is made there too.
 
 smoke_require_bash() {
   if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 3 ]; }; then
@@ -1077,6 +1099,14 @@ smoke_macos_entitlements() {
   printf '%s\n' packaging/macos/aggrega.entitlements
 }
 
+smoke_macos_team() {
+  printf '%s\n' N4DSTL8KLH
+}
+
+smoke_macos_developer_id() {
+  printf 'Developer ID Application: COGNITIO SRL (%s)\n' "$(smoke_macos_team)"
+}
+
 smoke_plist_entitlements() {
   local LC_ALL=C file="$1" text rest key value
   local plist_re='<plist[^>]*>(.*)</plist>'
@@ -1118,15 +1148,23 @@ smoke_plist_entitlements() {
 }
 
 smoke_check_codesign_report() {
-  local LC_ALL=C report="$1" publisher="$2" entitlements="$3" line authority="" team="" listed_team="" flags="" stamp="" bad=0
+  local LC_ALL=C report="$1" expected="$2" team="$3" entitlements="$4" line authority="" listed_team="" flags="" stamp="" bad=0
   local declared="" claimed="" rc entry
   local -A declared_set=() claimed_set=()
   local flags_re='^CodeDirectory .*flags=0x[0-9a-fA-F]+\(([^)]*)\)'
   local team_re='^[A-Z0-9]{10}$'
-  if [ -z "$publisher" ]; then
-    printf 'smoke: no publisher was named to hold the signature to\n' >&2
+  if [ -z "$expected" ] || ! [[ $team =~ $team_re ]]; then
+    printf 'smoke: no certificate name, or no team of ten letters or digits, was named to hold the signature to (%s, %s)\n' \
+      "${expected:-none}" "${team:-none}" >&2
     return 1
   fi
+  case "$expected" in
+    "Developer ID Application: "*" ($team)") ;;
+    *)
+      printf 'smoke: %s is not a Developer ID Application certificate name ending in the team (%s)\n' "$expected" "$team" >&2
+      return 1
+      ;;
+  esac
   if [ -z "$entitlements" ]; then
     printf 'smoke: no entitlements file was named to hold the signature'"'"'s entitlements to\n' >&2
     return 1
@@ -1152,24 +1190,12 @@ smoke_check_codesign_report() {
         ;;
     esac
   done < "$report"
-  case "$authority" in
-    "Developer ID Application: $publisher ("*")")
-      team="${authority#"Developer ID Application: $publisher ("}"
-      team="${team%)}"
-      if ! [[ $team =~ $team_re ]]; then
-        printf 'smoke: the signing certificate is %s, whose team %s is not ten letters or digits\n' "$authority" "$team" >&2
-        bad=1
-      fi
-      ;;
-    *)
-      printf 'smoke: the signing certificate is %s, not a Developer ID Application certificate of %s\n' \
-        "${authority:-absent}" "$publisher" >&2
-      bad=1
-      ;;
-  esac
-  if [ -z "$listed_team" ] || [ "$listed_team" != "$team" ]; then
-    printf 'smoke: the signature names the team %s, not %s, the team its certificate names\n' \
-      "${listed_team:-nothing}" "${team:-unknown}" >&2
+  if [ "$authority" != "$expected" ]; then
+    printf 'smoke: the signing certificate is %s, not %s\n' "${authority:-absent}" "$expected" >&2
+    bad=1
+  fi
+  if [ "$listed_team" != "$team" ]; then
+    printf 'smoke: the signature names the team %s, not %s\n' "${listed_team:-nothing}" "$team" >&2
     bad=1
   fi
   case ",$flags," in
@@ -1223,24 +1249,24 @@ smoke_check_codesign_report() {
     "$authority" "$team" "$stamp" "$entitlements" "$(printf '%s' "$claimed" | tr '\n' ' ')"
 }
 
-smoke_check_gatekeeper_report() {
-  local report="$1" line accepted=0 notarized=0
+smoke_check_notarization_report() {
+  local report="$1" line satisfied=0 failed=0
   if [ ! -f "$report" ]; then
-    printf 'smoke: there is no assessment report at %s\n' "$report" >&2
+    printf 'smoke: there is no notarization report at %s\n' "$report" >&2
     return 1
   fi
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     case "$line" in
-      *": accepted") accepted=1 ;;
-      "source=Notarized Developer ID") notarized=1 ;;
+      *": explicit requirement satisfied") satisfied=1 ;;
+      *"failed to satisfy"*) failed=1 ;;
     esac
   done < "$report"
-  if [ "$accepted" = 1 ] && [ "$notarized" = 1 ]; then
-    printf 'ok: Gatekeeper accepts it as notarized Developer ID software\n'
+  if [ "$satisfied" = 1 ] && [ "$failed" = 0 ]; then
+    printf 'ok: codesign reports it notarized\n'
     return 0
   fi
-  [ "$accepted" = 1 ] || printf 'smoke: Gatekeeper does not report it accepted\n' >&2
-  [ "$notarized" = 1 ] || printf 'smoke: Gatekeeper does not report its source as Notarized Developer ID\n' >&2
+  [ "$satisfied" = 1 ] || printf 'smoke: codesign does not report the notarized requirement satisfied\n' >&2
+  [ "$failed" = 0 ] || printf 'smoke: codesign reports the code failed to satisfy the notarized requirement\n' >&2
   return 1
 }
