@@ -252,7 +252,7 @@ func TestAFeatureAConnectionAttachmentNamesIsPinnedAndVerified(t *testing.T) {
 		uri  string
 		site string
 	}{
-		{"example/token", "aggregate.spec.subsystems.default.components.caller.uses.peers.first.features.credential.type"},
+		{"example/token", "aggregate.spec.components.caller.uses.peers.first.features.credential.type"},
 		{"example/badge", "release.spec.boundaries.app.components.caller.uses.peers.second.features.credential.type"},
 		{"compose/token-plain:1.0.0", "manifest.spec.mappings.features.name.first.credential"},
 	}

@@ -1356,12 +1356,118 @@ spec:
 	if !ok {
 		t.Fatalf("provenance entry missing at key %q; got keys: %v", provKey, keysOf(rr.AnnotationProvenance))
 	}
-	// The source string carries the synthesized default scope. Recorded here as
-	// what the pass actually emits for a component authored at the top-level
-	// surface — every other diagnostic surface elides the generated scope name and
-	// renders the shape the author typed, so this one is out of step with them.
-	if prov.AnnotationSource != "aggregate.yaml:subsystems.default.components.api.annotations.feature.myco/db-pool" {
-		t.Errorf("provenance source = %q, want canonical aggregate.yaml-rooted path", prov.AnnotationSource)
+	// The provenance KEY stays canonical — it is how a later stage finds the
+	// record — while the SOURCE a reader is shown names the top-level shape the
+	// author typed, not the scope normalization generated.
+	if prov.AnnotationSource != "aggregate.yaml:components.api.annotations.feature.myco/db-pool" {
+		t.Errorf("provenance source = %q, want the authored top-level path", prov.AnnotationSource)
+	}
+}
+
+// TestExpand_AggregateSide_FailureNamesTheAuthoredComponent proves an
+// Aggregate-side expansion failure names the component at the site its author
+// wrote: a component written at the top-level `.spec.components` surface is named
+// there, not under the scope normalization folded it into, while a subsystem the
+// author declared — including one named like that scope — is named in full.
+//
+// Each row carries one fault: a scalar annotation whose binding maps two value
+// paths, which no scalar can route to unambiguously.
+func TestExpand_AggregateSide_FailureNamesTheAuthoredComponent(t *testing.T) {
+	t.Parallel()
+	const manifest = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      type:
+        core/db-pool: db-pool-helm:1.0.0
+      annotations:
+        feature.myco/db-pool:
+          feature: core/db-pool:1.0.0
+          maps:
+            values:
+              - pool
+              - size
+`
+	for _, tc := range []struct {
+		name   string
+		spec   string
+		want   string
+		absent string
+	}{
+		{
+			name: "top-level component",
+			spec: `  components:
+    api:
+      type: core/server:1.0.0
+      annotations:
+        feature.myco/db-pool: "x"
+`,
+			want:   `failed at aggregate component "components.api" key "feature.myco/db-pool"`,
+			absent: "subsystems.default",
+		},
+		{
+			name: "declared subsystem",
+			spec: `  subsystems:
+    data:
+      components:
+        api:
+          type: core/server:1.0.0
+          annotations:
+            feature.myco/db-pool: "x"
+`,
+			want: `failed at aggregate component "subsystems.data.components.api" key "feature.myco/db-pool"`,
+		},
+		{
+			name: "declared subsystem named like the synthesized scope",
+			spec: `  subsystems:
+    default:
+      components:
+        api:
+          type: core/server:1.0.0
+          annotations:
+            feature.myco/db-pool: "x"
+`,
+			want: `failed at aggregate component "subsystems.default.components.api" key "feature.myco/db-pool"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var m types.Manifest
+			if err := yaml.Unmarshal([]byte(manifest), &m); err != nil {
+				t.Fatalf("manifest unmarshal: %v", err)
+			}
+			src := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: test\n  version: \"1.0.0\"\nspec:\n" + tc.spec
+			rr := &ResolveResult{
+				Manifest:             &m,
+				Aggregate:            loadTestAggregate(t, src),
+				AggregatePath:        "aggregate.yaml",
+				AnnotationProvenance: map[string]AnnotationProvenance{},
+			}
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("expansion panicked: %v", r)
+					}
+				}()
+				err = ExpandAnnotations(rr, CatalogLookup{})
+			}()
+			if err == nil {
+				t.Fatal("want the expansion to fail on a scalar routed to two paths; got nil")
+			}
+			msg := cerrors.CauseChain(err)
+			if !strings.Contains(msg, tc.want) {
+				t.Errorf("error does not name the authored component\nwant substring: %s\nfull message:   %s", tc.want, msg)
+			}
+			if tc.absent != "" && strings.Contains(msg, tc.absent) {
+				t.Errorf("error names %q, a scope the author did not write\nfull message: %s", tc.absent, msg)
+			}
+		})
 	}
 }
 

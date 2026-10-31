@@ -222,7 +222,35 @@ func ValidatePillarConformance(
 	parameters map[string]any,
 	entity, fieldPrefix, schemaLabel string,
 ) []*ResolverError {
-	return validatePillarConformance(compiled, pillar, instance, parameters, entity, fieldPrefix, schemaLabel)
+	return validatePillarConformance(compiled, pillar, instance, parameters, entity, "", "",
+		func(path string) string {
+			if path == "" {
+				return fieldPrefix
+			}
+			return fieldPrefix + "." + path
+		}, schemaLabel)
+}
+
+// ValidatePillarConformanceAt is [ValidatePillarConformance] for a caller that
+// positions each finding through the locator assembly rather than by a prefix:
+// locate turns the path a finding landed on — leading with the pillar name, empty
+// for the pillar as a whole — into its locator, and file names the document that
+// locator is a path inside.
+//
+// component, where set, is named in each finding's detail together with the
+// path, because a locator through a key holding the dialect's separator stops at
+// the container that key sits in, and the detail is then the only place the
+// component and the leaf appear.
+func ValidatePillarConformanceAt(
+	compiled compactform.Schema,
+	pillar string,
+	instance types.OrderedMap[any],
+	parameters map[string]any,
+	entity, file, component string,
+	locate func(path string) string,
+	schemaLabel string,
+) []*ResolverError {
+	return validatePillarConformance(compiled, pillar, instance, parameters, entity, file, component, locate, schemaLabel)
 }
 
 // CompileComponentSchema compiles a Component type's declared schema for
@@ -340,23 +368,26 @@ func validatePillarConformance(
 	pillar string,
 	instance types.OrderedMap[any],
 	parameters map[string]any,
-	entity, fieldPrefix, schemaLabel string,
+	entity, file, component string,
+	locate func(path string) string,
+	schemaLabel string,
 ) []*ResolverError {
 	findings := pillarConformanceFindings(compiled, pillar, instance, parameters)
 	errs := make([]*ResolverError, 0, len(findings))
 	for _, f := range findings {
-		field := fieldPrefix
-		if f.path != "" {
-			field = fieldPrefix + "." + f.path
-		}
 		msg := f.reason
 		if f.keyword != "" {
 			msg = fmt.Sprintf("%s (%s)", msg, f.keyword)
 		}
+		message := fmt.Sprintf("%s pillar does not conform to %s: %s", pillar, schemaLabel, msg)
+		if component != "" {
+			message = fmt.Sprintf("component %q at %q: %s", component, f.path, message)
+		}
 		errs = append(errs, &ResolverError{
 			Entity:  entity,
-			Field:   field,
-			Message: fmt.Sprintf("%s pillar does not conform to %s: %s", pillar, schemaLabel, msg),
+			Field:   locate(f.path),
+			File:    file,
+			Message: message,
 			Err:     ErrSchemaConformance(),
 		})
 	}

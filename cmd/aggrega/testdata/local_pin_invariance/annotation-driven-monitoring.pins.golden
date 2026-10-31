@@ -8,12 +8,12 @@ entities:
       resolved_version: 1.0.0
       digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073
       referenced_from:
-        - aggregate.spec.subsystems.default.components.api.type
-        - aggregate.spec.subsystems.default.components.etl.type
-        - aggregate.spec.subsystems.default.components.gateway.type
-        - aggregate.spec.subsystems.default.components.ledger.type
-        - aggregate.spec.subsystems.default.components.reconcile.type
-        - aggregate.spec.subsystems.default.components.worker.type
+        - aggregate.spec.components.api.type
+        - aggregate.spec.components.etl.type
+        - aggregate.spec.components.gateway.type
+        - aggregate.spec.components.ledger.type
+        - aggregate.spec.components.reconcile.type
+        - aggregate.spec.components.worker.type
     - uri: example/compute/service:1.0.0
       resolved_version: 1.0.0
       digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073

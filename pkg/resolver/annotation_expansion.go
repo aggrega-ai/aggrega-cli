@@ -861,13 +861,16 @@ func expandAggregateSubsystems(
 			Path: aggregateAnnotationScopePath,
 			Enter: func(sub types.Subsystem, _, path string, inherited annotationCascade) annotationCascade {
 				return inherited.withScopeAnnotations(sub.Annotations, func(key string) string {
-					return aggregateAnnotationSourcePath(rr.AggregatePath, path, key)
+					return aggregateAnnotationSourcePath(rr.AggregatePath, path, "", key, sub.Synthesized)
 				})
 			},
-			Visit: func(comp types.ComponentInstance, name, path string, _ bool, cascade annotationCascade) error {
-				componentPath := path + ".components." + name
+			Visit: func(comp types.ComponentInstance, name, path string, synthesized bool, cascade annotationCascade) error {
+				// componentPath keys the provenance table and the write-back; the
+				// authored path is what a reader is shown.
+				componentPath := aggregateAnnotationComponentPath(path, name)
+				authoredPath := aggregateAuthoredComponentPath(path, name, synthesized)
 				effective := cascade.withScopeAnnotations(comp.Annotations, func(key string) string {
-					return aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
+					return aggregateAnnotationSourcePath(rr.AggregatePath, path, name, key, synthesized)
 				})
 
 				for key, value := range effective.values.All() {
@@ -883,7 +886,7 @@ func expandAggregateSubsystems(
 					}
 					feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, effective.sources[key])
 					if len(errs) > 0 {
-						return wrapAggregateAnnotationError(componentPath, key, "expansion", errors.Join(errs...))
+						return wrapAggregateAnnotationError(authoredPath, key, "expansion", errors.Join(errs...))
 					}
 					comp.Features.Set(key, feature)
 					recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, effective.sources[key])
@@ -894,14 +897,43 @@ func expandAggregateSubsystems(
 		})
 }
 
-// aggregateAnnotationSourcePath formats the source location for an
-// Aggregate-authored annotation, in the shape [annotationSource] composes, the
-// key path being <canonical-dotted-path>.annotations.<key>, with no line number.
-// componentPath is the canonical dotted path of the authoring scope (the
-// subsystem path for a subsystem-level annotation or the component path for a
-// component-level annotation).
-func aggregateAnnotationSourcePath(aggregatePath, componentPath, key string) string {
-	return annotationSource(aggregatePath, componentPath+".annotations."+key)
+// aggregateAnnotationSourcePath formats the source location for an annotation
+// declaration written in the Aggregate, in the shape [annotationSource] composes,
+// with no line number — the Aggregate-side sibling of [annotationSourcePath].
+// componentName empty signals a subsystem-level annotation; non-empty signals a
+// component-level annotation in that subsystem. scopePath is the subsystem's
+// canonical dotted path, as [aggregateAnnotationScopePath] composes it.
+func aggregateAnnotationSourcePath(aggregatePath, scopePath, componentName, key string, synthesized bool) string {
+	if componentName == "" {
+		if synthesized {
+			return annotationSource(aggregatePath, "annotations."+key)
+		}
+		return annotationSource(aggregatePath, scopePath+".annotations."+key)
+	}
+	return annotationSource(aggregatePath,
+		aggregateAuthoredComponentPath(scopePath, componentName, synthesized)+".annotations."+key)
+}
+
+// aggregateAuthoredComponentPath composes the dotted path of one component's
+// block as the author wrote it in the Aggregate, from the canonical path of the
+// subsystem holding it.
+//
+// It differs from the canonical path, which keys the effective-annotation and
+// provenance tables, in exactly one case. A component authored at the top-level
+// `.spec.components` surface is folded into the synthesized default subsystem
+// before any walk reaches it, so its canonical path names a scope no file
+// spells; this names the top-level shape the author did write. It keys on the
+// provenance flag rather than the path string, so a subsystem an author declares
+// and happens to name the same as the synthesized one keeps its own path.
+//
+// Every user-visible string naming an Aggregate component's site — an
+// annotation's provenance source and an expansion failure's component — is
+// composed here, so the two cannot come to name one component two ways.
+func aggregateAuthoredComponentPath(scopePath, componentName string, synthesized bool) string {
+	if synthesized {
+		return "components." + componentName
+	}
+	return aggregateAnnotationComponentPath(scopePath, componentName)
 }
 
 // writeAggregateComponent persists a mutated ComponentInstance back

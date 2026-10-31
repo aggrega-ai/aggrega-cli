@@ -8,7 +8,7 @@ entities:
       resolved_version: 1.0.0
       digest: sha256:4226f6f3d1f1d61a6eac318a084694d92feaff4e6977c06a28232c2f085406c8
       referenced_from:
-        - aggregate.spec.subsystems.default.components.db.type
+        - aggregate.spec.components.db.type
     - uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
       digest: sha256:4226f6f3d1f1d61a6eac318a084694d92feaff4e6977c06a28232c2f085406c8
@@ -18,7 +18,7 @@ entities:
       resolved_version: 1.0.0
       digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
       referenced_from:
-        - aggregate.spec.subsystems.default.components.web.type
+        - aggregate.spec.components.web.type
     - uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
       digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
@@ -28,7 +28,7 @@ entities:
       resolved_version: 1.0.0
       digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
-        - aggregate.spec.subsystems.default.components.db.features.user_password.type
+        - aggregate.spec.components.db.features.user_password.type
     - uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
       digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
@@ -38,7 +38,7 @@ entities:
       resolved_version: 1.0.0
       digest: sha256:6af12390cdabf71ba3ef239472ed77eef512dd6d9cf6e1b09c87b9df9fdeddec
       referenced_from:
-        - aggregate.spec.subsystems.default.components.db.features.root_password.type
+        - aggregate.spec.components.db.features.root_password.type
     - uri: core/secret-value:1.0.0
       resolved_version: 1.0.0
       digest: sha256:6af12390cdabf71ba3ef239472ed77eef512dd6d9cf6e1b09c87b9df9fdeddec

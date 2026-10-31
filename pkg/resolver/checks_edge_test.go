@@ -92,38 +92,6 @@ func normalizedReleaseTopLevelEdge(socket, alias string, infra types.OrderedMap[
 	return types.NormalizeRelease(rel).Release()
 }
 
-// TestReleaseComponentFieldPath pins the Release-side path renderer: a
-// synthesized-default component renders at the root shape, a declared boundary
-// renders qualified, and a boundary a user *declares* as "default" still renders
-// qualified — the key is the flag, not the path string.
-//
-// The routed rows pin the locator a component placed through a sub-module routing
-// entry renders under: the key path the author wrote, which names the module and
-// the component's LOCAL name inside it, never the qualified id — that id is not a
-// key anywhere in the document, and the Release schema forbids a dot in a routed
-// component key.
-func TestReleaseComponentFieldPath(t *testing.T) {
-	t.Parallel()
-	direct := []string{"components", "svc"}
-	if got := releaseComponentFieldPath("default", direct, true); got != `.spec.components["svc"]` {
-		t.Errorf("synthesized default must render root-shaped; got %q", got)
-	}
-	if got := releaseComponentFieldPath("prod", direct, false); got != `.spec.boundaries["prod"].components["svc"]` {
-		t.Errorf("declared boundary must render qualified; got %q", got)
-	}
-	if got := releaseComponentFieldPath("default", direct, false); got != `.spec.boundaries["default"].components["svc"]` {
-		t.Errorf("a declared boundary named default must stay qualified; got %q", got)
-	}
-	routed := []string{"aggregates", "data", "components", "consumer"}
-	if got := releaseComponentFieldPath("prod", routed, false); got != `.spec.boundaries["prod"].aggregates["data"].components["consumer"]` {
-		t.Errorf("a routed component must render through its routing entry; got %q", got)
-	}
-	nested := []string{"aggregates", "data", "aggregates", "inner", "components", "consumer"}
-	if got := releaseComponentFieldPath("prod", nested, false); got != `.spec.boundaries["prod"].aggregates["data"].aggregates["inner"].components["consumer"]` {
-		t.Errorf("a nested routed component must render through every routing entry; got %q", got)
-	}
-}
-
 // edgeSocketFindings asks the rule about a socket the Release's edge surface
 // wires, and returns the sockets it reported.
 func edgeSocketFindings(

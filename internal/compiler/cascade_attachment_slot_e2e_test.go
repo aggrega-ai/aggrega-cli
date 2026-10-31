@@ -111,8 +111,9 @@ func TestCascadeAttachmentSlot_ContributedFillHalts(t *testing.T) {
 	// The locator names the AUTHORED site: the subsystem whose features block
 	// declared the attachment. Not the node it reached, and not the delivery key
 	// inside it — a derived subject that cannot point back at an authored edit
-	// sends the reader nowhere.
-	const wantLocator = `.spec.subsystems.svc.features["root_password"]`
+	// sends the reader nowhere. It is spelled in the one dialect the editor's
+	// position recovery walks, so it resolves to that key in the document.
+	const wantLocator = `.spec.subsystems.svc.features.root_password`
 	if v.Field != wantLocator {
 		t.Errorf("want the violation located at the authoring scope %s; got %s", wantLocator, v.Field)
 	}

@@ -567,7 +567,7 @@ func TestExpandBindingStructured_ValuesPillarOnReleaseSideContributesNothing(t *
 // annotation.
 func TestAggregateAnnotationSourcePath_NoFileIsTheKeyPathAlone(t *testing.T) {
 	t.Parallel()
-	got := aggregateAnnotationSourcePath("", "subsystems.data", "feature.myco/db-pool")
+	got := aggregateAnnotationSourcePath("", "subsystems.data", "", "feature.myco/db-pool", false)
 	want := "subsystems.data.annotations.feature.myco/db-pool"
 	if got != want {
 		t.Errorf("no file: got %q; want %q", got, want)
@@ -578,10 +578,43 @@ func TestAggregateAnnotationSourcePath_NoFileIsTheKeyPathAlone(t *testing.T) {
 // formatting: a non-empty file path is preserved as the prefix.
 func TestAggregateAnnotationSourcePath_NamedPrefix(t *testing.T) {
 	t.Parallel()
-	got := aggregateAnnotationSourcePath("/abs/path/aggregate.yaml", "components.api", "feature.myco/rewrite")
+	got := aggregateAnnotationSourcePath("/abs/path/aggregate.yaml", "subsystems.default", "api", "feature.myco/rewrite", true)
 	want := "/abs/path/aggregate.yaml:components.api.annotations.feature.myco/rewrite"
 	if got != want {
 		t.Errorf("named prefix: got %q; want %q", got, want)
+	}
+}
+
+// TestAggregateAnnotationSourcePath_SynthesizedScopeIsElided pins the
+// Aggregate-side formatter against its Release-side sibling's rule: a component
+// in the synthesized default subsystem is named at the top-level shape the
+// author wrote, keyed on the provenance flag, while a subsystem the author
+// declared — even one named like the synthesized scope — keeps its own path.
+func TestAggregateAnnotationSourcePath_SynthesizedScopeIsElided(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		scope       string
+		component   string
+		synthesized bool
+		want        string
+	}{
+		{"top-level component", "subsystems.default", "api", true,
+			"aggregate.yaml:components.api.annotations.feature.myco/x"},
+		{"declared subsystem named default", "subsystems.default", "api", false,
+			"aggregate.yaml:subsystems.default.components.api.annotations.feature.myco/x"},
+		{"nested declared subsystem", "subsystems.a.subsystems.b", "api", false,
+			"aggregate.yaml:subsystems.a.subsystems.b.components.api.annotations.feature.myco/x"},
+		{"declared subsystem scope", "subsystems.a", "", false,
+			"aggregate.yaml:subsystems.a.annotations.feature.myco/x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := aggregateAnnotationSourcePath("aggregate.yaml", tc.scope, tc.component, "feature.myco/x", tc.synthesized)
+			if got != tc.want {
+				t.Errorf("got %q; want %q", got, tc.want)
+			}
+		})
 	}
 }
 

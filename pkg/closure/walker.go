@@ -182,9 +182,19 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 	// Every subsystem's components and its own scope-wide attachments are recorded;
 	// the authoring-site path accumulated per level is what a reference records as
 	// its origin. No visitor callback fails, so the walk cannot.
+	//
+	// The subsystem normalization synthesized to hold the top-level components
+	// contributes no level: it is not a key the document holds, so a component
+	// written at the top level records the path its author wrote,
+	// <path>.spec.components.<name>. It keys on the provenance flag rather than the
+	// subsystem's name, so a subsystem an author declares under the same name keeps
+	// its own level.
 	_ = types.WalkInstanceTree(agg.Spec.Subsystems, types.SubsystemTree(), path+".spec", struct{}{},
 		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, struct{}]{
-			Path: func(parentPath, name string, _ bool) string {
+			Path: func(parentPath, name string, synthesized bool) string {
+				if synthesized {
+					return parentPath
+				}
 				return parentPath + ".subsystems." + name
 			},
 			Visit: func(ci types.ComponentInstance, name, subPath string, _ bool, _ struct{}) error {

@@ -44,10 +44,41 @@ func ReleaseEdgeConfigurations(
 	}
 	out := make([]constraint.ReleaseEdgeConfigurationInstance, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, releaseEdgeConfigurationInstance(
-			e.NodeID, e.BoundaryScopePath, e.ComponentKeys, e.Socket, e.Alias, sourceFile))
+		out = append(out, e.Instance(sourceFile))
 	}
 	return out
+}
+
+// Instance is the entry in the shape a traversal over the Release's per-edge
+// surface enumerates it, through the one spelling of its coordinates and site —
+// so a finding about the entry raised outside a rule names the entry exactly as
+// a rule over it does.
+func (e ReleaseEdgeEntry) Instance(sourceFile string) constraint.ReleaseEdgeConfigurationInstance {
+	return releaseEdgeConfigurationInstance(
+		e.NodeID, e.BoundaryScopePath, e.ComponentKeys, e.Socket, e.Alias, sourceFile)
+}
+
+// Site returns where the Release wrote the component entry: the site, and the
+// keys reaching the entry's own block from it — the same division a per-edge
+// entry under it takes, so the component entry and an entry written inside it
+// are located by one rule.
+func (c ReleaseComponentEntry) Site() (constraint.AuthoredSite, []string) {
+	return releaseComponentEntrySite(c.NodeID, c.BoundaryScopePath, c.ComponentKeys)
+}
+
+// releaseComponentEntrySite is the one spelling of where a Release component
+// entry sits: in the boundary normalization synthesized, the component on the
+// site itself, since that boundary spells no level the keys could be relative
+// to; in every other boundary, the boundary on the site and the keys reaching the
+// entry after it.
+func releaseComponentEntrySite(
+	node, boundaryScopePath string,
+	componentKeys []string,
+) (constraint.AuthoredSite, []string) {
+	if boundaryScopePath == "" {
+		return constraint.AuthoredSite{Component: node}, nil
+	}
+	return constraint.AuthoredSite{ScopePath: boundaryScopePath}, componentKeys
 }
 
 // ReleaseConnectionEntry returns the per-edge entry a Release writes, or would
@@ -93,11 +124,6 @@ func releaseEdgeConfigurationInstance(
 		},
 		SourceFile: sourceFile,
 	}
-	if boundaryScopePath == "" {
-		instance.Site = constraint.AuthoredSite{Component: node}
-	} else {
-		instance.Site = constraint.AuthoredSite{ScopePath: boundaryScopePath}
-		instance.ComponentKeys = componentKeys
-	}
+	instance.Site, instance.ComponentKeys = releaseComponentEntrySite(node, boundaryScopePath, componentKeys)
 	return instance
 }

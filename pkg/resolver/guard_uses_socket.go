@@ -5,41 +5,10 @@ package resolver
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
-
-// releaseComponentFieldPath renders the authoring field locator for a Release
-// boundary component, the Release-side mirror of [componentFieldPath]. A
-// synthesized-default component renders at the root shape
-// `.spec.components["node"]` — where the author typed it — while a component in
-// a declared boundary renders the qualified
-// `.spec.boundaries["path"].components["node"]`. The key is the
-// synthesized-provenance flag, not the path string: a boundary a user declares
-// with the name "default" still renders the qualified path.
-//
-// locator is the key path within the boundary, from
-// [types.BoundaryComponentLocator]. A component the boundary routes in from a
-// sub-module locates through the routing entry and under its local name —
-// `.aggregates["data"].components["consumer"]` — because that is the key the
-// author wrote; naming it by its qualified id would send them looking for a key
-// that is not in the document, and one the Release schema would not accept there.
-func releaseComponentFieldPath(boundaryPath string, locator []string, synthesized bool) string {
-	if len(locator) == 0 {
-		return fmt.Sprintf(".spec.boundaries[%q]", boundaryPath)
-	}
-	if synthesized {
-		return fmt.Sprintf(".spec.components[%q]", locator[len(locator)-1])
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, ".spec.boundaries[%q]", boundaryPath)
-	for i := 0; i+1 < len(locator); i += 2 {
-		fmt.Fprintf(&b, ".%s[%q]", locator[i], locator[i+1])
-	}
-	return b.String()
-}
 
 // ReleaseEdgeEntry is one operator-authored per-edge connection collected from a
 // Release: the consuming node ID, the socket and alias the entry sits under, the
@@ -206,7 +175,14 @@ func ReleaseEntryCreatesEdge(entry types.ReleaseUsesEntry) bool {
 // a socket their own component's type declares no entry for is authoring the
 // product accepts, and the asymmetry between the two surfaces is what lets one
 // relax without the other.
-func ValidateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.FeatureUsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
+//
+// Where each finding is positioned is the caller's, because only the caller
+// knows which block wrote the attachment: at names the document's file and
+// assembles the locator of one socket's entry. Where at names a component, every
+// finding also names the component and the attachment in its detail, because a
+// locator through a key holding the dialect's separator stops at the container
+// that key sits in, and the detail is then the only place either appears.
+func ValidateFeatureUsesAgainstSchema(entity string, at FeatureUsesSite, uses types.OrderedMap[types.FeatureUsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {
 		return nil
@@ -217,8 +193,9 @@ func ValidateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.Order
 		for socket := range uses.All() {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
-				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
-				Message: fmt.Sprintf("feature type %q has no usesSchema — uses declarations are not allowed", featType),
+				Field:   at.Locate(socket),
+				File:    at.File,
+				Message: at.subject(socket) + fmt.Sprintf("feature type %q has no usesSchema — uses declarations are not allowed", featType),
 				Err:     ErrUnknownUsesSocket(),
 			})
 		}
@@ -230,11 +207,41 @@ func ValidateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.Order
 		if _, ok := catFeat.Spec.UsesSchema.Get(socket); !ok {
 			errs = append(errs, &ResolverError{
 				Entity:  entity,
-				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
-				Message: fmt.Sprintf("socket %q not defined in feature type %q usesSchema (valid: %v)", socket, featType, catFeat.Spec.UsesSchema.Keys()),
+				Field:   at.Locate(socket),
+				File:    at.File,
+				Message: at.subject("") + fmt.Sprintf("socket %q not defined in feature type %q usesSchema (valid: %v)", socket, featType, catFeat.Spec.UsesSchema.Keys()),
 				Err:     ErrUnknownUsesSocket(),
 			})
 		}
 	}
 	return errs
+}
+
+// FeatureUsesSite says where an attachment's `uses` block was written, for the
+// findings [ValidateFeatureUsesAgainstSchema] raises about its sockets.
+type FeatureUsesSite struct {
+	// File is the document the locators are paths inside, empty where the caller
+	// holds none.
+	File string
+
+	// Locate returns the locator of one socket's entry in the block.
+	Locate func(socket string) string
+
+	// Component and Attachment name the attachment in each finding's detail;
+	// both empty leaves the detail to the socket alone.
+	Component  string
+	Attachment string
+}
+
+// subject is the opening of a finding's detail naming the attachment it is
+// about, and the socket where the rest of the detail does not name it; empty
+// where the site names no component.
+func (s FeatureUsesSite) subject(socket string) string {
+	if s.Component == "" {
+		return ""
+	}
+	if socket == "" {
+		return fmt.Sprintf("component %q attachment %q: ", s.Component, s.Attachment)
+	}
+	return fmt.Sprintf("component %q attachment %q socket %q: ", s.Component, s.Attachment, socket)
 }

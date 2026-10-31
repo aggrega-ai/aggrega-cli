@@ -1074,9 +1074,12 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		entity = fmt.Sprintf("Aggregate %s", cfg.ResolveResult.Aggregate.Metadata.Name)
 	}
 	var release *types.Release
+	releasePath := ""
 	if cfg.ResolveResult != nil {
 		release = cfg.ResolveResult.Release
+		releasePath = cfg.ResolveResult.ReleasePath
 	}
+	releaseEntries := releaseComponentEntriesByNode(release)
 
 	var errs []*resolver.ResolverError
 	for nodeID, node := range flat.Nodes.All() {
@@ -1140,8 +1143,11 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				if att.Feature.Uses.Len() == 0 {
 					continue
 				}
+				instance := att.InstanceName
 				errs = append(errs, resolver.ValidateFeatureUsesAgainstSchema(
-					entity, fmt.Sprintf(".%s.features[%q].uses", nodeID, att.InstanceName),
+					entity, resolver.FeatureUsesSite{Locate: func(socket string) string {
+						return fmt.Sprintf(".%s.features[%q].uses[%q]", nodeID, instance, socket)
+					}},
 					att.Feature.Uses, att.Feature.Type, catalog)...)
 			}
 		}
@@ -1181,9 +1187,10 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			// edit to fix it.
 			if release != nil {
 				if placement, placed := cfg.ResolveResult.BoundaryInfra[nodeID]; placed && placement != nil {
-					errs = append(errs, resolver.ValidatePillarConformance(
+					errs = append(errs, resolver.ValidatePillarConformanceAt(
 						compiled, "infra", placement.Infra, node.ResolvedParameters,
-						releaseEntityName(release), fmt.Sprintf(".%s", nodeID),
+						releaseEntityName(release), releasePath, nodeID,
+						releasePlacementLocator(releaseEntries, nodeID, placement),
 						"the Component schema")...)
 				}
 			}
@@ -1224,9 +1231,49 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		}
 	}
 
-	errs = append(errs, guardSubAggregateReleaseEdges(flat, release, catalog)...)
-	errs = append(errs, guardSubAggregateReleaseAttachmentSockets(flat, release, catalog)...)
+	errs = append(errs, guardSubAggregateReleaseEdges(flat, release, releasePath, catalog)...)
+	errs = append(errs, guardSubAggregateReleaseAttachmentSockets(flat, release, releasePath, catalog)...)
 	return errs
+}
+
+// releaseComponentEntriesByNode indexes the component entries a Release writes by
+// the node each names, for a lookup by node. It is read by key only, so nothing
+// any output carries depends on an order over it.
+func releaseComponentEntriesByNode(release *types.Release) map[string]resolver.ReleaseComponentEntry {
+	out := map[string]resolver.ReleaseComponentEntry{}
+	for _, entry := range resolver.ReleaseComponentEntries(release) {
+		out[entry.NodeID] = entry
+	}
+	return out
+}
+
+// releasePlacementLocator returns how a finding about the sizing a Release placed
+// against a node is positioned: inside the component entry the Release wrote for
+// the node, through the locator assembly, at the path the finding landed on.
+//
+// A node the Release placed without writing an entry for it — a component a
+// routed module placement covers — has no entry holding the sizing, so its
+// findings name the boundary that placed it and stop there: a key inside that
+// boundary would be one the document does not hold. The boundary normalization
+// synthesized names no level, so such a finding is positioned at the file.
+func releasePlacementLocator(
+	entries map[string]resolver.ReleaseComponentEntry,
+	nodeID string,
+	placement *resolver.BoundaryInfra,
+) func(path string) string {
+	if entry, written := entries[nodeID]; written {
+		site, keys := entry.Site()
+		return func(path string) string {
+			return constraint.SiteLocator(constraint.AuthoringDocumentRelease, site, keys, path)
+		}
+	}
+	scope := placement.BoundaryPath
+	if placement.Synthesized {
+		scope = ""
+	}
+	return func(string) string {
+		return constraint.SiteLocator(constraint.AuthoringDocumentRelease, constraint.AuthoredSite{ScopePath: scope}, nil, "")
+	}
 }
 
 // guardSubAggregateReleaseAttachmentSockets asks the attachment socket rule of
@@ -1251,15 +1298,25 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 //
 // Nodes are walked in flattened author order, and each node's boundary chain
 // outer to inner, so the findings are deterministic.
+//
+// A finding names the Release's file and is positioned at the socket's entry
+// inside the attachment the Release wrote, at the site the Release's own walk
+// records for the component entry, through the locator assembly. An entry keyed
+// by the identifier the composition gave the component holds the dialect's
+// separator, so its locator stops at the components block, and the finding names
+// the component, the attachment and the socket in its detail; an entry written
+// through a routing entry is keyed by the local name and is named to the socket.
 func guardSubAggregateReleaseAttachmentSockets(
 	flat *flattenResult,
 	release *types.Release,
+	releasePath string,
 	catalog resolver.CatalogLookup,
 ) []*resolver.ResolverError {
 	if release == nil || catalog.Feature == nil {
 		return nil
 	}
 	entity := releaseEntityName(release)
+	entries := releaseComponentEntriesByNode(release)
 
 	var errs []*resolver.ResolverError
 	for nodeID, node := range flat.Nodes.All() {
@@ -1278,8 +1335,17 @@ func guardSubAggregateReleaseAttachmentSockets(
 					if feat.Uses.Len() == 0 {
 						continue
 					}
+					site, keys := entries[nodeID].Site()
+					attachment := constraint.AttachmentSiteInBlock(
+						constraint.AuthoringDocumentRelease, site, name, releasePath)
+					attachment.ComponentKeys = keys
 					errs = append(errs, resolver.ValidateFeatureUsesAgainstSchema(
-						entity, fmt.Sprintf(".%s.features[%q].uses", nodeID, name),
+						entity, resolver.FeatureUsesSite{
+							File:       releasePath,
+							Locate:     attachment.SocketLocator,
+							Component:  nodeID,
+							Attachment: name,
+						},
 						feat.Uses, feat.Type, catalog)...)
 				}
 			}
@@ -1492,9 +1558,15 @@ func configurationNamed(infra, attachments bool) string {
 //
 // Walk order is the shared Release-boundary walk's, so violations are
 // deterministic across runs.
+//
+// A finding names the Release's file and is positioned at the entry, through the
+// same locator a rule over the Release's per-edge entries is positioned at. An
+// entry under a component keyed by the identifier the composition gave it stops
+// at the components block, so the finding names the component in its detail.
 func guardSubAggregateReleaseEdges(
 	flat *flattenResult,
 	release *types.Release,
+	releasePath string,
 	catalog resolver.CatalogLookup,
 ) []*resolver.ResolverError {
 	if release == nil {
@@ -1515,9 +1587,10 @@ func guardSubAggregateReleaseEdges(
 		if _, declared := catComp.Spec.UsesSchema.Get(ref.Socket); !declared {
 			errs = append(errs, &resolver.ResolverError{
 				Entity: entity,
-				Field:  fmt.Sprintf(".%s.uses[%q][%q]", ref.NodeID, ref.Socket, ref.Alias),
-				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
-					ref.Socket, node.ComponentType, catComp.Spec.UsesSchema.Keys()),
+				Field:  ref.Instance(releasePath).Locator(),
+				File:   releasePath,
+				Message: fmt.Sprintf("component %q alias %q: socket %q not defined in component type %q usesSchema (valid: %v)",
+					ref.NodeID, ref.Alias, ref.Socket, node.ComponentType, catComp.Spec.UsesSchema.Keys()),
 				Err: resolver.ErrUnknownUsesSocket(),
 			})
 		}

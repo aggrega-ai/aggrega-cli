@@ -123,7 +123,7 @@ func TestTheWalkPinsTheFeatureEveryConnectionAttachmentNames(t *testing.T) {
 		referencedFrom []string
 	}
 	const (
-		top     = "aggregate.spec.subsystems.default.components."
+		top     = "aggregate.spec.components."
 		routerC = top + "router.uses.models.gpt.features.credential.type"
 	)
 	components := func(prefix string) map[string]pin {
@@ -302,7 +302,7 @@ func TestTheSubAggregateDescentPinsTheFeatureAModulesConnectionCarries(t *testin
 	if err := closure.DescendSubAggregates(context.Background(), &c, loader, lookup); err != nil {
 		t.Fatalf("DescendSubAggregates: %v", err)
 	}
-	want := "aggregate(" + connectionModuleURI + ").spec.subsystems.default.components.router.uses.models.gpt.features.credential.type"
+	want := "aggregate(" + connectionModuleURI + ").spec.components.router.uses.models.gpt.features.credential.type"
 	for _, e := range c.Entities {
 		if e.URI != "sec/token" {
 			continue
@@ -352,7 +352,7 @@ func TestALockfileWithoutAConnectionAttachmentPinIsRefusedAsDrift(t *testing.T) 
 		site string
 	}{
 		{"the Feature an Aggregate connection attachment names", "sec/token",
-			"aggregate.spec.subsystems.default.components.router.uses.models.gpt.features.credential.type"},
+			"aggregate.spec.components.router.uses.models.gpt.features.credential.type"},
 		{"the Feature an attachment only the Release makes names", "sec/badge",
 			"release.spec.boundaries.prod.components.router.uses.models.nim.features.credential.type"},
 		{"the realization the name tier binds to the connection attachment", "helm/token-external:1.0.0",

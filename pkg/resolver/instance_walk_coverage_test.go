@@ -87,17 +87,17 @@ func TestCollectComponentInstances_RootOnlyFoldsToDefault(t *testing.T) {
 		if !p.synthesized {
 			t.Errorf("%s: folded root component must carry the synthesized-provenance flag", p.name)
 		}
-		// Elision: the author-read locator is root-shaped, never `default`.
-		want := `.spec.components["` + p.name + `"]`
-		if locator := componentFieldPath(p.subsystemPath, p.name, p.synthesized); locator != want {
-			t.Errorf("%s: synthesized-default component must render root-shaped %q; got %q", p.name, want, locator)
+		// Elision: the site an author reads is root-shaped, never `default`.
+		want := constraint.AuthoredSite{Component: p.name}
+		if site := constraint.ComponentSite(p.name, p.subsystemPath, p.synthesized); site != want {
+			t.Errorf("%s: synthesized-default component must be sited root-shaped %+v; got %+v", p.name, want, site)
 		}
 	}
 	// Counter-case: a subsystem a user *declares* with the name "default" is not
-	// synthesized, so its components still render the qualified locator — the
-	// key is the provenance flag, not the path string.
-	if got := componentFieldPath("default", "a", false); got != `.spec.subsystems.default.components["a"]` {
-		t.Errorf("declared default path render: got %q", got)
+	// synthesized, so its components keep the qualified site — the key is the
+	// provenance flag, not the path string.
+	if got := constraint.ComponentSite("a", "default", false); got != (constraint.AuthoredSite{ScopePath: "default", Component: "a"}) {
+		t.Errorf("declared default site: got %+v", got)
 	}
 }
 
@@ -122,23 +122,22 @@ func TestSynthesizedDefault_HonestIRWhileDiagnosticElided(t *testing.T) {
 		t.Error("the folded root surface must be empty in the normalized view")
 	}
 
-	// Elision: the same folded component renders root-shaped in diagnostics.
-	var locator string
+	// Elision: the same folded component is sited root-shaped in diagnostics.
+	var site constraint.AuthoredSite
 	for _, p := range collectComponentInstances(na) {
 		if p.name == "api" {
-			locator = componentFieldPath(p.subsystemPath, p.name, p.synthesized)
+			site = constraint.ComponentSite(p.name, p.subsystemPath, p.synthesized)
 		}
 	}
-	if locator != `.spec.components["api"]` {
-		t.Errorf("diagnostic locator must be root-shaped while the IR stays honest; got %q", locator)
+	if site != (constraint.AuthoredSite{Component: "api"}) {
+		t.Errorf("diagnostic site must be root-shaped while the IR stays honest; got %+v", site)
 	}
 }
 
 // TestCollectComponentInstances_SubsystemsPathAware pins the walker's
 // path-awareness over a subsystems-bearing aggregate (Normalize is a no-op): it
 // yields every component instance — including nested subsystems — each tagged
-// with its dotted subsystem path, and componentFieldPath renders the accurate
-// nested locator.
+// with its dotted subsystem path, and the component's site keeps that path.
 func TestCollectComponentInstances_SubsystemsPathAware(t *testing.T) {
 	t.Parallel()
 	innerComps := types.OrderedMap[types.ComponentInstance]{}
@@ -161,7 +160,7 @@ func TestCollectComponentInstances_SubsystemsPathAware(t *testing.T) {
 			t.Errorf("%s: want subsystemPath %q; got %q", p.name, wantPath[p.name], p.subsystemPath)
 		}
 	}
-	if got := componentFieldPath("svc.inner", "c", false); got != `.spec.subsystems.svc.subsystems.inner.components["c"]` {
-		t.Errorf("nested path render: got %q", got)
+	if got := constraint.ComponentSite("c", "svc.inner", false); got != (constraint.AuthoredSite{ScopePath: "svc.inner", Component: "c"}) {
+		t.Errorf("nested site: got %+v", got)
 	}
 }

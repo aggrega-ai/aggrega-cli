@@ -71,6 +71,15 @@ func buildWithModule(t *testing.T, moduleSpec string, release *types.Release) er
 // boundary `edge`.
 func buildModuleComposition(t *testing.T, imports []string, modules map[string]string, release *types.Release) error {
 	t.Helper()
+	return buildModuleCompositionAt(t, imports, modules, release, "")
+}
+
+// buildModuleCompositionAt is buildModuleComposition with the Release named by
+// the file path given, as a workspace build names it.
+func buildModuleCompositionAt(
+	t *testing.T, imports []string, modules map[string]string, release *types.Release, releasePath string,
+) error {
+	t.Helper()
 	documents := map[string]*types.Aggregate{}
 	for typeName, spec := range modules {
 		var module types.Aggregate
@@ -107,6 +116,7 @@ func buildModuleComposition(t *testing.T, imports []string, modules map[string]s
 			ResolveResult: &resolver.ResolveResult{
 				Aggregate:     root,
 				Release:       release,
+				ReleasePath:   releasePath,
 				BoundaryInfra: placed,
 			},
 			LoadSubAggregate: loader,
@@ -255,8 +265,11 @@ spec:
                   link:
                     target: mod.api
 `))
+	// The Release keys the component by the identifier the composition gave it,
+	// which holds the locator dialect's separator, so the finding is positioned at
+	// the components block holding that key.
 	assertFinding(t, err, resolver.ErrUnknownUsesSocket(),
-		"Release rel", `.mod.api.features["scrape"].uses["invented-socket"]`)
+		"Release rel", `.spec.boundaries.edge.components`)
 
 	if err := buildWithModule(t, moduleSpec, release(t, "")); errors.Is(err, resolver.ErrUnknownUsesSocket()) {
 		t.Fatalf("an attachment wiring no socket must not halt under the socket rule; got %v", err)

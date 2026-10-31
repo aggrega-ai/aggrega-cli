@@ -11,7 +11,7 @@ entities:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
     - uri: compose/postgres:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:eb8b77043eb916dc82281f2d2620baf3f37a31ddf3a6283e9bf4246b2c5474cd
+      digest: sha256:792b0fb983d53cb438ea683607ce1415c7222694e882fcdd5208a29d2a109b8f
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/compose-bridge:1.0.0
@@ -24,13 +24,13 @@ entities:
       resolved_version: 1.0.0
       digest: sha256:e90b02efee3f2fa283910aa3655e5f86c10114e4b7573e964dbcac2c50f03611
       referenced_from:
-        - aggregate.spec.subsystems.default.components.db.type
+        - aggregate.spec.components.db.type
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
       digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
       referenced_from:
-        - aggregate.spec.subsystems.default.components.adminer.type
+        - aggregate.spec.components.adminer.type
         - manifest.spec.mappings.components.type.core/devtool/adminer
     - uri: cross-boundary-app
       resolved_version: ""

@@ -770,7 +770,7 @@ var errVerdictPluginTrustMismatch = cerrors.Register("verdict-plugin-trust-misma
 // ResolverError carries entity and field context alongside a sentinel error.
 // Entity follows the convention "<Kind> <metadata.name>" (e.g.
 // "Aggregate my-app", "Release prod"); Field is a JSON-path-style locator
-// from the entity root (e.g. ".spec.components[\"web\"].features[\"audit\"]")
+// from the entity root (e.g. ".spec.components.web.features.audit")
 // or empty for whole-entity errors. Err carries one of the sentinel errors
 // above so callers can match via errors.Is; Unwrap returns it.
 //
@@ -982,7 +982,7 @@ func (e *MultiResolverError) Unwrap() []error {
 //
 // The Source location maps the JSON-path Field into the CompilerError's
 // SourceLocation.File. Field is a JSON-path-style locator (e.g.,
-// ".spec.components[\"web\"]"), not a real file path; the dual semantics
+// ".spec.components.web"), not a real file path; the dual semantics
 // is documented in pkg/errors's SourceLocation godoc as "the most
 // specific authoring locator available, file path or JSON path."
 //

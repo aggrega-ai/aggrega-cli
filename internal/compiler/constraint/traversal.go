@@ -2501,3 +2501,57 @@ func attachmentSiteSegments(site AttachmentSite, tail ...string) []string {
 func (s AttachmentSite) Locator() string {
 	return authoredLocator(attachmentSiteSegments(s)...)
 }
+
+// SocketLocator returns the locator of the entry one socket has in the
+// attachment's own dependency block: the attachment's site, then .uses.<socket>
+// — the locator [RunOnNodeAttachmentSockets] positions a rule over that socket
+// at, through the same assembly.
+//
+// It is exported for a finding about such a socket that is not raised by a rule,
+// so that finding and a rule's finding about the same socket name one entry.
+// Where a key on the way holds the dialect's separator — a Release entry keyed by
+// the qualified identifier a composition gave its component — the locator names
+// the container that key sits in and stops, for the reason [authoredLocator]
+// states, and the finding names the attachment and the socket in its detail.
+func (s AttachmentSite) SocketLocator(socket string) string {
+	return authoredLocator(attachmentSiteSegments(s, authoredKeyUses, socket)...)
+}
+
+// Locator returns the locator of the per-edge entry the instance describes —
+// the one a rule over that entry is positioned at — through the same assembly,
+// for a finding about the entry that is not raised by a rule.
+//
+// An entry whose component is keyed by a qualified identifier stops at the
+// components block, for the reason [authoredLocator] states; the finding names
+// the component, the socket and the alias in its detail.
+func (i ReleaseEdgeConfigurationInstance) Locator() string {
+	return authoredLocator(releaseEdgeConfigurationSegments(i)...)
+}
+
+// SiteLocator returns the locator of an element written at site in document:
+// the site on that document's nesting axis, then keys — each one key the author
+// wrote — then leaf, a dotted path inside the element, split back into the keys
+// it names exactly as [Subject.RaiseAt] splits one.
+//
+// It is exported for a finding raised outside a rule about a value written at a
+// site — a pillar leaf the operator wrote on a Release entry, say — so its
+// position is assembled by the one locator assembly rather than spelled at the
+// raise site. A site whose document this rule cannot name, or that names no
+// scope and no component, yields the empty locator, which positions a finding
+// at its file rather than at a key the file does not hold. A key holding the
+// dialect's separator ends the locator at its container, and every segment after
+// it — leaf included — is dropped, for the reason [authoredLocator] states.
+func SiteLocator(document string, site AuthoredSite, keys []string, leaf string) string {
+	nesting, named := originNesting(document)
+	if !named {
+		return ""
+	}
+	segments := authoredSiteSegments(nesting, site, keys...)
+	if len(segments) == 0 {
+		return ""
+	}
+	if leaf != "" {
+		segments = append(segments, strings.Split(leaf, locatorSeparator)...)
+	}
+	return authoredLocator(segments...)
+}
