@@ -5,6 +5,7 @@ package pullops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -211,7 +212,13 @@ func carryForwardExternalInputs(lf *lockfile.Lockfile, prior *lockfile.Lockfile)
 // The rule itself: a missing marker is not an error at all, because most artifacts
 // are not deprecated. A marker that IS present and does not verify is a policy
 // decision — fatal under a registry that both requires signatures and is not
-// advisory, reported and skipped otherwise.
+// advisory, reported and skipped otherwise. A lookup that never finished asking
+// whether a marker is attached falls under the same policy, because nothing was
+// learned that could stand in for the check: it halts where a marker that does not
+// verify halts, and is reported and skipped where that one is. Its report is its
+// own, though, and says the lookup did not complete rather than that a marker was
+// found, since the reader would otherwise go looking for a withdrawal that may not
+// exist.
 func honorDeprecationDiscoveryError(
 	e pullverify.Entity,
 	policy workspaceconfig.RegistryConfig,
@@ -225,9 +232,31 @@ func honorDeprecationDiscoveryError(
 	if configured && policy.SigningRequiredForKind(e.Kind) && !policy.Advisory {
 		return fmt.Errorf("verifying the deprecation marker published for %s: %w", e.URI, verr)
 	}
+	var unfinished *unfinishedMarkerLookup
+	if errors.As(verr, &unfinished) {
+		fmt.Fprintf(diagOut, "  deprecation: %s: marker lookup did not complete (%v); nothing recorded\n", e.URI, verr)
+		return nil
+	}
 	fmt.Fprintf(diagOut, "  deprecation: %s: marker present but not honored (%v); not recorded\n", e.URI, verr)
 	return nil
 }
+
+// unfinishedMarkerLookup marks a discovery that never learned whether a marker is
+// attached: the artifact's registry target could not be obtained, or the listing
+// of its deprecation referrers did not complete. It is how
+// honorDeprecationDiscoveryError tells that apart from a marker that was listed and
+// then not honored.
+//
+// The mark is set where the lookup fails rather than read off the cause, because
+// the cause cannot tell the two apart: a failed referrer listing carries the same
+// condition whether it was the listing of the artifact's markers or the listing of
+// a listed marker's own signatures, and only the first leaves the marker's
+// presence unknown. Its text is the wrapped error's own, so a halt on it reads
+// exactly as it would without the mark, and the wrapped causes stay reachable.
+type unfinishedMarkerLookup struct{ err error }
+
+func (u *unfinishedMarkerLookup) Error() string { return u.err.Error() }
+func (u *unfinishedMarkerLookup) Unwrap() error { return u.err }
 
 // discoverVerdictPluginDeprecation runs the same marker discovery over ONE
 // verdict attachment's plugin artifact that the closure pass runs over a pinned
@@ -291,8 +320,10 @@ func discoverVerdictPluginDeprecation(
 // a present marker, decodes it and verifies its own signature against the
 // honored signer set (the original artifact signer plus the registry's trusted
 // deprecation identities). It returns registryindex.NoMarker() when no marker is
-// attached; a wrapped signing error when a marker is present but does not
-// verify; and the verified DeprecationRecord otherwise.
+// attached; an unfinishedMarkerLookup when the target could not be obtained or the
+// marker listing did not complete, so whether a marker is attached is unknown; the
+// error of a marker that was listed and could not be read or does not verify; and
+// the verified DeprecationRecord otherwise.
 func discoverEntityDeprecation(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -303,7 +334,7 @@ func discoverEntityDeprecation(
 ) (*lockfile.DeprecationRecord, error) {
 	target, subjectRef, err := targetFor(e)
 	if err != nil {
-		return nil, fmt.Errorf("resolve target: %w", err)
+		return nil, &unfinishedMarkerLookup{err: fmt.Errorf("resolve target: %w", err)}
 	}
 	if target == nil {
 		return nil, registryindex.NoMarker()
@@ -311,7 +342,7 @@ func discoverEntityDeprecation(
 
 	markers, err := oci.ListReferrers(ctx, target, subjectRef, deprecation.ArtifactType)
 	if err != nil {
-		return nil, fmt.Errorf("list deprecation referrers: %w", err)
+		return nil, &unfinishedMarkerLookup{err: fmt.Errorf("list deprecation referrers: %w", err)}
 	}
 	if len(markers) == 0 {
 		return nil, registryindex.NoMarker()
