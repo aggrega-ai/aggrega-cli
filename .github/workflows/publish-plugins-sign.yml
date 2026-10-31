@@ -2541,7 +2541,7 @@ jobs:
     # refuses the workflow otherwise. Each secret reaches only the step that
     # needs it, through that step's environment: the Developer ID identity's
     # passphrase reaches Apple's openssl through its environment, which unwraps
-    # the identity into a pipe and wraps it again under a passphrase drawn for
+    # the identity into two pipes and wraps it again under a passphrase drawn for
     # this job, the one security import is given; the identity goes into a
     # keychain of this job's own in the runner's temporary directory, under a
     # password drawn for it, which the signing step deletes when it ends,
@@ -2728,7 +2728,7 @@ jobs:
 
       - name: Sign the macOS binaries
         # The identity is unwrapped from its PKCS#12 file by Apple's openssl,
-        # which reads the passphrase from its environment, into a pipe, and
+        # which reads the passphrase from its environment, into two pipes, and
         # wrapped again under a passphrase drawn for this job, which security
         # import is given in its place; the decrypted key is never written to a
         # file. It is imported into a keychain of this job's own, under a
@@ -2783,9 +2783,15 @@ jobs:
           /usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nokeys 2>/dev/null |
             /usr/bin/openssl x509 -noout -subject -issuer 2>&1 | /usr/bin/sed 's/^/  first certificate: /' || true
           export WRAP_PASSWORD="$wrap_password"
-          if ! /usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nodes |
-            /usr/bin/openssl pkcs12 -export -passout env:WRAP_PASSWORD \
-              -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -out "$identity/import.p12"; then
+          # The certificates and the key reach the re-wrap as two separate
+          # streams. Apple's openssl is LibreSSL, whose export reads the key and
+          # then the certificates from its input, and the key read consumes a
+          # single shared stream whole, leaving no certificate to load.
+          if ! /usr/bin/openssl pkcs12 -export -passout env:WRAP_PASSWORD \
+              -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+              -in <(/usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nokeys) \
+              -inkey <(/usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nocerts -nodes) \
+              -out "$identity/import.p12"; then
             echo "sign-macos: the identity in APPLE_DEVELOPER_ID_CERTIFICATE could not be read with APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD: it must be a PKCS#12 file holding the certificate and its private key, exported with that passphrase, in base64" >&2
             exit 1
           fi
