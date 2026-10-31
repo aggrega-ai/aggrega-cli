@@ -525,14 +525,15 @@ func inspectPath(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, pat
 // same ambiguous identifier. What stays here is the rendering: which view each
 // matched kind gets, and the withdrawal advisory that follows it.
 //
-// A Component match keeps its dedicated render path: the merged schema +
-// usesSchema view. Every other kind is
-// handed to the same per-kind inspector the file-path branch uses (via the
-// kindRenderers table), so a bare identifier and a standalone file of the same
-// entity render identically. For the pure-unmarshal kinds the matched in-memory
-// entity is re-marshaled to YAML for that dispatch; a bare non-Component
-// identifier therefore shows the entity's canonical re-marshaled form under
-// --raw / --output yaml, since catalog entities retain no single authored-file
+// A Component match keeps its dedicated render path for the readable layouts:
+// the merged schema + usesSchema view. Under --output yaml it is handed on like
+// the other kinds. Every other kind is handed to the same per-kind inspector the
+// file-path branch uses (via the kindRenderers table), so a bare identifier and
+// a standalone file of the same entity render identically. For the
+// pure-unmarshal kinds the matched in-memory entity is re-marshaled to YAML for
+// that dispatch; a bare identifier therefore shows the entity's canonical
+// re-marshaled form under --output yaml (and, for a kind other than Component,
+// under --raw), since catalog entities retain no single authored-file
 // byte source uniformly across kinds. Aggregate is the exception: its inspector
 // runs the topology pass over the entity read from its source file, so it
 // receives the retained source path and authored bytes rather than a re-marshal.
@@ -629,6 +630,13 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 
 	switch match.Kind {
 	case "Component":
+		// --output yaml asks for the entity as a document, which the structured
+		// view below cannot produce, so it takes the funnel every other kind takes:
+		// the resolved entity re-marshaled and handed to the kind's own inspector,
+		// whose YAML form is the one a Component file gets.
+		if opts.output == outputYAML {
+			return renderCatalogMatch(ctx, rw, id, resolvedIdentifier, match.Definition, catalogDirs, opts)
+		}
 		// Component keeps its own render path: the structured schema view. Its
 		// withdrawal advisory is the shared one every other kind gets.
 		//
@@ -826,8 +834,9 @@ func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspa
 	return nil
 }
 
-// inspectReleaseFile loads a Release plus its referenced Aggregate and
-// Manifest, runs the build pipeline far enough to produce the IR
+// renderReleaseFile loads a Release, folds the extends chain it heads, loads
+// the Aggregate and Manifest the folded Release references, runs the build
+// pipeline far enough to produce the IR
 // (Resolve → ExpandAnnotations → RunGuards → Topology → IR), and
 // prints per-node Feature attachments with provenance brackets:
 //
@@ -918,9 +927,24 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	}
 
 	releaseDir := filepath.Dir(releasePath)
-	rel, err := resolver.LoadRelease(releasePath)
+	authoredRelease, err := resolver.LoadResolvedRelease(releasePath)
 	if err != nil {
 		return fmt.Errorf("load release: %w", err)
+	}
+	// The Release's own extends chain is folded before either of its pointers is
+	// read, because a child may inherit both rather than declare them: read
+	// unfolded, a child naming only its parent has an empty Aggregate and Manifest
+	// reference, and the picture would fail on a Release a build of the same
+	// documents resolves. The fold is the one every build reaches, so the picture
+	// is drawn from the Release a build composes. A Release extending nothing folds
+	// to itself.
+	//
+	// What the composition rules advise is not reported here, as a validation of
+	// the same Release does not report it either: this command shows the composed
+	// Release rather than how it was composed.
+	rel, _, err := resolver.ResolveReleaseExtends(wsRoot, releaseDir, authoredRelease)
+	if err != nil {
+		return fmt.Errorf("compose release extends: %w", err)
 	}
 	// The Manifest and the Aggregate are resolved by the resolvers every other
 	// surface resolves a Release's references by — a relative path beside the

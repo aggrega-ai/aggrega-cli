@@ -97,6 +97,60 @@ func TestInspectBareName_Component_Preserved(t *testing.T) {
 	}
 }
 
+// TestInspectBareName_ComponentHonoursYAMLOutput proves a Component reached by
+// its name answers --output yaml with the entity as a YAML document, as a
+// Component file and every other kind reached by name already do. The text
+// row is the control that the structured view still answers the default
+// format, and the Feature row the control that the YAML form of another kind
+// reached by name is the shape the Component row now matches.
+func TestInspectBareName_ComponentHonoursYAMLOutput(t *testing.T) {
+	t.Parallel()
+	catDir := writeBareNameCatalog(t, map[string]string{
+		"component.yaml": bareNameComponentFixture,
+		"feature.yaml":   bareNameFeatureFixture,
+	})
+	for _, row := range []struct {
+		name       string
+		identifier string
+		yaml       bool
+		want       []string
+		absent     []string
+	}{
+		{name: "a Component under --output yaml", identifier: "core/api-server", yaml: true,
+			want:   []string{"apiVersion: aggrega.ai/v1alpha1\n", "kind: Component\n", "name: core/api-server\n"},
+			absent: []string{"Component: core/api-server", "Schema:"}},
+		{name: "control: a Component under the default format", identifier: "core/api-server",
+			want:   []string{"Component: core/api-server:1.0.0\n", "Schema:"},
+			absent: []string{"kind: Component"}},
+		{name: "control: a Feature under --output yaml", identifier: "core/metrics", yaml: true,
+			want:   []string{"apiVersion: aggrega.ai/v1alpha1\n", "kind: Feature\n", "name: core/metrics\n"},
+			absent: []string{"Feature: core/metrics"}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			opts := testInspectOptions(&buf)
+			if row.yaml {
+				opts.output = outputYAML
+			}
+			if err := dispatchInspect(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), row.identifier, []string{catDir}, opts); err != nil {
+				t.Fatalf("inspect %s: %v", row.identifier, err)
+			}
+			out := buf.String()
+			for _, want := range row.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("output does not carry %q; got:\n%s", want, out)
+				}
+			}
+			for _, absent := range row.absent {
+				if strings.Contains(out, absent) {
+					t.Errorf("output carries %q, which this format does not print; got:\n%s", absent, out)
+				}
+			}
+		})
+	}
+}
+
 // TestInspectBareName_Feature proves the general cross-kind path resolves a
 // Feature by identity and renders it through the Feature inspector.
 func TestInspectBareName_Feature(t *testing.T) {
