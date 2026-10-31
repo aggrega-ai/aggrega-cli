@@ -6,11 +6,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -74,12 +80,76 @@ func withRegistrationWarnings(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// withDiscoverable swaps the discoverability seam for the test.
-func withDiscoverable(t *testing.T, fn func(context.Context, string) bool) {
+// withUnknownCommandWorkspace points the unknown-command hint's workspace seam at
+// rw for the duration of the test, so the hint reads that workspace's index rather
+// than none.
+func withUnknownCommandWorkspace(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) {
 	t.Helper()
-	prev := pluginDiscoverable
-	pluginDiscoverable = fn
-	t.Cleanup(func() { pluginDiscoverable = prev })
+	prev := unknownCommandWorkspace
+	unknownCommandWorkspace = func() *workspaceconfig.ResolvedWorkspace { return rw }
+	t.Cleanup(func() { unknownCommandWorkspace = prev })
+}
+
+// refusingRegistryWorkspace writes a workspace whose default registry, and only
+// configured registry, is a server on this machine that FAILS the test on any
+// request it receives, and returns the workspace root and the server's host. A
+// hint or a search run against it proves it read the local index alone: a lookup
+// reaching for the registry is a failure, not a slow pass.
+func refusingRegistryWorkspace(t *testing.T) (string, string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the registry was contacted, and nothing here may contact it: %s %s", r.Method, r.URL)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	root := t.TempDir()
+	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename),
+		"workspace: {}\ndefault_registry: \""+host+"\"\nregistries:\n  - host: \""+host+"\"\n")
+	return root, host
+}
+
+// writeCLIPluginIndex writes host's local index through the writer the index build
+// uses, holding one record per repository. Each record carries the fields the build
+// derives from a published plugin's annotations — its URI and name from the
+// repository, the Plugin kind and the plugin type — so the hint and the search
+// read the shape a real index holds.
+func writeCLIPluginIndex(t *testing.T, root, host string, pluginTypes map[string]string, repos ...string) {
+	t.Helper()
+	rw, err := workspaceconfig.Resolve(root, "")
+	if err != nil {
+		t.Fatalf("resolve the workspace: %v", err)
+	}
+	var records []registryindex.Record
+	for _, repo := range repos {
+		records = append(records, registryindex.Record{
+			URI:        "oci://" + host + "/" + repo,
+			Name:       repo,
+			Version:    "1.0.0",
+			Versions:   []string{"1.0.0"},
+			Kind:       "Plugin",
+			PluginType: pluginTypes[repo],
+		})
+	}
+	if err := registryops.WriteHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(),
+		registryops.HostIndex{Host: host, Records: records}, searchFrozen()); err != nil {
+		t.Fatalf("write the local index: %v", err)
+	}
+}
+
+// unknownCommandHint drives an unrecognized command through the real command tree
+// and returns the diagnostic the exit boundary prints for it.
+func unknownCommandHint(t *testing.T, name string) string {
+	t.Helper()
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{name})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("unknown command %q returned no error", name)
+	}
+	return unknownCommandSuggestion(t.Context(), formatCompilerError(err), err)
 }
 
 // TestConfiguredCLIPlugin_ListedAndDispatched proves a configured CLI plugin
@@ -331,40 +401,151 @@ func TestConfiguredCLIPlugin_ExitCodePropagation(t *testing.T) {
 	}
 }
 
-// TestUnknownCommand_InstallSuggestion proves the unknown-command boundary appends
-// the install hint only when the name is discoverable, and otherwise leaves
-// cobra's normal error unchanged.
-func TestUnknownCommand_InstallSuggestion(t *testing.T) {
-	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
+// TestUnknownCommandHintReadsTheLocalIndex proves the hint an unknown command gets
+// is decided by the default registry's local index, and by nothing else: each row
+// runs against a registry that fails the test on any request, so a hint that
+// reached the registry fails rather than passing slowly.
+//
+// A planted defect makes a row fail: point the hint at the registry rather than the
+// index and every row reports the request; drop the plugin-type narrowing and the
+// "without" row prints the install hint for the provider plugin named hep; read a
+// missing index as an empty one and the "no index" row loses the update step.
+func TestUnknownCommandHintReadsTheLocalIndex(t *testing.T) {
+	// Not parallel: mutates the process-global registration, dispatcher and
+	// unknown-command workspace seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, nil)
 	withDispatcher(t, &fakeDispatcher{})
 
-	run := func() string {
-		root := newRootCmd()
-		root.SetOut(&bytes.Buffer{})
-		root.SetErr(&bytes.Buffer{})
-		root.SetArgs([]string{"definitely-not-a-command"})
-		err := root.Execute()
-		if err == nil {
-			t.Fatalf("unknown command returned no error")
-		}
-		return unknownCommandSuggestion(context.Background(), formatCompilerError(err), err)
+	cases := []struct {
+		name  string
+		repos []string // nil writes no index at all
+		types map[string]string
+		want  string
+	}{
+		{
+			name:  "an index holding the CLI plugin prints the install hint",
+			repos: []string{"plugin/cli/hep", "plugin/cli/moo"},
+			types: map[string]string{"plugin/cli/hep": "cli", "plugin/cli/moo": "cli"},
+			want:  `"hep" is not a command — install the "hep" plugin with 'aggrega plugin add cli hep'`,
+		},
+		{
+			name:  "an index without the CLI plugin prints the search hint",
+			repos: []string{"plugin/cli/moo", "plugin/provider/hep"},
+			types: map[string]string{"plugin/cli/moo": "cli", "plugin/provider/hep": "provider"},
+			want:  `"hep" is not a command — to look for a CLI plugin of that name, run: aggrega search hep --kind plugin --plugin-type cli`,
+		},
+		{
+			name: "no index prints the update-then-search hint",
+			want: `"hep" is not a command — to look for a CLI plugin of that name, build the local registry index with 'aggrega registry update', then run: aggrega search hep --kind plugin --plugin-type cli`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, host := refusingRegistryWorkspace(t)
+			if tc.repos != nil {
+				writeCLIPluginIndex(t, root, host, tc.types, tc.repos...)
+			}
+			rw, err := workspaceconfig.Resolve(root, "")
+			if err != nil {
+				t.Fatalf("resolve the workspace: %v", err)
+			}
+			withUnknownCommandWorkspace(t, rw)
+
+			got := unknownCommandHint(t, "hep")
+			t.Logf("diagnostic:\n%s", got)
+			if !strings.Contains(got, `unknown command "hep" for "aggrega"`) {
+				t.Errorf("the hint replaced cobra's own message rather than following it:\n%s", got)
+			}
+			if !strings.HasSuffix(got, "\n"+tc.want) {
+				t.Errorf("diagnostic ends\n%s\nwant it to end with the hint\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnknownCommandSearchHintRunsAsPrinted runs the search command the hint
+// prints, exactly as printed, through the real command tree against an index
+// holding a CLI plugin of that name, and proves it finds that plugin — so the
+// printed flags are ones the search accepts and the plugin type it names is the
+// one a CLI plugin's record carries. The index also holds a provider plugin of the
+// same name, which the printed search must leave out.
+//
+// A planted defect makes this fail: print a plugin type other than the one a CLI
+// plugin records and the search finds nothing; drop the type from the printed line
+// and the provider plugin is found too.
+func TestUnknownCommandSearchHintRunsAsPrinted(t *testing.T) {
+	// Not parallel: mutates the process-global registration, dispatcher, search
+	// clock and unknown-command workspace seams other tests read.
+	withRegistrationWarnings(t)
+	withCLIRegistrations(t, nil)
+	withDispatcher(t, &fakeDispatcher{})
+	withSearchClock(t, searchFrozen().Add(time.Hour))
+
+	root, host := refusingRegistryWorkspace(t)
+	rw, err := workspaceconfig.Resolve(root, "")
+	if err != nil {
+		t.Fatalf("resolve the workspace: %v", err)
+	}
+	withUnknownCommandWorkspace(t, rw)
+
+	// The hint is taken while the index holds no CLI plugin named hep, which is
+	// when the search hint is what the reader is shown.
+	writeCLIPluginIndex(t, root, host, map[string]string{"plugin/provider/hep": "provider"}, "plugin/provider/hep")
+	hint := unknownCommandHint(t, "hep")
+	_, line, ok := strings.Cut(hint, "run: ")
+	if !ok {
+		t.Fatalf("the diagnostic prints no search command (no %q):\n%s", "run: ", hint)
+	}
+	if strings.ContainsAny(line, `'"\`) {
+		t.Fatalf("the printed command %q carries shell quoting this test does not split; the name was plain", line)
+	}
+	args := strings.Fields(line)
+	if len(args) < 2 || args[0] != "aggrega" || args[1] != "search" {
+		t.Fatalf("the printed command %q is not an 'aggrega search' invocation", line)
 	}
 
-	withDiscoverable(t, func(context.Context, string) bool { return true })
-	withHint := run()
-	if !strings.Contains(withHint, "aggrega plugin add cli definitely-not-a-command") {
-		t.Fatalf("discoverable unknown command lacks the install hint:\n%s", withHint)
-	}
+	// Now the plugin is published: the index holds the CLI plugin as well.
+	writeCLIPluginIndex(t, root, host,
+		map[string]string{"plugin/cli/hep": "cli", "plugin/provider/hep": "provider"},
+		"plugin/cli/hep", "plugin/provider/hep")
 
-	withDiscoverable(t, func(context.Context, string) bool { return false })
-	noHint := run()
-	if strings.Contains(noHint, "plugin add cli") {
-		t.Fatalf("non-discoverable unknown command should keep cobra's normal error:\n%s", noHint)
+	cmd := newRootCmd()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(append([]string{"--workspace-root", root}, append(args[1:], "-o", "names")...))
+	if err := cmd.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("the printed search command %q failed: %v\nstderr:\n%s", line, err, errOut.String())
 	}
-	if !strings.Contains(noHint, "unknown command") {
-		t.Fatalf("non-discoverable unknown command lost cobra's normal error:\n%s", noHint)
+	t.Logf("printed command: %s\nstdout:\n%s", line, out.String())
+	want := "oci://" + host + "/plugin/cli/hep\n"
+	if out.String() != want {
+		t.Errorf("the printed search found\n%q\nwant exactly the CLI plugin\n%q", out.String(), want)
+	}
+}
+
+// TestCLIPluginSearchCommandWritesTheNameAsOneShellWord proves the printed search
+// command carries the typed name as a single word a POSIX shell reads back as the
+// name, quoting it only where the name holds a character the shell would read.
+func TestCLIPluginSearchCommandWritesTheNameAsOneShellWord(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"hep", "aggrega search hep --kind plugin --plugin-type cli"},
+		{"my-tool_2.0", "aggrega search my-tool_2.0 --kind plugin --plugin-type cli"},
+		{"two words", "aggrega search 'two words' --kind plugin --plugin-type cli"},
+		{"it's", `aggrega search 'it'\''s' --kind plugin --plugin-type cli`},
+		{"$(x)", "aggrega search '$(x)' --kind plugin --plugin-type cli"},
+		{"~home", "aggrega search '~home' --kind plugin --plugin-type cli"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cliPluginSearchCommand(tc.name); got != tc.want {
+				t.Errorf("cliPluginSearchCommand(%q) = %q; want %q", tc.name, got, tc.want)
+			}
+		})
 	}
 }
 

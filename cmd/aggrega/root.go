@@ -215,8 +215,8 @@ func Execute() {
 // — an installed plugin that ran and exited non-zero, or the drift import --sync
 // --dry-run found — surfaces as an exitCodeError, whose code is propagated
 // verbatim with no formatted diagnostic. Any other error is the single formatted
-// diagnostic to stderr and exit 1; when it is cobra's unknown-command error for a
-// discoverable plugin name, an install hint is appended.
+// diagnostic to stderr and exit 1; when it is cobra's unknown-command error, a
+// plugin hint read from the local registry index is appended.
 //
 // A reported success is checked once more before it becomes exit 0, which is why
 // this uses ExecuteContextC rather than ExecuteContext: only the C-suffixed form

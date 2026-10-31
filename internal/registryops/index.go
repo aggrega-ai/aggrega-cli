@@ -22,7 +22,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -46,13 +45,6 @@ type RepoLister interface {
 // It is what makes one enumeration primitive serve several callers: a plugin
 // search and a whole-catalog index pass different scopes over the same walk.
 type RepoScope func(repoPath string) bool
-
-// PluginScope admits the repository paths Wasm plugins publish under — the
-// plugin path prefix the plugin reference convention uses. It scopes an
-// enumeration to installable plugins rather than the whole catalog.
-func PluginScope(repoPath string) bool {
-	return strings.HasPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-}
 
 // CatalogScope admits every repository — a catalog enumeration spans the full
 // entity surface, not one kind.

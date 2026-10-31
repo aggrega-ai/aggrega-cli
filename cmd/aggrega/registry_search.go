@@ -5,105 +5,90 @@ package main
 
 import (
 	"context"
+	"io"
 	"path"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// The registry enumeration primitive, its scope predicate and the two standing
-// scopes live in the shared operations layer, which is where every surface that
-// enumerates a registry reaches them. They are named here so this package's
-// existing spellings resolve to that one implementation rather than to a second
-// copy of it.
-type (
-	registryRepoLister = registryops.RepoLister
-	searchScope        = registryops.RepoScope
+// cliPluginSearchKind is the entity kind a search for a CLI plugin narrows to, in
+// the spelling the search command's --kind flag takes. The index lookup below and
+// the search command the hint prints both read it, so the hint never prints a
+// search that asks something other than what the hint asked.
+const cliPluginSearchKind = "plugin"
+
+// cliPluginIndexAnswer is what the local registry index says about a name typed
+// where a command was expected.
+type cliPluginIndexAnswer int
+
+const (
+	// noLocalIndex: there is no index of the default registry to read — none has
+	// been built, no default registry is configured, no workspace resolved, or the
+	// index could not be read.
+	noLocalIndex cliPluginIndexAnswer = iota
+	// indexHoldsNoCLIPlugin: the index was read and holds no CLI plugin of that name
+	// published through the default registry.
+	indexHoldsNoCLIPlugin
+	// indexHoldsCLIPlugin: the index holds a CLI plugin of that name published
+	// through the default registry, which is where 'aggrega plugin add cli' looks.
+	indexHoldsCLIPlugin
 )
 
-// pluginSearchScope admits the repository paths Wasm plugins publish under, so
-// an enumeration is scoped to installable plugins rather than the whole catalog.
-var pluginSearchScope = registryops.PluginScope
-
-// catalogSearchScope admits every repository — a catalog enumeration spans the
-// full entity surface, not one kind.
-var catalogSearchScope = registryops.CatalogScope
-
-// searchRegistry enumerates the repositories a registry serves that the scope
-// admits and whose path contains the query substring, in ascending order. It
-// delegates to the shared layer's one enumeration primitive, whose walk,
-// filtering, ordering and partial-on-error posture are documented there.
-func searchRegistry(ctx context.Context, reg registryRepoLister, query string, scope searchScope) ([]string, error) {
-	return registryops.EnumerateRepositories(ctx, reg, query, scope)
-}
-
-// The registry-target seam is deliberately NOT re-declared here. It lives in the
-// plugin operations layer, which is where every surface that resolves the default
-// registry to enumerate reaches it, and the sites below name it there.
-//
-// A local spelling of it would have to be either a copy of the resolution or a
-// variable initialized from the seam, and both are the same defect: a test points
-// at one of the two while production reads the other, so the fake silently stops
-// applying and the enumeration goes to the live registry. Naming the one seam at
-// the call site cannot come apart that way.
-
-// productionPluginDiscoverable is the live-registry backing for the
-// unknown-command install hint: it resolves the workspace registry and reports
-// whether it serves an installable CLI plugin named name. It is wired into the
-// pluginDiscoverable seam only in the process entry point, so the test binary
-// keeps the non-network stub. Every step is best-effort — an unresolvable
-// workspace, an offline workspace, an unconfigured registry, or a search failure
-// yields false — so an unknown command never blocks or crashes on a registry
-// probe. The workspace resolves lazily from the working directory, because the
-// unknown-command boundary is reached after dispatch has already failed and
-// carries no resolved workspace of its own.
-//
-// ctx is the run's own, so the enumeration this makes ends when the reader asks
-// the run to stop rather than holding the process open for a hint.
-func productionPluginDiscoverable(ctx context.Context, name string) bool {
+// workingDirectoryWorkspace resolves the workspace the working directory sits in,
+// or returns nil where none resolves. It is the live form of the unknown-command
+// hint's workspace seam, wired only in the process entry point.
+func workingDirectoryWorkspace() *workspaceconfig.ResolvedWorkspace {
 	rw, err := workspaceconfig.Resolve(".", "")
 	if err != nil {
-		return false
+		return nil
 	}
-	cfg := rw.Config()
-	// The offline decision lives at the egress gate: the registry target derives
-	// its client there and returns an error for an offline workspace, which this
-	// best-effort hint treats as "not discoverable" (silent).
-	reg, _, err := pluginops.RegistryTarget(cfg)
-	if err != nil {
-		return false
-	}
-	return discoverableViaSearch(ctx, reg, cfg.DefaultRegistryLocation().Path, name)
+	return rw
 }
 
-// discoverableViaSearch reports whether the registry serves an installable CLI
-// plugin whose command name matches name, so the unknown-command path can
-// suggest installing it. It matches a plugin repository whose final path segment
-// equals name — a best-effort hint over the plugin scope beneath under, the
-// repository path the default registry carries (empty for none), not an
-// install-time guarantee. Any search error yields false: a registry failure
-// degrades the hint to "not discoverable" and never propagates to the
-// unknown-command path.
-func discoverableViaSearch(ctx context.Context, reg registryRepoLister, under, name string) bool {
-	scope := pluginSearchScope
-	if under != "" {
-		beneath := registryhost.Location{Path: under}.Repository("")
-		scope = func(repoPath string) bool {
-			rest, ok := strings.CutPrefix(repoPath, beneath)
-			return ok && pluginSearchScope(rest)
-		}
+// cliPluginInLocalIndex reports what the default registry's local index says about
+// a CLI plugin named name.
+//
+// It reads the index through the search 'aggrega search' runs, asking it the
+// question the printed search command asks — the name as the query, narrowed to
+// the plugin kind and the CLI plugin type — restricted to the default registry,
+// which is the registry a plugin addition enumerates. That search reads the
+// snapshot 'aggrega registry update' wrote and contacts no network, so neither
+// does this, whatever the workspace's offline setting.
+//
+// A record answers for the name when its repository sits beneath the repository
+// path the default registry carries, if any, and its final path segment is the
+// name: the same reading of a plugin's name a plugin addition prefers among
+// several matches. A search that cannot be performed — no index built, or one
+// that cannot be read — is reported as no index, so the hint offers to build one.
+func cliPluginInLocalIndex(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, name string) cliPluginIndexAnswer {
+	if rw == nil {
+		return noLocalIndex
 	}
-	matches, err := searchRegistry(ctx, reg, name, scope)
+	loc := rw.Config().DefaultRegistryLocation()
+	if loc.Host == "" {
+		return noLocalIndex
+	}
+	// The search's notices are commentary on withdrawn versions, which a hint about
+	// whether a plugin exists has no use for.
+	res, err := registryops.Search(ctx, rw, registryops.Query{
+		Text:       name,
+		Kinds:      []string{cliPluginSearchKind},
+		PluginType: string(wasm.PluginTypeCLI),
+		Registry:   loc.Host,
+	}, io.Discard, searchNow())
 	if err != nil {
-		return false
+		return noLocalIndex
 	}
-	for _, m := range matches {
-		if path.Base(m) == name {
-			return true
+	beneath := loc.Repository("")
+	for _, rec := range res.Records {
+		repo, ok := strings.CutPrefix(registryindex.ReferenceForURI(rec.URI), loc.Host+"/")
+		if ok && strings.HasPrefix(repo, beneath) && path.Base(repo) == name {
+			return indexHoldsCLIPlugin
 		}
 	}
-	return false
+	return indexHoldsNoCLIPlugin
 }

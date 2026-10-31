@@ -62,7 +62,7 @@ var resolveCLIPluginDigest = func(rw *workspaceconfig.ResolvedWorkspace, uri str
 // invocation, derived from the resolved config cascade and the describe cache.
 //
 // It defaults to contributing nothing, and the process entry point wires the
-// live implementation — the same shape the unknown-command install hint uses.
+// live implementation — the same shape the unknown-command hint's workspace uses.
 // The default matters because command-tree construction happens before any
 // command runs, so the live implementation has no resolved workspace to be
 // handed and resolves one from the working directory. Defaulting to the live
@@ -79,15 +79,18 @@ var cliPluginRegistrations = func() []cliCommandReg { return nil }
 // redirected by tests to observe the diagnostics.
 var pluginRegistrationWarnWriter io.Writer = os.Stderr
 
-// pluginDiscoverable reports whether an unrecognized command name corresponds to
-// an installable plugin, so the unknown-command path can suggest installing it.
-// The default is a non-network stub that reports nothing discoverable; the
-// registry-backed lookup is wired separately.
+// unknownCommandWorkspace resolves the workspace whose local registry index the
+// unknown-command hint reads, or nil for none.
 //
-// It takes the run's context because the registry-backed form reaches a registry
-// over the network: a reader who withdraws while the hint is being looked up ends
-// the lookup instead of waiting on it.
-var pluginDiscoverable = func(_ context.Context, name string) bool { return false }
+// It defaults to resolving none, and the process entry point wires the live
+// resolution, for the reason the command registrations above default to nothing:
+// the unknown-command boundary is reached after dispatch has already failed and
+// carries no resolved workspace of its own, so the live form resolves one from the
+// working directory. Defaulting to it would make a test, or the generated command
+// reference, read whatever configuration and index sit above the directory it was
+// started in. With none resolved the hint reads no index, and says how to build
+// one.
+var unknownCommandWorkspace = func() *workspaceconfig.ResolvedWorkspace { return nil }
 
 // reservedCommandNames are command names the CLI reserves for anticipated
 // built-ins, so a configured CLI plugin can never squat a name the CLI intends
@@ -542,20 +545,72 @@ func installSuggestion(name string) string {
 	return fmt.Sprintf("%q is not a command — install the %q plugin with 'aggrega plugin add cli %s'", name, name, name)
 }
 
-// unknownCommandSuggestion returns formatted with an install hint appended when
-// err is cobra's unknown-command error for a name that is discoverable as an
-// installable plugin. For any other error, or an unknown command that is not
-// discoverable, it returns formatted unchanged so cobra's normal message stands.
+// searchSuggestion is the single home for the wording that tells a user how to
+// look for a CLI plugin named after a command the CLI does not recognize. The
+// command it names is the one cliPluginSearchCommand composes, so the printed
+// search asks exactly what the hint itself asked of the index.
 //
-// ctx is the run's, and it is what bounds the discoverability lookup: the hint is
-// worth a registry round trip only while the reader is still waiting for the
-// diagnostic, so a withdrawn run gets cobra's message without one.
+// indexBuilt says whether the default registry's local index could be read. A
+// search reads only that index, so where there is none the hint first names the
+// command that builds it.
+func searchSuggestion(name string, indexBuilt bool) string {
+	if indexBuilt {
+		return fmt.Sprintf("%q is not a command — to look for a CLI plugin of that name, run: %s",
+			name, cliPluginSearchCommand(name))
+	}
+	return fmt.Sprintf("%q is not a command — to look for a CLI plugin of that name, build the local registry index with 'aggrega registry update', then run: %s",
+		name, cliPluginSearchCommand(name))
+}
+
+// cliPluginSearchCommand is the search command line that looks for a CLI plugin
+// named name: the name as the free-text query, narrowed to the plugin kind and the
+// CLI plugin type. The name is written as one shell word, so the line can be
+// copied as printed whatever the user typed.
+func cliPluginSearchCommand(name string) string {
+	return "aggrega search " + shellWord(name) + " --kind " + cliPluginSearchKind + " --plugin-type " + string(wasm.PluginTypeCLI)
+}
+
+// shellWord returns s as a single word a POSIX shell reads back as s: unchanged
+// where every character is one a shell gives no meaning to, and otherwise wrapped
+// in single quotes, with each single quote inside written as a closing quote, an
+// escaped quote and an opening quote.
+func shellWord(s string) string {
+	plain := s != ""
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./:@%+=,", r)) {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// unknownCommandSuggestion returns formatted with a plugin hint appended when err
+// is cobra's unknown-command error. For any other error it returns formatted
+// unchanged. Cobra's own message, with its suggestions of similar commands, is
+// always kept; the hint follows it.
+//
+// Which hint follows is decided by the default registry's local index alone, so
+// the answer costs what reading a few files costs and a mistyped command is never
+// sent to a registry: an index holding a CLI plugin of that name gets the install
+// hint, an index holding none gets the search hint, and no index gets the search
+// hint preceded by the command that builds the index.
 func unknownCommandSuggestion(ctx context.Context, formatted string, err error) string {
 	name, ok := unknownCommandName(err)
-	if !ok || !pluginDiscoverable(ctx, name) {
+	if !ok {
 		return formatted
 	}
-	return formatted + "\n" + installSuggestion(name)
+	switch cliPluginInLocalIndex(ctx, unknownCommandWorkspace(), name) {
+	case indexHoldsCLIPlugin:
+		return formatted + "\n" + installSuggestion(name)
+	case indexHoldsNoCLIPlugin:
+		return formatted + "\n" + searchSuggestion(name, true)
+	default:
+		return formatted + "\n" + searchSuggestion(name, false)
+	}
 }
 
 // unknownCommandName extracts the offending command name from cobra's

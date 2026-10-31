@@ -8,11 +8,11 @@ package main
 func main() {
 	// Wire the seams that read outside the process to their live implementations
 	// only here, in the process entry point, so the test binary and the command
-	// reference generator both keep the inert defaults: the install hint keeps
-	// the non-network stub, and command-tree construction contributes no
-	// configured CLI plugin commands rather than resolving a workspace from
-	// whatever directory it was started in.
-	pluginDiscoverable = productionPluginDiscoverable
+	// reference generator both keep the inert defaults: neither the unknown-command
+	// hint nor command-tree construction resolves a workspace from whatever
+	// directory it was started in, so the hint reads no index and the tree carries
+	// no configured CLI plugin commands.
+	unknownCommandWorkspace = workingDirectoryWorkspace
 	cliPluginRegistrations = productionCLIPluginRegistrations
 	Execute()
 }

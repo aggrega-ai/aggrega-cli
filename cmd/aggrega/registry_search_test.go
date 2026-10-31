@@ -16,11 +16,12 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
+	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// fakeRepoLister is an in-memory registryRepoLister: it hands the search
-// primitive a fixed repository set in one page, so search runs without a
+// fakeRepoLister is an in-memory registryops.RepoLister: it hands the enumeration
+// primitive a fixed repository set in one page, so an enumeration runs without a
 // network. It mirrors the memory-target wrappers the tag-listing tests use.
 type fakeRepoLister struct {
 	repos []string
@@ -35,8 +36,7 @@ func (f fakeRepoLister) Repositories(_ context.Context, _ string, fn func(repos 
 }
 
 // searchFixtureRepos spans every catalog kind plus two plugin repositories, so a
-// scope filter's effect is observable: the plugin scope keeps only the wasm/
-// paths, the catalog scope keeps them all.
+// scope's or a query's effect on an enumeration is observable.
 var searchFixtureRepos = []string{
 	"recipe/helm/api-server",
 	"plugin/cli/moo",
@@ -45,12 +45,12 @@ var searchFixtureRepos = []string{
 	"plugin/provider/helm",
 }
 
-// withSearchTarget points the registry-search target seam at a fake lister for
-// the duration of the test, so a search runs without a network.
-func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
+// withSearchTarget points the registry-enumeration target seam at a fake lister
+// for the duration of the test, so a plugin addition runs without a network.
+func withSearchTarget(t *testing.T, reg registryops.RepoLister, err error) {
 	t.Helper()
 	prev := pluginops.RegistryTarget
-	pluginops.RegistryTarget = func(workspaceconfig.Config) (registryRepoLister, string, error) {
+	pluginops.RegistryTarget = func(workspaceconfig.Config) (registryops.RepoLister, string, error) {
 		if err != nil {
 			return nil, "hub.aggrega.ai", err
 		}
@@ -66,46 +66,39 @@ func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 	})
 }
 
-// TestSearchRegistry_ScopesAndQuery proves the one search primitive filters by
-// scope and by case-insensitive substring query, and returns matches in
-// ascending order.
-func TestSearchRegistry_ScopesAndQuery(t *testing.T) {
+// TestEnumerateRepositories_ScopeAndQuery proves the one enumeration primitive
+// keeps every repository the catalog scope admits, filters by case-insensitive
+// substring query, and returns matches in ascending order.
+func TestEnumerateRepositories_ScopeAndQuery(t *testing.T) {
 	reg := fakeRepoLister{repos: searchFixtureRepos}
 	ctx := context.Background()
 
-	pluginAll, err := searchRegistry(ctx, reg, "", pluginSearchScope)
+	catalogAll, err := registryops.EnumerateRepositories(ctx, reg, "", registryops.CatalogScope)
 	if err != nil {
-		t.Fatalf("plugin scope search: %v", err)
+		t.Fatalf("catalog scope enumeration: %v", err)
 	}
-	wantPlugin := []string{"plugin/cli/moo", "plugin/provider/helm"}
-	if strings.Join(pluginAll, ",") != strings.Join(wantPlugin, ",") {
-		t.Fatalf("plugin scope = %v; want %v", pluginAll, wantPlugin)
+	wantAll := []string{
+		"component/core/api-server",
+		"feature/core/tls",
+		"plugin/cli/moo",
+		"plugin/provider/helm",
+		"recipe/helm/api-server",
+	}
+	if strings.Join(catalogAll, ",") != strings.Join(wantAll, ",") {
+		t.Fatalf("catalog scope = %v; want %v", catalogAll, wantAll)
 	}
 
-	catalogAll, err := searchRegistry(ctx, reg, "", catalogSearchScope)
+	moo, err := registryops.EnumerateRepositories(ctx, reg, "MOO", registryops.CatalogScope)
 	if err != nil {
-		t.Fatalf("catalog scope search: %v", err)
-	}
-	if len(catalogAll) != len(searchFixtureRepos) {
-		t.Fatalf("catalog scope kept %d repos; want all %d: %v", len(catalogAll), len(searchFixtureRepos), catalogAll)
-	}
-	// Distinct scopes over the same registry: the catalog scope is a strict
-	// superset of the plugin scope, proving the two searches differ only in scope.
-	if len(catalogAll) <= len(pluginAll) {
-		t.Fatalf("catalog scope (%d) should be broader than plugin scope (%d)", len(catalogAll), len(pluginAll))
-	}
-
-	moo, err := searchRegistry(ctx, reg, "MOO", pluginSearchScope)
-	if err != nil {
-		t.Fatalf("query search: %v", err)
+		t.Fatalf("query enumeration: %v", err)
 	}
 	if len(moo) != 1 || moo[0] != "plugin/cli/moo" {
-		t.Fatalf("case-insensitive query = %v; want [wasm/cli/moo]", moo)
+		t.Fatalf("case-insensitive query = %v; want [plugin/cli/moo]", moo)
 	}
 
-	core, err := searchRegistry(ctx, reg, "core", catalogSearchScope)
+	core, err := registryops.EnumerateRepositories(ctx, reg, "core", registryops.CatalogScope)
 	if err != nil {
-		t.Fatalf("catalog query search: %v", err)
+		t.Fatalf("catalog query enumeration: %v", err)
 	}
 	wantCore := []string{"component/core/api-server", "feature/core/tls"}
 	if strings.Join(core, ",") != strings.Join(wantCore, ",") {
@@ -115,8 +108,8 @@ func TestSearchRegistry_ScopesAndQuery(t *testing.T) {
 
 // newCatalogRegistry builds a real oras remote registry pointed at a local
 // httptest server, mirroring the plain-HTTP catalog wiring oras's own registry
-// tests use. It proves the search primitive against the real enumeration path,
-// not just a fake lister.
+// tests use. It proves the enumeration primitive against the real enumeration
+// path, not just a fake lister.
 func newCatalogRegistry(t *testing.T, ts *httptest.Server) *remote.Registry {
 	t.Helper()
 	uri, err := url.Parse(ts.URL)
@@ -138,11 +131,11 @@ func newCatalogRegistryAt(t *testing.T, authority string) *remote.Registry {
 	return reg
 }
 
-// TestSearchRegistry_MalformedLinkHeaderReturnsFirstPage proves that when the
-// registry serves a bracket-less (non-compliant) pagination header, search
-// returns the first page's repositories it already collected rather than
-// hard-failing with nothing. It exercises the real oras enumeration path.
-func TestSearchRegistry_MalformedLinkHeaderReturnsFirstPage(t *testing.T) {
+// TestEnumerateRepositories_MalformedLinkHeaderReturnsFirstPage proves that when
+// the registry serves a bracket-less (non-compliant) pagination header, the
+// enumeration returns the first page's repositories it already collected rather
+// than hard-failing with nothing. It exercises the real oras enumeration path.
+func TestEnumerateRepositories_MalformedLinkHeaderReturnsFirstPage(t *testing.T) {
 	firstPage := []string{"component/core/api-server", "plugin/cli/moo"}
 	var ts *httptest.Server
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +157,7 @@ func TestSearchRegistry_MalformedLinkHeaderReturnsFirstPage(t *testing.T) {
 	defer ts.Close()
 
 	reg := newCatalogRegistry(t, ts)
-	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
+	got, err := registryops.EnumerateRepositories(context.Background(), reg, "", registryops.CatalogScope)
 	if err != nil {
 		t.Fatalf("malformed Link header should degrade to first page, got error: %v", err)
 	}
@@ -174,10 +167,10 @@ func TestSearchRegistry_MalformedLinkHeaderReturnsFirstPage(t *testing.T) {
 	}
 }
 
-// TestSearchRegistry_CompliantMultiPagePagesFully proves the tolerance does not
-// short-circuit compliant pagination: a well-formed multi-page Link chain still
-// pages through every page and returns the union, in sorted order.
-func TestSearchRegistry_CompliantMultiPagePagesFully(t *testing.T) {
+// TestEnumerateRepositories_CompliantMultiPagePagesFully proves the tolerance
+// does not short-circuit compliant pagination: a well-formed multi-page Link
+// chain still pages through every page and returns the union, in sorted order.
+func TestEnumerateRepositories_CompliantMultiPagePagesFully(t *testing.T) {
 	var ts *httptest.Server
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v2/_catalog" {
@@ -202,9 +195,9 @@ func TestSearchRegistry_CompliantMultiPagePagesFully(t *testing.T) {
 	defer ts.Close()
 
 	reg := newCatalogRegistry(t, ts)
-	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
+	got, err := registryops.EnumerateRepositories(context.Background(), reg, "", registryops.CatalogScope)
 	if err != nil {
-		t.Fatalf("compliant multi-page search: %v", err)
+		t.Fatalf("compliant multi-page enumeration: %v", err)
 	}
 	want := []string{
 		"component/core/api-server",
@@ -217,59 +210,20 @@ func TestSearchRegistry_CompliantMultiPagePagesFully(t *testing.T) {
 	}
 }
 
-// TestSearchRegistry_FirstRequestFailurePropagates proves a failure before any
-// page is delivered (here, a connection failure — the callback is never
+// TestEnumerateRepositories_FirstRequestFailurePropagates proves a failure before
+// any page is delivered (here, a connection failure — the callback is never
 // invoked) still surfaces as an error rather than a silent empty result — the
 // fallback covers only post-first-page failures.
-func TestSearchRegistry_FirstRequestFailurePropagates(t *testing.T) {
+func TestEnumerateRepositories_FirstRequestFailurePropagates(t *testing.T) {
 	// A loopback authority that refuses connections, so the first catalog request
 	// fails to connect before any page is delivered.
 	reg := newCatalogRegistryAt(t, refusingLoopbackAddr(t))
 
-	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
+	got, err := registryops.EnumerateRepositories(context.Background(), reg, "", registryops.CatalogScope)
 	if err == nil {
 		t.Fatalf("a first-request failure should propagate; got matches %v, nil error", got)
 	}
 	if got != nil {
 		t.Fatalf("a first-request failure should return no matches; got %v", got)
-	}
-}
-
-// TestDiscoverableViaSearch proves the unknown-command hint matches a plugin
-// repository whose final segment equals the name, and degrades to false on a
-// search error rather than propagating it.
-func TestDiscoverableViaSearch(t *testing.T) {
-	ctx := context.Background()
-	reg := fakeRepoLister{repos: searchFixtureRepos}
-	if !discoverableViaSearch(ctx, reg, "", "moo") {
-		t.Fatal("moo should be discoverable (wasm/cli/moo)")
-	}
-	if discoverableViaSearch(ctx, reg, "", "not-a-plugin") {
-		t.Fatal("an absent name should not be discoverable")
-	}
-	// A registry failure degrades to "not discoverable", never an error.
-	if discoverableViaSearch(ctx, fakeRepoLister{err: context.Canceled}, "", "moo") {
-		t.Fatal("a search error should yield false, not a match")
-	}
-}
-
-// TestDiscoverableViaSearchLooksBeneathTheDefaultRegistrysPath proves the hint
-// reads the plugins published through a default registry carrying a repository
-// path: the host's enumeration lists every repository it serves, and only those
-// beneath the path are the default's.
-func TestDiscoverableViaSearchLooksBeneathTheDefaultRegistrysPath(t *testing.T) {
-	ctx := context.Background()
-	reg := fakeRepoLister{repos: []string{"acme/plugin/cli/moo", "other/plugin/cli/baa", "plugin/cli/root-only"}}
-	if !discoverableViaSearch(ctx, reg, "acme", "moo") {
-		t.Error("moo is published beneath the default's path acme and should be discoverable")
-	}
-	if discoverableViaSearch(ctx, reg, "acme", "baa") {
-		t.Error("baa is published beneath another path and is not the default's to suggest")
-	}
-	if discoverableViaSearch(ctx, reg, "acme", "root-only") {
-		t.Error("root-only is published at the host's root, outside the default's path")
-	}
-	if discoverableViaSearch(ctx, reg, "", "moo") {
-		t.Error("with no path the hint reads the root plugin scope, where no moo is published")
 	}
 }
