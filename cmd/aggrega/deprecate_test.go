@@ -214,6 +214,61 @@ func TestDeprecateBatch_AttachesPerEntry(t *testing.T) {
 	}
 }
 
+// TestTheDeprecateCommandRefusesContentFlagsBesideABatchFile drives `aggrega
+// deprecate` through its own flag parsing with --from and a content flag, and
+// requires a refusal naming every content flag set, in one fixed order, before
+// anything else the command does.
+//
+// The command runs with no workspace attached, so any step past the refusal —
+// reading the workspace, then the batch file, then a registry — would fail
+// differently; the control row, --from alone, is that different failure, which
+// shows the batch path was reached and that the refusal is what stops the other
+// rows. Nothing here can reach a registry: the refusal comes before the
+// command reads its workspace, and the control stops there.
+func TestTheDeprecateCommandRefusesContentFlagsBesideABatchFile(t *testing.T) {
+	t.Parallel()
+	const tail = " would be ignored; put the content in the file's entries, or pass one reference with its content flags instead"
+	const head = "deprecate --from <file> reads each marker's content from the file's own entries, so "
+	for _, row := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"severity", []string{"--from", "batch.yaml", "--severity", "warning"}, head + "--severity" + tail},
+		{"reason", []string{"--from", "batch.yaml", "--reason", "superseded"}, head + "--reason" + tail},
+		{"replacement", []string{"--from", "batch.yaml", "--replacement", "reg.test/x:2"}, head + "--replacement" + tail},
+		{"message", []string{"--from", "batch.yaml", "--message", "move on"}, head + "--message" + tail},
+		{"every content flag, named in one fixed order", []string{
+			"--message", "m", "--from", "batch.yaml", "--replacement", "reg.test/x:2", "--reason", "r", "--severity", "warning",
+		}, head + "--severity, --reason, --replacement, --message" + tail},
+		{"control: --from alone passes the check", []string{"--from", "batch.yaml"}, ""},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			c := newDeprecateCmd()
+			var out bytes.Buffer
+			c.SetOut(&out)
+			c.SetErr(&out)
+			c.SetArgs(row.args)
+			c.SilenceUsage = true
+			c.SilenceErrors = true
+			err := c.ExecuteContext(t.Context())
+			if err == nil {
+				t.Fatal("the command ran with no workspace attached and reported no failure")
+			}
+			if row.want == "" {
+				if strings.Contains(err.Error(), "would be ignored") {
+					t.Errorf("--from alone was refused as carrying content: %v", err)
+				}
+				return
+			}
+			if err.Error() != row.want {
+				t.Errorf("the refusal reads %q; want %q", err.Error(), row.want)
+			}
+		})
+	}
+}
+
 // tagListingStore adds tag enumeration to an in-memory store so the query-time
 // probe — which lists a repository's tags before probing each — runs without a
 // network. memory.Store alone does not implement the tag-listing capability.

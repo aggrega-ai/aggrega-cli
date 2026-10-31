@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -44,7 +45,8 @@ func newDeprecateCmd() *cobra.Command {
 			"can be attached retroactively. The marker records a severity (warning, error, or retracted), a reason, " +
 			"an optional replacement reference, and the timestamp it was issued. Run it three ways: pass the content " +
 			"as flags; omit the content flags at an interactive terminal to be prompted for severity, reason, and " +
-			"replacement; or pass --from <file> to attach one marker per entry from a batch file. The marker itself " +
+			"replacement; or pass --from <file> to attach one marker per entry from a batch file, whose entries carry " +
+			"their own content, so a content flag passed beside --from is refused rather than ignored. The marker itself " +
 			"is signed the same way artifacts are: its manifest digest is signed and the signature is attached as a " +
 			"referrer of the marker, so the marker is verifiable the same way artifact signatures are. With " +
 			"--key the signature is produced offline from a held ECDSA P-256 key; without --key the keyless flow is " +
@@ -54,10 +56,21 @@ func newDeprecateCmd() *cobra.Command {
 			"run one batch per credential.",
 		// One positional reference in the normal path; none with --from, where the
 		// references are read from the batch file.
+		//
+		// The batch file also carries each marker's content, so a content flag set
+		// beside --from is refused here, before the batch file is read or anything
+		// is signed, rather than dropped; which flags count is the deprecation
+		// operation's to decide.
+		// The flags default to empty, so only one the invocation set can be named.
 		Args: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("from") {
 				if len(args) > 0 {
 					return fmt.Errorf("deprecate --from <file> reads references from the file and takes no positional reference")
+				}
+				if sent := publishops.ContentBesideBatch(opts.severity, opts.reason, opts.replacement, opts.message); len(sent) > 0 {
+					return fmt.Errorf("deprecate --from <file> reads each marker's content from the file's own entries, "+
+						"so --%s would be ignored; put the content in the file's entries, or pass one reference with "+
+						"its content flags instead", strings.Join(sent, ", --"))
 				}
 				return nil
 			}
@@ -89,11 +102,11 @@ func newDeprecateCmd() *cobra.Command {
 			})
 		},
 	}
-	c.Flags().StringVar(&opts.severity, "severity", "", "Deprecation severity: one of warning, error, retracted. Required unless --from or an interactive prompt supplies it.")
-	c.Flags().StringVar(&opts.reason, "reason", "", "Human-readable reason for the deprecation — why it is deprecated and what to do instead. Required unless --from or an interactive prompt supplies it.")
-	c.Flags().StringVar(&opts.replacement, "replacement", "", "Optional artifact reference that replaces the deprecated one.")
-	c.Flags().StringVar(&opts.message, "message", "", "Optional message retained for audit and for the recorded build-time diagnostic; defaults to --reason when unset.")
-	c.Flags().StringVar(&opts.from, "from", "", "Batch file (YAML, or JSON as a subset) whose top-level list attaches one marker per entry. Each entry carries reference and severity and reason, plus optional replacement and message. Mutually exclusive with a positional reference.")
+	c.Flags().StringVar(&opts.severity, "severity", "", "Deprecation severity: one of warning, error, retracted. Required with a positional reference unless an interactive prompt supplies it; refused beside --from, whose entries carry their own.")
+	c.Flags().StringVar(&opts.reason, "reason", "", "Human-readable reason for the deprecation — why it is deprecated and what to do instead. Required with a positional reference unless an interactive prompt supplies it; refused beside --from, whose entries carry their own.")
+	c.Flags().StringVar(&opts.replacement, "replacement", "", "Optional artifact reference that replaces the deprecated one. Refused beside --from, whose entries carry their own.")
+	c.Flags().StringVar(&opts.message, "message", "", "Optional message retained for audit and for the recorded build-time diagnostic; defaults to --reason when unset. Refused beside --from, whose entries carry their own.")
+	c.Flags().StringVar(&opts.from, "from", "", "Batch file (YAML, or JSON as a subset) whose top-level list attaches one marker per entry. Each entry carries reference and severity and reason, plus optional replacement and message. Mutually exclusive with a positional reference and with --severity, --reason, --replacement and --message.")
 	c.Flags().StringVar(&opts.keyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
 	c.Flags().StringVar(&opts.fulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")
 	c.Flags().StringVar(&opts.rekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
