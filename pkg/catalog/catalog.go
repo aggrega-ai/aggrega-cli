@@ -835,7 +835,10 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // The refusal is located at the pillar's own authored field and source line, and
 // attributed to the entity that DECLARED the contract rather than to any
 // document configuring it — an Aggregate author handed a component type whose
-// contract is unusable has nothing to change in their own file. The validator's
+// contract is unusable has nothing to change in their own file. The line is
+// paired with the file it belongs to: a contract the entity read through
+// `$import:` is located in the imported file, where the fault is written, and
+// filePath names every contract written in the entity itself. The validator's
 // own text is carried verbatim, since re-deriving what is wrong with the schema
 // would be a second answer to keep in step.
 func UnusablePillarContractErrors(
@@ -853,7 +856,7 @@ func UnusablePillarContractErrors(
 		out = append(out, cerrors.Wrap(
 			resolver.ErrSchemaContractCompileFailure(),
 			cerrors.CatalogError,
-			cerrors.SourceLocation{File: filePath, Line: u.Line},
+			cerrors.SourceLocation{File: schemaContractDocument(u.Field, filePath, schemaNode, sockets), Line: u.Line},
 			cerrors.ComposeMessage(resolver.ErrSchemaContractCompileFailure(), nil, fmt.Sprintf(
 				"%s %q: %s declares a schema no validator can be built from, so the %s it "+
 					"constrains would go unmeasured: %s",

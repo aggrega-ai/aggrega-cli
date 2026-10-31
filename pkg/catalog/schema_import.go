@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/nodeorigin"
+	"github.com/aggrega-ai/aggrega-cli/internal/schemasurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
@@ -51,7 +53,7 @@ var schemaPillars = [...]string{"values", "infra", "provides"}
 // walk that knows, which is why the files an entity's schema imports are
 // collected here rather than by a second reading of the directives.
 func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *types.OrderedMap[types.UsesSchemaEntry], read schemaFileRead) error {
-	if err := resolveSchemaSurfaceImports(entityPath, schema, "spec.schema", true, read); err != nil {
+	if err := resolveSchemaSurfaceImports(entityPath, schema, schemasurface.Schema, true, read); err != nil {
 		return err
 	}
 	if sockets == nil {
@@ -59,17 +61,63 @@ func resolveEntitySchemaImports(entityPath string, schema *yaml.Node, sockets *t
 	}
 	for _, name := range sockets.Keys() {
 		entry, _ := sockets.Get(name)
-		if err := resolveSchemaSurfaceImports(
-			entityPath, &entry.ValueSchema, "spec.usesSchema."+name+".valueSchema", false, read,
-		); err != nil {
-			return err
-		}
-		if err := resolveSchemaSurfaceImports(
-			entityPath, &entry.InfraSchema, "spec.usesSchema."+name+".infraSchema", false, read,
-		); err != nil {
-			return err
+		for _, f := range schemasurface.SocketContractFields() {
+			if err := resolveSchemaSurfaceImports(
+				entityPath, entry.PillarNode(f.Pillar), schemasurface.SocketContract(name, f.Field), false, read,
+			); err != nil {
+				return err
+			}
 		}
 		sockets.Set(name, entry)
+	}
+	return nil
+}
+
+// schemaContractDocument returns the document the contract body an authored field
+// names was read from: the file its `$import:` substituted, or entityPath where the
+// body is written in the entity itself.
+//
+// field is a name schemasurface composes — the name the schema-contract reading
+// gives a finding's field, and the name the import walk above gives the surface it
+// substitutes. A field naming no body this entity carries is answered with
+// entityPath, the document every such position belonged to before any import was
+// read.
+func schemaContractDocument(
+	field, entityPath string,
+	schemaNode *yaml.Node,
+	sockets types.OrderedMap[types.UsesSchemaEntry],
+) string {
+	if body := schemaContractBody(field, schemaNode, sockets); body != nil {
+		return nodeorigin.DocumentOr(body, entityPath)
+	}
+	return entityPath
+}
+
+// schemaContractBody returns the contract body a finding's field names, or nil
+// when the entity carries none there.
+func schemaContractBody(
+	field string,
+	schemaNode *yaml.Node,
+	sockets types.OrderedMap[types.UsesSchemaEntry],
+) *yaml.Node {
+	if root := schemaNode; root != nil {
+		if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+			root = root.Content[0]
+		}
+		if root.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(root.Content); i += 2 {
+				if schemasurface.Pillar(root.Content[i].Value) == field {
+					return root.Content[i+1]
+				}
+			}
+		}
+	}
+	for name, entry := range sockets.All() {
+		for _, f := range schemasurface.SocketContractFields() {
+			if schemasurface.SocketContract(name, f.Field) == field {
+				return entry.PillarNode(f.Pillar)
+			}
+		}
 	}
 	return nil
 }
@@ -80,7 +128,8 @@ type schemaFileRead func(surface, file string)
 
 // resolveSchemaSurfaceImports resolves one schema-bearing node: the node itself,
 // and — when withPillars is set, which is the entity-level `spec.schema` shape —
-// each of its three pillar bodies.
+// each of its three pillar bodies, each under the name schemasurface gives that
+// pillar.
 //
 // A node that is not a mapping is left alone: an absent schema carries no node at
 // all, and the inheritance marker a Component declaring `extends` writes is a
@@ -109,7 +158,7 @@ func resolveSchemaSurfaceImports(entityPath string, node *yaml.Node, where strin
 			continue
 		}
 		if err := substituteSchemaImport(
-			entityPath, target.Content[i+1], where+"."+key.Value, nil, read,
+			entityPath, target.Content[i+1], schemasurface.Pillar(key.Value), nil, read,
 		); err != nil {
 			return err
 		}
@@ -159,7 +208,7 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 		// not reach at all.
 		if errors.Is(err, sourceref.ErrContentOutsideEntityDirectory()) {
 			return cerrors.Wrap(err, cerrors.CatalogError,
-				cerrors.SourceLocation{File: entityPath, Line: nodeLineOf(node)},
+				importLocation(entityPath, node),
 				where+": imported schema "+quoteTarget(target))
 		}
 		return schemaImportLoadError(entityPath, node,
@@ -169,7 +218,7 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 		return cerrors.Wrap(
 			refcycle.ErrCycle(),
 			cerrors.CatalogError,
-			cerrors.SourceLocation{File: entityPath, Line: nodeLineOf(node)},
+			importLocation(entityPath, node),
 			where+": circular schema import: "+strings.Join(chain, " -> "),
 		)
 	}
@@ -198,6 +247,10 @@ func substituteSchemaImport(entityPath string, node *yaml.Node, where string, st
 		read(where, resolved)
 	}
 	*node = *content
+	// Every line in the substituted content is a line of the file just read, not
+	// of the entity, so the file is recorded with the content for whatever later
+	// locates a position in it.
+	nodeorigin.Record(node, resolved)
 	return substituteSchemaImport(entityPath, node, where, refcycle.Push(stack, resolved), read)
 }
 
@@ -337,9 +390,18 @@ func schemaImportDiagnostic(condition error, entityPath string, node *yaml.Node,
 	return cerrors.Wrap(
 		condition,
 		cerrors.CatalogError,
-		cerrors.SourceLocation{File: entityPath, Line: nodeLineOf(node)},
+		importLocation(entityPath, node),
 		cerrors.ComposeMessage(condition, nil, message),
 	)
+}
+
+// importLocation is where an import failure over node is reported: the node's
+// line, in the document that line belongs to. A directive written in a file an
+// earlier import brought in is a line of that file, so it is located there rather
+// than in the entity, whose lines it does not occupy; a directive the entity
+// wrote itself is located in the entity.
+func importLocation(entityPath string, node *yaml.Node) cerrors.SourceLocation {
+	return cerrors.SourceLocation{File: nodeorigin.DocumentOr(node, entityPath), Line: nodeLineOf(node)}
 }
 
 // nodeLineOf reads a node's source line for a diagnostic, answering zero for a

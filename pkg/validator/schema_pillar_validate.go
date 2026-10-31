@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/nodeorigin"
+	"github.com/aggrega-ai/aggrega-cli/internal/schemasurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -56,8 +58,11 @@ const InheritedSchemaMarker = "inherited"
 // Errors are cerrors.CatalogError-categorised CompilerError values carrying the
 // source file path, so authors locate the fragment from the diagnostic alone. A
 // refusal of the block's shape or of a pillar body carries the offending line as
-// well; a refusal of a key that names no pillar carries the key's authored
-// locator instead, which names the site rather than a position in the file.
+// well, paired with the file that line belongs to: a body the entity read through
+// `$import:` is located in the imported file rather than in filePath, whose lines
+// it does not occupy. A refusal of a key that names no pillar carries the key's
+// authored locator instead, which names the site rather than a position in the
+// file.
 // Validation runs fragment-level (as authored) rather than
 // post-extends-resolution: an error in a base entity surfaces at the base file,
 // not at every derived entity's merged view.
@@ -89,7 +94,7 @@ func ValidateSchemaPillars(
 	if node.Kind != yaml.MappingNode {
 		return cerrors.Unidentified(
 			cerrors.CatalogError,
-			cerrors.SourceLocation{File: filePath, Line: node.Line},
+			cerrors.SourceLocation{File: nodeorigin.DocumentOr(node, filePath), Line: node.Line},
 			fmt.Sprintf(
 				"%s %q: spec.schema must be a YAML map of pillars (values / infra / provides), not a %s. "+
 					"Compact-form authoring uses inline YAML mapping, as vocabulary/compact-form-authoring.md describes.",
@@ -122,10 +127,10 @@ func ValidateSchemaPillars(
 			return cerrors.Wrap(
 				err,
 				cerrors.CatalogError,
-				cerrors.SourceLocation{File: filePath, Line: valueNode.Line},
+				cerrors.SourceLocation{File: nodeorigin.DocumentOr(valueNode, filePath), Line: valueNode.Line},
 				fmt.Sprintf(
-					"%s %q: spec.schema.%s body failed to compile to JSON Schema 2020-12: %s",
-					entityKind, entityName, keyNode.Value, err.Error(),
+					"%s %q: %s body failed to compile to JSON Schema 2020-12: %s",
+					entityKind, entityName, schemasurface.Pillar(keyNode.Value), err.Error(),
 				),
 			)
 		}
@@ -232,7 +237,9 @@ type UnusableContract struct {
 	Pillar string
 
 	// Line is the source line the body was declared on, so a diagnostic sends an
-	// author to the fragment rather than to the file.
+	// author to the fragment rather than to the file. It is a line of the document
+	// the body was read from, which for a body read through `$import:` is the
+	// imported file rather than the entity's.
 	Line int
 
 	// Err is why no validator could be built, as the validator reported it.
@@ -283,30 +290,20 @@ func UnusableSchemaContracts(
 	var out []UnusableContract
 	out = append(out, unusableEntityPillars(filePath, extends, schemaNode, libraries)...)
 	for socket, entry := range sockets.All() {
-		for _, pillar := range socketPillarFields {
-			node := entry.PillarNode(pillar.pillar)
+		for _, contract := range schemasurface.SocketContractFields() {
+			node := entry.PillarNode(contract.Pillar)
 			if node == nil || node.Kind == 0 {
 				continue
 			}
 			if u, bad := unusableContractAt(
-				fmt.Sprintf("spec.usesSchema.%s.%s", socket, pillar.field),
-				pillar.pillar, filePath, node, libraries, true,
+				schemasurface.SocketContract(socket, contract.Field),
+				contract.Pillar, filePath, node, libraries, true,
 			); bad {
 				out = append(out, u)
 			}
 		}
 	}
 	return out
-}
-
-// socketPillarFields pairs each pillar a socket may constrain with the field it
-// is declared in, so the two are named together rather than derived apart.
-var socketPillarFields = [...]struct {
-	pillar string
-	field  string
-}{
-	{pillar: "values", field: "valueSchema"},
-	{pillar: "infra", field: "infraSchema"},
 }
 
 // unusableEntityPillars is the spec.schema half of [UnusableSchemaContracts].
@@ -337,7 +334,7 @@ func unusableEntityPillars(
 			continue
 		}
 		if u, bad := unusableContractAt(
-			"spec.schema."+keyNode.Value, keyNode.Value, filePath, valueNode, libraries, false,
+			schemasurface.Pillar(keyNode.Value), keyNode.Value, filePath, valueNode, libraries, false,
 		); bad {
 			out = append(out, u)
 		}
