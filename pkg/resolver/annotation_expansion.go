@@ -488,10 +488,10 @@ func expandBindingStructured(
 			// directly, by a caller that has not asked it — and there an unroutable
 			// value would otherwise be dropped with nothing said.
 			declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-			errs = append(errs, &conditionFinding{condition: errAnnotationSubkeyNotBound, text: fmt.Sprintf(
+			errs = append(errs, cerrors.Occurrence(errAnnotationSubkeyNotBound, fmt.Sprintf(
 				"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 				subkey, key, sourceLocation, declared,
-			)})
+			)))
 			continue
 		}
 		if pillar == "infra" {
@@ -553,10 +553,10 @@ func synthesizeAggregateFeatureFromAnnotation(
 				// Reached only without the rule over the authored entry, for the
 				// reason the Release-side branch states.
 				declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-				errs = append(errs, &conditionFinding{condition: errAnnotationSubkeyNotBound, text: fmt.Sprintf(
+				errs = append(errs, cerrors.Occurrence(errAnnotationSubkeyNotBound, fmt.Sprintf(
 					"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 					subkey, key, sourceLocation, declared,
-				)})
+				)))
 				continue
 			}
 			if pillar == "values" {
@@ -639,19 +639,20 @@ func lookupFeature(catalogLookup CatalogLookup, typeURI string) *types.Feature {
 // JSON Schema's minProperties / minItems constraints; this function
 // returns a clear runtime error if the load-time check has been bypassed.
 //
-// Every refusal here is an occurrence of ErrAnnotationScalarNotRoutable.
+// Every refusal here is an occurrence of ErrAnnotationScalarNotRoutable, built
+// through cerrors.Occurrence so its text stays exactly as composed here.
 func resolveBindingTarget(binding types.AnnotationBinding, value string) (string, string, error) {
 	total := binding.Maps.Len()
 	if total == 0 {
-		return "", "", &conditionFinding{condition: errAnnotationScalarNotRoutable, text: fmt.Sprintf(
+		return "", "", cerrors.Occurrence(errAnnotationScalarNotRoutable, fmt.Sprintf(
 			"binding for feature %q declares no paths in maps; scalar annotation value cannot route to any subkey",
-			binding.Feature)}
+			binding.Feature))
 	}
 	if total > 1 && value != "" {
 		paths := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-		return "", "", &conditionFinding{condition: errAnnotationScalarNotRoutable, text: fmt.Sprintf(
+		return "", "", cerrors.Occurrence(errAnnotationScalarNotRoutable, fmt.Sprintf(
 			"binding for feature %q maps multiple subkey paths (%v); scalar annotation value %q cannot route to multiple subkeys unambiguously. Provide separate annotation keys for each path",
-			binding.Feature, paths, value)}
+			binding.Feature, paths, value))
 	}
 	if len(binding.Maps.Infra) == 1 {
 		return binding.Maps.Infra[0], "infra", nil
@@ -662,36 +663,9 @@ func resolveBindingTarget(binding types.AnnotationBinding, value string) (string
 	// total == 0 covered above; total > 1 covered above; remaining case
 	// is exactly one path across both lists, handled by the two branches.
 	// Defensive fallback for unreachable state.
-	return "", "", &conditionFinding{condition: errAnnotationScalarNotRoutable, text: fmt.Sprintf(
-		"binding for feature %q maps shape is structurally invalid", binding.Feature)}
+	return "", "", cerrors.Occurrence(errAnnotationScalarNotRoutable, fmt.Sprintf(
+		"binding for feature %q maps shape is structurally invalid", binding.Feature))
 }
-
-// conditionFinding is a finding whose whole text its raise site composed, carrying
-// the registered condition it is an occurrence of.
-//
-// The condition is reached through Is and As rather than through Unwrap, and that
-// is what keeps the text exactly as the raise site composed it. A walk that
-// flattens a chain onto one line follows Unwrap and appends every frame whose text
-// the line does not already carry, so a finding unwrapping to its condition would
-// gain the condition's registered sentence on each such surface. errors.Is and
-// errors.As consult Is and As as well as Unwrap, and they are how a condition is
-// matched and how its codes are read off a chain — by the head a terminal prints
-// and by every other surface reporting a code — so the condition stays matchable
-// and its codes reach the diagnostic while the text stays the occurrence's own.
-type conditionFinding struct {
-	condition error
-	text      string
-}
-
-// Error returns the text the raise site composed, and nothing beside it.
-func (f *conditionFinding) Error() string { return f.text }
-
-// Is reports whether target is the condition this finding is an occurrence of.
-func (f *conditionFinding) Is(target error) bool { return errors.Is(f.condition, target) }
-
-// As reads the condition this finding is an occurrence of into target, so a read
-// of the condition's identifiers off a chain reaches it.
-func (f *conditionFinding) As(target any) bool { return errors.As(f.condition, target) }
 
 // writeComponent persists a mutated component back into its containing
 // boundary in the Release tree. OrderedMap returns values by value, so

@@ -152,4 +152,12 @@
 // naming no condition is indistinguishable, to the person reading it, from one
 // that does — the bracketed category is there either way. A shape that let the
 // identity be omitted would make the commonest failure the silent one.
+//
+// One form of occurrence is not an envelope. Occurrence builds a finding whose
+// whole text its raise site composed and which travels inside a larger report,
+// whose frames supply the category and the scope. It requires a registered
+// condition, admitted exactly as Raise admits one, and renders its text and nothing
+// beside it: the condition is matchable and its codes reach the head a surface
+// prints, while the text stays the raise site's own. Its own documentation says
+// why it reaches the condition through Is and As rather than through Unwrap.
 package errors

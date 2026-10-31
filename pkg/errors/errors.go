@@ -411,8 +411,26 @@ func (e *CompilerError) WithExpression(expression string) *CompilerError {
 // nobody registered — sending a reader to look up a code that resolves to
 // nothing, or to whichever condition happens to hold the number.
 func Raise(condition Identity, category Category, source SourceLocation, message string, context map[string]any) *CompilerError {
+	return &CompilerError{
+		category: category,
+		source:   source,
+		message:  message,
+		context:  context,
+		wrap:     registeredCondition("Raise", condition),
+	}
+}
+
+// registeredCondition returns the registration behind condition, and panics when
+// there is none: a nil condition, or one no [Register] call produced. constructor
+// names the constructor that was handed it, so the refusal says which call to
+// correct.
+//
+// It is the one place a constructor's run-time half of the seal is written, so
+// every constructor demanding a registered condition refuses the same values for
+// the same reasons. See [Raise] for why the refusal is a panic.
+func registeredCondition(constructor string, condition Identity) *sealed {
 	if condition == nil {
-		panic("errors: Raise called with a nil condition; pass the identity the condition's Register call returned, or call Unidentified if the failure names no registered condition")
+		panic("errors: " + constructor + " called with a nil condition; pass the identity the condition's Register call returned, or call Unidentified if the failure names no registered condition")
 	}
 	// The assertion is against the concrete type rather than against any
 	// property of the value, because only this package can produce that type.
@@ -421,15 +439,9 @@ func Raise(condition Identity, category Category, source SourceLocation, message
 	// registered condition.
 	registered, ok := condition.(*sealed)
 	if !ok || registered == nil {
-		panic("errors: Raise called with a condition no Register call produced; a type that embeds Identity satisfies the interface without registering anything, so pass the value the condition's Register call returned, or call Unidentified if the failure names no registered condition")
+		panic("errors: " + constructor + " called with a condition no Register call produced; a type that embeds Identity satisfies the interface without registering anything, so pass the value the condition's Register call returned, or call Unidentified if the failure names no registered condition")
 	}
-	return &CompilerError{
-		category: category,
-		source:   source,
-		message:  message,
-		context:  context,
-		wrap:     registered,
-	}
+	return registered
 }
 
 // Unidentified builds an occurrence that names no registered halting condition.
