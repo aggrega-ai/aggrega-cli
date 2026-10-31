@@ -105,15 +105,39 @@ func AttachPublishedAt(ctx context.Context, target oras.Target, subjectRef strin
 // passed over. A listing that could not be completed is returned as the error,
 // so a caller can tell "no date recorded" from "no answer".
 func ReadPublishedAt(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string) (time.Time, bool, error) {
-	refs, err := ListReferrers(ctx, target, subjectRef, MediaTypePublishedAt)
+	earliest, found, _, err := readPublishedAt(ctx, target, subjectRef)
+	return earliest, found, err
+}
+
+// ReadPublishedAtFully is ReadPublishedAt for a caller that keeps the answer
+// until the referrers change, and so must not keep one a passing failure shaped.
+// It returns the same date, and an error as well where any published-at
+// referrer's payload could not be fetched: the earliest of the ones that were
+// read may then not be the earliest attached. A payload that was fetched and does
+// not decode is still passed over without an error, since reading it again
+// decodes the same bytes the same way.
+func ReadPublishedAtFully(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string) (time.Time, bool, error) {
+	earliest, found, unfetched, err := readPublishedAt(ctx, target, subjectRef)
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	var earliest time.Time
-	found := false
+	if unfetched != nil {
+		return earliest, found, unfetched
+	}
+	return earliest, found, nil
+}
+
+// readPublishedAt is the one walk over a version's published-at referrers both
+// readings share. unfetched is the last payload fetch that failed, if any.
+func readPublishedAt(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string) (earliest time.Time, found bool, unfetched, err error) {
+	refs, err := ListReferrers(ctx, target, subjectRef, MediaTypePublishedAt)
+	if err != nil {
+		return time.Time{}, false, nil, err
+	}
 	for _, ref := range refs {
 		payload, ferr := FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
+			unfetched = ferr
 			continue
 		}
 		at, perr := UnmarshalPublishedAt(payload)
@@ -124,5 +148,5 @@ func ReadPublishedAt(ctx context.Context, target oras.ReadOnlyTarget, subjectRef
 			earliest, found = at, true
 		}
 	}
-	return earliest, found, nil
+	return earliest, found, unfetched, nil
 }

@@ -59,21 +59,21 @@ func TestARefreshReusesNoRecordTheReadHoldRefuses(t *testing.T) {
 			ws, elsewhere := t.TempDir(), t.TempDir()
 			link := row.layout(t, ws, elsewhere)
 
-			prior, err := loadPriorRecords(ws, cacheDir, host)
+			prior, err := loadPriorIndex(ws, cacheDir, host)
 			if link == "" {
 				if err != nil {
 					t.Fatalf("refused an index the workspace holds: %v", err)
 				}
-				if len(prior) != row.want {
-					t.Errorf("offered %d records for reuse, want %d", len(prior), row.want)
+				if len(prior.records) != row.want {
+					t.Errorf("offered %d records for reuse, want %d", len(prior.records), row.want)
 				}
 				return
 			}
 			if !errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
 				t.Fatalf("want the read hold's refusal, got %v", err)
 			}
-			if prior != nil {
-				t.Errorf("a refused read offered %d records for reuse", len(prior))
+			if prior.records != nil {
+				t.Errorf("a refused read offered %d records for reuse", len(prior.records))
 			}
 			if !strings.Contains(err.Error(), link) {
 				t.Errorf("the refusal does not name the link %s: %v", link, err)

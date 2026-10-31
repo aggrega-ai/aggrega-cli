@@ -101,21 +101,35 @@ The per-repository records are byte-identical across two runs against the same
 registry state; the freshness timestamp is written to a sibling file so it never
 disturbs the records.
 
-A refresh revalidates each repository conditionally: it re-resolves the selected
-version's manifest digest and reuses the cached record untouched when the tag set
-and digest are unchanged, so an unchanged registry costs a round of cheap digest
-resolves rather than a full re-read of every repository's manifest and referrers.
-Use --upgrade to ignore the cached validators and re-read every repository — this
-picks up a change a conditional refresh skips, such as a deprecation marker, a
-signature or a publication date added to an existing version whose digest did not
-change, or an older version published again under its existing tag while the
-selected one stayed the same. A record written by an index build that read no
-publication dates keeps none until such a re-read.
+A refresh reads again only what changed, and finds every change a full re-read
+would. For each repository it revalidates the tag listing with a conditional
+request, resolves every version's tag to its manifest digest, and revalidates every
+version's attachments — its signatures, publication-date statements and deprecation
+markers — with one conditional request, plus one for the signatures of a
+deprecation marker it judged before. A version whose digest or attachments changed
+is read again in full, and its signatures and markers are verified again exactly as
+a full re-read verifies them; everything else is kept as recorded. A change to this
+registry's trust policy reads every version again under the policy now in force, and
+so does a repository whose entry in the index records none of these checks. An
+unchanged registry therefore costs one conditional request per repository and two
+small requests per version (three where a deprecation marker was judged), with
+nothing downloaded. A version whose reads did not all complete, or that carries a
+deprecation marker that was not honored, is read again on the next refresh, and so
+is every version of a registry that offers no way to revalidate attachments.
+
+Several repositories are read at a time. Everything the command records and prints
+comes out in repository order, so the index and the output are the same as reading
+one repository at a time would produce.
+
+Use --upgrade to read every repository in full, comparing nothing with the index
+already written — to rebuild an index from the registry alone. It finds no change a
+refresh without it would miss.
 
 Each published version's deprecation markers are read as the walk goes, and the ones
-whose own signature verifies are recorded into the index. Every marker met is
-reported, whether or not it was recorded, and each registry reports how many markers
-its index now records — including when that number is zero. Where signature
+whose own signature verifies are recorded into the index. Every marker read is
+reported, whether or not it was recorded — a version kept as recorded is not read, so
+its marker is not reported again — and each registry reports how many markers its
+index now records, including when that number is zero. Where signature
 verification is disabled for a registry, the walk reports that its markers were not
 examined rather than a count, so a registry that published nothing is never confused
 with one this run had no basis to judge.`,
@@ -133,7 +147,7 @@ with one this run had no basis to judge.`,
 			})
 		},
 	}
-	c.Flags().BoolVar(&upgrade, "upgrade", false, "Re-read every repository from the registry, ignoring what is already cached (picks up changes a conditional refresh would skip)")
+	c.Flags().BoolVar(&upgrade, "upgrade", false, "Read every repository in full, comparing nothing with the index already written (a refresh without it already re-reads whatever changed)")
 	return c
 }
 
@@ -143,11 +157,10 @@ type registryUpdateConfig struct {
 	// Args carries the optional single registry token (host or alias). Empty
 	// selects every configured registry.
 	Args []string
-	// Upgrade forces a full re-read of every repository, ignoring the cached
-	// revalidation validators. It is the escape from the conditional refresh's one
-	// bound: a deprecation added to an existing version whose tag set and manifest
-	// digest are unchanged is invisible to digest-compare, and a full re-read picks
-	// it up.
+	// Upgrade reads every repository in full, comparing nothing with the index
+	// already written. A refresh without it already re-reads everything that
+	// changed, so Upgrade rebuilds an index from the registry alone rather than
+	// picking up a change the refresh would miss.
 	Upgrade bool
 
 	ws  *workspaceconfig.ResolvedWorkspace

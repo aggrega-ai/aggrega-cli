@@ -4,6 +4,7 @@
 package registryops
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -155,6 +158,20 @@ type IndexSource interface {
 	ConditionalTags(ctx context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error)
 }
 
+// ReferrerRevalidator is the registry capability a refresh revalidates a
+// version's referrers with: one conditional request for the unfiltered referrer
+// listing of a manifest digest, answering whether it is unchanged since the
+// validator ifNoneMatch, and otherwise the listing's current validator (empty
+// where the registry serves none).
+//
+// It is a capability of its own rather than part of IndexSource because a source
+// without it is still a complete index source: every version it serves is read in
+// full on every refresh, since nothing can say its referrers did not change. The
+// production source has it.
+type ReferrerRevalidator interface {
+	ConditionalReferrers(ctx context.Context, repo, digest, ifNoneMatch string) (etag string, notModified bool, err error)
+}
+
 // remoteIndexSource is the production IndexSource. It enumerates through an
 // authenticated remote registry and constructs a per-repository remote
 // repository on demand, both through the one registry-client home so the
@@ -175,6 +192,10 @@ func (s remoteIndexSource) Repository(repo string) (oras.ReadOnlyTarget, error) 
 
 func (s remoteIndexSource) ConditionalTags(ctx context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error) {
 	return oci.ConditionalListTags(ctx, s.host, repo, ifNoneMatch, s.httpClient)
+}
+
+func (s remoteIndexSource) ConditionalReferrers(ctx context.Context, repo, digest, ifNoneMatch string) (etag string, notModified bool, err error) {
+	return oci.ConditionalListReferrers(ctx, s.host, repo, digest, ifNoneMatch, s.httpClient)
 }
 
 // IndexTarget resolves the index source for a registry host. Production returns
@@ -205,9 +226,15 @@ var IndexTarget = func(cfg workspaceconfig.Config, host string) (IndexSource, er
 // to emit one file per repository under the host's index directory; the on-disk
 // layout is per-repository files, not this struct serialized whole. Records are
 // held in URI-then-version order.
+//
+// Revalidations holds, keyed by record URI, what the writer stores beside each
+// record for the next refresh to compare against (registryindex.Revalidation). A
+// record with no entry is written with none, and the next refresh reads it in
+// full. It is looked up per record and never iterated.
 type HostIndex struct {
-	Host    string                 `json:"host"`
-	Records []registryindex.Record `json:"records"`
+	Host          string                                `json:"host"`
+	Records       []registryindex.Record                `json:"records"`
+	Revalidations map[string]registryindex.Revalidation `json:"-"`
 }
 
 // SkippedRepo is one repository the walk could not read, with what stopped it.
@@ -287,18 +314,32 @@ type UpdateResult struct {
 //
 // Registry selects a single configured registry by host or friendly alias;
 // empty indexes every configured registry, and the two paths differ in how a
-// host-level failure is handled. Upgrade forces a full re-read of every
-// repository, ignoring the cached revalidation validators — it is the escape
-// from the conditional refresh's one bound: a deprecation added to an existing
-// version whose tag set and manifest digest are unchanged is invisible to a
-// digest comparison, and a full re-read picks it up.
+// host-level failure is handled. Upgrade reads every repository in full,
+// comparing nothing against the index already on disk. A refresh without it
+// already re-reads everything a full read would find changed (see indexRepo), so
+// Upgrade is for rebuilding an index from the registry alone — after a doubt about
+// the index on disk, say — rather than for picking up a kind of change a refresh
+// misses.
 type UpdateOptions struct {
 	Registry string
 	Upgrade  bool
 	// Now supplies the freshness timestamp written to each host's sibling file.
 	// Nil selects the live clock; a test injects a frozen time for determinism.
 	Now func() time.Time
+	// workers bounds how many repositories one registry's walk reads at once.
+	// Zero selects indexWalkWorkers; a test sets one to compare the parallel walk
+	// with a sequential one.
+	workers int
 }
+
+// indexWalkWorkers is how many repositories one registry's walk reads at once.
+// The walk's cost is round-trip latency rather than data volume — a repository
+// costs a handful of small sequential requests — so reading several repositories
+// at once shortens it roughly in proportion, and the bound keeps the load one
+// refresh puts on a registry modest. Every record, skip, notice and note is still
+// emitted in repository order, so the bound changes how long a walk takes and
+// nothing it writes or prints.
+const indexWalkWorkers = 16
 
 // Update walks each selected registry's repositories, reads each repository's
 // latest-version manifest annotations, and writes a deterministic local
@@ -409,7 +450,7 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 		if serr := stopped(ctx); serr != nil {
 			return res, serr
 		}
-		hu, herr := updateHostIndex(ctx, cfg, root, cacheDir, host, now, opts.Upgrade, notices)
+		hu, herr := updateHostIndex(ctx, cfg, root, cacheDir, host, now, opts, notices)
 		if herr != nil {
 			hu.Err = herr.Error()
 			hu.Unreachable = oci.Unreachable(herr)
@@ -445,7 +486,7 @@ func updateHostIndex(
 	cfg workspaceconfig.Config,
 	root, cacheDir, host string,
 	now func() time.Time,
-	upgrade bool,
+	opts UpdateOptions,
 	notices io.Writer,
 ) (HostUpdate, error) {
 	hu := HostUpdate{Host: host}
@@ -453,9 +494,9 @@ func updateHostIndex(
 	if err != nil {
 		return hu, err
 	}
-	var prior map[string]registryindex.Record
-	if !upgrade {
-		if prior, err = loadPriorRecords(root, cacheDir, host); err != nil {
+	var prior priorIndex
+	if !opts.Upgrade {
+		if prior, err = loadPriorIndex(root, cacheDir, host); err != nil {
 			return hu, err
 		}
 	}
@@ -463,7 +504,19 @@ func updateHostIndex(
 	// which signers may withdraw a version of anything this host serves, so every
 	// repository under the host is verified against the same set.
 	policy, _ := cfg.RegistryTrustPolicy(host)
-	idx, err := buildHostIndex(ctx, cfg, policy, host, src, prior, &hu, notices)
+	workers := opts.workers
+	if workers <= 0 {
+		workers = indexWalkWorkers
+	}
+	hw := &hostWalk{
+		wsCfg:  cfg,
+		policy: policy,
+		trust:  registryindex.TrustPolicyFingerprint(cfg, policy),
+		host:   host,
+		src:    src,
+		prior:  prior,
+	}
+	idx, err := buildHostIndex(ctx, hw, workers, &hu, notices)
 	if err != nil {
 		return hu, err
 	}
@@ -498,260 +551,503 @@ func reportDeprecationScan(notices io.Writer, hu HostUpdate, host string) {
 	fmt.Fprintf(notices, "Recorded %d deprecation markers from %s\n", hu.DeprecationsRecorded, host)
 }
 
-// loadPriorRecords loads the previous per-host index records keyed by URI, so a
-// conditional refresh can reuse an unchanged repository's record. A not-yet-built
-// or unreadable prior index yields a nil map, degrading the refresh to a full
-// build rather than failing — the first update after a cache wipe re-reads
-// everything.
+// priorIndex is the index a conditional refresh compares against: the previous
+// records and the revalidation stored beside each, both keyed by URI. Both are
+// looked up per repository and never iterated.
+type priorIndex struct {
+	records       map[string]registryindex.Record
+	revalidations map[string]registryindex.Revalidation
+}
+
+// loadPriorIndex loads the previous per-host index keyed by URI, so a conditional
+// refresh can keep what is unchanged. A not-yet-built or unreadable prior index
+// yields an empty one, degrading the refresh to a full build rather than failing —
+// the first update after a cache wipe re-reads everything.
 //
 // A prior index the read hold refuses — leading through a link out of the root the
 // cache is held to — is not one of those: it is returned as the error, naming the
 // link, because a record reused from it would carry whatever the link leads to into
 // the index this refresh writes.
-func loadPriorRecords(root, cacheDir, host string) (map[string]registryindex.Record, error) {
+func loadPriorIndex(root, cacheDir, host string) (priorIndex, error) {
 	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
-			return nil, err
+			return priorIndex{}, err
 		}
-		return nil, nil
+		return priorIndex{}, nil
 	}
-	prior := make(map[string]registryindex.Record, len(loaded.Records))
+	prior := priorIndex{
+		records:       make(map[string]registryindex.Record, len(loaded.Records)),
+		revalidations: loaded.Revalidations,
+	}
 	for _, rec := range loaded.Records {
-		prior[rec.URI] = rec
+		prior.records[rec.URI] = rec
 	}
 	return prior, nil
 }
 
+// hostWalk is what every repository of one registry's walk is read against: the
+// workspace configuration, the host's resolved trust policy and its fingerprint,
+// the host, its index source, and the index the refresh compares against. It is
+// shared by the walk's workers and none of them changes it.
+type hostWalk struct {
+	wsCfg  workspaceconfig.Config
+	policy workspaceconfig.RegistryConfig
+	trust  string
+	host   string
+	src    IndexSource
+	prior  priorIndex
+}
+
+// repoWalk is one repository's share of a host's walk: its record and the
+// revalidation stored beside it, whether there is a record at all, and everything
+// the walk reports about it — the skip, the deprecation notes, and the running
+// commentary in the words a reader sees. A worker fills it; the walk reports it,
+// in repository order, once every repository before it has been reported.
+type repoWalk struct {
+	rec          registryindex.Record
+	revalidation registryindex.Revalidation
+	ok           bool
+	skipped      *SkippedRepo
+	notes        []DeprecationNote
+	text         bytes.Buffer
+}
+
+// skip records the repository as unreadable and writes the commentary for a
+// reader, so the prose and the structured account of a skip are produced from one
+// place and cannot come to disagree.
+func (w *repoWalk) skip(repo, reason string) {
+	w.skipped = &SkippedRepo{Repo: repo, Reason: reason}
+	fmt.Fprintf(&w.text, "  skipped %s: %s\n", repo, reason)
+}
+
 // buildHostIndex enumerates the host's repositories through the one enumeration
-// primitive (progress-aware and partial-on-error) and appends one record per
-// repository whose latest version conforms to strict SemVer. Each repository is
-// revalidated conditionally against prior (keyed by URI): a repository whose tag
-// set and headline manifest digest match its prior record reuses that record,
-// skipping the manifest read and the per-version referrer scan. A nil prior
-// forces a full read of every repository. Records are sorted by URI then version
-// so the emitted files are deterministic. A repository that dropped out of the
-// registry is simply not enumerated, so it contributes no record and its file is
-// not rewritten (the writer resets the host directory).
-func buildHostIndex(
-	ctx context.Context,
-	wsCfg workspaceconfig.Config,
-	policy workspaceconfig.RegistryConfig,
-	host string,
-	src IndexSource,
-	prior map[string]registryindex.Record,
-	hu *HostUpdate,
-	notices io.Writer,
-) (HostIndex, error) {
-	repos, err := EnumerateRepositories(ctx, src, "", CatalogScope)
+// primitive (progress-aware and partial-on-error) and builds one record per
+// repository whose latest version conforms to strict SemVer, each revalidated
+// against the prior index as indexRepo describes. Records are sorted by URI then
+// version so the emitted files are deterministic. A repository that dropped out
+// of the registry is simply not enumerated, so it contributes no record and its
+// file is not rewritten (the writer resets the host directory).
+//
+// Up to workers repositories are read at once, each by a worker taking the next
+// repository in the enumeration's order. What a repository's read reports — its
+// skip, its deprecation notes, its commentary and its record — is held until every
+// repository before it has been reported, then reported in turn, so the result and
+// the commentary come out in repository order whatever order the reads finish in.
+// The commentary still streams: each repository's lines are written as soon as the
+// repositories before it are done, not at the end of the walk. A walk of one
+// worker and a walk of many therefore write the same files and the same
+// commentary for the same registry state.
+//
+// A stop ends the walk at the next repository a worker would take: no worker
+// starts another, the reads in flight end with the stop their requests carry, and
+// the caller sees the stop before anything is written.
+func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpdate, notices io.Writer) (HostIndex, error) {
+	repos, err := EnumerateRepositories(ctx, hw.src, "", CatalogScope)
 	if err != nil {
 		return HostIndex{}, err
 	}
-	idx := HostIndex{Host: host}
-	for _, repo := range repos {
-		rec, ok := indexRepo(ctx, wsCfg, policy, host, src, repo, prior, hu, notices)
-		if !ok {
-			continue
+	idx := HostIndex{Host: hw.host, Revalidations: map[string]registryindex.Revalidation{}}
+	walks := make([]repoWalk, len(repos))
+	done := make([]bool, len(repos))
+	var (
+		mu       sync.Mutex
+		next     int // the next repository a worker takes
+		reported int // how many repositories, from the first, have been reported
+	)
+	// report hands one finished repository to the walk's result and its reader. It
+	// runs under mu, one repository at a time and in repository order.
+	report := func(w *repoWalk) {
+		if w.skipped != nil {
+			hu.Skipped = append(hu.Skipped, *w.skipped)
 		}
-		idx.Records = append(idx.Records, rec)
+		hu.Deprecations = append(hu.Deprecations, w.notes...)
+		_, _ = notices.Write(w.text.Bytes())
+		w.text = bytes.Buffer{}
+		if w.ok {
+			idx.Records = append(idx.Records, w.rec)
+			idx.Revalidations[w.rec.URI] = w.revalidation
+		}
 	}
+	var wg sync.WaitGroup
+	for range min(workers, len(repos)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				mu.Lock()
+				if next >= len(repos) || stopped(ctx) != nil {
+					mu.Unlock()
+					return
+				}
+				i := next
+				next++
+				mu.Unlock()
+
+				indexRepo(ctx, hw, repos[i], &walks[i])
+
+				mu.Lock()
+				done[i] = true
+				for reported < len(repos) && done[reported] {
+					report(&walks[reported])
+					reported++
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
 	registryindex.SortRecords(idx.Records)
 	return idx, nil
 }
 
-// skipRepo records one unreadable repository on the host's result and writes the
-// running commentary for a reader, so the prose and the structured account of a
-// skip are produced from one place and cannot come to disagree.
-func skipRepo(hu *HostUpdate, notices io.Writer, repo string, reason string) {
-	hu.Skipped = append(hu.Skipped, SkippedRepo{Repo: repo, Reason: reason})
-	fmt.Fprintf(notices, "  skipped %s: %s\n", repo, reason)
-}
-
-// indexRepo builds the record for one repository's latest published version. It
-// revalidates against the prior record for the repository's URI in two conditional
-// steps before deciding to re-read. First a conditional tags listing: when the
-// stored listing validator still matches, the tag set is unchanged and the tag
-// re-list is skipped. Then a headline manifest digest re-resolve (a cheap metadata
-// read, no content blob): when the digest also matches the prior record, that
-// record is reused untouched — skipping the manifest read and the per-version
-// referrer scan, so an unchanged repository costs one conditional tag listing plus
-// one cheap digest resolve. Only a changed or previously-unseen repository, or one
-// whose prior record gives no digest for some version it lists, re-reads the
-// manifest annotations, resolves each version's digest and re-scans referrers. A
-// nil prior (a full-upgrade refresh, or the first build) reuses nothing.
+// indexRepo builds the record for one repository's latest published version,
+// reading again only what changed since the prior index and keeping the rest.
 //
-// The reuse compares the latest version's digest only. An older version whose tag
-// was moved to other bytes while the latest stayed put keeps its prior digest until
-// a full-upgrade refresh, which is the same bound a deprecation marker, a
-// signature or a publication date added to an unchanged version carries.
+// What it keeps rests on four checks, each a cheap conditional read, and a fact is
+// kept only where every check bearing on it says nothing changed:
+//
+//   - The tag listing is revalidated against the validator stored with the
+//     record. An unchanged listing keeps the recorded version list; a changed one
+//     is read again, and a version no longer listed is dropped with it.
+//   - Every version's tag is resolved to its manifest digest. A version whose
+//     digest differs from the recorded one — an older version published again
+//     under its tag as much as a new latest — is read again in full, and a latest
+//     version whose digest changed has its manifest's annotations read again.
+//   - Every version's referrer listing — the one listing holding its signatures,
+//     its published-at statements and its deprecation markers — is revalidated
+//     against the validator stored for that version, and where a marker was
+//     judged, so is that marker's own referrer listing, which holds the marker's
+//     signatures. Only where both are unchanged are the version's signer, date and
+//     marker kept; otherwise the version is read again and every signature and
+//     marker it carries is verified again, exactly as a full read verifies them.
+//   - The trust policy the prior index was judged under is compared with this
+//     host's, by fingerprint. A different fingerprint, or a prior record with
+//     none, keeps nothing: every version is read again and judged under the
+//     policy in force.
+//
+// A verdict is therefore reused only where neither the version's bytes, nor
+// anything attached to it, nor the policy judging it changed — the same basis on
+// which a recorded verdict is trusted when the index is read. A version whose
+// reads did not all complete, or whose marker is present and not honored, stores
+// no validator and is read again on every refresh, so a failure that might pass
+// is never kept as though it were the answer. A registry serving no
+// validators has every version read again on every refresh: nothing can then say
+// the version is unchanged. Without a prior index — the first build, or a full
+// read forced by the caller — every repository is read in full.
 //
 // A repository with no strict-SemVer version is skipped silently (a deterministic
 // non-error). A repository that cannot be read — no per-repo target, a tag-list
-// failure, a resolve failure, or a manifest read failure — is skipped with a note
-// so one unreadable repository does not abandon the walk, mirroring the
-// enumeration primitive's partial-on-error posture.
-func indexRepo(
-	ctx context.Context,
-	wsCfg workspaceconfig.Config,
-	policy workspaceconfig.RegistryConfig,
-	host string,
-	src IndexSource,
-	repo string,
-	prior map[string]registryindex.Record,
-	hu *HostUpdate,
-	notices io.Writer,
-) (registryindex.Record, bool) {
-	target, err := src.Repository(repo)
+// failure, a version that no longer resolves, or a manifest read failure — is
+// skipped with a note so one unreadable repository does not abandon the walk,
+// mirroring the enumeration primitive's partial-on-error posture.
+func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
+	target, err := hw.src.Repository(repo)
 	if err != nil {
-		skipRepo(hu, notices, repo, err.Error())
-		return registryindex.Record{}, false
+		w.skip(repo, err.Error())
+		return
 	}
-	uri := "oci://" + host + "/" + repo
-	p, hasPrior := prior[uri]
+	uri := "oci://" + hw.host + "/" + repo
+	p, hasPrior := hw.prior.records[uri]
+	pr, hasRevalidation := hw.prior.revalidations[uri]
+	reusable := hasPrior && hasRevalidation && pr.TrustPolicy == hw.trust && p.CoversVersions()
 
-	// Conditional tags listing: present the prior record's listing validator so an
-	// unchanged tag set answers as not-modified and skips the re-list.
 	priorListing := ""
-	if hasPrior {
+	if reusable {
 		priorListing = p.ListingDigest
 	}
-	tags, listingDigest, notModified, truncated, err := src.ConditionalTags(ctx, repo, priorListing)
+	tags, listingDigest, notModified, truncated, err := hw.src.ConditionalTags(ctx, repo, priorListing)
 	if err != nil {
-		skipRepo(hu, notices, repo, err.Error())
-		return registryindex.Record{}, false
+		w.skip(repo, err.Error())
+		return
 	}
+	var version string
+	var versions []string
 	if notModified {
-		// The tag set is unchanged. Confirm the headline manifest digest is unchanged
-		// too — a tag re-pushed to new content changes the digest without changing the
-		// set — and reuse the prior record when it is.
-		digest, exists, rerr := oci.Resolve(ctx, target, p.Version)
-		if rerr == nil && exists && p.ManifestDigest != "" && p.ManifestDigest == digest && p.CoversVersions() {
-			return p, true
+		// The tag set is the one the prior record was built from, so its version list
+		// and its selected version stand.
+		version = p.Version
+		versions = slices.Clone(p.Versions)
+	} else {
+		// A truncated listing's single-request validator does not cover the whole tag
+		// set, so fall back to the full enumeration and record no validator (the next
+		// refresh re-lists rather than falsely matching a partial validator).
+		if truncated {
+			tags, err = oci.ListTags(ctx, target)
+			if err != nil {
+				w.skip(repo, err.Error())
+				return
+			}
+			listingDigest = ""
 		}
-		// The headline manifest moved (or the resolve failed): re-list unconditionally
-		// to get the current tag set and validator, then fall through to a full read.
-		tags, listingDigest, _, truncated, err = src.ConditionalTags(ctx, repo, "")
+		version = oci.SelectLatestVersion(tags, false /* includePreRelease */)
+		if version == "" {
+			return
+		}
+		versions = oci.SortedSemverTags(tags)
+	}
+
+	digests, ok := resolveVersions(ctx, target, repo, versions, version, w)
+	if !ok {
+		return
+	}
+	latest := slices.Index(versions, version)
+
+	var rec registryindex.Record
+	if reusable && p.ManifestDigest == digests[latest] {
+		// The latest version's manifest is the one the prior record's facets were read
+		// from, so they stand.
+		rec = p
+	} else {
+		annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
 		if err != nil {
-			skipRepo(hu, notices, repo, err.Error())
-			return registryindex.Record{}, false
+			w.skip(repo, err.Error())
+			return
 		}
-	}
-	// A truncated listing's single-request validator does not cover the whole tag set,
-	// so fall back to the full enumeration and record no validator (the next refresh
-	// re-reads rather than falsely matching a partial validator).
-	if truncated {
-		tags, err = oci.ListTags(ctx, target)
-		if err != nil {
-			skipRepo(hu, notices, repo, err.Error())
-			return registryindex.Record{}, false
+		if rec, err = recordFromAnnotations(hw.host, repo, version, annotations); err != nil {
+			w.skip(repo, err.Error())
+			return
 		}
-		listingDigest = ""
+		digests[latest] = manifestDigest
 	}
-
-	version := oci.SelectLatestVersion(tags, false /* includePreRelease */)
-	if version == "" {
-		return registryindex.Record{}, false
-	}
-	versions := oci.SortedSemverTags(tags)
-
-	digest, exists, err := oci.Resolve(ctx, target, version)
-	if err != nil {
-		skipRepo(hu, notices, repo, err.Error())
-		return registryindex.Record{}, false
-	}
-	if !exists {
-		skipRepo(hu, notices, repo, fmt.Sprintf("selected version %s no longer resolves", version))
-		return registryindex.Record{}, false
-	}
-	if hasPrior && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) && p.CoversVersions() {
-		// The manifest and tag set are unchanged; reuse the prior record but carry the
-		// refreshed listing validator forward (it may have been absent before).
-		p.ListingDigest = listingDigest
-		return p, true
-	}
-
-	annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
-	if err != nil {
-		skipRepo(hu, notices, repo, err.Error())
-		return registryindex.Record{}, false
-	}
-	rec, err := recordFromAnnotations(host, repo, version, annotations)
-	if err != nil {
-		skipRepo(hu, notices, repo, err.Error())
-		return registryindex.Record{}, false
-	}
+	rec.Version = version
 	rec.Versions = versions
-	rec.ManifestDigest = manifestDigest
+	rec.ManifestDigest = digests[latest]
 	rec.ListingDigest = listingDigest
-	published, err := readPublishedVersions(ctx, wsCfg, policy, target, versions, version, manifestDigest)
-	if err != nil {
-		skipRepo(hu, notices, repo, err.Error())
-		return registryindex.Record{}, false
+	rec.Published = make([]registryindex.PublishedVersion, 0, len(versions))
+	rec.Deprecations = nil
+
+	revalidation := registryindex.Revalidation{
+		TrustPolicy: hw.trust,
+		Versions:    make([]registryindex.VersionRevalidation, 0, len(versions)),
 	}
-	rec.Published = published
-	deprecations, notes := CollectVersionDeprecations(ctx, wsCfg, policy, target, repo, versions, notices)
-	rec.Deprecations = deprecations
-	hu.Deprecations = append(hu.Deprecations, notes...)
-	return rec, true
+	for i, v := range versions {
+		var (
+			pv   registryindex.PublishedVersion
+			vr   registryindex.VersionRevalidation
+			dep  *registryindex.VersionDeprecation
+			kept bool
+		)
+		if reusable {
+			pv, vr, dep, kept = keepVersion(ctx, hw, repo, p, pr, v, digests[i])
+		}
+		if !kept {
+			pv, vr, dep = readVersion(ctx, hw, target, repo, v, digests[i], w)
+		}
+		rec.Published = append(rec.Published, pv)
+		revalidation.Versions = append(revalidation.Versions, vr)
+		if dep != nil {
+			rec.Deprecations = append(rec.Deprecations, *dep)
+		}
+	}
+	w.rec, w.revalidation, w.ok = rec, revalidation, true
 }
 
-// readPublishedVersions records, for each version in the ascending order it is
-// given, the manifest digest its tag resolves to; where this host's policy gives
-// a basis to judge one, the verified signer of that version's own signature; and
-// its publication date with the date's source. The latest
-// version's digest was resolved already and is passed in rather than resolved
-// again.
-//
-// A version whose tag cannot be resolved fails the whole repository rather than
-// leaving a gap. A record listing a version it gives no digest for would send a
-// reader addressing versions by digest to a version it cannot address, and
-// skipping the repository with a note is the walk's posture for any read it
-// could not complete.
+// resolveVersions resolves every version's tag to the manifest digest it names
+// now, in the order given. A version that cannot be resolved, or no longer
+// resolves, skips the whole repository rather than leaving a gap: a record
+// listing a version it gives no digest for would send a reader addressing
+// versions by digest to a version it cannot address.
+func resolveVersions(ctx context.Context, target oras.ReadOnlyTarget, repo string, versions []string, latest string, w *repoWalk) ([]string, bool) {
+	digests := make([]string, len(versions))
+	for i, v := range versions {
+		d, exists, err := oci.Resolve(ctx, target, v)
+		if err != nil {
+			w.skip(repo, err.Error())
+			return nil, false
+		}
+		if !exists {
+			if v == latest {
+				w.skip(repo, fmt.Sprintf("selected version %s no longer resolves", v))
+			} else {
+				w.skip(repo, fmt.Sprintf("version %s no longer resolves", v))
+			}
+			return nil, false
+		}
+		digests[i] = d
+	}
+	return digests, true
+}
+
+// keepVersion decides whether one version's recorded signer, date and marker
+// still hold, and returns them when they do. They hold where the version's tag
+// still names the recorded digest, a referrer validator was stored for it, the
+// registry answers that the version's referrer listing is unchanged, and — where a
+// marker was judged — that the marker's own referrer listing is unchanged too.
+// Anything else, including a registry that cannot answer, is a reason to read the
+// version again.
+func keepVersion(
+	ctx context.Context,
+	hw *hostWalk,
+	repo string,
+	p registryindex.Record,
+	pr registryindex.Revalidation,
+	version, digest string,
+) (registryindex.PublishedVersion, registryindex.VersionRevalidation, *registryindex.VersionDeprecation, bool) {
+	pv, found := publishedEntry(p.Published, version)
+	if !found || pv.ManifestDigest != digest {
+		return registryindex.PublishedVersion{}, registryindex.VersionRevalidation{}, nil, false
+	}
+	vr, found := revalidationEntry(pr.Versions, version)
+	if !found || vr.Referrers == "" {
+		return registryindex.PublishedVersion{}, registryindex.VersionRevalidation{}, nil, false
+	}
+	if !referrersUnchanged(ctx, hw.src, repo, digest, vr.Referrers) {
+		return registryindex.PublishedVersion{}, registryindex.VersionRevalidation{}, nil, false
+	}
+	if vr.MarkerDigest != "" && (vr.MarkerReferrers == "" || !referrersUnchanged(ctx, hw.src, repo, vr.MarkerDigest, vr.MarkerReferrers)) {
+		return registryindex.PublishedVersion{}, registryindex.VersionRevalidation{}, nil, false
+	}
+	var dep *registryindex.VersionDeprecation
+	for i := range p.Deprecations {
+		if p.Deprecations[i].Version == version {
+			d := p.Deprecations[i]
+			dep = &d
+			break
+		}
+	}
+	return pv, vr, dep, true
+}
+
+// readVersion reads one version in full, as a refresh with nothing to compare
+// against does: its signer verified under the host's policy, its publication
+// date, and its deprecation marker verified against the signers the policy
+// honors, with the marker's commentary written to the repository's account. The
+// version's referrer validator is taken BEFORE those reads, and the marker's
+// before its signature is verified, so anything attached while the version is
+// being read changes a validator the next refresh compares against rather than
+// slipping in under one taken afterwards. Validators are stored only where every
+// read was answered.
+func readVersion(
+	ctx context.Context,
+	hw *hostWalk,
+	target oras.ReadOnlyTarget,
+	repo, version, digest string,
+	w *repoWalk,
+) (registryindex.PublishedVersion, registryindex.VersionRevalidation, *registryindex.VersionDeprecation) {
+	referrers, answered := currentReferrers(ctx, hw.src, repo, digest)
+	pv, perr := readPublishedVersion(ctx, hw.wsCfg, hw.policy, target, version, digest)
+	if perr != nil {
+		answered = false
+	}
+	vr := registryindex.VersionRevalidation{Version: version}
+	var dep *registryindex.VersionDeprecation
+	if deprecationScanEnabled(hw.wsCfg, hw.policy) {
+		var note *DeprecationNote
+		var settled bool
+		dep, note, settled = collectVersionDeprecation(ctx, hw.wsCfg, hw.policy, target, repo, version, &w.text, func(markerDigest string) {
+			vr.MarkerDigest = markerDigest
+			var markerAnswered bool
+			vr.MarkerReferrers, markerAnswered = currentReferrers(ctx, hw.src, repo, markerDigest)
+			if !markerAnswered {
+				answered = false
+			}
+		})
+		if note != nil {
+			w.notes = append(w.notes, *note)
+		}
+		if !settled {
+			answered = false
+		}
+	}
+	if !answered {
+		return pv, registryindex.VersionRevalidation{Version: version}, dep
+	}
+	vr.Referrers = referrers
+	return pv, vr, dep
+}
+
+// referrersUnchanged asks the registry whether a digest's referrer listing is
+// still the one validator names. A source that cannot revalidate referrers, and a
+// registry that does not answer, both read as changed.
+func referrersUnchanged(ctx context.Context, src IndexSource, repo, digest, validator string) bool {
+	rv, ok := src.(ReferrerRevalidator)
+	if !ok {
+		return false
+	}
+	_, notModified, err := rv.ConditionalReferrers(ctx, repo, digest, validator)
+	return err == nil && notModified
+}
+
+// currentReferrers returns the validator a digest's referrer listing carries now,
+// and whether there is one to store: a source that cannot revalidate referrers, a
+// registry that serves no validator, and a registry that does not answer all give
+// none.
+func currentReferrers(ctx context.Context, src IndexSource, repo, digest string) (string, bool) {
+	rv, ok := src.(ReferrerRevalidator)
+	if !ok {
+		return "", false
+	}
+	etag, _, err := rv.ConditionalReferrers(ctx, repo, digest, "")
+	if err != nil || etag == "" {
+		return "", false
+	}
+	return etag, true
+}
+
+// publishedEntry finds a version's published entry in a record.
+func publishedEntry(published []registryindex.PublishedVersion, version string) (registryindex.PublishedVersion, bool) {
+	for _, pv := range published {
+		if pv.Version == version {
+			return pv, true
+		}
+	}
+	return registryindex.PublishedVersion{}, false
+}
+
+// revalidationEntry finds a version's revalidation entry.
+func revalidationEntry(versions []registryindex.VersionRevalidation, version string) (registryindex.VersionRevalidation, bool) {
+	for _, vr := range versions {
+		if vr.Version == version {
+			return vr, true
+		}
+	}
+	return registryindex.VersionRevalidation{}, false
+}
+
+// readPublishedVersion records one published version: the manifest digest its tag
+// resolved to; where this host's policy gives a basis to judge one, the verified
+// signer of that version's own signature; and its publication date with the
+// date's source. The error is non-nil where a read could not be completed — the
+// signature walk or the date read did not finish — and the entry returned beside
+// it is then the best of what was read.
 //
 // A signature is judged through the one verification home, against the host's
-// own trust policy, and is best-effort: a version whose signatures do not verify
-// is recorded with no signer, never with an unverified one. Where several verify,
-// the one recorded is the earliest (registryindex.VerifiedSignerAt), and the date
-// is read from that same signature, so a version signed again keeps both its
-// signer and its date. The date is the verified signature's log time where it
-// carries one, and otherwise what the version's published-at referrers state
-// (registryindex.PublicationDate); that second read needs no trust anchor, so it
-// is made on every host, and it too is best-effort. Only manifests, signature
-// referrers and published-at referrers are read; no entity content is fetched.
-func readPublishedVersions(
+// own trust policy: a version whose signatures do not verify is recorded with no
+// signer, never with an unverified one. Where several verify, the one recorded is
+// the earliest (registryindex.FindVerifiedSigner), and the date is read from that
+// same signature, so a version signed again keeps both its signer and its date.
+// The date is the verified signature's log time where it carries one, and
+// otherwise what the version's published-at referrers state
+// (registryindex.ReadPublicationDate); that second read needs no trust anchor, so
+// it is made on every host. Only signature referrers and published-at referrers
+// are read; no entity content is fetched.
+func readPublishedVersion(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
 	policy workspaceconfig.RegistryConfig,
 	target oras.ReadOnlyTarget,
-	versions []string,
-	latest, latestDigest string,
-) ([]registryindex.PublishedVersion, error) {
-	judge := signerVerificationEnabled(wsCfg, policy)
-	out := make([]registryindex.PublishedVersion, 0, len(versions))
-	for _, v := range versions {
-		digest := latestDigest
-		if v != latest {
-			d, exists, err := oci.Resolve(ctx, target, v)
-			if err != nil {
-				return nil, err
-			}
-			if !exists {
-				return nil, fmt.Errorf("version %s no longer resolves", v)
-			}
-			digest = d
+	version, digest string,
+) (registryindex.PublishedVersion, error) {
+	pv := registryindex.PublishedVersion{Version: version, ManifestDigest: digest}
+	var verified *pullverify.Result
+	var unfinished error
+	if signerVerificationEnabled(wsCfg, policy) {
+		res, err := registryindex.FindVerifiedSigner(ctx, wsCfg, target, version, digest, policy)
+		if err != nil {
+			unfinished = err
 		}
-		pv := registryindex.PublishedVersion{Version: v, ManifestDigest: digest}
-		var verified *pullverify.Result
-		if judge {
-			if res := registryindex.VerifiedSignerAt(ctx, wsCfg, target, v, digest, policy); res != nil {
-				pv.Signer = pluginfetchverify.SignatureFact(*res)
-				verified = res
-			}
+		if res != nil {
+			pv.Signer = pluginfetchverify.SignatureFact(*res)
+			verified = res
 		}
-		pv.PublishedAt, pv.PublishedAtSource = registryindex.PublicationDate(ctx, target, v, verified)
-		out = append(out, pv)
 	}
-	return out, nil
+	var err error
+	pv.PublishedAt, pv.PublishedAtSource, err = registryindex.ReadPublicationDate(ctx, target, version, verified)
+	if err != nil {
+		unfinished = err
+	}
+	return pv, unfinished
 }
 
 // signerVerificationEnabled reports whether the walk judges each published
@@ -761,21 +1057,6 @@ func readPublishedVersions(
 // read at all rather than read and refused.
 func signerVerificationEnabled(wsCfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) bool {
 	return deprecationScanEnabled(wsCfg, policy) && TrustOf(policy).Anchor != ""
-}
-
-// equalStrings reports whether two string slices are element-wise equal. The
-// conditional refresh compares a repository's live tag set against the prior
-// record's Versions to decide reuse.
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // CollectVersionDeprecations scans each conforming version's deprecation
@@ -854,33 +1135,70 @@ func CollectVersionDeprecations(
 	var deprecations []registryindex.VersionDeprecation
 	var notes []DeprecationNote
 	for _, version := range versions {
-		markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
-		if err != nil || len(markers) == 0 {
-			continue
+		dep, note, _ := collectVersionDeprecation(ctx, wsCfg, policy, target, repo, version, notices, nil)
+		if note != nil {
+			notes = append(notes, *note)
 		}
-		markerDesc, marker, err := registryindex.LatestMarker(ctx, target, markers)
-		if err != nil {
-			notes = append(notes, DeprecationNote{Repo: repo, Version: version, Reason: err.Error()})
-			fmt.Fprintf(notices, "  deprecation: %s:%s: marker present but not readable (%v); not recorded\n", repo, version, err)
-			continue
+		if dep != nil {
+			deprecations = append(deprecations, *dep)
 		}
-		var origSigner *pullverify.Result
-		if policy.PublicKey == "" {
-			origSigner = registryindex.VerifiedArtifactSigner(ctx, wsCfg, target, version, policy)
-		}
-		signer, err := registryindex.VerifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
-		if err != nil {
-			notes = append(notes, DeprecationNote{Repo: repo, Version: version, Reason: err.Error()})
-			fmt.Fprintf(notices, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
-			continue
-		}
-		notes = append(notes, DeprecationNote{
-			Repo: repo, Version: version, Recorded: true, Severity: marker.Severity.StatedAs(),
-		})
-		fmt.Fprintf(notices, "  deprecation: %s:%s: marker present and honored; recorded as %s\n", repo, version, marker.Severity.StatedAs())
-		deprecations = append(deprecations, registryindex.VersionDeprecation{Version: version, Marker: marker, Signer: signer})
 	}
 	return deprecations, notes
+}
+
+// collectVersionDeprecation is CollectVersionDeprecations for one version: the
+// authoritative marker it records, if any, the note it reports, if any, and
+// whether every read the judgement needed was answered. It is the one home of that
+// judgement, so the scan over a version list and an index refresh reading one
+// version again cannot come to judge a marker differently.
+//
+// answered is false where the referrer listing could not be read, where a marker
+// is present and could not be read, and where a marker is present and not
+// honored: none of those is an answer a later read could not change, since a
+// passing failure and a signature attached to the marker afterwards both turn into
+// a different verdict without the version's own referrers changing.
+//
+// markerSelected, when non-nil, is called with the authoritative marker's digest
+// once it is chosen and before its signature is verified, so a caller can note
+// the state of the marker's own referrers ahead of the judgement that reads them.
+// The caller must have checked deprecationScanEnabled.
+func collectVersionDeprecation(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	policy workspaceconfig.RegistryConfig,
+	target oras.ReadOnlyTarget,
+	repo, version string,
+	notices io.Writer,
+	markerSelected func(markerDigest string),
+) (dep *registryindex.VersionDeprecation, note *DeprecationNote, answered bool) {
+	markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
+	if err != nil {
+		return nil, nil, false
+	}
+	if len(markers) == 0 {
+		return nil, nil, true
+	}
+	markerDesc, marker, err := registryindex.LatestMarker(ctx, target, markers)
+	if err != nil {
+		fmt.Fprintf(notices, "  deprecation: %s:%s: marker present but not readable (%v); not recorded\n", repo, version, err)
+		return nil, &DeprecationNote{Repo: repo, Version: version, Reason: err.Error()}, false
+	}
+	if markerSelected != nil {
+		markerSelected(markerDesc.Digest.String())
+	}
+	var origSigner *pullverify.Result
+	if policy.PublicKey == "" {
+		origSigner = registryindex.VerifiedArtifactSigner(ctx, wsCfg, target, version, policy)
+	}
+	signer, err := registryindex.VerifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
+	if err != nil {
+		fmt.Fprintf(notices, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
+		return nil, &DeprecationNote{Repo: repo, Version: version, Reason: err.Error()}, false
+	}
+	fmt.Fprintf(notices, "  deprecation: %s:%s: marker present and honored; recorded as %s\n", repo, version, marker.Severity.StatedAs())
+	return &registryindex.VersionDeprecation{Version: version, Marker: marker, Signer: signer},
+		&DeprecationNote{Repo: repo, Version: version, Recorded: true, Severity: marker.Severity.StatedAs()},
+		true
 }
 
 // deprecationScanEnabled reports whether this run examines a host's published
@@ -1006,7 +1324,11 @@ func WriteHostIndex(workspaceRoot, cacheDir string, idx HostIndex, now time.Time
 		return fmt.Errorf("index mkdir %s: %w", staging, err)
 	}
 	for _, rec := range idx.Records {
-		data, err := json.MarshalIndent(rec, "", "  ")
+		file := registryindex.RecordFile{Record: rec}
+		if r, ok := idx.Revalidations[rec.URI]; ok {
+			file.Revalidation = &r
+		}
+		data, err := json.MarshalIndent(file, "", "  ")
 		if err != nil {
 			return fmt.Errorf("index marshal %s: %w", rec.Name, err)
 		}

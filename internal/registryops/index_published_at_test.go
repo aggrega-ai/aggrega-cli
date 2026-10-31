@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
@@ -117,6 +118,27 @@ func newDatedRepo(t *testing.T) datedRepo {
 	return r
 }
 
+// readEachPublishedVersion reads every version in the order given the way the
+// index walk reads a version in full: its tag resolved to the digest it names,
+// then its signer and date read through readPublishedVersion. A read the walk
+// could not finish is not an error here, since these tests hold the entry the
+// walk records rather than whether it would read the version again.
+func readEachPublishedVersion(ctx context.Context, wsCfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig, target oras.ReadOnlyTarget, versions []string) ([]registryindex.PublishedVersion, error) {
+	out := make([]registryindex.PublishedVersion, 0, len(versions))
+	for _, v := range versions {
+		digest, exists, err := oci.Resolve(ctx, target, v)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, fmt.Errorf("version %s no longer resolves", v)
+		}
+		pv, _ := readPublishedVersion(ctx, wsCfg, policy, target, v, digest)
+		out = append(out, pv)
+	}
+	return out, nil
+}
+
 // wantDate is one version's expected date and source; an empty source expects
 // no date at all.
 type wantDate struct {
@@ -181,10 +203,9 @@ func TestReadPublishedVersionsRecordsEachDateWithItsSource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			versions := []string{"1.0.0", "1.1.0", "1.2.0", "1.3.0"}
-			got, err := readPublishedVersions(context.Background(), workspaceconfig.Config{}, tc.policy, repo.store,
-				versions, "1.3.0", repo.digests["1.3.0"])
+			got, err := readEachPublishedVersion(context.Background(), workspaceconfig.Config{}, tc.policy, repo.store, versions)
 			if err != nil {
-				t.Fatalf("readPublishedVersions: %v", err)
+				t.Fatalf("readEachPublishedVersion: %v", err)
 			}
 			if len(got) != len(versions) {
 				t.Fatalf("entries = %d; want %d", len(got), len(versions))

@@ -242,13 +242,13 @@ func TestRegistryUpdateOnTheDaemonReportsWhatItCouldNotRead(t *testing.T) {
 }
 
 // TestRegistryUpdateOnTheDaemonReusesAnUnchangedRepository drives the refresh
-// twice against unchanged registry state and asserts the second run reuses the
-// prior record.
+// twice against unchanged registry state and asserts the second run writes the
+// same record and skips nothing.
 //
-// It reaches the reuse arm the conditional-listing path does not: this fixture
-// records no listing validator, so a second run cannot answer not-modified and
-// falls through to the digest-and-tag-set comparison instead. That arm was
-// reachable by no test, so the comparison it rests on was never executed.
+// This fixture records no listing validator, so the second run lists the tags in
+// full and compares the selected version's digest instead, keeping the facets it
+// read before; it offers no referrer revalidation, so each version is read again.
+// The two runs must still agree byte for byte.
 func TestRegistryUpdateOnTheDaemonReusesAnUnchangedRepository(t *testing.T) {
 	// Not parallel: it points the process-wide index-target seam.
 	const host = "reuse.aggrega.test"

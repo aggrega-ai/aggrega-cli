@@ -788,11 +788,13 @@ func TestRegistryUpdateConditionalFromScratchParityAndFileSet(t *testing.T) {
 	}
 }
 
-// TestRegistryUpdateDeprecationOnExistingTagBound documents and proves the one
-// bound of the digest-compare baseline: a deprecation marker attached to an
-// existing version (no new tag, unchanged manifest digest) is invisible to a
-// conditional refresh and is picked up only by a full --upgrade re-read.
-func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
+// TestRegistryUpdatePicksUpADeprecationOnAnExistingTag proves a refresh without
+// --upgrade records a deprecation marker attached to an existing version — no new
+// tag, an unchanged manifest digest — and that it records exactly what a full
+// --upgrade re-read records. This source offers no way to revalidate a version's
+// referrers, so the refresh reads every version again; the conditional path that
+// keeps an unchanged version is proven against a registry that does.
+func TestRegistryUpdatePicksUpADeprecationOnAnExistingTag(t *testing.T) {
 	// Not parallel: mutates the process-global registryops.IndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
@@ -818,7 +820,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	marker := deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "old", IssuedOn: "2026-05-01T00:00:00Z"}
 	attachSignedMarkerToTag(t, target.Store, "1.0.0", marker, signer)
 
-	// Conditional refresh reuses the prior record — the new marker is NOT seen.
+	// A refresh without --upgrade sees the new marker.
 	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (conditional): %v", err)
 	}
@@ -826,21 +828,26 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
-	if len(loaded.Records) != 1 || len(loaded.Records[0].Deprecations) != 0 {
-		t.Errorf("conditional refresh saw the marker on an existing tag; digest-compare bound broken: %+v", loaded.Records[0].Deprecations)
+	if len(loaded.Records) != 1 || len(loaded.Records[0].Deprecations) != 1 ||
+		loaded.Records[0].Deprecations[0].Version != "1.0.0" {
+		t.Fatalf("a refresh without --upgrade missed the marker on the existing tag: %+v\nwalk output:\n%s", loaded.Records, out.String())
+	}
+	recPath := oci.IndexRepoPath(root, cacheDir, host, repo)
+	refreshed, err := os.ReadFile(recPath)
+	if err != nil {
+		t.Fatalf("read record file: %v", err)
 	}
 
-	// A full --upgrade re-read picks it up.
+	// A full --upgrade re-read records the same thing, byte for byte.
 	if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: rw, Out: &out, now: frozen, Upgrade: true}); err != nil {
 		t.Fatalf("registryUpdateRun (upgrade): %v", err)
 	}
-	loaded, err = registryindex.LoadHost(root, cacheDir, host)
+	upgraded, err := os.ReadFile(recPath)
 	if err != nil {
-		t.Fatalf("loadHostIndex (after upgrade): %v", err)
+		t.Fatalf("re-read record file: %v", err)
 	}
-	if len(loaded.Records) != 1 || len(loaded.Records[0].Deprecations) != 1 ||
-		loaded.Records[0].Deprecations[0].Version != "1.0.0" {
-		t.Errorf("--upgrade did not pick up the marker on the existing tag: %+v", loaded.Records[0].Deprecations)
+	if !bytes.Equal(refreshed, upgraded) {
+		t.Errorf("the refresh and the full re-read recorded different files:\nrefresh:\n%s\nupgrade:\n%s", refreshed, upgraded)
 	}
 }
 

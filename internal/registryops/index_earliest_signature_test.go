@@ -238,10 +238,12 @@ func TestTheIndexRecordsTheEarliestSignatureThatVerifies(t *testing.T) {
 			store, dg, made := signedVersionRepo(t, authority, tc.signers)
 			target := &listsReferrersInOrder{taggedStore: store, first: listedAs(made, tc.listed...)}
 
-			got, err := readPublishedVersions(context.Background(), workspaceconfig.Config{}, policy, target,
-				[]string{"1.0.0"}, "1.0.0", dg)
+			got, err := readEachPublishedVersion(context.Background(), workspaceconfig.Config{}, policy, target, []string{"1.0.0"})
 			if err != nil {
-				t.Fatalf("readPublishedVersions: %v", err)
+				t.Fatalf("readEachPublishedVersion: %v", err)
+			}
+			if got[0].ManifestDigest != dg {
+				t.Fatalf("1.0.0 resolved to %s; want the digest the fixture signed, %s", got[0].ManifestDigest, dg)
 			}
 			if len(got) != 1 {
 				t.Fatalf("entries = %d; want 1", len(got))

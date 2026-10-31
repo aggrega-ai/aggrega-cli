@@ -98,6 +98,57 @@ type PublishedVersion struct {
 	PublishedAtSource string                      `json:"publishedAtSource,omitempty"`
 }
 
+// Revalidation is what a later refresh compares against to learn which of a
+// record's facts still hold without reading them again. It is stored in the
+// record's file beside the record and is not part of the record itself: it says
+// nothing about the published entity, only about when the registry was last read
+// for it, so it never reaches a search answer.
+//
+// TrustPolicy fingerprints the trust policy the signers and markers were judged
+// under (TrustPolicyFingerprint). A refresh under a policy with another
+// fingerprint judges them again rather than reuse a verdict a different policy
+// reached, and so does a refresh meeting a file with no revalidation at all — one
+// written before these were recorded.
+//
+// Versions holds one entry per published version, in the record's version order.
+type Revalidation struct {
+	TrustPolicy string                `json:"trustPolicy"`
+	Versions    []VersionRevalidation `json:"versions,omitempty"`
+}
+
+// VersionRevalidation is what a refresh revalidates for one published version.
+//
+// Referrers is the validator of the version's whole referrer listing, taken
+// before its signer, date and deprecation marker were read, so a refresh
+// revalidates the listing with one conditional request and keeps all three when
+// the registry answers that it is unchanged. Where the version carries a
+// deprecation marker, MarkerDigest names the one that was judged and
+// MarkerReferrers is the validator of that marker's own referrer listing, which
+// is where its signatures live: a signature attached to a marker changes the
+// marker's listing and not the version's.
+//
+// The validators are recorded only where every one of those reads was answered,
+// and only where the registry serves a validator at all. A version whose reads did
+// not all finish, or whose marker is present and not honored, carries no Referrers
+// validator and is read again on the next refresh, so a passing failure is never
+// kept as though it were the answer.
+type VersionRevalidation struct {
+	Version         string `json:"version"`
+	Referrers       string `json:"referrers,omitempty"`
+	MarkerDigest    string `json:"markerDigest,omitempty"`
+	MarkerReferrers string `json:"markerReferrers,omitempty"`
+}
+
+// RecordFile is the content of one repository's file in a host's index: the
+// record, and beside it the revalidation a refresh compares against. The record's
+// keys sit at the top level of the file, where every reader of the index has
+// always found them; the revalidation sits under one key of its own, which a
+// reader that does not know it passes over.
+type RecordFile struct {
+	Record
+	Revalidation *Revalidation `json:"revalidation,omitempty"`
+}
+
 // CoversVersions reports whether the record carries a published-version entry
 // for every version it lists, in the same order. A record written before those
 // entries were recorded does not, so a refresh reads that repository again
@@ -162,11 +213,16 @@ func IsNotBuilt(err error) bool { return errors.Is(err, errNotBuilt) }
 // distinguishes a genuinely absent timestamp sibling (LastUpdated is the zero
 // time) from one that happens to parse to the zero time, so a caller can decide
 // how to present freshness.
+//
+// Revalidations holds, keyed by record URI, the revalidation each record's file
+// carries beside it; a record whose file carries none has no entry. Only a refresh
+// reads it, to look a record's validators up; nothing iterates it.
 type Loaded struct {
-	Host         string
-	Records      []Record
-	LastUpdated  time.Time
-	HasTimestamp bool
+	Host          string
+	Records       []Record
+	Revalidations map[string]Revalidation
+	LastUpdated   time.Time
+	HasTimestamp  bool
 }
 
 // LoadHost reads one host's local searchable index from the artifact cache and
@@ -209,6 +265,7 @@ func LoadHost(workspaceRoot, cacheDir, host string) (Loaded, error) {
 		return Loaded{}, fmt.Errorf("read index %s: %w", hostDir, err)
 	}
 	var records []Record
+	var revalidations map[string]Revalidation
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -221,14 +278,20 @@ func LoadHost(workspaceRoot, cacheDir, host string) (Loaded, error) {
 		if rerr != nil {
 			return Loaded{}, fmt.Errorf("read index %s: %w", recordPath, rerr)
 		}
-		var rec Record
-		if uerr := json.Unmarshal(data, &rec); uerr != nil {
+		var file RecordFile
+		if uerr := json.Unmarshal(data, &file); uerr != nil {
 			return Loaded{}, fmt.Errorf("parse index %s: %w", recordPath, uerr)
 		}
-		records = append(records, rec)
+		records = append(records, file.Record)
+		if file.Revalidation != nil {
+			if revalidations == nil {
+				revalidations = map[string]Revalidation{}
+			}
+			revalidations[file.URI] = *file.Revalidation
+		}
 	}
 	SortRecords(records)
-	result := Loaded{Host: host, Records: records}
+	result := Loaded{Host: host, Records: records, Revalidations: revalidations}
 
 	timestampPath := base + ".updated"
 	if err := readscope.CheckCacheRead(heldTo, timestampPath); err != nil {

@@ -47,12 +47,23 @@ const (
 // than a guessed one. subjectRef is any reference target resolves to the
 // version's manifest — its tag. No entity content is read.
 func PublicationDate(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string, verified *pullverify.Result) (at, source string) {
+	at, source, _ = ReadPublicationDate(ctx, target, subjectRef, verified)
+	return at, source
+}
+
+// ReadPublicationDate is PublicationDate for a caller that must know whether the
+// answer is complete. The date and source are the same; err is non-nil where the
+// published-at referrers could not all be read (oci.ReadPublishedAtFully), and the
+// date returned beside it is then only the best of what was read. An index refresh
+// reads it so a version whose date read did not finish is read again on the next
+// refresh rather than kept with a date a passing failure chose.
+func ReadPublicationDate(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string, verified *pullverify.Result) (at, source string, err error) {
 	if verified != nil && !verified.LoggedAt.IsZero() {
-		return oci.FormatPublishedAt(verified.LoggedAt), PublishedAtFromTransparencyLog
+		return oci.FormatPublishedAt(verified.LoggedAt), PublishedAtFromTransparencyLog, nil
 	}
-	stated, found, err := oci.ReadPublishedAt(ctx, target, subjectRef)
-	if err != nil || !found {
-		return "", ""
+	stated, found, err := oci.ReadPublishedAtFully(ctx, target, subjectRef)
+	if !found {
+		return "", "", err
 	}
-	return oci.FormatPublishedAt(stated), PublishedAtFromPublisher
+	return oci.FormatPublishedAt(stated), PublishedAtFromPublisher, err
 }

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,13 +38,15 @@ const pagingSourceBound = 200
 // is the shape of a registry whose next link leads back to where it has been.
 //
 // It counts every repository it is asked to open, so a row can assert which
-// repositories the walk read and that none was read twice.
+// repositories the walk read and that none was read twice. The walk opens
+// repositories from several workers at once, so the count is kept under a lock.
 type pagingSource struct {
-	pages   [][]string
-	cycle   bool
-	targets map[string]oras.ReadOnlyTarget
-	opened  map[string]int
-	served  int
+	pages    [][]string
+	cycle    bool
+	targets  map[string]oras.ReadOnlyTarget
+	openedMu sync.Mutex
+	opened   map[string]int
+	served   int
 	// onPage, when set, runs after each page is handed over; onOpen before each
 	// repository is opened. A stop row uses them to withdraw the walk at a chosen
 	// point.
@@ -79,7 +82,9 @@ func (p *pagingSource) Repository(repo string) (oras.ReadOnlyTarget, error) {
 	if p.onOpen != nil {
 		p.onOpen()
 	}
+	p.openedMu.Lock()
 	p.opened[repo]++
+	p.openedMu.Unlock()
 	tgt, ok := p.targets[repo]
 	if !ok {
 		return nil, fmt.Errorf("no repository %s in the fixture", repo)
