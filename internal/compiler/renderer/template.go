@@ -127,7 +127,15 @@ func (p preparedTemplate) executeOver(data any) (string, error) {
 // executionFailure reports a failed execution of the prepared tree the way the
 // surface names it, withholding any text a value an author declared sensitive
 // could reach.
+//
+// A path the template both prints and iterates while it holds nothing is refused
+// before the template runs, and that refusal is reported as it stands: its text is
+// the path as the template spells it and never anything the data holds, so there
+// is nothing in it to withhold.
 func (p preparedTemplate) executionFailure(err error) error {
+	if errors.Is(err, gotmpl.ErrAbsentPathReadAndIterated()) {
+		return p.eval.wrap(stageExecute, err)
+	}
 	return p.eval.wrap(stageExecute, p.eval.withholdFailure(p.tree, p.refs, err))
 }
 
@@ -220,7 +228,9 @@ func (e templateEval) data() any {
 
 // executeData runs a prepared tree over data already converted from the surface's
 // context — a fresh private copy the caller allocated for this execution alone —
-// substituted first when substitute is set.
+// substituted first when substitute is set. On a surface that supplies unset
+// values, a path the template both prints and iterates while it holds nothing
+// halts here with gotmpl.ErrAbsentPathReadAndIterated, before the tree runs.
 func (e templateEval) executeData(t *template.Template, refs []gotmpl.RootRef, data any, substitute bool) (string, error) {
 	if substitute {
 		e.scope.withheld.SubstituteTree(data)
@@ -230,7 +240,9 @@ func (e templateEval) executeData(t *template.Template, refs []gotmpl.RootRef, d
 		// root read whole that the surface defines and the data leaves nil is
 		// supplied for exactly as an absent key beneath a root is.
 		admitted, _ := e.scope.admittedRoots()
-		gotmpl.SeedAbsentLeafKeys(data, refs, admitted)
+		if err := gotmpl.SeedAbsentLeafKeys(data, refs, admitted); err != nil {
+			return "", err
+		}
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {

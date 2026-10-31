@@ -30,10 +30,23 @@ import (
 // anything that supplies something for an absent reference. It is set when ANY
 // occurrence of the path is iterated, not just the first, so the flag does not
 // depend on which occurrence the template happens to write first.
+//
+// Printed marks a reference the template prints as it stands: an action whose whole
+// pipeline is the reference, in any spelling — .values.x, $.values.x, a variable
+// bound to it, (.values.x), or a field off a parenthesised root — at a point the
+// template reaches every time it runs, outside every if, with and range body and
+// every else branch. Such a print certainly runs, so what it prints is decided by
+// the data alone. A print inside a body is not marked: whether it runs depends on a
+// condition, and the condition may be the very test that keeps the print from
+// meeting nothing, which no reading of the text can decide. A reference handed to a
+// function, assigned to a variable or tested by a guard is not printed either,
+// because what reaches the output there is the function's or the guard's answer.
+// Like Iterated, the flag is set when ANY occurrence of the path is such a print.
 type RootRef struct {
 	Segs     []string
 	Path     string
 	Iterated bool
+	Printed  bool
 }
 
 // CollectRootRefs returns every field access a parsed template makes against its
@@ -105,7 +118,10 @@ type RootRef struct {
 // over what a context type defines, and that class has no use for the
 // over-collecting direction; this walk is the only one behind it. Seeding sits on
 // the same side for the same reason: it WRITES at the path it is handed, so a
-// reference attributed wrongly would insert a key the template never reads.
+// reference attributed wrongly would insert a key the template never reads. So does
+// its one refusal, of a path both printed and iterated: a print the walk does not
+// mark renders as it always did, while one marked wrongly would halt a template
+// that renders correctly.
 //
 // The scope of that statement is worth being exact about, because an earlier and
 // wider version of it — that NO reference check has any use for the
@@ -190,6 +206,19 @@ func CollectRootRefs(tree parse.Node) []RootRef {
 // already iterates as nothing — which is the outcome an author ranging over an
 // optional list wants. Nothing to fix, so nothing is supplied.
 //
+// A reference the template both iterates and PRINTS, where the data holds nothing
+// at its path, has no answer either way: the empty string fails the iteration, and
+// leaving the path absent prints the template engine's placeholder text. That one
+// case is refused rather than supplied for: the returned error is
+// [ErrAbsentPathReadAndIterated], naming the path as the template first spelled
+// it, and nothing is written into data. The path holds nothing on the same terms a
+// supply would be made on — a leaf absent or nil under a parent chain that resolves
+// to maps, or a root the surface defines that is absent or nil. A path holding a
+// value, a path whose parent chain does not resolve, and a root the surface does not
+// define are not refused, and every other reference is treated as above. The
+// references are judged in the order the walk returns them, so the path a refusal
+// names is the same on every run.
+//
 // Two consequences are worth knowing before either looks like a defect.
 //
 // On a surface carrying the `optional` helper, that helper reports a key as present
@@ -205,28 +234,32 @@ func CollectRootRefs(tree parse.Node) []RootRef {
 // "<no value>" this exists to remove. A guard that means "did the author fill this
 // one field" belongs on the field, where the empty string is falsy as the unset
 // value was.
-func SeedAbsentLeafKeys(data any, refs []RootRef, definedRoots []string) {
+func SeedAbsentLeafKeys(data any, refs []RootRef, definedRoots []string) error {
 	root, ok := data.(map[string]any)
 	if !ok {
-		return
+		return nil
+	}
+	// Every refusal is decided before anything is written, so a refused template
+	// leaves its data exactly as it was handed over.
+	for _, ref := range refs {
+		if len(ref.Segs) == 0 || !ref.Iterated || !ref.Printed {
+			continue
+		}
+		if holdsNothing(root, ref.Segs, definedRoots) {
+			return &absentPathReadAndIteratedError{path: ref.Path}
+		}
 	}
 	for _, ref := range refs {
 		if len(ref.Segs) == 0 || ref.Iterated {
 			continue
 		}
 		if len(ref.Segs) == 1 {
-			seedNilRoot(root, ref.Segs[0], definedRoots)
+			if rootHoldsNothing(root, ref.Segs[0], definedRoots) {
+				root[ref.Segs[0]] = ""
+			}
 			continue
 		}
-		parent := root
-		for _, seg := range ref.Segs[:len(ref.Segs)-1] {
-			next, ok := parent[seg].(map[string]any)
-			if !ok || next == nil {
-				parent = nil
-				break
-			}
-			parent = next
-		}
+		parent := resolvingParent(root, ref.Segs)
 		if parent == nil {
 			continue
 		}
@@ -235,19 +268,50 @@ func SeedAbsentLeafKeys(data any, refs []RootRef, definedRoots []string) {
 			parent[leaf] = ""
 		}
 	}
+	return nil
 }
 
-// seedNilRoot supplies the empty string for one root read whole, on the terms
-// SeedAbsentLeafKeys states: only a defined root, and only where it holds nothing.
-func seedNilRoot(root map[string]any, name string, definedRoots []string) {
+// holdsNothing reports whether the data holds nothing at a reference's path, on the
+// terms SeedAbsentLeafKeys supplies on: a root the surface defines that is absent or
+// nil, or a leaf that is absent or nil beneath a parent chain resolving to maps. A
+// path whose parent chain does not resolve is not one this reports, because a read
+// of it already fails the execution.
+func holdsNothing(root map[string]any, segs []string, definedRoots []string) bool {
+	if len(segs) == 1 {
+		return rootHoldsNothing(root, segs[0], definedRoots)
+	}
+	parent := resolvingParent(root, segs)
+	if parent == nil {
+		return false
+	}
+	value, present := parent[segs[len(segs)-1]]
+	return !present || value == nil
+}
+
+// rootHoldsNothing reports whether one root read whole holds nothing on the terms
+// SeedAbsentLeafKeys states: a root the data holds as nil, or a root the surface
+// defines that the data leaves out. A root holding a value holds something, and a
+// root the surface does not define is that surface's own policy.
+func rootHoldsNothing(root map[string]any, name string, definedRoots []string) bool {
 	value, present := root[name]
-	if present && value != nil {
-		return
+	if present {
+		return value == nil
 	}
-	if !present && !slices.Contains(definedRoots, name) {
-		return
+	return slices.Contains(definedRoots, name)
+}
+
+// resolvingParent returns the map a reference's leaf sits in, or nil where any
+// step of its parent chain is absent or is not a map.
+func resolvingParent(root map[string]any, segs []string) map[string]any {
+	parent := root
+	for _, seg := range segs[:len(segs)-1] {
+		next, ok := parent[seg].(map[string]any)
+		if !ok || next == nil {
+			return nil
+		}
+		parent = next
 	}
-	root[name] = ""
+	return parent
 }
 
 // rootRefs accumulates the walk's result: the references in first-appearance
@@ -260,10 +324,15 @@ func seedNilRoot(root map[string]any, name string, definedRoots []string) {
 // read names no path, so it is not a reference and CollectRootRefs does not report
 // it; it is kept beside the references for [RootKeysRead], whose answer is only
 // complete when nothing could have reached a root's keys that way.
+//
+// bodies counts the if, with and range bodies and else branches the walk is
+// inside, which is what decides whether a print is one the template reaches every
+// time it runs.
 type rootRefs struct {
 	refs      []RootRef
 	seen      map[string]int
 	wholeRoot bool
+	bodies    int
 }
 
 // dotPath is what the dot names at one point in the walk. A known dot carries the
@@ -393,16 +462,25 @@ func walkRoots(n parse.Node, dot dotPath, vars varPaths, out *rootRefs) {
 		}
 	case *parse.ActionNode:
 		walkRootsPipe(v.Pipe, dot, vars, false, out)
+		// An action declaring a variable prints nothing; any other prints the value
+		// its pipeline yields.
+		if out.bodies == 0 && v.Pipe != nil && len(v.Pipe.Decl) == 0 {
+			if segs, ok := printedPath(v.Pipe, dot, vars); ok {
+				out.markPrinted(segs)
+			}
+		}
 		bindPipeDecls(vars, v.Pipe, pipeDot(v.Pipe, dot, vars))
 	case *parse.IfNode:
 		walkRootsPipe(v.Pipe, dot, vars, false, out)
 		value := pipeDot(v.Pipe, dot, vars)
 		body := vars.clone()
 		bindPipeDecls(body, v.Pipe, value)
+		out.bodies++
 		walkRoots(v.List, dot, body, out)
 		elseVars := vars.clone()
 		bindPipeDecls(elseVars, v.Pipe, value)
 		walkRoots(v.ElseList, dot, elseVars, out)
+		out.bodies--
 	case *parse.RangeNode:
 		// Everything the range pipeline reaches is marked iterated. A reference
 		// nested inside that pipeline — an argument to a function whose result is
@@ -416,8 +494,10 @@ func walkRoots(n parse.Node, dot dotPath, vars varPaths, out *rootRefs) {
 		// from the text, so all three are unknown rather than the container's path.
 		body := vars.clone()
 		bindPipeDecls(body, v.Pipe, dotPath{})
+		out.bodies++
 		walkRoots(v.List, dotPath{}, body, out)
 		walkRoots(v.ElseList, dot, vars.clone(), out)
+		out.bodies--
 	case *parse.WithNode:
 		walkRootsPipe(v.Pipe, dot, vars, false, out)
 		// A with body's dot IS the value the pipeline named, so a nameable pipeline
@@ -426,8 +506,10 @@ func walkRoots(n parse.Node, dot dotPath, vars varPaths, out *rootRefs) {
 		value := pipeDot(v.Pipe, dot, vars)
 		body := vars.clone()
 		bindPipeDecls(body, v.Pipe, value)
+		out.bodies++
 		walkRoots(v.List, value, body, out)
 		walkRoots(v.ElseList, dot, vars.clone(), out)
+		out.bodies--
 	case *parse.TemplateNode:
 		walkRootsPipe(v.Pipe, dot, vars, false, out)
 	}
@@ -535,7 +617,7 @@ func recordRootRef(out *rootRefs, segs []string, path string, iterated bool) {
 	if len(segs) == 0 || segs[0] == "" {
 		return
 	}
-	key := strings.Join(segs, "\x00")
+	key := refKey(segs)
 	if at, ok := out.seen[key]; ok {
 		// A path read as a value in one place and iterated in another is iterated:
 		// the position that needs a container is the binding one.
@@ -544,4 +626,44 @@ func recordRootRef(out *rootRefs, segs []string, path string, iterated bool) {
 	}
 	out.seen[key] = len(out.refs)
 	out.refs = append(out.refs, RootRef{Segs: segs, Path: path, Iterated: iterated})
+}
+
+// refKey is the one key an entry is recorded and found under: the segments, so
+// every spelling of one path finds the same entry.
+func refKey(segs []string) string { return strings.Join(segs, "\x00") }
+
+// markPrinted marks the entry recorded for a path as printed. The print's own
+// pipeline is walked first, so the entry is already there; a path the walk declined
+// to record has no entry, and nothing is marked.
+func (out *rootRefs) markPrinted(segs []string) {
+	if at, ok := out.seen[refKey(segs)]; ok {
+		out.refs[at].Printed = true
+	}
+}
+
+// printedPath returns the root-anchored path an action prints when its pipeline is
+// one reference and nothing more — a field, a variable bound to a path, a $-anchored
+// read, a field chained off a parenthesised single reference, or any of these in
+// parentheses. ok is false for every other pipeline: one applying a function or
+// chaining commands prints that function's answer rather than the reference, and the
+// dot itself names no path while the walk is outside every body.
+func printedPath(p *parse.PipeNode, dot dotPath, vars varPaths) ([]string, bool) {
+	if p == nil || len(p.Cmds) != 1 || p.Cmds[0] == nil || len(p.Cmds[0].Args) != 1 {
+		return nil, false
+	}
+	switch a := p.Cmds[0].Args[0].(type) {
+	case *parse.PipeNode:
+		return printedPath(a, dot, vars)
+	case *parse.ChainNode:
+		segs, _, ok := chainReceiverPath(a, dot, vars)
+		if !ok {
+			return nil, false
+		}
+		return append(append([]string(nil), segs...), a.Field...), true
+	}
+	value := pipeDot(p, dot, vars)
+	if !value.known || len(value.segs) == 0 {
+		return nil, false
+	}
+	return value.segs, true
 }

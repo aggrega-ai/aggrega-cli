@@ -129,12 +129,11 @@ func TestEvalTemplate_IteratedReferenceIsLeftAlone(t *testing.T) {
 		{"present list still iterates", `{{ range .values.list }}{{ . }}{{ end }}`, "ab"},
 		{"a rebound field inside the body is not a reference", `{{ range .values.list }}{{ . }}-{{ end }}`, "a-b-"},
 		{"with over an absent key still takes its else branch", `{{ with .values.absent }}y{{ else }}n{{ end }}`, "n"},
-		// A path read as a value in one place and iterated in another keeps the
-		// iterated treatment, because withholding can only ever leave today's
-		// behaviour in place while supplying could break an iteration that works.
-		// This is the residue of that choice, pinned so it is a decision rather
-		// than a surprise.
-		{"iterating a path elsewhere withholds it from the value read", `{{ range .values.absent_list }}x{{ end }}|{{ .values.absent_list }}`, "|<no value>"},
+		// A path iterated in one place and read in another keeps the iterated
+		// treatment wherever the read is not a print the template always reaches;
+		// such a print over an absent path halts, which
+		// TestEvalTemplate_AbsentPathPrintedAndIteratedHalts holds.
+		{"iterating a path elsewhere withholds it from a guarded read", `{{ range .values.absent_list }}x{{ end }}|{{ if .values.absent_list }}{{ .values.absent_list }}{{ end }}`, "|"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

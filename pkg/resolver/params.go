@@ -40,7 +40,9 @@ import (
 // optional list wants; an empty string there would fail the execution instead. And
 // a reference whose PARENT is absent — .parameters.db.host where no db parameter
 // was filled — still halts, because creating the parent would trade a loud halt
-// for a silently wrong artifact.
+// for a silently wrong artifact. A reference the template both prints and iterates,
+// unfilled, can be given neither treatment, so it halts with
+// gotmpl.ErrAbsentPathReadAndIterated naming the reference.
 //
 // A read anchored at a name other than .parameters reaches nothing to supply and
 // resolves through missingkey=zero unchanged.
@@ -50,7 +52,8 @@ import (
 // stays unfilled for every later reader of that map.
 //
 // Both template-parse and template-execute errors are wrapped as
-// ResolverError with ErrInvalidParameterRef.
+// ResolverError with ErrInvalidParameterRef. The refusal of a reference both
+// printed and iterated is wrapped as ResolverError too, under its own condition.
 //
 // The Aggregate a build starts from is refused ahead of this function when its
 // text is not a template at all: that fault is a rule over what the author wrote
@@ -79,7 +82,12 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 	// exactly the references the execution will make.
 	data := map[string]any{parametersRoot: copyParameterTree(params)}
 	refs := gotmpl.CollectRootRefs(tmpl.Tree.Root)
-	gotmpl.SeedAbsentLeafKeys(data, refs, []string{parametersRoot})
+	if err := gotmpl.SeedAbsentLeafKeys(data, refs, []string{parametersRoot}); err != nil {
+		// The refusal is already composed for its own condition and names the
+		// path, so the finding carries it whole under that condition rather than
+		// under the interpolation's.
+		return nil, &ResolverError{Entity: "Aggregate", Err: err}
+	}
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
