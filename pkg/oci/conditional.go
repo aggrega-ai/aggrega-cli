@@ -121,7 +121,7 @@ func ConditionalListReferrers(ctx context.Context, host, repo, digest, ifNoneMat
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return "", false, fmt.Errorf("oci: referrers request %q@%s: %w", repo, digest, err)
+		return "", false, fmt.Errorf("referrers request %q@%s: %w", repo, digest, err)
 	}
 	req.Header.Set("Accept", ocispec.MediaTypeImageIndex)
 	if ifNoneMatch != "" {
@@ -130,7 +130,7 @@ func ConditionalListReferrers(ctx context.Context, host, repo, digest, ifNoneMat
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", false, fmt.Errorf("oci: referrers %q@%s: %w", repo, digest, err)
+		return "", false, fmt.Errorf("referrers %q@%s: %w", repo, digest, err)
 	}
 	defer resp.Body.Close()
 	// The body is not read for what it says, only drained so the connection can
@@ -148,8 +148,8 @@ func ConditionalListReferrers(ctx context.Context, host, repo, digest, ifNoneMat
 	case http.StatusNotFound:
 		return "", false, nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return "", false, fmt.Errorf("oci: referrers %q@%s: status %d: %w", repo, digest, resp.StatusCode, ErrFetchUnauthorized())
+		return "", false, fmt.Errorf("referrers %q@%s: status %d: %w", repo, digest, resp.StatusCode, ErrFetchUnauthorized())
 	default:
-		return "", false, fmt.Errorf("oci: referrers %q@%s: unexpected status %d", repo, digest, resp.StatusCode)
+		return "", false, fmt.Errorf("referrers %q@%s: unexpected status %d", repo, digest, resp.StatusCode)
 	}
 }
