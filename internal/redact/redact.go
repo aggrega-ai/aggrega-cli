@@ -503,14 +503,14 @@ func injectPipe(in types.InjectPipe, marked DeliveryKeys) types.InjectPipe {
 	out.Env = replaceFlat(in.Env, marked["env"])
 	out.File = replaceFlat(in.File, marked["file"])
 	out.Arg = replaceFlat(in.Arg, marked["arg"])
-	// `all` is the host-built union of the typed mechanisms rather than an
-	// authored pillar, so the same datum reappears here and the union must not
-	// become the hole that re-prints what the typed pillar hid. The lookup is
-	// the union of every mechanism's marking, deliberately wider than exact:
-	// which mechanism won a same-named key in the merge is the merge's own
-	// precedence rule, and reproducing it here would put that rule in a second
-	// place. Withholding both is the safe side of that trade, and it costs only
-	// the union view of one key authored under two mechanisms.
+	// `all` is the host-built union of every mechanism, custom ones included,
+	// rather than an authored pillar, so the same datum reappears here and the
+	// union must not become the hole that re-prints what a mechanism hid. The
+	// lookup is the union of every mechanism's marking, deliberately wider than
+	// exact: which mechanism won a same-named key in the merge is the merge's
+	// own precedence rule, and reproducing it here would put that rule in a
+	// second place. Withholding both is the safe side of that trade, and it costs
+	// only the union view of one key authored under two mechanisms.
 	out.All = replaceFlat(in.All, unionMarked(marked))
 	if in.Additional.Len() > 0 {
 		additional := types.OrderedMap[types.OrderedMap[string]]{}

@@ -119,7 +119,7 @@ func TestInjectPipe_ReplacesMarkedDeliveryKeyAndKeepsSibling(t *testing.T) {
 	if v, _ := out.Env.Get("DATABASE_NAME"); v != "db-creds" {
 		t.Errorf("an unmarked sibling delivery key must survive; got %q", v)
 	}
-	// .all is the host-built union of the typed mechanisms; the same datum
+	// .all is the host-built union of every mechanism; the same datum
 	// reappears there and must not be re-printed in the clear.
 	if v, _ := out.All.Get("DATABASE_PASSWORD"); v != Placeholder() {
 		t.Errorf("the union pillar must hide what the typed pillar hid; got %q", v)
@@ -148,6 +148,56 @@ func TestInjectPipe_CustomMechanism(t *testing.T) {
 	}
 	if v, _ := got.Get("PATH"); v != "secret/data/app" {
 		t.Errorf("unmarked custom delivery key must survive; got %q", v)
+	}
+}
+
+// TestInjectPipe_CustomOnlyPipeWithholdsBothViews covers the pipe a node gets when
+// a custom mechanism is the only thing delivering into it: the three typed maps
+// are present and empty, the merged view carries the custom mechanism's keys, and
+// the marking names that mechanism and nothing else. The custom key is withheld
+// under its mechanism and in the merged view, with no unrelated marked key holding
+// the withholding open.
+func TestInjectPipe_CustomOnlyPipeWithholdsBothViews(t *testing.T) {
+	t.Parallel()
+	additional := types.OrderedMap[types.OrderedMap[string]]{}
+	additional.Set("vault", sm("ROOT_PASSWORD", "r00t", "VAULT_PATH", "secret/data/db"))
+	in := types.InjectPipe{
+		Env:        types.OrderedMap[string]{},
+		File:       types.OrderedMap[string]{},
+		Arg:        types.OrderedMap[string]{},
+		All:        sm("ROOT_PASSWORD", "r00t", "VAULT_PATH", "secret/data/db"),
+		Additional: additional,
+	}
+	out := deliveryOnly(DeliveryKeys{"vault": {"ROOT_PASSWORD": true}}).InjectPipe(in)
+
+	vault, ok := out.Additional.Get("vault")
+	if !ok {
+		t.Fatalf("the custom mechanism must survive; got %v", out.Additional.Keys())
+	}
+	if v, _ := vault.Get("ROOT_PASSWORD"); v != Placeholder() {
+		t.Errorf("the marked key must be withheld under its mechanism; got %q", v)
+	}
+	if v, _ := out.All.Get("ROOT_PASSWORD"); v != Placeholder() {
+		t.Errorf("the marked key must be withheld in the merged view; got %q", v)
+	}
+	if v, _ := vault.Get("VAULT_PATH"); v != "secret/data/db" {
+		t.Errorf("an unmarked key under the mechanism must survive; got %q", v)
+	}
+	if v, _ := out.All.Get("VAULT_PATH"); v != "secret/data/db" {
+		t.Errorf("an unmarked key in the merged view must survive; got %q", v)
+	}
+	if got := out.All.Keys(); len(got) != 2 || got[0] != "ROOT_PASSWORD" {
+		t.Errorf("the merged view's key order must survive; got %v", got)
+	}
+	if out.Env.Len() != 0 || out.File.Len() != 0 || out.Arg.Len() != 0 {
+		t.Errorf("the empty typed maps must stay empty; got env %v file %v arg %v", out.Env.Keys(), out.File.Keys(), out.Arg.Keys())
+	}
+	if v, _ := in.All.Get("ROOT_PASSWORD"); v != "r00t" {
+		t.Errorf("the input merged view must not be mutated; got %q", v)
+	}
+	inVault, _ := in.Additional.Get("vault")
+	if v, _ := inVault.Get("ROOT_PASSWORD"); v != "r00t" {
+		t.Errorf("the input custom mechanism must not be mutated; got %q", v)
 	}
 }
 

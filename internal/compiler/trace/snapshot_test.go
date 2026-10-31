@@ -275,6 +275,67 @@ func TestPillarSnapshot_WithholdsConsumedTargetProvides(t *testing.T) {
 	}
 }
 
+// TestPillarSnapshot_CustomOnlyPipeShowsInjectBlock covers a delivery pipe that
+// carries nothing but a custom mechanism — a FeatureRecipe delivering under a
+// mechanism of its own name, with no env, file or arg key on the node. Templates
+// read those keys through the mechanism's name and through the merged view, so the
+// projection must show the block, and must withhold the marked key on both views
+// it prints while an unmarked sibling survives.
+//
+// The last row is the boundary of the rule: a custom mechanism present with no
+// keys delivers nothing, and shows no block.
+func TestPillarSnapshot_CustomOnlyPipeShowsInjectBlock(t *testing.T) {
+	t.Parallel()
+	customOnly := func() *types.TemplateContext {
+		ctx := makeCtx()
+		vault := edgeProvides("MARIADB_ROOT_PASSWORD", "root-plaintext", "VAULT_PATH", "secret/data/db")
+		additional := types.OrderedMap[types.OrderedMap[string]]{}
+		additional.Set("vault", vault)
+		ctx.Context.Inject = types.InjectPipe{
+			Env:        types.OrderedMap[string]{},
+			File:       types.OrderedMap[string]{},
+			Arg:        types.OrderedMap[string]{},
+			All:        edgeProvides("MARIADB_ROOT_PASSWORD", "root-plaintext", "VAULT_PATH", "secret/data/db"),
+			Additional: additional,
+		}
+		return ctx
+	}
+	keys := redact.NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{}, redact.CrossNode{},
+		redact.DeliveryKeys{"vault": {"MARIADB_ROOT_PASSWORD": true}}, nil, redact.Derived{})
+
+	for _, pass := range []Pass{PassInject, PassPhaseA, PassPhaseB3} {
+		snap := PillarSnapshot(customOnly(), pass, keys)
+		shown, ok := snap["context.inject"].(types.InjectPipe)
+		if !ok {
+			t.Fatalf("pass %v: a pipe carrying only a custom mechanism must show its inject block; got keys %v", pass, keysOf(snap))
+		}
+		vault, present := shown.Additional.Get("vault")
+		if !present {
+			t.Fatalf("pass %v: the custom mechanism must be shown; got %v", pass, shown.Additional.Keys())
+		}
+		if v, _ := vault.Get("MARIADB_ROOT_PASSWORD"); v != redact.Placeholder() {
+			t.Errorf("pass %v: the marked key must be withheld under its mechanism; got %q", pass, v)
+		}
+		if v, _ := shown.All.Get("MARIADB_ROOT_PASSWORD"); v != redact.Placeholder() {
+			t.Errorf("pass %v: the marked key must be withheld in the merged view; got %q", pass, v)
+		}
+		if v, _ := vault.Get("VAULT_PATH"); v != "secret/data/db" {
+			t.Errorf("pass %v: an unmarked key under the mechanism must survive; got %q", pass, v)
+		}
+		if v, _ := shown.All.Get("VAULT_PATH"); v != "secret/data/db" {
+			t.Errorf("pass %v: an unmarked key in the merged view must survive; got %q", pass, v)
+		}
+	}
+
+	empty := makeCtx()
+	additional := types.OrderedMap[types.OrderedMap[string]]{}
+	additional.Set("vault", types.OrderedMap[string]{})
+	empty.Context.Inject = types.InjectPipe{Additional: additional}
+	if _, present := PillarSnapshot(empty, PassPhaseA, keys)["context.inject"]; present {
+		t.Error("a custom mechanism carrying no key delivers nothing and must show no inject block")
+	}
+}
+
 func edgeProvides(pairs ...string) types.OrderedMap[string] {
 	m := types.OrderedMap[string]{}
 	for i := 0; i+1 < len(pairs); i += 2 {

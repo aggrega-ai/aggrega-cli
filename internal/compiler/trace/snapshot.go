@@ -103,7 +103,7 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 
 	// Inject hydration onward: the inject pipe is populated.
 	if pass == PassInject || isPhaseAOrLater(pass) {
-		if ctx.Context.Inject.Env.Len() > 0 || ctx.Context.Inject.File.Len() > 0 || ctx.Context.Inject.Arg.Len() > 0 {
+		if deliversAnyKey(ctx.Context.Inject) {
 			out["context.inject"] = keys.InjectPipe(ctx.Context.Inject)
 		}
 	}
@@ -158,6 +158,23 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 	}
 
 	return out
+}
+
+// deliversAnyKey reports whether a delivery pipe carries at least one key under
+// any mechanism, a custom one included. Templates read a custom mechanism's keys
+// through its own name and through the merged view, so a pipe carrying nothing
+// but a custom mechanism still delivers, and its block is shown like any other.
+// A mechanism present with no keys delivers nothing and does not count.
+func deliversAnyKey(pipe types.InjectPipe) bool {
+	if pipe.Env.Len() > 0 || pipe.File.Len() > 0 || pipe.Arg.Len() > 0 || pipe.All.Len() > 0 {
+		return true
+	}
+	for _, deliveries := range pipe.Additional.All() {
+		if deliveries.Len() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // isPhaseAOrLater reports whether the given pass is at or after inject
