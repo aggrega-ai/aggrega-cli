@@ -214,6 +214,17 @@ func SynthesizeWorkloadCore(
 			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName,
 				"volumes."+name+".ephemeral.sizeLimit"))
 		}
+		// A persistent volume of either kind becomes a bare named volume, so an
+		// authored storage class or access-mode list reaches no part of the output.
+		// Kept outside the switch for the same reason as the check above.
+		switch {
+		case v.Persistent != nil:
+			diags = append(diags, droppedPersistentFieldDiagnostics(name, "persistent",
+				v.Persistent.Class, v.Persistent.AccessModes)...)
+		case v.PersistentTemplate != nil:
+			diags = append(diags, droppedPersistentFieldDiagnostics(name, "persistentTemplate",
+				v.PersistentTemplate.Class, v.PersistentTemplate.AccessModes)...)
+		}
 
 		// A volume nothing mounts is a distinct fact from any fidelity loss in
 		// the variant itself, so both may be reported for one volume.
@@ -242,6 +253,34 @@ func SynthesizeWorkloadCore(
 			Intermediate: true,
 		},
 	}, diags, nil
+}
+
+// droppedPersistentFieldDiagnostics reports the optional sub-fields of a
+// persistent or persistentTemplate volume that the compose output cannot carry:
+// the storage class and the access-mode list. Compose expresses such a volume as a
+// bare named volume backed by the host's default volume driver, so both values
+// reach no part of the output. variant is the authored key the volume was written
+// under; each warning names its field at the authored
+// volumes.<name>.<variant>.<field> coordinate.
+//
+// Each is reported only when it is authored, because both are optional: a volume
+// that leaves one out has lost nothing and has nothing to act on, and one that
+// writes it can remove it. The required size is deliberately not reported here —
+// no document can leave it out, so a warning for it would name nothing the author
+// could change — and the provider documentation teaches that difference instead.
+//
+// The order is the schema's field order, class before accessModes, so the
+// warnings for one volume read the same on every build.
+func droppedPersistentFieldDiagnostics(name, variant, class string, accessModes []string) []renderctx.Diagnostic {
+	var diags []renderctx.Diagnostic
+	prefix := "volumes." + name + "." + variant + "."
+	if class != "" {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, prefix+"class"))
+	}
+	if len(accessModes) > 0 {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, prefix+"accessModes"))
+	}
+	return diags
 }
 
 // refuseSensitiveAttachmentsAtReference halts a reference node that carries an

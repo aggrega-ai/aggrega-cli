@@ -80,7 +80,10 @@
 //     Compose resolves the remaining ordering transitively, so a three-wave
 //     group chains rather than fanning out to every earlier wave. A group whose
 //     nodes all carry one wave records nothing, so a dispatch group where no
-//     boundary declared a wave emits byte-identical output.
+//     boundary declared a wave emits byte-identical output. An edge whose
+//     source sits in an earlier wave than its target makes the two layers wait
+//     on each other; both are still emitted, and each such edge is named in a
+//     warning.
 //   - Author order. Map-shaped top-level fields (services, volumes,
 //     networks, configs, models) are alphabetised by yaml.v3 on marshal — the
 //     alphabetical-by-derivation-key principle for synthesized
@@ -99,6 +102,7 @@ import (
 	"sort"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
@@ -377,6 +381,11 @@ func AssembleBoundaryCore(
 	// order dependencies are recorded).
 	diags := applyWaveOrdering(&merged, waveByService)
 
+	// A uses edge pointing at a service of a later wave states the opposite of
+	// what the waves state. Both are emitted as declared; the contradiction is
+	// reported beside them.
+	diags = append(diags, waveEdgeContradictions(edges, waveByService)...)
+
 	body, err := marshalDeterministic(&merged, yamlIndent)
 	if err != nil {
 		return nil, diags, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{}, "compose: assemble-boundary marshal")
@@ -491,6 +500,81 @@ func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []rend
 		diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, "syncWave", fmt.Sprintf(
 			"service %q declares no healthcheck, so services in later waves wait for it to start rather than for it to report healthy",
 			target)))
+	}
+	return diags
+}
+
+// waveEdgeContradictions returns one advisory per uses edge whose consumer sits in
+// an earlier wave than the service it uses, naming both services and both waves.
+//
+// Why such an edge is always a cycle. The edge-derived pass makes the consumer
+// wait for the target. The wave pass makes every service wait for every service of
+// the immediately-preceding populated wave, so a service waits, through that
+// chain, for every service of every earlier wave — the target therefore waits for
+// the consumer. Compose refuses a dependency cycle and starts nothing, so the
+// author learns of it at build time rather than when the file is brought up. The
+// converse holds too: a wave-derived wait always points at an earlier wave, so a
+// cycle the waves take part in has to climb back up through some edge pointing at
+// a later wave, and that edge is reported here. A cycle formed by uses edges alone
+// involves no wave and is not reported, and neither is one formed with a
+// depends_on entry a contributed fragment wrote itself, since neither is a
+// contradiction between an edge and a wave.
+//
+// Reach. The edge set is the one applyDependsOn projects: an edge counts only when
+// both endpoints contribute a service to this file, which is exactly when
+// waveByService holds both. Each pair is named once however many times the edge
+// list carries it.
+//
+// The advisory is warn-severity and changes nothing: both sets of entries are
+// emitted as declared, because a uses graph may legitimately be cyclic and
+// refusing the shape here would turn a graph the compiler accepts into a halt. It
+// carries no class code, so the unsupported-field suppression filter does not
+// reach it: the target can express both declarations, and what is reported is
+// that together they cannot start.
+//
+// Order. Pairs are sorted by consumer and then target, so the advisories read the
+// same whatever order the edges arrived in.
+func waveEdgeContradictions(edges []rendercore.IREdgeInfo, waveByService map[string]int) []renderctx.Diagnostic {
+	type pair struct{ consumer, target string }
+	seen := map[pair]struct{}{}
+	var pairs []pair
+	for _, edge := range edges {
+		consumerWave, consumerContributes := waveByService[edge.Source]
+		targetWave, targetContributes := waveByService[edge.Target]
+		if !consumerContributes || !targetContributes || consumerWave >= targetWave {
+			continue
+		}
+		p := pair{consumer: edge.Source, target: edge.Target}
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		pairs = append(pairs, p)
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].consumer != pairs[j].consumer {
+			return pairs[i].consumer < pairs[j].consumer
+		}
+		return pairs[i].target < pairs[j].target
+	})
+
+	diags := make([]renderctx.Diagnostic, 0, len(pairs))
+	for _, p := range pairs {
+		consumerWave, targetWave := waveByService[p.consumer], waveByService[p.target]
+		diags = append(diags, renderctx.Diagnostic{
+			Severity:  abi.SeverityWarn,
+			SourceRef: "syncWave",
+			Message: fmt.Sprintf(
+				"service %q in wave %d uses service %q in wave %d: the uses edge makes %q wait for %q while the waves make %q wait for %q, "+
+					"so the emitted depends_on entries form a cycle that Docker Compose refuses to start; "+
+					"place %q in wave %d or later, or %q in wave %d or earlier",
+				p.consumer, consumerWave, p.target, targetWave,
+				p.consumer, p.target, p.target, p.consumer,
+				p.consumer, targetWave, p.target, consumerWave),
+		})
 	}
 	return diags
 }
