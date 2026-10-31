@@ -81,7 +81,28 @@ func (s AttachmentSlotShape) Validate(
 	if s.v == nil || authored.Len() == 0 {
 		return nil
 	}
-	return attachmentShapeErrors(s.v, authored, entity, componentField)
+	return attachmentShapeErrors(s.v, authored, entity, "", func(path string) string {
+		if path == "" {
+			return componentField
+		}
+		return componentField + "." + path
+	})
+}
+
+// ValidateAt is [AttachmentSlotShape.Validate] for a caller that positions each
+// finding through the locator assembly rather than by a prefix: locate turns the
+// path a finding landed on — leading with the attachment block's own key, empty
+// for the block as a whole — into its locator, and file names the document that
+// locator is a path inside.
+func (s AttachmentSlotShape) ValidateAt(
+	authored types.OrderedMap[types.FeatureInstance],
+	entity, file string,
+	locate func(path string) string,
+) []*ResolverError {
+	if s.v == nil || authored.Len() == 0 {
+		return nil
+	}
+	return attachmentShapeErrors(s.v, authored, entity, file, locate)
 }
 
 // ValidateContributedFill checks one attachment contributed at a scope broader
@@ -127,7 +148,7 @@ func (s AttachmentSlotShape) ValidateContributedFill(
 	// purpose — they lead into the delivery block.
 	one := types.OrderedMap[types.FeatureInstance]{}
 	one.Set(instanceName, contribution)
-	if len(attachmentShapeErrors(s.v, one, entity, "")) == 0 {
+	if len(attachmentShapeErrors(s.v, one, entity, "", func(string) string { return "" })) == 0 {
 		return nil
 	}
 	return &ResolverError{
@@ -153,7 +174,8 @@ func (s AttachmentSlotShape) ValidateContributedFill(
 func attachmentShapeErrors(
 	v jsonvalidator.Validator,
 	authored types.OrderedMap[types.FeatureInstance],
-	entity, componentField string,
+	entity, file string,
+	locate func(path string) string,
 ) []*ResolverError {
 	raw, err := json.Marshal(authored)
 	if err != nil {
@@ -175,10 +197,7 @@ func attachmentShapeErrors(
 	leaves := leafmostFindings(rpt.Findings)
 	errs := make([]*ResolverError, 0, len(leaves))
 	for _, f := range leaves {
-		field := componentField
-		if f.FieldPath != "" {
-			field = componentField + "." + f.FieldPath
-		}
+		field := locate(f.FieldPath)
 		msg := f.Message
 		if f.Keyword != "" {
 			msg = fmt.Sprintf("%s (%s)", f.Message, f.Keyword)
@@ -195,6 +214,7 @@ func attachmentShapeErrors(
 		errs = append(errs, &ResolverError{
 			Entity:  entity,
 			Field:   field,
+			File:    file,
 			Message: fmt.Sprintf("attachment does not conform to the declared slot shape: %s", msg),
 			Err:     ErrAttachmentSlotShape(),
 		})

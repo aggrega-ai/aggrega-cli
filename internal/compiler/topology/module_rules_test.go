@@ -71,13 +71,14 @@ func buildWithModule(t *testing.T, moduleSpec string, release *types.Release) er
 // boundary `edge`.
 func buildModuleComposition(t *testing.T, imports []string, modules map[string]string, release *types.Release) error {
 	t.Helper()
-	return buildModuleCompositionAt(t, imports, modules, release, "")
+	return buildModuleCompositionAt(t, imports, modules, release, "", "")
 }
 
 // buildModuleCompositionAt is buildModuleComposition with the Release named by
-// the file path given, as a workspace build names it.
+// the file path given, as a workspace build names it, and every module document
+// read from moduleFile, as a catalog-backed loader names the file it read.
 func buildModuleCompositionAt(
-	t *testing.T, imports []string, modules map[string]string, release *types.Release, releasePath string,
+	t *testing.T, imports []string, modules map[string]string, release *types.Release, releasePath, moduleFile string,
 ) error {
 	t.Helper()
 	documents := map[string]*types.Aggregate{}
@@ -101,7 +102,7 @@ func buildModuleCompositionAt(
 	}
 	loader := func(typeName string, _ map[string]any) (*types.Aggregate, string, map[string]any, error) {
 		if module, ok := documents[typeName]; ok {
-			return module, "", nil, nil
+			return module, moduleFile, nil, nil
 		}
 		return nil, "", nil, fmt.Errorf("unknown: %s", typeName)
 	}

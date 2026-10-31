@@ -254,7 +254,7 @@ func TestRunModuleGuardsAsksEachRuleOfAModuleDocument(t *testing.T) {
 						t.Fatalf("the module pass panicked: %v", r)
 					}
 				}()
-				errs, err = RunModuleGuards(nil, na, moduleGuardCatalog(t), nil)
+				errs, err = RunModuleGuards(nil, na, "mods/data/aggregate.yaml", moduleGuardCatalog(t), nil)
 			}()
 			if err != nil {
 				t.Fatalf("the module pass returned an error: %v", err)
@@ -284,6 +284,16 @@ func TestRunModuleGuardsAsksEachRuleOfAModuleDocument(t *testing.T) {
 			if match.Entity != wantEntity {
 				t.Errorf("the finding names %q, want %q: %v", match.Entity, wantEntity, match)
 			}
+			// A rule's finding is a path inside the module's document, so it
+			// carries that document's file; the contract failure names a catalog
+			// entity's key and carries none of the module's.
+			wantFile := "mods/data/aggregate.yaml"
+			if errors.Is(tc.want, ErrSchemaContractCompileFailure()) {
+				wantFile = ""
+			}
+			if match.File != wantFile {
+				t.Errorf("the finding carries file %q, want %q: %v", match.File, wantFile, match)
+			}
 			if strings.Contains(match.Error(), "Aggregate root") {
 				t.Errorf("the finding names an importing document: %v", match)
 			}
@@ -296,7 +306,7 @@ func TestRunModuleGuardsAsksEachRuleOfAModuleDocument(t *testing.T) {
 // asked of.
 func TestRunModuleGuardsOfAnAbsentDocumentReportsNothing(t *testing.T) {
 	t.Parallel()
-	errs, err := RunModuleGuards(nil, types.Normalize(nil), moduleGuardCatalog(t), nil)
+	errs, err := RunModuleGuards(nil, types.Normalize(nil), "", moduleGuardCatalog(t), nil)
 	if err != nil || len(errs) != 0 {
 		t.Fatalf("an absent document must report nothing; got %v, %v", errs, err)
 	}

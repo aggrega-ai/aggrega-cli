@@ -56,6 +56,8 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 		// the pre-flatten rules carry it in the message beside a locator naming the
 		// attachment, and the post-flatten one spells it in the locator itself.
 		wantSocket string
+		// wantEntity, where set, is the document the halt must name.
+		wantEntity string
 	}{
 		{
 			name:        "subsystem-wide attachment",
@@ -90,18 +92,19 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 			wantSocket:  "bogus-module-socket",
 		},
 		{
-			// The same block one document deeper. The locator names the flattened
-			// node rather than an authoring path inside the module, matching every
-			// other post-flatten diagnostic: the module's own document is out of
-			// view by the time the node exists.
+			// The same block one document deeper. The finding names the module's
+			// own document — the one the block is written in — and the key inside
+			// it, so the locator is the root row's path to the socket and the
+			// document it is a path inside is what tells the two rows apart.
 			//
 			// This row is answered after the composition is flattened rather than
-			// by the pre-flatten rules above, which is why its locator still spells
-			// the socket and still carries the bracketed keys.
+			// by the pre-flatten rules above, which is why its locator spells the
+			// socket.
 			name:        "component attachment inside a sub-aggregate module",
 			release:     "release-contrib-module.yaml",
-			wantLocator: `.data.consumer.features["modfeat"].uses["bogus-module-socket"]`,
+			wantLocator: `.spec.components.consumer.features.modfeat.uses.bogus-module-socket`,
 			wantSocket:  "bogus-module-socket",
+			wantEntity:  "Aggregate cov-mod-contrib-component",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,7 +129,8 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 			var found bool
 			for _, v := range multi.Violations {
 				named := strings.Contains(v.Field, tc.wantSocket) || strings.Contains(v.Message, tc.wantSocket)
-				if strings.Contains(v.Field, tc.wantLocator) && named {
+				inDocument := tc.wantEntity == "" || v.Entity == tc.wantEntity
+				if strings.Contains(v.Field, tc.wantLocator) && named && inDocument {
 					found = true
 				}
 			}

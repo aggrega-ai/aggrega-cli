@@ -2528,6 +2528,44 @@ func (i ReleaseEdgeConfigurationInstance) Locator() string {
 	return authoredLocator(releaseEdgeConfigurationSegments(i)...)
 }
 
+// ComponentLocator returns the locator of an element written inside a component
+// instance's own block, in the document the instance was authored in: the
+// component's site by the rule [RunOnNodes] names a node by, then leaf, a dotted
+// path inside the block split back into the keys it names exactly as
+// [Subject.RaiseAt] splits one. An empty leaf names the block itself.
+//
+// It is exported for a finding raised outside a rule about what a component's
+// block declares — the conformance of a module component's values, say — so the
+// finding is positioned by the one locator assembly and names the block a rule
+// over the same node would name. It yields the empty locator where the node's own
+// block has none, which positions a finding at its file.
+func ComponentLocator(node NodeInstance, leaf string) string {
+	segments := componentInnerSegments(node)
+	if len(segments) == 0 {
+		return ""
+	}
+	if leaf != "" {
+		segments = append(segments, strings.Split(leaf, locatorSeparator)...)
+	}
+	return authoredLocator(segments...)
+}
+
+// ConnectionLeafLocator returns the locator of an element written inside one of
+// a component's own connection entries, .uses.<socket>.<alias>, followed by
+// leaf, split as [ComponentLocator] splits one — the entry the rule over that
+// connection is positioned at, through the same assembly. The alias is a key the
+// author wrote: an entry carrying anything inside it is written in the long form.
+func ConnectionLeafLocator(node NodeInstance, socket, alias, leaf string) string {
+	segments := componentInnerSegments(node, authoredKeyUses, socket, alias)
+	if len(segments) == 0 {
+		return ""
+	}
+	if leaf != "" {
+		segments = append(segments, strings.Split(leaf, locatorSeparator)...)
+	}
+	return authoredLocator(segments...)
+}
+
 // SiteLocator returns the locator of an element written at site in document:
 // the site on that document's nesting axis, then keys — each one key the author
 // wrote — then leaf, a dotted path inside the element, split back into the keys

@@ -999,6 +999,23 @@ func (e *ResolverError) ToCompilerError() *cerrors.CompilerError {
 	return cerrors.Wrap(e, e.category(), source, e.Error())
 }
 
+// InAnotherDeveloperDocument reports whether the finding is a path inside a
+// developer's document other than the one named by aggregateFile — an Aggregate
+// a composition imported as a module, whose keys the locator names — rather
+// than inside aggregateFile itself, inside the operator's or a catalog author's
+// document, or inside no document it records.
+//
+// It is the question a surface placing findings inside an open document asks
+// before placing one in the Aggregate it is answering for: a finding this
+// reports true for is positioned in the module's document, and placing it in
+// the importing Aggregate would put a module's key path on whichever key of the
+// importing document happens to share its spelling. Both halves are read from
+// the finding: the document it is a path inside from File, and that the
+// document is a developer's from the authoring surface it is filed under.
+func (e *ResolverError) InAnotherDeveloperDocument(aggregateFile string) bool {
+	return e.File != "" && e.File != aggregateFile && e.category() == cerrors.DeveloperError
+}
+
 // category answers which authoring surface this finding is filed under, and
 // returns the empty Category for a finding that is filed under none.
 //

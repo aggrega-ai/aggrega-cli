@@ -97,6 +97,10 @@ type loadedModule struct {
 	document types.NormalizedAggregate
 	// parameters is the parameter context the module resolved under.
 	parameters map[string]any
+	// sourceFile is the file the loader read the module's document from, as
+	// [TopologyNode.SourceFile] carries it for the module's components, and empty
+	// where the loader named none.
+	sourceFile string
 }
 
 // ModuleDeclaration is one sub-module the composition brought in: the dotted
@@ -313,6 +317,7 @@ func flattenAggregate(
 				path:       childPrefix,
 				document:   childDocument,
 				parameters: childParams,
+				sourceFile: childSourceFile,
 			})
 			childResult, err := flattenAggregate(childDocument, childPrefix, "", childSourceFile, loader, childVisited, depth+1, childParams)
 			if err != nil {

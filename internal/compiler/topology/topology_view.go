@@ -708,15 +708,24 @@ func (v *topologyView) Nodes() []constraint.NodeInstance {
 		if node == nil {
 			continue
 		}
-		out = append(out, constraint.NodeInstance{
-			ID:                   id,
-			SourceFile:           node.SourceFile,
-			AuthoredName:         constraint.AuthoredComponentName(id),
-			SubsystemPath:        node.SubsystemPath,
-			SynthesizedSubsystem: node.SynthesizedSubsystem,
-		})
+		out = append(out, nodeInstanceOf(id, node))
 	}
 	return out
+}
+
+// nodeInstanceOf is a flattened node as the framework enumerates it: the
+// identifier, and the provenance a locator is built from. It is the one reading
+// of that provenance at this stage, so a node a rule is invoked for and a node a
+// finding raised outside a rule is positioned at cannot come to be located
+// differently.
+func nodeInstanceOf(id string, node *TopologyNode) constraint.NodeInstance {
+	return constraint.NodeInstance{
+		ID:                   id,
+		SourceFile:           node.SourceFile,
+		AuthoredName:         constraint.AuthoredComponentName(id),
+		SubsystemPath:        node.SubsystemPath,
+		SynthesizedSubsystem: node.SynthesizedSubsystem,
+	}
 }
 
 // Edges returns every connection a node's own dependency block wrote, for every

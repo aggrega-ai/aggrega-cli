@@ -1080,12 +1080,26 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		releasePath = cfg.ResolveResult.ReleasePath
 	}
 	releaseEntries := releaseComponentEntriesByNode(release)
+	moduleEntities := moduleDocumentEntities(flat)
 
 	var errs []*resolver.ResolverError
 	for nodeID, node := range flat.Nodes.All() {
 		if node.SourceAggregate == "" {
 			continue // root / subsystem components are guarded during resolution
 		}
+		// What the module's component declares — its attachments, its values, the
+		// values on its own connections — is written in the module's own document,
+		// so a finding about it names that document, carries its file, and is
+		// positioned at the key it holds through the locator assembly, under the
+		// local name and the module-local subsystem path the node carries. Naming
+		// the importing Aggregate would send the reader to a document that holds
+		// none of these keys.
+		moduleEntity, known := moduleEntities[node.SourceAggregate]
+		if !known {
+			moduleEntity = entity
+		}
+		moduleFile := node.SourceFile
+		moduleNode := nodeInstanceOf(nodeID, node)
 
 		// A sub-aggregate node whose type resolved as a catalog reference but is
 		// absent from the guard's view is the same loud halt the Step-1 guards
@@ -1121,9 +1135,10 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// the node, so they are re-projected into the authored map shape the
 		// validator reads.
 		if shape, ok := resolver.CompileAttachmentSlotShape(catComp); ok {
-			errs = append(errs, shape.Validate(
+			errs = append(errs, shape.ValidateAt(
 				authoredAttachments(flat.FeatureAttachments[nodeID]),
-				entity, fmt.Sprintf(".%s", nodeID))...)
+				moduleEntity, moduleFile,
+				func(path string) string { return constraint.ComponentLocator(moduleNode, path) })...)
 		}
 
 		// Attachment socket names on the same authored block. An attachment may
@@ -1143,11 +1158,23 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				if att.Feature.Uses.Len() == 0 {
 					continue
 				}
-				instance := att.InstanceName
+				// An attachment lowered from one of the component's connections was
+				// written on that connection's entry, under the slot it fills, so it
+				// is positioned there and named by the slot rather than by the
+				// composed name it carries once lowered.
+				site := constraint.AttachmentSiteInBlock(constraint.AuthoringDocumentAggregate,
+					constraint.ComponentSite(moduleNode.AuthoredName, moduleNode.SubsystemPath, moduleNode.SynthesizedSubsystem),
+					att.InstanceName, moduleFile)
+				if conn := att.Connection; conn != nil {
+					site = constraint.ConnectionAttachmentSiteInAggregate(moduleNode, conn.Socket, conn.Alias, conn.Attachment)
+				}
 				errs = append(errs, resolver.ValidateFeatureUsesAgainstSchema(
-					entity, resolver.FeatureUsesSite{Locate: func(socket string) string {
-						return fmt.Sprintf(".%s.features[%q].uses[%q]", nodeID, instance, socket)
-					}},
+					moduleEntity, resolver.FeatureUsesSite{
+						File:       moduleFile,
+						Locate:     site.SocketLocator,
+						Component:  moduleNode.AuthoredName,
+						Attachment: site.Name,
+					},
 					att.Feature.Uses, att.Feature.Type, catalog)...)
 			}
 		}
@@ -1160,9 +1187,10 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			// Component values — validated against the sub-aggregate's own resolved
 			// parameter context (carried on the node), so parameter-dependent
 			// predicates evaluate correctly rather than predicate-inert.
-			errs = append(errs, resolver.ValidatePillarConformance(
-				compiled, "values", node.Values, node.ResolvedParameters, entity,
-				fmt.Sprintf(".%s", nodeID), "the Component schema")...)
+			errs = append(errs, resolver.ValidatePillarConformanceAt(
+				compiled, "values", node.Values, node.ResolvedParameters, moduleEntity, moduleFile, "",
+				func(path string) string { return constraint.ComponentLocator(moduleNode, path) },
+				"the Component schema")...)
 
 			// Component infra — the operator-side pillar, over the other document.
 			// Its scope is the components the Release PLACED, which is the same
@@ -1206,9 +1234,12 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				continue
 			}
 			for _, ev := range resolver.EdgeValuesOf(sv) {
-				errs = append(errs, resolver.ValidatePillarConformance(
-					compiled, "values", ev.Values, node.ResolvedParameters, entity,
-					fmt.Sprintf(".%s.uses[%q][%q]", nodeID, socket, ev.Alias), "the socket valueSchema")...)
+				errs = append(errs, resolver.ValidatePillarConformanceAt(
+					compiled, "values", ev.Values, node.ResolvedParameters, moduleEntity, moduleFile, "",
+					func(path string) string {
+						return constraint.ConnectionLeafLocator(moduleNode, socket, ev.Alias, path)
+					},
+					"the socket valueSchema")...)
 			}
 		}
 	}
@@ -1234,6 +1265,20 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	errs = append(errs, guardSubAggregateReleaseEdges(flat, release, releasePath, catalog)...)
 	errs = append(errs, guardSubAggregateReleaseAttachmentSockets(flat, release, releasePath, catalog)...)
 	return errs
+}
+
+// moduleDocumentEntities names, by the prefix each module's components carry, the
+// module's own document as a finding about a key inside it names that document.
+// It is read by key only, so nothing any output carries depends on an order over
+// it.
+func moduleDocumentEntities(flat *flattenResult) map[string]string {
+	out := map[string]string{}
+	for _, module := range flat.ModuleDocuments {
+		if agg := module.document.Aggregate(); agg != nil {
+			out[module.path] = resolver.ModuleDocumentEntity(agg)
+		}
+	}
+	return out
 }
 
 // releaseComponentEntriesByNode indexes the component entries a Release writes by
@@ -1378,7 +1423,7 @@ func guardModuleDocuments(
 	var errs []*resolver.ResolverError
 	reported := map[string]bool{}
 	for _, module := range flat.ModuleDocuments {
-		found, err := resolver.RunModuleGuards(cancelled, module.document, catalog, module.parameters)
+		found, err := resolver.RunModuleGuards(cancelled, module.document, module.sourceFile, catalog, module.parameters)
 		if err != nil {
 			return nil, err
 		}

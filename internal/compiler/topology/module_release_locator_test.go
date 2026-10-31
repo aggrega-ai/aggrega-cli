@@ -86,7 +86,7 @@ func TestModuleComponentReleaseFindingsResolveToTheAuthoredKey(t *testing.T) {
 			}
 
 			err := buildModuleCompositionAt(t, []string{"mod"},
-				map[string]string{"mods/data": moduleSpec}, &release, "release.yaml")
+				map[string]string{"mods/data": moduleSpec}, &release, "release.yaml", "")
 			if !errors.Is(err, resolver.ErrUnknownUsesSocket()) {
 				t.Fatalf("want the socket rule to halt; got %v", err)
 			}

@@ -45,6 +45,12 @@ import (
 // parameters is the parameter context the module resolved under, which is what
 // its declarations were rendered with.
 //
+// sourceFile is the file the module's document was read from, in the form the
+// composition names it by, and empty where the loader named none. Every finding
+// positioned at a key carries it, so a surface placing findings inside an open
+// document places these inside the module's document rather than inside the
+// Aggregate that imports it, whose keys the locator does not name.
+//
 // Order: the contract failures, then rule by rule in the order [RunGuards] asks
 // them, and within a rule in the order its traversal invoked it — so identical
 // input yields a byte-identical sequence. Returns no findings for an absent
@@ -52,6 +58,7 @@ import (
 func RunModuleGuards(
 	cancelled constraint.Cancellation,
 	na types.NormalizedAggregate,
+	sourceFile string,
 	catalog CatalogLookup,
 	parameters map[string]any,
 ) ([]*ResolverError, error) {
@@ -60,11 +67,29 @@ func RunModuleGuards(
 		return nil, nil
 	}
 	view := newNormalizedView(na, nil, catalog, parameters)
-	errs, err := runModuleRules(cancelled, view, fmt.Sprintf("Aggregate %s", agg.Metadata.Name))
+	errs, err := runModuleRules(cancelled, view, ModuleDocumentEntity(agg))
 	if err != nil {
 		return nil, err
 	}
+	// The rules' subjects are built over the module's document alone, which
+	// records no file, so the file is the one thing added here — and only beside a
+	// locator, because a file with no path inside it would place a finding where no
+	// rule positioned it.
+	for _, f := range errs {
+		if f.Field != "" && f.File == "" {
+			f.File = sourceFile
+		}
+	}
 	return append(contractCompileFailures(view), errs...), nil
+}
+
+// ModuleDocumentEntity names a sub-module's own document as a finding about a key
+// inside it names that document. It is the one spelling, shared by the rules
+// [RunModuleGuards] asks and by the checks the composition asks of a module's
+// components once flattened, so a reader comparing two findings about one module
+// reads the same document named the same way.
+func ModuleDocumentEntity(agg *types.Aggregate) string {
+	return fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 }
 
 // runModuleRules asks the rules [RunModuleGuards] states, over one module's

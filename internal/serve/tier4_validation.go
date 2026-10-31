@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -60,12 +61,13 @@ import (
 // findings positioned in the Release — a finding about what the Release wrote,
 // whether the composition or the graph raised it, lands on the Release, on the
 // key that wrote it, and on the Aggregate not at all (see
-// releaseDocumentDiagnostics and writtenInRelease). When the request file is any
-// other document that is not the named Release's Aggregate (e.g., the
-// Manifest or a library), the Tier-4 pipeline is not relevant to the requested
-// file and the function returns an empty slice once the closure has resolved —
-// the caller's existing Tier-1 diagnostics for the file already populated stay
-// in place.
+// ownDocumentDiagnostics and filedIn). A request on another Aggregate document is
+// answered the same way, with the findings filed under it — a module the named
+// Release's Aggregate imports carries what the composition found in what it
+// declares. When the request file is any other document (e.g., the Manifest or
+// a library), the Tier-4 pipeline is not relevant to the requested file and the
+// function returns an empty slice once the closure has resolved — the caller's
+// existing Tier-1 diagnostics for the file already populated stay in place.
 //
 // A closure that does not resolve is reported at the head of the named Release's
 // own document and of every document the daemon reads as one of Aggrega's own —
@@ -224,7 +226,17 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// and withholds them as an empty result, which reads as a file with nothing
 	// wrong rather than as a comparison that failed.
 	onAggregate := relFile == relAggPath
-	if !onAggregate && !onReleaseDocument {
+	// A third document carries findings of its own: an Aggregate the named
+	// Release's Aggregate imports as a module. A finding about what a module
+	// declares is a path inside the module's document, so it is answered when
+	// that document is the one validated, placed on the key that wrote it — the
+	// answer the named Release's own document gets for what it wrote. Whether the
+	// buffer IS such a module is known only once the composition has read its
+	// modules, so the pipeline runs for any Aggregate buffer, and the answer is
+	// the findings filed under it, which for an Aggregate the composition never
+	// imported is none.
+	onModuleDocument := !onAggregate && !onReleaseDocument && isAggregateBuffer(file, releasePath, doc)
+	if !onAggregate && !onReleaseDocument && !onModuleDocument {
 		return nil
 	}
 
@@ -289,10 +301,10 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		CompilerVersion: s.compilerVersion,
 	})
 
-	// The request is on the Release's own document: what is positioned there,
-	// and nothing else.
+	// The request is on the Release's own document, or on a module's: what is
+	// positioned there, and nothing else.
 	if !onAggregate {
-		return s.releaseDocumentDiagnostics(vr.RunErr, vr.Tier4, relFile, content, doc)
+		return s.ownDocumentDiagnostics(vr.RunErr, vr.Tier4, relFile, content, doc)
 	}
 
 	// Closure-scoped extends — early-warning extends gate. A dangling parent (or
@@ -366,7 +378,10 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		// A finding about what the Release wrote is the Release document's to
 		// carry, and it is published there; the full slice still answers the
 		// phase-error question below, because it was published, only elsewhere.
-		if writtenInRelease(ve.File, relRelease) {
+		// A finding about what a module declares is the module document's, for
+		// the same reason: its locator is a path inside that document, and placed
+		// here it would land on whichever key of this one shares its spelling.
+		if filedIn(ve.File, relRelease) || ve.InAnotherDeveloperDocument(relAggPath) {
 			continue
 		}
 		diags = append(diags, resolverFindingToDiagnostic(ve, editorSeverityError, doc, idx))
@@ -576,19 +591,23 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 	return out
 }
 
-// releaseDocumentDiagnostics answers a validation of the named Release's own
-// document: the findings the validation positioned in it, each placed on the
+// ownDocumentDiagnostics answers a validation of a document other than the named
+// Release's Aggregate — the named Release's own, or a module the Aggregate
+// imports: the findings the validation positioned in it, each placed on the
 // authored key its locator names, and nothing else.
 //
 // A rule over what the Release wrote — an entry it writes on a connection, an
 // attachment it fills there, a connection it draws — names the Release's file,
 // so the Release document is the one an author opens to act on it, and it is
-// published there. That holds for a finding the composition raised before any
-// graph existed as for one the graph's rules raised, and both are read through
-// [writtenInRelease], the one statement of which document a finding belongs to.
-// Every other finding this validation produces stays on the Aggregate's answer,
-// a finding naming no file among them: the filters below keep only what names
-// this file and adopt nothing, so no finding is shown on both documents.
+// published there. A rule over what a module declares — a component's
+// attachments, its values, the values on its own connections — names the
+// module's file, for the same reason, and is published on the module. That
+// holds for a finding the composition raised before any graph existed as for
+// one the graph's rules raised, and both are read through [filedIn], the one
+// statement of which document a finding belongs to. Every other finding this
+// validation produces stays on the Aggregate's answer, a finding naming no file
+// among them: the filters below keep only what names this file and adopt
+// nothing, so no finding is shown on two documents.
 //
 // The composition's findings lead, in the order they were raised, followed by
 // the graph's: the order the two classes were decided in, which is the order the
@@ -596,14 +615,14 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 //
 // A cancelled run publishes nothing, exactly as on the Aggregate. What stopped a
 // run before any of these findings could be raised — a gate over the
-// dependencies, say — names no file of the Release's and is published on the
+// dependencies, say — names no file of this document's and is published on the
 // Aggregate.
 //
 // It is handed the two parts of the validation outcome it reads — the pipeline's
 // run error, which says whether the run was cancelled, and its result, which
 // holds the findings — rather than the outcome whole, so every part of that
 // outcome the daemon reads is named in the function that called the validation.
-func (s *Server) releaseDocumentDiagnostics(runErr error, tier4 *pipeline.Tier4Result, file string, content []byte, doc *yaml.Node) []Diagnostic {
+func (s *Server) ownDocumentDiagnostics(runErr error, tier4 *pipeline.Tier4Result, file string, content []byte, doc *yaml.Node) []Diagnostic {
 	if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 		return nil
 	}
@@ -612,14 +631,14 @@ func (s *Server) releaseDocumentDiagnostics(runErr error, tier4 *pipeline.Tier4R
 	}
 	var composition []*resolver.ResolverError
 	for _, ve := range tier4.ResolveDiagnostics {
-		if writtenInRelease(ve.File, file) {
+		if filedIn(ve.File, file) {
 			composition = append(composition, ve)
 		}
 	}
 	var placed []analyzer.AnalysisError
 	if tier4.Analysis != nil {
 		for _, e := range tier4.Analysis.Errors {
-			if writtenInRelease(e.OriginFile, file) {
+			if filedIn(e.OriginFile, file) {
 				placed = append(placed, e)
 			}
 		}
@@ -635,19 +654,27 @@ func (s *Server) releaseDocumentDiagnostics(runErr error, tier4 *pipeline.Tier4R
 	return append(out, analyzerErrorsToDiagnostics(placed, file, doc, idx)...)
 }
 
-// writtenInRelease reports whether a finding is about what the named Release
-// wrote: whether the file its locator is a path inside — the one its own subject
-// recorded — is that Release's document, in the workspace-relative form the
-// compilation names the Release by.
+// filedIn reports whether a finding is about what the given document wrote:
+// whether the file its locator is a path inside — the one its own subject
+// recorded — is that document, in the workspace-relative form the compilation
+// names its documents by.
 //
-// It is the one rule deciding which of the two documents a validation answers a
-// finding belongs to. A finding it answers yes for is published on the Release,
-// on the key that wrote it, and on the Aggregate not at all; every other finding
-// is the Aggregate's to carry. A finding recording no file is never the
-// Release's: that absence says nothing about which document holds the path, and
-// publishing it on the Release would assert a place no rule positioned it at.
-func writtenInRelease(file, release string) bool {
-	return file != "" && file == release
+// It is the one rule deciding which document a validation answers a finding
+// belongs to. A finding it answers yes for, for the named Release or for a module
+// the Aggregate imports, is published on that document, on the key that wrote it,
+// and on the Aggregate not at all; every other finding is the Aggregate's to
+// carry. A finding recording no file is never another document's: that absence
+// says nothing about which document holds the path, and publishing it there would
+// assert a place no rule positioned it at.
+func filedIn(file, document string) bool {
+	return file != "" && file == document
+}
+
+// isAggregateBuffer reports whether the validated buffer is an Aggregate
+// document, by the classification every validated document gets.
+func isAggregateBuffer(file, releasePath string, doc *yaml.Node) bool {
+	kind, ours := classifyBuffer(file, releasePath, doc)
+	return ours && kind == envelope.KindAggregate
 }
 
 // resolverFindingToDiagnostic maps a resolver-class finding to a
