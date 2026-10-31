@@ -3619,7 +3619,7 @@ jobs:
           # The macOS binaries as sign-macos signed them, or, while macOS
           # signing is off, as the build wrote them; the release notes say which.
           case "$MACOS_SIGNING" in
-            sign) MACOS_NOTE="the macOS files are signed with the Developer ID of Cognitio S.r.l. and notarized by Apple" ;;
+            sign) MACOS_NOTE="the macOS files are signed with the Developer ID of COGNITIO SRL and notarized by Apple" ;;
             unsigned) MACOS_NOTE="the macOS files are not signed or notarized" ;;
             *) echo "sign-and-publish: the macOS signing decision is '$MACOS_SIGNING', neither sign nor unsigned" >&2; exit 1 ;;
           esac
