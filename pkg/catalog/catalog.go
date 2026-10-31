@@ -448,6 +448,11 @@ func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, e
 // surfaced by the closure walk, with the skip replayed — or
 // present-but-schema-invalid, surfaced by closure-scoped pillar validation).
 //
+// A file too malformed for its header to unmarshal is recorded where its text
+// declares the Aggrega envelope (UnloadableDocument's criterion), and passed over
+// otherwise: YAML that declares some other apiVersion, or none, is no catalog
+// entity, and a refusal of it would explain nothing.
+//
 // The skip is per-file and post-`indexFile`: `indexFile` mutates the catalog
 // only after a successful parse, so a skipped file leaves no partial state.
 func LoadPassOneTolerant(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, []SkippedEntity, error) {
@@ -540,12 +545,11 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, named []string, tolerant b
 			}
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "read catalog file")
 		}
-		if ierr := c.indexFile(data, path); ierr != nil {
-			if tolerant {
-				skipped = append(skipped, newSkippedEntity(path, data, ierr))
-				return nil
-			}
-			return ierr
+		if !tolerant {
+			return c.indexFile(data, path)
+		}
+		if ierr := c.tolerantIndexFile(data, path); ierr != nil {
+			skipped = append(skipped, newSkippedEntity(path, data, ierr))
 		}
 		return nil
 	}); err != nil {
@@ -1096,19 +1100,19 @@ type entityHeader struct {
 
 // indexFile is the single point of dispatch over the catalog-resident
 // entity kinds — the SSOT for "what counts as a catalog entity" in this
-// package. The switch arms enumerate every catalog entity kind
+// package. The switch arms of indexKind, which it dispatches through, enumerate every catalog entity kind
 // (Component, Feature, Recipe, FeatureRecipe, Aggregate,
 // SchemaLibrary, MappingLibrary, WorkloadLibrary, ArtifactLibrary, Plugin), leaving out Manifest and
 // Release (which are deployment-side and are silently skipped — see
 // LoadAll's error model). Adding a new catalog-resident kind requires
-// extending the switch here AND adding the matching map field on Catalog.
+// extending that switch AND adding the matching map field on Catalog.
 //
 // This kind set coincides exactly with the publishable set that pkg/oci's
 // mediatype table declares. The coincidence is real but not definitional, and
-// the two must not be collapsed into one home: this switch answers which kinds
+// the two must not be collapsed into one home: that switch answers which kinds
 // a catalog holds and how each one is parsed into which map, while the
 // mediatype table answers which kinds may be published and under which
-// mediatype. Every arm below carries irreducible per-kind work — its own parse
+// mediatype. Every arm of it carries irreducible per-kind work — its own parse
 // call, its own identity claim, its own destination map and its own source map
 // — so there is no membership test here to extract in the first place. A kind
 // that is catalog-resident without being publishable is a shape the design
@@ -1120,14 +1124,46 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		// Passed over whatever the file declares, an Aggrega document included.
 		// A whole-catalog check refuses such a document itself, through
-		// UnloadableDocument, before it loads.
+		// UnloadableDocument, before it loads; a tolerant walk records it,
+		// through tolerantIndexFile.
 		return nil
 	}
+	return c.indexKind(header.Kind, data, path)
+}
+
+// tolerantIndexFile is indexFile as a tolerant walk reads a document: the same
+// dispatch, except that a document whose header does not unmarshal is answered
+// with UnloadableDocument's refusal of it rather than passed over. That refusal
+// is non-nil only for a document whose text declares the Aggrega envelope, so
+// YAML that is not an Aggrega document — a chart's template, a stray
+// configuration file — is still passed over without a word, while a malformed
+// Aggrega document is recorded and reaches the note a resolution failure
+// carries, naming the file and the parser's message.
+//
+// It is a sibling of indexFile rather than a change to it because the
+// fail-fast walk returns any error indexFile returns: refusing such a document
+// there would halt a strict load over input it passes over.
+//
+// The header UnloadableDocument decodes into is indexFile's own, so the
+// document it refuses is exactly the one indexFile passes over, and the
+// document is read a second time only on that refusal's path.
+func (c *Catalog) tolerantIndexFile(data []byte, path string) error {
+	var header entityHeader
+	if err := yaml.Unmarshal(data, &header); err != nil {
+		return UnloadableDocument(path, data, nil, &entityHeader{})
+	}
+	return c.indexKind(header.Kind, data, path)
+}
+
+// indexKind indexes the document read from path under the kind its header
+// declares — the dispatch indexFile and tolerantIndexFile share once each has
+// read that header.
+func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 	if c.entityBytes == nil {
 		c.entityBytes = make(map[string][]byte)
 	}
 
-	switch header.Kind {
+	switch kind {
 	case "Component":
 		// The indexing-walk parse + the static per-entity x-aggrega-* discouragement
 		// scan run through the shared per-entity resolve (parseComponentEntity) so the

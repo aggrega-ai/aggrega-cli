@@ -2215,10 +2215,14 @@ func (l *LazyLookup) recordParseRefusal(src string, data []byte, local bool, per
 // index a document records it exactly as the load a build annotates from does,
 // rather than in its own words for the same failure.
 //
+// The load meant is the tolerant one a build annotates from, so a document whose
+// header does not unmarshal is refused here exactly where that load records it:
+// where its text declares the Aggrega envelope, and nowhere else.
+//
 // The document is read alone, so a duplicate identity is not judged here;
 // duplicateLoadRefusal is the counterpart for two documents of one directory.
 func loadRefusal(workspaceRoot string, data []byte, path string) error {
-	return newPassOneCatalog(workspaceRoot).indexFile(data, path)
+	return newPassOneCatalog(workspaceRoot).tolerantIndexFile(data, path)
 }
 
 // duplicateLoadRefusal is the refusal the whole-catalog load records for the
