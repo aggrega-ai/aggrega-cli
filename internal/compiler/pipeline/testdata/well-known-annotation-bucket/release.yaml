@@ -8,14 +8,26 @@ spec:
   aggregate: well-known-bucket-app
   manifest: well-known-bucket-manifest
   boundaries:
-    operated-zone:
-      directory: ./dist/operated
-      annotations:
-        aggrega.ai/namespace: "from-release"
-        aggrega.ai/image-registry: "release.registry.example"
+    zone:
+      directory: ./dist/zone
       components:
-        operated: {}
-    plain-zone:
-      directory: ./dist/plain
-      components:
-        unoperated: {}
+        rsub: {}
+        rsub-operated:
+          annotations:
+            aggrega.ai/namespace: "from-release"
+        rcomp: {}
+        rcomp-operated:
+          annotations:
+            aggrega.ai/namespace: "from-release"
+        plain: {}
+      aggregates:
+        mod:
+          components:
+            msub: {}
+            msub-operated:
+              annotations:
+                aggrega.ai/namespace: "from-release"
+            mcomp: {}
+            mcomp-operated:
+              annotations:
+                aggrega.ai/namespace: "from-release"

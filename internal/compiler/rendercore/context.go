@@ -22,7 +22,7 @@ type IREdgeInfo struct {
 // NodeRenderContext provides identity metadata for manifest generation.
 type NodeRenderContext struct {
 	NodeID      string
-	Annotations map[string]string // merged release annotations
+	Annotations map[string]string // the node's platform annotations, see WellKnownAnnotationSet
 	// GuestContext is the render context a provider guest is handed on every
 	// export that carries one — the parameters, the three annotation buckets by
 	// the side that wrote each annotation, and the boundary the node renders

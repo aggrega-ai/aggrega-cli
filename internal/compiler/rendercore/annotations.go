@@ -10,7 +10,8 @@ import (
 )
 
 // Well-known provider annotation keys. Provider engines read these out of
-// NodeRenderContext.Annotations and apply them to the rendered artifacts. Which
+// NodeRenderContext.Annotations — the set [WellKnownAnnotationSet] returns — and
+// apply them to the rendered artifacts. Which
 // engines honor a given key varies by key (a key applies only where the target
 // format has a matching concept) — see each key's own documentation.
 const (
@@ -19,7 +20,7 @@ const (
 	AnnotationNamespace = "aggrega.ai/namespace"
 
 	// AnnotationServiceAccount binds the rendered pods' serviceAccountName from
-	// the operator boundary layer. It is the boundary-layer alternative to the
+	// the node's annotations. It is the annotation-layer alternative to the
 	// recipe-layer workload.serviceAccount field, and overrides that field when
 	// both are set.
 	AnnotationServiceAccount = "aggrega.ai/service-account"
@@ -50,8 +51,8 @@ const (
 // resolved by field cardinality:
 //
 //   - A scalar annotation-field overrides the workload field
-//     (AnnotationServiceAccount wins over workload.serviceAccount) — the operator
-//     boundary is last-writer over the recipe default.
+//     (AnnotationServiceAccount wins over workload.serviceAccount) — the
+//     annotation is last-writer over the recipe default.
 //   - A list annotation-field unions with the workload field
 //     (AnnotationImagePullSecret appends into workload.imagePullSecrets) —
 //     overriding a list would silently drop recipe-declared entries.
@@ -59,23 +60,21 @@ const (
 // The resolution for each field lives in exactly one render site per engine.
 
 // WellKnownAnnotationSet returns the annotation map a provider render reads the
-// well-known keys above from: the render context's release bucket — the
-// annotations the Release wrote for the node, its boundaries' cascaded down with
-// its own Release entry's layered last — flattened into a plain map.
+// well-known keys above from: the render context's platform annotations
+// ([renderctx.RenderAnnotations.PlatformAnnotations]) — what the Aggregate wrote
+// for the node, with what the Release wrote for it layered over, the Release
+// winning on a key both write — flattened into a plain map.
 //
-// The aggregate and catalog buckets reach a guest beside it, and a guest may read
-// them for anything of its own, but they never decide a well-known key. The keys
-// are the operator's boundary layer: a value written in an Aggregate or a catalog
-// entity must not override the operator's Release, and the compiler reads a
-// node's namespace from the Release alone when it places the node's connections,
-// so a render reading it from another bucket would place the node somewhere its
-// connections do not look for it.
+// The catalog bucket reaches a guest beside it, and a guest may read it for
+// anything of its own, but it never decides a well-known key. The set is the one
+// the compiler reads a node's namespace from when it places the node's
+// connections, so a render reading the keys from anywhere else would place the
+// node somewhere its connections do not look for it.
 func WellKnownAnnotationSet(a renderctx.RenderAnnotations) map[string]string {
-	out := make(map[string]string, a.Release.Len())
-	for _, k := range a.Release.Keys() {
-		if v, ok := a.Release.Get(k); ok {
-			out[k] = v
-		}
+	platform := a.PlatformAnnotations()
+	out := make(map[string]string, platform.Len())
+	for k, v := range platform.All() {
+		out[k] = v
 	}
 	return out
 }

@@ -373,11 +373,27 @@ func runNodePipelineWithInvoker(
 // the render-wide indentation width added by the provider engine. The host hands
 // it whole and the guest reads it without the host interpreting it.
 func buildNodeGuestContext(node types.IRNode, bi *resolver.BoundaryInfra, parameters map[string]any) renderctx.RenderContext {
-	return buildGuestContext(node.BoundaryPath, renderctx.RenderAnnotations{
+	return buildGuestContext(node.BoundaryPath, nodeRenderAnnotations(node), node.SyncWave, bi, parameters)
+}
+
+// nodeRenderAnnotations returns one node's three annotation buckets, partitioned
+// by authoring side exactly as the IR node carries them.
+func nodeRenderAnnotations(node types.IRNode) renderctx.RenderAnnotations {
+	return renderctx.RenderAnnotations{
 		Aggregate: node.AggregateAnnotations,
 		Release:   node.ReleaseAnnotations,
 		Catalog:   node.CatalogAnnotations,
-	}, node.SyncWave, bi, parameters)
+	}
+}
+
+// nodePlatformAnnotations returns the set one node's platform annotations are
+// read from — its namespace, its image registry, every aggrega.ai/ key a
+// provider applies — layered by [renderctx.RenderAnnotations.PlatformAnnotations]
+// from the same buckets the node's guest context carries. Every host reader of a
+// node's platform annotations reads this set, so the placement the host decides
+// for a node and the placement its provider renders it into come from one set.
+func nodePlatformAnnotations(node types.IRNode) types.OrderedMap[string] {
+	return nodeRenderAnnotations(node).PlatformAnnotations()
 }
 
 // buildGuestContext is the one constructor of the render context a guest

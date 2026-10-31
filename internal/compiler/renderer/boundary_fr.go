@@ -1266,12 +1266,13 @@ func EnrichedEdgeViewFromIREdge(edge types.IREdge, allProvides NodeProvides) typ
 // and the connections made to a node, for the connecting end (AssembleInboundEdges).
 //
 // The namespace is the endpoint's OWN annotation — the set its own render is handed
-// (IRNode.ReleaseAnnotations: its boundaries' annotations cascaded down, with its
-// own Release entry's annotations layered on last) — and never its boundary's set
-// alone. A component whose Release entry sets or clears aggrega.ai/namespace renders
-// into that namespace, so a value read from the boundary would name a namespace the
-// endpoint does not run in, and the provider's network placement, which reads the
-// node's own set, would disagree with whatever this value was used to decide.
+// (nodePlatformAnnotations: what the Aggregate wrote for it, with its boundaries'
+// annotations cascaded down and its own Release entry's layered over) — and never
+// its boundary's set alone. A component whose Aggregate or Release entry sets or
+// clears aggrega.ai/namespace renders into that namespace, so a value read from the
+// boundary would name a namespace the endpoint does not run in, and the provider's
+// network placement, which reads the node's own set, would disagree with whatever
+// this value was used to decide.
 func edgeEndpointNetworkInputs(nodeID string, graph *types.IRGraph) (boundaryPath, namespace string) {
 	if graph == nil {
 		return "", ""
@@ -1280,7 +1281,8 @@ func edgeEndpointNetworkInputs(nodeID string, graph *types.IRGraph) (boundaryPat
 	if !ok {
 		return "", ""
 	}
-	namespace, _ = n.ReleaseAnnotations.Get(AnnotationNamespace)
+	platform := nodePlatformAnnotations(n)
+	namespace, _ = platform.Get(AnnotationNamespace)
 	return n.BoundaryPath, namespace
 }
 

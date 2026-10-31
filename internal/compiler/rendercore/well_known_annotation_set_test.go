@@ -21,12 +21,19 @@ func bucketOf(pairs ...string) types.OrderedMap[string] {
 	return m
 }
 
-// TestWellKnownAnnotationSetReadsTheReleaseBucketAlone pins which bucket a
+// TestWellKnownAnnotationSetLayersTheReleaseOverTheAggregate pins which buckets a
 // provider render reads the well-known keys from, over every way the three
-// buckets can carry them. Each row names its buckets and the map the render must
-// read; a row where another bucket carries a key the Release also writes, or one
-// the Release does not write, is what proves that bucket decides nothing.
-func TestWellKnownAnnotationSetReadsTheReleaseBucketAlone(t *testing.T) {
+// buckets can carry them: the Aggregate's values, with the Release's written over
+// them, and never the catalog's. Each row names its buckets and the map the render
+// must read; a row where the Release writes a key the Aggregate also writes is
+// what proves the Release wins, and a row where only the catalog writes a key is
+// what proves the catalog decides nothing.
+//
+// 🔴 PLANTED DEFECT: in RenderAnnotations.PlatformAnnotations
+// (internal/compiler/renderctx/renderctx.go) drop the loop over the aggregate
+// bucket: the "only the Aggregate" and "per key" rows fail. Swap the two loops:
+// the "both write" row renders the Aggregate's values and fails.
+func TestWellKnownAnnotationSetLayersTheReleaseOverTheAggregate(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -44,6 +51,14 @@ func TestWellKnownAnnotationSetReadsTheReleaseBucketAlone(t *testing.T) {
 			want: map[string]string{AnnotationNamespace: "from-release", AnnotationImageRegistry: "release.registry.example"},
 		},
 		{
+			name: "the Release writes one key and the Aggregate both: per key, the Release's where it writes",
+			buckets: renderctx.RenderAnnotations{
+				Aggregate: bucketOf(AnnotationNamespace, "from-aggregate", AnnotationImageRegistry, "aggregate.registry.example"),
+				Release:   bucketOf(AnnotationNamespace, "from-release"),
+			},
+			want: map[string]string{AnnotationNamespace: "from-release", AnnotationImageRegistry: "aggregate.registry.example"},
+		},
+		{
 			name: "the catalog and the Release write the key: the Release's value",
 			buckets: renderctx.RenderAnnotations{
 				Release: bucketOf(AnnotationNamespace, "from-release"),
@@ -52,12 +67,12 @@ func TestWellKnownAnnotationSetReadsTheReleaseBucketAlone(t *testing.T) {
 			want: map[string]string{AnnotationNamespace: "from-release"},
 		},
 		{
-			name: "only the Aggregate and the catalog write the keys: nothing",
+			name: "only the Aggregate and the catalog write the keys: the Aggregate's, never the catalog's",
 			buckets: renderctx.RenderAnnotations{
 				Aggregate: bucketOf(AnnotationNamespace, "from-aggregate"),
 				Catalog:   bucketOf(AnnotationImageRegistry, "catalog.registry.example"),
 			},
-			want: map[string]string{},
+			want: map[string]string{AnnotationNamespace: "from-aggregate"},
 		},
 		{
 			name: "the Release writes keys of its own beside the well-known one: all of them",

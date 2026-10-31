@@ -2263,7 +2263,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// The node's declared input kinds are settled now, and the resolved
-		// provider and the Release's authored annotations were already in hand —
+		// provider and the node's authored annotations were already in hand —
 		// so this is the one point that holds every fact the advisory needs. It
 		// reports the platform annotations this node carries that its target's own
 		// support claim covers for none of those kinds: authored directives that
@@ -2278,7 +2278,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// the ordinary case, which reads exactly as it always has.
 		warnUnhonorableAnnotations(nodeID, providerRef, providerName,
 			declaredNodeInputKinds(hasSource, hasWorkload, hasArtifacts),
-			node.ReleaseAnnotations, input.CatalogLookup.ProviderPlugin,
+			nodePlatformAnnotations(node), input.CatalogLookup.ProviderPlugin,
 			nodeCtx.UnsupportedFieldSink)
 
 		// The same point holds every fact the sensitivity advisory needs, which is
@@ -3737,7 +3737,7 @@ func buildNodeRenderContext(
 	bi, parameters := nodeBoundaryInputs(input, nodeID)
 	nrc := NodeRenderContext{
 		NodeID:       nodeID,
-		Annotations:  flattenOrderedStringMap(node.ReleaseAnnotations),
+		Annotations:  flattenOrderedStringMap(nodePlatformAnnotations(node)),
 		GuestContext: buildNodeGuestContext(node, bi, parameters),
 		BoundaryPath: node.BoundaryPath,
 		SyncWave:     node.SyncWave,

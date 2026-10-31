@@ -1,0 +1,36 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: annotated-module
+  version: "1.0.0"
+spec:
+  subsystems:
+    declaring:
+      annotations:
+        aggrega.ai/namespace: "from-module-subsystem"
+        aggrega.ai/image-registry: "module-subsystem.registry.example"
+      components:
+        msub:
+          type: core/worker
+          values:
+            image: "corp/msub:v1"
+        msub-operated:
+          type: core/worker
+          values:
+            image: "corp/msub-operated:v1"
+    instances:
+      components:
+        mcomp:
+          type: core/worker
+          annotations:
+            aggrega.ai/namespace: "from-module-component"
+            aggrega.ai/image-registry: "module-component.registry.example"
+          values:
+            image: "corp/mcomp:v1"
+        mcomp-operated:
+          type: core/worker
+          annotations:
+            aggrega.ai/namespace: "from-module-component"
+            aggrega.ai/image-registry: "module-component.registry.example"
+          values:
+            image: "corp/mcomp-operated:v1"

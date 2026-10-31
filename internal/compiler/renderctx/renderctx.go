@@ -18,9 +18,10 @@ import (
 // same IR node, so the two sockets see the same values for the same node.
 // A boundary-scope FeatureRecipe, which has no node of its own, is handed
 // one context on both sockets too: the boundary's, whose release bucket is
-// the boundary's own annotation set, so a guest reading the well-known
-// annotations from that bucket renders it by the boundary rather than by
-// whichever component's turn dispatched it. The assembly export, which
+// the boundary's own annotation set and whose aggregate bucket is empty, so a
+// guest reading the platform annotations ([RenderAnnotations.PlatformAnnotations])
+// renders it by the boundary rather than by whichever component's turn
+// dispatched it. The assembly export, which
 // merges several nodes, carries only the indentation width: each
 // contributor's annotations ride its own entry.
 //
@@ -53,6 +54,39 @@ type RenderAnnotations struct {
 	Aggregate types.OrderedMap[string] `json:"aggregate,omitempty,omitzero"`
 	Release   types.OrderedMap[string] `json:"release,omitempty,omitzero"`
 	Catalog   types.OrderedMap[string] `json:"catalog,omitempty,omitzero"`
+}
+
+// PlatformAnnotations returns the one annotation set the platform annotations
+// of a render are read from — the namespace, the image registry and every other
+// aggrega.ai/ key a provider applies or a placement decision reads: the aggregate
+// bucket with the release bucket written over it, so a key both of them carry
+// takes the Release's value and a key only one of them carries takes that one's.
+// The aggregate bucket already layers the authoring side within itself — a
+// subsystem's annotations beneath a nested subsystem's, beneath the component
+// instance's own, each read from the document declaring the component — so this
+// is the last layer, and the Release is the last writer.
+//
+// The catalog bucket takes no part: a catalog entity's annotations describe the
+// entity, and they never decide where one of its instances is placed.
+//
+// Keys come in author order, the aggregate bucket's first and then the keys only
+// the Release writes, so a reader walking the set in order reads the same
+// sequence for the same input. Where the aggregate bucket is empty the result
+// holds exactly the release bucket's keys in its order.
+//
+// This is the one home of the layering: the host reads it for the placement it
+// decides itself and for what it hands a provider per node, and a provider guest
+// reads it for the keys it applies, so the two can never read a node's namespace
+// from different sets.
+func (a RenderAnnotations) PlatformAnnotations() types.OrderedMap[string] {
+	var out types.OrderedMap[string]
+	for k, v := range a.Aggregate.All() {
+		out.Set(k, v)
+	}
+	for k, v := range a.Release.All() {
+		out.Set(k, v)
+	}
+	return out
 }
 
 // BoundaryContext is the per-render boundary metadata a guest receives:

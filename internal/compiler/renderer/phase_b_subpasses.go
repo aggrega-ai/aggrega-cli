@@ -587,13 +587,13 @@ func phaseB6(
 	// The platform annotations authored for the scope every component-scope
 	// attachment below renders into. An attachment's output lands in the host
 	// node's boundary directory, so the set that reaches it is the host node's own
-	// merged set — read here from the ordered IR node rather than from the render
+	// platform set — read here from the ordered IR node rather than from the render
 	// context's flattened copy, so the advisory stream each render raises is
 	// byte-stable across runs of identical input.
 	var nodeAnnotations types.OrderedMap[string]
 	if graph != nil {
 		if hostNode, ok := graph.Spec.Nodes.Get(nodeID); ok {
-			nodeAnnotations = hostNode.ReleaseAnnotations
+			nodeAnnotations = nodePlatformAnnotations(hostNode)
 		}
 	}
 

@@ -4,18 +4,40 @@ metadata:
   name: well-known-bucket-app
   version: "1.0.0"
 spec:
-  components:
-    operated:
-      type: core/worker
+  aggregates:
+    mod:
+      type: annotated-module
+  subsystems:
+    declaring:
       annotations:
-        aggrega.ai/namespace: "from-aggregate"
-        aggrega.ai/image-registry: "aggregate.registry.example"
-      values:
-        image: "corp/operated:v1"
-    unoperated:
-      type: core/worker
-      annotations:
-        aggrega.ai/namespace: "from-aggregate"
-        aggrega.ai/image-registry: "aggregate.registry.example"
-      values:
-        image: "corp/unoperated:v1"
+        aggrega.ai/namespace: "from-root-subsystem"
+        aggrega.ai/image-registry: "root-subsystem.registry.example"
+      components:
+        rsub:
+          type: core/worker
+          values:
+            image: "corp/rsub:v1"
+        rsub-operated:
+          type: core/worker
+          values:
+            image: "corp/rsub-operated:v1"
+    instances:
+      components:
+        rcomp:
+          type: core/worker
+          annotations:
+            aggrega.ai/namespace: "from-root-component"
+            aggrega.ai/image-registry: "root-component.registry.example"
+          values:
+            image: "corp/rcomp:v1"
+        rcomp-operated:
+          type: core/worker
+          annotations:
+            aggrega.ai/namespace: "from-root-component"
+            aggrega.ai/image-registry: "root-component.registry.example"
+          values:
+            image: "corp/rcomp-operated:v1"
+        plain:
+          type: core/worker
+          values:
+            image: "corp/plain:v1"
