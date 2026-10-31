@@ -1232,6 +1232,57 @@ var AttachmentInjectMappingCoversEveryAuthoredMechanism = constraint.Check[
 	},
 }
 
+// AttachmentInjectMappingWritesOnlyDeliveredKeys reports each top-level key one
+// attachment's rendered injectMapping output wrote deliveries under that no
+// delivery mechanism of the host reads.
+//
+// The merge into the host's pipe applies env, file and arg, and every other
+// top-level key as a custom mechanism under its own name. It rebuilds the all view
+// from those afterwards rather than merging it, so deliveries an output writes
+// there reach nothing while the output still parses. The build halts rather than
+// rendering a consumer that silently lacks them, and the author resolves it by
+// moving the deliveries under a mechanism that delivers them, which is what the
+// detail names.
+//
+// It is invoked once per attachment and reads one fact, the keys that
+// attachment's output wrote and the merge did not apply. The attachment is the
+// positioned side for the reason the mechanism pairing's rule gives: the mapping
+// is authored in a FeatureRecipe the Aggregate does not contain, and the
+// attachment's entry is the position in the author's own file that binds it. The
+// FeatureRecipe is captioned in the detail, since it is the document the remedy is
+// applied to and the locator cannot reach it.
+//
+// Each key is its own objection. The node and the attachment are not in the
+// detail, because the locator carries both.
+var AttachmentInjectMappingWritesOnlyDeliveredKeys = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrInjectMappingOutputKeyNotDelivered(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		var out []constraint.Objection
+		for _, written := range v.AttachmentInjectMappingUndeliveredKeys(
+			s.NodeID(), s.AttachmentName(),
+		) {
+			out = append(out, s.RaiseWith(
+				ErrInjectMappingOutputKeyNotDelivered(),
+				constraint.Uncaptioned(written.Key),
+				constraint.Captioned("recipe", written.Recipe),
+				constraint.Captioned("an output may carry", injectMappingDeliveredKeysPhrase),
+			))
+		}
+		return out
+	},
+}
+
+// injectMappingDeliveredKeysPhrase names, in the author's terms, the top-level
+// keys the merge into the host's pipe applies.
+const injectMappingDeliveredKeysPhrase = "env, file, arg, or a custom mechanism the host's Recipe reads under its own name"
+
 // ProvidesTemplateSelfContained reports each provides entry whose template
 // reaches outside the self-contained data a provides template is evaluated
 // against.

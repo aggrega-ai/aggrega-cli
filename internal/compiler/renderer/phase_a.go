@@ -90,6 +90,16 @@ type InjectMappingDelivery struct {
 	// makes no claim about the component's declarations to read against.
 	Mechanisms []constraint.InjectMappingMechanism
 
+	// Undelivered names the top-level keys this mapping's rendered output wrote
+	// deliveries under that the merge does not apply, each beside the
+	// FeatureRecipe the mapping was read from.
+	//
+	// It travels with the mechanisms for the reason they do: both are read off
+	// the one rendered output, and the merged pipe cannot answer either. The phase
+	// decides nothing about it; the rule declared over the recorded keys refuses
+	// them.
+	Undelivered []constraint.InjectMappingUndeliveredKey
+
 	// Deliveries are the deliveries this mapping made on the host node's pipe,
 	// each attributed to the attachment and marked as made through its mapping,
 	// in the order the merge applied them: the three named mechanisms and then
@@ -145,6 +155,11 @@ type InjectMappingDelivery struct {
 // consumer would otherwise render as though the attachment delivered nothing at
 // all. An output that is empty, or parses as a dictionary delivering nothing,
 // delivers nothing and is not a failure.
+//
+// An output that parses and writes deliveries under a key the merge does not
+// apply — the all view, which is rebuilt from the mechanisms rather than merged —
+// is reported on its entry rather than halted here, for the reason the pairing
+// below is: the rule declared over the recorded keys is what refuses it.
 //
 // It returns one InjectMappingDelivery per attachment whose mapping produced an
 // overlay, in the order the attachments were resolved. That report is what lets a
@@ -279,7 +294,8 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 				Keys:         overlayDeliveryKeys(overlay),
 				Mechanisms: authoredMechanismsMapped(
 					authored, mapped, ref.FeatureRecipe.Metadata.Name),
-				Deliveries: overlayDeliveries(overlay, ref.InstanceName),
+				Undelivered: undeliveredInjectMappingKeys(overlay, ref.FeatureRecipe.Metadata.Name),
+				Deliveries:  overlayDeliveries(overlay, ref.InstanceName),
 			})
 		}
 	}

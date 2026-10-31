@@ -469,6 +469,20 @@ var records = []recordDecl{
 		},
 	},
 	{
+		Name: "InjectMappingUndeliveredKey",
+		Doc: "InjectMappingUndeliveredKey is one top-level key an attachment's " +
+			"rendered injectMapping output writes deliveries under that no " +
+			"delivery mechanism of the host reads, beside the FeatureRecipe " +
+			"whose mapping was evaluated.\n\nThe FeatureRecipe travels with " +
+			"the key because the mapping is authored there rather than on the " +
+			"attachment that binds it, so a reader holding only the attachment " +
+			"could not name the document the key has to be moved in.",
+		Fields: []recordField{
+			{Name: "Key", Type: "string", Doc: "Key is the top-level key the rendered output wrote, as the output spelled it."},
+			{Name: "Recipe", Type: "string", Doc: "Recipe is the FeatureRecipe whose injectMapping was evaluated for the attachment, which is the document the key is moved in."},
+		},
+	},
+	{
 		Name: "ContainerEnvironmentNames",
 		Doc: "ContainerEnvironmentNames is what one container of a parsed workload " +
 			"names in its environment: which container it is, the names of its plain " +
@@ -6196,6 +6210,33 @@ var facts = []factDecl{
 			"all, so it makes no claim about the component's declarations to " +
 			"read against. It is empty for a component that declares no " +
 			"injection block of its own, which is the ordinary answer.",
+	},
+	{
+		Name:        "attachment-inject-mapping-undelivered-keys",
+		Stage:       "hydrated",
+		SourceField: "types.FeatureRecipeSpec.InjectMapping",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "[]InjectMappingUndeliveredKey",
+		Doc: "AttachmentInjectMappingUndeliveredKeys are the top-level keys " +
+			"this attachment's rendered injectMapping output writes deliveries " +
+			"under that the merge into the host's pipe does not apply, each " +
+			"beside the FeatureRecipe whose mapping was evaluated, in the order " +
+			"the output wrote them.\n\nThe merge applies the three named " +
+			"mechanisms and every custom mechanism under its own name, and " +
+			"rebuilds the all view from them afterwards rather than merging it " +
+			"from an output. So a delivery written under all reaches nothing, " +
+			"and the output still parses, which is why the key has to be read " +
+			"off the rendered output: the pipe the merge produces remembers " +
+			"neither the mapping nor what it wrote there.\n\nIt is keyed per " +
+			"attachment because each attachment carries its own mapping. It is " +
+			"empty for an attachment binding a FeatureRecipe that declares no " +
+			"injectMapping, for one whose mapping rendered nothing, for a flat " +
+			"delivery dictionary, and for an output whose every key the merge " +
+			"applies, which is the ordinary answer.",
 	},
 	{
 		Name:        "artifact-template-text",

@@ -183,6 +183,36 @@ var errInjectMappingOutputNotParsable = cerrors.Register("inject-mapping-output-
 		"what failed is in the cause it wraps."),
 })
 
+// ErrInjectMappingOutputKeyNotDelivered is the halt raised when a FeatureRecipe's
+// injectMapping output parses and writes deliveries under a top-level key that no
+// delivery mechanism of the host reads.
+//
+// The merge into the host's pipe applies env, file and arg, and every other
+// top-level key as a custom mechanism under its own name, which the host's Recipe
+// reads at that name. It rebuilds the all view from those mechanisms afterwards
+// rather than merging it from an output, so a delivery written under all reaches
+// nothing. Without the halt the output would parse, the build would succeed, and
+// a credential written there would be missing from the rendered output with
+// nothing in the build saying so — or a consumer reading the key strictly would
+// stop on a missing key that names neither the attachment nor the mapping.
+//
+// It is raised by AttachmentInjectMappingWritesOnlyDeliveredKeys, once per key and
+// attachment, positioned at the attachment's entry, with the key and the
+// FeatureRecipe in the detail and the keys an output may carry beside them. It is
+// distinct from ErrInjectMappingOutputNotParsable, whose output does not parse at
+// all: the remedies differ — that one is fixed in the template's syntax, this one
+// by moving the deliveries under a mechanism that delivers them. An output whose
+// all view is written empty loses nothing and is not this condition.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrInjectMappingOutputKeyNotDelivered()).
+func ErrInjectMappingOutputKeyNotDelivered() error { return errInjectMappingOutputKeyNotDelivered }
+
+var errInjectMappingOutputKeyNotDelivered = cerrors.Register("inject-mapping-output-key-not-delivered", cerrors.Meta{
+	ShortCode: "E0368",
+	Message:   "FeatureRecipe injectMapping output writes a key no delivery mechanism of the host reads",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrProvidesContractUnfulfilled is the Loud Guardrail halt raised at render
 // when a bound realizer does not publish every provides key its abstract
 // entity declares as the output contract in schema.provides — a Recipe short

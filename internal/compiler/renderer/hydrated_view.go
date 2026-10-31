@@ -439,6 +439,26 @@ func (v *hydratedView) AttachmentInjectMappingMechanisms(
 	return p.AttachmentInjectMappingMechanisms
 }
 
+// AttachmentInjectMappingUndeliveredKeys returns the top-level keys one
+// attachment's rendered injectMapping output wrote deliveries under that the merge
+// into the host's pipe does not apply, each beside the FeatureRecipe the output was
+// read from.
+//
+// It is answered from the attachment's own owner, as the pairing above is, because
+// each attachment carries its own mapping. An attachment the render did not reach,
+// and one whose output the merge applied in full, answer empty.
+func (v *hydratedView) AttachmentInjectMappingUndeliveredKeys(
+	node string, attachment string,
+) []constraint.InjectMappingUndeliveredKey {
+	p, ok := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	return p.AttachmentInjectMappingUndeliveredKeys
+}
+
 // BoundaryAttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
 // boundary-scope attachment binds carries a source once source resolution has
 // run.

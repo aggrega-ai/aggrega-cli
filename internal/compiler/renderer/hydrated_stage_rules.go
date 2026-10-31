@@ -746,6 +746,40 @@ func runInjectMappingMechanismRule(
 		raised, "attachments whose injectMapping leaves a declared inject mechanism unmapped")
 }
 
+// runInjectMappingUndeliveredKeyRule asks the rule declared over the keys each
+// attachment's rendered injectMapping output wrote and the merge did not apply,
+// once per attachment of one node, and returns what it raised as the render's
+// halt.
+//
+// It is called from inside the node walk at the point the two readings beside it
+// are, for their reason: the keys exist only once every mapping has rendered, and
+// nothing downstream has read the rewritten pipe yet. It is asked after both of
+// them, so an input either of them refuses is still refused by it: an input
+// carrying such a fault and an undelivered key reports the fault it reported
+// before this rule existed.
+//
+// Its absent inputs leave it uninvoked, as the mechanism reading's do, for the
+// reason given there.
+func runInjectMappingUndeliveredKeyRule(
+	cancelled constraint.Cancellation,
+	view constraint.HydratedView,
+	coordinates constraint.AttachmentEnumerator,
+	node constraint.NodeInstance,
+) error {
+	if view == nil || coordinates == nil || node.ID == "" {
+		return nil
+	}
+	subject := oneNodesAttachments{node: node, attachments: coordinates}
+	raised, err := constraint.RunOnNodeAttachments(
+		cancelled, subject, subject, view, AttachmentInjectMappingWritesOnlyDeliveredKeys,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "attachments whose injectMapping writes a key no delivery mechanism reads")
+}
+
 // runNodeInjectMappingDeliveryRule asks the rule declared over one node's
 // attributed deliveries about each attachment attached to that node, once every
 // attachment's mapping has delivered, and returns what it raised as the render's

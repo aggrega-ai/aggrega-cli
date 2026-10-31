@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -66,6 +67,14 @@ func mergeAdditional(base *types.OrderedMap[types.OrderedMap[string]], overlay t
 // fills nothing falls through to the flat-map fallback (every key under .env),
 // matching the "Recipe author writes a flat env dictionary" idiom.
 //
+// A structured read that filled only the all view is returned rather than
+// passed to the fallback, so the caller can see what it wrote there:
+// [DeepMergeInjectStructured] rebuilds that view from the mechanisms rather than
+// merging it, so deliveries written under it reach nothing, and
+// [undeliveredInjectMappingKeys] reads them off the returned pipe. Such an output
+// could not have been read as a flat dictionary either — its value under all is a
+// dictionary, never one delivery — so the fallback had nothing to give it.
+//
 // It also reports the top-level mechanism names the STRUCTURED parse found, in
 // the order the output wrote them: the three typed mechanisms wherever their
 // field is non-zero, then every key the output routed into Additional. That
@@ -74,9 +83,9 @@ func mergeAdditional(base *types.OrderedMap[types.OrderedMap[string]], overlay t
 // afterwards — the merge folds the overlay into one pipe carrying no record of
 // which mapping wrote what.
 //
-// It is empty, rather than absent, for the two outputs that name no mechanism:
-// an output that parsed as a flat delivery dictionary, and one that parsed as
-// nothing at all. A flat output does not advertise structured intent — it is the
+// It is empty, rather than absent, for the outputs that name no mechanism: an
+// output that parsed as a flat delivery dictionary, one that parsed as nothing at
+// all, and one that wrote only the all view, which is no mechanism. A flat output does not advertise structured intent — it is the
 // legitimate idiom for a Recipe producing env-only deliveries — so it makes no
 // claim about which mechanisms it fills, and reading it as claiming none would
 // turn every such Recipe into a refusal.
@@ -102,7 +111,8 @@ func ParseInjectMappingOutput(output string) (*types.InjectPipe, []string, error
 	var structured types.InjectPipe
 	structuredErr := parse.TemplateOutput([]byte(output), &structured)
 	if structuredErr == nil {
-		if !structured.Env.IsZero() || !structured.File.IsZero() || !structured.Arg.IsZero() || structured.Additional.Len() > 0 {
+		if !structured.Env.IsZero() || !structured.File.IsZero() || !structured.Arg.IsZero() ||
+			structured.Additional.Len() > 0 || !structured.All.IsZero() {
 			return &structured, structuredMechanisms(&structured), nil
 		}
 	}
@@ -151,6 +161,33 @@ func structuredMechanisms(p *types.InjectPipe) []string {
 		out = append(out, mechanism)
 	}
 	return out
+}
+
+// injectAllViewKey is the top-level key the unmarshal hook routes into the
+// pipe's all view, spelled here only to name it in a report: which slot reaches
+// nothing is decided by the field below, not by this name.
+const injectAllViewKey = "all"
+
+// undeliveredInjectMappingKeys names the top-level keys one parsed injectMapping
+// overlay wrote deliveries under that [DeepMergeInjectStructured] does not apply,
+// each beside the FeatureRecipe the mapping was read from.
+//
+// The answer follows the merge rather than a list of names. The merge applies
+// the three typed mechanisms and every key the unmarshal hook routed into
+// Additional — a custom mechanism, delivered on the pipe under its own name — and
+// rebuilds the all view from those afterwards. The all view is therefore the one
+// slot an output can fill that reaches nothing, and a delivery written under it
+// is lost while the output still parses.
+//
+// It is read from the view's entries rather than from the key's presence: a view
+// written empty loses no delivery, and the typed field cannot tell an empty one
+// from an absent one, which is the same distinction [structuredMechanisms] draws
+// for the typed mechanisms.
+func undeliveredInjectMappingKeys(p *types.InjectPipe, recipe string) []constraint.InjectMappingUndeliveredKey {
+	if p == nil || p.All.IsZero() {
+		return nil
+	}
+	return []constraint.InjectMappingUndeliveredKey{{Key: injectAllViewKey, Recipe: recipe}}
 }
 
 func trimWhitespace(s string) string {

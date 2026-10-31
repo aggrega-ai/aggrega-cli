@@ -449,6 +449,25 @@ type InjectMappingMechanism struct {
 	Mapped bool
 }
 
+// InjectMappingUndeliveredKey is one top-level key an attachment's
+// rendered injectMapping output writes deliveries under that no delivery
+// mechanism of the host reads, beside the FeatureRecipe whose mapping was
+// evaluated.
+//
+// The FeatureRecipe travels with the key because the mapping is authored
+// there rather than on the attachment that binds it, so a reader holding
+// only the attachment could not name the document the key has to be moved
+// in.
+type InjectMappingUndeliveredKey struct {
+	// Key is the top-level key the rendered output wrote, as the output
+	// spelled it.
+	Key string
+
+	// Recipe is the FeatureRecipe whose injectMapping was evaluated for the
+	// attachment, which is the document the key is moved in.
+	Recipe string
+}
+
 // ContainerEnvironmentNames is what one container of a parsed workload
 // names in its environment: which container it is, the names of its plain
 // variables, and the names of its attachments entries delivered into the
@@ -5832,6 +5851,29 @@ type HydratedView interface {
 	// Keyed by (node, attachment); read from
 	// types.FeatureRecipeSpec.InjectMapping.
 	AttachmentInjectMappingMechanisms(node string, attachment string) []InjectMappingMechanism
+
+	// AttachmentInjectMappingUndeliveredKeys are the top-level keys this
+	// attachment's rendered injectMapping output writes deliveries under that
+	// the merge into the host's pipe does not apply, each beside the
+	// FeatureRecipe whose mapping was evaluated, in the order the output wrote
+	// them.
+	//
+	// The merge applies the three named mechanisms and every custom mechanism
+	// under its own name, and rebuilds the all view from them afterwards
+	// rather than merging it from an output. So a delivery written under all
+	// reaches nothing, and the output still parses, which is why the key has
+	// to be read off the rendered output: the pipe the merge produces
+	// remembers neither the mapping nor what it wrote there.
+	//
+	// It is keyed per attachment because each attachment carries its own
+	// mapping. It is empty for an attachment binding a FeatureRecipe that
+	// declares no injectMapping, for one whose mapping rendered nothing, for a
+	// flat delivery dictionary, and for an output whose every key the merge
+	// applies, which is the ordinary answer.
+	//
+	// Keyed by (node, attachment); read from
+	// types.FeatureRecipeSpec.InjectMapping.
+	AttachmentInjectMappingUndeliveredKeys(node string, attachment string) []InjectMappingUndeliveredKey
 
 	// ArtifactTemplateText is the template text standing at one of a node's
 	// artifacts, as it is before anything evaluates it.

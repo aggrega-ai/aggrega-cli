@@ -3052,6 +3052,13 @@ func (EmittedViewBase) AttachmentInjectMappingMechanisms(node string, attachment
 	panic("this view does not carry attachment-inject-mapping-mechanisms, which is read from types.FeatureRecipeSpec.InjectMapping")
 }
 
+// AttachmentInjectMappingUndeliveredKeys panics. This view does not carry
+// attachment-inject-mapping-undelivered-keys, which is read from
+// types.FeatureRecipeSpec.InjectMapping.
+func (EmittedViewBase) AttachmentInjectMappingUndeliveredKeys(node string, attachment string) []InjectMappingUndeliveredKey {
+	panic("this view does not carry attachment-inject-mapping-undelivered-keys, which is read from types.FeatureRecipeSpec.InjectMapping")
+}
+
 // ArtifactTemplateText panics. This view does not carry
 // artifact-template-text, which is read from types.RecipeSpec.Artifacts.
 func (EmittedViewBase) ArtifactTemplateText(node string, artifact string) string {
@@ -3693,6 +3700,7 @@ type HydratedStageFacts interface {
 	ParsedNodeWorkloadEnvironmentNames(node string) []ContainerEnvironmentNames
 	NodeInjectDeliveries(node string) []InjectDelivery
 	AttachmentInjectMappingMechanisms(node string, attachment string) []InjectMappingMechanism
+	AttachmentInjectMappingUndeliveredKeys(node string, attachment string) []InjectMappingUndeliveredKey
 	ArtifactTemplateText(node string, artifact string) string
 	ArtifactRecordedContentPin(node string, artifact string) (string, bool)
 	ArtifactImportedPath(node string, artifact string) string

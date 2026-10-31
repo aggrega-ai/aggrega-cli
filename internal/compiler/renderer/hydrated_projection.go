@@ -227,6 +227,16 @@ type nodeAttachmentProjection struct {
 	// mechanisms the output names exist only in the parsed overlay, which the
 	// merge folds into a pipe that remembers no mapping.
 	AttachmentInjectMappingMechanisms []constraint.InjectMappingMechanism
+
+	// AttachmentInjectMappingUndeliveredKeys are the top-level keys this
+	// attachment's rendered injectMapping output wrote deliveries under that the
+	// merge into the host's pipe does not apply, in the order the output wrote
+	// them.
+	//
+	// It is recorded where the mapping is evaluated for the reason the pairing
+	// above is: the keys exist only in the parsed overlay, and the pipe the merge
+	// produces remembers neither the mapping nor what it wrote there.
+	AttachmentInjectMappingUndeliveredKeys []constraint.InjectMappingUndeliveredKey
 }
 
 // boundaryAttachmentProjection is what the mid-render state of one boundary-scope
@@ -364,6 +374,26 @@ func (h *hydratedProjections) recordAttachmentInjectMappingMechanisms(
 	defer h.mu.Unlock()
 	p := h.nodeAttachmentEntry(nodeAttachmentKey{node: nodeID, attachment: attachment})
 	p.AttachmentInjectMappingMechanisms = mechanisms
+}
+
+// recordAttachmentInjectMappingUndeliveredKeys retains the top-level keys one
+// attachment's rendered injectMapping output wrote deliveries under that the
+// merge does not apply.
+//
+// It is called from the node walk beside the pairing above, once per attachment
+// whose mapping produced an overlay, and owned by the attachment for the same
+// reason. A nil set records nothing, which is the state of a render whose caller
+// assembled its own input.
+func (h *hydratedProjections) recordAttachmentInjectMappingUndeliveredKeys(
+	nodeID, attachment string, keys []constraint.InjectMappingUndeliveredKey,
+) {
+	if h == nil || nodeID == "" || attachment == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p := h.nodeAttachmentEntry(nodeAttachmentKey{node: nodeID, attachment: attachment})
+	p.AttachmentInjectMappingUndeliveredKeys = keys
 }
 
 // recordArtifactTemplate retains the template text standing at one of a node's

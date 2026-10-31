@@ -2023,18 +2023,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 		// Retain what each attachment's mapping said about the mechanisms this
-		// component declared, and what it delivered — the deliveries join the
-		// node's record after every block's, in the order the mappings ran — then
-		// ask the two rules declared over those records. The recording is
-		// unconditional and the readings are immediately after it: this is the
-		// point every mapping has rendered and nothing below has read the
-		// rewritten pipe yet, so a declaration reaching nothing, and a key two
-		// attachments delivered, are refused before any output is rendered
-		// against the pipe. The mechanism reading is asked first, so an input it
-		// refuses is still refused by it.
+		// component declared, which keys it wrote that the merge did not apply,
+		// and what it delivered — the deliveries join the node's record after
+		// every block's, in the order the mappings ran — then ask the three rules
+		// declared over those records. The recording is unconditional and the
+		// readings are immediately after it: this is the point every mapping has
+		// rendered and nothing below has read the rewritten pipe yet, so a
+		// declaration reaching nothing, a key two attachments delivered, and a
+		// delivery written where nothing reads it are refused before any output is
+		// rendered against the pipe. The mechanism reading is asked first and the
+		// undelivered-key reading last, so an input an earlier reading refuses is
+		// still refused by it.
 		for _, delivery := range mappedDelivery {
 			input.hydrated.recordAttachmentInjectMappingMechanisms(
 				nodeID, delivery.InstanceName, delivery.Mechanisms)
+			input.hydrated.recordAttachmentInjectMappingUndeliveredKeys(
+				nodeID, delivery.InstanceName, delivery.Undelivered)
 			injectDeliveries = append(injectDeliveries, delivery.Deliveries...)
 		}
 		input.hydrated.recordNodeInjectDeliveries(nodeID, injectDeliveries)
@@ -2044,6 +2048,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 		if err := runNodeInjectMappingDeliveryRule(
+			ctx.Err, result.HydratedView, input.GraphCoordinates, nodeInstances[nodeID],
+		); err != nil {
+			return nil, err
+		}
+		if err := runInjectMappingUndeliveredKeyRule(
 			ctx.Err, result.HydratedView, input.GraphCoordinates, nodeInstances[nodeID],
 		); err != nil {
 			return nil, err
