@@ -62,9 +62,9 @@ func mergeAdditional(base *types.OrderedMap[types.OrderedMap[string]], overlay t
 //
 // Structured parse goes through types.InjectPipe's typed unmarshal hook:
 // env / file / arg / all decode into the typed fields; everything else routes
-// into Additional preserving author order. Empty output and parse failures
-// fall through to the flat-map fallback (every key under .env), matching the
-// "Recipe author writes a flat env dictionary" idiom.
+// into Additional preserving author order. A structured read that fails or
+// fills nothing falls through to the flat-map fallback (every key under .env),
+// matching the "Recipe author writes a flat env dictionary" idiom.
 //
 // It also reports the top-level mechanism names the STRUCTURED parse found, in
 // the order the output wrote them: the three typed mechanisms wherever their
@@ -80,28 +80,44 @@ func mergeAdditional(base *types.OrderedMap[types.OrderedMap[string]], overlay t
 // legitimate idiom for a Recipe producing env-only deliveries — so it makes no
 // claim about which mechanisms it fills, and reading it as claiming none would
 // turn every such Recipe into a refusal.
-func ParseInjectMappingOutput(output string) (*types.InjectPipe, []string) {
+//
+// The error is non-nil for exactly one outcome: an output that is not empty and
+// reads as neither shape — the structured read and the flat read both fail. It
+// is the structured read's failure, which describes the output against the
+// shape a mapping documents, and its target type is [types.InjectPipe], so a
+// caller withholding its text re-reads a substituted output into that type. An
+// output that reads as either shape and delivers nothing is not an error: it
+// parsed, and what it says is that this mapping delivers nothing. Telling the
+// two apart is the point of returning the error at all — an output that does
+// not parse delivers none of its keys, and a caller that could not tell that
+// from an empty one would drop every delivery it carried without a word.
+func ParseInjectMappingOutput(output string) (*types.InjectPipe, []string, error) {
 	output = trimWhitespace(output)
 	if output == "" || output == "{}" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Structured parse via InjectPipe's typed unmarshal hook (env/file/arg/all
 	// → typed fields; default → Additional).
 	var structured types.InjectPipe
-	if err := parse.TemplateOutput([]byte(output), &structured); err == nil {
+	structuredErr := parse.TemplateOutput([]byte(output), &structured)
+	if structuredErr == nil {
 		if !structured.Env.IsZero() || !structured.File.IsZero() || !structured.Arg.IsZero() || structured.Additional.Len() > 0 {
-			return &structured, structuredMechanisms(&structured)
+			return &structured, structuredMechanisms(&structured), nil
 		}
 	}
 
 	// Fallback: try flat map (all goes to env).
 	var flat types.OrderedMap[string]
-	if err := parse.TemplateOutput([]byte(output), &flat); err == nil && flat.Len() > 0 {
-		return &types.InjectPipe{Env: flat}, nil
+	flatErr := parse.TemplateOutput([]byte(output), &flat)
+	if flatErr == nil && flat.Len() > 0 {
+		return &types.InjectPipe{Env: flat}, nil, nil
 	}
 
-	return nil, nil
+	if structuredErr != nil && flatErr != nil {
+		return nil, nil, structuredErr
+	}
+	return nil, nil, nil
 }
 
 // structuredMechanisms names the top-level mechanism keys one structurally

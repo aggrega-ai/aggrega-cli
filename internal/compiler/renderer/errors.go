@@ -150,6 +150,39 @@ var errUnmappedCustomMechanism = cerrors.Register("custom-mechanism-has-no-mappi
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrInjectMappingOutputNotParsable is the halt raised when a FeatureRecipe's
+// injectMapping template ran and produced output that reads as neither of the two
+// shapes a mapping's output takes: a dictionary keyed by delivery mechanism, or a
+// flat dictionary of environment deliveries. Output that is empty, or that parses
+// as a dictionary delivering nothing, is not this condition — it delivers nothing
+// and says so.
+//
+// The halt exists because the alternative is a delivery that silently never
+// happens. A value the template interpolates — a credential, most often — can
+// break the output it is written into, a double quote or a backslash inside a
+// quoted scalar being the usual case, and an output that is not read delivers
+// none of its keys. The consuming Recipe would then render as though the
+// attachment had delivered nothing, so a component expecting a credential could
+// run without one and nothing in the build would say so.
+//
+// The diagnostic names the attachment and the FeatureRecipe, and beneath them
+// the reason the output could not be read. That reason is withheld when the
+// template reads a value an author declared sensitive and the failure depends on
+// what that value holds, the way a failure to read any template's output is, so
+// the halt never quotes the value that broke the output.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrInjectMappingOutputNotParsable()).
+func ErrInjectMappingOutputNotParsable() error { return errInjectMappingOutputNotParsable }
+
+var errInjectMappingOutputNotParsable = cerrors.Register("inject-mapping-output-not-parsable", cerrors.Meta{
+	ShortCode: "E0366",
+	Message:   "FeatureRecipe injectMapping output could not be read as a dictionary of deliveries",
+	RulePlace: cerrors.NotARule("A FeatureRecipe's injectMapping template produced output the build could not read. The " +
+		"output is rendered from the attachment's values rather than authored as written, so the " +
+		"failure is a file that does not parse rather than a rule over an authored document, and " +
+		"what failed is in the cause it wraps."),
+})
+
 // ErrProvidesContractUnfulfilled is the Loud Guardrail halt raised at render
 // when a bound realizer does not publish every provides key its abstract
 // entity declares as the output contract in schema.provides — a Recipe short

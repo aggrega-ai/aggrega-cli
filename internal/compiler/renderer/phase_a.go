@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -138,6 +139,13 @@ type InjectMappingDelivery struct {
 // indicates a contract violation upstream and produces a loud halt rather than
 // silently reading against an empty set.
 //
+// A mapping whose output does not parse halts with
+// ErrInjectMappingOutputNotParsable, naming the attachment and the FeatureRecipe,
+// rather than delivering nothing: none of the output's keys could be read, so the
+// consumer would otherwise render as though the attachment delivered nothing at
+// all. An output that is empty, or parses as a dictionary delivering nothing,
+// delivers nothing and is not a failure.
+//
 // It returns one InjectMappingDelivery per attachment whose mapping produced an
 // overlay, in the order the attachments were resolved. That report is what lets a
 // caller decide which of the delivered keys carry material a declaration governs:
@@ -227,7 +235,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, frLocals)
 
-		output, err := evalValueTemplate(
+		eval := valueTemplate(
 			fmt.Sprintf("injectMapping[%s/%s]", ref.InstanceName, ref.FeatureRecipe.Metadata.Name),
 			tmplText,
 			injectMappingScope.with(
@@ -236,14 +244,30 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			),
 			"{{", "}}",
 		)
+		output, err := eval.run()
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
 				fmt.Sprintf("feature %q (recipe %q) injectMapping", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 
-		// Parse the output and deep-merge over the inject pipe
-		overlay, mapped := ParseInjectMappingOutput(output)
+		// Parse the output and deep-merge over the inject pipe. An output that
+		// does not parse halts: none of its keys would be delivered, and the
+		// consumer would render as though the attachment delivered nothing. The
+		// reason is withheld on the terms every template output's is, since the
+		// value that broke the output is most often the one declared sensitive.
+		// The frame names the attachment and the FeatureRecipe the way every other
+		// failure of this mapping is named, with the condition and the reason
+		// beneath it.
+		overlay, mapped, parseErr := ParseInjectMappingOutput(output)
+		if parseErr != nil {
+			reason := withholdDecodeFailure(eval, parseErr, reflect.TypeOf(types.InjectPipe{}))
+			return nil, cerrors.Wrap(
+				fmt.Errorf("%w: %w", ErrInjectMappingOutputNotParsable(), reason),
+				cerrors.CatalogError,
+				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
+				fmt.Sprintf("feature %q (recipe %q) injectMapping output", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+		}
 
 		if overlay != nil {
 			DeepMergeInjectStructured(&ctx.Context.Inject, overlay)
@@ -276,7 +300,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 // pairing's business — a mapping is free to write mechanisms of its own.
 //
 // It answers nothing at all when the output named no mechanism, which is the
-// state a flat delivery dictionary and an unparsed output both reach. Returning
+// state a flat delivery dictionary and an output parsing as nothing both reach. Returning
 // a pairing there would say every declared mechanism went unnamed, and that
 // reading turns the flat-output idiom into a refusal. The two states are told
 // apart by the rendered names being absent rather than empty, which is what the

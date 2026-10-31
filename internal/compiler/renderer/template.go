@@ -402,13 +402,26 @@ func decodeTemplateOutput(e templateEval, output string, dst any) error {
 	if err == nil {
 		return nil
 	}
+	return withholdDecodeFailure(e, err, reflect.TypeOf(dst).Elem())
+}
+
+// withholdDecodeFailure decides what err — a failure to read e's output into a
+// value of type target — may report, on the terms decodeTemplateOutput states. It
+// is the half of that reading a caller decoding the output itself needs: one that
+// tries more than one shape and reports a failure only once every shape failed
+// still withholds that failure here, so there is one place deciding what a
+// failure to read a template's output may say.
+//
+// target is the type err's read decoded into, because the substituted output is
+// read into a fresh value of it and the two failures compared.
+func withholdDecodeFailure(e templateEval, err error, target reflect.Type) error {
 	t, _, perr := e.prepare()
 	if perr != nil || !e.readsWithheld(t) {
 		return err
 	}
 	substituted, serr := e.runSubstituted()
 	if serr == nil {
-		fresh := reflect.New(reflect.TypeOf(dst).Elem()).Interface()
+		fresh := reflect.New(target).Interface()
 		if derr := parse.TemplateOutput([]byte(substituted), fresh); derr != nil && sameDecodeFailure(err, derr) {
 			return derr
 		}

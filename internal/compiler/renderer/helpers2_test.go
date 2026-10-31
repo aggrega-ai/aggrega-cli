@@ -107,19 +107,22 @@ func TestMergeAdditional_BothBranches(t *testing.T) {
 func TestParseInjectMappingOutput_EveryShape(t *testing.T) {
 	t.Parallel()
 	// Empty / brace-only.
-	got, mechanisms := ParseInjectMappingOutput("")
-	if got != nil || mechanisms != nil {
-		t.Errorf("empty → (nil, nil); got (%v, %v)", got, mechanisms)
+	got, mechanisms, err := ParseInjectMappingOutput("")
+	if got != nil || mechanisms != nil || err != nil {
+		t.Errorf("empty → (nil, nil, nil); got (%v, %v, %v)", got, mechanisms, err)
 	}
-	got, mechanisms = ParseInjectMappingOutput("{}")
-	if got != nil || mechanisms != nil {
-		t.Errorf("braces → (nil, nil); got (%v, %v)", got, mechanisms)
+	got, mechanisms, err = ParseInjectMappingOutput("{}")
+	if got != nil || mechanisms != nil || err != nil {
+		t.Errorf("braces → (nil, nil, nil); got (%v, %v, %v)", got, mechanisms, err)
 	}
 
 	// Flat-map output (single-level map): it names no mechanism at all, which is
 	// what keeps the rule over this naming from refusing the env-only idiom.
 	output := "K1: v1\nK2: v2\n"
-	got, mechanisms = ParseInjectMappingOutput(output)
+	got, mechanisms, err = ParseInjectMappingOutput(output)
+	if err != nil {
+		t.Fatalf("a flat output parses; got %v", err)
+	}
 	if got == nil || got.Env.Len() != 2 {
 		t.Errorf("flat-map should populate Env; got %v", got)
 	}
@@ -133,7 +136,10 @@ func TestParseInjectMappingOutput_EveryShape(t *testing.T) {
 file:
   F1: /x
 `
-	got, mechanisms = ParseInjectMappingOutput(output)
+	got, mechanisms, err = ParseInjectMappingOutput(output)
+	if err != nil {
+		t.Fatalf("a structured output parses; got %v", err)
+	}
 	if got == nil || got.Env.Len() != 1 || got.File.Len() != 1 {
 		t.Errorf("structured: got %+v", got)
 	}
@@ -146,7 +152,10 @@ file:
 	output = `env:
   K1: v1
 `
-	got, mechanisms = ParseInjectMappingOutput(output)
+	got, mechanisms, err = ParseInjectMappingOutput(output)
+	if err != nil {
+		t.Fatalf("a single-mechanism output parses; got %v", err)
+	}
 	if got == nil {
 		t.Fatalf("structured single-mechanism output should parse; got nil")
 	}
@@ -345,16 +354,53 @@ func TestAssembleEnrichedUses_AllBranches(t *testing.T) {
 	}
 }
 
-// TestParseInjectMappingOutput_MalformedYAML pins the malformed-input
-// branch: returning (nil, nil) when neither structured nor flat parse
-// produces content.
+// TestParseInjectMappingOutput_MalformedYAML pins the line between an output
+// that does not parse and one that parses as nothing.
+//
+// An output that reads as neither shape — the structured read and the flat read
+// both fail — is reported as an error, because none of its keys can be delivered
+// and a caller that could not tell it from an empty output would drop every one
+// of them without a word. An output that parses and delivers nothing is not an
+// error, so the halt this error drives never reaches a mapping that legitimately
+// delivers nothing. Each failing row has a parsing twin beside it, so a parse
+// that reported every output as a failure fails this test too.
 func TestParseInjectMappingOutput_MalformedYAML(t *testing.T) {
 	t.Parallel()
-	// "[" parses as an unclosed sequence — YAML can't read it, both
-	// structured and flat fall back to (nil, nil).
-	got, mechanisms := ParseInjectMappingOutput("[\n  not closed")
-	if got != nil || mechanisms != nil {
-		t.Errorf("malformed: (%v, %v); want (nil, nil)", got, mechanisms)
+	for _, tc := range []struct {
+		name    string
+		output  string
+		wantErr bool
+	}{
+		// "[" opens a sequence the output never closes.
+		{name: "an unclosed sequence", output: "[\n  not closed", wantErr: true},
+		// A double quote inside a double-quoted scalar ends it early.
+		{name: "a quote inside a quoted scalar", output: "env:\n  KEY: \"ab\"c\"\n", wantErr: true},
+		{name: "a quote inside a quoted flat scalar", output: "KEY: \"ab\"c\"\n", wantErr: true},
+		// A backslash starts an escape, and \q is none YAML knows.
+		{name: "a backslash inside a quoted scalar", output: "env:\n  KEY: \"ab\\qc\"\n", wantErr: true},
+		{name: "a scalar where a dictionary belongs", output: "just text", wantErr: true},
+
+		{name: "the same value written as a JSON string", output: "env:\n  KEY: \"ab\\\"c\"\n"},
+		{name: "a dictionary delivering nothing", output: "env: {}\n"},
+		{name: "a null document", output: "null\n"},
+		{name: "a comment and nothing else", output: "# nothing to deliver\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, mechanisms, err := ParseInjectMappingOutput(tc.output)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("output %q parses, so it must not be reported as unreadable; got %v", tc.output, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("output %q reads as neither shape and must be reported; got (%v, %v, nil)", tc.output, got, mechanisms)
+			}
+			if got != nil || mechanisms != nil {
+				t.Errorf("an unreadable output delivers nothing; got (%v, %v)", got, mechanisms)
+			}
+		})
 	}
 }
 
