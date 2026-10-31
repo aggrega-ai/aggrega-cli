@@ -2764,6 +2764,24 @@ jobs:
             echo "sign-macos: APPLE_DEVELOPER_ID_CERTIFICATE is not base64" >&2
             exit 1
           fi
+          # What the identity file holds, in terms that carry no secret: the
+          # openssl build reading it, the file's size, the algorithms its bags
+          # are encrypted with, how many certificates and private keys it
+          # yields, and the first certificate's subject and issuer. The key and
+          # the certificates go into a pipe that only counts them; nothing of
+          # either is printed. A failure below is then read against these lines.
+          echo "sign-macos: identity file diagnostics (no secret material):"
+          echo "  openssl: $(/usr/bin/openssl version 2>&1)"
+          echo "  identity.p12: $(/usr/bin/wc -c < "$identity/identity.p12" | /usr/bin/tr -d ' ') bytes"
+          /usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -info -noout 2>&1 |
+            /usr/bin/sed 's/^/  info: /' || true
+          certs="$(/usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nokeys 2>/dev/null |
+            /usr/bin/grep -c 'BEGIN CERTIFICATE' || true)"
+          keys="$(/usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nocerts -nodes 2>/dev/null |
+            /usr/bin/grep -c 'PRIVATE KEY-----$' || true)"
+          echo "  certificates read: ${certs:-0}; private keys read: $(( ${keys:-0} / 2 ))"
+          /usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nokeys 2>/dev/null |
+            /usr/bin/openssl x509 -noout -subject -issuer 2>&1 | /usr/bin/sed 's/^/  first certificate: /' || true
           export WRAP_PASSWORD="$wrap_password"
           if ! /usr/bin/openssl pkcs12 -in "$identity/identity.p12" -passin env:APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD -nodes |
             /usr/bin/openssl pkcs12 -export -passout env:WRAP_PASSWORD \
