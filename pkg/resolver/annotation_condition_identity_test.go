@@ -363,6 +363,102 @@ spec:
 	assertNoCategoryToken(t, findings[0].Error())
 }
 
+// TestAnnotationExpansionRefusals_CarryTheirConditions drives each refusal the
+// expansion raises itself — a scalar value its binding cannot place, and a subkey
+// of a structured value its binding does not route — on both authoring sides, and
+// pins that each is an occurrence of its registered condition while its text stays
+// what the expansion composed.
+//
+// The text is read through the one-line flattening of the whole chain, which ends
+// with the findings the expansion joined. Each row asserts that line ends with the
+// finding's own text, exactly as composed, and carries the condition's registered
+// sentence nowhere: the condition is carried beside the text, never written into it.
+func TestAnnotationExpansionRefusals_CarryTheirConditions(t *testing.T) {
+	t.Parallel()
+	const severalPaths = `binding for feature "core/db-pool:1.0.0" maps multiple subkey paths ` +
+		`([pool_size max_connections db_name read_replicas]); scalar annotation value "shared" cannot route ` +
+		`to multiple subkeys unambiguously. Provide separate annotation keys for each path`
+	const unboundTail = `is not declared in binding map; declared paths: ` +
+		`[pool_size max_connections db_name read_replicas]`
+
+	for _, row := range []struct {
+		name      string
+		rr        func(t *testing.T) *ResolveResult
+		condition error
+		code      string
+		shortCode string
+		tail      string
+	}{
+		{
+			name: "a Release-side scalar its binding routes to several paths",
+			rr: func(t *testing.T) *ResolveResult {
+				return &ResolveResult{Manifest: structuredManifest(t),
+					Release: releaseAnnotating(t, `feature.myco/db-pool: "shared"`+"\n")}
+			},
+			condition: ErrAnnotationScalarNotRoutable(),
+			code:      "annotation-scalar-not-routable", shortCode: "E0367",
+			tail: severalPaths,
+		},
+		{
+			name: "an Aggregate-side scalar its binding routes to several paths",
+			rr: func(t *testing.T) *ResolveResult {
+				return &ResolveResult{Manifest: structuredManifest(t),
+					Aggregate: aggregateAnnotating(t, `feature.myco/db-pool: "shared"`+"\n")}
+			},
+			condition: ErrAnnotationScalarNotRoutable(),
+			code:      "annotation-scalar-not-routable", shortCode: "E0367",
+			tail: severalPaths,
+		},
+		{
+			name: "a Release-side subkey its binding does not route",
+			rr: func(t *testing.T) *ResolveResult {
+				return &ResolveResult{Manifest: structuredManifest(t),
+					Release: releaseAnnotating(t, "feature.myco/db-pool:\n  nosuch: 1\n")}
+			},
+			condition: ErrAnnotationSubkeyNotBound(),
+			code:      "annotation-subkey-not-bound", shortCode: "E0363",
+			tail: unboundTail,
+		},
+		{
+			name: "an Aggregate-side subkey its binding does not route",
+			rr: func(t *testing.T) *ResolveResult {
+				return &ResolveResult{Manifest: structuredManifest(t),
+					Aggregate: aggregateAnnotating(t, "feature.myco/db-pool:\n  nosuch: 1\n")}
+			},
+			condition: ErrAnnotationSubkeyNotBound(),
+			code:      "annotation-subkey-not-bound", shortCode: "E0363",
+			tail: unboundTail,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			err := ExpandAnnotations(row.rr(t), CatalogLookup{})
+			assertIdentity(t, err, row.condition, row.code, row.shortCode)
+			chain := cerrors.CauseChain(err)
+			if !strings.HasSuffix(chain, row.tail) {
+				t.Errorf("the flattened refusal does not end with the expansion's own text\n got: %s\nwant suffix: %s",
+					chain, row.tail)
+			}
+			sentence, _ := cerrors.MessageOf(row.condition)
+			if strings.Contains(chain, sentence) {
+				t.Errorf("the flattened refusal carries the condition's registered sentence %q, so the text "+
+					"is no longer what the expansion composed: %s", sentence, chain)
+			}
+		})
+	}
+
+	// A binding declaring no path is refused by the Manifest schema before
+	// expansion runs, so it is reached here directly; its refusal is an occurrence
+	// of the same condition as the several-paths one, and keeps its own text.
+	_, _, err := resolveBindingTarget(types.AnnotationBinding{Feature: "core/db-pool:1.0.0"}, "shared")
+	assertIdentity(t, err, ErrAnnotationScalarNotRoutable(), "annotation-scalar-not-routable", "E0367")
+	const wantNoPaths = `binding for feature "core/db-pool:1.0.0" declares no paths in maps; ` +
+		`scalar annotation value cannot route to any subkey`
+	if got := err.Error(); got != wantNoPaths {
+		t.Errorf("no-path refusal\n got: %s\nwant: %s", got, wantNoPaths)
+	}
+}
+
 // TestAnnotationSidePillarMismatch_SaysTheCategoryOnce pins the composition an
 // author actually meets: the finding names its authoring document once, and the
 // category word appears once rather than at two levels.

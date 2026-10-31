@@ -130,7 +130,7 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs, named []string, diagOut,
 	}
 	if len(res.InputKindErrs) > 0 {
 		for _, e := range res.InputKindErrs {
-			fmt.Fprintf(diagOut, "  input-kind: %s\n", cerrors.CauseChain(e))
+			fmt.Fprintf(diagOut, "  input-kind: %s\n", cerrors.HeadedCauseChain(e))
 		}
 		return fmt.Errorf("catalog validation failed: %d input-kind capability error(s)", len(res.InputKindErrs))
 	}

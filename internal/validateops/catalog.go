@@ -206,6 +206,11 @@ func unloadableCatalogDocuments(wsRoot, cacheDir string, dirs, named []string) e
 // (renderer.UnsupportedInputKindMessage) so the early and late diagnostics read
 // identically. The workload predicate is the gate's own
 // (!Spec.Workload.IsEmpty()), so presence is classified identically.
+//
+// Each finding is an occurrence of the gate's own condition,
+// renderer.ErrUnsupportedInputKind, so it matches with errors.Is and carries that
+// condition's codes to every surface reporting this detector's findings, as the
+// halt at render does.
 func InputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bool, error), recipes []types.Recipe, featureRecipes []types.FeatureRecipe) []error {
 	var errs []error
 	check := func(kind, identity, provider string, workload types.WorkloadTemplate) {
@@ -216,8 +221,8 @@ func InputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bo
 		if !ok || caps.Synthesized {
 			return
 		}
-		errs = append(errs, fmt.Errorf("%s %q: %s", kind, identity,
-			renderer.UnsupportedInputKindMessage(provider, "synthesized", caps)))
+		errs = append(errs, &inputKindFinding{text: fmt.Sprintf("%s %q: %s", kind, identity,
+			renderer.UnsupportedInputKindMessage(provider, "synthesized", caps))})
 	}
 	for _, r := range recipes {
 		check("Recipe", r.Metadata.Name+":"+r.Metadata.Version, r.Spec.Capability, r.Spec.Workload)
@@ -229,6 +234,36 @@ func InputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bo
 	// caller's iteration order (the whole-catalog mode ranges an unordered map).
 	sort.Slice(errs, func(i, j int) bool { return errs[i].Error() < errs[j].Error() })
 	return errs
+}
+
+// inputKindFinding is one finding of the early input-kind detector: the text the
+// detector composed, as an occurrence of renderer.ErrUnsupportedInputKind.
+//
+// The condition is reached through Is and As rather than through Unwrap, and that
+// is what keeps the text exactly as composed. A walk that flattens a chain onto one
+// line follows Unwrap and appends every frame whose text the line does not already
+// carry, so a finding unwrapping to the condition would gain the condition's
+// registered sentence on each such surface — whole-catalog validate prints this
+// detector's findings that way. errors.Is and errors.As consult Is and As as well
+// as Unwrap, and they are how a condition is matched and how its codes are read
+// off a chain, so the condition stays matchable and its codes reach the diagnostic
+// while the text stays the detector's own.
+type inputKindFinding struct {
+	text string
+}
+
+// Error returns the text the detector composed, and nothing beside it.
+func (f *inputKindFinding) Error() string { return f.text }
+
+// Is reports whether target is the condition this finding is an occurrence of.
+func (f *inputKindFinding) Is(target error) bool {
+	return errors.Is(renderer.ErrUnsupportedInputKind(), target)
+}
+
+// As reads the condition this finding is an occurrence of into target, so a read
+// of the condition's identifiers off a chain reaches it.
+func (f *inputKindFinding) As(target any) bool {
+	return errors.As(renderer.ErrUnsupportedInputKind(), target)
 }
 
 // VerifyNoOCILocationCollision halts when two DISTINCT catalog identities map to

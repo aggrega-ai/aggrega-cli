@@ -190,6 +190,29 @@ var errAnnotationSubkeyNotBound = cerrors.Register("annotation-subkey-not-bound"
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrAnnotationScalarNotRoutable wraps a scalar annotation value — one written
+// bare rather than as a map of subkeys — whose binding does not route it to
+// exactly one path. A bare value names no subkey, so it can only be placed when
+// the binding declares a single path across its maps.infra and maps.values lists
+// together; a binding declaring several leaves the value with more than one place
+// to go and no way to choose, and a binding declaring none leaves it nowhere.
+//
+// It is raised as the annotation is expanded into a Feature attachment, on either
+// authoring side, and the finding names the binding's Feature, the paths it
+// declares and the value that could not be placed. A binding declaring no path is
+// refused by the Manifest schema before expansion runs, so a build reaches this
+// condition through the several-paths case. Distinct from
+// ErrAnnotationSubkeyNotBound, which refuses a subkey of a structured value that
+// the binding does not route: that value names where it should go, and this one
+// does not.
+func ErrAnnotationScalarNotRoutable() error { return errAnnotationScalarNotRoutable }
+
+var errAnnotationScalarNotRoutable = cerrors.Register("annotation-scalar-not-routable", cerrors.Meta{
+	ShortCode: "E0367",
+	Message:   "a scalar annotation value does not route to exactly one path of its binding",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrAnnotationSidePillarMismatch wraps an annotation whose binding routes it
 // through a pillar the authoring side it was written on may not use: an
 // Aggregate-side annotation routes through values, a Release-side annotation

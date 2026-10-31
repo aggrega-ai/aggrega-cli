@@ -14,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// Side-string values for validateAnnotationSideCompatibility. The two
+// Side-string values naming the two
 // authoring surfaces an annotation can originate from: Aggregate (the
 // Developer-side authoring surface) and Release (the Operator-side
 // authoring surface). The Aggregate-as-Authoring-Surface invariant
@@ -412,11 +412,11 @@ func expandBinding(
 }
 
 // expandBindingScalar handles the single-path scalar branch. The
-// binding must declare exactly one path across both pillar lists;
-// the resolved path must route through the authoring side's pillar
-// (per validateAnnotationSideCompatibility); the scalar value must
-// match the target Feature's spec.schema declared type at the
-// routed path.
+// binding must declare exactly one path across both pillar lists, or
+// the value is refused as one that does not route. Whether the routed
+// path lies in the authoring side's pillar, and whether the value
+// conforms to the target Feature's schema there, are declared rules
+// asked over the authored entry before expansion runs.
 func expandBindingScalar(
 	out types.BoundaryFeature,
 	key string,
@@ -460,15 +460,13 @@ func expandBindingScalar(
 //
 // Parallel structure: the body intentionally mirrors the structured
 // branch of [synthesizeAggregateFeatureFromAnnotation] (Aggregate
-// side) — same per-subkey iteration, same Maps.Lookup +
-// validateAnnotationSideCompatibility + validateSubkeyValueAgainstFeatureSchema
-// sequence, same collect-and-emit-all discipline. The two helpers
-// differ only in which pillar they write to (Infra vs Values), which
-// return-struct type wraps the contribution (BoundaryFeature vs
-// FeatureInstance), and the hardcoded side constant (sideRelease vs
-// sideAggregate). Future maintainers touching one MUST touch the
-// other in lockstep — divergence between sides silently breaks
-// cross-side composition.
+// side) — same per-subkey iteration, same Maps.Lookup routing, same
+// refusal of a subkey the binding does not route, same
+// collect-and-emit-all discipline. The two helpers differ only in
+// which pillar they write to (Infra vs Values) and which return-struct
+// type wraps the contribution (BoundaryFeature vs FeatureInstance).
+// Future maintainers touching one MUST touch the other in lockstep —
+// divergence between sides silently breaks cross-side composition.
 func expandBindingStructured(
 	out types.BoundaryFeature,
 	key string,
@@ -490,10 +488,10 @@ func expandBindingStructured(
 			// directly, by a caller that has not asked it — and there an unroutable
 			// value would otherwise be dropped with nothing said.
 			declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-			errs = append(errs, fmt.Errorf(
+			errs = append(errs, &conditionFinding{condition: errAnnotationSubkeyNotBound, text: fmt.Sprintf(
 				"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 				subkey, key, sourceLocation, declared,
-			))
+			)})
 			continue
 		}
 		if pillar == "infra" {
@@ -509,27 +507,25 @@ func expandBindingStructured(
 // synthesizeAggregateFeatureFromAnnotation produces the synthetic
 // FeatureInstance for the Aggregate-side expansion path. Mirrors
 // expandBinding's responsibilities (per-subkey routing,
-// side-vs-pillar enforcement, type validation, collect-and-emit-all)
-// but produces a FeatureInstance and writes to its Values pillar.
+// collect-and-emit-all) but produces a FeatureInstance and writes to
+// its Values pillar.
 //
-// Scalar values route to the binding's single declared path through
-// the values pillar; Aggregate-side scalar annotations whose binding
-// declares only Maps.Infra paths fail the side-vs-pillar check and
-// the contribution is dropped. Structured values route per subkey;
-// per-subkey errors collect via the same discipline as the Release
-// side.
+// Scalar values route to the binding's single declared path, and
+// contribute only where that path lies in the values pillar: an
+// Aggregate-side annotation routing through infra is refused by the
+// side-vs-pillar rule asked over the authored entry before expansion
+// runs. Structured values route per subkey; per-subkey errors collect
+// via the same discipline as the Release side.
 //
 // Parallel structure: the structured branch below intentionally
-// mirrors [expandBindingStructured] (Release side) — same
-// per-subkey iteration, same Maps.Lookup +
-// validateAnnotationSideCompatibility + validateSubkeyValueAgainstFeatureSchema
-// sequence, same collect-and-emit-all discipline. The two helpers
-// differ only in which pillar they write to (Values vs Infra), which
-// return-struct type wraps the contribution (FeatureInstance vs
-// BoundaryFeature), and the hardcoded side constant (sideAggregate
-// vs sideRelease). Future maintainers touching one MUST touch the
-// other in lockstep — divergence between sides silently breaks
-// cross-side composition.
+// mirrors [expandBindingStructured] (Release side) — same per-subkey
+// iteration, same Maps.Lookup routing, same refusal of a subkey the
+// binding does not route, same collect-and-emit-all discipline. The
+// two helpers differ only in which pillar they write to (Values vs
+// Infra) and which return-struct type wraps the contribution
+// (FeatureInstance vs BoundaryFeature). Future maintainers touching
+// one MUST touch the other in lockstep — divergence between sides
+// silently breaks cross-side composition.
 func synthesizeAggregateFeatureFromAnnotation(
 	key string,
 	value types.AnnotationValue,
@@ -557,10 +553,10 @@ func synthesizeAggregateFeatureFromAnnotation(
 				// Reached only without the rule over the authored entry, for the
 				// reason the Release-side branch states.
 				declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-				errs = append(errs, fmt.Errorf(
+				errs = append(errs, &conditionFinding{condition: errAnnotationSubkeyNotBound, text: fmt.Sprintf(
 					"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 					subkey, key, sourceLocation, declared,
-				))
+				)})
 				continue
 			}
 			if pillar == "values" {
@@ -642,14 +638,20 @@ func lookupFeature(catalogLookup CatalogLookup, typeURI string) *types.Feature {
 // paths is structurally invalid and is rejected at Manifest load by the
 // JSON Schema's minProperties / minItems constraints; this function
 // returns a clear runtime error if the load-time check has been bypassed.
+//
+// Every refusal here is an occurrence of ErrAnnotationScalarNotRoutable.
 func resolveBindingTarget(binding types.AnnotationBinding, value string) (string, string, error) {
 	total := binding.Maps.Len()
 	if total == 0 {
-		return "", "", fmt.Errorf("binding for feature %q declares no paths in maps; scalar annotation value cannot route to any subkey", binding.Feature)
+		return "", "", &conditionFinding{condition: errAnnotationScalarNotRoutable, text: fmt.Sprintf(
+			"binding for feature %q declares no paths in maps; scalar annotation value cannot route to any subkey",
+			binding.Feature)}
 	}
 	if total > 1 && value != "" {
 		paths := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
-		return "", "", fmt.Errorf("binding for feature %q maps multiple subkey paths (%v); scalar annotation value %q cannot route to multiple subkeys unambiguously. Provide separate annotation keys for each path", binding.Feature, paths, value)
+		return "", "", &conditionFinding{condition: errAnnotationScalarNotRoutable, text: fmt.Sprintf(
+			"binding for feature %q maps multiple subkey paths (%v); scalar annotation value %q cannot route to multiple subkeys unambiguously. Provide separate annotation keys for each path",
+			binding.Feature, paths, value)}
 	}
 	if len(binding.Maps.Infra) == 1 {
 		return binding.Maps.Infra[0], "infra", nil
@@ -660,8 +662,36 @@ func resolveBindingTarget(binding types.AnnotationBinding, value string) (string
 	// total == 0 covered above; total > 1 covered above; remaining case
 	// is exactly one path across both lists, handled by the two branches.
 	// Defensive fallback for unreachable state.
-	return "", "", fmt.Errorf("binding for feature %q maps shape is structurally invalid", binding.Feature)
+	return "", "", &conditionFinding{condition: errAnnotationScalarNotRoutable, text: fmt.Sprintf(
+		"binding for feature %q maps shape is structurally invalid", binding.Feature)}
 }
+
+// conditionFinding is a finding whose whole text its raise site composed, carrying
+// the registered condition it is an occurrence of.
+//
+// The condition is reached through Is and As rather than through Unwrap, and that
+// is what keeps the text exactly as the raise site composed it. A walk that
+// flattens a chain onto one line follows Unwrap and appends every frame whose text
+// the line does not already carry, so a finding unwrapping to its condition would
+// gain the condition's registered sentence on each such surface. errors.Is and
+// errors.As consult Is and As as well as Unwrap, and they are how a condition is
+// matched and how its codes are read off a chain — by the head a terminal prints
+// and by every other surface reporting a code — so the condition stays matchable
+// and its codes reach the diagnostic while the text stays the occurrence's own.
+type conditionFinding struct {
+	condition error
+	text      string
+}
+
+// Error returns the text the raise site composed, and nothing beside it.
+func (f *conditionFinding) Error() string { return f.text }
+
+// Is reports whether target is the condition this finding is an occurrence of.
+func (f *conditionFinding) Is(target error) bool { return errors.Is(f.condition, target) }
+
+// As reads the condition this finding is an occurrence of into target, so a read
+// of the condition's identifiers off a chain reaches it.
+func (f *conditionFinding) As(target any) bool { return errors.As(f.condition, target) }
 
 // writeComponent persists a mutated component back into its containing
 // boundary in the Release tree. OrderedMap returns values by value, so
