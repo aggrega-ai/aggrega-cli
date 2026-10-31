@@ -336,7 +336,7 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, n
 		return err
 	}
 	if err := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, cat.SchemaLibraries); err != nil {
-		return fmt.Errorf("pillars: %w", err)
+		return fmt.Errorf("pillars: %w", withCachedLibraryRemedy(err, wsRoot, cacheDir, dirs, named))
 	}
 	if errs := catalog.UnusablePillarContractErrors(
 		"Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, comp.Spec.UsesSchema, cat.SchemaLibraries,
@@ -364,7 +364,7 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, nam
 		return err
 	}
 	if err := validator.ValidateSchemaPillars("Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, cat.SchemaLibraries); err != nil {
-		return fmt.Errorf("pillars: %w", err)
+		return fmt.Errorf("pillars: %w", withCachedLibraryRemedy(err, wsRoot, cacheDir, dirs, named))
 	}
 	if errs := catalog.UnusablePillarContractErrors(
 		"Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, feat.Spec.UsesSchema, cat.SchemaLibraries,
@@ -374,6 +374,28 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, nam
 	res.Diagnostics = append(res.Diagnostics, "Pillars: valid")
 	res.Valid = true
 	return nil
+}
+
+// withCachedLibraryRemedy follows a pillar failure of one entity with the
+// remediation line for the cached libraries this check could not use, or returns
+// the failure unchanged where there is nothing to say (see cachedLibraryRemedy).
+//
+// The line goes into the message of the diagnostic the failure already leads
+// with, re-issued at the same category and source, rather than into a frame
+// around it. The terminal renders a diagnostic from its outermost envelope and
+// drops every frame above that, so a line carried in a wrapping frame would never
+// be printed; and the re-issued head holds the failure's own text, so the
+// failure is not printed a second time beneath it.
+func withCachedLibraryRemedy(err error, wsRoot, cacheDir string, dirs, named []string) error {
+	remedy := cachedLibraryRemedy(err, wsRoot, cacheDir, dirs, named)
+	if remedy == "" {
+		return err
+	}
+	var ce *cerrors.CompilerError
+	if errors.As(err, &ce) && ce != nil {
+		return cerrors.Wrap(err, ce.Category(), ce.Source(), ce.Message()+"\n  "+remedy)
+	}
+	return fmt.Errorf("%w\n  %s", err, remedy)
 }
 
 // validateWorkloadEntity runs the standalone Workload shape check. A Workload

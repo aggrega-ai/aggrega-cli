@@ -366,6 +366,26 @@ func (c Config) annotate(rw *workspaceconfig.ResolvedWorkspace, err error, skipp
 	return compilerops.AnnotateSkipContext(err, skipped, rw.LocalCatalogAdviceNote(c.ReleasePath))
 }
 
+// withPullLibraryRemedy follows a library discovery that found nothing for a
+// reference with the remediation line naming the cached libraries no lockfile
+// entry pins (catalog.LazyLookup.PullLibraryRemedy), or returns err unchanged
+// where the failure is a different one or the cache holds no such library.
+//
+// The failure keeps its condition and its text; the line is added beneath it, as
+// the decoration of a failure that carries no categorised envelope, which is the
+// shape the unresolvable-reference condition reaches a reader in. offline is the
+// workspace's offline posture, which decides the action the line can name.
+func withPullLibraryRemedy(err error, view *catalog.LazyLookup, offline bool) error {
+	if !errors.Is(err, closure.ErrUnresolvableURI()) {
+		return err
+	}
+	remedy := view.PullLibraryRemedy(offline)
+	if remedy == "" {
+		return err
+	}
+	return fmt.Errorf("%w\n  %s", err, remedy)
+}
+
 // irEntityInfra derives the per-instance source infra for FeatureRecipe
 // entities from the IR render-set (graph.Spec) — the exact attachment set the
 // renderer renders, assembled across all five tiers (Aggregate component/subsystem,
@@ -841,7 +861,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// closure.
 	report.phase(PhaseLibraries)
 	if err := closure.AugmentClosure(ctx, &cl, lazyView, lookup); err != nil {
-		return Result{}, err
+		return Result{}, withPullLibraryRemedy(err, lazyView, wsCfg.Offline)
 	}
 	// The pinned axes the closure walk leaves empty — the transitive sub-aggregates,
 	// the pipeline and provider plugin entities the closure's Recipes and

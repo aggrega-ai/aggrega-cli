@@ -4,6 +4,7 @@
 package validateops
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -58,6 +61,9 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 	}
 	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
+		if remedy := cachedLibraryRemedy(err, wsRoot, cacheDir, dirs, named); remedy != "" {
+			return CatalogResult{}, &remediedLoadError{err: err, remedy: remedy}
+		}
 		return CatalogResult{}, err
 	}
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
@@ -87,6 +93,44 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 	// code. Emission order is deterministic — the accumulator walks sorted keys.
 	return CatalogResult{Valid: true, Notices: cat.LintWarnings()}, nil
 }
+
+// cachedLibraryRemedy returns the remediation line for a failure of a check that
+// reads libraries from catalog directories only — this package's whole-catalog
+// and single-entity checks — or "" where there is nothing to say: the failure is
+// not a schema reference that resolved to nothing, or the artifact cache holds no
+// library the catalog directories do not supply.
+//
+// It is asked only on the failing path, because naming the libraries reads the
+// cache and the catalog directories once more.
+func cachedLibraryRemedy(err error, wsRoot, cacheDir string, dirs, named []string) string {
+	if !errors.Is(err, compactform.ErrUnresolvedSchemaLibraryRef()) {
+		return ""
+	}
+	return catalog.UnpinnedCachedLibraryRemedy(wsRoot, cacheDir, dirs, named...)
+}
+
+// remediedLoadError is a whole-catalog load failure followed by the remediation
+// line for the cached libraries it could not use. Unwrap returns the failure, so
+// its condition and its findings are matched as they were.
+//
+// Error renders the failure's whole cause chain and then the line. A
+// whole-catalog report prints a failure as its flattened cause chain, where each
+// frame's text is followed by the frames beneath it; a line carried in an outer
+// frame's text would therefore be followed on the same line by the findings it
+// explains. Rendering the chain here first leaves every frame beneath already
+// said, so the flattened report ends with the line rather than continuing past it.
+type remediedLoadError struct {
+	err    error
+	remedy string
+}
+
+// Error renders the failure's cause chain, then the remediation line beneath it.
+func (e *remediedLoadError) Error() string {
+	return cerrors.CauseChain(e.err) + "\n  " + e.remedy
+}
+
+// Unwrap returns the load failure the line follows.
+func (e *remediedLoadError) Unwrap() error { return e.err }
 
 // unloadableCatalogDocuments walks dirs as the catalog's own walk reads them,
 // reads every document beneath them once, and returns the halt naming each

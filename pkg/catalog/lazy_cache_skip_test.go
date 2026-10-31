@@ -268,7 +268,7 @@ func TestUnverifiedCachedSchemaLibraries_NamesOnlyWhatWentUnused(t *testing.T) {
 		t.Errorf("unverifiedCachedSchemaLibraries() = %v, want %v; a library that resolved must never be named as unused", got, want)
 	}
 
-	rem := cachedLibraryRemedy(got)
+	rem := cachedLibraryRemedy(remedyLockfilePinned, got)
 	for _, must := range []string{`SchemaLibrary "DbSizing"`, "aggrega pull --release", "lockfile"} {
 		if !strings.Contains(rem, must) {
 			t.Errorf("the remedy does not mention %q, so the halt does not tell the author how to recover:\n%s", must, rem)
@@ -277,8 +277,74 @@ func TestUnverifiedCachedSchemaLibraries_NamesOnlyWhatWentUnused(t *testing.T) {
 	if strings.Contains(rem, "Verified") {
 		t.Errorf("the remedy names a library that resolved:\n%s", rem)
 	}
-	if cachedLibraryRemedy(nil) != "" {
+	if cachedLibraryRemedy(remedyLockfilePinned, nil) != "" {
 		t.Error("an empty finding set must produce no remedy line")
+	}
+}
+
+// TestCachedLibraryRemedy_EachScopeNamesTheActionThatWorksThere holds the remedy
+// line to the surface printing it. A surface that reads a lockfile is fixed by a
+// pull; a check that reads catalog directories only is not, so it must point
+// past the pull to the check that reads what the pull records; an offline pull
+// cannot record anything, so it must say where the pull has to run; and a
+// connected pull that found the library nowhere has nothing to record, so it must
+// not send the author back to the command that just failed.
+func TestCachedLibraryRemedy_EachScopeNamesTheActionThatWorksThere(t *testing.T) {
+	names := []string{`SchemaLibrary "DbSizing"`}
+	const lockfileSentence = "remediation: the artifact cache holds library content that no lockfile entry pins " +
+		`(SchemaLibrary "DbSizing"); cached content counts as catalog content only where a lockfile entry vouches ` +
+		"for its digest, so it was not used. Run `aggrega pull --release <release>` to resolve and record it, or " +
+		"author the library under a catalog directory."
+	tests := []struct {
+		name    string
+		scope   remedyScope
+		exact   string
+		must    []string
+		mustNot []string
+	}{
+		{
+			name:  "a surface reading the lockfile keeps its sentence byte for byte",
+			scope: remedyLockfilePinned,
+			exact: lockfileSentence,
+		},
+		{
+			name:    "a check reading catalog directories only points past the pull",
+			scope:   remedyCatalogDirectoriesOnly,
+			must:    []string{`SchemaLibrary "DbSizing"`, "catalog directories only", "reads no lockfile", "aggrega validate --release <release>", "aggrega pull --release <release>", "Author the library under a catalog directory"},
+			mustNot: []string{"counts as catalog content only where"},
+		},
+		{
+			name:  "an offline pull says the pull must reach a registry",
+			scope: remedyOfflinePull,
+			must:  []string{`SchemaLibrary "DbSizing"`, "runs offline", "where it can reach a registry", "author the library under a catalog directory"},
+		},
+		{
+			name:    "a connected pull that found the library nowhere does not send the author back to the pull",
+			scope:   remedyConnectedPull,
+			must:    []string{`SchemaLibrary "DbSizing"`, "no catalog directory or registry this pull reads serves the library", "Author the library under a catalog directory"},
+			mustNot: []string{"aggrega pull --release"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cachedLibraryRemedy(tc.scope, names)
+			if tc.exact != "" && got != tc.exact {
+				t.Errorf("remedy changed:\n got %q\nwant %q", got, tc.exact)
+			}
+			for _, m := range tc.must {
+				if !strings.Contains(got, m) {
+					t.Errorf("remedy lacks %q:\n%s", m, got)
+				}
+			}
+			for _, m := range tc.mustNot {
+				if strings.Contains(got, m) {
+					t.Errorf("remedy carries %q, which is untrue on this surface:\n%s", m, got)
+				}
+			}
+			if cachedLibraryRemedy(tc.scope, nil) != "" {
+				t.Error("an empty finding set must produce no remedy line")
+			}
+		})
 	}
 }
 

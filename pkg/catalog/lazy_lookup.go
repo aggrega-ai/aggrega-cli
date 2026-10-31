@@ -3062,8 +3062,56 @@ func (l *LazyLookup) ValidateClosureScopedPillars(ctx context.Context, cl closur
 	// cache with nothing vouching for it, so it was never read. Name it, and name
 	// the command that fixes it.
 	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.schemaLibraries, func() string {
-		return cachedLibraryRemedy(l.unverifiedCachedSchemaLibraries())
+		return cachedLibraryRemedy(remedyLockfilePinned, l.unverifiedCachedSchemaLibraries())
 	})
+}
+
+// PullLibraryRemedy returns the remediation line for a pull whose library
+// discovery found nothing for a library reference while the artifact cache holds
+// SchemaLibrary content that no lockfile entry pins and no catalog directory
+// supplies. It names those libraries and the action that works for the pull that
+// failed: offline, a pull can neither fetch the library nor record an entry for
+// it, so the line says to run the pull where it can reach a registry; connected,
+// no catalog directory or registry the pull reads serves the library, so the line
+// says to author it under a catalog directory. Either way it offers authoring the
+// library as the alternative.
+//
+// It reads the cache only when called, so a pull that succeeds never pays for the
+// enumeration. Returns "" when the cache holds no such library.
+func (l *LazyLookup) PullLibraryRemedy(offline bool) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = l.buildSchemaLibraries()
+	scope := remedyConnectedPull
+	if offline {
+		scope = remedyOfflinePull
+	}
+	return cachedLibraryRemedy(scope, l.unverifiedCachedSchemaLibraries())
+}
+
+// UnpinnedCachedLibraryRemedy returns the remediation line for a check that reads
+// SchemaLibraries from catalog directories only and reads no lockfile — a
+// whole-catalog validation, or the validation of one entity file — when a schema
+// reference in it resolved to nothing while the artifact cache holds SchemaLibrary
+// content that none of catalogDirs supplies. Such a check never uses cached
+// content, pinned or not, so the line names those libraries, says why they were
+// not used, and points to authoring the library under a catalog directory, or to
+// pulling the Release and validating it with --release, which checks the Release
+// against the libraries its lockfile pins.
+//
+// workspaceRoot, cacheDir, catalogDirs and named are the arguments
+// [NewLazyLookup] takes for the same search stack. The catalog directories are
+// read only when the cache is configured, and only for this call, so a check that
+// passes never pays for it. Returns "" when the cache holds no such library.
+func UnpinnedCachedLibraryRemedy(workspaceRoot, cacheDir string, catalogDirs []string, named ...string) string {
+	if cacheDir == "" {
+		return ""
+	}
+	l := NewLazyLookup(workspaceRoot, cacheDir, catalogDirs, nil, named...)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = l.buildSchemaLibraries()
+	return cachedLibraryRemedy(remedyCatalogDirectoriesOnly, l.unverifiedCachedSchemaLibraries())
 }
 
 // unverifiedCachedSchemaLibraries names the SchemaLibraries the artifact cache
@@ -3129,21 +3177,65 @@ func (l *LazyLookup) unverifiedCachedSchemaLibraries() []string {
 	return names
 }
 
+// remedyScope says what the surface reporting an unresolved library reads, which
+// decides the action its remediation line can truthfully name. Each surface reads
+// a different set of places, so one sentence cannot be true on all of them: a
+// pull is the fix where a lockfile entry is read, and no fix at all where none is.
+type remedyScope int
+
+const (
+	// remedyLockfilePinned is a surface that reads the Release's lockfile and
+	// counts a cached library its entries pin: closure-scoped validation, which a
+	// build and a Release-scoped validation run.
+	remedyLockfilePinned remedyScope = iota
+	// remedyCatalogDirectoriesOnly is a check that reads libraries from catalog
+	// directories only and reads no lockfile: whole-catalog validation and the
+	// validation of one entity file.
+	remedyCatalogDirectoriesOnly
+	// remedyOfflinePull is a pull, or a build filling its lockfile, under the
+	// offline posture: it reads no registry, so it cannot record an entry for a
+	// library it does not already hold.
+	remedyOfflinePull
+	// remedyConnectedPull is a pull, or a build filling its lockfile, that read the
+	// catalog directories and the registries the workspace configures and found
+	// the library in none of them.
+	remedyConnectedPull
+)
+
 // cachedLibraryRemedy is the operator-actionable line appended to a schema
 // resolution failure when the artifact cache holds library content that never
-// reached the resolved set. It states the rule in the terms the author works in
-// — the cache holds what a fetch put there, and it counts as catalog content
-// only where a lockfile entry vouches for its digest — then names the command
-// that records such an entry, and the alternative of authoring the library
-// directly. Returns "" when there is nothing to say.
-func cachedLibraryRemedy(names []string) string {
+// reached the resolved set. It is the one home of that line's wording on every
+// surface that reports such a failure, so the surfaces differ only in the clause
+// scope selects.
+//
+// It states the rule in the terms the author works in — the cache holds what a
+// fetch put there, and it counts as catalog content only where a lockfile entry
+// vouches for its digest — then names the action that works on the surface
+// reporting the failure, and the alternative of authoring the library directly.
+// Returns "" when there is nothing to say.
+func cachedLibraryRemedy(scope remedyScope, names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return "remediation: the artifact cache holds library content that no lockfile entry pins (" +
-		strings.Join(names, ", ") +
-		"); cached content counts as catalog content only where a lockfile entry vouches for its digest, so it was not used. " +
-		"Run `aggrega pull --release <release>` to resolve and record it, or author the library under a catalog directory."
+	head := "remediation: the artifact cache holds library content that no lockfile entry pins (" +
+		strings.Join(names, ", ") + "); "
+	switch scope {
+	case remedyCatalogDirectoriesOnly:
+		return head + "this check reads libraries from catalog directories only and reads no lockfile, so it was not used. " +
+			"Author the library under a catalog directory, or run `aggrega pull --release <release>` and then " +
+			"`aggrega validate --release <release>`, which checks the Release against the libraries its lockfile pins."
+	case remedyOfflinePull:
+		return head + "cached content counts as catalog content only where a lockfile entry vouches for its digest, " +
+			"and this pull runs offline, so it can neither fetch the library nor record an entry for it. " +
+			"Run `aggrega pull --release <release>` where it can reach a registry, or author the library under a catalog directory."
+	case remedyConnectedPull:
+		return head + "cached content counts as catalog content only where a lockfile entry vouches for its digest, " +
+			"and no catalog directory or registry this pull reads serves the library, so there is no entry to record. " +
+			"Author the library under a catalog directory."
+	default:
+		return head + "cached content counts as catalog content only where a lockfile entry vouches for its digest, so it was not used. " +
+			"Run `aggrega pull --release <release>` to resolve and record it, or author the library under a catalog directory."
+	}
 }
 
 // ClosureLintWarnings returns the schema-pillar-overlap advisories for every
