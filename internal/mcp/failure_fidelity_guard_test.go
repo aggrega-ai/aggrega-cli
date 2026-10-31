@@ -215,14 +215,19 @@ var proseOnlyFailureReturns = map[string]int{
 	// to build the view the closure is resolved through, ahead of the resolution,
 	// so nothing has been resolved, validated or described at that return.
 	//
+	// The Release scope of each refuses one more beside it: the plugin trust record
+	// beside the Release where it is there and cannot be read. It is read at the
+	// same front door, for the withdrawal report the answer carries, and ahead of
+	// the resolution, so here too nothing has been resolved, validated or described.
+	//
 	// Each refuses two more where the workspace found again from the folder of the
 	// file the call is about could not be resolved: description in its Release
 	// scope and in its lookup by name in a Release's terms, validation in its
 	// Release scope and its entity scope. Each is asked once the call's paths are
 	// resolved and before the lookup, the resolution or the check runs, so nothing
 	// has been looked up, resolved or validated at that return.
-	"tool_validate.go": 22,
-	"tool_describe.go": 18,
+	"tool_validate.go": 23,
+	"tool_describe.go": 19,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.
