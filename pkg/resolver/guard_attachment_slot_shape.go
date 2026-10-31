@@ -6,8 +6,13 @@ package resolver
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
+	"sync"
 
 	libschema "github.com/google/jsonschema-go/jsonschema"
+
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -202,14 +207,17 @@ func attachmentShapeErrors(
 		if f.Keyword != "" {
 			msg = fmt.Sprintf("%s (%s)", f.Message, f.Keyword)
 		}
-		// Every closed position in this projection is expressed as a
-		// not-of-empty sub-schema, so within THIS schema a `not` failure means
-		// exactly one thing: the key the field path names is not part of the
-		// slot's declaration. The engine's own wording for that keyword names
-		// the mechanism rather than the fault, and the field path already
-		// carries the offending key, so say what the author has to change.
-		if f.Keyword == "not" {
-			msg = "this key is not part of the slot's declaration — remove it, or declare it on the slot in the entity's featuresSchema"
+		// Each slot, and each slot's inject block, is a closed position in this
+		// projection: its additionalProperties is a not-of-empty sub-schema. The
+		// engine recognises that closed form and reports every key the position
+		// does not declare under the keyword additionalProperties, one finding
+		// at that key's own path, and the projection carries no other
+		// additionalProperties — so within THIS schema the keyword means exactly
+		// one thing: the key the field path names is not part of the slot's
+		// declaration. The engine's own wording names the key but no edit, so
+		// say what the author may change.
+		if f.Keyword == "additionalProperties" {
+			msg = slotDeclarationRemedy(f.FieldPath, authored)
 		}
 		errs = append(errs, &ResolverError{
 			Entity:  entity,
@@ -220,4 +228,88 @@ func attachmentShapeErrors(
 		})
 	}
 	return errs
+}
+
+// slotDeclarationRemedy words the finding for a key, at path, that the slot's
+// declaration does not hold, offering only an edit the Component schema accepts.
+//
+// The edit on offer depends on where the key sits. A key inside an attachment's
+// inject block is a delivery mechanism, and a slot's inject allowlist can name
+// only the mechanisms the schema enumerates: a mechanism inside that set may be
+// added to the allowlist, while one outside it cannot be declared on any slot,
+// so the message names the set and asks for the key's removal. Every other key
+// sits at a position the slot's shape fixes, which no declaration on the slot
+// widens, so removal is the one edit.
+func slotDeclarationRemedy(path string, authored types.OrderedMap[types.FeatureInstance]) string {
+	const fault = "this key is not part of the slot's declaration"
+	mechanism, isMechanism := injectMechanismAt(path, authored)
+	if !isMechanism {
+		return fault + " — remove it"
+	}
+	declarable := slotInjectMechanisms()
+	if len(declarable) == 0 {
+		return fault + " — remove it"
+	}
+	if slices.Contains(declarable, mechanism) {
+		return fault + " — remove it, or add it to the slot's inject allowlist in the entity's featuresSchema"
+	}
+	return fault + " — remove it: a slot's inject allowlist in the entity's featuresSchema accepts only " +
+		joinAlternatives(declarable)
+}
+
+// injectMechanismAt reports the mechanism key path names when path addresses a
+// key inside one authored attachment's inject block. The attachment names are
+// matched whole, in author order, rather than by splitting path on its
+// separator, because an attachment name may itself contain the separator.
+func injectMechanismAt(path string, authored types.OrderedMap[types.FeatureInstance]) (string, bool) {
+	for name := range authored.All() {
+		prefix := attachmentBlockKey + "." + name + ".inject."
+		if mechanism, ok := strings.CutPrefix(path, prefix); ok && mechanism != "" {
+			return mechanism, true
+		}
+	}
+	return "", false
+}
+
+// slotInjectMechanisms is the closed set of delivery mechanisms a slot's inject
+// allowlist may name, in the order the Component schema lists them.
+//
+// It is read from the Component schema the binary embeds — the same document a
+// catalog Component is validated against when it loads — so the mechanisms a
+// diagnostic invites an author to declare are exactly the ones that validation
+// then accepts. Empty when that schema no longer carries the set at the
+// position read here, in which case a diagnostic offers removal alone.
+var slotInjectMechanisms = sync.OnceValue(func() []string {
+	var doc struct {
+		Properties struct {
+			Spec struct {
+				Properties struct {
+					FeaturesSchema struct {
+						AdditionalProperties struct {
+							Properties struct {
+								Inject struct {
+									Items struct {
+										Enum []string `json:"enum"`
+									} `json:"items"`
+								} `json:"inject"`
+							} `json:"properties"`
+						} `json:"additionalProperties"`
+					} `json:"featuresSchema"`
+				} `json:"properties"`
+			} `json:"spec"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(schemas.ComponentV1alpha1), &doc); err != nil {
+		return nil
+	}
+	return doc.Properties.Spec.Properties.FeaturesSchema.AdditionalProperties.Properties.Inject.Items.Enum
+})
+
+// joinAlternatives renders names as an English list: "a", "a and b",
+// "a, b and c".
+func joinAlternatives(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
