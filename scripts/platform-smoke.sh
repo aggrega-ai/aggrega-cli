@@ -176,6 +176,10 @@
 #                 printed. Then the same codesign and Gatekeeper checks over a
 #                 quarantined copy of the unsigned default binary staged in
 #                 bin/, and the same list check over bin/, must refuse them.
+#                 Given --notarization-pending, Gatekeeper does not assess the
+#                 signed binaries, since Apple may not have notarized them yet,
+#                 and every other check of the step, the refusals included,
+#                 holds as above.
 #                 Given --unsigned or --ships-unsigned it is not applicable,
 #                 as for Windows
 #  13. installer  windows/amd64 only. The installer in the --installer directory
@@ -247,7 +251,7 @@
 # what it does.
 #
 # Usage:
-#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> | --unsigned | --ships-unsigned] [--installer <dir>] [--binaries <dir>]
+#   scripts/platform-smoke.sh --target <goos>/<goarch> --inputs <dir> [--signed <dir> [--notarization-pending] | --unsigned | --ships-unsigned] [--installer <dir>] [--binaries <dir>]
 #   scripts/platform-smoke.sh --help
 #
 # --signed <dir> names the directory holding the signed binaries and SHA256SUMS.
@@ -275,6 +279,15 @@
 # applicable, never passed; and the run exits 0 when every other step passed,
 # since what ran is what the release attaches.
 #
+# --notarization-pending, beside --signed for darwin/arm64 or darwin/amd64, runs
+# the signed binaries on a run that has submitted them to Apple's notary service
+# without waiting for its answer: step 12 holds the list, the codesign
+# signature, the hardened runtime, the timestamp and the entitlements as above,
+# and the refusals of the unsigned copies, but does not ask Gatekeeper to accept
+# the signed ones as notarized, which it would refuse until Apple accepts them.
+# The release checks Apple's answer, and Gatekeeper's acceptance, once its
+# publish has run. It is refused without --signed and for any other target.
+#
 # --binaries <dir> runs every step with the binaries in <dir>, named as bin/ names
 # them, in place of the ones it would run otherwise (the --signed ones for
 # windows/amd64 and macOS, the staged ones for Linux and with --unsigned): the way to show
@@ -299,7 +312,7 @@ step() { printf '\n==> %s\n' "$*"; }
 . scripts/lib/platform-smoke-common.sh
 smoke_require_bash || exit 1
 
-INPUTS="" SIGNED="" UNSIGNED="" SHIPS_UNSIGNED="" SUBSTITUTE="" INSTALLER=""
+INPUTS="" SIGNED="" UNSIGNED="" SHIPS_UNSIGNED="" NOTARIZATION_PENDING="" SUBSTITUTE="" INSTALLER=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target)
@@ -323,6 +336,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --ships-unsigned)
       SHIPS_UNSIGNED=1
+      shift
+      ;;
+    --notarization-pending)
+      NOTARIZATION_PENDING=1
       shift
       ;;
     --installer)
@@ -366,6 +383,15 @@ if [ -n "$SHIPS_UNSIGNED" ]; then
   [ "${TARGET%/*}" = darwin ] ||
     { fail "--ships-unsigned applies to darwin/arm64 and darwin/amd64 alone, the binaries a release may attach unsigned"; exit 2; }
   UNSIGNED=1
+fi
+# Signed binaries whose notarization Apple may not have finished: step 12 holds
+# their signatures and leaves Gatekeeper's assessment of them to the release's
+# notarization check.
+if [ -n "$NOTARIZATION_PENDING" ]; then
+  [ -n "$SIGNED" ] ||
+    { fail "--notarization-pending needs --signed: it is about the signed binaries Apple is notarizing"; exit 2; }
+  [ "$GOOS_T" = darwin ] ||
+    { fail "--notarization-pending applies to darwin/arm64 and darwin/amd64 alone, the binaries Apple notarizes"; exit 2; }
 fi
 case "$GOOS_T" in
   windows | darwin)
@@ -485,6 +511,9 @@ if [ -n "$SIGNED" ]; then
   require_binary_set "$SIGNED" "$SUMS_NAME"
   BIN_DIR="$SIGNED"
   echo "platform-smoke: running the signed binaries in $SIGNED; bin/ holds the unsigned ones the build wrote"
+  if [ -n "$NOTARIZATION_PENDING" ]; then
+    echo "platform-smoke: --notarization-pending: Apple may not have notarized them yet, so step 12 holds their signatures and does not ask Gatekeeper to accept them as notarized"
+  fi
 fi
 if [ -n "$SHIPS_UNSIGNED" ]; then
   echo "platform-smoke: --ships-unsigned: the release attaches the $TARGET binaries unsigned, so the binaries it runs are the unsigned ones in bin/, as the build wrote them, and step 12 is not applicable"
@@ -1245,6 +1274,10 @@ check_macos_signature() {
     fi
     cat "$report"
     smoke_check_codesign_report "$report" "$SIGNER_CN" "$ENTITLEMENTS" || bad=1
+    if [ -n "$NOTARIZATION_PENDING" ]; then
+      echo "not assessed by Gatekeeper: --notarization-pending: Apple may not have notarized $name yet"
+      continue
+    fi
     copy="$log/quarantined/$name"
     quarantine_copy "$BIN_DIR/$name" "$copy" || { fail "could not make a quarantined copy of $name"; bad=1; continue; }
     report="$log/$name.gatekeeper.txt"
@@ -1259,7 +1292,11 @@ check_macos_signature() {
     smoke_check_gatekeeper_report "$report" || bad=1
   done
   if [ "$bad" != 0 ]; then
-    fail "the binaries are not the listed ones, each signed with the Developer ID of $SIGNER_CN, hardened, timestamped, claiming the entitlements $(smoke_macos_entitlements) declares, and accepted by Gatekeeper as notarized"
+    if [ -n "$NOTARIZATION_PENDING" ]; then
+      fail "the binaries are not the listed ones, each signed with the Developer ID of $SIGNER_CN, hardened, timestamped, claiming the entitlements $(smoke_macos_entitlements) declares"
+    else
+      fail "the binaries are not the listed ones, each signed with the Developer ID of $SIGNER_CN, hardened, timestamped, claiming the entitlements $(smoke_macos_entitlements) declares, and accepted by Gatekeeper as notarized"
+    fi
     return 1
   fi
 
@@ -1671,6 +1708,9 @@ if [ "$GOOS_T" = windows ] || [ "$GOOS_T" = darwin ]; then
   if [ "$GOOS_T" = windows ]; then
     SIGNATURE_STEP="12. signature: each binary signed as $SIGNER_CN, timestamped, and the one SHA256SUMS lists"
     SIGNATURE_CHECK=check_signature
+  elif [ -n "$NOTARIZATION_PENDING" ]; then
+    SIGNATURE_STEP="12. signature: each binary signed with the Developer ID of $SIGNER_CN, hardened, timestamped, and the one SHA256SUMS lists; its notarization is checked when Apple has answered"
+    SIGNATURE_CHECK=check_macos_signature
   else
     SIGNATURE_STEP="12. signature: each binary signed with the Developer ID of $SIGNER_CN, hardened, timestamped, accepted by Gatekeeper as notarized, and the one SHA256SUMS lists"
     SIGNATURE_CHECK=check_macos_signature

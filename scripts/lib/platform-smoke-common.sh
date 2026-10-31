@@ -314,7 +314,11 @@
 #     --assess --type execute -vvv <file>`, its standard output and its standard
 #     error together — to an acceptance of notarized Developer ID software: a
 #     line ending ": accepted" and a line "source=Notarized Developer ID".
-#     Returns 1, printing what was found instead, otherwise.
+#     Returns 1, printing what was found instead, otherwise. The release
+#     workflow's notarization-check job holds its own assessments to the same
+#     two lines in a copy written inline, deliberately: that job holds the
+#     notary key and so may run no repository script, this library included.
+#     A change to what counts as an acceptance here is made there too.
 
 smoke_require_bash() {
   if [ "${BASH_VERSINFO[0]}" -gt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -ge 3 ]; }; then
