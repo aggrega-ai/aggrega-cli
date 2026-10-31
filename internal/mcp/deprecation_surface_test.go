@@ -264,7 +264,7 @@ func TestReleaseAdvisoriesLeadWithTheDeprecationReport(t *testing.T) {
 	}
 	vr := &compilerops.ValidateResult{LintWarnings: []string{"pillar overlap on api"}}
 
-	got := releaseAdvisories(vr, lf)
+	got := releaseAdvisories(vr, compilerops.DeprecationReport(lf, nil))
 	if len(got) != 2 {
 		t.Fatalf("want the deprecation notice and the overlap advisory; got %#v", got)
 	}
@@ -275,9 +275,9 @@ func TestReleaseAdvisoriesLeadWithTheDeprecationReport(t *testing.T) {
 		t.Errorf("the gate advisories must follow unchanged; got %#v", got)
 	}
 
-	// An absent lockfile contributes nothing and needs no guard at the call site:
-	// where there is no lockfile there are no recorded markers either.
-	if got := releaseAdvisories(vr, nil); len(got) != 1 || got[0] != "pillar overlap on api" {
+	// An absent lockfile and record contribute nothing and need no guard at the call
+	// site: where there is no store there are no recorded markers either.
+	if got := releaseAdvisories(vr, compilerops.DeprecationReport(nil, nil)); len(got) != 1 || got[0] != "pillar overlap on api" {
 		t.Errorf("an absent lockfile must contribute nothing; got %#v", got)
 	}
 }

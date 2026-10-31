@@ -14,7 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -318,6 +317,10 @@ func validateReleaseScope(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	deprecations, refusal := tw.releaseDeprecations(lf, releasePath)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
@@ -365,7 +368,7 @@ func validateReleaseScope(
 		Scope:       validateScopeRelease,
 		Valid:       len(diags) == 0,
 		Diagnostics: tw.reportedTexts(diags),
-		Notices:     tw.reportedTexts(releaseAdvisories(vr, lf)),
+		Notices:     tw.reportedTexts(releaseAdvisories(vr, deprecations)),
 	}
 	payload.Target, payload.TargetWithheld = tw.reportedLocationField(releasePath)
 	payload.Release, payload.ReleaseWithheld = tw.reportedLocationField(releasePath)
@@ -672,30 +675,29 @@ func validateDiagnostics(vr *compilerops.ValidateResult, consistencyFindings []e
 }
 
 // releaseAdvisories collects the exit-code-neutral advisory lines in the order
-// the facts were decided — the deprecation report over the lockfile's recorded
+// the facts were decided — the deprecation report over both stores' recorded
 // markers, then the schema-pillar overlap advisories, then the narrowing-on-extend
 // advisories. These never change the verdict; they travel in the payload's Notices
 // field for callers and the detailed render form.
 //
 // The deprecation report leads because its facts predate every gate in vr: the
-// markers were recorded at the pull that wrote the lockfile. It is the same shared
-// report the build reads, so this tool names the same references rather than a
-// subset — and it is advisory here for the reason the build's own default records:
-// a marker is registry state applied after the version was pinned, and the dial
-// that turns it into a halt governs the build alone.
+// markers were recorded at the pull that wrote the lockfile and the plugin trust
+// record beside it. It is the same shared report the build reads, so this tool
+// names the same references and plugins rather than a subset — and it is advisory
+// here for the reason the build's own default records: a marker is registry state
+// applied after the version was pinned, and the dial that turns it into a halt
+// governs the build alone.
 //
-// lf is a parameter rather than something read from vr because the shared
-// validation core takes no lockfile. A nil lockfile — an absent or unreadable one
-// — carries no recorded markers, so it contributes nothing and needs no guard at
-// the call site.
-func releaseAdvisories(vr *compilerops.ValidateResult, lf *lockfile.Lockfile) []string {
-	deprecations := lf.DeprecationFindings()
+// deprecations is a parameter rather than something read from vr because the
+// shared validation core produces no withdrawal report; the caller reads it at the
+// tool's front door, where an unreadable record is refused.
+func releaseAdvisories(vr *compilerops.ValidateResult, deprecations []compilerops.DeprecationFinding) []string {
 	if len(deprecations) == 0 && len(vr.LintWarnings) == 0 && len(vr.NarrowingWarnings) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(deprecations)+len(vr.LintWarnings)+len(vr.NarrowingWarnings))
 	for _, f := range deprecations {
-		out = append(out, "deprecation: "+f.Notice())
+		out = append(out, "deprecation: "+f.Notice)
 	}
 	out = append(out, vr.LintWarnings...)
 	out = append(out, vr.NarrowingWarnings...)

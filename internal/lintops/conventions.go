@@ -23,7 +23,6 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -257,36 +256,29 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		lockForClosure = lf
 	}
 
-	// The deprecation report over the lockfile's recorded markers — the same report
-	// the build reads, so this pass names the same references rather than a subset.
-	// A pass that said nothing about a withdrawn dependency would read as though
-	// there were none.
+	// The deprecation report over both stores — the lockfile's recorded markers and
+	// the plugin trust record's — the same report the build reads, so this pass
+	// names the same references and plugins rather than a subset. A pass that said
+	// nothing about a withdrawn dependency or linter would read as though there were
+	// none, and this is the pass that runs those linters.
 	//
 	// It is reported BEFORE the gates and the pass below, because it depends on
-	// neither: a recorded marker is a fact about the lockfile alone, so a workspace
-	// whose closure does not resolve — or whose gate refuses — still learns that a
-	// pin has been withdrawn, which is often the explanation. It does not move the
-	// verdict, for the reason the build's own default records: a marker is registry
-	// state applied after the version was pinned, and the dial that turns it into a
-	// halt governs the build alone. A workspace with no lockfile has no recorded
-	// markers either, so reporting nothing there skips nothing.
-	for _, f := range lockForClosure.DeprecationFindings() {
-		fmt.Fprintf(diagOut, "deprecation: %s\n", f.Notice())
+	// neither: a recorded marker is a fact about the store that recorded it, so a
+	// workspace whose closure does not resolve — or whose gate refuses, the trust
+	// record's own dropped-gate refusal included — still learns that something has
+	// been withdrawn, which is often the explanation. It does not move the verdict,
+	// for the reason the build's own default records: a marker is registry state
+	// applied after the version was pinned, and the dial that turns it into a halt
+	// governs the build alone. A workspace with no lockfile or no record has no
+	// recorded markers in it either, so reporting nothing there skips nothing. A
+	// record that cannot be read stops the pass after the lockfile's findings are
+	// printed, because a damaged record must not pass as an empty one.
+	findings, trustErr := compilerops.ReleaseDeprecationReport(lockForClosure, releasePath)
+	for _, f := range findings {
+		fmt.Fprintf(diagOut, "deprecation: %s\n", f.Notice)
 	}
-
-	// The same report over the other store, for the same reason and with the same
-	// verdict — none. A plugin attached at a verdict role is recorded beside the
-	// lockfile rather than pinned in it, so it has no row the report above can reach;
-	// a pass silent about a withdrawn linter would read as though there were none,
-	// and this is the pass that runs those linters. It is read before the record's
-	// own dropped-gate refusal below, so a withdrawal is stated even where that
-	// refusal stops the pass — a withdrawal is often the explanation.
-	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
 	if trustErr != nil {
 		return trustErr
-	}
-	for _, f := range trustRecord.DeprecationFindings() {
-		fmt.Fprintf(diagOut, "deprecation: %s\n", f.Notice())
 	}
 
 	// Hold this Release's configuration to the record of the plugin identities

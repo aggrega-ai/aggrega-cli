@@ -317,9 +317,13 @@ func TestDescribeReleaseCarriesEverythingTheResolutionReachedAndDecided(t *testi
 	for _, f := range resolved.ManifestConsistencyFindings {
 		wantMappings = append(wantMappings, f.Error())
 	}
+	report, trustErr := compilerops.ReleaseDeprecationReport(lf, releasePath)
+	if trustErr != nil {
+		t.Fatalf("read the oracle's withdrawal report: %v", trustErr)
+	}
 	var wantDeprecations []string
-	for _, f := range lf.DeprecationFindings() {
-		wantDeprecations = append(wantDeprecations, f.Notice())
+	for _, f := range report {
+		wantDeprecations = append(wantDeprecations, f.Notice)
 	}
 
 	// Calibration, per class. Without it a fixture that stopped raising one class

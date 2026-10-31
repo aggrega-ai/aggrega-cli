@@ -24,13 +24,13 @@ import (
 // reader actually sees — the notice content and the verdict are the gate's, and
 // the prefix is the calling surface's.
 func enforceLockfileDeprecation(lf *lockfile.Lockfile, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
-	return LockfileDeprecationVerdict(lf, buildCfg, func(n string) {
+	return DeprecationVerdict(DeprecationReport(lf, nil), buildCfg, func(n string) {
 		fmt.Fprintf(diagOut, "  deprecation: %s\n", n)
 	})
 }
 
 func enforceTrustDeprecation(trust *pluginstrust.Trust, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
-	return TrustDeprecationVerdict(trust, buildCfg, func(n string) {
+	return DeprecationVerdict(DeprecationReport(nil, trust), buildCfg, func(n string) {
 		fmt.Fprintf(diagOut, "  deprecation: %s\n", n)
 	})
 }

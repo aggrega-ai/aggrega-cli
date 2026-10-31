@@ -18,7 +18,6 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -221,19 +220,13 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),
 	})
-	// The deprecation report is the shared one every surface reads, from the
-	// lockfile loaded above. This verb produces a REPORT, so it enumerates each
-	// finding beside everything else it has to say; the halt on a recorded marker
-	// belongs to the verbs that produce an artifact.
-	//
-	// Both stores are read, because which one holds a marker is decided by the
-	// attachment's role rather than by anything the reader chose: a plugin attached
-	// at a verdict role is recorded beside the lockfile and has no row here. A
-	// surface reading one store and not the other reports a withdrawal for some
-	// references and stays silent for others, and its silence reads as "nothing is
-	// withdrawn". An unreadable record is reported rather than skipped, for the same
-	// reason the record's loader refuses one: a damaged record must not be able to
-	// pass as an empty one.
+	// The deprecation report is the shared one every surface reads, over both the
+	// lockfile loaded above and the plugin trust record beside the Release. This
+	// verb produces a REPORT, so it enumerates each finding beside everything else
+	// it has to say; the halt on a recorded marker belongs to the verbs that produce
+	// an artifact. An unreadable record is reported rather than skipped, for the
+	// same reason the record's loader refuses one: a damaged record must not be able
+	// to pass as an empty one.
 	// The graph the run already resolved, handed back before any of this verb's
 	// own output. It is read off the result rather than rebuilt: the validation
 	// core holds the graph it validated, and a second resolution here could
@@ -246,16 +239,13 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		}
 	}
 
-	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
+	findings, trustErr := compilerops.ReleaseDeprecationReport(lf, releasePath)
 	if trustErr != nil {
 		return trustErr
 	}
 	var notices []string
-	for _, f := range lf.DeprecationFindings() {
-		notices = append(notices, f.Notice())
-	}
-	for _, f := range trustRecord.DeprecationFindings() {
-		notices = append(notices, f.Notice())
+	for _, f := range findings {
+		notices = append(notices, f.Notice)
 	}
 	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, notices, releasePath, verbosity, diagOut, out)
 }

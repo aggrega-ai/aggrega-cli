@@ -27,7 +27,7 @@ func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
 	const stamp = "2026-07-01T09:30:00Z"
 	lf := deprecationHaltLockfile("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
 
-	err := compilerops.LockfileDeprecationVerdict(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, func(string) {})
+	err := compilerops.DeprecationVerdict(compilerops.DeprecationReport(lf, nil), workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, func(string) {})
 	if err == nil {
 		t.Fatal("a recorded marker at the configured threshold must halt the build")
 	}

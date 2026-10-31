@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -942,4 +943,25 @@ func (tw *toolWorkspace) loadReleaseLockfile(releasePath string) (*lockfile.Lock
 		return nil, explainToolError("Could not read the Release's lockfile.", err, "release")
 	}
 	return lf, ""
+}
+
+// releaseDeprecations reads the withdrawal report for the Release at releasePath
+// over both stores — lf, the lockfile loadReleaseLockfile returned, and the plugin
+// trust record beside the Release — so a tool reporting what a Release depends on
+// names a withdrawn gate plugin as it names a withdrawn pinned reference. Which
+// store holds a marker is decided by the attachment's role, so a tool reading one
+// alone would stay silent about the other.
+//
+// It is read at the same front door as the lockfile, and a record that is there
+// and cannot be read yields the refusal's guidance as the second result, in the
+// shape a lockfile refusal takes. Unlike a lockfile that does not load, which the
+// view tolerates as one with no pins, an unreadable record is refused, because one
+// passed over as empty would report no withdrawn plugin where nothing could be
+// said.
+func (tw *toolWorkspace) releaseDeprecations(lf *lockfile.Lockfile, releasePath string) ([]compilerops.DeprecationFinding, string) {
+	findings, err := compilerops.ReleaseDeprecationReport(lf, releasePath)
+	if err != nil {
+		return nil, explainToolError("Could not read the plugin trust record beside the Release.", err, "release")
+	}
+	return findings, ""
 }

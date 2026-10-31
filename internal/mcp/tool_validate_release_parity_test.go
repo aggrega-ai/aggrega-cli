@@ -385,7 +385,11 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 			// validateReleaseScope reads them, so the oracle mirrors production
 			// rather than a subset of it.
 			wantDiags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
-			wantNotices := releaseAdvisories(vr, lf)
+			deprecations, trustRefused := tw.releaseDeprecations(lf, releasePath)
+			if trustRefused != "" {
+				t.Fatalf("read the oracle's withdrawal report: %s", trustRefused)
+			}
+			wantNotices := releaseAdvisories(vr, deprecations)
 
 			if c.name == "clean" {
 				if len(wantDiags) != 0 {

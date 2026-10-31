@@ -146,15 +146,18 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// validation reads the directories a build of that Release reads.
 	view := s.catalogFor(releasePath).ForRequest(pins)
 
-	// The deprecation report over the lockfile's recorded markers — the same report
-	// the build reads, so the editor names the same references the build would.
+	// The deprecation report over both stores — the lockfile's recorded markers and
+	// the plugin trust record beside the Release — the same report the build reads,
+	// so the editor names the same references and plugins the build would. Which
+	// store holds a marker is decided by the attachment's role, so reading one store
+	// alone would leave a withdrawn gate plugin unmentioned here.
 	//
 	// It is computed HERE, before closure resolution, so it is carried through the
 	// closure-level failure return as well: a recorded marker is a fact about the
-	// lockfile alone, so the author still learns a pin is withdrawn on an edit where
-	// the closure does not resolve at all — where it may well be the explanation.
-	// That is more than the mapping findings below can offer, which are decided BY
-	// the resolution.
+	// store that recorded it, so the author still learns something is withdrawn on
+	// an edit where the closure does not resolve at all — where it may well be the
+	// explanation. That is more than the mapping findings below can offer, which are
+	// decided BY the resolution.
 	//
 	// Past that point it is bounded exactly as every other closure-level class is:
 	// this function returns nothing once the requested file is not the named
@@ -166,9 +169,27 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// named in the message text, so mapping a recorded severity onto the editor's
 	// error tier would put a policy stance in the editor that the product
 	// deliberately leaves to a build-time dial.
+	//
+	// A trust record that is there and cannot be read is reported in place of the
+	// validation, in the shape the lockfile refusal above takes: it must not pass as
+	// an empty record, which would report no withdrawn plugin where the daemon
+	// cannot tell.
+	deprecations, trustErr := compilerops.ReleaseDeprecationReport(lf, releasePath)
+	if trustErr != nil {
+		if _, ours := classifyBuffer(file, releasePath, doc); !ours && !onReleaseDocument {
+			return nil
+		}
+		return []Diagnostic{{
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        s.dependencyFailureMessage(releasePath, onReleaseDocument, trustErr.Error()),
+			ConditionCodes: conditionCodesOf(trustErr),
+		}}
+	}
 	var deprecationDiags []Diagnostic
-	for _, f := range lf.DeprecationFindings() {
-		deprecationDiags = append(deprecationDiags, closureAdvisoryDiagnostic(f.Notice()))
+	for _, f := range deprecations {
+		deprecationDiags = append(deprecationDiags, closureAdvisoryDiagnostic(f.Notice))
 	}
 
 	// Quiet load — pins only, no drift verify, and no lockfile reaches the
@@ -253,7 +274,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// every keystroke, so an editor would lose every other thing it had to say
 	// about the buffer in exchange for one Manifest complaint.
 	// The deprecation notices lead every set below, matching the order the facts
-	// were decided in: the lockfile recorded its markers at the pull, before the
+	// were decided in: both stores recorded their markers at the pull, before the
 	// Manifest was judged and before any gate here read anything.
 	//
 	// Both are the Aggregate's to carry. A request on the Release's own document is

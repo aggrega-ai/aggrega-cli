@@ -338,8 +338,12 @@ func sharedClosureFacts(t *testing.T, root, releasePath string) (libraries, mapp
 	for _, f := range resolved.ManifestConsistencyFindings {
 		mappings = append(mappings, f.Error())
 	}
-	for _, f := range lf.DeprecationFindings() {
-		deprecations = append(deprecations, f.Notice())
+	report, trustErr := compilerops.ReleaseDeprecationReport(lf, releasePath)
+	if trustErr != nil {
+		t.Fatalf("read the oracle's withdrawal report: %v", trustErr)
+	}
+	for _, f := range report {
+		deprecations = append(deprecations, f.Notice)
 	}
 	return libraries, mappings, deprecations
 }

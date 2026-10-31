@@ -66,6 +66,15 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	if lf != nil {
 		view.SetPins(catalog.PinsFromLockfile(lf))
 	}
+	// The withdrawal report over both stores — the lockfile loaded above and the
+	// plugin trust record beside the Release — read at the same point as the
+	// lockfile. A record that is there and cannot be read refuses the listing rather
+	// than passing as an empty one, which would report no withdrawn plugin where
+	// nothing can be said.
+	deprecations, err := compilerops.ReleaseDeprecationReport(lf, releasePath)
+	if err != nil {
+		return err
+	}
 
 	// The resolution below runs under the caller's context, so a reader who stops
 	// the run stops the entity fetches the walk is making rather than only the
@@ -105,7 +114,7 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
 	}
 
-	renderClosureListing(opts, lf, resolved)
+	renderClosureListing(opts, deprecations, resolved)
 	return nil
 }
 
@@ -120,16 +129,14 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 // a second order here would be a second statement of the same thing, free to
 // disagree with the first.
 //
-// lf is the record of pinned versions the resolution was seeded with, or nil where
-// the workspace has none and equally where one is there and did not load. It is
-// read for the withdrawal markers it recorded, which is a fact about the record
-// rather than about the walk, so those are reported beside the closure. The read is
-// nil-safe; what a nil means differs by cause, and only one of the two is free — a
-// workspace with no record has no recorded marker either, while a record that did
-// not load has markers this listing cannot report. The second is the degradation
-// the resolution above already takes on an unreadable record rather than one this
-// listing introduces.
-func renderClosureListing(opts inspectOptions, lf *lockfile.Lockfile, resolved *compilerops.ResolvedClosure) {
+// deprecations is the shared withdrawal report over the record of pinned versions
+// the resolution was seeded with and the plugin trust record beside the Release.
+// A withdrawal marker is a fact about the store that recorded it rather than about
+// the walk, so those are reported beside the closure. A lockfile that is there and
+// did not load contributes nothing to it, which is the degradation the resolution
+// above already takes on an unreadable lockfile rather than one this listing
+// introduces.
+func renderClosureListing(opts inspectOptions, deprecations []compilerops.DeprecationFinding, resolved *compilerops.ResolvedClosure) {
 	if opts.level == levelList {
 		for _, e := range resolved.Closure.Entities {
 			fmt.Fprintf(opts.out, "%s\n", e.URI)
@@ -171,32 +178,32 @@ func renderClosureListing(opts inspectOptions, lf *lockfile.Lockfile, resolved *
 	// replacing it with a refusal — the verdict is the reporting caller's, which is
 	// exactly why the resolution carries these back as findings instead of failing
 	// on them.
-	renderClosureFindings(opts, lf, resolved)
+	renderClosureFindings(opts, deprecations, resolved)
 }
 
 // renderClosureFindings writes what is wrong with the closure just listed: the
 // Manifest mappings whose target does not implement the mapped type, and the
-// pinned references a withdrawal marker was recorded against.
+// pinned references and trusted plugins a withdrawal marker was recorded against.
 //
 // The two are separate sections because they are separate populations decided at
-// separate moments — one by this resolution, one by the record it was seeded with —
-// and a reader acting on either needs to know which. Each section is omitted where
-// its population is empty, on the same footing as an axis the closure reached
-// nothing on.
-func renderClosureFindings(opts inspectOptions, lf *lockfile.Lockfile, resolved *compilerops.ResolvedClosure) {
+// separate moments — one by this resolution, one by the records written at the
+// pull — and a reader acting on either needs to know which. Each section is omitted
+// where its population is empty, on the same footing as an axis the closure
+// reached nothing on.
+func renderClosureFindings(opts inspectOptions, deprecations []compilerops.DeprecationFinding, resolved *compilerops.ResolvedClosure) {
 	if len(resolved.ManifestConsistencyFindings) > 0 {
 		fmt.Fprintln(opts.out, "\nMapping findings:")
 		for _, f := range resolved.ManifestConsistencyFindings {
 			fmt.Fprintf(opts.out, "  %s\n", f.Error())
 		}
 	}
-	// Read through the shared report rather than off the record's rows, so the set
-	// of references reported here is the set every reader of that report sees and
-	// only the framing around it is this command's.
-	if findings := lf.DeprecationFindings(); len(findings) > 0 {
+	// The shared report rather than either record's rows, so the set reported here
+	// is the set every reader of that report sees and only the framing around it is
+	// this command's.
+	if len(deprecations) > 0 {
 		fmt.Fprintln(opts.out, "\nDeprecations:")
-		for _, f := range findings {
-			fmt.Fprintf(opts.out, "  %s\n", f.Notice())
+		for _, f := range deprecations {
+			fmt.Fprintf(opts.out, "  %s\n", f.Notice)
 		}
 	}
 }

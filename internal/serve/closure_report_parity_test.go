@@ -36,6 +36,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -350,9 +351,13 @@ func TestReleaseClosureCarriesEveryFindingTheResolutionDecided(t *testing.T) {
 	for _, f := range preview.resolved.ManifestConsistencyFindings {
 		wantMappings = append(wantMappings, f.Error())
 	}
+	report, trustErr := compilerops.ReleaseDeprecationReport(preview.lockfile, preview.releasePath)
+	if trustErr != nil {
+		t.Fatalf("read the oracle's withdrawal report: %v", trustErr)
+	}
 	var wantDeprecations []string
-	for _, f := range preview.lockfile.DeprecationFindings() {
-		wantDeprecations = append(wantDeprecations, f.Notice())
+	for _, f := range report {
+		wantDeprecations = append(wantDeprecations, f.Notice)
 	}
 
 	// Calibration, per class. Without it a fixture that stopped raising one class

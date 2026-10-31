@@ -144,10 +144,11 @@ type describeReleasePayload struct {
 	// rather than replacing the description with a refusal: a caller asking what a
 	// Release contains is answered, and told what is wrong with it.
 	MappingDiagnostics []string `json:"mapping_diagnostics,omitempty"`
-	// Deprecations names each pinned reference carrying a recorded deprecation
-	// marker, from the shared report the build reads — so a caller asking what a
-	// Release depends on is told which of those dependencies has been deprecated,
-	// rather than having to build it to find out. This tool describes rather than
+	// Deprecations names each pinned reference, and each plugin trusted for a
+	// verdict attachment, carrying a recorded deprecation marker, from the shared
+	// report over both stores the build reads — so a caller asking what a Release
+	// depends on is told which of those dependencies has been deprecated, rather
+	// than having to build it to find out. This tool describes rather than
 	// produces, so the entries are informational and never a refusal.
 	Deprecations []string `json:"deprecations,omitempty"`
 }
@@ -504,6 +505,10 @@ func (s *server) describeRelease(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	deprecations, refusal := tw.releaseDeprecations(lf, releasePath)
+	if refusal != "" {
+		return errorResult(refusal)
+	}
 	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{
@@ -544,8 +549,9 @@ func (s *server) describeRelease(
 	for _, f := range resolved.ManifestConsistencyFindings {
 		payload.MappingDiagnostics = append(payload.MappingDiagnostics, tw.reportedText(f.Error()))
 	}
-	for _, f := range lf.DeprecationFindings() {
-		payload.Deprecations = append(payload.Deprecations, tw.reportedText(f.Notice()))
+	// The withdrawal report over both stores, read at the front door above.
+	for _, f := range deprecations {
+		payload.Deprecations = append(payload.Deprecations, tw.reportedText(f.Notice))
 	}
 	if detail {
 		for _, e := range resolved.Closure.Entities {

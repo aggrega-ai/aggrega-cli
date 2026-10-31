@@ -960,21 +960,16 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 func enforceDeprecation(in PreviewInputs, warn func(WarningClass, string)) (halt error, readErr error) {
 	report := func(notice string) { warn(WarningDeprecation, notice) }
 
-	halt = LockfileDeprecationVerdict(in.lockfile, in.workspaceConfig.Build, report)
-
-	// The same gate over the other store. A plugin attached at a verdict role
-	// shapes no rendered byte, so it is recorded beside the lockfile rather than
-	// pinned in it and has no row the gate above could read. Without this, a
-	// withdrawn gate plugin is fetched, cached and run with nothing said.
-	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(in.releasePath))
-	if trustErr != nil {
-		return nil, trustErr
-	}
-	// Both walks always complete: the second runs even when the first earned a
-	// halt, so a reader is told about every withdrawn plugin rather than only
-	// about whichever store happened to be walked first.
-	if trustHalt := TrustDeprecationVerdict(trustRecord, in.workspaceConfig.Build, report); halt == nil {
-		halt = trustHalt
+	// The one report over both stores. A plugin attached at a verdict role shapes
+	// no rendered byte, so it is recorded beside the lockfile rather than pinned in
+	// it; without the record's half, a withdrawn gate plugin is fetched, cached and
+	// run with nothing said. On a record that cannot be read the report still hands
+	// back the lockfile's findings, and they are reported before the read failure is
+	// returned, so a reader is told what could be read.
+	findings, readErr := ReleaseDeprecationReport(in.lockfile, in.releasePath)
+	halt = DeprecationVerdict(findings, in.workspaceConfig.Build, report)
+	if readErr != nil {
+		return nil, readErr
 	}
 	return halt, nil
 }

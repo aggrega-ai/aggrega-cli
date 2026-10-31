@@ -612,9 +612,10 @@ type releaseClosureResult struct {
 	// MappingDiagnostics names each Manifest mapping whose target does not
 	// implement the mapped type, as the resolution reported it.
 	MappingDiagnostics []string `json:"mappingDiagnostics"`
-	// Deprecations names each pinned reference a withdrawal marker was recorded
-	// against, from the shared report — so the set of references named here is the
-	// set every reader of that report sees, and only the framing differs.
+	// Deprecations names each pinned reference, and each plugin trusted for a
+	// verdict attachment, a withdrawal marker was recorded against, from the shared
+	// report over both stores — so the set named here is the set every reader of
+	// that report sees, and only the framing differs.
 	Deprecations []string `json:"deprecations"`
 }
 
@@ -686,12 +687,20 @@ func (s *Server) dispatchReleaseClosure(ctx context.Context, req *jsonRPCRequest
 //
 // The findings are read from the same computation the listing is read from — the
 // resolution's own mapping verdict, and the shared withdrawal report over the
-// record that computation was seeded with — so nothing here re-derives a fact that
-// already has a producer.
+// lockfile that computation was seeded with and the plugin trust record beside the
+// Release — so nothing here re-derives a fact that already has a producer.
 func (s *Server) handleReleaseClosure(ctx context.Context, params releaseClosureParams) (releaseClosureResult, *jsonRPCError) {
 	preview, errEnvelope := s.previewRelease(ctx, params.Release, pipeline.Options{SkipRender: true})
 	if errEnvelope != nil {
 		return releaseClosureResult{}, errEnvelope
+	}
+	deprecations, err := closureDeprecations(preview.lockfile, preview.releasePath)
+	if err != nil {
+		return releaseClosureResult{}, &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: err.Error(),
+			cause:   err,
+		}
 	}
 	return releaseClosureResult{
 		Release:            params.Release,
@@ -702,7 +711,7 @@ func (s *Server) handleReleaseClosure(ctx context.Context, params releaseClosure
 		Libraries:          closureLibraries(preview.resolved.Closure, stateRows),
 		Plugins:            closurePlugins(preview.resolved.Closure, stateRows),
 		MappingDiagnostics: closureMappingDiagnostics(preview.resolved.ManifestConsistencyFindings),
-		Deprecations:       closureDeprecations(preview.lockfile),
+		Deprecations:       deprecations,
 	}, nil
 }
 
@@ -720,27 +729,36 @@ func closureMappingDiagnostics(findings []error) []string {
 	return out
 }
 
-// closureDeprecations renders the withdrawal markers recorded against the pinned
-// references onto the wire shape.
+// closureDeprecations renders the withdrawal markers recorded against what the
+// Release at releasePath depends on onto the wire shape: those the lockfile
+// records against its pinned references, then those the plugin trust record beside
+// the Release records against a plugin attached at a verdict role.
 //
-// It reads the shared report rather than the record's rows, so a reference reported
-// here is reported by every reader of that report and the wording of the notice has
-// one home.
+// It reads the shared report over both stores rather than either record's rows, so
+// what is reported here is reported by every reader of that report and the wording
+// of each notice has one home. Reading the lockfile alone would leave a withdrawn
+// gate plugin unmentioned, because which store holds a marker is decided by the
+// attachment's role.
 //
-// The report is nil-safe by contract, so no guard is needed here for a nil record.
-// What that means differs by why the record is nil, and only one of the two cases is
-// free: a workspace with no record has no recorded marker either, while a record
-// present but unreadable has markers this answer cannot report. The second is the
-// same degradation the surrounding computation already takes on an unreadable record
-// — it proceeds with no pins — rather than one introduced here, and the answer says
-// nothing about it either way.
-func closureDeprecations(lf *lockfile.Lockfile) []string {
-	findings := lf.DeprecationFindings()
+// A nil lockfile contributes nothing, and what that means differs by why it is nil:
+// a workspace with no lockfile has no recorded marker either, while one present but
+// unreadable has markers this answer cannot report — the same degradation the
+// surrounding computation already takes on an unreadable lockfile, which proceeds
+// with no pins. A trust record that is there and cannot be read is returned as an
+// error instead, so it cannot pass as an empty one.
+//
+// The result is an empty slice rather than nil where nothing is recorded, matching
+// every other collection in this response.
+func closureDeprecations(lf *lockfile.Lockfile, releasePath string) ([]string, error) {
+	findings, err := compilerops.ReleaseDeprecationReport(lf, releasePath)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]string, 0, len(findings))
 	for _, f := range findings {
-		out = append(out, f.Notice())
+		out = append(out, f.Notice)
 	}
-	return out
+	return out, nil
 }
 
 // closureEntities projects the catalog-entity axis onto the wire shape, in the
