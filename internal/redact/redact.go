@@ -279,6 +279,11 @@ type DeliveryKeys map[string]map[string]bool
 // template's text — what a refusal may carry, and the re-render of a workload a
 // capture shows — because a template can read either.
 //
+// Lists names what the set withholds inside a LIST a template reads, entry by
+// entry, and the locals computed from it. It is held apart from every other field
+// for one reason, which PluginMarking states: it reaches what a failure's text may
+// say and not the marking a rendering plugin is handed.
+//
 // Workload is the one entry that names a whole projection rather than keys
 // within it, and it records what the display DOES with that projection rather
 // than which of its keys are withheld — a rendered workload is a parsed document
@@ -296,6 +301,7 @@ type Keys struct {
 	ConnectionSockets map[string]string
 	Features          map[string]AttachmentKeys
 	Provides          map[string]bool
+	Lists             ListKeys
 	Workload          WorkloadDisplay
 
 	// inject is the delivery marking. See the type's own documentation for why
@@ -331,7 +337,62 @@ func (k Keys) AnyWithheld() bool {
 	return len(k.Values) > 0 || len(k.Infra) > 0 || len(k.inject) > 0 ||
 		len(k.Locals) > 0 || len(k.Source) > 0 || len(k.UsesProvides) > 0 ||
 		len(k.UsesConnections) > 0 || len(k.UsesAttachments) > 0 || len(k.Features) > 0 ||
-		len(k.Provides) > 0
+		len(k.Provides) > 0 || k.Lists.Any()
+}
+
+// ListKeys names what a set withholds inside the lists a template reads — a
+// boundary's connections and attachments, the connections made to a node — and
+// the locals computed from any of it.
+//
+// Entries is keyed by the dotted path a template reads a list at, spelled as every
+// other coordinate is (boundary.internal_uses_edges, context.used_by), and holds
+// one element per entry of that list, in the list's own order: what that entry
+// carries that an author declared sensitive, in the three pillars an entry is read
+// with, spelled as an attachment's declarations are. An entry its governing entity
+// declares nothing for holds the zero value.
+//
+// Each entry is governed by its OWN entity — a connection's target Component, a
+// connecting node's Component, a boundary attachment's Feature — which is why the
+// list is addressed per entry rather than by one declaration for the whole list.
+// The positions are only meaningful against the list they were read from, so the
+// caller reads them off the very list the template's data carries.
+//
+// Locals names the entries of a locals block computed from a datum Entries names,
+// beyond those Keys.Locals already names; a local is withheld when either names it.
+type ListKeys struct {
+	Entries map[string][]AttachmentKeys
+	Locals  map[string]bool
+}
+
+// Any reports whether the set names anything inside a list, or any local computed
+// from one.
+func (l ListKeys) Any() bool {
+	if len(l.Locals) > 0 {
+		return true
+	}
+	for _, entries := range l.Entries {
+		for _, entry := range entries {
+			if entry.Any() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// PluginMarking returns the set a marking handed to a rendering plugin is read
+// against: this set without what it names inside lists.
+//
+// A marking is more than a statement about failure text. A plugin may refuse input
+// it otherwise accepts because the marking says a value was read from a declared
+// datum, and a read of a whole list reaches every entry of it — so widening the
+// marking by what a set names inside lists would halt builds that are accepted
+// without it. What a set names inside lists therefore governs the host's own
+// reading of a failure, what a refusal may say, and leaves every marking a plugin
+// receives exactly what the rest of the set makes it.
+func (k Keys) PluginMarking() Keys {
+	k.Lists = ListKeys{}
+	return k
 }
 
 // Empty reports whether the set names nothing and no projection is displayed

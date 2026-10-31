@@ -318,6 +318,114 @@ func TestKeys_NodesOwnDeclarations(t *testing.T) {
 	}
 }
 
+// listKeys names, inside a boundary's connection list, the provides key the first
+// entry's target declares — and nothing for the second entry, whose target
+// publishes the same key — the infra leaf an attachment entry's Feature declares,
+// and a local computed from a list entry.
+func listKeys() Keys {
+	return Keys{Lists: ListKeys{
+		Entries: map[string][]AttachmentKeys{
+			"boundary.internal_uses_edges": {{Provides: map[string]bool{"secret_ref": true}}, {}},
+			"boundary.feature_attachments": {{Infra: map[string]bool{"token": true}}},
+		},
+		Locals: map[string]bool{"ref": true},
+	}}
+}
+
+// listTree is a template's data carrying a datum at every position listKeys names,
+// beside an undeclared sibling at each, and an authored array under values.
+func listTree() map[string]any {
+	return map[string]any{
+		"boundary": map[string]any{
+			"path": "shop",
+			"internal_uses_edges": []any{
+				map[string]any{"target": "store", "provides": map[string]any{"secret_ref": "store-ref-plaintext", "host": "store-host"}},
+				map[string]any{"target": "cache", "provides": map[string]any{"secret_ref": "cache-ref-public", "host": "cache-host"}},
+			},
+			"feature_attachments": []any{
+				map[string]any{"type": "test/guard", "infra": map[string]any{"token": "guard-token-plaintext", "region": "eu-west-1"}},
+			},
+		},
+		"locals": map[string]any{"ref": "store-ref-plaintext", "label": "shop"},
+		"values": map[string]any{"servers": []any{"first-server", "second-server"}},
+	}
+}
+
+// TestKeys_ListEntries is the set's two readings over what it names inside lists.
+// Each row is a position and whether the substitution writes at it; each withheld
+// row sits beside an undeclared row of the same shape, and the second connection's
+// key shares the first one's name, so a reading keyed on a key's name rather than
+// on the entry it belongs to fails a row.
+func TestKeys_ListEntries(t *testing.T) {
+	t.Parallel()
+	keys := listKeys()
+	tree := listTree()
+	keys.SubstituteTree(tree)
+
+	edge := func(i int, at ...string) any {
+		entries, _ := dig(tree, "boundary", "internal_uses_edges").([]any)
+		if i >= len(entries) {
+			return nil
+		}
+		return dig(entries[i], at...)
+	}
+	attachment, _ := dig(tree, "boundary", "feature_attachments").([]any)
+	servers, _ := dig(tree, "values", "servers").([]any)
+	cases := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"an entry's declared provides key", edge(0, "provides", "secret_ref"), placeholder},
+		{"its undeclared provides key", edge(0, "provides", "host"), "store-host"},
+		{"the same key on an entry declaring nothing", edge(1, "provides", "secret_ref"), "cache-ref-public"},
+		{"an entry's identity", edge(0, "target"), "store"},
+		{"an attachment entry's declared infra leaf", dig(attachment[0], "infra", "token"), placeholder},
+		{"its undeclared infra leaf", dig(attachment[0], "infra", "region"), "eu-west-1"},
+		{"a local computed from an entry", dig(tree, "locals", "ref"), placeholder},
+		{"a local computed from nothing declared", dig(tree, "locals", "label"), "shop"},
+		{"a field beside the lists", dig(tree, "boundary", "path"), "shop"},
+		{"an authored array the set names no entry of", servers[0], "first-server"},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Errorf("%s: the substitution left %v, want %v", c.name, c.got, c.want)
+		}
+	}
+
+	// A read of a list, or of anything holding one, reaches the declared entries
+	// beneath it — which is how an entry read inside a range or through index is
+	// reached, since no reference names a position.
+	for _, ref := range []string{".boundary.internal_uses_edges", ".boundary.feature_attachments", ".boundary", ".locals.ref", "."} {
+		if !keys.ReachedBy([]string{ref}) {
+			t.Errorf("a read of %s must reach the withheld data beneath it", ref)
+		}
+	}
+	for _, ref := range []string{".boundary.path", ".boundary.components", ".locals.label", ".values.servers"} {
+		if keys.ReachedBy([]string{ref}) {
+			t.Errorf("a read of %s must reach nothing", ref)
+		}
+	}
+
+	// The plugin marking reads none of it.
+	marking := keys.PluginMarking()
+	if marking.AnyWithheld() || marking.ReachedBy([]string{".boundary.internal_uses_edges"}) {
+		t.Error("the plugin marking must name nothing a set names inside lists")
+	}
+}
+
+// TestKeys_ListEntriesNeedTheirList: a coordinate an author spelled with an
+// all-digit segment does not enter an authored array, because only a list the set
+// names entries of is entered.
+func TestKeys_ListEntriesNeedTheirList(t *testing.T) {
+	t.Parallel()
+	tree := map[string]any{"values": map[string]any{"servers": []any{"first-server"}}}
+	Keys{Values: map[string]bool{"servers.0": true}}.SubstituteTree(tree)
+	if got := dig(tree, "values", "servers").([]any)[0]; got != "first-server" {
+		t.Errorf("an authored array must be left as it is, got %v", got)
+	}
+}
+
 // TestSubstituteTree_EmptySetIsIdentity: a set naming nothing writes nothing.
 func TestSubstituteTree_EmptySetIsIdentity(t *testing.T) {
 	t.Parallel()

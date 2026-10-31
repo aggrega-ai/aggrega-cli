@@ -206,10 +206,11 @@ func buildArtifactsProjection(
 			Origin:  origin,
 			Content: []byte(rendered),
 			// Whether this entry's template read a value its failure is withheld by,
-			// asked of the text just evaluated with the pair it was evaluated with.
+			// asked of the text just evaluated with the pair it was evaluated with,
+			// over the set's plugin marking because the answer is handed to the guest.
 			// The content is the template's output, so the guest placing it has no
 			// other way to know which of it came from a declared value.
-			SensitiveContent: templateReadsWithheldDelims(tmplText, leftDelim, rightDelim, state.Withheld),
+			SensitiveContent: templateReadsWithheldDelims(tmplText, leftDelim, rightDelim, state.Withheld.PluginMarking()),
 			Labels:           labels,
 			Annotations:      annotations,
 		}

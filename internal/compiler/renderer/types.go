@@ -218,6 +218,16 @@ type RendererInput struct {
 	// this axis's safe direction, and it is the opposite of the direction that is
 	// safe for withholding, so this reader's answer must never be reused there.
 	declaredFeatureLeaves func(featureType string) resolver.SensitiveLeaves
+
+	// declaredComponentLeaves answers what one Component type declares sensitive,
+	// through the same memoised reader as declaredFeatureLeaves and for the same
+	// reason: the answer is needed far from where the reader is built — at each
+	// attachment's render dispatch, for the entries of the lists its context carries,
+	// each governed by the Component of the node the entry names.
+	//
+	// Unexported and nil-safe on the same terms: an input built elsewhere leaves it
+	// nil, and nothing is then declared for those entries.
+	declaredComponentLeaves func(componentType string) resolver.SensitiveLeaves
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

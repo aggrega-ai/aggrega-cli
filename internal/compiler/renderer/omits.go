@@ -81,10 +81,10 @@ func EvaluateOmits(entries []types.OmitEntry, data *types.TemplateContext, withh
 			Entry:    OmitEntry{Kind: kind, Name: name, Namespace: namespace, Subchart: subchart},
 			Position: i,
 			Withheld: OmitFieldsWithheld{
-				Kind:      templateReadsWithheld(entry.Kind, withheld),
-				Name:      templateReadsWithheld(entry.Name, withheld),
-				Namespace: templateReadsWithheld(entry.Namespace, withheld),
-				Subchart:  templateReadsWithheld(entry.Subchart, withheld),
+				Kind:      templateReadsWithheld(entry.Kind, withheld.PluginMarking()),
+				Name:      templateReadsWithheld(entry.Name, withheld.PluginMarking()),
+				Namespace: templateReadsWithheld(entry.Namespace, withheld.PluginMarking()),
+				Subchart:  templateReadsWithheld(entry.Subchart, withheld.PluginMarking()),
 			},
 		})
 	}

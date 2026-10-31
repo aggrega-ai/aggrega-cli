@@ -102,9 +102,11 @@ type PhaseBState struct {
 	BoundaryArtifacts []boundaryArtifact
 
 	// SensitiveWorkload reports that the workload template that produced
-	// ParsedWorkload reads a value Withheld names. It is the same answer that
-	// decides how the checks of that workload word their findings, recorded once
-	// where it is taken so the provider guest is told exactly what the checks were.
+	// ParsedWorkload reads a value Withheld's plugin marking names. It is the same
+	// answer that decides how the checks of that workload word their findings, save
+	// for what Withheld names inside lists, which reaches the checks alone; it is
+	// recorded once where it is taken so the provider guest is told what the checks
+	// were.
 	SensitiveWorkload bool
 
 	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal

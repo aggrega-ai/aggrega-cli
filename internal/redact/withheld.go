@@ -5,6 +5,7 @@ package redact
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -34,7 +35,9 @@ const (
 // context.uses.<alias>.values.<leaf> and context.uses.<alias>.infra.<leaf>,
 // context.uses.<alias>.features.<slot>.<pillar>… — and, where the set names the
 // connection's socket, the same connection's values, infra and features beneath
-// uses.<socket>.<alias> — features.<name>.<pillar>… and provides.<key>.
+// uses.<socket>.<alias> — features.<name>.<pillar>…, provides.<key>, and
+// <list>.<position>.<pillar>… for an entry of a list, its position in the list as
+// one segment.
 //
 // It is the ONE statement of where in a template's data each kind of entry in the
 // set sits, and both questions asked of a set in those terms read it: whether a
@@ -96,7 +99,23 @@ func (k Keys) coordinates() map[string]bool {
 			}
 		}
 	}
+	for list, entries := range k.Lists.Entries {
+		for position, declared := range entries {
+			addAttachment(out, entryPath(list, position), declared)
+		}
+	}
+	addPaths(out, rootLocals, k.Lists.Locals)
 	return out
+}
+
+// entryPath spells the position of one entry of the list a template reads at
+// list: the list's own path and the entry's position as one more segment. No
+// reference a template spells names a position — an entry is read inside a range
+// or through index, both of which the reference census records as a read of the
+// whole list — so a reference reaches an entry's datum as an ancestor of it, and
+// the spelling only has to agree with the substitution that writes at it.
+func entryPath(list string, position int) string {
+	return list + "." + strconv.Itoa(position)
 }
 
 // addPaths adds one coordinate per entry of paths, each beneath prefix.
@@ -197,9 +216,12 @@ func coordinateAncestors(coords map[string]bool) map[string]bool {
 // PRESENT is replaced: a declared datum the author left unset stays absent, so a
 // template testing whether it was supplied takes the same branch it took before.
 // A declaration on an object replaces that whole object, and nothing is descended
-// into but a map, so a coordinate reaches exactly the positions the display's
-// pillar appliers reach; a parity test holds the two to one answer over one
-// fixture.
+// into but a map — and a list the set names entries of, entry by entry — so a
+// coordinate naming a map position reaches exactly the positions the display's
+// pillar appliers reach, which a parity test holds the two to over one fixture. No
+// display shows a list the set names entries of, so the list positions have no
+// applier to agree with; their own test holds each entry to the declarations read
+// for it.
 //
 // Two ways output built this way still differs from the original, and a surface
 // showing it has to say so rather than paper over it: a template that branches on
@@ -215,13 +237,30 @@ func (k Keys) SubstituteTree(tree any) {
 	if len(coords) == 0 {
 		return
 	}
-	substituteMap(root, "", coords, coordinateAncestors(coords))
+	w := substitution{coords: coords, ancestors: coordinateAncestors(coords), lists: map[string]bool{}}
+	for list := range k.Lists.Entries {
+		w.lists[list] = true
+	}
+	w.walkMap(root, "")
 }
 
-// substituteMap walks one map of a template's data tree. The keys are visited in
-// sorted order so the walk is the same on every run, although the result does not
-// depend on it: each step writes only the key it is visiting.
-func substituteMap(m map[string]any, prefix string, coords, ancestors map[string]bool) {
+// substitution is one walk of a template's data tree: the coordinates it writes
+// at, the objects those are reached through, and the lists whose entries are
+// addressed by position.
+//
+// A list is descended into only where the set names entries of it. A coordinate
+// naming a map position is spelled from the names an author declared, and a
+// declared name may be all digits; a walk entering every list it met would read
+// such a coordinate as a position in an authored array, where the display's
+// appliers, which never enter a list, leave the array as it is.
+type substitution struct {
+	coords, ancestors, lists map[string]bool
+}
+
+// walkMap walks one map of a template's data tree. The keys are visited in sorted
+// order so the walk is the same on every run, although the result does not depend
+// on it: each step writes only the key it is visiting.
+func (w substitution) walkMap(m map[string]any, prefix string) {
 	keys := make([]string, 0, len(m))
 	for key := range m {
 		keys = append(keys, key)
@@ -232,15 +271,40 @@ func substituteMap(m map[string]any, prefix string, coords, ancestors map[string
 		if prefix != "" {
 			path = prefix + "." + key
 		}
-		if coords[path] {
+		if w.coords[path] {
 			m[key] = placeholder
 			continue
 		}
-		if !ancestors[path] {
+		if w.ancestors[path] {
+			w.descend(m[key], path)
+		}
+	}
+}
+
+// walkList walks the entries of a list the set names entries of, each at its
+// position, in order.
+func (w substitution) walkList(entries []any, list string) {
+	for position := range entries {
+		path := entryPath(list, position)
+		if w.coords[path] {
+			entries[position] = placeholder
 			continue
 		}
-		if child, ok := m[key].(map[string]any); ok {
-			substituteMap(child, path, coords, ancestors)
+		if w.ancestors[path] {
+			w.descend(entries[position], path)
+		}
+	}
+}
+
+// descend continues the walk into the value at path: a map always, a list only
+// where the set names entries of it, and nothing else.
+func (w substitution) descend(value any, path string) {
+	switch child := value.(type) {
+	case map[string]any:
+		w.walkMap(child, path)
+	case []any:
+		if w.lists[path] {
+			w.walkList(child, path)
 		}
 	}
 }

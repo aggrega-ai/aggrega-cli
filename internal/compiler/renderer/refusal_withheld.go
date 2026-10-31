@@ -268,15 +268,139 @@ func (w hostWithheld) leaves(instanceName string, pillarsFound bool) resolver.Se
 // Feature the attachment names, an empty values pillar, the FeatureRecipe's own
 // locals, and the boundary's view. leaves is what that Feature declares.
 //
-// The boundary's view lists its components, its edges and its attachments, and
-// a list is a shape the coordinates a set is spelled in do not address — so a
-// value one of those entries carries is not withheld from a failure's text by
-// this set.
-func boundaryFRKeys(fr *types.FeatureRecipe, leaves resolver.SensitiveLeaves) redact.Keys {
+// The boundary's view carries its connections and its attachments as lists, each
+// entry governed by its own entity: a connection's target publishes its provides
+// on the entry, and an attachment carries its own infra. view is the view the
+// templates read, and the entries are read off it, so each position the set names
+// is the entry it was read for. A local the FeatureRecipe computes from one of
+// those entries is withheld with it.
+func boundaryFRKeys(fr *types.FeatureRecipe, leaves resolver.SensitiveLeaves, view *types.BoundaryContext, lists listDeclarations) redact.Keys {
 	if fr == nil {
 		return redact.Keys{}
 	}
-	return attachmentPillarKeys(leaves, derivedLocals(fr.Spec.Locals, leaves.Values, leaves.Infra))
+	keys := attachmentPillarKeys(leaves, derivedLocals(fr.Spec.Locals, leaves.Values, leaves.Infra))
+	return withListEntries(keys, boundaryListEntries(view, lists), fr.Spec.Locals)
+}
+
+// The paths a template reads each list at, spelled as every coordinate is — the
+// json tags of the fields carrying them, joined by dots.
+// TestListPathsAreTheTemplateContextTags holds each to those tags.
+const (
+	listBoundaryInternalEdges         = "boundary.internal_uses_edges"
+	listBoundaryOutgoingCrossingEdges = "boundary.outgoing_cross_boundary_uses_edges"
+	listBoundaryIncomingCrossingEdges = "boundary.incoming_cross_boundary_uses_edges"
+	listBoundaryCrossingEdges         = "boundary.cross_boundary_uses_edges"
+	listBoundaryAttachments           = "boundary.feature_attachments"
+	listUsedBy                        = "context.used_by"
+)
+
+// listDeclarations answers what governs each entry of a list a template reads: the
+// Component of the node an entry names, read through the graph that names it, and
+// the Feature an attachment entry names. Its zero value declares nothing.
+type listDeclarations struct {
+	graph     *types.IRGraph
+	component func(componentType string) resolver.SensitiveLeaves
+	feature   func(featureType string) resolver.SensitiveLeaves
+}
+
+// listDeclarationsOf returns the answers a render's input carries, against graph.
+func listDeclarationsOf(input RendererInput, graph *types.IRGraph) listDeclarations {
+	return listDeclarations{graph: graph, component: input.declaredComponentLeaves, feature: input.declaredFeatureLeaves}
+}
+
+// nodeProvides returns the provides keys the Component of the node nodeID
+// declares sensitive; a node the graph does not hold declares nothing.
+func (d listDeclarations) nodeProvides(nodeID string) map[string]bool {
+	if d.graph == nil || d.component == nil {
+		return nil
+	}
+	node, ok := d.graph.Spec.Nodes.Get(nodeID)
+	if !ok {
+		return nil
+	}
+	return d.component(node.Component).Provides
+}
+
+// boundaryListEntries returns, for each list of a boundary's view, what each of
+// its entries carries that its governing entity declares sensitive: the provides
+// each connection's target declares, and what each attachment's Feature declares.
+// A list no entry of which declares anything is left out.
+func boundaryListEntries(view *types.BoundaryContext, d listDeclarations) map[string][]redact.AttachmentKeys {
+	if view == nil {
+		return nil
+	}
+	out := map[string][]redact.AttachmentKeys{}
+	for _, list := range []struct {
+		path  string
+		edges []types.EnrichedEdge
+	}{
+		{listBoundaryInternalEdges, view.InternalUsesEdges},
+		{listBoundaryOutgoingCrossingEdges, view.OutgoingCrossBoundaryUsesEdges},
+		{listBoundaryIncomingCrossingEdges, view.IncomingCrossBoundaryUsesEdges},
+		{listBoundaryCrossingEdges, view.CrossBoundaryUsesEdges},
+	} {
+		addListEntries(out, list.path, len(list.edges), func(i int) redact.AttachmentKeys {
+			return redact.AttachmentKeys{Provides: d.nodeProvides(list.edges[i].Target)}
+		})
+	}
+	addListEntries(out, listBoundaryAttachments, len(view.FeatureAttachments), func(i int) redact.AttachmentKeys {
+		leaves := declaredLeavesOf(d.feature, view.FeatureAttachments[i].Type)
+		return redact.AttachmentKeys{Values: leaves.Values, Infra: leaves.Infra, Provides: leaves.Provides}
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// usedByListEntries returns what each connection made to a node carries that the
+// connecting node's Component declares sensitive among its provides, in the order
+// the connections are listed. usedBy is the list the template's context carries.
+func usedByListEntries(usedBy []types.InboundEdge, d listDeclarations) map[string][]redact.AttachmentKeys {
+	out := map[string][]redact.AttachmentKeys{}
+	addListEntries(out, listUsedBy, len(usedBy), func(i int) redact.AttachmentKeys {
+		return redact.AttachmentKeys{Provides: d.nodeProvides(usedBy[i].ComponentID)}
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// addListEntries records the n entries of the list at path, each as entry reads
+// it, when at least one of them declares something.
+func addListEntries(out map[string][]redact.AttachmentKeys, path string, n int, entry func(i int) redact.AttachmentKeys) {
+	entries := make([]redact.AttachmentKeys, n)
+	declared := false
+	for i := range entries {
+		entries[i] = entry(i)
+		declared = declared || entries[i].Any()
+	}
+	if declared {
+		out[path] = entries
+	}
+}
+
+// withListEntries widens keys by what the lists a template reads carry, entry by
+// entry, and by the entries of locals — the block the same templates read at
+// .locals — computed from one of those entries, directly or through an earlier
+// entry. With no entry declaring anything, keys is returned as it is.
+func withListEntries(keys redact.Keys, entries map[string][]redact.AttachmentKeys, locals types.OrderedMap[string]) redact.Keys {
+	if len(entries) == 0 {
+		return keys
+	}
+	keys.Lists.Entries = entries
+	readable := redact.Keys{Values: keys.Values, Infra: keys.Infra, Lists: redact.ListKeys{Entries: entries}}
+	for name := range localsReading(locals, readable) {
+		if keys.Locals[name] {
+			continue
+		}
+		if keys.Lists.Locals == nil {
+			keys.Lists.Locals = map[string]bool{}
+		}
+		keys.Lists.Locals[name] = true
+	}
+	return keys
 }
 
 // attachmentPillarKeys returns the set for a template that reads nothing but one

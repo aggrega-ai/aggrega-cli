@@ -536,9 +536,10 @@ func dispatchBoundaryScopeFR(
 	}
 	boundaryFRState.links.stampBoundaryLinkReads(frCtx)
 	// What the Feature this attachment names declares, governing the infra this
-	// context carries, and the locals computed from it — the set every template this
-	// render evaluates is withheld by.
-	withheld := boundaryFRKeys(fr, declaredLeavesOf(input.declaredFeatureLeaves, feat.Type))
+	// context carries, what each entry of the boundary's lists carries that its own
+	// entity declares, and the locals computed from either — the set every template
+	// this render evaluates is withheld by.
+	withheld := boundaryFRKeys(fr, declaredLeavesOf(input.declaredFeatureLeaves, feat.Type), frCtx.Boundary, listDeclarationsOf(input, graph))
 
 	// The FR's locals and provides, read back from the one evaluation the
 	// pre-pass made against a context built from the same inputs; the locals land
@@ -899,9 +900,10 @@ func buildBoundaryFRTemplateContext(
 //
 // The evaluation is host-side template work and crosses into no plugin.
 //
-// declared answers what each boundary attachment's Feature declares sensitive, so
-// a failing locals or provides template reports without such a value; nil declares
-// nothing.
+// declared answers what each boundary attachment's Feature declares sensitive, and
+// declaredComponent what a Component type declares — the target of each
+// connection the boundary's view lists — so a failing locals or provides template
+// reports without such a value; nil declares nothing.
 func PrepopulateBoundaryScopeProvides(
 	graph *types.IRGraph,
 	release *types.Release,
@@ -911,10 +913,12 @@ func PrepopulateBoundaryScopeProvides(
 	allProvides NodeProvides,
 	state *BoundaryFRState,
 	declared func(featureType string) resolver.SensitiveLeaves,
+	declaredComponent func(componentType string) resolver.SensitiveLeaves,
 ) error {
 	if graph == nil || state == nil {
 		return nil
 	}
+	lists := listDeclarations{graph: graph, component: declaredComponent, feature: declared}
 	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
 		for instName, bf := range feats.All() {
 			fr, ok := recipeLookup.FeatureRecipe(instName, bf.Type)
@@ -928,7 +932,7 @@ func PrepopulateBoundaryScopeProvides(
 			}
 			state.links.stampBoundaryLinkReads(frCtx)
 			if err := evaluateBoundaryFRTemplates(fr, instName, frCtx, state, key,
-				boundaryFRKeys(fr, declaredLeavesOf(declared, bf.Type)),
+				boundaryFRKeys(fr, declaredLeavesOf(declared, bf.Type), frCtx.Boundary, lists),
 				featureProvidesContractOf(catalogLookup, bf.Type)); err != nil {
 				return err
 			}

@@ -173,10 +173,10 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	// one that records the fact, as the branch above records its own.
 	state.ValuesMapped = true
 	// Whether the mapping read a value an author declared sensitive, asked of its
-	// references over the same set its failure is withheld by. The output's keys are
-	// the mapping's own invention, so this is the only marking its values can carry
-	// to the provider guest.
-	state.SensitiveValues = templateReadsWithheld(tmplText, state.Withheld)
+	// references over the plugin marking of the set its failure is withheld by. The
+	// output's keys are the mapping's own invention, so this is the only marking its
+	// values can carry to the provider guest.
+	state.SensitiveValues = templateReadsWithheld(tmplText, state.Withheld.PluginMarking())
 	// Trace point: B.1 valuesMapping output (slot 07).
 	state.capture(trace.PassPhaseB1, "", ctx)
 	state.PhaseReached = 1
@@ -251,11 +251,14 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots validator.Wor
 	// it found. That is the fail-safe direction: a finding at a position no
 	// declared datum reached loses its value text too.
 	//
-	// The same answer is recorded for the provider guest, which synthesizes from
-	// this document and words its own refusals over it on the same terms.
-	state.SensitiveWorkload = workloadReadsWithheld(workloadText, state.Withheld)
+	// The answer recorded for the provider guest, which synthesizes from this
+	// document and words its own refusals over it, is the same question asked of the
+	// set's plugin marking: what the set names inside lists governs these checks'
+	// findings and not what the guest is handed (redact.Keys.PluginMarking).
+	withholdFindings := workloadReadsWithheld(workloadText, state.Withheld)
+	state.SensitiveWorkload = workloadReadsWithheld(workloadText, state.Withheld.PluginMarking())
 	var validation []validator.WorkloadValidationOption
-	if state.SensitiveWorkload {
+	if withholdFindings {
 		validation = append(validation, validator.WithholdRenderedValues())
 	}
 
@@ -894,6 +897,12 @@ func (p *attachmentPass) render(
 		},
 	}
 	frKeys := frWithheld.forAttachment(item.Instance, pillarsFound, fr.Spec.Locals)
+	// The connections made to the host ride this copy alone, each carrying what its
+	// connecting node publishes, governed by that node's Component — so each entry
+	// is withheld by its own declarations, read off the list this copy carries. The
+	// attachment's locals are evaluated against a context carrying no list, so none
+	// of them is computed from one.
+	frKeys.Lists.Entries = usedByListEntries(frCtx.Context.UsedBy, listDeclarationsOf(input, input.Graph))
 
 	frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 		fr, item.Instance, nodeID, frCtx.Context.RenderedName, frCtx.Values, frCtx.Infra,

@@ -1286,6 +1286,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// them all.
 	readers := newDeclarationReaders(input.CatalogLookup)
 	input.declaredFeatureLeaves = readers.feature
+	input.declaredComponentLeaves = readers.component
 	// Each node's own declarations — its Component's, those of the Features attached
 	// to it, and which of its Recipe's locals and source parts are computed from a
 	// declared leaf — read from the bound Recipe as the catalog holds it, BEFORE
@@ -1464,7 +1465,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// per-node Phase B.6 dispatch (which renders the FR's files) reads the same
 	// evaluation back. See PrepopulateBoundaryScopeProvides.
 	if input.ResolveResult != nil {
-		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, input.CatalogLookup, allProvides, boundaryFRState, readers.feature); err != nil {
+		if err := PrepopulateBoundaryScopeProvides(graph, input.ResolveResult.Release, input.ResolveResult.BoundaryAnnotations, recipeLookup, input.CatalogLookup, allProvides, boundaryFRState, readers.feature, readers.component); err != nil {
 			return nil, err
 		}
 	}

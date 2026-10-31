@@ -255,8 +255,9 @@ type FeatureValues struct {
 	KeysAreDeclaredLeaves bool
 
 	// Sensitive reports that the values mapping that produced Resolved reads a
-	// value the evaluation's withheld set names — the reading the base Recipe's
-	// own values pass records for the same fact. False where no mapping ran.
+	// value the plugin marking of the evaluation's withheld set names — the reading
+	// the base Recipe's own values pass records for the same fact. False where no
+	// mapping ran.
 	Sensitive bool
 
 	// Mapped reports that Resolved is the output of the FeatureRecipe's values
@@ -350,7 +351,7 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		return FeatureValues{}, cerrors.Wrap(decodeErr, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
-	return FeatureValues{Resolved: map[string]any(values), Sensitive: templateReadsWithheld(tmplText, withheld), Mapped: true, Omits: omits}, nil
+	return FeatureValues{Resolved: map[string]any(values), Sensitive: templateReadsWithheld(tmplText, withheld.PluginMarking()), Mapped: true, Omits: omits}, nil
 }
 
 // featureRecipeDeclaredSensitivity assembles the sensitivity declarations one

@@ -89,18 +89,27 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 // read the same way against the attachment's declarations.
 //
 // The reading consults exactly the three pillars a locals template can read a
-// DECLARED leaf through. withheld is carried by reference, so each entry the loop
-// marks is visible to the entries after it — which is what makes withholding
-// transitive in one pass, in author order.
+// DECLARED leaf through.
 //
 // A block reading nothing declared, or no declaration at all, returns an empty
 // map rather than nil, so a caller can add to it.
 func derivedLocals(locals types.OrderedMap[string], declaredValues, declaredInfra map[string]bool) map[string]bool {
-	withheld := map[string]bool{}
 	if len(declaredValues) == 0 && len(declaredInfra) == 0 {
-		return withheld
+		return map[string]bool{}
 	}
-	readable := redact.Keys{Values: declaredValues, Infra: declaredInfra, Locals: withheld}
+	return localsReading(locals, redact.Keys{Values: declaredValues, Infra: declaredInfra})
+}
+
+// localsReading reads which entries of one locals block read a datum readable
+// names, or read an earlier entry so marked. readable's own locals are not
+// consulted: the block's entries are the locals this reading decides. The marked
+// set is carried by reference in the set the templates are read against, so each
+// entry the loop marks is visible to the entries after it — which is what makes
+// withholding transitive in one pass, in author order.
+func localsReading(locals types.OrderedMap[string], readable redact.Keys) map[string]bool {
+	withheld := map[string]bool{}
+	readable.Locals = withheld
+	readable.Lists.Locals = nil
 	for key, tmplText := range locals.All() {
 		if templateReadsWithheld(tmplText, readable) {
 			withheld[key] = true
