@@ -357,6 +357,23 @@ var proseOnlyFailureReturns = map[string]int{
 	// written and there is no draft in hand to carry; the parts in conflict are
 	// carried in the refusal's own words, every one of them.
 	"tool_import.go": 16,
+	// The scaffold tool's example form, which lists the documentation's runnable
+	// examples or writes one into a new directory. Four of these are decided before
+	// any bundle is read: a workspace that could not be resolved, an example name
+	// the shared rule refuses, a directory this session may not name, and a session
+	// with no documentation cache to read the examples from. At each of them
+	// nothing has been fetched, listed or written.
+	//
+	// The other three answer the shared example layer's refusals, and that they
+	// lose nothing is established rather than assumed: opening the bundle, reading
+	// its list of examples and writing one each hand back the zero result on every
+	// failing return. The write stages its files before placing them and answers
+	// a failure with no list of them, so a refused write has no list of written
+	// files to carry; the warnings the bundle's acquisition raised went to the log
+	// stream as they arrived. What
+	// stopped the layer reaches the caller in the refusal's own words, followed by
+	// a note naming the condition where the failure carries one.
+	"tool_scaffold_example.go": 7,
 	// Position lookup, workspace description, the progressive surface, and the
 	// shared argument-decode helper: argument and context refusals. Position
 	// lookup carries two more, refusing a document path this session may not name
