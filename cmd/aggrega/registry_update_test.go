@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1048,7 +1049,7 @@ func TestRegistryUpdateNamesEveryRepositoryItCouldNotReadWithTheFailure(t *testi
 				t.Fatalf("the command printed no closing summary for the one registry it indexed:\n%s", printed)
 			}
 			outcome := printed[opens+1:]
-			if !strings.Contains(outcome, reg.host+": 1 entity, 1 repository could not be read\n") {
+			if !strings.Contains(outcome, reg.host+": 1 entity, 1 repository could not be read, 1 read retried\n") {
 				t.Errorf("the closing summary does not count the one repository it could not read:\n%s", outcome)
 			}
 			if !strings.Contains(outcome, "\n"+named) {
@@ -1088,6 +1089,146 @@ func TestRegistryUpdateNamesEveryRepositoryItCouldNotReadWithTheFailure(t *testi
 			}
 			if !strings.HasPrefix(skipped.Reason, row.kind+": ") {
 				t.Errorf("the result's reason does not open with the kind of the last failure %q: %q", row.kind, skipped.Reason)
+			}
+		})
+	}
+}
+
+// listingFlake fails a repository's tag listing the first times it is read, one
+// way, and then lets it through; times of zero or less fails every read.
+type listingFlake struct {
+	times int
+	fail  func(http.ResponseWriter, *http.Request, http.Handler)
+	fired int
+}
+
+// flakyListingRegistry is an in-process OCI registry over HTTP that fails the tag
+// listing of chosen repositories in passing, or for good, and serves everything
+// else as the go-containerregistry in-memory registry does. The walk reaches it
+// through the production index source, so every read goes through the walk's own
+// retrying transport.
+type flakyListingRegistry struct {
+	host   string
+	inner  http.Handler
+	mu     sync.Mutex
+	flakes map[string]*listingFlake
+}
+
+func newFlakyListingRegistry(t *testing.T, flakes map[string]*listingFlake) *flakyListingRegistry {
+	t.Helper()
+	r := &flakyListingRegistry{inner: registry.New(), flakes: flakes}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/tags/list") {
+			repo := strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/v2/"), "/tags/list")
+			r.mu.Lock()
+			flake := r.flakes[repo]
+			hit := flake != nil && (flake.times <= 0 || flake.fired < flake.times)
+			if hit {
+				flake.fired++
+			}
+			r.mu.Unlock()
+			if hit {
+				flake.fail(w, req, r.inner)
+				return
+			}
+		}
+		r.inner.ServeHTTP(w, req)
+	}))
+	t.Cleanup(srv.Close)
+	r.host = strings.TrimPrefix(srv.URL, "http://")
+	return r
+}
+
+// fired returns how many reads the flake on repo failed.
+func (r *flakyListingRegistry) fired(repo string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.flakes[repo].fired
+}
+
+// TestRegistryUpdateCountsTheReadsItAskedAgain walks an in-process registry that
+// fails some tag listings in passing, or for good, and requires the closing summary
+// to state, on the registry's row, how many reads were asked again — beside the
+// count of repositories that could not be read where there is one, and zero where
+// nothing was asked again. A read asked several times counts once: the 429 row's
+// listing is asked three times and counts as one read retried.
+//
+// The summary is what a terminal, the catalog build and an assistant running the
+// command all read, so it is read from the command's own output after the line
+// that opens it. Each row also requires its faults to have fired as often as set,
+// so a fixture whose fault never met a read cannot pass as a walk that counted
+// nothing.
+func TestRegistryUpdateCountsTheReadsItAskedAgain(t *testing.T) {
+	// Not parallel: the walk resolves its source through the process-global
+	// index-target seam, which other tests in this package point elsewhere; here it
+	// is read at its production value, so the walk reaches the registry over HTTP.
+	const (
+		web = "component/core/web"
+		api = "component/core/api"
+	)
+	rows := []struct {
+		name   string
+		flakes map[string]*listingFlake
+		// row is the registry's row in the closing summary after the host.
+		row string
+	}{
+		{
+			name: "nothing fails",
+			row:  ": 2 entities, 0 reads retried",
+		},
+		{
+			name:   "one listing answered 503 once",
+			flakes: map[string]*listingFlake{web: {times: 1, fail: answerWithStatus(http.StatusServiceUnavailable)}},
+			row:    ": 2 entities, 1 read retried",
+		},
+		{
+			name:   "one listing answered 429 twice, then served",
+			flakes: map[string]*listingFlake{web: {times: 2, fail: answerWithStatus(http.StatusTooManyRequests)}},
+			row:    ": 2 entities, 1 read retried",
+		},
+		{
+			name: "two listings dropped once each, by a reset and by an answer cut short",
+			flakes: map[string]*listingFlake{
+				web: {times: 1, fail: resetTheConnection},
+				api: {times: 1, fail: cutTheAnswerShort},
+			},
+			row: ": 2 entities, 2 reads retried",
+		},
+		{
+			name:   "one listing answered 503 on every attempt",
+			flakes: map[string]*listingFlake{web: {fail: answerWithStatus(http.StatusServiceUnavailable)}},
+			row:    ": 1 entity, 1 repository could not be read, 1 read retried",
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			reg := newFlakyListingRegistry(t, row.flakes)
+			publishComponent(t, reg.host, api, "1.0.0")
+			publishComponent(t, reg.host, web, "1.0.0")
+			config := "workspace: {}\nregistries:\n  - host: " + reg.host + "\n"
+
+			var out bytes.Buffer
+			if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: resolveWorkspaceWithConfig(t, t.TempDir(), config), Out: &out, now: frozenClock()}); err != nil {
+				t.Fatalf("registryUpdateRun: %v\n%s", err, out.String())
+			}
+			for repo, flake := range row.flakes {
+				fired := reg.fired(repo)
+				if flake.times > 0 && fired != flake.times {
+					t.Fatalf("the fault on %s failed %d read(s); want %d, so the walk did not meet the failures it is meant to count", repo, fired, flake.times)
+				}
+				if flake.times <= 0 && fired == 0 {
+					t.Fatalf("the fault on %s failed no read, so the walk did not meet the failure it is meant to count", repo)
+				}
+			}
+			printed := out.String()
+			opens := strings.Index(printed, "\nIndexed 1 registry.\n")
+			if opens < 0 {
+				t.Fatalf("the command printed no closing summary for the one registry it indexed:\n%s", printed)
+			}
+			outcome := printed[opens+1:]
+			if want := "\n  " + reg.host + row.row + "\n"; !strings.Contains(outcome, want) {
+				t.Errorf("the closing summary does not state the reads asked again on the registry's row (looked for %q):\n%s\nwhole output:\n%s",
+					strings.TrimSpace(want), outcome, printed)
 			}
 		})
 	}

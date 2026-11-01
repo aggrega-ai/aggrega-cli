@@ -490,9 +490,21 @@ func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest
 	return verifyBundle(cfg, bundleBytes, artifactDigest, policy, keylessAnchor)
 }
 
+// VerifyBundleWithin is [VerifyBundle] for a verification made under ctx: where a
+// keyless check pinning no trust root of its own verifies against the live public
+// trust root, it takes that root through livetrust.TrustedRootWithin, so every
+// verification under a context carrying a shared root (livetrust.WithSharedRoot)
+// verifies against one fetch of it. The checks, the signers honored and the
+// refusals are VerifyBundle's own; only where the live root comes from differs,
+// and under a context carrying no shared root, not even that.
+func VerifyBundleWithin(ctx context.Context, cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
+	return verifyBundle(cfg, bundleBytes, artifactDigest, policy, keylessAnchorWithin(ctx))
+}
+
 // verifyBundle is [VerifyBundle] building its keyless trust anchor with anchor: a
-// read of kept bundles passes the one its [HeldRoot] builds, and every other
-// verification passes keylessAnchor.
+// read of kept bundles passes the one its [HeldRoot] builds, a verification made
+// under a context passes the one keylessAnchorWithin builds for it, and every
+// other verification passes keylessAnchor.
 func verifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig, anchor anchorFor) (*Result, error) {
 	digest := blobDigest(bundleBytes)
 	if policy.PublicKey != "" {
@@ -593,10 +605,22 @@ type anchorFor func(cfg workspaceconfig.Config, policy workspaceconfig.RegistryC
 // reaches the live branch; the pinned-root branch and the verification logic
 // that consumes either anchor are fully exercised offline.
 func keylessAnchor(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
-	if policy.TrustedRoot != "" {
-		return signing.TrustedMaterialFromRootPath(policy.TrustedRoot)
+	return keylessAnchorWithin(context.Background())(cfg, policy)
+}
+
+// keylessAnchorWithin is keylessAnchor for a verification made under ctx: the
+// pinned trust root is read exactly as keylessAnchor reads it, and the live one is
+// taken through livetrust.TrustedRootWithin, which shares one fetch among the
+// verifications under a context carrying a shared root and otherwise fetches as
+// livetrust.TrustedRoot does — so under a context carrying none, it is
+// keylessAnchor.
+func keylessAnchorWithin(ctx context.Context) anchorFor {
+	return func(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
+		if policy.TrustedRoot != "" {
+			return signing.TrustedMaterialFromRootPath(policy.TrustedRoot)
+		}
+		return livetrust.TrustedRootWithin(ctx, cfg)
 	}
-	return livetrust.TrustedRoot(cfg)
 }
 
 // blobDigest returns the sha256:... digest of b — the content address of

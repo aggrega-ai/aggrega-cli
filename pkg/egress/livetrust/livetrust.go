@@ -42,15 +42,35 @@ import (
 // offline it returns (nil, egress.ErrOfflineEgress) before any dial, so an
 // offline keyless sign or a no-pinned-root offline verify refuses early and
 // clearly rather than failing deep inside a TUF request.
+//
+// Each call builds a TUF client of its own, and every client refreshes and
+// rewrites the metadata in the one cache directory this machine keeps. Two
+// clients doing so at once can each find the other's write where its own should
+// be — the public repository's root has moved on from the one a new client
+// starts from, so they write different bytes — and one of them then fails. A
+// caller verifying many signatures at once obtains the root once instead, through
+// [WithSharedRoot] and [TrustedRootWithin].
 func TrustedRoot(cfg workspaceconfig.Config) (root.TrustedMaterial, error) {
 	if cfg.Offline {
 		return nil, egress.ErrOfflineEgress()
 	}
-	live, err := root.NewLiveTrustedRoot(tuf.DefaultOptions())
+	live, err := root.NewLiveTrustedRoot(liveOptions())
 	if err != nil {
 		return nil, fmt.Errorf("livetrust: live trust-root fetch: %w", err)
 	}
 	return live, nil
+}
+
+// liveOptions are the options every live fetch builds its TUF client from: the
+// public repository and this machine's cache directory, or, inside a test binary
+// that named one through [UseTestRepository], the test's own repository and cache
+// directory.
+func liveOptions() *tuf.Options {
+	if test := testRepository.Load(); test != nil {
+		opts := *test
+		return &opts
+	}
+	return tuf.DefaultOptions()
 }
 
 // trustedRootTarget is the name the public trust root is published under in the

@@ -246,6 +246,12 @@ func TestRegistryUpdateSummaryCarriesEveryFactTheWalkComputed(t *testing.T) {
 							host.Host, unread, want, row)
 					}
 				}
+				// The reads asked again are stated on every indexed registry's row, zero
+				// included, so a row saying nothing about them is not read as none.
+				if want := strconv.Itoa(host.ReadsRetried) + " read"; !strings.Contains(row, want) {
+					t.Errorf("the row for %s does not state the %d reads the walk asked again (looked for %q): %q",
+						host.Host, host.ReadsRetried, want, row)
+				}
 			}
 
 			// The reporter is reached from the command's own entry point, so the

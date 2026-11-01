@@ -219,7 +219,7 @@ func VerifyMarkerSignature(
 			}
 			continue
 		}
-		res, verr := pullverify.VerifyBundle(wsCfg, bundle, markerDigest, markerPolicy)
+		res, verr := pullverify.VerifyBundleWithin(ctx, wsCfg, bundle, markerDigest, markerPolicy)
 		if verr == nil {
 			return &lockfile.VerifiedSignature{
 				Mode:         res.Mode,
@@ -358,6 +358,11 @@ func VerifiedSignerAt(
 // a policy admitting no signer, or a payload that is not a bundle at all — is an
 // answer about that bundle, and the walk moves on to the next; it is never a
 // candidate for the earliest.
+//
+// Each signature is verified under ctx (pullverify.VerifyBundleWithin), as a
+// marker's own signature is in VerifyMarkerSignature, so a caller verifying many
+// versions at once verifies them all against one fetch of the live trust root by
+// passing a context carrying a shared one (livetrust.WithSharedRoot).
 func FindVerifiedSigner(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -379,7 +384,7 @@ func FindVerifiedSigner(
 			unanswered = fmt.Errorf("fetch signature %s: %w", ref.Digest, ferr)
 			continue
 		}
-		res, verr := pullverify.VerifyBundle(wsCfg, bundle, digest, policy)
+		res, verr := pullverify.VerifyBundleWithin(ctx, wsCfg, bundle, digest, policy)
 		if verr != nil {
 			if !doesNotVerify(bundle, verr) {
 				unanswered = fmt.Errorf("verify signature %s: %w", ref.Digest, verr)

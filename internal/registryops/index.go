@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
@@ -290,6 +291,14 @@ type DeprecationNote struct {
 // that answered and failed — a listing that repeated itself, a refusal — by
 // reading a field rather than the words of Err, whose wording follows the
 // machine's resolver as much as the condition.
+//
+// ReadsRetried is how many of the walk's reads the registry refused or dropped in
+// passing and were asked again (readRetryingTransport), each read counted once
+// however many times it was asked; zero where none was. It says how near the walk
+// came to repositories it could not read: a read asked again that then succeeded
+// leaves nothing in Skipped, and only this count shows it happened. The command
+// line's closing summary states it; the encoded form of this result carries no
+// key for it.
 type HostUpdate struct {
 	Host                 string            `json:"host"`
 	Indexed              int               `json:"indexed"`
@@ -299,6 +308,7 @@ type HostUpdate struct {
 	Deprecations         []DeprecationNote `json:"deprecations"`
 	Err                  string            `json:"error,omitempty"`
 	Unreachable          bool              `json:"unreachable,omitempty"`
+	ReadsRetried         int               `json:"-"`
 }
 
 // UpdateResult is what a whole index build did, per host.
@@ -497,8 +507,17 @@ func updateHostIndex(
 	now func() time.Time,
 	opts UpdateOptions,
 	notices io.Writer,
-) (HostUpdate, error) {
-	hu := HostUpdate{Host: host}
+) (hu HostUpdate, err error) {
+	hu = HostUpdate{Host: host}
+	// Every read of this registry's walk is counted where it is asked again, and the
+	// count is the walk's to report however it ends.
+	ctx, retried := countingReadRetries(ctx)
+	defer func() { hu.ReadsRetried = int(retried.Load()) }()
+	// Every signature this walk verifies against the live public trust root
+	// verifies against one fetch of it, made by the first verification that needs
+	// it: the walk's workers verify at once, and a fetch per verification would
+	// have their TUF clients rewrite one cache directory together.
+	ctx = livetrust.WithSharedRoot(ctx)
 	src, err := IndexTarget(cfg, host)
 	if err != nil {
 		return hu, err

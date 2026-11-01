@@ -70,7 +70,14 @@ summary under its registry's row, with the kind of the read's last failure — t
 status the registry answered, a timeout, a reset, an answer cut short — and the
 read that failed. So a version is never recorded unsigned,
 undated or without its deprecation marker because a read failed, with or without
---upgrade.
+--upgrade. Each registry's row in the closing summary also says how many reads
+were asked again, whether or not they then succeeded, and says zero when none
+was.
+
+Every signature a registry's walk verifies against the public Sigstore trust root
+is verified against the same copy of that root, fetched once for the walk rather
+than once per signature; a registry whose trust policy pins a trust root of its
+own is verified against that file.
 
 A registry whose repository listing repeats itself — naming a repository it has
 already named, or answering two pages in a row with no repository while still
@@ -222,15 +229,16 @@ func registryUpdateRun(ctx context.Context, cfg registryUpdateConfig) error {
 
 // reportRegistryUpdate writes the closing summary of an index build: how many of
 // the selected registries were indexed, what each indexed registry's walk found —
-// how many entities it indexed, and each repository it could not read, named with
-// its reason — which registries were not indexed, and the directory the index was
-// written to.
+// how many entities it indexed, each repository it could not read, named with its
+// reason, and how many of its reads were asked again, zero included — which
+// registries were not indexed, and the directory the index was written to.
 //
 // The running commentary carries none of them as an outcome. It names a
 // repository as it skips it, at that moment and among everything else the walk
-// says, but never says how many a registry could not read; it names a registry as it
-// fails but never gathers them, so a reader watching a walk over several
-// registries has to scroll back to find which are missing; and it never names the
+// says, but never says how many a registry could not read, nor that a read was
+// asked again at all; it names a registry as it fails but never gathers them, so
+// a reader watching a walk over several registries has to scroll back to find
+// which are missing; and it never names the
 // directory the index was written to, which is what says a refresh changed
 // nothing another project on this machine resolves through. What is deliberately
 // not restated is the reason a registry could not be indexed: the walk states
@@ -277,6 +285,7 @@ func reportRegistryUpdate(out io.Writer, res registryops.UpdateResult) {
 		if unread := len(host.Skipped); unread > 0 {
 			line += fmt.Sprintf(", %s could not be read", countOfNoun(unread, "repository", "repositories"))
 		}
+		line += ", " + countOfNoun(host.ReadsRetried, "read retried", "reads retried")
 		fmt.Fprintln(out, line)
 		for _, skipped := range host.Skipped {
 			fmt.Fprintf(out, "    %s: %s\n", skipped.Repo, skipped.Reason)
