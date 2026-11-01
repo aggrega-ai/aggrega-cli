@@ -7,11 +7,46 @@
 # processor from a release, checks it against the release's SHA256SUMS list,
 # and installs it as ~/.local/bin/aggrega, replacing an earlier copy there in
 # one step. Then it runs the installed binary to print its version, and, when
-# the folder is not on PATH, prints the line that puts it there. It never uses
-# sudo and edits no shell profile.
+# the folder is not on PATH, prints the line that puts it there. It ends by
+# printing the next steps: setting up shell completion, installing the Aggrega
+# skill for an AI assistant, and connecting an AI client to the Aggrega MCP
+# server. It never uses sudo, and it edits a shell profile only when
+# --completion sets up completion for zsh.
 #
 # Beyond the standard system utilities it needs curl or wget, uname, and
 # sha256sum or shasum.
+#
+# Options, written after `sh -s --` when the script is piped into sh:
+#
+#   curl -fsSL https://aggrega.ai/install.sh | sh -s -- --completion
+#
+#   --completion           also set up shell completion, for you alone, for the
+#                          shell your SHELL setting names, using the installed
+#                          aggrega's own `aggrega completion` script, and say
+#                          which file it wrote or changed:
+#                            bash  writes the script into the folder the
+#                                  bash-completion package reads your own
+#                                  completions from,
+#                                  ~/.local/share/bash-completion/completions;
+#                                  bash completion needs that package
+#                            zsh   writes _aggrega into
+#                                  ~/.local/share/zsh/site-functions and adds
+#                                  the lines that load it to ~/.zshrc
+#                            fish  writes aggrega.fish into
+#                                  ~/.config/fish/completions
+#                          XDG_DATA_HOME, XDG_CONFIG_HOME,
+#                          BASH_COMPLETION_USER_DIR and ZDOTDIR move those
+#                          folders as each shell reads them. Run again, it
+#                          rewrites a script only when it changed and adds the
+#                          lines to ~/.zshrc only once.
+#
+# Exit status:
+#
+#   0  aggrega is installed, and every step an option asked for succeeded
+#   1  nothing was installed, or the installed aggrega did not run
+#   2  an option the script does not take; nothing was done
+#   3  aggrega is installed and runs, but setting up shell completion failed,
+#      as the message before the next steps says
 #
 # Settings, read from the environment:
 #
@@ -36,6 +71,37 @@ say() {
 refuse() {
   printf 'aggrega install: %s\n' "$*" >&2
   exit 1
+}
+
+# complain reports a step that failed without stopping the script.
+complain() {
+  printf 'aggrega install: %s\n' "$*" >&2
+}
+
+# Sets want_completion from the options, or refuses with exit status 2 before
+# anything is done.
+parse_options() {
+  want_completion=''
+  for option in "$@"; do
+    case "$option" in
+      --completion) want_completion=1 ;;
+      *)
+        printf "aggrega install: '%s' is not an option install.sh takes; it takes --completion, written after 'sh -s --' when the script is piped into sh\n" "$option" >&2
+        exit 2
+        ;;
+    esac
+  done
+}
+
+# sh_quote <text> prints text quoted for a POSIX shell, quotes left off when
+# none are needed.
+sh_quote() {
+  case "$1" in
+    '' | *[!A-Za-z0-9_./:@%+=,-]*)
+      printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+      ;;
+    *) printf '%s' "$1" ;;
+  esac
 }
 
 # Sets os and arch to the names release files carry, or refuses.
@@ -139,6 +205,7 @@ find_asset() {
   version="${version%-"$os-$arch"}"
 }
 
+# shellcheck disable=SC2329 # run by the EXIT trap main sets
 cleanup() {
   if [ -n "${staged:-}" ]; then
     rm -f -- "$staged"
@@ -168,7 +235,147 @@ path_hint() {
   say "then open a new terminal."
 }
 
+# write_completion <shell> <file> writes the installed aggrega's completion
+# script for the shell to the file, replacing it in one step, unless the file
+# already holds exactly that script.
+write_completion() {
+  if ! "$dest" completion "$1" >"$tmp/completion.$1"; then
+    complain "could not set up shell completion: running '$dest completion $1' failed"
+    return 1
+  fi
+  if [ -f "$2" ] && cmp -s "$tmp/completion.$1" "$2"; then
+    say "$2 already holds aggrega's $1 completion; left it unchanged"
+    return 0
+  fi
+  if ! mkdir -p -- "${2%/*}"; then
+    complain "could not set up shell completion: could not create the folder ${2%/*}"
+    return 1
+  fi
+  staged="${2%/*}/.aggrega.completion.$$"
+  if ! cp -- "$tmp/completion.$1" "$staged" || ! mv -f -- "$staged" "$2"; then
+    complain "could not set up shell completion: could not write $2"
+    return 1
+  fi
+  staged=''
+  say "wrote aggrega's $1 completion to $2"
+}
+
+# file_has_line <file> <line> succeeds when the file holds the line exactly.
+file_has_line() {
+  [ -f "$1" ] || return 1
+  while IFS= read -r existing || [ -n "$existing" ]; do
+    if [ "$existing" = "$2" ]; then
+      return 0
+    fi
+  done <"$1"
+  return 1
+}
+
+completion_bash() {
+  if [ -n "${BASH_COMPLETION_USER_DIR:-}" ]; then
+    folder="${BASH_COMPLETION_USER_DIR%%:*}/completions"
+  else
+    folder="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+  fi
+  write_completion bash "$folder/aggrega" || return 1
+  say "bash loads it through the bash-completion package, from a new terminal on"
+}
+
+completion_zsh() {
+  folder="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
+  write_completion zsh "$folder/_aggrega" || return 1
+  rc="${ZDOTDIR:-$HOME}/.zshrc"
+  marker='# Shell completion for aggrega, added by the aggrega installer.'
+  if file_has_line "$rc" "$marker"; then
+    say "$rc already loads it; left it unchanged"
+    return 0
+  fi
+  # A file whose last line has no newline gets one first, so the lines start
+  # on their own.
+  if [ -s "$rc" ] && [ -n "$(tail -c 1 "$rc")" ]; then
+    lead='
+'
+  else
+    lead=''
+  fi
+  # compdef exists once compinit has run; where nothing ran it, the lines run
+  # it, as zsh completion needs.
+  # shellcheck disable=SC2016 # the third line is zsh's to expand, when zsh reads it.
+  if ! printf '%s%s\n%s\n%s\n' "$lead" "$marker" \
+    "fpath=($(sh_quote "$folder") \$fpath)" \
+    'if (( $+functions[compdef] )); then autoload -Uz _aggrega && compdef _aggrega aggrega; else autoload -Uz compinit && compinit; fi' \
+    >>"$rc"; then
+    complain "could not set up shell completion: could not add the lines that load it to $rc"
+    return 1
+  fi
+  say "added the lines that load it to $rc; zsh reads them from a new terminal on"
+}
+
+completion_fish() {
+  write_completion fish "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/aggrega.fish" || return 1
+  say "fish loads it from a new terminal on"
+}
+
+# setup_completion sets up completion for the shell SHELL names, or reports
+# why it did not.
+setup_completion() {
+  if [ -z "${HOME:-}" ]; then
+    complain "could not set up shell completion: HOME is not set, so there is no folder of yours to write it into"
+    return 1
+  fi
+  case "${SHELL:-}" in
+    */bash | bash) completion_bash ;;
+    */zsh | zsh) completion_zsh ;;
+    */fish | fish) completion_fish ;;
+    '')
+      complain "could not set up shell completion: SHELL is not set, so the shell to set it up for is not known; install.sh sets it up for bash, zsh and fish"
+      return 1
+      ;;
+    *)
+      complain "could not set up shell completion: SHELL names $SHELL, and install.sh sets it up for bash, zsh and fish"
+      return 1
+      ;;
+  esac
+}
+
+# next_steps prints one command for each thing left to set up.
+next_steps() {
+  settings=''
+  if [ -n "${AGGREGA_MIRROR:-}" ]; then
+    settings="${settings}AGGREGA_MIRROR=$(sh_quote "$base") "
+  fi
+  if [ -n "$requested" ]; then
+    settings="${settings}AGGREGA_VERSION=$(sh_quote "$requested") "
+  fi
+  if [ -n "${AGGREGA_INSTALL_DIR:-}" ]; then
+    settings="${settings}AGGREGA_INSTALL_DIR=$(sh_quote "$dir") "
+  fi
+  shell_name="${SHELL##*/}"
+  say "next steps:"
+  printf '\n'
+  if [ "$completion_done" = 1 ]; then
+    printf '  Shell completion for %s is set up; a new terminal loads it.\n' "$shell_name"
+  else
+    case "$shell_name" in
+      bash | zsh | fish)
+        printf '  Set up shell completion for %s:\n' "$shell_name"
+        printf '    curl -fsSL %s | %ssh -s -- --completion\n' "$(sh_quote "$base/latest/download/install.sh")" "$settings"
+        ;;
+      *)
+        printf '  Set up shell completion, for one of the shells aggrega writes it for:\n'
+        printf '    aggrega completion --help\n'
+        ;;
+    esac
+  fi
+  printf '  Install the Aggrega skill for your AI assistant, one of those aggrega skills list names:\n'
+  printf '    aggrega skills install --global --agent <assistant>\n'
+  printf '  Connect your AI client to the Aggrega MCP server, as this page describes:\n'
+  printf '    https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client\n'
+  printf '\n'
+}
+
 main() {
+  parse_options "$@"
   base="${AGGREGA_MIRROR:-https://github.com/aggrega-ai/aggrega-cli/releases}"
   base="${base%/}"
   detect_platform
@@ -260,6 +467,17 @@ main() {
       ;;
     *) path_hint ;;
   esac
+
+  status=0 completion_done=''
+  if [ -n "$want_completion" ]; then
+    if setup_completion; then
+      completion_done=1
+    else
+      status=3
+    fi
+  fi
+  next_steps
+  exit "$status"
 }
 
 main "$@"

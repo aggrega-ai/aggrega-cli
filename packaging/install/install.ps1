@@ -7,8 +7,47 @@
 # %LOCALAPPDATA%\Programs\aggrega\aggrega.exe, replacing an earlier copy there
 # in one step. It adds that folder to the user PATH when it is not there yet,
 # and to the PATH of the window it runs in, then runs the installed binary to
-# print its version. It runs in Windows PowerShell 5.1 and in PowerShell 7, and
-# needs no administrator rights.
+# print its version. It ends by printing the next steps: setting up shell
+# completion, installing the Aggrega skill for an AI assistant, and connecting
+# an AI client to the Aggrega MCP server. It runs in Windows PowerShell 5.1 and
+# in PowerShell 7, and needs no administrator rights.
+#
+# Options, given to the script as a script block, since Invoke-Expression
+# passes none:
+#
+#   & ([scriptblock]::Create((irm https://aggrega.ai/install.ps1))) -Completion
+#
+#   -Completion            also set up shell completion, for you alone, for the
+#                          PowerShell the script runs in, using the installed
+#                          aggrega's own `aggrega completion powershell`
+#                          script, and say which file it wrote or changed: it
+#                          writes the script as
+#                          %LOCALAPPDATA%\aggrega\completion.ps1 and adds the
+#                          lines that load it to your profile for every host of
+#                          that PowerShell, $PROFILE.CurrentUserAllHosts.
+#                          Windows PowerShell and PowerShell 7 keep separate
+#                          profiles, so run it from each one you use. A profile
+#                          runs only where the execution policy a new window
+#                          takes lets it (RemoteSigned, Unrestricted or
+#                          Bypass); under another policy it writes nothing,
+#                          says which policy it found, and the step fails. It
+#                          never changes the policy. Run again, it rewrites the
+#                          script only when it changed and adds the lines to
+#                          the profile only once.
+#
+# Exit status. The script never closes the window it runs in, so it does not
+# exit with a number: it leaves the number in $LASTEXITCODE, and every outcome
+# but 0 ends in an error, which a run through powershell -Command or
+# pwsh -Command reports as exit status 1.
+#
+#   0  aggrega is installed, and every step an option asked for succeeded
+#   1  nothing was installed, or the installed aggrega did not run
+#   3  aggrega is installed and runs, but setting up shell completion failed,
+#      as the warning before the next steps says
+#
+# An option the script does not take is refused by PowerShell itself, which
+# names it, before anything runs. install.sh exits 2 for one, which is why the
+# numbers here skip 2.
 #
 # Settings, read from the environment:
 #
@@ -28,24 +67,171 @@
 # runs in, so a refusal throws instead: the error is shown and the window stays
 # open. Everything runs inside one script block, so none of its variables or
 # preferences outlive it in the session that ran it; what it leaves in that
-# session is the folder added to its PATH and, in Windows PowerShell 5.1, TLS
-# 1.2 added to the protocols the session's web requests may use.
+# session is the folder added to its PATH, $LASTEXITCODE as above, the
+# $Completion switch its options declare, which Invoke-Expression defines in
+# the session it runs in, and, in Windows PowerShell 5.1, TLS 1.2 added to the
+# protocols the session's web requests may use.
 #
 # The script is kept to ASCII: Windows PowerShell 5.1 reads a file without a
 # byte-order mark in the system's legacy code page.
 
+param([switch]$Completion)
+
 & {
+    param([bool]$WantCompletion)
+
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell 5.1 redraws a progress bar for every block it
     # downloads, which slows a large download many times over.
     $ProgressPreference = 'SilentlyContinue'
 
     function Stop-Install([string]$Message) {
+        $global:LASTEXITCODE = 1
         throw "aggrega install: $Message"
     }
 
     function Write-Step([string]$Message) {
         Write-Host "aggrega install: $Message"
+    }
+
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $shellName = 'PowerShell'
+    } else {
+        $shellName = 'Windows PowerShell'
+    }
+
+    # Get-NewWindowPolicy returns the execution policy a PowerShell window
+    # opened from now on takes, which decides whether it runs a profile. The
+    # policy set for this process alone is left out, since it ends with the
+    # process; where it is set, the scopes that outlive it are read in the
+    # order PowerShell reads them, falling back to each edition's default.
+    function Get-NewWindowPolicy {
+        if ([string](Get-ExecutionPolicy -Scope Process) -eq 'Undefined') {
+            return [string](Get-ExecutionPolicy)
+        }
+        foreach ($scope in 'MachinePolicy', 'UserPolicy', 'CurrentUser', 'LocalMachine') {
+            $policy = [string](Get-ExecutionPolicy -Scope $scope)
+            if ($policy -ne 'Undefined') {
+                return $policy
+            }
+        }
+        if ($PSVersionTable.PSEdition -eq 'Core') {
+            return 'RemoteSigned'
+        }
+        return 'Restricted'
+    }
+
+    # Get-ProfileEncoding returns the encoding to add lines to a profile in:
+    # UTF-16 where the file starts with that encoding's byte-order mark, as one
+    # Windows PowerShell 5.1 wrote with > does, and UTF-8 otherwise.
+    function Get-ProfileEncoding([string]$Path) {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $head = New-Object byte[] 2
+            $stream = [IO.File]::OpenRead($Path)
+            try {
+                $count = $stream.Read($head, 0, 2)
+            } finally {
+                $stream.Dispose()
+            }
+            if ($count -eq 2 -and $head[0] -eq 0xFF -and $head[1] -eq 0xFE) {
+                return [Text.Encoding]::Unicode
+            }
+            if ($count -eq 2 -and $head[0] -eq 0xFE -and $head[1] -eq 0xFF) {
+                return [Text.Encoding]::BigEndianUnicode
+            }
+        }
+        return (New-Object Text.UTF8Encoding $false)
+    }
+
+    # Set-Completion sets up completion for this PowerShell and returns $null,
+    # or returns why it did not.
+    function Set-Completion {
+        try {
+            $policy = Get-NewWindowPolicy
+            if (@('RemoteSigned', 'Unrestricted', 'Bypass') -notcontains $policy) {
+                return "could not set up shell completion: a new $shellName window takes the execution policy $policy, under which it runs no profile, so nothing was written; Set-ExecutionPolicy -Scope CurrentUser RemoteSigned lets it run yours"
+            }
+            if (-not $env:LOCALAPPDATA) {
+                return 'could not set up shell completion: LOCALAPPDATA is not set, so there is no folder of yours to write it into'
+            }
+            $profiles = Get-Variable -Name PROFILE -ValueOnly -ErrorAction SilentlyContinue
+            $profilePath = $null
+            if ($profiles) {
+                $profilePath = $profiles.CurrentUserAllHosts
+            }
+            if (-not $profilePath) {
+                return "could not set up shell completion: this $shellName names no profile file of yours"
+            }
+
+            $completionPath = Join-Path $env:LOCALAPPDATA 'aggrega\completion.ps1'
+            $text = & $dest completion powershell | Out-String
+            if ($LASTEXITCODE -ne 0) {
+                return "could not set up shell completion: running '$dest completion powershell' failed with exit code $LASTEXITCODE"
+            }
+            $current = $null
+            if (Test-Path -LiteralPath $completionPath -PathType Leaf) {
+                $current = [IO.File]::ReadAllText($completionPath)
+            }
+            if ($current -ceq $text) {
+                Write-Step "$completionPath already holds aggrega's PowerShell completion; left it unchanged"
+            } else {
+                $folder = Split-Path -Parent $completionPath
+                New-Item -ItemType Directory -Force -Path $folder | Out-Null
+                $stagedScript = Join-Path $folder ('.aggrega.completion.' + [guid]::NewGuid().ToString('N') + '.ps1')
+                try {
+                    [IO.File]::WriteAllText($stagedScript, $text)
+                    if (Test-Path -LiteralPath $completionPath) {
+                        [IO.File]::Replace($stagedScript, $completionPath, [NullString]::Value)
+                    } else {
+                        [IO.File]::Move($stagedScript, $completionPath)
+                    }
+                } finally {
+                    Remove-Item -LiteralPath $stagedScript -Force -ErrorAction SilentlyContinue
+                }
+                Write-Step "wrote aggrega's PowerShell completion to $completionPath"
+            }
+
+            $marker = '# Shell completion for aggrega, added by the aggrega installer.'
+            $content = ''
+            if (Test-Path -LiteralPath $profilePath -PathType Leaf) {
+                $content = [IO.File]::ReadAllText($profilePath)
+            }
+            if (($content -split "`r?`n") -ccontains $marker) {
+                Write-Step "$profilePath already loads it; left it unchanged"
+                return $null
+            }
+            $quoted = $completionPath.Replace("'", "''")
+            $lines = $marker + "`r`n" + "if (Test-Path -LiteralPath '$quoted') { . '$quoted' }" + "`r`n"
+            # A file whose last line has no line break gets one first, so the
+            # lines start on their own.
+            if ($content.Length -gt 0 -and -not $content.EndsWith("`n")) {
+                $lines = "`r`n" + $lines
+            }
+            $encoding = Get-ProfileEncoding $profilePath
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $profilePath) | Out-Null
+            [IO.File]::AppendAllText($profilePath, $lines, $encoding)
+            Write-Step "added the lines that load it to $profilePath; $shellName reads them from a new window on"
+            return $null
+        } catch {
+            return "could not set up shell completion: $($_.Exception.Message)"
+        }
+    }
+
+    # Write-NextSteps prints one command for each thing left to set up.
+    function Write-NextSteps([bool]$CompletionDone) {
+        Write-Step 'next steps:'
+        Write-Host ''
+        if ($CompletionDone) {
+            Write-Host "  Shell completion for $shellName is set up; a new window loads it."
+        } else {
+            Write-Host "  Set up shell completion for ${shellName}:"
+            Write-Host "    & ([scriptblock]::Create((irm $base/latest/download/install.ps1))) -Completion"
+        }
+        Write-Host '  Install the Aggrega skill for your AI assistant, one of those aggrega skills list names:'
+        Write-Host '    aggrega skills install --global --agent <assistant>'
+        Write-Host '  Connect your AI client to the Aggrega MCP server, as this page describes:'
+        Write-Host '    https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client'
+        Write-Host ''
     }
 
     function Get-ReleaseFile([string]$Url, [string]$Path) {
@@ -241,4 +427,21 @@
     if ($first -and $first.Path -ne $dest) {
         Write-Step "note: the aggrega that runs by name is $($first.Path), which comes before $dir on your PATH"
     }
-}
+
+    $status = 0
+    $completionDone = $false
+    if ($WantCompletion) {
+        $failure = Set-Completion
+        if ($failure) {
+            Write-Warning "aggrega install: $failure"
+            $status = 3
+        } else {
+            $completionDone = $true
+        }
+    }
+    Write-NextSteps $completionDone
+    $global:LASTEXITCODE = $status
+    if ($status -ne 0) {
+        throw "aggrega install: installed $dest, and it runs, but setting up shell completion failed, as the warning above says"
+    }
+} ([bool]$Completion)
