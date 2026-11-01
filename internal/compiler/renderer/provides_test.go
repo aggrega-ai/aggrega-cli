@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -369,6 +371,64 @@ func TestEvaluateAllProvides_FailingTemplateHaltCarriesTheReason(t *testing.T) {
 				if !strings.Contains(line, want) {
 					t.Errorf("the halt's line omits %q: %s", want, line)
 				}
+			}
+		})
+	}
+}
+
+// TestEvaluateAllProvides_FailingTemplateHaltChainsItsInnerCondition pins that the
+// provides-evaluation halt carries the condition the evaluation itself named as a
+// matchable cause, while the code the halt heads with stays its own.
+//
+// Both halves are read off the chain a build receives — the halt as the pass
+// returns it, wrapped once more as the stage above it wraps it — so the head is
+// the one the terminal composes, read through the same composition, and the inner
+// condition is matched through its accessor rather than through its code.
+func TestEvaluateAllProvides_FailingTemplateHaltChainsItsInnerCondition(t *testing.T) {
+	t.Parallel()
+	head, _ := cerrors.ShortCodeOf(ErrProvidesEvaluation())
+	for _, tc := range []struct {
+		name     string
+		template string
+		inner    error
+	}{
+		{name: "an absent value read through index", template: `{{ index .values "noport" }}`, inner: gotmpl.ErrIndexOfAbsentMapKey()},
+		{name: "an absent local read through index", template: `{{ index .locals "replica_host" }}`, inner: gotmpl.ErrIndexOfAbsentMapKey()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			nodes := types.OrderedMap[types.IRNode]{}
+			nodes.Set("db", types.IRNode{})
+			vm := types.OrderedMap[json.RawMessage]{}
+			vm.Set("db", json.RawMessage(`{"zone":"eu-west-1"}`))
+			graph := &types.IRGraph{Spec: types.IRSpec{Nodes: nodes, ValuesMapping: vm}}
+
+			locals := types.OrderedMap[string]{}
+			locals.Set("db_identifier", `{{ .context.instance_id }}-main`)
+			provides := types.OrderedMap[string]{}
+			provides.Set("port", tc.template)
+			recipes := map[string]*types.Recipe{
+				"db": {Metadata: types.RecipeMetadata{Name: "mariadb-recipe"}, Spec: types.RecipeSpec{Locals: locals, Provides: provides}},
+			}
+
+			_, _, err := EvaluateAllProvides(graph, recipes, nil, refusalDeclarations{})
+			if err == nil {
+				t.Fatalf("%s rendered; want the provides-evaluation halt", tc.template)
+			}
+			build := cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "locals and provides evaluation")
+
+			if !errors.Is(build, ErrProvidesEvaluation()) {
+				t.Fatalf("the halt is not the provides-evaluation condition: %v", err)
+			}
+			if !errors.Is(build, tc.inner) {
+				t.Errorf("the condition the evaluation named is not matchable beneath the halt: %s", cerrors.CauseChain(build))
+			}
+			if got := cerrors.QualifiedShortCodeOf(build); got != head {
+				t.Errorf("the halt heads with %q; want its own code %q", got, head)
+			}
+			wantHead := "[" + string(cerrors.CatalogError) + " " + head + "]"
+			if got := cerrors.HeadedCauseChain(build); !strings.HasPrefix(got, wantHead) {
+				t.Errorf("the one-line form does not open with %q: %s", wantHead, got)
 			}
 		})
 	}

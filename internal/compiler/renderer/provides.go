@@ -154,7 +154,15 @@ func EvaluateAllProvides(
 				// failing expression and the key a read did not find, sits in the
 				// frames beneath it; formatting the envelope alone would print the
 				// frame and drop the reason.
-				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				//
+				// The evaluation error is also joined beneath the condition, so the
+				// condition it names — an absent map key, an unknown root — stays
+				// matchable with errors.Is. The provides condition is joined FIRST:
+				// the code a diagnostic heads with is the first condition the chain
+				// names, and this halt heads with its own. The text above stays in
+				// the message because a one-line rendering of the chain stops at a
+				// join and would otherwise print the frame without the reason.
+				return nil, nil, cerrors.Wrap(fmt.Errorf("%w: %w", ErrProvidesEvaluation(), err), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					cerrors.ComposeMessage(ErrProvidesEvaluation(), []string{
 						fmt.Sprintf("node %q", nodeID),
 						fmt.Sprintf("provides[%q]", key),

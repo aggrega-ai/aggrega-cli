@@ -660,7 +660,12 @@ func phaseB6(
 				ctx, fr, item.Instance, key, state, boundaryFRState,
 				nodeCtx, engineFactory, recipeLookup, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
-				return attachmentOutput{}, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
+				// This envelope is the outermost one the halt carries, so its category
+				// is the one the diagnostic heads with — and the dispatch hands back
+				// the shared render's errors as well as its own, a provider's fault
+				// among them. So the category is read off the condition, exactly as the
+				// render beneath it reads it, rather than fixed here.
+				return attachmentOutput{}, nil, cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
 			continue
 		}
@@ -685,6 +690,28 @@ func phaseB6(
 
 	state.PhaseReached = 6
 	return out, held, nil
+}
+
+// renderHaltCategory returns the category a crossing files a render's halt under
+// when the halt reaches it without a category the crossing should keep: a catalog
+// fault, unless the condition the halt carries names the provider as the one who
+// must act. A provider that rendered non-deterministically is that exception — the
+// fault is in the provider, not in the entry that happened to route through it —
+// so it is a translation fault on every crossing that asks here, as it is on the
+// source-render and workload-synthesis crossings that file a provider's errors as
+// translation faults outright.
+//
+// The category is derived from the crossing and the condition together: the
+// crossing supplies the default and the condition overrides it. This is the one
+// reading of that rule, and every crossing that re-files a render's error asks it,
+// because the outermost envelope's category is the one a diagnostic heads with — a
+// crossing fixing its own category over an error it was handed would file one
+// condition under two categories depending on the path it took.
+func renderHaltCategory(err error) cerrors.Category {
+	if errors.Is(err, ErrRenderNondeterministic()) {
+		return cerrors.TranslationError
+	}
+	return cerrors.CatalogError
 }
 
 // readsCallerRenderFacts reports whether a FeatureRecipe declares that its
@@ -1844,23 +1871,17 @@ func renderFeatureRecipeFiles(
 	}
 	if err := phaseB3(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
 		// The artifacts pass is the one crossing that hands the provider's own
-		// error back untouched, so the category is assigned here or nowhere: the
-		// callers of this function return its error unchanged by design. An
+		// error back untouched, so the category is assigned here: the
+		// per-component caller returns this function's error unchanged. An
 		// artifacts fault is normally a catalog fault — the entry, its import or
 		// its template is what went wrong. A provider that rendered
 		// non-deterministically is the exception, and it carries the same
 		// translation category here that it carries on this function's source-
-		// render and workload-synthesis crossings. The condition fixes the
-		// category; the crossing it surfaced through does not. The component
-		// render path reads its own artifacts crossing the same way, and the two
-		// are deliberately separate expressions of that reading: each path names
-		// its own crossing in the message it adds, so neither depends on the
-		// other's wrapping.
-		category := cerrors.CatalogError
-		if errors.Is(err, ErrRenderNondeterministic()) {
-			category = cerrors.TranslationError
-		}
-		return nil, "", cerrors.Wrap(err, category, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe artifacts")
+		// render and workload-synthesis crossings. renderHaltCategory is that
+		// reading, and the component render path's own artifacts crossing and the
+		// boundary-scope caller ask it too; each names its own crossing in the
+		// message it adds.
+		return nil, "", cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe artifacts")
 	}
 	if err := phaseB4(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
 		return nil, "", err

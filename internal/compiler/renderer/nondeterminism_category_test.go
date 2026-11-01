@@ -365,3 +365,149 @@ containers:
 		})
 	}
 }
+
+// TestBoundaryScopeFeatureRecipeRender_CategoryFollowsTheCondition pins that a halt
+// escaping a FeatureRecipe rendered once for a boundary heads with the category its
+// condition calls for, exactly as the same halt does on a per-component attachment.
+//
+// The boundary-scope dispatch is re-filed by its caller under an envelope of its
+// own, and that envelope is the outermost one the halt carries — the one whose
+// category the diagnostic heads with. So the category read here is the outermost
+// envelope's, and each case also requires that envelope to be the boundary-scope
+// crossing's, which is what proves the crossing under test is the one that filed it.
+// The catalog-side faults are kept beside the provider-side one for the reason the
+// per-component test keeps them: they reach the user through the same crossing, and
+// a change moving both would otherwise look like a change moving the intended one.
+func TestBoundaryScopeFeatureRecipeRender_CategoryFollowsTheCondition(t *testing.T) {
+	t.Parallel()
+
+	artifacts := types.OrderedMap[types.ArtifactEntry]{}
+	artifacts.Set("extra.yaml", types.ArtifactEntry{Inline: "key: value\n"})
+
+	unparseable := types.OrderedMap[types.ArtifactEntry]{}
+	unparseable.Set("extra.yaml", types.ArtifactEntry{Inline: "{{ .never_closed"})
+
+	boundaryScope := func(spec types.FeatureRecipeSpec) types.FeatureRecipeSpec {
+		spec.Capability = "compose"
+		spec.Implements = "core/compose-bridge:1.0.0"
+		spec.ExecutionScope = "boundary"
+		return spec
+	}
+
+	cases := []struct {
+		name             string
+		spec             types.FeatureRecipeSpec
+		engine           renderer.Provider
+		nondeterministic bool
+		names            string
+		want             cerrors.Category
+	}{
+		{
+			name:             "source render, provider fault",
+			spec:             boundaryScope(types.FeatureRecipeSpec{Source: "./app"}),
+			engine:           nondeterministicEngine{},
+			nondeterministic: true,
+			names:            "provider render is not deterministic",
+			want:             cerrors.TranslationError,
+		},
+		{
+			name:             "artifacts emission, provider fault",
+			spec:             boundaryScope(types.FeatureRecipeSpec{Artifacts: artifacts}),
+			engine:           nondeterministicEngine{},
+			nondeterministic: true,
+			names:            "provider render is not deterministic",
+			want:             cerrors.TranslationError,
+		},
+		{
+			name: "workload synthesis, provider fault",
+			spec: boundaryScope(types.FeatureRecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: gateway:1.0
+`}}),
+			engine:           nondeterministicEngine{},
+			nondeterministic: true,
+			names:            "provider render is not deterministic",
+			want:             cerrors.TranslationError,
+		},
+		{
+			name:   "artifacts declared against a provider that places none",
+			spec:   boundaryScope(types.FeatureRecipeSpec{Artifacts: artifacts}),
+			engine: artifactsUnawareEngine{},
+			names:  "does not implement artifacts emission",
+			want:   cerrors.CatalogError,
+		},
+		{
+			name:   "artifact body is not a valid template",
+			spec:   boundaryScope(types.FeatureRecipeSpec{Artifacts: unparseable}),
+			engine: nondeterministicEngine{},
+			names:  "extra.yaml",
+			want:   cerrors.CatalogError,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := renderWithBoundaryScopeFeatureRecipe(t, tc.spec, tc.engine)
+
+			if tc.nondeterministic && !errors.Is(err, renderer.ErrRenderNondeterministic()) {
+				t.Fatalf("expected the non-determinism halt in the chain; got %v", err)
+			}
+			if chain := cerrors.CauseChain(err); !strings.Contains(chain, tc.names) {
+				t.Fatalf("cause chain does not name %q, so the specific diagnostic did not survive to the user; got %q", tc.names, chain)
+			}
+
+			var ce *cerrors.CompilerError
+			if !errors.As(err, &ce) {
+				t.Fatalf("an error escaping the boundary-scope render carries no category; got %T: %v", err, err)
+			}
+			if !strings.Contains(ce.Message(), `boundary-scope attachment "bridge"`) {
+				t.Fatalf("the outermost envelope is not the boundary-scope crossing's, so another crossing filed this halt: %q", ce.Message())
+			}
+			if ce.Category() != tc.want {
+				t.Errorf("Category = %q; want %q", ce.Category(), tc.want)
+			}
+		})
+	}
+}
+
+// renderWithBoundaryScopeFeatureRecipe drives the two-node, one-boundary render
+// whose boundary carries one attachment under the name "bridge", rendered by a
+// FeatureRecipe with the given spec through the given provider. It returns the
+// error as a caller of the renderer receives it.
+//
+// Both host Recipes declare no input kind, so no host crossing reaches the
+// provider and every provider fault below belongs to the boundary-scope render.
+func renderWithBoundaryScopeFeatureRecipe(t *testing.T, frSpec types.FeatureRecipeSpec, engine renderer.Provider) error {
+	t.Helper()
+
+	host := &types.Recipe{
+		Metadata: types.RecipeMetadata{Name: "host-recipe", Version: "1.0.0"},
+		Spec:     types.RecipeSpec{Capability: "compose"},
+	}
+	fr := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "bridge-fr", Version: "1.0.0"},
+		Spec:     frSpec,
+	}
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, _ string) (*types.Recipe, bool) { return host, true },
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if strings.HasPrefix(featureType, "core/compose-bridge") {
+				return fr, true
+			}
+			return nil, false
+		},
+	}
+
+	factory := func(string) (renderer.Provider, error) { return engine, nil }
+
+	_, err := renderer.RenderAll(context.Background(), composeBridgeBoundaryInput(), lookup, factory)
+	if err == nil {
+		t.Fatal("render returned nil; expected a halt from the boundary-scope feature recipe render")
+	}
+	return err
+}

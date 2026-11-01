@@ -6,7 +6,6 @@ package renderer
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"path"
@@ -2405,13 +2404,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// in the provider itself, not in the artifacts entry that happened to
 			// route through it — so it carries the same translation category here
 			// that it carries on the source-render and workload-synthesis
-			// crossings. The condition fixes the category; the crossing it
-			// surfaced through does not.
-			category := cerrors.CatalogError
-			if errors.Is(err, ErrRenderNondeterministic()) {
-				category = cerrors.TranslationError
-			}
-			return nil, cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			// crossings. renderHaltCategory is that reading, shared with every
+			// crossing that re-files a render's error.
+			return nil, cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		// The files this node's Recipe contributes to its boundary's shared output,
