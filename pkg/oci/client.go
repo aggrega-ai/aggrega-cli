@@ -125,7 +125,7 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, reference st
 		}
 		rc, err := target.Fetch(ctx, desc)
 		if err != nil {
-			return ocispec.Descriptor{}, nil, fmt.Errorf("oci: fetch manifest %q: %w", reference, err)
+			return ocispec.Descriptor{}, nil, fmt.Errorf("fetch manifest %q: %w", reference, err)
 		}
 		manifestDesc, manifestRC = desc, rc
 	}
@@ -134,10 +134,10 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, reference st
 	manifestBytes, err := content.ReadAll(manifestRC, manifestDesc)
 	if err != nil {
 		if errors.Is(err, content.ErrMismatchedDigest) || errors.Is(err, content.ErrTrailingData) {
-			return ocispec.Descriptor{}, nil, fmt.Errorf("oci: manifest %q does not match its digest %s: %v: %w",
+			return ocispec.Descriptor{}, nil, fmt.Errorf("manifest %q does not match its digest %s: %v: %w",
 				reference, manifestDesc.Digest, err, ErrFetchIntegrity())
 		}
-		return ocispec.Descriptor{}, nil, fmt.Errorf("oci: read manifest %q: %w", reference, err)
+		return ocispec.Descriptor{}, nil, fmt.Errorf("read manifest %q: %w", reference, err)
 	}
 	return manifestDesc, manifestBytes, nil
 }
