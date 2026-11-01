@@ -240,6 +240,12 @@ type pullConfig struct {
 	// the very option set that build would have rendered under, so the discovery
 	// render and the build's render are one render under one set of knobs.
 	renderOptions pipeline.Options
+
+	// display is where the resolution's runs show what they raise. Build's
+	// automatic fill hands its own command display, so an advisory the fill and
+	// the build's render both raise is shown once for the command; nil gives the
+	// pull a display of its own over the process's error stream.
+	display io.Writer
 }
 
 // resolutionRequest is the part of the resolution's input contract this
@@ -433,8 +439,13 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	opts.Toolchain = toolchainStamp()
 	opts.DiagOut = diagOut
 	// The compiler runs the resolution makes show their advisories on this
-	// command's error stream, whatever collects the resolution's own account.
-	opts.Display = os.Stderr
+	// command's error stream, whatever collects the resolution's own account,
+	// through one display for the command, so a line the graph resolution and the
+	// discovery render both raise is shown once.
+	opts.Display = cfg.display
+	if opts.Display == nil {
+		opts.Display = pipeline.NewOperationDisplay(os.Stderr)
+	}
 	// A failure the resolution reports and survives is printed in the rendering
 	// this command's own refusals use, so it carries the same head and condition
 	// code a validate or build of the same Release prints for it.

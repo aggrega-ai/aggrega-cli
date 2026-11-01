@@ -176,7 +176,7 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 			tw.cfg,
 			s.serverVersion,
 			compilerops.WithLockfile(lf, lf != nil),
-			compilerops.WithDisplay(s.logw),
+			compilerops.WithDisplay(s.runDisplay()),
 		),
 		pipeline.Options{SkipRender: true},
 	)

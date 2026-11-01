@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cacheops"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
@@ -23,6 +24,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// runDisplay is the display this server's runs show on: the server-lifetime
+// display its constructor built over logw, or, for a server built without one,
+// logw itself.
+func (s *server) runDisplay() io.Writer {
+	if s.display != nil {
+		return s.display
+	}
+	return s.logw
+}
 
 // Config carries the I/O streams the server reads from and writes to plus
 // its reported build identity. The cobra-bound entry point passes
@@ -240,6 +251,14 @@ type server struct {
 	out           io.Writer
 	logw          io.Writer
 	serverVersion string
+
+	// display is the one display every run this server makes shows on, over logw,
+	// for the life of the server: an advisory a run shows once — a plugin resolved
+	// with no recorded digest, a catalog view's advisory — is logged once however
+	// many calls raise it, while each call's own answer still carries it. The
+	// constructors set it; a server built without one shows on logw directly
+	// (runDisplay).
+	display *pipeline.OperationDisplay
 
 	// bundleVersion is the version of the desktop bundle that launched this
 	// process (Config.BundleVersion), empty where none did. It is reported
@@ -508,6 +527,7 @@ func Run(ctx context.Context, cfg Config) error {
 	s := &server{
 		out:              stdout,
 		logw:             logw,
+		display:          pipeline.NewOperationDisplay(logw),
 		serverVersion:    cfg.ServerVersion,
 		bundleVersion:    cfg.BundleVersion,
 		toolchain:        cfg.Toolchain,

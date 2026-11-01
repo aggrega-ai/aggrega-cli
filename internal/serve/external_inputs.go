@@ -55,7 +55,7 @@ func (s *Server) irGraphPreviewInputs(
 		compilerops.WithLockfile(lf, lockfilePreexisted),
 		// The run's displays go where this process says what it has to say; what
 		// the editor is shown comes off the run's advisory channel.
-		compilerops.WithDisplay(s.stderr),
+		compilerops.WithDisplay(s.runDisplay()),
 	)
 }
 

@@ -286,6 +286,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
@@ -949,6 +950,14 @@ type session struct {
 	out    io.Writer
 	stderr io.Writer
 
+	// display is the one display every run this process makes shows on, over
+	// stderr, for the life of the process: an advisory a run shows once — a plugin
+	// resolved with no recorded digest, a catalog view's advisory — reaches the
+	// launch stream once, however many requests raise it, while each run still
+	// records it on the advisory channel the editor reads. Run sets it; a session
+	// built without Run has none, and its runs show on stderr directly (runDisplay).
+	display *pipeline.OperationDisplay
+
 	// positionEncodingValue holds the negotiated position encoding,
 	// which selects how Position.Character offsets are interpreted in
 	// JSON-RPC requests + responses. Defaults to UTF-16 (LSP 3.17
@@ -1497,6 +1506,16 @@ func (s *Server) heldRefusal() error {
 	return workspaceRefusal(s.workspaceRoot, s.held.Refusal())
 }
 
+// runDisplay is the display this process's runs show on: the process-lifetime
+// display Run built over the launch stream, or, for a session built without Run,
+// that stream itself.
+func (s *session) runDisplay() io.Writer {
+	if s.display != nil {
+		return s.display
+	}
+	return s.stderr
+}
+
 // heldWorkspace builds the state a request listing a held workspace is answered
 // from: the root, what anchored it, and nothing configured. There is no
 // configuration to keep and no resolution to answer from; the catalog lookup
@@ -1987,6 +2006,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		in:                  bufio.NewReader(cfg.Stdin),
 		out:                 cfg.Stdout,
 		stderr:              stderr,
+		display:             pipeline.NewOperationDisplay(stderr),
 	}
 	sess.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 	// The default push declaration. A client that declares a workspace at the

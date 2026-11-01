@@ -1002,7 +1002,7 @@ func ResolveAndValidate(
 		if inputs.CatalogAdvisories != nil {
 			for _, d := range inputs.CatalogAdvisories() {
 				if !inputs.ResolutionAdvisoriesShown {
-					fmt.Fprintln(inputs.display(), WarningLine(d))
+					inputs.showOnce(catalogAdvisoryKey(d.Message), WarningLine(d))
 				}
 				inputs.AdvisoryLog.record(d)
 			}

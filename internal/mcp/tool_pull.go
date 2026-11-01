@@ -442,7 +442,7 @@ func pullResolutionConfig(s *server, tw *toolWorkspace, releasePath string, a pu
 	cfg.DiagOut = diagOut
 	// The runs the resolution makes show their advisories on the server's log,
 	// apart from the account the call collects.
-	cfg.Display = s.logw
+	cfg.Display = s.runDisplay()
 	cfg.Report = report
 	// No prompt is supplied, and that is not an omission: see the notes on
 	// pullInvoke. The report above carries whatever this call asked to be told.

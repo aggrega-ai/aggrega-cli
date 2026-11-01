@@ -120,21 +120,90 @@ func (in Inputs) display() io.Writer {
 	return in.Display
 }
 
+// OperationDisplay is the display an operation hands every run it makes, so an
+// advisory a run shows once per run is shown once per operation. A command that
+// fills its lockfile and then renders, a pull that draws its graph and then
+// renders, a long-running process answering request after request — each makes
+// several runs, and a run cannot know what the runs before it showed; the
+// operation can. It is a writer like any other: every line a run writes passes
+// through to the writer it wraps unchanged, and only the advisories a run shows
+// once (an unrecorded plugin identity, a catalog view's advisory) consult its
+// memory. Each run still records those advisories on its own advisory log, so a
+// surface reading a run's advisories reads all of them whatever was shown.
+//
+// Its memory lives as long as the value, so its owner decides what "once" spans:
+// a command builds one for its own invocation, a long-running process one for its
+// life. A nil *OperationDisplay writes nowhere and remembers nothing.
+type OperationDisplay struct {
+	w     io.Writer
+	mu    sync.Mutex
+	shown map[string]struct{}
+}
+
+// NewOperationDisplay returns the operation display writing to w; a nil w writes
+// nowhere.
+func NewOperationDisplay(w io.Writer) *OperationDisplay {
+	return &OperationDisplay{w: w, shown: map[string]struct{}{}}
+}
+
+// Write passes p to the wrapped writer.
+func (d *OperationDisplay) Write(p []byte) (int, error) {
+	if d == nil || d.w == nil {
+		return len(p), nil
+	}
+	return d.w.Write(p)
+}
+
+// firstShowing reports whether the advisory keyed by key has not yet been shown
+// through this display, and remembers that it now has. A nil display reports
+// every showing as the first.
+func (d *OperationDisplay) firstShowing(key string) bool {
+	if d == nil {
+		return true
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, seen := d.shown[key]; seen {
+		return false
+	}
+	d.shown[key] = struct{}{}
+	return true
+}
+
+// showOnce writes line to the run's display, unless the run was handed an
+// [OperationDisplay] that has already shown the advisory keyed by key — so the
+// advisory reaches a reader once per operation however many runs the operation
+// makes. A plain writer has no memory beyond the run, so it is written to.
+func (in Inputs) showOnce(key, line string) {
+	if d, ok := in.Display.(*OperationDisplay); ok && !d.firstShowing(key) {
+		return
+	}
+	fmt.Fprintln(in.display(), line)
+}
+
+// unrecordedPluginKey and catalogAdvisoryKey name the advisories a run shows
+// once, in the one key space a run's advisory log and an operation display share.
+func unrecordedPluginKey(uri string) string    { return "unrecorded-plugin\x00" + uri }
+func catalogAdvisoryKey(message string) string { return "catalog-advisory\x00" + message }
+
 // reportUnrecordedPlugin is the run's receiver for the advisory a plugin
 // resolution raises when no recorded digest governs the bytes it resolved. The
 // advisory joins the run's one advisory channel beside its display, so a surface
 // that reads no terminal — an editor's diagnostics among them — receives it with
 // the run's other advisories. A render resolves the same plugin for every node it
-// renders, so it is displayed and recorded once per reference per run; each run
-// reports it afresh, so a surface replacing what it shows with each run's
-// advisories keeps showing it for as long as a run resolves the plugin
-// unverified, and stops once none does.
+// renders, so it is recorded once per reference per run; each run records it
+// afresh, so a surface replacing what it shows with each run's advisories keeps
+// showing it for as long as a run resolves the plugin unverified, and stops once
+// none does. It is displayed once per operation where the run was handed an
+// [OperationDisplay], since an operation making several runs is still one
+// account to its reader.
 func (in Inputs) reportUnrecordedPlugin(a pluginpath.UnrecordedIdentity) {
-	if !in.AdvisoryLog.firstMention("unrecorded-plugin\x00" + a.URI) {
+	key := unrecordedPluginKey(a.URI)
+	if !in.AdvisoryLog.firstMention(key) {
 		return
 	}
 	d := renderer.Diagnostic{Severity: abi.SeverityWarn, Message: a.Message(), SourceRef: a.URI}
-	fmt.Fprintln(in.display(), WarningLine(d))
+	in.showOnce(key, WarningLine(d))
 	in.AdvisoryLog.record(d)
 }
 

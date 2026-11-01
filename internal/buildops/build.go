@@ -318,6 +318,13 @@ type Config struct {
 	// without mutating a process global.
 	DiagOut io.Writer
 
+	// Display is where the build's render shows what it raises as it raises it.
+	// A caller that also fills the lockfile through Pull hands the fill the same
+	// value — a pipeline.OperationDisplay — so an advisory both renders raise is
+	// shown once for the command. Nil shows on a display of the build's own over
+	// DiagOut.
+	Display io.Writer
+
 	// Out is the sink for the run's user-facing status output — the resolution
 	// report the detail knob asks for, and the dry run's artifact report. Nil
 	// defaults to os.Stdout at the top of Run.
@@ -380,6 +387,10 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 	diagOut := cfg.DiagOut
 	if diagOut == nil {
 		diagOut = os.Stderr
+	}
+	display := cfg.Display
+	if display == nil {
+		display = pipeline.NewOperationDisplay(diagOut)
 	}
 	out := cfg.Out
 	if out == nil {
@@ -668,7 +679,7 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 				// to emit, so the advisory sequence has one order.
 				compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
 				compilerops.WithProgress(func(p compilerops.PreviewPhase) { report.phase(previewPhase(p)) }),
-				compilerops.WithDisplay(diagOut),
+				compilerops.WithDisplay(display),
 			),
 			renderOptions,
 		)

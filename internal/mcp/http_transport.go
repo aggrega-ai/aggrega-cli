@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 )
@@ -283,6 +284,7 @@ func NewHTTPHandler(ctx context.Context, cfg Config, transport HTTPConfig) (http
 		// rather than crash the serving process.
 		out:           io.Discard,
 		logw:          logw,
+		display:       pipeline.NewOperationDisplay(logw),
 		serverVersion: cfg.ServerVersion,
 		// Carried as the other transport carries it. The desktop bundle launches
 		// a server over standard input and output, so a listener's launch carries

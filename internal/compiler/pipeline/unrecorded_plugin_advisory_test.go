@@ -80,6 +80,46 @@ func TestAPluginResolvedWithNoRecordedDigestJoinsTheRunsChannelOnce(t *testing.T
 	}
 }
 
+// TestAnOperationShowsAnUnrecordedPluginOnceAcrossItsRuns holds the advisory to
+// one line per operation where the operation hands its runs one
+// OperationDisplay — a build that fills its lockfile and then renders, a
+// long-running process answering request after request — while each run still
+// records it on its own advisory log, so every run's channel carries it.
+//
+// 🔴 PLANTED DEFECT: show the advisory with a plain write in place of showOnce
+// (reportUnrecordedPlugin, internal/compiler/pipeline/advisories.go) — and the
+// display carries two lines.
+func TestAnOperationShowsAnUnrecordedPluginOnceAcrossItsRuns(t *testing.T) {
+	guest := filepath.Join(t.TempDir(), "guest.wasm")
+	if err := os.WriteFile(guest, []byte("guest-bytes"), 0o644); err != nil {
+		t.Fatalf("write guest: %v", err)
+	}
+	cfg := workspaceconfig.Default()
+	var shown bytes.Buffer
+	display := NewOperationDisplay(&shown)
+	logs := []*AdvisoryLog{{}, {}}
+	for i, log := range logs {
+		inputs := Inputs{
+			WorkspaceConfig: &cfg,
+			WorkspaceRoot:   t.TempDir(),
+			PluginPins:      pluginpath.RecordedPins(pluginpath.PinMaps{}),
+			AdvisoryLog:     log,
+			Display:         display,
+		}
+		if _, err := buildPluginResolver(inputs, nil).Resolve(guest); err != nil {
+			t.Fatalf("run %d: resolve: %v", i, err)
+		}
+	}
+	for i, log := range logs {
+		if n := len(log.Entries()); n != 1 {
+			t.Errorf("run %d recorded %d entries, want 1: each run's channel carries the advisory", i, n)
+		}
+	}
+	if n := strings.Count(shown.String(), "no recorded digest"); n != 1 {
+		t.Errorf("two runs of one operation showed the advisory %d times, want once:\n%s", n, shown.String())
+	}
+}
+
 // TestAPinFreeRunRaisesNoUnrecordedPluginAdvisory is the control: a run whose
 // pin source declares that no recorded digest governs what it resolves raises
 // nothing for the same plugin, so the entry above is the rule firing rather than

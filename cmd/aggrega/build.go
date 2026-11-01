@@ -270,7 +270,12 @@ func dispatchBuildWithDiag(ctx context.Context, rw *workspaceconfig.ResolvedWork
 // progress may be nil, which reports nothing — the shape the acquisition command
 // uses, whose own report is the only thing a reader is meant to see.
 func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, run buildops.RunOptions, progress *progressReporter, diagOut, out io.Writer) buildops.Config {
+	// One display for the whole command: a build that fills its own lockfile makes
+	// a run in the fill and may make another to render, and an advisory both raise
+	// is told to the reader once.
+	display := pipeline.NewOperationDisplay(diagOut)
 	return buildops.Config{
+		Display:         display,
 		Workspace:       rw,
 		ReleasePath:     releasePath,
 		CatalogDirs:     catalogFlagDirs,
@@ -303,7 +308,7 @@ func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath stri
 		// That render comes back and the build presents it, so a build that fills its
 		// own lockfile still renders the Release exactly once.
 		Pull: func(ctx context.Context, upgrade, detail bool, render pipeline.Options, pullDiagOut, pullOut io.Writer) (*compilerops.PreviewResult, error) {
-			res, err := pullRunWithResult(ctx, pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, renderOptions: render, diag: buildDiagOptions{quiet: true}})
+			res, err := pullRunWithResult(ctx, pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, renderOptions: render, diag: buildDiagOptions{quiet: true}, display: display})
 			if err != nil {
 				return nil, err
 			}

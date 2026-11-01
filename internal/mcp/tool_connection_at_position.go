@@ -206,7 +206,7 @@ func connectionAtPositionInvoke(s *server, ctx context.Context, args json.RawMes
 			tw.cfg,
 			s.serverVersion,
 			compilerops.WithLockfile(lf, lf != nil),
-			compilerops.WithDisplay(s.logw),
+			compilerops.WithDisplay(s.runDisplay()),
 		),
 		pipeline.Options{SkipRender: true},
 	)
