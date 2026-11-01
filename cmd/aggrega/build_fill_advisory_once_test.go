@@ -4,12 +4,40 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// captureProcessStreams runs fn with the process standard output and standard
+// error both captured, and returns what fn wrote to each. A build writes its
+// summaries — the fill's "Pull complete" among them — to the process standard
+// output and its diagnostics to the process standard error, and neither reaches
+// the command's own writer.
+func captureProcessStreams(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var b bytes.Buffer
+		_, _ = io.Copy(&b, r)
+		done <- b.String()
+	}()
+	stderr = captureStderr(t, fn)
+	_ = w.Close()
+	os.Stdout = old
+	return <-done, stderr
+}
 
 // schemaKeywordAdvisory is the line a run shows for the inline x-aggrega-*
 // keyword the fixture's Component authors.
@@ -67,9 +95,12 @@ spec:
 // workspace, and the reader runs one command.
 //
 // The assertion is exact, so a command that stopped showing the line fails here
-// as surely as one that shows it twice; and the build is required to have stopped
-// on the render's refusal, which is what proves the second run happened rather
-// than the fill's render being presented.
+// as surely as one that shows it twice. The two runs are proven rather than
+// assumed, from three facts read off the command's own streams: the fill reports
+// its discovery render stopped and still completes ("Pull complete", on the
+// process standard output beside the build's other summaries), which is the first
+// run; and the command then fails on the render's refusal, which — with the fill
+// having returned — only the build's own render can raise, which is the second.
 //
 // 🔴 PLANTED DEFECT: hand the fill its own display rather than the build's
 // (cmd/aggrega/build.go, buildDispatchConfig — drop `display: display` from the
@@ -85,24 +116,31 @@ func TestABuildThatFillsItsLockfileShowsARunsAdvisoryOnce(t *testing.T) {
 
 	var out string
 	var err error
-	stderr := captureStderr(t, func() {
+	stdout, stderr := captureProcessStreams(t, func() {
 		out, err = runAggrega(t, "--workspace-root", root, "build", "--release", "release.yaml", "--auto-pull")
 	})
+	streams := "output:\n" + out + "\nstdout:\n" + stdout + "\nstderr:\n" + stderr
+	// The first run: the fill's discovery render stopped on the refusal, and the
+	// fill wrote past it and completed, so it handed the build no finished render.
+	if !strings.Contains(stderr, "external inputs: could not finish rendering release.lock to discover them") ||
+		!strings.Contains(stdout, "External inputs were not fully discovered") {
+		t.Fatalf("the fill's discovery render did not stop, so the build may have presented the fill's render\n%s", streams)
+	}
+	if !strings.Contains(stdout, "Pull complete: release.lock") {
+		t.Fatalf("the fill did not complete, so the build never made a second run\n%s", streams)
+	}
+	// The second run: the command fails on the same refusal after the fill
+	// returned, which only the build's own render raises.
 	if err == nil {
-		t.Fatalf("the build rendered past the key the render refuses, so the fixture no longer makes a second run\n"+
-			"output:\n%s\nstderr:\n%s", out, stderr)
+		t.Fatalf("the build rendered past the key the render refuses, so the fixture no longer makes a second run\n%s", streams)
 	}
-	if !strings.Contains(err.Error()+out+stderr, "instance_idd") {
-		t.Fatalf("the build stopped for a reason other than the render's refusal, so the second run is not proven: %v\n"+
-			"output:\n%s\nstderr:\n%s", err, out, stderr)
+	// The refusal's text sits on a cause beneath the failing node's frame, so the
+	// failure is read as the command prints it, whole.
+	if failure := formatCompilerError(err); !strings.Contains(failure, "instance_idd") {
+		t.Fatalf("the build stopped for a reason other than the render's refusal, so the second run is not proven:\n%s\n%s",
+			failure, streams)
 	}
-	// The fill finished — it survives its discovery render stopping and writes the
-	// lockfile — so the refusal above came from the build's own render: two runs.
-	if !strings.Contains(out+stderr, "Pull complete") {
-		t.Fatalf("the fill did not complete, so the build never made a second run\noutput:\n%s\nstderr:\n%s", out, stderr)
-	}
-	if n := strings.Count(out+"\n"+stderr, schemaKeywordAdvisory+"\n"); n != 1 {
-		t.Errorf("a build that fills its lockfile showed the advisory %d time(s); want exactly once\noutput:\n%s\nstderr:\n%s",
-			n, out, stderr)
+	if n := strings.Count(out+"\n"+stdout+"\n"+stderr, schemaKeywordAdvisory+"\n"); n != 1 {
+		t.Errorf("a build that fills its lockfile showed the advisory %d time(s); want exactly once\n%s", n, streams)
 	}
 }
