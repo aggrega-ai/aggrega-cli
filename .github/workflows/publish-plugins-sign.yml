@@ -199,8 +199,8 @@ name: Publish and sign core plugins
 #                        Scoop manifest and the winget manifest from the files it
 #                        attached and their SHA256SUMS, hands the first two on to
 #                        publish-package-channels, and prints the winget
-#                        manifest's three files for the pull request a person
-#                        opens on the winget community repository.
+#                        manifest's three files and hands them on to
+#                        open-winget-pull-request.
 #   record-published     After a real publish only — on a dry run it is skipped —
 #                        records what sign-and-publish published on aggrega-hub's
 #                        published branch: each plugin's reference, version and
@@ -259,6 +259,33 @@ name: Publish and sign core plugins
 #                        that one, and no program but git and the shell's own
 #                        utilities. The token reaches git through its
 #                        environment and is never written to disk.
+#   open-winget-pull-request
+#                        Once sign-and-publish has succeeded, opens the pull
+#                        request that adds the winget manifest sign-and-publish
+#                        rendered to the winget community repository,
+#                        microsoft/winget-pkgs, through
+#                        scripts/open-winget-pull-request.sh: it syncs the
+#                        organization's fork of that repository, pushes to the
+#                        fork a branch adding the manifest's three files, as
+#                        sign-and-publish rendered them, under the folder
+#                        winget-pkgs keeps them in, never forced, and opens the
+#                        pull request from that branch. It does so only on a
+#                        real publish, and only when the repository variable
+#                        AGGREGA_WINGET_PULL_REQUEST is true; with it anything
+#                        else, unset included, it opens nothing and says that
+#                        the gate is off. On a dry run it prints the fork, the
+#                        branch, the files' paths and the title of the pull
+#                        request it would open, and opens nothing, whatever the
+#                        variable is. It runs on a GitHub-hosted runner, checks
+#                        out this repository at the commit the build job built
+#                        for that script and needs nothing from the hand-over
+#                        folder. Its one credential beside the run's own
+#                        read-only token is the personal access token
+#                        WINGET_PULL_REQUEST_TOKEN; it may not mint an OIDC
+#                        token, and runs no action but checkout and no program
+#                        but gh, git and the shell's own utilities. The token
+#                        reaches gh and git through their environment and is
+#                        never written to disk.
 #   notarization-check   Once the publish jobs above have ended, whatever each
 #                        did, on a real publish and a dry run alike, whenever
 #                        sign-macos succeeded and gave a submission ID: asks
@@ -435,13 +462,17 @@ name: Publish and sign core plugins
 # This workflow NEVER creates or pushes a git tag on this repository. Deciding
 # the version and cutting the tag is a human action; this workflow publishes the
 # OCI artifacts and attaches the built binaries and the extension package to the
-# GitHub release for the already-pushed tag. Its git writes are four, all after a
+# GitHub release for the already-pushed tag. Its git writes are five, all after a
 # real publish and all to another repository: record-published's one commit on
 # aggrega-hub's published branch, never on a main branch; publish-skills' one
 # commit on aggrega-skills' main branch with the release tag on it, a repository
-# that holds nothing but the generated skills tree; and publish-package-channels'
+# that holds nothing but the generated skills tree; publish-package-channels'
 # one commit on the main branch of each of aggrega-ai/homebrew-tap and
-# aggrega-ai/scoop-bucket, each changing one file.
+# aggrega-ai/scoop-bucket, each changing one file; and, while
+# AGGREGA_WINGET_PULL_REQUEST is true, open-winget-pull-request's one branch on
+# the organization's fork of microsoft/winget-pkgs, a new branch holding one
+# commit that adds the winget manifest's three files, from which it opens a pull
+# request on microsoft/winget-pkgs.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image and the Windows
@@ -453,8 +484,11 @@ name: Publish and sign core plugins
 # and then, once they have passed, sign-and-publish loads and checks the image's
 # two archives and prints what it would push, publish, sign and release, doing none of it,
 # record-published is skipped, publish-skills prints the tree it would
-# publish to aggrega-skills, and publish-package-channels prints the formula and
-# the manifest it would commit, pushing nothing; last, notarization-check reads
+# publish to aggrega-skills, publish-package-channels prints the formula and
+# the manifest it would commit, pushing nothing, and open-winget-pull-request
+# prints the pull request it would open on microsoft/winget-pkgs and what
+# AGGREGA_WINGET_PULL_REQUEST would make of it, opening nothing and reading no
+# token; last, notarization-check reads
 # Apple's answer to the submission as on a real run, which publishes nothing.
 #
 # Which refs may sign is decided by the signing identity's federated
@@ -529,6 +563,21 @@ name: Publish and sign core plugins
 #                                        unset included, releases them
 #                                        unsigned and not notarized, saying so
 #                                        (read by registry-credential alone)
+#              AGGREGA_WINGET_PULL_REQUEST
+#                                        true to open the pull request that
+#                                        adds each release's winget manifest
+#                                        to microsoft/winget-pkgs, in
+#                                        open-winget-pull-request, on a real
+#                                        publish, which then needs the secret
+#                                        WINGET_PULL_REQUEST_TOKEN below and the
+#                                        steps after this list; anything else,
+#                                        unset included, opens none, saying
+#                                        so (read by open-winget-pull-request
+#                                        alone). Leave it unset while the
+#                                        release's downloads are not public:
+#                                        winget-pkgs' validation downloads the
+#                                        installer from the address the
+#                                        manifest names
 #   secrets    REGISTRY_PASSWORD         the registry password
 #                                        (registry-credential and
 #                                        sign-and-publish only)
@@ -576,6 +625,38 @@ name: Publish and sign core plugins
 #                                        command line; each of the two jobs
 #                                        refuses, naming it, any it reads that
 #                                        is not set)
+#              WINGET_PULL_REQUEST_TOKEN a personal access token (classic)
+#                                        with the public_repo scope alone, of
+#                                        an account that may push to the
+#                                        organization's fork of
+#                                        microsoft/winget-pkgs: it pushes the
+#                                        branch to the fork and opens the pull
+#                                        request on microsoft/winget-pkgs, which
+#                                        neither a fine-grained token nor an App
+#                                        installation token can do, since
+#                                        neither writes to a public repository
+#                                        the organization neither owns nor is a
+#                                        member of (open-winget-pull-request
+#                                        only, read on a real publish with
+#                                        AGGREGA_WINGET_PULL_REQUEST true, and
+#                                        reaching gh and git through their
+#                                        environment alone)
+#
+# Before AGGREGA_WINGET_PULL_REQUEST is set to true, once:
+#   1. fork microsoft/winget-pkgs into this organization, keeping the name
+#      winget-pkgs, the name open-winget-pull-request's env: gives the fork;
+#   2. as a member of this organization who may push to that fork, create a
+#      personal access token (classic) with the public_repo scope and no other,
+#      in GitHub's Settings, Developer settings, Personal access tokens, Tokens
+#      (classic), with an expiry, renewing it before it expires; the
+#      organization's policy must not restrict personal access tokens (classic);
+#   3. store it as the repository secret WINGET_PULL_REQUEST_TOKEN;
+#   4. with the account that created it, sign Microsoft's Contributor License
+#      Agreement, https://cla.opensource.microsoft.com, which winget-pkgs' pull
+#      request template asks every author to have signed: that account is the
+#      author of each pull request the release opens;
+#   5. set the repository variable AGGREGA_WINGET_PULL_REQUEST to true.
+# A manual dry run then prints the pull request a real publish would open.
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
@@ -624,7 +705,9 @@ on:
 # branch, with the App token it mints, never this repository; so does
 # publish-skills, which writes aggrega-skills with the App token it mints, and
 # publish-package-channels, which writes the Homebrew tap and the Scoop bucket
-# with the App token it mints.
+# with the App token it mints, and open-winget-pull-request, which writes the
+# organization's fork of microsoft/winget-pkgs and opens the pull request with
+# the personal access token it is given.
 # sources keeps contents:read too: it reads the sibling repositories with the
 # App token it mints.
 permissions:
@@ -3049,11 +3132,15 @@ jobs:
     #
     # The Homebrew formula and the Scoop manifest the render step wrote, and the
     # version their binaries carry: publish-package-channels commits the two
-    # files to the tap and the bucket. Set on a dry run too, which renders them.
+    # files to the tap and the bucket. The winget manifest's three files, one
+    # line each as scripts/open-winget-pull-request.sh --pack writes them:
+    # open-winget-pull-request adds them to winget-pkgs. Set on a dry run too,
+    # which renders them.
     outputs:
       plugin_push_output: ${{ steps.plugins.outputs.push_output }}
       homebrew_formula: ${{ steps.package-channels.outputs.formula }}
       scoop_manifest: ${{ steps.package-channels.outputs.manifest }}
+      winget_manifest: ${{ steps.package-channels.outputs.winget }}
       release_version: ${{ steps.package-channels.outputs.version }}
 
     env:
@@ -3720,19 +3807,21 @@ jobs:
         # name resolve by the time publish-package-channels commits them. The
         # formula and the Scoop manifest, and the version, are handed on as this
         # job's outputs, each file under a delimiter drawn at random for this
-        # run. The winget manifest's three files are printed here, under the
-        # folder the winget community repository keeps them in, for the pull
-        # request a person opens there; nothing here sends them anywhere.
+        # run. The winget manifest's three files are printed here, and handed on
+        # as one more output, written by scripts/open-winget-pull-request.sh
+        # --pack, the script that reads it back in open-winget-pull-request; this
+        # job sends them nowhere else.
         id: package-channels
         run: |
           set -euo pipefail
           [ -n "${RELEASE_VERSION:-}" ] || { echo "sign-and-publish: the release step recorded no version" >&2; exit 1; }
           aggrega-cli/scripts/render-package-channels.sh "$RELEASE_DIR" "$RELEASE_VERSION" "$CHANNELS_DIR"
-          echo "sign-and-publish: the winget manifest for aggrega $RELEASE_VERSION, three files for manifests/c/Cognitio/Aggrega/$RELEASE_VERSION/ in https://github.com/microsoft/winget-pkgs:"
+          echo "sign-and-publish: the winget manifest for aggrega $RELEASE_VERSION, three files:"
           for file in "$CHANNELS_DIR"/winget/*; do
             echo "--- ${file##*/}"
             cat "$file"
           done
+          winget="$(aggrega-cli/scripts/open-winget-pull-request.sh --pack "$CHANNELS_DIR/winget")"
           delimiter="package-channels-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
           {
             printf 'version=%s\n' "$RELEASE_VERSION"
@@ -3741,6 +3830,9 @@ jobs:
             printf '%s\n' "$delimiter"
             printf 'manifest<<%s\n' "$delimiter"
             awk 1 "$CHANNELS_DIR/aggrega.json"
+            printf '%s\n' "$delimiter"
+            printf 'winget<<%s\n' "$delimiter"
+            printf '%s\n' "$winget"
             printf '%s\n' "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
@@ -4304,6 +4396,87 @@ jobs:
           commit_file "$HOMEBREW_TAP_REPOSITORY" Formula/aggrega.rb "$work/aggrega.rb"
           commit_file "$SCOOP_BUCKET_REPOSITORY" bucket/aggrega.json "$work/aggrega.json"
 
+  open-winget-pull-request:
+    # Opens the pull request that adds the winget manifest sign-and-publish
+    # rendered from this release's own files to the winget community
+    # repository, microsoft/winget-pkgs, so that `winget install
+    # Cognitio.Aggrega` installs this release once winget-pkgs accepts it. The
+    # three files reach it as sign-and-publish's output and are added as they
+    # are: nothing here renders them again.
+    #
+    # It runs once sign-and-publish has succeeded, on a dry run too, and the
+    # script decides what it does: on a real publish with the repository
+    # variable AGGREGA_WINGET_PULL_REQUEST exactly true it opens the pull
+    # request; with the variable anything else, unset included, it opens
+    # nothing and says the gate is off; on a dry run it prints the pull request
+    # it would open and opens nothing, whatever the variable is. Only the first
+    # path reads the token or reaches the network. A job of its own, on a
+    # GitHub-hosted runner, so the token that writes the fork shares a job with
+    # no other credential but the run's own token, which here reads this
+    # repository and nothing more. It runs no action but checkout and no program
+    # but gh, git and the shell's own utilities.
+    #
+    # The fork's name is written once, in this job's env. The if: names both
+    # jobs it needs as having succeeded rather than leaving it to the default,
+    # since sign-and-publish may run beside a sign-macos skipped while macOS
+    # signing is off.
+    needs: [build, sign-and-publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      WINGET_PKGS_FORK: ${{ github.repository_owner }}/winget-pkgs
+
+    steps:
+      - name: Check out the CLI at the commit the build job built
+        # For scripts/open-winget-pull-request.sh only.
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Open the winget pull request
+        # The script syncs the fork with winget-pkgs, pushes a branch adding the
+        # three files under the folder winget-pkgs keeps them in, never forced,
+        # and opens the pull request from it; it stops, opening nothing, when
+        # winget-pkgs already holds this version, and refuses a branch of that
+        # name already on the fork. On a real publish the tag must be
+        # v<version>, the version the files carry. The token reaches gh through
+        # GH_TOKEN and git as an Authorization header through git's environment
+        # configuration (GIT_CONFIG_COUNT), so it is never placed on a command
+        # line or written to disk. Its --help says the rest.
+        env:
+          WINGET_PULL_REQUEST_TOKEN: ${{ secrets.WINGET_PULL_REQUEST_TOKEN }}
+          AGGREGA_WINGET_PULL_REQUEST: ${{ vars.AGGREGA_WINGET_PULL_REQUEST }}
+          WINGET_MANIFEST: ${{ needs.sign-and-publish.outputs.winget_manifest }}
+          RELEASE_VERSION: ${{ needs.sign-and-publish.outputs.release_version }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+            TAG="$DISPATCH_TAG"
+          else
+            DRY="false"
+            TAG="$REF_NAME"
+          fi
+
+          if [ -z "$WINGET_MANIFEST" ] || [ -z "$RELEASE_VERSION" ]; then
+            echo "open-winget-pull-request: sign-and-publish handed on no winget manifest or version; nothing was opened" >&2
+            exit 1
+          fi
+          manifest="$(mktemp "$RUNNER_TEMP/winget-manifest.XXXXXX")"
+          trap 'rm -f -- "$manifest"' EXIT
+          printf '%s\n' "$WINGET_MANIFEST" > "$manifest"
+          aggrega-cli/scripts/open-winget-pull-request.sh --manifest "$manifest" \
+            --version "$RELEASE_VERSION" --tag "$TAG" --fork "$WINGET_PKGS_FORK" --dry-run "$DRY"
+
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
     # binaries and hands them to windows-smoke as an artifact, saved under the
@@ -4839,7 +5012,7 @@ jobs:
     # job name another Apple secret or run anything but Apple's programs, the
     # shell's own utilities and the artifact download pinned by commit.
     # clean-up waits for it, so the artifacts it reads are still there.
-    needs: [sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels]
+    needs: [sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request]
     if: >-
       ${{ !cancelled()
       && needs.sign-macos.result == 'success'
@@ -5086,7 +5259,7 @@ jobs:
     # emulation's installer image once the image is built, and
     # sign-and-publish's publish script removes every image and reference it
     # loads when it exits, a refusal included.
-    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15
