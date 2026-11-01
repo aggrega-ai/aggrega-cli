@@ -51,10 +51,14 @@
 # .yaml.
 #
 # --manifest <file> holds those lines, exactly three; <version> is the version
-# the files carry, MAJOR.MINOR.PATCH, and <tag> the release's tag, which on a
-# real publish must be v<version>; <owner>/<repository> is the fork of
-# microsoft/winget-pkgs the branch is pushed to and the pull request opened
-# from; --dry-run true prints what would be opened and opens nothing.
+# the files carry, which on a real publish must be MAJOR.MINOR.PATCH, and
+# <tag> the release's tag, which on a real publish must be v<version>;
+# <owner>/<repository> is the fork of microsoft/winget-pkgs the branch is pushed
+# to and the pull request opened from; --dry-run true prints what would be
+# opened and opens nothing. A dry run may build a commit no release tag names, whose binaries
+# carry a version such as 1.2.3-4-gabc1234, so on a dry run the version need
+# only start with a digit and hold letters, digits, dots, - and _; the dry run
+# then says a real publish files the manifest under its tag's version instead.
 #
 # Programs: bash, git 2.31 or later (it reads the token from GIT_CONFIG_COUNT),
 # gh, base64, mktemp and the shell's own utilities; the network on a real
@@ -129,7 +133,12 @@ case "$DRY" in
   true | false) ;;
   *) echo "open-winget-pull-request: --dry-run is '$DRY'; it takes true or false" >&2; exit 2 ;;
 esac
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "open-winget-pull-request: '$VERSION' is not a version of the form MAJOR.MINOR.PATCH" >&2; exit 2; }
+# The version names a folder and a branch, so it is held to the characters those
+# take here on every run; a release publishes only MAJOR.MINOR.PATCH.
+[[ "$VERSION" =~ ^[0-9][0-9A-Za-z._-]*$ ]] || { echo "open-winget-pull-request: '$VERSION' is not a version this script names a folder and a branch with" >&2; exit 2; }
+RELEASE_FORM=false
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && RELEASE_FORM=true
+[ "$DRY" = "true" ] || [ "$RELEASE_FORM" = "true" ] || { echo "open-winget-pull-request: '$VERSION' is not a version of the form MAJOR.MINOR.PATCH" >&2; exit 2; }
 [[ "$FORK" =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$ ]] || { echo "open-winget-pull-request: '$FORK' is not <owner>/<repository>" >&2; exit 2; }
 [ -f "$MANIFEST" ] || { echo "open-winget-pull-request: no manifest file at $MANIFEST" >&2; exit 2; }
 
@@ -192,6 +201,9 @@ if [ "$DRY" = "true" ]; then
     say "  $FOLDER/${file##*/}"
   done
   say "dry run: titled \"$TITLE_NEW\", or \"$TITLE_UPDATE\" when winget-pkgs already holds a version of $ID"
+  if [ "$RELEASE_FORM" != "true" ]; then
+    say "dry run: $VERSION is this build's version, not a release's MAJOR.MINOR.PATCH, as when no release tag names the commit built; a real publish, from the tag v<MAJOR.MINOR.PATCH>, files the manifest under that version"
+  fi
   if [ "$GATE" = "true" ]; then
     say "dry run: the repository variable AGGREGA_WINGET_PULL_REQUEST is true, so a real publish opens it; nothing is opened on a dry run"
   else
