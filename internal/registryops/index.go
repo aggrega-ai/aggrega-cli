@@ -213,11 +213,10 @@ func (s remoteIndexSource) ConditionalReferrers(ctx context.Context, repo, diges
 // registry refused or dropped in passing is asked again before the walk decides
 // anything from it.
 var IndexTarget = func(cfg workspaceconfig.Config, host string) (IndexSource, error) {
-	httpClient, err := egress.HTTPClient(cfg)
+	httpClient, err := retryingReadClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	httpClient = retryingReadClient(httpClient)
 	reg, err := oci.NewRemoteRegistry(host, httpClient)
 	if err != nil {
 		return nil, err
@@ -635,6 +634,19 @@ func (hw *hostWalk) unreadable(w *repoWalk, repo, uri string, err error) {
 	fmt.Fprintf(&w.text, "  could not read %s: %v; its earlier record is kept\n", repo, err)
 }
 
+// readFailed settles a repository one of whose own reads failed — its tag listing,
+// or its latest version's manifest. Where the registry answered that it holds
+// nothing there (registryindex.IsAbsent), that is an answer: the repository is no
+// longer there to record, and it is skipped as one whose version no longer
+// resolves is. Anything else is a read that did not complete (unreadable).
+func (hw *hostWalk) readFailed(w *repoWalk, repo, uri string, err error) {
+	if registryindex.IsAbsent(err) {
+		w.skip(repo, err.Error())
+		return
+	}
+	hw.unreadable(w, repo, uri, err)
+}
+
 // repoWalk is one repository's share of a host's walk: its record and the
 // revalidation stored beside it, whether there is a record at all, and everything
 // the walk reports about it — the skip, the deprecation notes, and the running
@@ -778,14 +790,16 @@ func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpda
 // unreadable (hostWalk.unreadable), never recorded with what the failure left out
 // — a version with no signer, no date or no marker, or a repository dropped from
 // the index. Only what the registry ANSWERED is recorded as absent: a listing that
-// names no signature, no marker, no tag.
+// names no signature, no marker, no tag; and a marker, a marker's signature or a
+// published-at statement the registry answers it does not hold
+// (registryindex.IsAbsent), which a later read answers the same way.
 //
 // A repository with no strict-SemVer version is skipped silently (a deterministic
 // non-error). A repository the registry answers is not what the index can record —
-// a version that no longer resolves, or a manifest whose label map does not decode
-// — is skipped with a note, and so is one that cannot be read and has no earlier
-// record to keep, so one such repository does not abandon the walk, mirroring the
-// enumeration primitive's partial-on-error posture.
+// one it no longer holds, a version that no longer resolves, or a manifest whose
+// label map does not decode — is skipped with a note, and so is one that cannot be
+// read and has no earlier record to keep, so one such repository does not abandon
+// the walk, mirroring the enumeration primitive's partial-on-error posture.
 func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 	uri := "oci://" + hw.host + "/" + repo
 	target, err := hw.src.Repository(repo)
@@ -803,7 +817,7 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 	}
 	tags, listingDigest, notModified, truncated, err := hw.src.ConditionalTags(ctx, repo, priorListing)
 	if err != nil {
-		hw.unreadable(w, repo, uri, err)
+		hw.readFailed(w, repo, uri, err)
 		return
 	}
 	var version string
@@ -820,7 +834,7 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 		if truncated {
 			tags, err = oci.ListTags(ctx, target)
 			if err != nil {
-				hw.unreadable(w, repo, uri, err)
+				hw.readFailed(w, repo, uri, err)
 				return
 			}
 			listingDigest = ""
@@ -851,7 +865,7 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 	} else {
 		annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
 		if err != nil {
-			hw.unreadable(w, repo, uri, err)
+			hw.readFailed(w, repo, uri, err)
 			return
 		}
 		if rec, err = recordFromAnnotations(hw.host, repo, version, annotations); err != nil {

@@ -115,7 +115,8 @@ func ReadPublishedAt(ctx context.Context, target oras.ReadOnlyTarget, subjectRef
 // referrer's payload could not be fetched: the earliest of the ones that were
 // read may then not be the earliest attached. A payload that was fetched and does
 // not decode is still passed over without an error, since reading it again
-// decodes the same bytes the same way.
+// decodes the same bytes the same way, and so is a referrer the registry answers
+// it does not hold, which a later read answers the same way.
 func ReadPublishedAtFully(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string) (time.Time, bool, error) {
 	earliest, found, unfetched, err := readPublishedAt(ctx, target, subjectRef)
 	if err != nil {
@@ -128,7 +129,8 @@ func ReadPublishedAtFully(ctx context.Context, target oras.ReadOnlyTarget, subje
 }
 
 // readPublishedAt is the one walk over a version's published-at referrers both
-// readings share. unfetched is the last payload fetch that failed, if any.
+// readings share. unfetched is the last payload fetch that failed without an
+// answer, if any.
 func readPublishedAt(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string) (earliest time.Time, found bool, unfetched, err error) {
 	refs, err := ListReferrers(ctx, target, subjectRef, MediaTypePublishedAt)
 	if err != nil {
@@ -137,7 +139,9 @@ func readPublishedAt(ctx context.Context, target oras.ReadOnlyTarget, subjectRef
 	for _, ref := range refs {
 		payload, ferr := FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
-			unfetched = ferr
+			if !isNotFoundResponse(ferr) {
+				unfetched = ferr
+			}
 			continue
 		}
 		at, perr := UnmarshalPublishedAt(payload)

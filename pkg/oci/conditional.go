@@ -34,6 +34,11 @@ const indexTagsListPageSize = 1000
 // remains. The caller stores the ETag and presents it as ifNoneMatch on the next
 // refresh; a truncated page means the single-request validator does not cover the
 // whole listing, so the caller should fall back to the full enumeration.
+//
+// A registry that holds no repository at the address answers the listing not
+// found, and that is reported as ErrFetchNotFound, as ListTags reports it: the
+// registry answered, so a caller can tell a repository that is gone from a listing
+// that could not be read.
 func ConditionalListTags(ctx context.Context, host, repo, ifNoneMatch string, httpClient *http.Client) (tags []string, etag string, notModified bool, truncated bool, err error) {
 	plainHTTP, client, err := remoteClient(host, httpClient)
 	if err != nil {
@@ -74,6 +79,8 @@ func ConditionalListTags(ctx context.Context, host, repo, ifNoneMatch string, ht
 			return nil, "", false, false, fmt.Errorf("oci: tags/list %q decode: %w", repo, err)
 		}
 		return payload.Tags, resp.Header.Get("ETag"), false, resp.Header.Get("Link") != "", nil
+	case http.StatusNotFound:
+		return nil, "", false, false, fmt.Errorf("tags/list %q: status %d: %w", repo, resp.StatusCode, ErrFetchNotFound())
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, "", false, false, fmt.Errorf("oci: tags/list %q: status %d: %w", repo, resp.StatusCode, ErrFetchUnauthorized())
 	default:

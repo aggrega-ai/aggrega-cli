@@ -23,14 +23,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
-// The reads a fault can be aimed at: the three filtered referrer listings a
-// version's signer, date and marker are read from, the manifest of a referrer, and
-// a blob — a signature's, a marker's or a statement's payload.
+// The reads a fault can be aimed at: a repository's tag listing, the three
+// filtered referrer listings a version's signer, date and marker are read from,
+// the manifest of a referrer, the resolve of a referrer's manifest by its digest —
+// which is how a marker's own signatures are listed — and a blob — a signature's,
+// a marker's or a statement's payload.
 const (
+	readTagListing         = "tag listing"
 	readSignatureListing   = "signature listing"
 	readMarkerListing      = "marker listing"
 	readPublishedAtListing = "published-at listing"
 	readReferrerManifest   = "referrer manifest"
+	readReferrerResolve    = "referrer resolve"
 	readBlob               = "blob"
 )
 
@@ -70,11 +74,22 @@ func (r *validatingRegistry) faultState(f *readFault) (int, []time.Time) {
 // readOf names the read a request is, among those a fault can be aimed at, and the
 // repository it reads.
 func (r *validatingRegistry) readOf(req *http.Request) (repo, read string) {
+	path := req.URL.Path
+	if req.Method == http.MethodHead {
+		if i := strings.LastIndex(path, "/manifests/"); i >= 0 {
+			repo = strings.TrimPrefix(path[:i], "/v2/")
+			if r.isReferrer(repo, path[i+len("/manifests/"):]) {
+				return repo, readReferrerResolve
+			}
+		}
+		return "", ""
+	}
 	if req.Method != http.MethodGet {
 		return "", ""
 	}
-	path := req.URL.Path
 	switch {
+	case strings.HasSuffix(path, "/tags/list"):
+		return strings.TrimSuffix(strings.TrimPrefix(path, "/v2/"), "/tags/list"), readTagListing
 	case strings.Contains(path, "/referrers/"):
 		repo = strings.TrimPrefix(path[:strings.LastIndex(path, "/referrers/")], "/v2/")
 		switch req.URL.Query().Get("artifactType") {

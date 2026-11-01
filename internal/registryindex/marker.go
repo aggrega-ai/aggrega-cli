@@ -11,6 +11,7 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/errdef"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -63,6 +64,24 @@ func IsUnread(err error) bool {
 	return errors.As(err, &u)
 }
 
+// IsAbsent reports whether a failed read is the registry's answer that it holds
+// nothing at the address asked: a manifest, a blob or a repository it does not
+// have, the condition oci.Resolve reports as a tag that does not exist. That is an
+// answer, not a failure to read — asking again gets the same answer — so a caller
+// telling the two apart treats it as what is there, never as IsUnread.
+func IsAbsent(err error) bool {
+	return errors.Is(err, errdef.ErrNotFound) || errors.Is(err, oci.ErrFetchNotFound())
+}
+
+// unreadUnlessAbsent marks err as a failure to read (IsUnread) unless the registry
+// answered that nothing is at the address asked, which is returned as it is.
+func unreadUnlessAbsent(err error) error {
+	if IsAbsent(err) {
+		return err
+	}
+	return unreadError{err}
+}
+
 // LatestMarker fetches and decodes each candidate marker referrer and returns
 // the descriptor and decoded marker carrying the newest issuedOn. A blank or
 // unparseable issuedOn sorts oldest; the marker manifest digest is the
@@ -81,7 +100,7 @@ func LatestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []oci
 // candidate marker's payload could not be fetched: the newest of the markers that
 // were read may then not be the newest attached. A marker that was fetched and does
 // not decode is still passed over, since reading it again decodes the same bytes
-// the same way.
+// the same way, and so is one the registry answers it does not hold (IsAbsent).
 func LatestMarkerFully(ctx context.Context, target oras.ReadOnlyTarget, markers []ocispec.Descriptor) (ocispec.Descriptor, deprecation.Marker, error) {
 	desc, marker, unfetched, err := latestMarker(ctx, target, markers)
 	if unfetched != nil {
@@ -91,7 +110,7 @@ func LatestMarkerFully(ctx context.Context, target oras.ReadOnlyTarget, markers 
 }
 
 // latestMarker is the one walk over candidate markers both readings share.
-// unfetched is the last payload fetch that failed, if any.
+// unfetched is the last payload fetch that failed without an answer, if any.
 func latestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []ocispec.Descriptor) (ocispec.Descriptor, deprecation.Marker, error, error) {
 	var (
 		bestDesc    ocispec.Descriptor
@@ -106,7 +125,9 @@ func latestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []oci
 		payload, ferr := oci.FetchReferrerPayload(ctx, target, mk)
 		if ferr != nil {
 			lastErr = fmt.Errorf("fetch deprecation marker payload: %w", ferr)
-			unfetched = lastErr
+			if !IsAbsent(ferr) {
+				unfetched = lastErr
+			}
 			continue
 		}
 		decoded, derr := deprecation.Unmarshal(payload)
@@ -167,7 +188,10 @@ func LaterMarker(aHasTime bool, aTime time.Time, aDigest string, bHasTime bool, 
 // could not be read, or a signature could not be fetched, or could not be judged
 // for a reason other than the bundle itself (as FindVerifiedSigner tells them
 // apart) — the error is a failure to read (IsUnread): the marker is not shown to
-// be untrusted, only not shown to be honored.
+// be untrusted, only not shown to be honored. The registry answering that it does
+// not hold the marker's manifest, or a listed signature (IsAbsent), is an answer
+// and not a failure to read: the marker is then not honored, as it would be with
+// no signature at all.
 func VerifyMarkerSignature(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -178,7 +202,7 @@ func VerifyMarkerSignature(
 ) (*lockfile.VerifiedSignature, error) {
 	sigRefs, err := oci.ListReferrers(ctx, target, markerDigest, signing.BundleMediaType)
 	if err != nil {
-		return nil, unreadError{fmt.Errorf("list marker signature referrers: %w", err)}
+		return nil, unreadUnlessAbsent(fmt.Errorf("list marker signature referrers: %w", err))
 	}
 	if len(sigRefs) == 0 {
 		return nil, signing.ErrNoSignatureFound()
@@ -190,7 +214,9 @@ func VerifyMarkerSignature(
 		bundle, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
 			lastErr = ferr
-			unanswered = ferr
+			if !IsAbsent(ferr) {
+				unanswered = ferr
+			}
 			continue
 		}
 		res, verr := pullverify.VerifyBundle(wsCfg, bundle, markerDigest, markerPolicy)

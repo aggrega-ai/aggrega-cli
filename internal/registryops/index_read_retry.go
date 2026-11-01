@@ -16,7 +16,9 @@ import (
 	"oras.land/oras-go/v2/registry/remote/errcode"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/retry"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // indexReadBodyLimit is how much of a successful read's body the walk's transport
@@ -48,16 +50,21 @@ type readRetryingTransport struct {
 	base http.RoundTripper
 }
 
-// retryingReadClient returns a client like httpClient whose reads go through
-// readRetryingTransport.
-func retryingReadClient(httpClient *http.Client) *http.Client {
-	base := httpClient.Transport
-	if base == nil {
-		base = http.DefaultTransport
+// retryingReadClient returns the network client for cfg with its reads going
+// through readRetryingTransport. The client and the transport it wraps both come
+// from the egress gate, so the walk reaches the network on the same terms, and
+// under the same offline decision, as every other client.
+func retryingReadClient(cfg workspaceconfig.Config) (*http.Client, error) {
+	base, err := egress.RoundTripper(cfg)
+	if err != nil {
+		return nil, err
 	}
-	c := *httpClient
-	c.Transport = readRetryingTransport{base: base}
-	return &c
+	httpClient, err := egress.HTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	httpClient.Transport = readRetryingTransport{base: base}
+	return httpClient, nil
 }
 
 func (t readRetryingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
