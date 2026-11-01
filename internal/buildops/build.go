@@ -642,6 +642,7 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 		// byte-identical from the lockfile.
 		lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, namedDirs...)
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
+		lazyView.WriteNoticesTo(diagOut)
 
 		// The preview computation itself — the gate sequence and the render — runs in
 		// the shared entry point every rendering surface is a transport over, so the
@@ -667,6 +668,7 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 				// to emit, so the advisory sequence has one order.
 				compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
 				compilerops.WithProgress(func(p compilerops.PreviewPhase) { report.phase(previewPhase(p)) }),
+				compilerops.WithDisplay(diagOut),
 			),
 			renderOptions,
 		)

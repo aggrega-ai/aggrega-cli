@@ -10,8 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -390,10 +388,12 @@ func TestRenderPolicyHCL_AllowReadsTree(t *testing.T) {
 	ctx := context.Background()
 	inputs := renderPolicyHCLInputs(t, "aws_s3_bucket")
 
-	var err error
-	stderr := captureRenderPolicyStderr(t, func() {
-		err = runRenderPolicySocket(ctx, inputs, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
-	})
+	// The runner shows the info verdict on the display the run is handed, so the
+	// proof that the guest recorded a tree-derived verdict reads that display.
+	var display bytes.Buffer
+	inputs.Display = &display
+	err := runRenderPolicySocket(ctx, inputs, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
+	stderr := display.String()
 	if err != nil {
 		t.Fatalf("expected the build to proceed for a present required resource type, got halt: %v", err)
 	}
@@ -429,29 +429,4 @@ func TestRenderPolicyHCL_ParsedTreeVerbatim(t *testing.T) {
 	if !bytes.Equal(first.Tree, second.Tree) {
 		t.Fatalf("non-deterministic parsed tree:\n first: %s\nsecond: %s", first.Tree, second.Tree)
 	}
-}
-
-// captureRenderPolicyStderr redirects os.Stderr for the duration of fn and
-// returns everything written to it. The render-policy runner emits info
-// verdicts to os.Stderr, so a proof that the guest recorded a tree-derived
-// verdict reads the captured text. It mutates a process global, so its callers
-// do not run in parallel.
-func captureRenderPolicyStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stderr = w
-	done := make(chan string, 1)
-	go func() {
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
-		done <- buf.String()
-	}()
-	fn()
-	_ = w.Close()
-	os.Stderr = orig
-	return <-done
 }

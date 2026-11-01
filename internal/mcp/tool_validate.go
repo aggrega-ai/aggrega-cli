@@ -361,6 +361,7 @@ func validateReleaseScope(
 		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,
 		CompilerVersion: s.serverVersion,
+		Display:         s.logw,
 	})
 
 	diags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
@@ -436,7 +437,8 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 	}
 	absent := tw.absentCatalogDirLines(releasePath)
 
-	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false)
+	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false,
+		validateops.WithDisplay(s.logw))
 
 	var diags []string
 	if verr != nil {

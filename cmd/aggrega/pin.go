@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -141,6 +142,9 @@ func pinRun(ctx context.Context, out io.Writer, rw *workspaceconfig.ResolvedWork
 		Workspace:  rw,
 		EntityPath: entityPath,
 		DryRun:     dryRun,
+		// The catalog's notices about the files the step reads go to this
+		// command's error stream; its own account goes to out.
+		Notices: os.Stderr,
 	})
 	if err != nil {
 		return fmt.Errorf("aggrega pin: %w", err)

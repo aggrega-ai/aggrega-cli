@@ -717,6 +717,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 				tw.cfg,
 				s.serverVersion,
 				compilerops.WithLockfile(lf, lf != nil && !lockfileFilled),
+				compilerops.WithDisplay(s.logw),
 			),
 			pipeline.Options{},
 		)

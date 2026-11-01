@@ -6,6 +6,7 @@ package compilerops
 import (
 	"context"
 	"errors"
+	"io"
 	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -214,6 +215,12 @@ type ValidateInputs struct {
 	WorkspaceRoot   string
 	WorkspaceConfig workspaceconfig.Config
 	CompilerVersion string
+
+	// Display is where the validation's run displays what it raises as it raises
+	// it (pipeline.Inputs.Display): a command hands its error stream, a
+	// long-running process the stream it was launched with. Nil shows nothing;
+	// every advisory still arrives on the result.
+	Display io.Writer
 }
 
 // ValidateResult carries the semantic-validation outcome in the order the gates
@@ -360,6 +367,10 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		// produces.
 		PluginPins:      pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile, in.ReleasePath)),
 		CompilerVersion: in.CompilerVersion,
+		Display:         in.Display,
+		// The view resolved every closure entity in the two gates above, so its
+		// advisories over those entities are complete when the run asks for them.
+		CatalogAdvisories: in.View.SchemaAdvisories,
 	}
 	// The governance attachment list the pipeline dispatches and the digests
 	// recorded as trusted for its verdict attachments arrive through the one

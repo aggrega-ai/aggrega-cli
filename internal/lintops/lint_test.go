@@ -245,7 +245,7 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 	}
 	// The --plugin override is the artifact-direct escape hatch; it never consults
 	// the entity model, so a nil entity lookup is fine.
-	attachments, err := ResolveLinterPlugins(path, wsCfg, resolver.VerdictPluginTrust{}, nil)
+	attachments, err := ResolveLinterPlugins(path, wsCfg, resolver.VerdictPluginTrust{}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveLinterPlugins: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 		wp.Metadata.PluginType = "linter"
 		return wp, true
 	}
-	_, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI)
+	_, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI, nil)
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
@@ -312,7 +312,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		return types.Plugin{}, false
 	}
-	_, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI)
+	_, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI, nil)
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
@@ -327,7 +327,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 // of the box rather than halting on an unconfigured path.
 func TestResolveLinterPluginDefaultsToEmbedded(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, nil)
+	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, nil, nil)
 	if err != nil {
 		t.Fatalf("unset linter path should resolve the built-in; got error: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestResolveLinterPluginCarriesEntityRuntimeCap(t *testing.T) {
 		wp.Spec.Runtime = &types.PluginRuntime{MaxMemoryPages: 32, TimeoutMs: 250}
 		return wp, true
 	}
-	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI)
+	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI, nil)
 	if err != nil {
 		t.Fatalf("ResolveLinterPlugins: %v", err)
 	}

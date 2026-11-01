@@ -5,6 +5,7 @@ package pipeline_test
 
 import (
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -98,8 +99,10 @@ func TestProvidesPublicationAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) 
 	resolveWith := func(binding resolver.RecipeBinding) ([]*resolver.ResolverError, string, error) {
 		var advisories []*resolver.ResolverError
 		var resolveErr error
-		stderr := captureStderr(t, func() {
-			resolveErr = pipeline.ResolveAndValidate(context.Background(), inputs,
+		stderr := captureDisplay(t, func(display io.Writer) {
+			in := inputs
+			in.Display = display
+			resolveErr = pipeline.ResolveAndValidate(context.Background(), in,
 				wiredLookup(cat, manifest), binding,
 				func(rr *resolver.ResolveResult) error {
 					advisories = rr.LintAdvisories

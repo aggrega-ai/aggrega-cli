@@ -7,6 +7,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -135,6 +136,11 @@ type PreviewInputs struct {
 	// render's own resolution records them without showing them again.
 	resolutionAdvisoriesShown bool
 
+	// display is where the preview's run displays what it raises as it raises
+	// it — the lines a build shows a reader at a terminal. nil shows nothing; the
+	// advisories arrive on the result either way. See WithDisplay.
+	display io.Writer
+
 	// catalogWarnings are advisories the caller's own catalog load produced.
 	// They are handed in rather than re-derived because only a caller that
 	// eagerly loaded a catalog has them, and emitting them here keeps the whole
@@ -208,6 +214,14 @@ func WithComposedTrustRecord(trust *pluginstrust.Trust) PreviewOption {
 // renders the same Release here to discover its external inputs.
 func WithResolutionAdvisoriesShown() PreviewOption {
 	return func(in *PreviewInputs) { in.resolutionAdvisoriesShown = true }
+}
+
+// WithDisplay supplies the writer the preview's run displays on as it raises
+// each advisory: a surface whose reader looks at a terminal hands its error
+// stream. Without it the run shows nothing as it goes, which is coherent for a
+// surface that reads the advisories off the result.
+func WithDisplay(w io.Writer) PreviewOption {
+	return func(in *PreviewInputs) { in.display = w }
 }
 
 // WithCatalogWarnings supplies the advisories the caller's own catalog load
@@ -930,6 +944,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 		TolerateCatalogViewInconsistency: pol.tolerateCatalogViewInconsistency,
 		composedTrust:                    in.composedTrust,
 		resolutionAdvisoriesShown:        in.resolutionAdvisoriesShown,
+		display:                          in.display,
 	}, opts)
 	// Assigned BEFORE the verdict is read, and that ordering is the whole point
 	// rather than a tidying. Assigned after the error check, the outcome would

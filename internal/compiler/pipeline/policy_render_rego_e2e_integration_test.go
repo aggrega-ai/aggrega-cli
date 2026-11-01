@@ -136,6 +136,7 @@ func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.Catal
 		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		PluginPins:        pluginpath.NoPins(),
 		CompilerVersion:   fixtureCompilerVersion,
+		Display:           processStderr{},
 	}
 	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()
 }

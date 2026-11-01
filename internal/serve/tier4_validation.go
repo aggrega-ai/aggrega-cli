@@ -320,6 +320,9 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		WorkspaceRoot:   s.workspaceRoot,
 		WorkspaceConfig: s.wsConfig,
 		CompilerVersion: s.compilerVersion,
+		// The run's displays go where this process says what it has to say; what
+		// the editor is shown comes off the run's advisory channel below.
+		Display: s.stderr,
 	})
 
 	// The request is on the Release's own document, or on a module's: what is

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -246,6 +247,11 @@ func pushRun(ctx context.Context, cfg pushConfig) error {
 	cfg.IdentitySupply = commandLineIdentitySupply
 	cfg.DestinationSupply = commandLineDestinationSupply
 	cfg.PinSourcesSupply = commandLinePinSourcesSupply
+	// The catalog's notices about the files the pin step reads go to this
+	// command's error stream, beside its warnings.
+	if cfg.Notices == nil {
+		cfg.Notices = os.Stderr
+	}
 	// projection-omits PushResult: the publication writes an account of itself to this surface's own status output, and its warnings to this surface's error stream, and between them they name every fact the result carries, so projecting it here would restate in full what the terminal has just been shown
 	if _, err := publishops.Push(ctx, cfg); err != nil {
 		return fmt.Errorf("aggrega push: %w", err)

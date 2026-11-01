@@ -1509,13 +1509,15 @@ func (s *Server) heldRefusal() error {
 // is answered from a held view.
 func (s *session) heldWorkspace(held *workspaceconfig.HeldWorkspace) *Server {
 	root := held.Root()
+	heldCatalog := catalog.NewLazyLookup(root, "", nil, nil)
+	heldCatalog.WriteNoticesTo(s.stderr)
 	return &Server{
 		session:         s,
 		workspaceRoot:   root,
 		configSource:    workspaceconfig.SourceDefaults.String(),
 		workspaceMarker: held.Marker(),
 		held:            held,
-		lazyCatalog:     catalog.NewLazyLookup(root, "", nil, nil),
+		lazyCatalog:     heldCatalog,
 		parseCache:      newCache(0, 0),
 		diagnostics:     map[string][]Diagnostic{},
 		renderDiags:     map[string][]Diagnostic{},
@@ -1547,6 +1549,9 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 	// twice becomes one entry, and a lookup handed the raw list would read it twice.
 	sessionNamed := resolved.NamedCatalogDirs("", nil)
 	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, sessionNamed, nil, sessionNamed...)
+	// The lookup's notices go where the process says what it has to say, and each
+	// request's view forked from it writes there too.
+	sessionCatalog.WriteNoticesTo(s.stderr)
 	return &Server{
 		session:           s,
 		workspaceRoot:     root,

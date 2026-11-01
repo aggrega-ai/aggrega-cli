@@ -219,6 +219,7 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 		WorkspaceRoot:   wsRoot,
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),
+		Display:         diagOut,
 	})
 	// The deprecation report is the shared one every surface reads, over both the
 	// lockfile loaded above and the plugin trust record beside the Release. This
@@ -290,6 +291,7 @@ func resolveReleaseDependencies(ctx context.Context, rw *workspaceconfig.Resolve
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
 
 	view := catalog.NewLazyLookup(wsRoot, wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs(releasePath, catalogFlagDirs)...)
+	view.WriteNoticesTo(os.Stderr)
 	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {
 		return releaseDependencies{}, err

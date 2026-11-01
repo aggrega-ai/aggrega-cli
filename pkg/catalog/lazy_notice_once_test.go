@@ -106,7 +106,7 @@ func TestANoticeAboutAFileIsPrintedOnceHoweverOftenItsWalkRuns(t *testing.T) {
 				_ = view.Skips()
 				_, _ = view.Component("test/base:1.0.0")
 			}
-			out := captureStderr(t, func() {
+			out := captureNotices(t, view, func() {
 				for i := 0; i < 3; i++ {
 					view.SetPins(map[string]Pin{})
 					walk()
@@ -116,7 +116,7 @@ func TestANoticeAboutAFileIsPrintedOnceHoweverOftenItsWalkRuns(t *testing.T) {
 				t.Errorf("across three pin changes the notice naming %s was printed %d times; want exactly once\nstderr:\n%s", tc.subject, got, out)
 			}
 
-			again := captureStderr(t, func() {
+			again := captureNotices(t, view, func() {
 				view.Reset()
 				walk()
 			})

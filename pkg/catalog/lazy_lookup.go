@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -106,10 +108,113 @@ func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller 
 		plugins:             map[string]types.Plugin{},
 		recipeSkips:         map[string]error{},
 		announced:           map[string]struct{}{},
+		schemaAdvisorySeen:  map[string]struct{}{},
 		entityBytes:         map[string][]byte{},
 		origins:             map[string]entityOrigin{},
 		recordedPins:        recipepin.Lookup{},
 	}
+}
+
+// WriteNoticesTo directs the notice lines this view writes for a reader at a
+// terminal — a catalog file it did not place, an extends chain that would not
+// resolve — to w. A view nobody directs writes them nowhere, so a surface that
+// shows them states where; a request-scoped view forked by ForRequest writes
+// where the view it was forked from does.
+func (l *LazyLookup) WriteNoticesTo(w io.Writer) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.notices = w
+}
+
+// noticeWriter is where a notice is written: the surface's writer, or nowhere.
+func (l *LazyLookup) noticeWriter() io.Writer {
+	if l.notices == nil {
+		return io.Discard
+	}
+	return l.notices
+}
+
+// SchemaAdvisories returns the advisories this view raised over the schema
+// content of the Components and Features it has resolved, in the order it first
+// resolved them: one entry per x-aggrega-* extension keyword an entity authors
+// inline, naming the entity, the keyword, where it sits and the declarative table
+// recommended in its place.
+//
+// Each is raised once per entity, however many times the entity is read, because
+// it is asked where the view resolves an entity rather than where a document is
+// parsed — a run reads one entity through an index walk, a digest and a
+// resolution, and an advisory raised per reading repeats with each. The entity
+// named is the one whose document authors the keyword: the check reads the
+// document as resolved, before its extends chain is merged in, so a child is not
+// named for what its parent wrote.
+//
+// The entries carry the warn severity, no class code and no location — the
+// entity is a catalog document rather than one the run's reader is editing — and
+// the entity's name as their source reference. The returned slice is a copy.
+func (l *LazyLookup) SchemaAdvisories() []renderer.Diagnostic {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.schemaAdvisories) == 0 {
+		return nil
+	}
+	out := make([]renderer.Diagnostic, len(l.schemaAdvisories))
+	copy(out, l.schemaAdvisories)
+	return out
+}
+
+// noteSchemaAdvisories asks the x-aggrega-* discouragement of one resolved
+// entity's schema content and holds each finding not already held.
+func (l *LazyLookup) noteSchemaAdvisories(entity string, schema *yaml.Node) {
+	for _, d := range SchemaAdvisoriesOf(entity, schema) {
+		if _, held := l.schemaAdvisorySeen[d.Message]; held {
+			continue
+		}
+		l.schemaAdvisorySeen[d.Message] = struct{}{}
+		l.schemaAdvisories = append(l.schemaAdvisories, d)
+	}
+}
+
+// SchemaAdvisoriesOf returns the advisories the x-aggrega-* discouragement
+// raises over one Component's or Feature's schema content, as the structured
+// entries every advisory display and every advisory channel reads: warn
+// severity, no class code, no location, and the entity's name as the source
+// reference. It is the one composition of those entries, so a surface checking
+// a single entity file and a run reading a resolved catalog report the finding
+// in one shape. It writes nothing.
+func SchemaAdvisoriesOf(entity string, schema *yaml.Node) []renderer.Diagnostic {
+	findings := validator.DiscourageDirectXAggregaInSchema(entity, schema)
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]renderer.Diagnostic, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, renderer.Diagnostic{
+			Severity:  abi.SeverityWarn,
+			Message:   f.Message(),
+			SourceRef: f.Entity,
+		})
+	}
+	return out
+}
+
+// noteExtendsFailure writes the one-line notice for an entity whose extends
+// chain would not resolve, through the one formatter every advisory display
+// reads.
+//
+// It is written to the surface's notice writer and recorded nowhere else,
+// deliberately. A broken parent already reaches a reader who reads no terminal
+// twice over: a validation reports it on the document as a halting fault, and a
+// build's answer carries it as a notice of its own class. A third, warning-tier
+// copy beside those would read as a second fault for the one parent, so this
+// line is a terminal reader's alone.
+func (l *LazyLookup) noteExtendsFailure(err error) {
+	// The failure names its own entity, kind included, so the line adds no
+	// prefix of its own — one identity per diagnostic, and the same line shape
+	// the whole-catalog resolution pass prints.
+	fmt.Fprintf(l.noticeWriter(), "  extends: %s\n", renderer.RenderDiagnosticText(renderer.Diagnostic{
+		Severity: abi.SeverityWarn,
+		Message:  err.Error(),
+	}))
 }
 
 // ForRequest returns a request-scoped *LazyLookup carrying its OWN pin set and
@@ -156,6 +261,7 @@ func (l *LazyLookup) ForRequest(pins map[string]Pin) *LazyLookup {
 	view.componentIndexBuilt = true
 	view.featureIndex = featureIndex
 	view.featureIndexBuilt = true
+	view.notices = l.notices
 	view.SetPins(pins)
 	return view
 }
@@ -405,6 +511,8 @@ func (l *LazyLookup) Reset() {
 	l.linkFault = nil
 	l.recipeCat = nil
 	l.announced = map[string]struct{}{}
+	l.schemaAdvisories = nil
+	l.schemaAdvisorySeen = map[string]struct{}{}
 	l.entityBytes = map[string][]byte{}
 	l.origins = map[string]entityOrigin{}
 	l.recordedPins = recipepin.Lookup{}
@@ -617,6 +725,21 @@ type LazyLookup struct {
 	// announced. SetPins keeps it; Reset clears it, because a changed workspace can
 	// hold a different set of such files.
 	announced map[string]struct{}
+
+	// notices is where this view writes the notice lines a reader at a terminal is
+	// shown — a file the view did not place, an extends chain that would not
+	// resolve. It is the surface's to choose, because only the surface knows where
+	// its reader looks: a command hands its error stream, a long-running process
+	// the stream it was launched with. Nil writes nowhere. See WriteNoticesTo.
+	notices io.Writer
+
+	// schemaAdvisories holds, in the order the entities were first resolved, the
+	// advisories this view raised over the schema content of the Components and
+	// Features it resolved — the x-aggrega-* discouragement — and schemaAdvisorySeen
+	// the sentences already held, so each is held once however often the entity is
+	// read again. See SchemaAdvisories. SetPins keeps them; Reset clears them.
+	schemaAdvisories   []renderer.Diagnostic
+	schemaAdvisorySeen map[string]struct{}
 
 	// shellClaims records, for each identity the recipe-shell enumeration placed,
 	// the position in catalogDirs of the directory whose file claimed it, or
@@ -1061,12 +1184,10 @@ type fileHeader struct {
 // cascade exhaustion.
 //
 // Extends-resolution errors (cycle, missing parent, malformed chain)
-// are emitted as one-line warnings to os.Stderr per the existing
-// mid-pipeline warning convention. The lookup does NOT halt on
+// are written as one-line notices to the view's notice writer (see
+// WriteNoticesTo and noteExtendsFailure). The lookup does NOT halt on
 // extends errors — it caches and returns the unmerged entity so
-// downstream consumers can proceed; the operator sees the warning
-// in the daemon's stderr stream. This mirrors how dispatchBuild
-// surfaces catalog deprecation + binding-lint warnings.
+// downstream consumers can proceed.
 //
 // It reads under a background context, because its signature is the plain
 // function a resolver.CatalogLookup field and an extends lookup take, and those
@@ -1173,12 +1294,12 @@ func (l *LazyLookup) componentContext(ctx context.Context, uri string, registry 
 		}
 		return types.Component{}, false
 	}
+	// Asked of the document as resolved, before its chain is merged in, so the
+	// entity named is the one that authored the keyword.
+	l.noteSchemaAdvisories(comp.Metadata.Name, &comp.Spec.Schema)
 	merged, vErrs := l.mergeComponentChain(ctx, uri, comp)
 	if len(vErrs) > 0 {
-		// The failure names its own entity, kind included, so the line adds no
-		// prefix of its own — one identity per diagnostic, and the same line
-		// shape the whole-catalog resolution pass prints.
-		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
+		l.noteExtendsFailure(vErrs[0])
 	}
 	if ctx.Err() == nil {
 		l.components[uri] = merged
@@ -1200,8 +1321,8 @@ func (l *LazyLookup) mergeComponentChain(ctx context.Context, uri string, comp t
 }
 
 // Feature mirrors Component for the Feature surface. Extends-resolution
-// errors surface to os.Stderr per the same convention, and it reads under a
-// background context for the reason Component does.
+// errors are written to the view's notice writer the same way, and it reads
+// under a background context for the reason Component does.
 func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 	return l.FeatureContext(context.Background(), uri)
 }
@@ -1305,9 +1426,10 @@ func (l *LazyLookup) featureContext(ctx context.Context, uri string, registry bo
 		}
 		return types.Feature{}, false
 	}
+	l.noteSchemaAdvisories(feat.Metadata.Name, &feat.Spec.Schema)
 	merged, vErrs := l.mergeFeatureChain(ctx, uri, feat)
 	if len(vErrs) > 0 {
-		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
+		l.noteExtendsFailure(vErrs[0])
 	}
 	if ctx.Err() == nil {
 		l.features[uri] = merged
@@ -1878,7 +2000,7 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // provider/name:version, Plugins and aggregates by name:version, libraries by
 // metadata.name). A file that
 // won't parse — or whose recipe/FR identity
-// collides with one already indexed — is skipped with a one-line stderr warning
+// collides with one already indexed — is skipped with a one-line notice
 // and a recorded reason; it never aborts the walk. This is the robustness crux:
 // a broken UNUSED recipe is invisible to a resolution that doesn't need it, where
 // the eager catalog.Load fails the whole walk on the first broken recipe.
@@ -2406,21 +2528,21 @@ func (l *LazyLookup) announceSkip(source string, err error) {
 // recordShadowedComponent emits the one-line first-win notice when a later
 // catalog directory re-declares a Component/Feature identity an earlier
 // directory already claimed. First-win precedence keeps the earlier occurrence;
-// the shadowed path is reported so the override is never silent. Stderr-only,
-// mirroring the recipe-shell skip diagnostic's form.
+// the shadowed path is reported so the override is never silent. Written to the
+// view's notice writer only, mirroring the recipe-shell skip diagnostic's form.
 func (l *LazyLookup) recordShadowedComponent(kind, name, path string) {
 	l.announce(fmt.Sprintf("  catalog: %s %q at %s is shadowed (first-win precedence)\n", kind, name, path))
 }
 
-// announce writes one notice line to stderr unless this view has already written
-// it (announced). Every notice about a file the view did not place is written
-// through here, so none is repeated by a walk that runs again.
+// announce writes one notice line to the view's notice writer unless this view
+// has already written it (announced). Every notice about a file the view did not
+// place is written through here, so none is repeated by a walk that runs again.
 func (l *LazyLookup) announce(line string) {
 	if _, done := l.announced[line]; done {
 		return
 	}
 	l.announced[line] = struct{}{}
-	fmt.Fprint(os.Stderr, line)
+	fmt.Fprint(l.noticeWriter(), line)
 }
 
 // recipeCatalog returns the cached *Catalog shell over the tolerantly-enumerated

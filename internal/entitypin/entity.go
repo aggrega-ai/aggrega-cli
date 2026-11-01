@@ -6,6 +6,7 @@ package entitypin
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,13 @@ type Options struct {
 	// The resolution still runs, so the content cache still fills — which is
 	// what makes the report describe a real effect rather than an empty one.
 	DryRun bool
+
+	// Notices is where the catalog views the step reads through write their notices
+	// for a reader at a terminal — a catalog file they did not place, an extends
+	// chain that would not resolve. It is the surface's to choose, because only the
+	// surface knows where its reader looks: a command hands its error stream, a
+	// long-running process the stream it was launched with. Nil writes them nowhere.
+	Notices io.Writer
 }
 
 // Result is what one run of the pin step over a named entity reports.
@@ -195,6 +203,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	// the root that directory picks (NamedDocumentRoot asks the same list).
 	named := namedDocumentDirs(abs)
 	view := catalog.NewLazyLookup(root, cacheDir, named, nil, named...)
+	view.WriteNoticesTo(opts.Notices)
 
 	// The entity is named by the identity the catalog indexes it under, so a
 	// capability written with a version pin names it by the capability alone.
@@ -217,7 +226,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 		WorkspaceRoot:   root,
 		CacheDir:        cacheDir,
 		ForWriting:      forWriting,
-		ServingProvider: WorkspaceServingProvider(rw),
+		ServingProvider: WorkspaceServingProvider(rw, opts.Notices),
 		NamedDirs:       named,
 	})
 	if err != nil {
@@ -237,7 +246,10 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 //
 // The entity's own directory is not enough to answer from, because a binding may
 // name a provider plugin authored elsewhere in the workspace.
-func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace) func(capability string) (catalog.ServingProvider, bool, error) {
+//
+// notices is where the catalog view behind it writes its notices about the files
+// it reads (see Options.Notices); nil writes them nowhere.
+func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace, notices io.Writer) func(capability string) (catalog.ServingProvider, bool, error) {
 	var view *catalog.LazyLookup
 	return func(capability string) (catalog.ServingProvider, bool, error) {
 		cfg := rw.Config()
@@ -246,6 +258,7 @@ func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace) func(capabi
 			// workspace's own stack is the one read.
 			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs("", nil), nil,
 				rw.NamedCatalogDirs("", nil)...)
+			view.WriteNoticesTo(notices)
 		}
 		return view.ServingProvider(capability, cfg.Plugins.ProviderTargetURIs())
 	}

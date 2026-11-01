@@ -477,6 +477,9 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		PinSourcesSupply:          toolPinSourcesSupply,
 		Out:                       io.Discard,
 		Advisories:                io.Discard,
+		// The catalog's notices about the files the pin step reads go to the
+		// server's log, where they went before the step took a writer.
+		Notices: s.logw,
 	}, ""
 }
 

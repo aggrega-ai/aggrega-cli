@@ -15,28 +15,70 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// captureUnrecordedAdvisory redirects the advisory stream into a buffer and
-// clears the once-per-reference memo, so each case starts from a state in which
-// the advisory is free to fire. Without the clear a case would inherit whichever
-// references an earlier case already advised on, and its silence would measure
-// the memo rather than the rule.
-func captureUnrecordedAdvisory(t *testing.T) *bytes.Buffer {
+// captureUnrecordedAdvisory returns a buffer and a receiver writing into it, so
+// each case observes exactly the advisories its own construction raised. Each
+// call returns a fresh receiver, so a case never inherits the references an
+// earlier case already advised on, and its silence measures the rule rather than
+// a memo.
+func captureUnrecordedAdvisory(t *testing.T) (*bytes.Buffer, func(UnrecordedIdentity)) {
 	t.Helper()
 	var buf bytes.Buffer
-	prev := unrecordedIdentityWriter
-	unrecordedIdentityWriter = &buf
-	advisedUnrecorded.Range(func(k, _ any) bool {
-		advisedUnrecorded.Delete(k)
-		return true
+	return &buf, ReportUnrecordedTo(&buf)
+}
+
+// TestUnrecordedIdentityAdvisoryReachesItsReceiverAndNotStandardError holds the
+// advisory to the receiver the construction supplied: the receiver gets it, as a
+// structured value naming the reference and its source, and the process's
+// standard error gets nothing. A resolution has no business choosing a stream —
+// a run records the advisory on its channel and a command writes it where its
+// reader looks — so a write of its own would reach a stream nobody reading the
+// run's advisories reads.
+func TestUnrecordedIdentityAdvisoryReachesItsReceiverAndNotStandardError(t *testing.T) {
+	guest := writeLocalGuest(t, "receiver-bytes")
+	var got []UnrecordedIdentity
+	r := NewResolver(ResolutionContext{Unrecorded: func(a UnrecordedIdentity) { got = append(got, a) }},
+		PinPostureLockfile, PinMaps{})
+
+	stderr := captureProcessStderr(t, func() {
+		if _, err := r.Resolve(guest); err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
 	})
-	t.Cleanup(func() {
-		unrecordedIdentityWriter = prev
-		advisedUnrecorded.Range(func(k, _ any) bool {
-			advisedUnrecorded.Delete(k)
-			return true
-		})
-	})
-	return &buf
+	if len(got) != 1 || got[0].URI != guest || got[0].Tier != TierLocal {
+		t.Fatalf("the receiver got %+v, want one advisory for %q from the local tier", got, guest)
+	}
+	if !strings.Contains(got[0].Message(), "no recorded digest") {
+		t.Errorf("the advisory's sentence does not say what it found: %q", got[0].Message())
+	}
+	if stderr != "" {
+		t.Fatalf("the resolution wrote to standard error: %q", stderr)
+	}
+}
+
+// captureProcessStderr runs fn with the process's standard error redirected and
+// returns what was written to it.
+func captureProcessStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	done := make(chan string)
+	go func() {
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(r)
+		done <- b.String()
+	}()
+	func() {
+		defer func() { os.Stderr = saved }()
+		fn()
+	}()
+	_ = w.Close()
+	out := <-done
+	_ = r.Close()
+	return out
 }
 
 // writeLocalGuest writes bytes to a temp file and returns the absolute path, so
@@ -108,8 +150,8 @@ func TestUnrecordedIdentityAdvisory(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := captureUnrecordedAdvisory(t)
-			r := NewResolver(ResolutionContext{}, tc.posture, tc.pins)
+			buf, report := captureUnrecordedAdvisory(t)
+			r := NewResolver(ResolutionContext{Unrecorded: report}, tc.posture, tc.pins)
 			if _, err := r.Resolve(tc.uri); err != nil {
 				t.Fatalf("resolve: %v", err)
 			}
@@ -167,8 +209,10 @@ func TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := captureUnrecordedAdvisory(t)
-			r := NewResolver(tc.sources(t), PinPostureLockfile, PinMaps{})
+			buf, report := captureUnrecordedAdvisory(t)
+			sources := tc.sources(t)
+			sources.Unrecorded = report
+			r := NewResolver(sources, PinPostureLockfile, PinMaps{})
 			if _, err := r.Resolve(uri); err != nil {
 				t.Fatalf("resolve: %v", err)
 			}
@@ -204,8 +248,8 @@ func TestUnrecordedIdentityAdvisorySkipsBytesInsideTheBinary(t *testing.T) {
 		t.Skip("this build embeds no guests, so the carve-out has nothing to exercise")
 	}
 
-	buf := captureUnrecordedAdvisory(t)
-	r := NewResolver(ResolutionContext{}, PinPostureLockfile, PinMaps{})
+	buf, report := captureUnrecordedAdvisory(t)
+	r := NewResolver(ResolutionContext{Unrecorded: report}, PinPostureLockfile, PinMaps{})
 	if _, err := r.Resolve(uris[0]); err != nil {
 		t.Fatalf("resolve embedded %q: %v", uris[0], err)
 	}
@@ -225,14 +269,14 @@ func TestUnrecordedIdentityAdvisorySkipsBytesInsideTheBinary(t *testing.T) {
 	}
 }
 
-// TestUnrecordedIdentityAdvisoryIsRaisedOncePerReference proves the advisory does
-// not repeat per resolution. A render resolves the same provider for every node
-// and a daemon resolves the same attachment on every request, so a per-resolution
-// advisory would bury the condition it exists to surface.
+// TestUnrecordedIdentityAdvisoryIsRaisedOncePerReference proves the terminal
+// receiver does not repeat the advisory per resolution. A command resolves the
+// same plugin for every node it renders and every command it registers, so a
+// per-resolution advisory would bury the condition it exists to surface.
 func TestUnrecordedIdentityAdvisoryIsRaisedOncePerReference(t *testing.T) {
-	buf := captureUnrecordedAdvisory(t)
+	buf, report := captureUnrecordedAdvisory(t)
 	guest := writeLocalGuest(t, "repeat-bytes")
-	r := NewResolver(ResolutionContext{}, PinPostureLockfile, PinMaps{})
+	r := NewResolver(ResolutionContext{Unrecorded: report}, PinPostureLockfile, PinMaps{})
 
 	for i := 0; i < 3; i++ {
 		if _, err := r.Resolve(guest); err != nil {

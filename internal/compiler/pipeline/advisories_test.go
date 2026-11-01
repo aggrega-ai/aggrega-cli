@@ -6,6 +6,7 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -154,7 +155,10 @@ func tier4OverFixtureWithErr(t *testing.T, aggregate []byte) (*pipeline.Tier4Res
 
 	var out *pipeline.Tier4Result
 	var runErr error
-	displayed := captureStderr(t, func() {
+	// The run is held to its display: the binding lint and the static-analysis
+	// stream are shown on the writer handed in, and nothing reaches the process's
+	// own standard error.
+	displayed := captureDisplayOnly(t, func(display io.Writer) {
 		out, runErr = pipeline.RunTier4Pipeline(context.Background(), pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
@@ -163,6 +167,7 @@ func tier4OverFixtureWithErr(t *testing.T, aggregate []byte) (*pipeline.Tier4Res
 			WorkspaceConfig:   fixtureWorkspaceConfig(),
 			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   fixtureCompilerVersion,
+			Display:           display,
 		}, wiredLookup(cat, manifest), cat.RecipeLookupWithManifest(manifest), nil)
 	})
 	if out == nil {

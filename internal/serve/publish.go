@@ -372,6 +372,9 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		PinSourcesSupply:  daemonPinSourcesSupply,
 		Out:               progressOut,
 		Advisories:        progressOut,
+		// The catalog's notices about the files the pin step reads go where this
+		// process says what it has to say, not into the publication's report.
+		Notices: s.stderr,
 	}, nil
 }
 

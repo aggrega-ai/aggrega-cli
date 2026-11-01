@@ -6,6 +6,7 @@ package pipeline_test
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -50,7 +51,7 @@ func fullstackBindingRun(t *testing.T, bindings []workspaceconfig.PluginRef) (bu
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		t.Fatalf("catalog extends: %d error(s); first: %v", len(extErrs), extErrs[0])
 	}
-	inputs := func() pipeline.Inputs {
+	inputs := func(display io.Writer) pipeline.Inputs {
 		cfg := fixtureWorkspaceConfig()
 		cfg.Plugins.Providers = bindings
 		return pipeline.Inputs{
@@ -61,13 +62,16 @@ func fullstackBindingRun(t *testing.T, bindings []workspaceconfig.PluginRef) (bu
 			WorkspaceConfig:   cfg,
 			PluginPins:        pluginpath.NoPins(),
 			CompilerVersion:   fixtureCompilerVersion,
+			Display:           display,
 		}
 	}
-	displayed = captureStderr(t, func() {
-		outcome, err := pipeline.RunPipeline(context.Background(), inputs(), wiredLookup(cat, manifest),
+	// Both runs are held to the display they are handed: the binding advisory is
+	// shown there, and nothing reaches the process's own standard error.
+	displayed = captureDisplayOnly(t, func(display io.Writer) {
+		outcome, err := pipeline.RunPipeline(context.Background(), inputs(display), wiredLookup(cat, manifest),
 			cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader(), pipeline.Options{SkipRender: true})
 		buildAdvisories, buildErr = outcome.Advisories(), err
-		tier4, err := pipeline.RunTier4Pipeline(context.Background(), inputs(), wiredLookup(cat, manifest),
+		tier4, err := pipeline.RunTier4Pipeline(context.Background(), inputs(display), wiredLookup(cat, manifest),
 			cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader())
 		if tier4 != nil {
 			validateAdvisories = tier4.Advisories

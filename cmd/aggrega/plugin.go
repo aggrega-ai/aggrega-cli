@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -346,6 +347,21 @@ type pluginResolutionInputs struct {
 	colocatedDirs map[string]pluginpath.ColocatedDir
 }
 
+// reportUnrecordedPlugin tells the reader of this command, on its error stream,
+// about a plugin the command resolved with no recorded digest to check it
+// against — once per reference for the life of the command, however many of its
+// commands and listings resolve the plugin. A build or a validation reports the
+// plugins its own run resolves through the run instead, which records them on
+// the run's advisory channel.
+var reportUnrecordedPlugin = pluginpath.ReportUnrecordedTo(processStderr{})
+
+// processStderr writes to the process's error stream as it stands at the moment
+// of each write, so a writer held for the life of the command follows the stream
+// rather than the file it named when the command started.
+type processStderr struct{}
+
+func (processStderr) Write(p []byte) (int, error) { return os.Stderr.Write(p) }
+
 // resolvePluginURI resolves uri to its .wasm bytes through the plugin cascade.
 // When a catalog Plugin accessor is supplied, an entity-fronted resolution is
 // tried first so a Plugin entity URI carries the entity's authored capability
@@ -364,6 +380,7 @@ func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.Resolve
 		ColocatedDirs: in.colocatedDirs,
 		WorkspaceRoot: in.workspaceRoot,
 		CacheDir:      in.cacheDir,
+		Unrecorded:    reportUnrecordedPlugin,
 	}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{
 		Pins:        in.pins,
 		PinVersions: in.pins,
@@ -407,6 +424,7 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) plug
 	// entities are read from the workspace's own stack.
 	dirs := rw.ResolveCatalogDirs("", nil)
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs("", nil)...)
+	lazyView.WriteNoticesTo(processStderr{})
 	var pins map[string]string
 	for _, ref := range wsCfg.Plugins.CLI {
 		if ref.URI == "" || ref.Digest == "" {

@@ -139,6 +139,14 @@ type PushConfig struct {
 	// a script reads. A caller that answers with the result carries the same
 	// entries in WindowsUnusableEntries and may discard these lines.
 	Advisories io.Writer
+
+	// Notices is where the catalog views the pin step reads through, on the way to
+	// a publication, write their notices for a reader at a terminal — a catalog file
+	// they did not place, an extends chain that would not resolve (see
+	// entitypin.Options.Notices). It is apart from Advisories because those lines are
+	// the publication's own report, which a caller may hand on as that report, and
+	// these are the catalog's. Nil writes them nowhere.
+	Notices io.Writer
 }
 
 // signerRequest projects the publication's credential inputs onto the shared

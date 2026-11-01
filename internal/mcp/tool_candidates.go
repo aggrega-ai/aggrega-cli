@@ -283,6 +283,7 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 			tw.cfg,
 			s.serverVersion,
 			compilerops.WithLockfile(lf, lf != nil),
+			compilerops.WithDisplay(s.logw),
 		),
 		pipeline.Options{SkipRender: true},
 	)

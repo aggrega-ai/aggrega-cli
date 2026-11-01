@@ -11,8 +11,9 @@ package serve
 // green either way. Something has to COUNT renders.
 //
 // What counts them is a line the render step writes once per render — a warning
-// naming a field the target cannot express — written straight to the process
-// stderr by the pipeline, from one call site, on every surface. The fixture
+// naming a field the target cannot express — shown by the pipeline, from one call
+// site, on the display the surface hands it, which on this surface is the stream
+// the process was launched with. The fixture
 // authors such a field deliberately, so each render of it produces exactly one
 // line and the number of lines IS the number of renders.
 //
@@ -23,41 +24,51 @@ package serve
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
-// captureProcessStderr redirects the process stderr for the duration of fn and
-// returns what was written to it.
+// lockedBuffer keeps what is written to it, safe for the concurrent writes a
+// request's work may make.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// captureServerStderr points srv's error stream at a buffer for the duration of
+// fn and returns what was written to it.
 //
-// It is the PROCESS stream rather than a server's own sink, and that is the
-// subject rather than a shortcut: the render step writes its per-render warnings
-// there directly, from one call site shared by every surface, so a daemon render
-// and a terminal render are counted by the same instrument.
-func captureProcessStderr(t *testing.T, fn func()) string {
+// It is the stream the process was launched with rather than any answer, and
+// that is the subject rather than a shortcut: every render this process runs —
+// the build's own and the one a fill makes — shows its per-render warnings on
+// that stream, through the one display the render writes to on every surface, so
+// a daemon render and a terminal render are counted by the same instrument.
+func captureServerStderr(t *testing.T, srv *Server, fn func()) string {
 	t.Helper()
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stderr = w
-	done := make(chan string, 1)
-	go func() {
-		var b strings.Builder
-		_, _ = io.Copy(&b, r)
-		done <- b.String()
-	}()
+	var buf lockedBuffer
+	old := srv.session.stderr
+	srv.session.stderr = &buf
+	defer func() { srv.session.stderr = old }()
 	fn()
-	_ = w.Close()
-	os.Stderr = old
-	return <-done
+	return buf.String()
 }
 
 // unsupportedFieldMarker is the user-facing text of one diagnostic of the
@@ -222,8 +233,8 @@ spec:
 // other left, and each drives one aggrega/build request through the dispatch
 // rather than calling the handler — the count is about what a client gets.
 func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
-	// Not parallel: the surface under assertion is the process stderr, which is
-	// a process global.
+	// The surface under assertion is each server's own error stream, which this
+	// test points at a buffer for the duration of one request.
 	marker := unsupportedFieldMarker(t, "compose", "replicas")
 
 	// Leg 1 — calibration. A build over a lockfile a separate resolution wrote
@@ -242,9 +253,9 @@ func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
 
 	var plainResp buildResponse
 	var plainWire string
-	plainStderr := captureProcessStderr(t, func() {
-		plainResp, plainWire = driveBuildWithRawParams(t, newFillCapableServer(t, wsPlain),
-			`{"release":"`+releasePlain+`"}`)
+	plainSrv := newFillCapableServer(t, wsPlain)
+	plainStderr := captureServerStderr(t, plainSrv, func() {
+		plainResp, plainWire = driveBuildWithRawParams(t, plainSrv, `{"release":"`+releasePlain+`"}`)
 	})
 	if plainResp.Error != nil {
 		t.Fatalf("the calibrating build refused: code %d: %s\nwire:\n%s",
@@ -260,9 +271,9 @@ func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
 	wsFill, releaseFill := unsupportedFieldWorkspace(t)
 	var fillResp buildResponse
 	var fillWire string
-	fillStderr := captureProcessStderr(t, func() {
-		fillResp, fillWire = driveBuildWithRawParams(t, newFillCapableServer(t, wsFill),
-			`{"release":"`+releaseFill+`","autoPull":true}`)
+	fillSrv := newFillCapableServer(t, wsFill)
+	fillStderr := captureServerStderr(t, fillSrv, func() {
+		fillResp, fillWire = driveBuildWithRawParams(t, fillSrv, `{"release":"`+releaseFill+`","autoPull":true}`)
 	})
 	if fillResp.Error != nil {
 		t.Fatalf("the filling build refused: code %d: %s\nwire:\n%s",

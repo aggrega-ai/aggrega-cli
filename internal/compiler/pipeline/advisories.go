@@ -4,8 +4,15 @@
 package pipeline
 
 import (
+	"fmt"
+	"io"
+	"sync"
+
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -34,8 +41,15 @@ import (
 // A nil *AdvisoryLog records nothing and is safe to use: a caller that drives a
 // phase directly and wants no collection leaves the field unset, and the
 // displays are unaffected either way.
+//
+// The log is safe for concurrent use: a plugin's bytes can be resolved — and the
+// advisory a resolution raises recorded — from wherever the run resolves one.
 type AdvisoryLog struct {
+	mu      sync.Mutex
 	entries []renderer.Diagnostic
+	// mentioned holds the keys of the advisories this run raises at most once,
+	// however many times their condition is met (see firstMention).
+	mentioned map[string]struct{}
 }
 
 // record appends one advisory. A nil receiver is a no-op, so a phase invoked
@@ -44,7 +58,31 @@ func (l *AdvisoryLog) record(d renderer.Diagnostic) {
 	if l == nil {
 		return
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.entries = append(l.entries, d)
+}
+
+// firstMention reports whether this is the first time the run raises the
+// advisory keyed by key, and remembers that it has. An advisory whose condition
+// is met over and over within one run — a plugin resolved without a recorded
+// digest is resolved again for every node rendered with it — is displayed and
+// recorded the first time only. A nil receiver remembers nothing, so it reports
+// every mention as the first.
+func (l *AdvisoryLog) firstMention(key string) bool {
+	if l == nil {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.mentioned == nil {
+		l.mentioned = map[string]struct{}{}
+	}
+	if _, seen := l.mentioned[key]; seen {
+		return false
+	}
+	l.mentioned[key] = struct{}{}
+	return true
 }
 
 // Entries returns the advisories recorded so far, in the order they were
@@ -52,12 +90,52 @@ func (l *AdvisoryLog) record(d renderer.Diagnostic) {
 // later append writing into the array behind it — the log outlives some of its
 // readers.
 func (l *AdvisoryLog) Entries() []renderer.Diagnostic {
-	if l == nil || len(l.entries) == 0 {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.entries) == 0 {
 		return nil
 	}
 	out := make([]renderer.Diagnostic, len(l.entries))
 	copy(out, l.entries)
 	return out
+}
+
+// WarningLine is the line a display shows for one warning-tier advisory: the
+// indented "warning:" label and the entry as the one formatter every surface
+// displaying this channel reads renders it ([renderer.RenderDiagnosticText]). It
+// carries no line break, so a caller holding a list of lines appends it as one.
+func WarningLine(d renderer.Diagnostic) string {
+	return "  warning: " + renderer.RenderDiagnosticText(d)
+}
+
+// display is where the run's displays write: the writer the caller supplied on
+// [Inputs.Display], or nowhere.
+func (in Inputs) display() io.Writer {
+	if in.Display == nil {
+		return io.Discard
+	}
+	return in.Display
+}
+
+// reportUnrecordedPlugin is the run's receiver for the advisory a plugin
+// resolution raises when no recorded digest governs the bytes it resolved. The
+// advisory joins the run's one advisory channel beside its display, so a surface
+// that reads no terminal — an editor's diagnostics among them — receives it with
+// the run's other advisories. A render resolves the same plugin for every node it
+// renders, so it is displayed and recorded once per reference per run; each run
+// reports it afresh, so a surface replacing what it shows with each run's
+// advisories keeps showing it for as long as a run resolves the plugin
+// unverified, and stops once none does.
+func (in Inputs) reportUnrecordedPlugin(a pluginpath.UnrecordedIdentity) {
+	if !in.AdvisoryLog.firstMention("unrecorded-plugin\x00" + a.URI) {
+		return
+	}
+	d := renderer.Diagnostic{Severity: abi.SeverityWarn, Message: a.Message(), SourceRef: a.URI}
+	fmt.Fprintln(in.display(), WarningLine(d))
+	in.AdvisoryLog.record(d)
 }
 
 // advisoryFromResolverFinding renders one resolver-class finding as a structured

@@ -226,6 +226,15 @@ type Config struct {
 	// global.
 	DiagOut io.Writer
 
+	// Display is where the compiler runs this operation makes show what they raise
+	// as they raise it — the resolution's advisories, the discovery render's
+	// warnings — and where its catalog view writes its notices about the catalog
+	// files it reads. It is apart from DiagOut because the two are read differently:
+	// DiagOut carries the operation's own account of its work, which a caller may
+	// collect and hand on as that account, while these lines are each run's own,
+	// which every run also returns on its result. Nil shows nothing.
+	Display io.Writer
+
 	// FormatFailure is the caller's rendering of a failure, used where a notice on
 	// DiagOut carries a failure the run reports and survives: the external-input
 	// discovery render that could not finish. It is supplied rather than chosen here
@@ -656,6 +665,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// holds.
 	report.phase(PhaseLoadCatalog)
 	lazyView := catalog.NewLazyLookup(workspaceRoot, cacheDir, dirs, puller, namedDirs...)
+	lazyView.WriteNoticesTo(cfg.Display)
 	// A link leading out of a catalog directory's root halts the run before
 	// anything is resolved or pinned, as it halts a build: the view passes such a
 	// link over unread, and pinning around it could record another entity of the
@@ -1157,6 +1167,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// as missing a digest that was never going to exist yet — advising a pull
 			// from inside the pull.
 			PluginPins: pluginpath.NoPins(),
+			// This resolution is the first of the two the pull makes of the Release,
+			// so its advisories are shown here, and the render that follows records
+			// them without showing them again.
+			Display:           cfg.Display,
+			CatalogAdvisories: lazyView.SchemaAdvisories,
 		},
 		pullLookup,
 		lazyView.RecipeLookupWithManifest(manifest),

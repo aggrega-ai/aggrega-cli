@@ -258,6 +258,7 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// This pass names no Release, so it reads the workspace's own stack.
 	dirs := rw.ResolveCatalogDirs("", nil)
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs("", nil)...)
+	lazyView.WriteNoticesTo(cfg.DiagOut)
 
 	// Every configured linter URI is a Plugin entity URI; the entity-front derives
 	// each entity's artifact reference from its identity. The --plugin override
@@ -280,7 +281,8 @@ func RunEntity(ctx context.Context, cfg Config) error {
 			linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI),
 		}
 	}
-	attachments, err := ResolveLinterPlugins(cfg.PluginPath, wsCfg, trusted, pluginByURI, cacheResolvers...)
+	attachments, err := ResolveLinterPlugins(cfg.PluginPath, wsCfg, trusted, pluginByURI,
+		pluginpath.ReportUnrecordedTo(cfg.DiagOut), cacheResolvers...)
 	if err != nil {
 		return err
 	}
@@ -590,7 +592,11 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 // A resolution failure at ANY attachment halts the whole resolution: an
 // attachment the operator configured and the gate cannot load is a loud
 // guardrail, never an attachment to quietly drop.
-func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted resolver.VerdictPluginTrust, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
+//
+// unrecorded receives the advisory a resolution under recorded digests raises
+// for an attachment the record holds no digest for (see
+// pluginpath.ResolutionContext.Unrecorded); nil raises it to nobody.
+func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted resolver.VerdictPluginTrust, pluginByURI func(uri string) (types.Plugin, bool), unrecorded func(pluginpath.UnrecordedIdentity), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
 	refs := linterAttachmentRefs(wsCfg)
 	// The posture is named from what the caller actually supplied rather than
 	// fixed at the construction: with recorded digests in hand the first arm
@@ -603,7 +609,8 @@ func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted 
 		posture = pluginpath.PinPostureVerifyOnRead
 	}
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
-		Override: cliFlag,
+		Override:   cliFlag,
+		Unrecorded: unrecorded,
 	}, posture, trusted.PinMaps)
 	// The --plugin override is the artifact-direct escape hatch: resolve it
 	// verbatim through the cascade override, never the entity model. The cascade

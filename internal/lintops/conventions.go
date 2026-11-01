@@ -23,6 +23,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -246,6 +247,7 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	named := rw.NamedCatalogDirs(releasePath, catalogFlagDirs)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...)
+	lazyView.WriteNoticesTo(diagOut)
 	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {
 		return err
@@ -447,7 +449,9 @@ type releaseRuleCheck struct {
 func lintConventionsFiles(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, dirs, named []string, paths []string, run conventionsRun, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
+	lazyView.WriteNoticesTo(diagOut)
 	attachments, err := ResolveLinterPlugins("", wsCfg, run.trusted, lazyView.PluginByURI,
+		pluginpath.ReportUnrecordedTo(diagOut),
 		linterCacheResolve(rw.Root(), wsCfg, run.trusted, lazyView.PluginFromCacheByURI))
 	if err != nil {
 		return err

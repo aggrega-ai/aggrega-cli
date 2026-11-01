@@ -1168,9 +1168,10 @@ func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 
 	switch kind {
 	case "Component":
-		// The indexing-walk parse + the static per-entity x-aggrega-* discouragement
-		// scan run through the shared per-entity resolve (parseComponentEntity) so the
-		// eager and lazy backings cannot drift. The pillar-shape + body validation runs
+		// The indexing-walk parse runs through the shared per-entity resolve
+		// (parseComponentEntity) so the eager and lazy backings cannot drift. The
+		// x-aggrega-* discouragement is not asked by an indexing walk (see
+		// resolveComponentDocument). The pillar-shape + body validation runs
 		// at pillar validation via validateSchemaPillarsPass (it needs the complete
 		// SchemaLibraries map for cross-document $ref expansion, so it cannot run
 		// per-file here).
@@ -1402,9 +1403,9 @@ func ParsePluginEntity(data []byte, path string) (types.Plugin, error) {
 
 // parseComponentEntity is the single per-entity Component resolution shared by the
 // eager (catalog.Load, per file) and lazy (LazyLookup, per URI on cache miss)
-// catalog-access backings: full unmarshal, kind-check, the static per-entity
-// load-time check, and the relative-`$import` schema substitution against the
-// entity file's own directory. It is the SSOT for "what an authored Component
+// catalog-access backings: the envelope check, full unmarshal, kind-check, and
+// the relative-`$import` schema substitution against the entity file's own
+// directory. It is the SSOT for "what an authored Component
 // resolves to" so the two backings cannot drift in parse/validation. Extends-merge
 // is applied separately by each backing through validator.ResolveComponentExtends
 // (eager in ResolveAllExtends; lazy in Component()); library-dependent pillar
@@ -1432,7 +1433,11 @@ func resolveComponentDocument(data []byte, path string, read schemaFileRead) (ty
 	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema, read); err != nil {
 		return types.Component{}, err
 	}
-	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
+	// The x-aggrega-* discouragement is not asked here, deliberately: this parse
+	// runs wherever an entity is read — an index walk, a digest, a publication,
+	// each resolution — so an advisory raised here repeats once per reading. The
+	// lookup asks it once per entity it resolves (noteSchemaAdvisories), which is
+	// what a run reports.
 	return e, nil
 }
 
@@ -1457,7 +1462,7 @@ func resolveFeatureDocument(data []byte, path string, read schemaFileRead) (type
 	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema, read); err != nil {
 		return types.Feature{}, err
 	}
-	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
+	// Not asked here, for the reason resolveComponentDocument gives.
 	return e, nil
 }
 

@@ -256,7 +256,8 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	named := rw.NamedCatalogDirs(release, catalogFlagDirs)
 	rw.NoteAbsentCatalogDirs(os.Stderr, release, catalogFlagDirs)
 
-	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings)
+	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings,
+		validateops.WithDisplay(os.Stderr))
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)
 	}

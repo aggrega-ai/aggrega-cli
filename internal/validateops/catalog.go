@@ -66,6 +66,9 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 		}
 		return CatalogResult{}, err
 	}
+	// Read before the extends chains are merged, so each finding names the entity
+	// whose document authors the keyword rather than every entity extending it.
+	schemaNotices := catalogSchemaNotices(cat)
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		errs := make([]error, len(extErrs))
 		for i, e := range extErrs {
@@ -89,9 +92,43 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 	}
 	// Surface the whole-catalog advisory notices accumulated during the eager
 	// passes above — schema-pillar overlap (Pass-2) and narrowing-on-extend (from
-	// ResolveAllExtends). Informational only: advisories never escalate the exit
-	// code. Emission order is deterministic — the accumulator walks sorted keys.
-	return CatalogResult{Valid: true, Notices: cat.LintWarnings()}, nil
+	// ResolveAllExtends) — then the x-aggrega-* discouragement over each entity's
+	// own schema content. Informational only: advisories never escalate the exit
+	// code. Emission order is deterministic — each source walks sorted keys.
+	// A fresh slice: the lint accessor may hand back the catalog's own.
+	notices := append(append([]string(nil), cat.LintWarnings()...), schemaNotices...)
+	return CatalogResult{Valid: true, Notices: notices}, nil
+}
+
+// catalogSchemaNotices is the x-aggrega-* discouragement over every Component's
+// and Feature's schema content in cat, as advisory lines: Components first, then
+// Features, each in identity order so the lines do not depend on the order the
+// load met the files. cat is read before its extends chains are merged.
+func catalogSchemaNotices(cat *catalog.Catalog) []string {
+	var notices []string
+	componentKeys := make([]string, 0, len(cat.Components))
+	for k := range cat.Components {
+		componentKeys = append(componentKeys, k)
+	}
+	sort.Strings(componentKeys)
+	for _, k := range componentKeys {
+		e := cat.Components[k]
+		for _, d := range catalog.SchemaAdvisoriesOf(e.Metadata.Name, &e.Spec.Schema) {
+			notices = append(notices, d.Message)
+		}
+	}
+	featureKeys := make([]string, 0, len(cat.Features))
+	for k := range cat.Features {
+		featureKeys = append(featureKeys, k)
+	}
+	sort.Strings(featureKeys)
+	for _, k := range featureKeys {
+		e := cat.Features[k]
+		for _, d := range catalog.SchemaAdvisoriesOf(e.Metadata.Name, &e.Spec.Schema) {
+			notices = append(notices, d.Message)
+		}
+	}
+	return notices
 }
 
 // cachedLibraryRemedy returns the remediation line for a failure of a check that

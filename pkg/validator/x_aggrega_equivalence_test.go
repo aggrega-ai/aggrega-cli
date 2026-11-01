@@ -4,10 +4,8 @@
 package validator
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,36 +23,39 @@ import (
 // xAggregaFinding represents one normalized finding for the
 // equivalence comparison: entity URI, the offending key, and the
 // RFC 6901 JSON Pointer locating it within the entity schema.
-// Severity field intentionally omitted — the Go walker emits at
-// warn severity (via log.Printf); the Wasm rule emits at halt
-// severity (via Diagnostic.Severity); the divergence is by
-// design and is normalised out of the equivalence comparison.
+// Severity field intentionally omitted — the Go walker's findings
+// are reported at warn severity by whoever reads them; the Wasm rule
+// emits at halt severity (via Diagnostic.Severity); the divergence is
+// by design and is normalised out of the equivalence comparison.
 type xAggregaFinding struct {
 	Entity  string
 	Key     string
 	Pointer string
 }
 
-// parseGoWalkerOutput extracts xAggregaFinding tuples from
-// captured DiscourageDirectXAggregaInSchema log output. Log
-// format (placeholders in ${...}, literal angle brackets around
-// the pointer):
+// parseGoWalkerOutput extracts xAggregaFinding tuples from the
+// sentences DiscourageDirectXAggregaInSchema's findings carry. Sentence
+// format (placeholders in ${...}, literal angle brackets around the
+// pointer):
 //
-//	warning: entity "${name}" authors ${key} at <${pointer}> in schema content; ...
+//	entity "${name}" authors ${key} at <${pointer}> in schema content; ...
 //
-// Pointer is bracketed (literal `<...>`) so the regex can capture
-// pointers containing spaces. Key is captured by `\S+`: spaces in
-// `x-aggrega-*` key names would violate the platform's naming
-// conventions (vendor-extension keys follow domain naming rules,
-// not free-form labels), so non-whitespace is sufficient.
-//
-// One tuple per matching log line. Lines not matching the regex
-// are ignored (other log.Printf callers don't pollute the result).
-func parseGoWalkerOutput(captured string) []xAggregaFinding {
-	re := regexp.MustCompile(`warning: entity "([^"]+)" authors (x-aggrega-\S+) at <([^>]+)> in schema content`)
-	matches := re.FindAllStringSubmatch(captured, -1)
-	result := make([]xAggregaFinding, 0, len(matches))
-	for _, m := range matches {
+// The tuple is parsed from the sentence rather than read off the
+// finding's fields, so the comparison is between what each side SAYS:
+// a sentence that stopped naming the pointer the way the Wasm rule does
+// would break equivalence here. Pointer is bracketed (literal `<...>`)
+// so the regex can capture pointers containing spaces. Key is captured
+// by `\S+`: spaces in `x-aggrega-*` key names would violate the
+// platform's naming conventions (vendor-extension keys follow domain
+// naming rules, not free-form labels), so non-whitespace is sufficient.
+func parseGoWalkerOutput(findings []XAggregaFinding) []xAggregaFinding {
+	re := regexp.MustCompile(`^entity "([^"]+)" authors (x-aggrega-\S+) at <([^>]+)> in schema content`)
+	result := make([]xAggregaFinding, 0, len(findings))
+	for _, f := range findings {
+		m := re.FindStringSubmatch(f.Message())
+		if m == nil {
+			continue
+		}
 		result = append(result, xAggregaFinding{Entity: m[1], Key: m[2], Pointer: m[3]})
 	}
 	return result
@@ -62,9 +63,8 @@ func parseGoWalkerOutput(captured string) []xAggregaFinding {
 
 // parseWasmFindings extracts xAggregaFinding tuples from the
 // publishing-linter Wasm plugin's findings. Message format is
-// identical to the Go walker's log line except for the leading
-// "warning: " prefix (severity carried separately in
-// Diagnostic.Severity). The RuleID filter is defensive against
+// identical to the Go walker's finding sentence (severity carried
+// separately in Diagnostic.Severity). The RuleID filter is defensive against
 // the dispatcher returning findings from other rules; harmless
 // here since DispatchPublishingLinter only returns findings for
 // the requested rule.
@@ -194,9 +194,6 @@ func buildProposedJSON(entityName string, schemaJSON json.RawMessage) json.RawMe
 // finding sets are equivalent (same entity, same key, same JSON
 // Pointer; severity differs by design and is normalised out of the
 // comparison).
-//
-// NO t.Parallel() — log.SetOutput is process-wide state; subtests
-// share the test binary's global logger.
 func TestXAggregaWalkerAndRuleProduceEquivalentFindings(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	fixtures, err := filepath.Glob("testdata/x_aggrega_equivalence/*.yaml")
@@ -214,20 +211,8 @@ func TestXAggregaWalkerAndRuleProduceEquivalentFindings(t *testing.T) {
 			}
 			entityName, schemaNode, schemaJSON := loadEntityAndSchemaJSON(t, yamlBytes)
 
-			// Drive Go walker; capture log output. Use t.Cleanup
-			// to restore on panic. Strip timestamp flags so the
-			// captured output is parser-friendly.
-			var logBuf bytes.Buffer
-			prevWriter := log.Writer()
-			prevFlags := log.Flags()
-			log.SetOutput(&logBuf)
-			log.SetFlags(0)
-			t.Cleanup(func() {
-				log.SetOutput(prevWriter)
-				log.SetFlags(prevFlags)
-			})
-			DiscourageDirectXAggregaInSchema(entityName, schemaNode)
-			goFindings := parseGoWalkerOutput(logBuf.String())
+			// Drive the Go walker; its findings carry the sentences.
+			goFindings := parseGoWalkerOutput(DiscourageDirectXAggregaInSchema(entityName, schemaNode))
 
 			// Drive Wasm rule via Extism through DispatchPublishingLinter.
 			proposed := buildProposedJSON(entityName, schemaJSON)

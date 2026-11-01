@@ -6,6 +6,7 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -81,8 +82,10 @@ func TestUnreadParameterAdvisoryReachesTheDiagnosticStream(t *testing.T) {
 	}
 
 	var advisories []*resolver.ResolverError
-	stderr := captureStderr(t, func() {
-		if rerr := pipeline.ResolveAndValidate(context.Background(), inputs,
+	stderr := captureDisplay(t, func(display io.Writer) {
+		in := inputs
+		in.Display = display
+		if rerr := pipeline.ResolveAndValidate(context.Background(), in,
 			wiredLookup(cat, manifest),
 			cat.RecipeLookupWithManifest(manifest).Recipe,
 			func(rr *resolver.ResolveResult) error {
@@ -107,8 +110,10 @@ func TestUnreadParameterAdvisoryReachesTheDiagnosticStream(t *testing.T) {
 	// Control: the same run over the UNSPLICED fixture must print no such line,
 	// or the assertion above would pass on unrelated output.
 	inputs.AggregateRawBytes = aggBytes
-	clean := captureStderr(t, func() {
-		if rerr := pipeline.ResolveAndValidate(context.Background(), inputs,
+	clean := captureDisplay(t, func(display io.Writer) {
+		in := inputs
+		in.Display = display
+		if rerr := pipeline.ResolveAndValidate(context.Background(), in,
 			wiredLookup(cat, manifest),
 			cat.RecipeLookupWithManifest(manifest).Recipe,
 			func(*resolver.ResolveResult) error { return nil },

@@ -114,6 +114,8 @@ func (s *Server) dispatchPin(ctx context.Context, req *jsonRPCRequest) error {
 		Workspace:  s.resolvedWorkspace,
 		EntityPath: entity,
 		DryRun:     params.DryRun,
+		// The catalog's notices go where this process says what it has to say.
+		Notices: s.stderr,
 	})
 	if ctx.Err() != nil {
 		return nil

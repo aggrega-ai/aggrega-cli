@@ -65,6 +65,14 @@ type ResolutionContext struct {
 	// Override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Empty leaves the cascade intact.
 	Override string
+
+	// Unrecorded receives the advisory a resolution raises for a plugin whose
+	// bytes no recorded digest governs, under a posture that declares a recorded
+	// digest is meant to govern them. It is the surface's to supply, because only
+	// the surface knows where its reader looks: a run records it on its advisory
+	// channel, a command writes it to its terminal (ReportUnrecordedTo). Nil raises
+	// it to nobody, so every construction under a pinned posture supplies one.
+	Unrecorded func(UnrecordedIdentity)
 }
 
 // ColocatedDir is where the co-located tier reads a plugin's .wasm, beside its
@@ -231,6 +239,7 @@ func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolve
 		workspaceRoot: rc.WorkspaceRoot,
 		cacheDir:      rc.CacheDir,
 		override:      rc.Override,
+		unrecorded:    rc.Unrecorded,
 	}
 	switch posture {
 	case PinPostureLockfile, PinPostureVerifyOnRead:

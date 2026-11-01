@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -59,6 +60,7 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
 
 	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogDirs)...)
+	view.WriteNoticesTo(os.Stderr)
 	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {
 		return err

@@ -110,6 +110,7 @@ func loadAdHocSocketForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogL
 		WorkspaceConfig:   fixtureWorkspaceConfig(),
 		PluginPins:        pluginpath.NoPins(),
 		CompilerVersion:   fixtureCompilerVersion,
+		Display:           processStderr{},
 	}, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()
 }
 

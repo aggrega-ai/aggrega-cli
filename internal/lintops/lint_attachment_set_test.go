@@ -204,7 +204,7 @@ func TestResolveLinterPluginsHaltsOnAnyAttachment(t *testing.T) {
 		wp.Metadata.PluginType = "linter"
 		return wp, true
 	}
-	if _, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI); err == nil {
+	if _, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI, nil); err == nil {
 		t.Fatal("a second attachment that resolves to nothing must halt the resolution; got nil")
 	}
 }
@@ -218,7 +218,7 @@ func TestResolveLinterPluginsHaltsOnAnyAttachment(t *testing.T) {
 func TestResolveLinterPluginsSkipsAttachmentWithoutURI(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{{Function: "some_export"}}
-	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, nil)
+	attachments, err := ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, nil, nil)
 	if err != nil {
 		t.Fatalf("an attachment carrying no URI leaves the socket unconfigured, which resolves the built-in; got: %v", err)
 	}

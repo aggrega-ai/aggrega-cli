@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -103,12 +104,30 @@ type EntityResult struct {
 // pipeline twice, loading and running provider guests, so ending the caller's
 // run ends that work: a guest call whose context ends unwinds rather than being
 // noticed only once the guest next returns.
-func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
+func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, suppressUnsupportedFieldWarnings bool, opts ...EntityOption) (EntityResult, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return EntityResult{Path: path}, fmt.Errorf("read %q: %w", path, err)
 	}
-	return ValidateEntityContent(ctx, wsRoot, cacheDir, dirs, named, path, data, suppressUnsupportedFieldWarnings)
+	return ValidateEntityContent(ctx, wsRoot, cacheDir, dirs, named, path, data, suppressUnsupportedFieldWarnings, opts...)
+}
+
+// EntityOption supplies an input the single-entity check can run without.
+type EntityOption func(*entityOptions)
+
+// entityOptions is what the options supply.
+type entityOptions struct {
+	// display is where the check's isolated runs display what they raise as they
+	// raise it — the lines a build shows a reader at a terminal. Nil shows nothing.
+	display io.Writer
+}
+
+// WithDisplay hands the check the writer its isolated runs display on: a
+// surface whose reader looks at a terminal hands its error stream. Without it
+// the runs show nothing as they go, and what the check reports is the result
+// it returns.
+func WithDisplay(w io.Writer) EntityOption {
+	return func(o *entityOptions) { o.display = w }
 }
 
 // ValidateEntityContent runs the checks ValidateEntity runs, over data as the
@@ -124,7 +143,11 @@ func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs, named []
 // It is the one implementation of the single-entity check; ValidateEntity reads
 // the file and calls it, so a check of a saved file and a check of the same
 // bytes held unsaved cannot come to differ.
-func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
+func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool, opts ...EntityOption) (EntityResult, error) {
+	var o entityOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
 	var res EntityResult
 	res.Path = path
 
@@ -167,7 +190,7 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 	case envelope.KindWorkload:
 		return res, validateWorkloadEntity(&res, path, data)
 	case envelope.KindRecipe:
-		return res, validateRecipeEntity(ctx, &res, wsRoot, cacheDir, dirs, named, path, data, suppressUnsupportedFieldWarnings)
+		return res, validateRecipeEntity(ctx, &res, wsRoot, cacheDir, dirs, named, path, data, suppressUnsupportedFieldWarnings, o.display)
 	case envelope.KindFeatureRecipe:
 		return res, validateFeatureRecipeEntity(&res, path, data)
 	case envelope.KindPlugin:
@@ -328,6 +351,7 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, n
 	if err != nil {
 		return fmt.Errorf("parse Component at %q: %w", path, err)
 	}
+	noteSchemaAdvisories(res, comp.Metadata.Name, &comp.Spec.Schema)
 	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	if note != "" {
 		res.Notes = append(res.Notes, note)
@@ -356,6 +380,7 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, nam
 	if err != nil {
 		return fmt.Errorf("parse Feature at %q: %w", path, err)
 	}
+	noteSchemaAdvisories(res, feat.Metadata.Name, &feat.Spec.Schema)
 	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	if note != "" {
 		res.Notes = append(res.Notes, note)
@@ -374,6 +399,17 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, nam
 	res.Diagnostics = append(res.Diagnostics, "Pillars: valid")
 	res.Valid = true
 	return nil
+}
+
+// noteSchemaAdvisories adds to the result's advisory lines the x-aggrega-*
+// discouragement's findings over the checked entity's own schema content, each
+// as the warning line a build displays for it. The check reads the entity as
+// authored, before any extends chain is merged in, so what it names is what this
+// document wrote.
+func noteSchemaAdvisories(res *EntityResult, entity string, schema *yaml.Node) {
+	for _, d := range catalog.SchemaAdvisoriesOf(entity, schema) {
+		res.Notes = append(res.Notes, pipeline.WarningLine(d))
+	}
 }
 
 // withCachedLibraryRemedy follows a pillar failure of one entity with the
@@ -507,7 +543,7 @@ func validatePluginEntity(res *EntityResult, path string, data []byte) error {
 // Recipe's directory would meet no refusal at all. The render is handed that same
 // document, so a source written as a template is anchored against it once it has
 // a value.
-func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
+func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool, display io.Writer) error {
 	rec, err := catalog.ParseRecipeEntity(data, path)
 	if err != nil {
 		return fmt.Errorf("shape: %w", err)
@@ -590,7 +626,7 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 	}
 	return runRenderTiers(ctx, res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(),
 		suppressUnsupportedFieldWarnings, sourceref.NeedsFetch(rec.Spec.Source),
-		buildOfOneReadsOf(&rec, cat, lookup))
+		buildOfOneReadsOf(&rec, cat, lookup), display)
 }
 
 // buildOfOneSuppliedRoots are the context paths under which a Recipe's template
@@ -1066,7 +1102,10 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // before rendering, and the Recipe's stop Tier 3. That is asked before reads is,
 // so an assertion beside a read a build of one cannot supply is reported as the
 // assertion it is.
-func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings, sourceNeedsFetch bool, reads buildOfOneReads) error {
+//
+// display is where the two runs display what they raise as they raise it, the
+// writer the caller handed the check (WithDisplay); nil shows nothing.
+func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings, sourceNeedsFetch bool, reads buildOfOneReads, display io.Writer) error {
 	// A single-entity harness runs against no workspace at all — it synthesizes
 	// its Release in memory — so the defaults are the configuration in force, and
 	// they are supplied explicitly rather than left unset: an unsupplied
@@ -1089,6 +1128,7 @@ func runRenderTiers(ctx context.Context, res *EntityResult, h entityHarness, loo
 		MappingLibraries:  h.libraries.Mappings,
 		WorkloadLibraries: h.libraries.Workloads,
 		ArtifactLibraries: h.libraries.Artifacts,
+		Display:           display,
 	}
 
 	// Tier 2: resolution, guards, IR construction — no render. A missing

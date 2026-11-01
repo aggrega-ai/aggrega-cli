@@ -218,7 +218,7 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 		// state (the guest resolves), so it FAILS while the resolver omits the cache
 		// tier and passes once it is wired.
 		pluginByURI := func(string) (types.Plugin, bool) { return entity, true }
-		attachments, err := lintops.ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI)
+		attachments, err := lintops.ResolveLinterPlugins("", wsCfg, resolver.VerdictPluginTrust{}, pluginByURI, nil)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) || errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) {
 				t.Fatalf("linter socket cannot resolve the pulled+cached guest %s: the content-cache tier is absent from ResolveLinterPlugins' resolver: %v", linterURI, err)

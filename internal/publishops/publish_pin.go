@@ -48,6 +48,7 @@ func pinBeforePublishing(ctx context.Context, out io.Writer, cfg PushConfig, rw 
 		Workspace:  rw,
 		EntityPath: cfg.EntityPath,
 		DryRun:     cfg.DryRun,
+		Notices:    cfg.Notices,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("pin %s before publishing: %w", cfg.EntityPath, err)
@@ -92,7 +93,7 @@ func pinBeforePublishing(ctx context.Context, out io.Writer, cfg PushConfig, rw 
 // one whose only source's identity is filled in per Release and so pinned in each
 // Release's lockfile — is accepted, and a hold over it acquires nothing.
 func holdBeforeBundling(ctx context.Context, cfg PushConfig, rw *workspaceconfig.ResolvedWorkspace) error {
-	return entitypin.Hold(ctx, entitypin.Options{Workspace: rw, EntityPath: cfg.EntityPath}, recipepin.Remedy{
+	return entitypin.Hold(ctx, entitypin.Options{Workspace: rw, EntityPath: cfg.EntityPath, Notices: cfg.Notices}, recipepin.Remedy{
 		Operation:  "publication",
 		Setting:    workspaceconfig.PinSourcesAtPushKey,
 		Invocation: string(cfg.PinSourcesSupply),

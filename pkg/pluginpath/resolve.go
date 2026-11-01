@@ -445,6 +445,10 @@ type Resolver struct {
 	// posture was. False for the pin-free base, whose two callers resolve something
 	// no record was ever going to stand at.
 	expectsRecordedIdentity bool
+
+	// unrecorded receives the advisory a resolution raises for a reference no
+	// recorded digest governs; nil raises it to nobody. See noteUnrecordedIdentity.
+	unrecorded func(UnrecordedIdentity)
 }
 
 // ociReferenceHint is woven into the exhaustion error for a reference shaped like
@@ -743,41 +747,70 @@ func holdContent(uri string, tier Tier, b []byte, want, heldTo string) error {
 	return nil
 }
 
-// unrecordedIdentityWriter receives the advisory raised when a plugin resolves
-// with no recorded digest to check it against. It defaults to standard error —
-// the stream every other compile-time advisory is written to, and the one a
-// daemon redirects at the process boundary — and is redirected by tests to
-// observe the advisory.
-var unrecordedIdentityWriter io.Writer = os.Stderr
+// UnrecordedIdentity is the advisory a resolution raises for a plugin whose
+// resolved bytes no recorded digest governs: the reference, and the source its
+// bytes were read from. A construction receives it through
+// [ResolutionContext.Unrecorded].
+type UnrecordedIdentity struct {
+	URI  string
+	Tier Tier
+}
 
-// advisedUnrecorded remembers the plugin references already advised on in this
-// process, so the advisory is raised once per reference rather than once per
-// resolution. A render resolves the same provider for every node it renders, and
-// a long-running daemon resolves the same attachment on every request; the
-// condition is a property of the workspace rather than of any one resolution, so
-// repeating it per resolution would bury it.
-var advisedUnrecorded sync.Map
+// Message is the advisory's sentence: the reference, where its bytes came from,
+// and what holds for that source.
+//
+// What it says after its first clause depends on the source, because the remedy
+// is true of one source and false of another. Bytes read from the content cache
+// are an acquisition a pull records, so the sentence names the pull that records
+// them. Bytes read from beside a Plugin entity in a catalog directory are
+// recorded by a pull only for a plugin attached at a transform role, whose bytes
+// a pull pins because they shape the rendered output; for every other plugin
+// authored there no pull records them, and telling the reader to run one would
+// send them to a command that changes nothing. A resolution cannot tell which
+// role a reference is attached at, so for those bytes the sentence says what
+// holds either way — they are read from the catalog directory on every build,
+// and a pull records them only for a transform role — and names the one thing
+// that brings any other plugin under a recorded digest, publishing it and
+// referencing the published entity.
+func (a UnrecordedIdentity) Message() string {
+	remedy := "run `aggrega pull --release <release>` to record it"
+	if a.Tier == TierColocated {
+		remedy = "it is read from beside its Plugin entity in a catalog directory on every build, and a pull " +
+			"records its digest only for a plugin attached at a transform role; otherwise publish the plugin and " +
+			"reference the published entity to have its digest recorded"
+	}
+	return fmt.Sprintf("plugin %q resolved from %s with no recorded digest to check it against, "+
+		"so it runs unverified; %s", a.URI, a.Tier.Source(), remedy)
+}
+
+// ReportUnrecordedTo returns a receiver for [ResolutionContext.Unrecorded] that
+// writes each advisory to w as one warning line, once per reference for as long
+// as the receiver is held: a surface resolves the same plugin for every node it
+// renders and every command it registers, and the condition is a property of the
+// workspace rather than of any one resolution, so repeating it per resolution
+// would bury it. It is for a surface whose reader looks at w and nowhere else; a
+// surface with a structured advisory channel supplies a receiver that records
+// there.
+func ReportUnrecordedTo(w io.Writer) func(UnrecordedIdentity) {
+	var mu sync.Mutex
+	advised := map[string]struct{}{}
+	return func(a UnrecordedIdentity) {
+		mu.Lock()
+		defer mu.Unlock()
+		if _, seen := advised[a.URI]; seen {
+			return
+		}
+		advised[a.URI] = struct{}{}
+		fmt.Fprintf(w, "warning: %s\n", a.Message())
+	}
+}
 
 // noteUnrecordedIdentity raises the advisory for a plugin whose resolved bytes no
-// recorded digest governs, naming the reference, where the bytes came from, and
-// what holds for that source. It never fails a resolution: a workspace that has
-// not been prepared yet is an ordinary state, and refusing to read a plugin for
-// want of a record would make every surface that only reports on a document
-// unusable until an operator prepared one.
-//
-// What the advisory says after its first clause depends on the source, because
-// the remedy is true of one source and false of another. Bytes read from the
-// content cache are an acquisition a pull records, so the advisory names the pull
-// that records them. Bytes read from beside a Plugin entity in a catalog directory
-// are recorded by a pull only for a plugin attached at a transform role, whose
-// bytes a pull pins because they shape the rendered output; for every other plugin
-// authored there no pull records them, and telling the reader to run one would send
-// them to a command that changes nothing. This resolver cannot tell which role a
-// reference is attached at, so for those bytes the advisory says what holds either
-// way — they are read from the catalog directory on every build, and a pull records
-// them only for a transform role — and names the one thing that brings any other
-// plugin under a recorded digest, publishing it and referencing the published
-// entity.
+// recorded digest governs, handing it to the receiver the construction supplied.
+// It never fails a resolution: a workspace that has not been prepared yet is an
+// ordinary state, and refusing to read a plugin for want of a record would make
+// every surface that only reports on a document unusable until an operator
+// prepared one.
 //
 // Two resolutions raise nothing, and each is a case where no record could exist
 // rather than one where a record is missing:
@@ -798,42 +831,29 @@ var advisedUnrecorded sync.Map
 // that names the pin-free posture raises no advisory even where a digest could in
 // principle have been recorded for what it resolved.
 //
-// The rule holds on a long-running process that serves an editor, which resolves
-// plugins as a document is edited: it raises this advisory like any other caller,
-// and that is deliberate. Three properties let an advisory sit there where a
-// diagnostic could not, and all three belong to this function rather than to that
-// surface. advisedUnrecorded holds it to one line per plugin reference for the
-// life of the process, so it does not repeat at editing cadence. It is written to
-// unrecordedIdentityWriter, which is standard error, and to nothing else, so it
-// cannot enter the stream an editor reads its diagnostics from. And it returns
-// nothing and cannot fail, so a resolution — and the verdict any surface reaches
-// on it — is identical whether or not the advisory was raised. A diagnostic has
-// none of the three: it would re-render on every edit and would claim a place in
-// the editor's own report on the buffer.
+// Where the advisory goes, and how often, is the receiver's to decide, because
+// only the surface knows where its reader looks. A run of the compiler records it
+// on the run's one advisory channel beside its display, once per reference per
+// run, so a long-running process that serves an editor publishes it with the
+// run's other advisories — each run reports what that run resolved unverified,
+// and a run that no longer resolves it stops reporting it. A command reporting
+// to a terminal writes it there, once per reference (see ReportUnrecordedTo).
+// Either way the advisory returns nothing and cannot fail, so a resolution — and
+// the verdict any surface reaches on it — is identical whether or not it was
+// raised.
 //
-// Silencing it for that one surface is therefore the wrong repair, and the reason
-// is the one that puts the rule at this single site rather than at each caller.
-// Honouring it where some plugins resolve and skipping it where others do leaves
-// the skipped resolutions looking covered: silence would then mean two things at
+// The rule itself stays at this single site rather than at each caller, and the
+// reason is the one that makes every pinned construction supply a receiver:
+// honouring it where some plugins resolve and skipping it where others do leaves
+// the skipped resolutions looking covered, so silence would mean two things at
 // once — nothing went unrecorded, or this surface does not say — with no way for
-// a reader to tell which, and that is worse than raising nothing anywhere.
+// a reader to tell which. A construction that supplies no receiver raises the
+// advisory to nobody.
 func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
-	if !r.expectsRecordedIdentity || tier == TierEmbed || uri == "" {
+	if !r.expectsRecordedIdentity || tier == TierEmbed || uri == "" || r.unrecorded == nil {
 		return
 	}
-	if _, seen := advisedUnrecorded.LoadOrStore(uri, struct{}{}); seen {
-		return
-	}
-	remedy := "run `aggrega pull --release <release>` to record it"
-	if tier == TierColocated {
-		remedy = "it is read from beside its Plugin entity in a catalog directory on every build, and a pull " +
-			"records its digest only for a plugin attached at a transform role; otherwise publish the plugin and " +
-			"reference the published entity to have its digest recorded"
-	}
-	fmt.Fprintf(unrecordedIdentityWriter,
-		"warning: plugin %q resolved from %s with no recorded digest to check it against, "+
-			"so it runs unverified; %s\n",
-		uri, tier.Source(), remedy)
+	r.unrecorded(UnrecordedIdentity{URI: uri, Tier: tier})
 }
 
 // verifyCachedBundle holds a signed guest's recorded signature fact — its lockfile

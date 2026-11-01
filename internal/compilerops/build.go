@@ -5,6 +5,7 @@ package compilerops
 
 import (
 	"context"
+	"io"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -63,6 +64,11 @@ type BuildInputs struct {
 	// it where its caller's operation has already shown the resolution's
 	// advisories, so the build's resolution records them without showing them.
 	resolutionAdvisoriesShown bool
+
+	// display is handed to the pipeline as pipeline.Inputs.Display: where the
+	// run displays what it raises as it raises it. The preview that builds this
+	// sets it from its own inputs (WithDisplay); nil shows nothing.
+	display io.Writer
 }
 
 // BuildToBuffer runs the full compiler pipeline for the resolved Release and
@@ -134,6 +140,10 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		CompilerVersion:                  in.CompilerVersion,
 		TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,
 		ResolutionAdvisoriesShown:        in.resolutionAdvisoriesShown,
+		Display:                          in.display,
+		// The closure resolution that produced Resolved read every closure entity
+		// through this view, so its advisories over them are complete here.
+		CatalogAdvisories: view.SchemaAdvisories,
 	}
 	// The governance attachment list and the digests recorded as trusted for the
 	// verdict attachments arrive through the one composition every build surface

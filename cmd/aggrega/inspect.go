@@ -1059,6 +1059,12 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 			// than a silence.
 			Lockfile:   deps.lockfile,
 			PluginPins: pluginpath.RecordedPins(lockfile.PluginPins(deps.lockfile, releasePath)),
+			// The run's displays go to this command's error stream, beside the
+			// drawing on its output; the dependency resolution above read every
+			// entity the drawing reaches through its view, so the view's advisories
+			// over them are the ones this run reports.
+			Display:           os.Stderr,
+			CatalogAdvisories: deps.view.SchemaAdvisories,
 		},
 		catalogLookup,
 		recipeLookup,

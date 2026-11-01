@@ -497,6 +497,9 @@ func (s *Server) fillDependencies(ctx context.Context, release string, opts pipe
 		Toolchain:       s.toolchain,
 		RenderOptions:   opts,
 		DiagOut:         &notices,
+		// The runs the fill makes show their advisories where this process says
+		// what it has to say, apart from the account the answer carries.
+		Display: s.stderr,
 		// No prompt is supplied, on the same terms every operation here runs
 		// under: nobody is watching this stream, so a fork that would have been
 		// put to a person halts naming what to supply.

@@ -6,7 +6,6 @@ package pipeline
 import (
 	stderrors "errors"
 	"fmt"
-	"os"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
@@ -54,9 +53,10 @@ func judgeProviderBindings(inputs Inputs, catalogLookup resolver.CatalogLookup) 
 		case stderrors.Is(err, catalog.ErrProviderBindingCapabilityUnserved()):
 			// The display and the record in one statement group, so the recorded
 			// order is the displayed order by construction.
-			fmt.Fprintf(os.Stderr, "  warning: %s\n", err)
 			code, _ := cerrors.CodeOf(err)
-			inputs.AdvisoryLog.record(abi.Diagnostic{Severity: abi.SeverityWarn, Message: err.Error(), Code: code})
+			d := abi.Diagnostic{Severity: abi.SeverityWarn, Message: err.Error(), Code: code}
+			fmt.Fprintln(inputs.display(), WarningLine(d))
+			inputs.AdvisoryLog.record(d)
 		default:
 			return err
 		}

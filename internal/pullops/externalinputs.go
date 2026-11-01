@@ -155,6 +155,8 @@ func discoverExternalInputs(
 			// shows none again. The render still records them on its result, so a
 			// surface reading that result reads the same list it would without this.
 			compilerops.WithResolutionAdvisoriesShown(),
+			// The render's own advisories are shown where the pull shows the rest.
+			compilerops.WithDisplay(cfg.Display),
 		),
 		cfg.RenderOptions,
 	)

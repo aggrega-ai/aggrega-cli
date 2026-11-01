@@ -253,6 +253,9 @@ func (s *Server) handleResolveDependencies(ctx context.Context, params resolveDe
 	request.CompilerVersion = s.compilerVersion
 	request.Toolchain = s.toolchain
 	request.DiagOut = io.MultiWriter(&notices, progress.writer())
+	// The runs the resolution makes show their advisories where this process
+	// says what it has to say, apart from the account the answer carries.
+	request.Display = s.stderr
 	// No prompt is supplied, and that is the posture rather than an omission: see
 	// the method documentation above.
 	res, err := pullops.Run(ctx, request)

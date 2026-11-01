@@ -432,6 +432,9 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	opts.CompilerVersion = provenanceCompilerVersion()
 	opts.Toolchain = toolchainStamp()
 	opts.DiagOut = diagOut
+	// The compiler runs the resolution makes show their advisories on this
+	// command's error stream, whatever collects the resolution's own account.
+	opts.Display = os.Stderr
 	// A failure the resolution reports and survives is printed in the rendering
 	// this command's own refusals use, so it carries the same head and condition
 	// code a validate or build of the same Release prints for it.

@@ -157,7 +157,8 @@ func pinInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolR
 	if tw, err = s.subjectWorkspace(tw, entity); err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace to pin in.", err, ""))
 	}
-	res, err := entitypin.Pin(ctx, entitypin.Options{Workspace: tw.rw, EntityPath: entityPath, DryRun: a.DryRun})
+	res, err := entitypin.Pin(ctx, entitypin.Options{Workspace: tw.rw, EntityPath: entityPath, DryRun: a.DryRun,
+		Notices: s.logw})
 	if err != nil {
 		return errorResult(explainToolError("The pin step did not complete, so the lock beside the entity is unchanged.", err, ""))
 	}

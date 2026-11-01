@@ -11,8 +11,9 @@ package mcp
 // would be green either way. Something has to COUNT renders.
 //
 // What counts them is a line the render step writes once per render — a warning
-// naming a field the target cannot express — written straight to the process
-// stderr by the pipeline, from one call site, on every surface. The fixture
+// naming a field the target cannot express — shown by the pipeline, from one call
+// site, on the display the surface hands it, which on this surface is the
+// server's log. The fixture
 // authors such a field deliberately, so each render of it produces exactly one
 // line and the number of lines IS the number of renders.
 //
@@ -26,7 +27,6 @@ package mcp
 // the returned file set, which is populated only from a finished render.
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,31 +37,22 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// captureProcessStderr redirects the process stderr for the duration of fn and
+// captureServerLog points s's log stream at a buffer for the duration of fn and
 // returns what was written to it.
 //
-// It is the PROCESS stream rather than a sink this surface owns, and that is the
-// subject rather than a shortcut: the render step writes its per-render warnings
-// there directly, from one call site shared by every surface, so a tool-protocol
-// render and a terminal render are counted by the same instrument.
-func captureProcessStderr(t *testing.T, fn func()) string {
+// It is the server's log rather than any answer, and that is the subject rather
+// than a shortcut: every render this server runs — the build's own and the one a
+// fill makes — shows its per-render warnings there, through the one display the
+// render writes to on every surface, so a tool-protocol render and a terminal
+// render are counted by the same instrument.
+func captureServerLog(t *testing.T, s *server, fn func()) string {
 	t.Helper()
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stderr = w
-	done := make(chan string, 1)
-	go func() {
-		var b strings.Builder
-		_, _ = io.Copy(&b, r)
-		done <- b.String()
-	}()
+	var buf lockedBuffer
+	old := s.logw
+	s.logw = &buf
+	defer func() { s.logw = old }()
 	fn()
-	_ = w.Close()
-	os.Stderr = old
-	return <-done
+	return buf.String()
 }
 
 // unsupportedFieldMarker is the user-facing text of one diagnostic of the
@@ -242,8 +233,8 @@ spec:
 // other left, and each drives one build call through the dispatch rather than
 // calling the invoke — the count is about what a caller gets.
 func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
-	// Not parallel: the surface under assertion is the process stderr, which is
-	// a process global.
+	// The surface under assertion is each server's own log, which this test points
+	// at a buffer for the duration of one call.
 	marker := unsupportedFieldMarker(t, "compose", "replicas")
 
 	// Leg 1 — calibration. A call that does not fill renders once by
@@ -258,7 +249,7 @@ func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
 	}
 
 	var plainRes *callToolResult
-	plainStderr := captureProcessStderr(t, func() {
+	plainStderr := captureServerLog(t, plainServer, func() {
 		plainRes = callBuildWith(t, plainServer, plainRoot, plainDirs, plainRelease, false)
 	})
 	if plainRes.IsError {
@@ -273,7 +264,7 @@ func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
 	// the warning appearing twice means the Release was rendered twice.
 	fillServer, fillRoot, fillDirs, fillRelease := unsupportedFieldWorkspace(t)
 	var fillRes *callToolResult
-	fillStderr := captureProcessStderr(t, func() {
+	fillStderr := captureServerLog(t, fillServer, func() {
 		fillRes = callBuildWith(t, fillServer, fillRoot, fillDirs, fillRelease, true)
 	})
 	if fillRes.IsError {

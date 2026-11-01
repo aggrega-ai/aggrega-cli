@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -68,9 +69,23 @@ spec:
 `
 }
 
+// captureNotices runs fn with view's notices directed at a buffer, and returns
+// what view wrote there — what a reader at a terminal is shown, on the writer
+// the surface hands the view. It also holds the view to that writer: the
+// process's standard error is redirected for the duration and must stay empty,
+// because the view writes its notices where its surface says and nowhere else.
+func captureNotices(t *testing.T, view *LazyLookup, fn func()) string {
+	t.Helper()
+	var notices bytes.Buffer
+	view.WriteNoticesTo(&notices)
+	stray := captureStderr(t, fn)
+	if stray != "" {
+		t.Errorf("the view wrote to the process's standard error rather than to the writer it was handed:\n%s", stray)
+	}
+	return notices.String()
+}
+
 // captureStderr runs fn with os.Stderr redirected, and returns what was written.
-// The tolerance warning this test is about goes to stderr directly, so reading
-// it is the only way to assert what a user actually sees.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -116,7 +131,7 @@ func TestPinnedBundleThatCannotBeUnwrappedIsReportedNotSwallowed(t *testing.T) {
 	subject.SetPins(map[string]Pin{"helm/shared": pin})
 
 	var skips map[string]error
-	warning := captureStderr(t, func() { skips = subject.Skips() })
+	warning := captureNotices(t, subject, func() { skips = subject.Skips() })
 
 	const wantKey = "lockfile-pinned:helm/shared"
 	reason, recorded := skips[wantKey]
@@ -151,7 +166,7 @@ func TestPinnedBundleSkipIsDistinctFromAPinWithNoSlot(t *testing.T) {
 			"helm/absent": {ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64)},
 		})
 		var skips map[string]error
-		warning := captureStderr(t, func() { skips = subject.Skips() })
+		warning := captureNotices(t, subject, func() { skips = subject.Skips() })
 		if len(skips) != 0 {
 			t.Errorf("a pin with no cache slot must not be reported — it is how a catalog-resolved entity looks; got %v", skipKeysOf(skips))
 		}
@@ -168,7 +183,7 @@ func TestPinnedBundleSkipIsDistinctFromAPinWithNoSlot(t *testing.T) {
 		subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
 		subject.SetPins(map[string]Pin{"helm/frontend": pin})
 		var skips map[string]error
-		warning := captureStderr(t, func() { skips = subject.Skips() })
+		warning := captureNotices(t, subject, func() { skips = subject.Skips() })
 		if len(skips) != 0 {
 			t.Errorf("a pinned bundle that unwraps cleanly must not be reported; got %v", skipKeysOf(skips))
 		}

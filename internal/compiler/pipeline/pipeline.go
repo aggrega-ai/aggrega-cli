@@ -19,7 +19,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -272,6 +271,30 @@ type Inputs struct {
 	// ordinary caller never assigns it. A caller driving a single phase directly
 	// leaves it nil, which records nothing and changes no display.
 	AdvisoryLog *AdvisoryLog
+
+	// Display is where the run's displays write: the line a terminal shows for
+	// each advisory as the run raises it, a refusal of the resolution's guards
+	// beside the error that carries it, and a housekeeping failure the run cannot
+	// report anywhere else. It is the caller's to choose, because only the caller
+	// knows where its reader looks — a command hands its error stream, a
+	// long-running process the stream it was launched with — so nothing in the run
+	// names a process stream of its own.
+	//
+	// Nil shows nothing. The advisories are recorded on AdvisoryLog whatever this
+	// holds, so a caller that reads them structurally loses nothing by leaving it
+	// unset; a caller that shows them to a reader sets it.
+	Display io.Writer
+
+	// CatalogAdvisories reports the advisories the catalog view raised over the
+	// entities it resolved for this run — the x-aggrega-* discouragement over a
+	// Component's or Feature's schema content, one per entity and keyword however
+	// often the entity was read. The run asks it once, as its resolution begins,
+	// and displays and records each entry there, so the entities the caller's
+	// closure resolution read ahead of the run are reported by the run.
+	//
+	// A caller whose view raises them supplies the view's accessor (the lazy
+	// catalog view's SchemaAdvisories); nil reports none.
+	CatalogAdvisories func() []renderer.Diagnostic
 
 	// ResolutionAdvisoriesShown reports that the operation this run is part of has
 	// already shown the reader the advisories the resolution raises, through an
@@ -820,7 +843,7 @@ func runStepsOneToFour(
 		// authoring key puts it on the entry's location, where a surface holding the
 		// parsed document reads it, and leaves the message alone.
 		for _, w := range analysis.Warnings {
-			fmt.Fprintf(os.Stderr, "  %s\n", w.Message)
+			fmt.Fprintf(inputs.display(), "  %s\n", w.Message)
 			inputs.AdvisoryLog.record(w)
 		}
 		return use(out)
@@ -952,7 +975,7 @@ func ResolveAndValidate(
 		// The catalog-aware advisory checks run in the same scope as the halting
 		// guards and read the same normalized aggregate and catalog view. This is
 		// the single DRAIN both front ends consume: the build renders every
-		// advisory to stderr below, the daemon maps them to editor warnings off
+		// advisory to its display below, the daemon maps them to editor warnings off
 		// Tier4Result. They are computed before the guard verdict so an advisory is
 		// not lost when an unrelated guard halts.
 		//
@@ -971,6 +994,19 @@ func ResolveAndValidate(
 			return err
 		}
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories, declaredAdvisories...)
+		// The catalog view's own advisories lead the drain: the view raised them
+		// while reading the entities this resolution reads, which a caller's closure
+		// resolution reads ahead of the run, so they are the earliest findings the
+		// run reports. They are shown and recorded on the same terms as the
+		// resolution's — once per operation on the display, every run on the log.
+		if inputs.CatalogAdvisories != nil {
+			for _, d := range inputs.CatalogAdvisories() {
+				if !inputs.ResolutionAdvisoriesShown {
+					fmt.Fprintln(inputs.display(), WarningLine(d))
+				}
+				inputs.AdvisoryLog.record(d)
+			}
+		}
 		// The drain: displayed, and recorded on the one advisory channel in the same
 		// loop so the recorded order is the displayed order by construction.
 		//
@@ -987,7 +1023,7 @@ func ResolveAndValidate(
 		// rather than once per resolution.
 		for _, a := range resolveResult.LintAdvisories {
 			if !inputs.ResolutionAdvisoriesShown {
-				fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
+				fmt.Fprintf(inputs.display(), "  lint: %s\n", a)
 			}
 			inputs.AdvisoryLog.record(advisoryFromResolverFinding(a, abi.SeverityWarn))
 		}
@@ -1012,7 +1048,7 @@ func ResolveAndValidate(
 		}
 		if len(guardErrs) > 0 {
 			for _, e := range guardErrs {
-				fmt.Fprintf(os.Stderr, "  refused: %s\n", e)
+				fmt.Fprintf(inputs.display(), "  refused: %s\n", e)
 			}
 			// Carry the per-violation slice on the returned error so a caller can
 			// errors.Is the specific guard sentinel at the pipeline boundary
@@ -1676,8 +1712,13 @@ func RunTier4Pipeline(
 // directory map, feeding the co-located tier so a binary that embeds no core
 // guests resolves them from beside their catalog entities; nil at a socket with
 // no catalog access, which disables that tier.
+//
+// A plugin it resolves with no recorded digest under a pinned source is
+// reported to the run (reportUnrecordedPlugin), which displays it and records it
+// on the run's advisory channel.
 func buildPluginResolver(inputs Inputs, colocatedDirs map[string]pluginpath.ColocatedDir) pluginpath.Resolver {
-	return PluginResolver(inputs.PluginPins, inputs.WorkspaceRoot, *inputs.WorkspaceConfig, colocatedDirs)
+	return PluginResolver(inputs.PluginPins, inputs.WorkspaceRoot, *inputs.WorkspaceConfig, colocatedDirs,
+		inputs.reportUnrecordedPlugin)
 }
 
 // PluginResolver constructs the plugin-resolution cascade a build loads plugin
@@ -1687,12 +1728,15 @@ func buildPluginResolver(inputs Inputs, colocatedDirs map[string]pluginpath.Colo
 // build's question outside a build — what the artifact of a Plugin entity
 // authored in a catalog directory resolves to — asks the same cascade over the
 // same sources rather than a second reading of either. pins states where the
-// construction's recorded digests come from and fixes its posture.
-func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]pluginpath.ColocatedDir) pluginpath.Resolver {
+// construction's recorded digests come from and fixes its posture; unrecorded
+// receives the advisory a resolution under a pinned posture raises for bytes no
+// recorded digest governs (see pluginpath.ResolutionContext.Unrecorded).
+func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]pluginpath.ColocatedDir, unrecorded func(pluginpath.UnrecordedIdentity)) pluginpath.Resolver {
 	return pins.Resolver(pluginpath.ResolutionContext{
 		ColocatedDirs: colocatedDirs,
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
+		Unrecorded:    unrecorded,
 	})
 }
 
@@ -1710,7 +1754,8 @@ func PluginResolver(pins *pluginpath.PinSource, workspaceRoot string, wsCfg work
 // bytes and report a changed module as an integrity failure rather than as a
 // lockfile that no longer matches.
 func CatalogPluginArtifacts(workspaceRoot string, wsCfg workspaceconfig.Config, colocatedDirs map[string]pluginpath.ColocatedDir) closure.LocalPluginArtifact {
-	return PluginResolver(pluginpath.NoPins(), workspaceRoot, wsCfg, colocatedDirs).ResolveCatalogArtifact
+	// No receiver: a pin-free construction raises no unrecorded-identity advisory.
+	return PluginResolver(pluginpath.NoPins(), workspaceRoot, wsCfg, colocatedDirs, nil).ResolveCatalogArtifact
 }
 
 // buildEntityPluginLookup fronts the build-time artifact cascade with the
@@ -1829,9 +1874,9 @@ func collectProviderGuestWarmers(graph *types.IRGraph, recipeLookup renderer.Rec
 //
 // Mid-run advisories — the binding-lint findings, the static-analysis advisory
 // stream, the governance sockets' warn and info verdicts, and the renderer's
-// warnings — are displayed on os.Stderr inline by this function AND ride out on
-// the Outcome, so a caller that reads no terminal receives every one of them as a
-// structured entry rather than having to redirect a process stream to see them.
+// warnings — are displayed inline on the writer the caller supplied
+// (Inputs.Display) AND ride out on the Outcome, so a caller that reads no
+// terminal receives every one of them as a structured entry.
 // The entries arrive in the order the display printed them, because each is
 // recorded beside its own display.
 //
@@ -1961,7 +2006,7 @@ func RunPipeline(
 		} else {
 			traceWriter = trace.New("", traceMode)
 		}
-		// A close failure is reported on the diagnostic stream and reaches the
+		// A close failure is reported on the run's display and reaches the
 		// advisory channel deliberately NOT AT ALL. It says that a side effect the
 		// caller asked for did not complete — the compiler's own housekeeping — and
 		// nothing whatever about the author's Release, so it does not belong in a
@@ -1970,7 +2015,7 @@ func RunPipeline(
 		// for symmetry with the advisories around it.
 		defer func() {
 			if cerr := traceWriter.Close(); cerr != nil {
-				fmt.Fprintf(os.Stderr, "  trace: close: %s\n", cerr)
+				fmt.Fprintf(inputs.display(), "  trace: close: %s\n", cerr)
 			}
 		}()
 
@@ -2087,7 +2132,7 @@ func RunPipeline(
 			return fmt.Errorf("rendering: %w", rerr)
 		}
 
-		emitRenderWarnings(os.Stderr, renderResult, opts.SuppressUnsupportedFieldWarnings)
+		emitRenderWarnings(inputs.display(), renderResult, opts.SuppressUnsupportedFieldWarnings)
 
 		// The render's own advisories join the channel here, immediately after their
 		// display and before the render-verdict socket's, so the channel's order is

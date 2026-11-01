@@ -82,7 +82,7 @@ func TestAModuleIsHeldToTheDigestItMustMatch(t *testing.T) {
 // cascade reading the unversioned slot instead; drop HeldTo and the refusal row
 // fails, naming a lockfile pin.
 func TestAnAcceptedDigestReadsTheSlotItAddressesAndHoldsTheBytesToIt(t *testing.T) {
-	advisory := captureUnrecordedAdvisory(t)
+	advisory, report := captureUnrecordedAdvisory(t)
 	const uri = "importer/accepted"
 	const cacheDir = ".aggrega/cache"
 	const heldTo = "the digest a release publishes"
@@ -92,7 +92,7 @@ func TestAnAcceptedDigestReadsTheSlotItAddressesAndHoldsTheBytesToIt(t *testing.
 	otherDigest := digest.ContentDigest(other)
 
 	ws := t.TempDir()
-	cascade := AcceptedDigest(uri, acceptedDigest, heldTo).Resolver(ResolutionContext{WorkspaceRoot: ws, CacheDir: cacheDir})
+	cascade := AcceptedDigest(uri, acceptedDigest, heldTo).Resolver(ResolutionContext{WorkspaceRoot: ws, CacheDir: cacheDir, Unrecorded: report})
 	write := func(t *testing.T, version string, b []byte) {
 		t.Helper()
 		if err := oci.WriteCached(ws, cacheDir, uri, version, b); err != nil {

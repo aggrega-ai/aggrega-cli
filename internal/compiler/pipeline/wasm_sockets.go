@@ -390,7 +390,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 				analysis.Warnings = append(analysis.Warnings,
 					advisoryFromPolicyVerdict(r, policyWarnMessage(ref.URI, r)))
 			case analyzer.SeverityInfo:
-				emitPolicyInfo(inputs.AdvisoryLog, ref.URI, r)
+				emitPolicyInfo(inputs, ref.URI, r)
 			}
 		}
 	}
@@ -531,10 +531,10 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 				// whichever verdict role raised it: the attributed line already names
 				// the severity, so no second label is prefixed.
 				line := policyWarnMessage(ref.URI, r)
-				fmt.Fprintf(os.Stderr, "  %s\n", line)
+				fmt.Fprintf(inputs.display(), "  %s\n", line)
 				inputs.AdvisoryLog.record(advisoryFromPolicyVerdict(r, line))
 			case analyzer.SeverityInfo:
-				emitPolicyInfo(inputs.AdvisoryLog, ref.URI, r)
+				emitPolicyInfo(inputs, ref.URI, r)
 			}
 		}
 	}
@@ -729,7 +729,7 @@ func policyWarnMessage(pluginURI string, r abi.Diagnostic) string {
 	return fmt.Sprintf("policy plugin %q warning: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
 }
 
-// emitPolicyInfo records an info verdict to the diagnostic sink under a
+// emitPolicyInfo displays an info verdict on the run's display under a
 // distinct "info:" label, in plugin-emitted order, with zero effect on the
 // build outcome.
 //
@@ -742,10 +742,10 @@ func policyWarnMessage(pluginURI string, r abi.Diagnostic) string {
 // caller that reads no terminal receives it too. The recorded entry keeps the
 // location the guest set; see advisoryFromPolicyVerdict for why its message
 // carries the plugin attribution rather than leaving it to the display.
-func emitPolicyInfo(log *AdvisoryLog, pluginURI string, r abi.Diagnostic) {
+func emitPolicyInfo(inputs Inputs, pluginURI string, r abi.Diagnostic) {
 	line := fmt.Sprintf("policy plugin %q: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
-	fmt.Fprintf(os.Stderr, "  info: %s\n", line)
-	log.record(advisoryFromPolicyVerdict(r, line))
+	fmt.Fprintf(inputs.display(), "  info: %s\n", line)
+	inputs.AdvisoryLog.record(advisoryFromPolicyVerdict(r, line))
 }
 
 // policyVerdictDetail renders the optional fields a fired verdict carried beside

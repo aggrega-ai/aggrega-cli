@@ -107,7 +107,9 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 	}
 	dirs, named := s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath)
 	return s.releaseCatalogs.lookupFor(dirs, named, func() *catalog.LazyLookup {
-		return catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil, named...)
+		l := catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil, named...)
+		l.WriteNoticesTo(s.stderr)
+		return l
 	})
 }
 

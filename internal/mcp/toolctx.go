@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -378,6 +379,10 @@ type toolWorkspace struct {
 	// answer depends on and a tool cannot reach around it to a different rule.
 	transport transportMode
 
+	// logw is the server's log stream, where a catalog view built for the call
+	// writes its notices (newView). Nil writes them nowhere.
+	logw io.Writer
+
 	// held is set on the workspace a listing resolved where that workspace's
 	// configuration is held — a configuration file its cascade merges is a link
 	// leading out of it — and is nil everywhere else. Such a workspace carries no
@@ -535,6 +540,7 @@ func (s *server) toolWorkspaceOf(rw *workspaceconfig.ResolvedWorkspace, catalogD
 		cfg:       cfg,
 		cacheDir:  cfg.ResolvedArtifactCacheDir(),
 		transport: s.transport,
+		logw:      s.logw,
 	}
 	dirs, err := tw.callCatalogDirs(catalogDirs)
 	if err != nil {
@@ -769,6 +775,7 @@ func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog
 	if lf != nil {
 		v.SetPins(catalog.PinsFromLockfile(lf))
 	}
+	v.WriteNoticesTo(tw.logw)
 	return v
 }
 

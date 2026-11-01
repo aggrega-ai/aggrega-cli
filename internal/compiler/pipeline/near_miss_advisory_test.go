@@ -6,6 +6,7 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -193,8 +194,10 @@ func TestNearMissAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) {
 
 			var advisories []*resolver.ResolverError
 			var resolveErr error
-			stderr := captureStderr(t, func() {
-				resolveErr = pipeline.ResolveAndValidate(context.Background(), inputs,
+			stderr := captureDisplay(t, func(display io.Writer) {
+				in := inputs
+				in.Display = display
+				resolveErr = pipeline.ResolveAndValidate(context.Background(), in,
 					lookup,
 					cat.RecipeLookupWithManifest(manifest).Recipe,
 					func(rr *resolver.ResolveResult) error {
@@ -248,8 +251,10 @@ func TestNearMissAdvisoryReportsWithoutHaltingTheBuild(t *testing.T) {
 			// Control: the unspliced fixture must produce none of this, or every
 			// assertion above could be passing on unrelated output.
 			inputs.AggregateRawBytes = aggBytes
-			clean := captureStderr(t, func() {
-				if rerr := pipeline.ResolveAndValidate(context.Background(), inputs,
+			clean := captureDisplay(t, func(display io.Writer) {
+				in := inputs
+				in.Display = display
+				if rerr := pipeline.ResolveAndValidate(context.Background(), in,
 					lookup,
 					cat.RecipeLookupWithManifest(manifest).Recipe,
 					func(*resolver.ResolveResult) error { return nil },
