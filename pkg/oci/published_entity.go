@@ -5,7 +5,6 @@ package oci
 
 import (
 	"context"
-	"fmt"
 
 	"oras.land/oras-go/v2"
 )
@@ -40,13 +39,9 @@ import (
 // Resolve-error mapping is Pull's: a reference nothing is published under wraps
 // ErrFetchNotFound, and a refused or absent credential wraps ErrFetchUnauthorized.
 func PullPublishedEntity(ctx context.Context, target oras.ReadOnlyTarget, reference string) (*PullResult, error) {
-	manifestDesc, err := resolveReference(ctx, target, reference)
+	manifestDesc, manifestBytes, err := fetchManifest(ctx, target, reference)
 	if err != nil {
 		return nil, err
-	}
-	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
-	if err != nil {
-		return nil, fmt.Errorf("fetch manifest %q: %w", reference, err)
 	}
 	if IsPluginManifest(manifestBytes) {
 		return pluginEntityFromManifest(ctx, target, reference, manifestDesc, manifestBytes)

@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry"
@@ -57,11 +58,16 @@ type PullResult struct {
 // digest verification below, so verification checks the selected content
 // layer, never a positionally-first layer.
 //
+// The manifest is read through fetchManifest: against a registry, one request
+// for the manifest by the reference exactly as given, so a pull by tag fetches
+// by the tag and a pull by digest fetches by the digest.
+//
 // Error mapping:
 //   - target reports "not found" → wrapped ErrFetchNotFound
 //   - authentication required, rejected, or no stored credential for
 //     the registry → wrapped ErrFetchUnauthorized
-//   - content digest mismatch between manifest and fetched bytes →
+//   - manifest bytes that do not match the digest stated for them, or
+//     content digest mismatch between manifest and fetched bytes →
 //     wrapped ErrFetchIntegrity
 //
 // Remaining raw transport errors (DNS/TCP failures → network
@@ -69,43 +75,85 @@ type PullResult struct {
 // sentinels in errors.go via errors.Is once they wrap their own
 // diagnostic context.
 func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedMediaType ...string) (*PullResult, error) {
-	manifestDesc, err := resolveReference(ctx, target, tag)
+	manifestDesc, manifestBytes, err := fetchManifest(ctx, target, tag)
 	if err != nil {
 		return nil, err
 	}
-
-	manifestRC, err := target.Fetch(ctx, manifestDesc)
-	if err != nil {
-		return nil, fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
-	}
-	manifestBytes, err := io.ReadAll(manifestRC)
-	_ = manifestRC.Close()
-	if err != nil {
-		return nil, fmt.Errorf("oci: read manifest %q: %w", tag, err)
-	}
-
 	return contentFromManifest(ctx, target, tag, manifestDesc, manifestBytes, expectedMediaType...)
 }
 
 // resolveReference resolves a tag or digest on target to the manifest it names,
-// mapping a missing reference to ErrFetchNotFound and a refused or absent
-// credential to ErrFetchUnauthorized.
-//
-// It is the one resolve every read of a published artifact begins with, so the
-// two failures a reader acts on are classified identically whichever descriptor
-// of the manifest it goes on to read.
-func resolveReference(ctx context.Context, target oras.ReadOnlyTarget, tag string) (ocispec.Descriptor, error) {
-	manifestDesc, err := target.Resolve(ctx, tag)
+// classifying a failure through referenceError.
+func resolveReference(ctx context.Context, target oras.ReadOnlyTarget, reference string) (ocispec.Descriptor, error) {
+	manifestDesc, err := target.Resolve(ctx, reference)
 	if err != nil {
-		if isNotFoundResponse(err) {
-			return ocispec.Descriptor{}, fmt.Errorf("%q: %w", tag, ErrFetchNotFound())
-		}
-		if isUnauthorized(err) {
-			return ocispec.Descriptor{}, fmt.Errorf("resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
-		}
-		return ocispec.Descriptor{}, fmt.Errorf("resolve %q: %w", tag, err)
+		return ocispec.Descriptor{}, referenceError(reference, err)
 	}
 	return manifestDesc, nil
+}
+
+// fetchManifest reads the manifest a tag or digest names on target and returns
+// its descriptor and its bytes. Each read that pulls a published entity or
+// plugin begins with it.
+//
+// Against a registry the manifest is requested once, by the reference exactly as
+// given: a tag is fetched by the tag and a digest by the digest, with no separate
+// request to resolve the reference first. A target that cannot fetch by
+// reference — an in-memory store — resolves the reference and then fetches the
+// descriptor it resolved to.
+//
+// Either way the bytes are checked against the size and digest the target states
+// for the manifest, so a body that does not match them is refused with
+// ErrFetchIntegrity rather than read as the manifest. A reference that names
+// nothing wraps ErrFetchNotFound, and a refused or absent credential wraps
+// ErrFetchUnauthorized, through referenceError, so the two failures a reader acts
+// on are classified identically whichever descriptor of the manifest it goes on to
+// read.
+func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, reference string) (ocispec.Descriptor, []byte, error) {
+	var manifestDesc ocispec.Descriptor
+	var manifestRC io.ReadCloser
+	if fetcher, ok := target.(registry.ReferenceFetcher); ok {
+		desc, rc, err := fetcher.FetchReference(ctx, reference)
+		if err != nil {
+			return ocispec.Descriptor{}, nil, referenceError(reference, err)
+		}
+		manifestDesc, manifestRC = desc, rc
+	} else {
+		desc, err := resolveReference(ctx, target, reference)
+		if err != nil {
+			return ocispec.Descriptor{}, nil, err
+		}
+		rc, err := target.Fetch(ctx, desc)
+		if err != nil {
+			return ocispec.Descriptor{}, nil, fmt.Errorf("oci: fetch manifest %q: %w", reference, err)
+		}
+		manifestDesc, manifestRC = desc, rc
+	}
+	defer manifestRC.Close()
+
+	manifestBytes, err := content.ReadAll(manifestRC, manifestDesc)
+	if err != nil {
+		if errors.Is(err, content.ErrMismatchedDigest) || errors.Is(err, content.ErrTrailingData) {
+			return ocispec.Descriptor{}, nil, fmt.Errorf("oci: manifest %q does not match its digest %s: %v: %w",
+				reference, manifestDesc.Digest, err, ErrFetchIntegrity())
+		}
+		return ocispec.Descriptor{}, nil, fmt.Errorf("oci: read manifest %q: %w", reference, err)
+	}
+	return manifestDesc, manifestBytes, nil
+}
+
+// referenceError classifies a failure to resolve or fetch the manifest a
+// reference names: a reference the registry holds nothing at wraps
+// ErrFetchNotFound, and a refused or absent credential wraps ErrFetchUnauthorized.
+// Any other failure is returned wrapped as it came.
+func referenceError(reference string, err error) error {
+	if isNotFoundResponse(err) {
+		return fmt.Errorf("%q: %w", reference, ErrFetchNotFound())
+	}
+	if isUnauthorized(err) {
+		return fmt.Errorf("resolve %q: %v: %w", reference, err, ErrFetchUnauthorized())
+	}
+	return fmt.Errorf("resolve %q: %w", reference, err)
 }
 
 // contentFromManifest reads the content layer a fetched manifest commits to,

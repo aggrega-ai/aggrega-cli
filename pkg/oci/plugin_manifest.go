@@ -118,14 +118,15 @@ func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, was
 // The .wasm layer is selected by media type, not by position, so a manifest
 // that is missing (or ambiguous about) the .wasm layer halts loudly with
 // ErrNoContentLayer / ErrAmbiguousContentLayer rather than yield the wrong blob.
+//
+// The manifest is read as Pull reads it, so its error mapping is Pull's: a tag
+// nothing is published under wraps ErrFetchNotFound, a refused or absent
+// credential wraps ErrFetchUnauthorized, and a manifest body that does not match
+// its digest wraps ErrFetchIntegrity.
 func FetchPluginManifest(ctx context.Context, target oras.ReadOnlyTarget, tag string) (entityYAML, wasm []byte, manifestDigest string, err error) {
-	manifestDesc, err := target.Resolve(ctx, tag)
+	manifestDesc, manifestBytes, err := fetchManifest(ctx, target, tag)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("oci: resolve %q: %w", tag, err)
-	}
-	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
+		return nil, nil, "", err
 	}
 	view, err := parseManifest(manifestBytes)
 	if err != nil {
@@ -159,17 +160,14 @@ func FetchPluginManifest(ctx context.Context, target oras.ReadOnlyTarget, tag st
 // resolves the catalog entity). The two read different descriptors of the same
 // manifest, so the entity and its executable resolve from one tagged unit.
 //
-// Resolve-error mapping mirrors Pull (ErrFetchNotFound / ErrFetchUnauthorized),
-// so a missing or auth-refused plugin entity surfaces the same sentinels the
-// entity-pull tier and its remediation expect.
+// The manifest is read as Pull reads it, so the error mapping mirrors Pull
+// (ErrFetchNotFound / ErrFetchUnauthorized / ErrFetchIntegrity), and a missing
+// or auth-refused plugin entity surfaces the same sentinels the entity-pull tier
+// and its remediation expect.
 func FetchPluginEntity(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullResult, error) {
-	manifestDesc, err := resolveReference(ctx, target, tag)
+	manifestDesc, manifestBytes, err := fetchManifest(ctx, target, tag)
 	if err != nil {
 		return nil, err
-	}
-	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
-	if err != nil {
-		return nil, fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
 	}
 	return pluginEntityFromManifest(ctx, target, tag, manifestDesc, manifestBytes)
 }
