@@ -51,10 +51,10 @@ func descriptor() aggrega.PluginDescriptor {
 	return aggrega.PluginDescriptor{
 		AbiVersion: aggrega.APIVersion,
 		PluginType: "importer",
-		Description: "Import the graphs a LangGraph application declares in " + langgraphimport.ConfigFile +
+		Description: "Import the graphs a LangGraph project declares in " + langgraphimport.ConfigFile +
 			" into a draft Aggregate holding one " + langgraphimport.Component + " instance per graph, wired to the " +
 			"datastore its checkpointer keeps state in, and a draft Release carrying the environment the " +
-			"configuration states; the application's code is not read, nor any value of an environment file.",
+			"configuration states; the project's code is not read, nor any value of an environment file.",
 		Capabilities: []string{"import:" + langgraphimport.Format},
 		Exports: []aggrega.PluginExport{{
 			Name:          "import",
