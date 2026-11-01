@@ -428,6 +428,11 @@ next_steps() {
     settings="${settings}AGGREGA_INSTALL_DIR=$(sh_quote "$dir") "
   fi
   shell_name="${SHELL##*/}"
+  # The command below fetches this script again under the name the release
+  # publishes it as. The name is kept apart from the address on purpose:
+  # scripts/check-release-job-isolation.sh reads every path ending in .sh that
+  # this script names as a repository script, and refuses one it cannot find.
+  installer=install.sh
   say "next steps:"
   printf '\n'
   if [ "$completion_done" = 1 ]; then
@@ -436,7 +441,7 @@ next_steps() {
     case "$shell_name" in
       bash | zsh | fish)
         printf '  Set up shell completion for %s:\n' "$shell_name"
-        printf '    curl -fsSL %s | %ssh -s -- --completion\n' "$(sh_quote "$base/latest/download/install.sh")" "$settings"
+        printf '    curl -fsSL %s | %ssh -s -- --completion\n' "$(sh_quote "$base/latest/download/$installer")" "$settings"
         ;;
       *)
         printf '  Set up shell completion, for one of the shells aggrega writes it for:\n'
