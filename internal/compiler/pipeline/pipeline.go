@@ -29,10 +29,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -1587,15 +1585,24 @@ func emissionRefusal(findings []*resolver.ResolverError) error {
 }
 
 // RunTier4Pipeline executes the pre-render phases of the compiler pipeline
-// (resolve, topology, IR finalisation, analyse, Component / Feature assertions)
+// (resolve, topology, IR finalisation, analyse, Component / Feature assertions),
+// then the stages a build runs ahead of its render to reach the Recipe /
+// FeatureRecipe assertions — recipe binding, the name each bound node's provider
+// reports, locals and provides evaluation, and the assertions themselves —
 // against caller-supplied inputs. The daemon's runTier4Validation consumes this
 // to surface structured per-violation diagnostics through aggrega/validate
 // without rendering, which is expensive and not needed for semantic validation.
 //
-// It runs every pre-render check the render path runs, because both entry points
-// share one implementation of those phases. A rule reachable from one and not the
-// other would make "this document validates" mean something different from "this
-// document builds".
+// It shares one implementation of each of those phases and stages with the render
+// path, so a verdict either reaches is the same verdict. A rule reachable from one
+// and not the other would make "this document validates" mean something different
+// from "this document builds". The rules a render asks between recipe binding and
+// the Recipe assertions — over what every plugin reports about itself, and over
+// what each provides key resolved to — are the render's alone and are not asked
+// here.
+//
+// The Recipe / FeatureRecipe stages run only when nothing earlier refused, and
+// their first failure is the returned error, in the shape a build reports it in.
 //
 // Unlike RunPipeline's first-error-fatal semantic for terminal phases,
 // the returned Tier4Result carries whichever phases completed even when
@@ -1617,16 +1624,25 @@ func RunTier4Pipeline(
 	inputs.AdvisoryLog = &AdvisoryLog{}
 	out := &Tier4Result{}
 	var assertionErr error
+	var recipeAssertionErr error
 	var emissionViolations []*resolver.ResolverError
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Capture the phase outputs inside the resolve scope, which
-		// resolver.ResolveAndUse closes once this returns. Tier-4 runs no
-		// further work in the scope — analyzer errors ride on
-		// Analysis.Errors, consumed below.
+		// resolver.ResolveAndUse closes once this returns. Analyzer errors ride
+		// on Analysis.Errors, consumed below.
 		out.IRGraph = stepsOut.IRGraph
 		out.Analysis = stepsOut.Analysis
 		assertionErr = stepsOut.AssertionErr
 		emissionViolations = stepsOut.EmissionViolations
+
+		// The Recipe and FeatureRecipe assertions, through the stages a build runs
+		// ahead of its render to reach them. Asked only when nothing earlier refused —
+		// no analysis violation, no Component or Feature assertion, and no finding a
+		// build would halt on at recipe resolution — so the reported set is the
+		// earliest failing class rather than a mixture, as a build reports it.
+		if len(stepsOut.Analysis.Errors) == 0 && stepsOut.AssertionErr == nil && len(stepsOut.EmissionViolations) == 0 {
+			recipeAssertionErr = evaluateRecipeAssertions(ctx, inputs, catalogLookup, recipeLookup, stepsOut.IRGraph)
+		}
 		return nil
 	})
 
@@ -1648,6 +1664,12 @@ func RunTier4Pipeline(
 	// graph is final before assertions evaluate.
 	if err == nil {
 		err = wrapAssertionErr(assertionErr)
+	}
+	// A failing Recipe or FeatureRecipe assertion is the same kind of verdict, and
+	// it arrives already in the shape a build reports it in. It can only be set when
+	// the two above were not, since the stage that produces it is asked only then.
+	if err == nil {
+		err = recipeAssertionErr
 	}
 
 	// Extract the structured per-violation slice into a uniform shape so
@@ -2072,9 +2094,7 @@ func RunPipeline(
 		if stepsOut.GraphCoordinates != nil {
 			rendererInput.GraphCoordinates = stepsOut.GraphCoordinates
 		}
-		if rendererInput.PluginPathLookup == nil {
-			rendererInput.PluginPathLookup = buildEntityPluginLookup(inputs, catalogLookup)
-		}
+		rendererInput.PluginPathLookup = renderPluginLookup(inputs, catalogLookup)
 		// Build-time source-artifact resolution: when the caller supplies a
 		// lockfile and workspace root, the orchestrator resolves each remote
 		// source to its pinned cache entry. Left unset, the renderer forwards
@@ -2093,8 +2113,7 @@ func RunPipeline(
 		// build, and every concurrent served request reuses the machine code. The
 		// routing is uniform across every caller of RunPipeline, so build, serve,
 		// and the test harness all route through it with no per-caller change.
-		sharedLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		hybrid, providerVersion, closeEngines := enginefactory.NewHybrid(catalogLookup, rendererInput.PluginPathLookup, sharedLoader)
+		hybrid, providerVersion, closeEngines := providerEngines(ctx, catalogLookup, rendererInput.PluginPathLookup)
 		// Release each provider engine's reused plugin instance at build end. A
 		// guest that declares reusable_instance is loaded once per build and its
 		// single instance lives on the per-build engine; this closes it after the

@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -124,8 +125,9 @@ var validateToolSpec = toolSpec{
 	description: "Check correctness without rendering or writing anything, across four scopes that mirror the CLI. " +
 		"Pass exactly one scope selector. `release` <path> runs the closure-scoped semantic-validation pipeline over " +
 		"a Release: it resolves the Release's Manifest and Aggregate, computes the catalog closure, and runs the " +
-		"closure-scoped extends and schema-pillar gates, the resolve/topology/IR pipeline, and the resolution-" +
-		"completeness checks. `entity` <path> checks one catalog entity file: a value its kind requires that the file " +
+		"closure-scoped extends and schema-pillar gates, the resolve/topology/IR pipeline, the Recipe and FeatureRecipe " +
+		"assertions evaluated against the Release's values as a build evaluates them before it renders, and the " +
+		"resolution-completeness checks. `entity` <path> checks one catalog entity file: a value its kind requires that the file " +
 		"leaves empty is reported first, every one at once, as a placeholder still owed with what it takes; then every " +
 		"kind is schema-checked, a Component or Feature has its pillar structure checked, a Workload, FeatureRecipe or " +
 		"Plugin has its shape checked, and a Recipe is driven through the real compilation pipeline around a " +
@@ -663,9 +665,15 @@ func validateDiagnostics(vr *compilerops.ValidateResult, consistencyFindings []e
 	// whose failure is elsewhere and on a run that did not fail at all — so reading
 	// its length would take such a finding as evidence about the phase error and drop
 	// the only line describing it.
+	//
+	// It is rendered as one line headed by its condition and carrying every cause
+	// beneath it (cerrors.HeadedCauseChain), not by its own Error, which is a single
+	// frame: a failing assertion's frame names only the stage, while the assertion,
+	// the instance and the author's own sentence sit in the frames beneath it, and
+	// the head is what explain-error reads the condition from.
 	if vr.RunErr != nil && !isCancellation(vr.RunErr) &&
 		!runErrPublishedPerViolation(vr.RunErr, perViolation) {
-		out = append(out, vr.RunErr.Error())
+		out = append(out, cerrors.HeadedCauseChain(vr.RunErr))
 	}
 	for _, f := range vr.ResolutionFindings {
 		out = append(out, f.Error())

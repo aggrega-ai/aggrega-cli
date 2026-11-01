@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -22,7 +23,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
-// runTier4Validation runs Steps 1-4 of the compiler pipeline against the
+// runTier4Validation runs Steps 1-4 of the compiler pipeline, and the Recipe and
+// FeatureRecipe assertion stages a build runs ahead of its render, against the
 // Release the request named and maps per-phase violations into
 // source-positioned diagnostics for the requested file.
 //
@@ -293,7 +295,8 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 
 	// Run the semantic-validation core through the shared compiler-operations
 	// layer (closure-scoped extends gate, closure-scoped schema-pillar gate,
-	// Steps 1-4 pipeline, resolution-completeness findings). The gates read
+	// Steps 1-4 pipeline and the Recipe and FeatureRecipe assertion stages,
+	// resolution-completeness findings). The gates read
 	// through the pinned request view so every resolution verifies-on-read
 	// against this Release's pins. The daemon owns the diagnostic MAPPING below;
 	// the shared layer returns the raw outcome in gate order.
@@ -775,8 +778,14 @@ func runErrPublishedPerViolation(runErr error, published []*resolver.ResolverErr
 // errors with "Step N (phase): ..." framing; strip the framing for
 // brevity and prefix with "Dependencies: " so the message reads naturally
 // in the IDE.
+//
+// The error is rendered with every cause beneath it (cerrors.CauseChain), not by
+// its own Error, which is a single frame: a failing assertion's frame names only
+// the stage, and the assertion, the instance and the author's own sentence sit in
+// the frames beneath it. The condition's code travels on the diagnostic's own
+// fields, so the text carries no head of its own.
 func tier4PhaseErrorMessage(err error) string {
-	msg := err.Error()
+	msg := cerrors.CauseChain(err)
 	if idx := strings.Index(msg, "): "); idx > 0 && strings.HasPrefix(msg, "Step ") {
 		msg = msg[idx+3:]
 	}

@@ -230,7 +230,9 @@ type ValidateInputs struct {
 // otherwise a non-nil VerdictTrustError means the workspace configuration
 // disagreed with the record of the plugin identities trusted for its verdict
 // attachments and validation stopped before the pipeline ran; otherwise Tier4 and
-// RunErr carry the Steps 1-4 pipeline outcome and ResolutionFindings carries the
+// RunErr carry the pipeline outcome — the Steps 1-4 phases, then the Recipe and
+// FeatureRecipe assertion stages, whose first failing assertion is RunErr in the
+// shape a build reports it in — and ResolutionFindings carries the
 // resolution-completeness findings its own producer still owns over the built IR
 // graph — both feature attachment axes in full, and the component axis for a
 // mapping value whose shape no recipe reference can express.
@@ -275,9 +277,11 @@ type ValidateResult struct {
 // Validate runs the semantic-validation core against explicit inputs: the
 // closure-scoped extends gate, the closure-scoped schema-pillar gate, the
 // verdict-plugin trust gate, the Steps 1-4 pipeline (resolve, topology, IR,
-// analyse), the resolution-completeness findings over the built IR graph, the
-// closure-scoped input-kind capability check, and the exit-code-neutral advisory
-// lines. It stops at the first of those three gates that fails and returns a
+// analyse, Component and Feature assertions) followed by the stages a build runs
+// ahead of its render to evaluate the Recipe and FeatureRecipe assertions against
+// the Release's resolved values, the resolution-completeness findings over the
+// built IR graph, the closure-scoped input-kind capability check, and the
+// exit-code-neutral advisory lines. Nothing is rendered and nothing is written. It stops at the first of those three gates that fails and returns a
 // discriminated result the caller maps into positioned diagnostics; it produces
 // no diagnostics itself.
 //

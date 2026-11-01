@@ -146,8 +146,10 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs, named []string, diagOut,
 // (the shared closure resolver over the lazy lookup — never a local fork, which would re-open
 // the build/validate view divergence) and validates over exactly the entities
 // that Release reaches: closure-scoped extends resolution, closure-scoped
-// schema-pillar validation, and pre-render authored-value conformance via the
-// build's shared Step-1 guard suite.
+// schema-pillar validation, pre-render authored-value conformance via the
+// build's shared Step-1 guard suite, and the Recipe and FeatureRecipe assertions
+// evaluated against the Release's resolved values through the stages a build runs
+// ahead of its render.
 //
 // Closure-scoped pillar VALIDATION errors fail the check (non-zero exit);
 // schema-pillar OVERLAP advisories are informational `notice:` lines that never
@@ -190,8 +192,8 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	// the other front doors validate a Release with — so every front door runs one
 	// implementation. The dependency resolution loads the Manifest and Aggregate
 	// siblings and walks the closure over the pinned view; Validate runs the closure-scoped
-	// extends and schema-pillar gates, the Steps 1-4 pipeline, the
-	// resolution-completeness findings, the input-kind capability check, and the
+	// extends and schema-pillar gates, the Steps 1-4 pipeline and the Recipe and
+	// FeatureRecipe assertion stages after it, the resolution-completeness findings, the input-kind capability check, and the
 	// advisory lines.
 	deps, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogFlagDirs)
 	if err != nil {

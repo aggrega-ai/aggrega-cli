@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // releaseParityFailingAssertionOverlayComponent declares a Component whose
@@ -144,7 +145,7 @@ func TestValidateDiagnosticsPublishesPhaseErrorBesidePerViolationFindings(t *tes
 
 			diags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
 
-			fallback := vr.RunErr.Error()
+			fallback := cerrors.HeadedCauseChain(vr.RunErr)
 
 			// Occurrences the other streams already contribute, so the count below
 			// measures the fall-back alone even where a stream happens to render the

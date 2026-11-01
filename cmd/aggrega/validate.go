@@ -68,7 +68,10 @@ func newValidateCmd() *cobra.Command {
 			"share one pass.\n\n" +
 			"With --release, validate checks the entities a Release's dependency closure\n" +
 			"reaches: closure-scoped pillars, extends, and pre-render authored-value\n" +
-			"conformance — the same correctness a build applies, scoped to that Release.\n\n" +
+			"conformance — the same correctness a build applies, scoped to that Release.\n" +
+			"It then evaluates the Recipe and FeatureRecipe assertions against the values\n" +
+			"that Release resolves to, as a build does before it renders, and reports a\n" +
+			"failing assertion as a build reports it. Nothing is rendered.\n\n" +
 			"With an entity path, validate checks one entity file. The kinds it accepts\n" +
 			"as a single-entity target are Component, Feature, Recipe, FeatureRecipe,\n" +
 			"Workload and Plugin. A value the kind requires that the file leaves empty is\n" +

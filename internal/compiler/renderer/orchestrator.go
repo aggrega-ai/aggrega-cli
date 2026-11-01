@@ -1005,18 +1005,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		Files: make(map[string]AssembledFile),
 	}
 
-	// Resolve recipes per node
-	nodeRecipes := make(map[string]*types.Recipe)
-	nodeIDs := graph.Spec.Nodes.Keys()
-	sort.Strings(nodeIDs)
-	for _, nodeID := range nodeIDs {
-		node, _ := graph.Spec.Nodes.Get(nodeID)
-		if recipeLookup.Recipe != nil {
-			if r, found := recipeLookup.Recipe(nodeID, node.Component); found {
-				nodeRecipes[nodeID] = r
-			}
-		}
-	}
+	// Resolve recipes per node. The stages from here to the Recipe and FeatureRecipe
+	// assertions are the methods of one value, which a surface that renders nothing
+	// runs back to back (EvaluateRecipeAssertionStage); this render runs the same
+	// methods with its own rules asked between them.
+	stage := bindRecipes(graph, recipeLookup)
+	nodeRecipes, nodeIDs := stage.recipes, stage.nodeIDs
 
 	// Ask each node's own provider what name it will give the resources it renders
 	// for that node, before anything is evaluated.
@@ -1026,10 +1020,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// be asked before the provides pass below, because a producer's provides
 	// templates are what publish an address built from the answer. One pass, one
 	// computation site, and every later reader reads the same answer.
-	renderedNames, err := CollectRenderedNames(ctx, graph, nodeRecipes, engineFactory)
-	if err != nil {
+	if err := stage.askRenderedNames(ctx, engineFactory); err != nil {
 		return nil, err
 	}
+	renderedNames := stage.renderedNames
 
 	// Present what every plugin this render reaches reports about itself, with
 	// the facts complete before any of them described itself answered by the
@@ -1284,23 +1278,25 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// reached from deep inside the per-node walk. One reader answers all of them, so
 	// they cannot come to disagree about what a Feature declares, and one memo serves
 	// them all.
-	readers := newDeclarationReaders(input.CatalogLookup)
-	input.declaredFeatureLeaves = readers.feature
-	input.declaredComponentLeaves = readers.component
+	//
 	// Each node's own declarations — its Component's, those of the Features attached
 	// to it, and which of its Recipe's locals and source parts are computed from a
-	// declared leaf — read from the bound Recipe as the catalog holds it, BEFORE
-	// anything replaces a local copy's source with its resolved value: the reading is
-	// over authored template text, and resolved text carries no reference to read.
-	declarations := readRefusalDeclarations(graph, nodeRecipes, readers)
+	// declared leaf — are read through the same reader from the bound Recipe as the
+	// catalog holds it, BEFORE anything replaces a local copy's source with its
+	// resolved value: the reading is over authored template text, and resolved text
+	// carries no reference to read.
+	stage.readDeclarations(input.CatalogLookup)
+	readers, declarations := stage.readers, stage.declarations
+	input.declaredFeatureLeaves = readers.feature
+	input.declaredComponentLeaves = readers.component
 
 	// Pass 1: per node, resolve locals then provides. The locals travel with the
 	// provides so every downstream reader — Step 5b assertions and Phase B.0 —
 	// consumes one evaluation rather than repeating it.
-	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, renderedNames, declarations)
-	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "locals and provides evaluation")
+	if err := stage.evaluateLocalsAndProvides(); err != nil {
+		return nil, err
 	}
+	allProvides, allLocals := stage.provides, stage.locals
 
 	// Install this render's retention of per-node mid-render state, holding the
 	// resolved provides by reference: they are evaluated once above for the whole
@@ -1389,8 +1385,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	}
 
 	// Step 5b: Recipe / FeatureRecipe assertions.
-	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides, allLocals, declarations); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Recipe/FeatureRecipe assertions")
+	if err := stage.evaluateAssertions(recipeLookup); err != nil {
+		return nil, err
 	}
 
 	dispatch := map[dispatchKey]*pendingDispatch{}
