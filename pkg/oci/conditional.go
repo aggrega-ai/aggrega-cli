@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
 // indexTagsListPageSize is the tag page a conditional tags/list read requests. A
@@ -84,7 +85,7 @@ func ConditionalListTags(ctx context.Context, host, repo, ifNoneMatch string, ht
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, "", false, false, fmt.Errorf("oci: tags/list %q: status %d: %w", repo, resp.StatusCode, ErrFetchUnauthorized())
 	default:
-		return nil, "", false, false, fmt.Errorf("oci: tags/list %q: unexpected status %d", repo, resp.StatusCode)
+		return nil, "", false, false, fmt.Errorf("tags/list %q: %w", repo, statusAnswer(req, resp))
 	}
 }
 
@@ -157,6 +158,14 @@ func ConditionalListReferrers(ctx context.Context, host, repo, digest, ifNoneMat
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "", false, fmt.Errorf("referrers %q@%s: status %d: %w", repo, digest, resp.StatusCode, ErrFetchUnauthorized())
 	default:
-		return "", false, fmt.Errorf("referrers %q@%s: unexpected status %d", repo, digest, resp.StatusCode)
+		return "", false, fmt.Errorf("referrers %q@%s: %w", repo, digest, statusAnswer(req, resp))
 	}
+}
+
+// statusAnswer is a status the registry answered a conditional read with and the
+// read has no other use for, as the registry error response every other read
+// reports one as — so a caller reads the status from the value, as
+// IsTransientRegistryError and ReadFailureKind do, rather than from words.
+func statusAnswer(req *http.Request, resp *http.Response) error {
+	return &errcode.ErrorResponse{Method: req.Method, URL: req.URL, StatusCode: resp.StatusCode}
 }

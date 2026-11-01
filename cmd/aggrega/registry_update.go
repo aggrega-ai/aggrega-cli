@@ -65,7 +65,10 @@ wait (Retry-After) the wait is as long as it says. A repository with a read stil
 failing after that is not recorded from this run: it keeps the record the index
 already holds for it, where that record was judged under the trust policy now in
 force, and is otherwise left out of the index; either way it is named as a
-repository that could not be read. So a version is never recorded unsigned,
+repository that could not be read, as the walk goes and again in the closing
+summary under its registry's row, with the kind of the read's last failure — the
+status the registry answered, a timeout, a reset, an answer cut short — and the
+read that failed. So a version is never recorded unsigned,
 undated or without its deprecation marker because a read failed, with or without
 --upgrade.
 
@@ -218,11 +221,14 @@ func registryUpdateRun(ctx context.Context, cfg registryUpdateConfig) error {
 }
 
 // reportRegistryUpdate writes the closing summary of an index build: how many of
-// the selected registries were indexed, what each indexed registry's walk found,
-// which registries were not indexed, and the directory the index was written to.
+// the selected registries were indexed, what each indexed registry's walk found —
+// how many entities it indexed, and each repository it could not read, named with
+// its reason — which registries were not indexed, and the directory the index was
+// written to.
 //
-// The running commentary carries none of them. It names a repository as it skips
-// it but never says how many a registry could not read; it names a registry as it
+// The running commentary carries none of them as an outcome. It names a
+// repository as it skips it, at that moment and among everything else the walk
+// says, but never says how many a registry could not read; it names a registry as it
 // fails but never gathers them, so a reader watching a walk over several
 // registries has to scroll back to find which are missing; and it never names the
 // directory the index was written to, which is what says a refresh changed
@@ -272,6 +278,9 @@ func reportRegistryUpdate(out io.Writer, res registryops.UpdateResult) {
 			line += fmt.Sprintf(", %s could not be read", countOfNoun(unread, "repository", "repositories"))
 		}
 		fmt.Fprintln(out, line)
+		for _, skipped := range host.Skipped {
+			fmt.Fprintf(out, "    %s: %s\n", skipped.Repo, skipped.Reason)
+		}
 	}
 	if len(notIndexed) > 0 {
 		names := make([]string, 0, len(notIndexed))

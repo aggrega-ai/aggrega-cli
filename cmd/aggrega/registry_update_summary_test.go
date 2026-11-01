@@ -80,6 +80,19 @@ func factsOwedByRegistryUpdateSummary(res registryops.UpdateResult) []owedFact {
 			about: "the registry " + host.Host,
 			want:  host.Host,
 		})
+		if host.Err != "" {
+			continue
+		}
+		// Each repository an indexed registry's walk could not read is owed by name,
+		// with the reason the walk gave, on a line of its own. The commentary names it
+		// only at the moment it is skipped.
+		for _, skipped := range host.Skipped {
+			owed = append(owed, owedFact{
+				field: "Hosts[].Skipped",
+				about: "the repository " + skipped.Repo + " the walk of " + host.Host + " could not read, and why",
+				want:  skipped.Repo + ": " + skipped.Reason + "\n",
+			})
+		}
 	}
 	return owed
 }

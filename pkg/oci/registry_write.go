@@ -6,6 +6,7 @@ package oci
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -65,26 +66,73 @@ func IsTransientRegistryError(err error) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
-	var resp *errcode.ErrorResponse
-	if errors.As(err, &resp) {
+	if status, answered := registryStatus(err); answered {
 		switch {
-		case resp.StatusCode >= 500,
-			resp.StatusCode == http.StatusRequestTimeout,
-			resp.StatusCode == http.StatusTooManyRequests:
+		case status >= 500,
+			status == http.StatusRequestTimeout,
+			status == http.StatusTooManyRequests:
 			return true
 		}
 	}
+	return timedOut(err) || connectionReset(err) || cutShort(err)
+}
+
+// ReadFailureKind names, in a reader's words, what kind of failure ended a
+// registry read: the status the registry answered with, a read that timed out, a
+// connection that was reset, or an answer whose body was cut short. It returns ""
+// for any other failure — one with no registry answer and no connection failure
+// behind it — and for a nil error.
+//
+// It reads the same error values IsTransientRegistryError reads, never their
+// wording, so a failure is named the same way whether it was worth another
+// attempt or not. Where an error carries more than one of these, the status is
+// named first, then a reset, then an answer cut short, then a timeout: a body
+// that ended because the connection was reset is named as the reset.
+func ReadFailureKind(err error) string {
+	if err == nil {
+		return ""
+	}
+	if status, answered := registryStatus(err); answered {
+		if text := http.StatusText(status); text != "" {
+			return fmt.Sprintf("the registry answered %d %s", status, text)
+		}
+		return fmt.Sprintf("the registry answered %d", status)
+	}
+	switch {
+	case connectionReset(err):
+		return "the connection was reset"
+	case cutShort(err):
+		return "the answer was cut short"
+	case timedOut(err):
+		return "the read timed out"
+	}
+	return ""
+}
+
+// registryStatus returns the status a registry answered a request with, where
+// err carries that answer.
+func registryStatus(err error) (int, bool) {
+	var resp *errcode.ErrorResponse
+	if errors.As(err, &resp) {
+		return resp.StatusCode, true
+	}
+	return 0, false
+}
+
+// timedOut reports whether err is a network error that reports a timeout, or a
+// deadline that expired on the request.
+func timedOut(err error) bool {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
 	}
-	if connectionReset(err) {
-		return true
-	}
-	if errors.Is(err, io.ErrUnexpectedEOF) {
-		return true
-	}
 	return errors.Is(err, context.DeadlineExceeded)
+}
+
+// cutShort reports whether err is a response body that ended before it was
+// complete.
+func cutShort(err error) bool {
+	return errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // connectionReset reports whether err carries the value this platform reports a

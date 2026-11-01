@@ -247,6 +247,11 @@ type HostIndex struct {
 // does not abandon the walk: the index that results is incomplete, and a caller
 // acting on it needs to know which repositories are missing from it rather than
 // reading a short answer as a complete one.
+//
+// Where a read of the repository failed, Reason opens with the kind of its last
+// failure — the status the registry answered, a timeout, a reset, an answer cut
+// short — and then gives the failure itself, so the account of the walk says what
+// went wrong without a reader having to recognise it in an error's words.
 type SkippedRepo struct {
 	Repo   string `json:"repo"`
 	Reason string `json:"reason"`
@@ -619,19 +624,34 @@ type hostWalk struct {
 // the index already holds for it, with what was stored beside that record, where
 // that record was judged under the trust policy in force; a record judged under
 // another policy, or none, leaves the repository out of this index. Either way it
-// is named as a repository that could not be read, with the read that failed.
+// is named as a repository that could not be read, with the read that failed and
+// the kind of its last failure (unreadReason).
 func (hw *hostWalk) unreadable(w *repoWalk, repo, uri string, err error) {
 	w.notes = nil
 	w.text.Reset()
+	reason := unreadReason(err)
 	p, hasPrior := hw.prior.records[uri]
 	pr, hasRevalidation := hw.prior.revalidations[uri]
 	if !hasPrior || !hasRevalidation || pr.TrustPolicy != hw.trust {
-		w.skip(repo, err.Error())
+		w.skip(repo, reason)
 		return
 	}
 	w.rec, w.revalidation, w.ok = p, pr, true
-	w.skipped = &SkippedRepo{Repo: repo, Reason: err.Error()}
-	fmt.Fprintf(&w.text, "  could not read %s: %v; its earlier record is kept\n", repo, err)
+	w.skipped = &SkippedRepo{Repo: repo, Reason: reason}
+	fmt.Fprintf(&w.text, "  could not read %s: %s; its earlier record is kept\n", repo, reason)
+}
+
+// unreadReason is what a repository that could not be read is reported with: the
+// kind of the read's last failure, as oci.ReadFailureKind names it — the status the
+// registry answered, a timeout, a reset, an answer cut short — followed by the
+// failure itself, which says which read it was. A failure of no such kind — a
+// trust root that could not be obtained to verify a signature against, say — is
+// reported as the failure alone.
+func unreadReason(err error) string {
+	if kind := oci.ReadFailureKind(err); kind != "" {
+		return kind + ": " + err.Error()
+	}
+	return err.Error()
 }
 
 // readFailed settles a repository one of whose own reads failed — its tag listing,

@@ -8,13 +8,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/registry"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
@@ -905,5 +911,184 @@ func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
 	}
 	if reloaded.Records[0].ListingDigest != wantETag || reloaded.Records[0].Version != "1.1.0" {
 		t.Fatalf("post-refresh record drifted: %+v", reloaded.Records[0])
+	}
+}
+
+// failingListingRegistry is an in-process OCI registry over HTTP that fails every
+// tag listing of one repository the same way, for good, and serves everything
+// else as the go-containerregistry in-memory registry does. The walk reaches it
+// through the production index source, so every read goes through the walk's own
+// retrying transport and the failure the walk reports is the last of its attempts.
+type failingListingRegistry struct {
+	host  string
+	inner http.Handler
+	repo  string
+	fail  func(w http.ResponseWriter, req *http.Request, inner http.Handler)
+}
+
+func newFailingListingRegistry(t *testing.T, repo string, fail func(http.ResponseWriter, *http.Request, http.Handler)) *failingListingRegistry {
+	t.Helper()
+	r := &failingListingRegistry{inner: registry.New(), repo: repo, fail: fail}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodGet && req.URL.Path == "/v2/"+r.repo+"/tags/list" {
+			r.fail(w, req, r.inner)
+			return
+		}
+		r.inner.ServeHTTP(w, req)
+	}))
+	t.Cleanup(srv.Close)
+	r.host = strings.TrimPrefix(srv.URL, "http://")
+	return r
+}
+
+// publishComponent pushes one component version with searchable annotations to
+// repo on the registry at host.
+func publishComponent(t *testing.T, host, repo, tag string) {
+	t.Helper()
+	target, err := oci.NewRemoteRepository(host+"/"+repo, &http.Client{})
+	if err != nil {
+		t.Fatalf("open %s: %v", repo, err)
+	}
+	ann, err := oci.SearchableMetadata{Kind: "Component", Description: "component " + repo}.Annotations()
+	if err != nil {
+		t.Fatalf("annotations: %v", err)
+	}
+	if _, err := oci.Push(t.Context(), target, tag, oci.MediaTypeComponent, []byte("# "+repo+"\n"), ann); err != nil {
+		t.Fatalf("publish %s:%s: %v", repo, tag, err)
+	}
+}
+
+// answerWithStatus fails the read with status.
+func answerWithStatus(status int) func(http.ResponseWriter, *http.Request, http.Handler) {
+	return func(w http.ResponseWriter, _ *http.Request, _ http.Handler) {
+		http.Error(w, "the registry failed this read", status)
+	}
+}
+
+// resetTheConnection drops the connection without an answer, with a reset rather
+// than an orderly close, as a connection the peer resets reaches a client.
+func resetTheConnection(w http.ResponseWriter, _ *http.Request, _ http.Handler) {
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		return
+	}
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetLinger(0)
+	}
+	_ = conn.Close()
+}
+
+// cutTheAnswerShort answers the read as the registry would, announcing the whole
+// body's length, and closes the connection after half of it.
+func cutTheAnswerShort(w http.ResponseWriter, req *http.Request, inner http.Handler) {
+	rec := httptest.NewRecorder()
+	inner.ServeHTTP(rec, req)
+	body := rec.Body.Bytes()
+	conn, buf, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	fmt.Fprintf(buf, "HTTP/1.1 %d %s\r\n", rec.Code, http.StatusText(rec.Code))
+	rec.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	_ = rec.Header().Write(buf)
+	_, _ = buf.WriteString("\r\n")
+	_, _ = buf.Write(body[:len(body)/2])
+	_ = buf.Flush()
+}
+
+// TestRegistryUpdateNamesEveryRepositoryItCouldNotReadWithTheFailure walks an
+// in-process registry that fails one repository's tag listing on every attempt,
+// one kind of failure per row, and requires the walk's stated outcome to name that
+// repository with the kind of the read's last failure — in the closing summary the
+// command prints, which is what a terminal, the catalog build and an assistant
+// running the command all read, and in the structured result the editor session
+// answers with, as its wire form encodes it.
+//
+// The summary is read from the command's own output after the line that opens it,
+// so a name the running commentary states as the walk goes cannot satisfy it: the
+// commentary names a skipped repository at the moment it is skipped, and the
+// outcome is what the walk owes once it is done.
+//
+// The other repository is indexed as usual, so the walk is a completed walk with
+// one repository missing, not a failed registry.
+func TestRegistryUpdateNamesEveryRepositoryItCouldNotReadWithTheFailure(t *testing.T) {
+	// Not parallel: the walk resolves its source through the process-global
+	// index-target seam, which other tests in this package point elsewhere; here it
+	// is read at its production value, so the walk reaches the registry over HTTP.
+	const (
+		failing = "component/core/web"
+		clean   = "component/core/api"
+	)
+	rows := []struct {
+		name string
+		fail func(http.ResponseWriter, *http.Request, http.Handler)
+		kind string
+	}{
+		{"the registry answers 503", answerWithStatus(http.StatusServiceUnavailable), "the registry answered 503 Service Unavailable"},
+		{"the connection is reset", resetTheConnection, "the connection was reset"},
+		{"the answer is cut short", cutTheAnswerShort, "the answer was cut short"},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			reg := newFailingListingRegistry(t, failing, row.fail)
+			publishComponent(t, reg.host, clean, "1.0.0")
+			publishComponent(t, reg.host, failing, "1.0.0")
+			config := "workspace: {}\nregistries:\n  - host: " + reg.host + "\n"
+			named := "    " + failing + ": " + row.kind + ": "
+
+			// The terminal: the command's own output.
+			var out bytes.Buffer
+			if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: resolveWorkspaceWithConfig(t, t.TempDir(), config), Out: &out, now: frozenClock()}); err != nil {
+				t.Fatalf("registryUpdateRun: %v; a repository that could not be read leaves the registry indexed\n%s", err, out.String())
+			}
+			printed := out.String()
+			opens := strings.Index(printed, "\nIndexed 1 registry.\n")
+			if opens < 0 {
+				t.Fatalf("the command printed no closing summary for the one registry it indexed:\n%s", printed)
+			}
+			outcome := printed[opens+1:]
+			if !strings.Contains(outcome, reg.host+": 1 entity, 1 repository could not be read\n") {
+				t.Errorf("the closing summary does not count the one repository it could not read:\n%s", outcome)
+			}
+			if !strings.Contains(outcome, "\n"+named) {
+				t.Errorf("the closing summary does not name %s with the kind of its last failure (looked for %q):\n%s\nwhole output:\n%s",
+					failing, named, outcome, printed)
+			}
+
+			// The structured result: the per-registry rows the editor session's
+			// refresh answers with, encoded as its wire form encodes them.
+			res, err := registryops.Update(t.Context(), resolveWorkspaceWithConfig(t, t.TempDir(), config),
+				registryops.UpdateOptions{Now: frozenClock()}, io.Discard)
+			if err != nil {
+				t.Fatalf("registryops.Update: %v", err)
+			}
+			encoded, err := json.Marshal(res)
+			if err != nil {
+				t.Fatalf("encode the result: %v", err)
+			}
+			var wire struct {
+				Hosts []struct {
+					Indexed int `json:"indexed"`
+					Skipped []struct {
+						Repo   string `json:"repo"`
+						Reason string `json:"reason"`
+					} `json:"skipped"`
+				} `json:"hosts"`
+			}
+			if err := json.Unmarshal(encoded, &wire); err != nil {
+				t.Fatalf("decode the result: %v", err)
+			}
+			if len(wire.Hosts) != 1 || wire.Hosts[0].Indexed != 1 || len(wire.Hosts[0].Skipped) != 1 {
+				t.Fatalf("the result does not report one registry indexing one entity with one repository it could not read: %s", encoded)
+			}
+			skipped := wire.Hosts[0].Skipped[0]
+			if skipped.Repo != failing {
+				t.Errorf("the result names %q as the repository it could not read; want %q: %s", skipped.Repo, failing, encoded)
+			}
+			if !strings.HasPrefix(skipped.Reason, row.kind+": ") {
+				t.Errorf("the result's reason does not open with the kind of the last failure %q: %q", row.kind, skipped.Reason)
+			}
+		})
 	}
 }
