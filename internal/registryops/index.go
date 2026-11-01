@@ -297,8 +297,8 @@ type DeprecationNote struct {
 // however many times it was asked; zero where none was. It says how near the walk
 // came to repositories it could not read: a read asked again that then succeeded
 // leaves nothing in Skipped, and only this count shows it happened. The command
-// line's closing summary states it; the encoded form of this result carries no
-// key for it.
+// line's closing summary states it on the registry's row, and the encoded form of
+// this result carries it as readsRetried, zero included.
 type HostUpdate struct {
 	Host                 string            `json:"host"`
 	Indexed              int               `json:"indexed"`
@@ -306,9 +306,9 @@ type HostUpdate struct {
 	DeprecationsRecorded int               `json:"deprecationsRecorded"`
 	Skipped              []SkippedRepo     `json:"skipped"`
 	Deprecations         []DeprecationNote `json:"deprecations"`
+	ReadsRetried         int               `json:"readsRetried"`
 	Err                  string            `json:"error,omitempty"`
 	Unreachable          bool              `json:"unreachable,omitempty"`
-	ReadsRetried         int               `json:"-"`
 }
 
 // UpdateResult is what a whole index build did, per host.
