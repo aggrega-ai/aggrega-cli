@@ -48,6 +48,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -451,13 +453,7 @@ func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, re
 	if !errors.As(held, &refused) && !errors.Is(held, docscache.ErrFetchNotFound()) {
 		return false, held
 	}
-	if target == nil {
-		target, _ = ctx.Value(targetKey{}).(TargetFor)
-	}
-	if target == nil {
-		target = RegistryTarget
-	}
-	repo, verify, err := target(cfg, ref, version, warn)
+	repo, verify, err := targetOf(ctx, target)(cfg, ref, version, warn)
 	if err != nil {
 		return false, alsoRefused(refused, err)
 	}
@@ -467,6 +463,143 @@ func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, re
 		return false, alsoRefused(refused, fmt.Errorf("acquire documentation bundle %s@%s: %w", ref, version, err))
 	}
 	return true, nil
+}
+
+// targetOf returns the target an acquisition reaches: target where it names one,
+// else the one ctx states ([WithTarget]), else [RegistryTarget].
+func targetOf(ctx context.Context, target TargetFor) TargetFor {
+	if target != nil {
+		return target
+	}
+	if stated, _ := ctx.Value(targetKey{}).(TargetFor); stated != nil {
+		return stated
+	}
+	return RegistryTarget
+}
+
+// EnsureCachedAtOrBelow acquires the documentation bundle for (ref, version) as
+// [EnsureCached] does and, where none is published at that version, the newest
+// one published at or below it, and returns the version it holds.
+//
+// The version asked for is tried first, exactly as EnsureCached tries it, so a
+// copy cached for it is used without reaching a registry and a reader whose
+// version is published reads exactly that one. Only when the registry answers
+// that it publishes no bundle at that version are the versions it does publish
+// listed, through the same target and the same egress, and the newest at or below
+// the version asked for is acquired in turn — under the same signature check, from
+// the cache where a copy of it is held. Offline, where no registry can be asked,
+// the newest version at or below it that the cache holds a copy of that the
+// workspace's check admits is used instead; with none, the offline refusal is
+// returned unchanged.
+//
+// "At or below" reads the version the way a release is numbered. A release
+// version X.Y.Z bounds the choice inclusively. A version a build describes
+// itself by as some commits after a release — X.Y.Z-N-gHASH, with or without a
+// trailing -dirty — is taken as built after X.Y.Z, so X.Y.Z bounds it, rather
+// than as a pre-release of X.Y.Z, which would sort before it. Any other
+// pre-release version bounds the choice strictly, and a pre-release is never
+// chosen. A version that is not a release number at all — a development build
+// stamped with none — has nothing to be at or below, and the failure to acquire
+// the exact version is returned as it is.
+//
+// The acquired reports whether a fetch happened, as EnsureCached reports it.
+func EnsureCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, version string,
+	target TargetFor, warn func(string)) (held string, acquired bool, err error) {
+	acquired, err = EnsureCached(ctx, cfg, cacheRoot, ref, version, target, warn)
+	if err == nil {
+		return version, acquired, nil
+	}
+	bound, ok := versionBound(version)
+	if !ok {
+		return "", false, err
+	}
+	switch {
+	case errors.Is(err, egress.ErrOfflineEgress()):
+		if cached, ok := newestCachedAtOrBelow(ctx, cfg, cacheRoot, ref, bound, warn); ok {
+			return cached, false, nil
+		}
+		return "", false, err
+	case errors.Is(err, docscache.ErrFetchNotFound()):
+		published, lerr := publishedVersions(ctx, cfg, ref, version, target, warn)
+		if lerr != nil {
+			return "", false, fmt.Errorf("%w; listing the versions the registry publishes failed: %w", err, lerr)
+		}
+		chosen := atOrBelow(published, bound)
+		if chosen == "" {
+			return "", false, fmt.Errorf("%w; the registry publishes no version of it at or below %s", err, bound)
+		}
+		acquired, err = EnsureCached(ctx, cfg, cacheRoot, ref, chosen, target, warn)
+		if err != nil {
+			return "", false, err
+		}
+		return chosen, acquired, nil
+	}
+	return "", false, err
+}
+
+// describedBuild matches a version a build describes itself by as some commits
+// after a release: the release, the count of commits since it, and the commit
+// the build was made from, marked when the tree it was built from held changes.
+var describedBuild = regexp.MustCompile(`^(\d+\.\d+\.\d+)-\d+-g[0-9a-f]+(-dirty)?$`)
+
+// versionBound returns the release number version is at or below — version
+// itself, or the release a described build was made after — and whether version
+// is a release number at all.
+func versionBound(version string) (string, bool) {
+	if m := describedBuild.FindStringSubmatch(version); m != nil {
+		return m[1], true
+	}
+	if oci.HasAnySemverTag([]string{version}) {
+		return version, true
+	}
+	return "", false
+}
+
+// atOrBelow returns the version among versions equal to bound, else the newest
+// release strictly below it, else "".
+func atOrBelow(versions []string, bound string) string {
+	for _, v := range versions {
+		if v == bound {
+			return v
+		}
+	}
+	return oci.SelectHighestBelow(versions, bound)
+}
+
+// publishedVersions lists the versions the registry publishes the bundle at,
+// through the target an acquisition reaches, within one acquisition's bound.
+func publishedVersions(ctx context.Context, cfg workspaceconfig.Config, ref, version string,
+	target TargetFor, warn func(string)) ([]string, error) {
+	repo, _, err := targetOf(ctx, target)(cfg, ref, version, warn)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, AcquireTimeout)
+	defer cancel()
+	return oci.ListTags(ctx, repo)
+}
+
+// newestCachedAtOrBelow returns the newest version at or below bound that the
+// cache under cacheRoot holds a copy of for ref that the workspace configured as
+// cfg admits, and whether there is one.
+func newestCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, bound string,
+	warn func(string)) (string, bool) {
+	versions, err := docscache.CachedVersions(cacheRoot, ref)
+	if err != nil {
+		return "", false
+	}
+	admit := Admission(ctx, cfg, ref, warn)
+	for len(versions) > 0 {
+		v := atOrBelow(versions, bound)
+		if v == "" {
+			return "", false
+		}
+		if docscache.Admitted(cacheRoot, ref, v, admit) == nil {
+			return v, true
+		}
+		versions = slices.DeleteFunc(versions, func(s string) bool { return s == v })
+	}
+	return "", false
 }
 
 // alsoRefused reports a failed fetch, together with the refusal of the cached copy

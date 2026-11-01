@@ -14,7 +14,8 @@
 // names, keyed by reference and version. The package is the
 // documentation-payload complement to the catalog-entity cache (pkg/oci) and
 // the source-artifact cache (pkg/sourcecache): the resolve half pulls, verifies,
-// and stores; the read half reads a stored bundle and returns one page's bytes.
+// and stores; the read half reads a stored bundle and returns one page's bytes,
+// or writes one directory of it out into a new directory of the caller's.
 //
 // The split mirrors the ahead-of-time boundary the rest of the compiler holds:
 // ResolveAndCache is the network-touching acquisition step (content integrity
@@ -220,6 +221,37 @@ func Admitted(cacheRoot, ref, version string, admit AdmitAtRead) error {
 		return err
 	}
 	return admitSlot(slot, ref, version, manifest, admit)
+}
+
+// CachedVersions returns the versions of ref the cache under cacheRoot holds a
+// slot for, in name order. A version a write is still staging, or one whose slot
+// a write is replacing, is not listed ([IsSlotName]); nor is a directory no
+// derivation of this package wrote. No slot at all is an empty list.
+//
+// It reports presence and nothing more, as [Cached] does: whether a reader may be
+// served a listed version is that reader's question ([Admitted]).
+func CachedVersions(cacheRoot, ref string) ([]string, error) {
+	if !filepath.IsAbs(cacheRoot) {
+		return nil, fmt.Errorf("the cache root %q is not an absolute path", cacheRoot)
+	}
+	entries, err := os.ReadDir(refDir(cacheRoot, ref))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list the cached versions of %s: %w", ref, pathless(err))
+	}
+	var versions []string
+	for _, e := range entries {
+		if !e.IsDir() || !IsSlotName(e.Name()) {
+			continue
+		}
+		if version, ok := pathsegment.Decode(e.Name()); ok {
+			versions = append(versions, version)
+		}
+	}
+	sort.Strings(versions)
+	return versions, nil
 }
 
 // slotPath returns the cache slot for a documentation bundle addressed by
@@ -596,6 +628,227 @@ func (b *Bundle) Page(page string) ([]byte, string, error) {
 	return data, mimeForPage(page), nil
 }
 
+// ExtractDirectory writes the members of the bundle beneath the bundle-internal
+// directory dir — "language-reference/examples/redis-cache", say — into the
+// directory dest, as that directory's own contents, and returns the names of the
+// files it wrote, relative to dest and slash-separated, in the bundle's order.
+//
+// dest must not exist yet, or must be an empty directory; anything else is
+// refused, so an extraction never mixes its files into somebody else's. Its
+// parent directories are created where they are missing.
+//
+// Every member of the bundle is judged before anything is written, and one
+// refusal leaves nothing behind:
+//
+//   - A member whose name is absolute or climbs above the bundle root, anywhere
+//     in the bundle, halts with ErrFetchIntegrity, as a page read halts on it: a
+//     bundle carrying one is not a bundle this program wrote.
+//   - A member beneath dir that is a link — symbolic or hard — or anything other
+//     than a regular file or a directory halts with ErrFetchIntegrity, naming it.
+//     A link is never followed or recreated, so no member can lead the
+//     extraction outside dest.
+//   - A member beneath dir whose name, below dir, would land outside dest is
+//     refused the same way.
+//
+// Members are matched against dir by their names as written. A dir the bundle
+// holds no member beneath is ErrPageNotFound.
+//
+// The files are written into a staging directory and then moved into place: where
+// dest does not exist, a directory staged beside it becomes it whole, so a reader
+// of dest sees either nothing or every file; where dest is an empty directory, it
+// is kept, and the entries staged inside it are moved up into it. A file
+// whose archived mode carries an execute bit is written executable; every other
+// file is written readable by all and writable by its owner.
+func (b *Bundle) ExtractDirectory(dir, dest string) ([]string, error) {
+	dir = strings.TrimSuffix(dir, "/")
+	if err := refuseOccupied(dest); err != nil {
+		return nil, err
+	}
+	members, err := b.membersBeneath(dir, dest)
+	if err != nil {
+		return nil, err
+	}
+	if len(members) == 0 {
+		return nil, fmt.Errorf("%q in %s@%s: %w", dir+"/", b.ref, b.version, ErrPageNotFound())
+	}
+
+	destDir, err := pathscope.DirectoryPath(dest)
+	if err != nil {
+		return nil, err
+	}
+	// The staging directory sits beside dest where dest is still to be created, and
+	// inside it where it is the empty directory the extraction was allowed into, so
+	// writing into a directory needs no write access to the one above it.
+	parent := filepath.Dir(destDir)
+	if info, err := os.Lstat(destDir); err == nil && info.IsDir() {
+		parent = destDir
+	} else if err := os.MkdirAll(parent, 0o755); err != nil {
+		return nil, fmt.Errorf("create %s: %w", parent, err)
+	}
+	staging, err := os.MkdirTemp(parent, ".aggrega-extract-*")
+	if err != nil {
+		return nil, fmt.Errorf("stage the extraction beside %s: %w", destDir, err)
+	}
+	defer os.RemoveAll(staging)
+	if err := os.Chmod(staging, 0o755); err != nil {
+		return nil, fmt.Errorf("stage the extraction beside %s: %w", destDir, err)
+	}
+
+	var written []string
+	for _, m := range members {
+		at, ok, err := pathscope.PlaceBeneath(staging, m.rel)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("member %q of %s@%s leaves %s: %w", m.name, b.ref, b.version, dest, oci.ErrFetchIntegrity())
+		}
+		if m.isDir {
+			if err := os.MkdirAll(at, 0o755); err != nil {
+				return nil, fmt.Errorf("write %s: %w", m.rel, pathless(err))
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
+			return nil, fmt.Errorf("write %s: %w", m.rel, pathless(err))
+		}
+		if err := os.WriteFile(at, m.data, m.mode); err != nil {
+			return nil, fmt.Errorf("write %s: %w", m.rel, pathless(err))
+		}
+		written = append(written, path.Clean(m.rel))
+	}
+
+	if err := placeExtraction(staging, destDir); err != nil {
+		return nil, fmt.Errorf("place the extraction at %s: %w", destDir, err)
+	}
+	return written, nil
+}
+
+// placeExtraction moves what staging holds to destDir. Where nothing stands at
+// destDir, staging itself is moved there, whole. Where the empty directory the
+// extraction was allowed into stands there, it is kept — it may be the directory a
+// shell is standing in, which removing and recreating would leave that shell
+// standing in a directory that no longer exists — and each entry staging holds is
+// moved into it instead, refusing one whose name has appeared there since. Anything
+// else standing at destDir is left as it is, and the move into its place fails.
+func placeExtraction(staging, destDir string) error {
+	info, err := os.Lstat(destDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return os.Rename(staging, destDir)
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is no longer a directory", destDir)
+	}
+	entries, err := os.ReadDir(staging)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		to := filepath.Join(destDir, e.Name())
+		if _, err := os.Lstat(to); err == nil {
+			return fmt.Errorf("%s appeared while the extraction was being written", to)
+		}
+		if err := os.Rename(filepath.Join(staging, e.Name()), to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// extractMember is one member of a bundle an extraction writes: its name as the
+// bundle carries it, its name below the extracted directory, and what it holds.
+type extractMember struct {
+	name, rel string
+	isDir     bool
+	mode      fs.FileMode
+	data      []byte
+}
+
+// membersBeneath reads every member of the bundle and returns the ones beneath
+// dir, each judged as [Bundle.ExtractDirectory] states, with the place each lands
+// judged against dest. It writes nothing.
+func (b *Bundle) membersBeneath(dir, dest string) ([]extractMember, error) {
+	gz, err := gzip.NewReader(strings.NewReader(string(b.blob)))
+	if err != nil {
+		return nil, fmt.Errorf("read %s@%s: gunzip: %w", b.ref, b.version, err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	var members []extractMember
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return members, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read %s@%s: tar next: %w", b.ref, b.version, err)
+		}
+		// The climb of every member is judged, beneath dir or not, as a page read
+		// judges it: a bundle carrying a member that leaves its root is refused
+		// whole. A name the host cannot hold is that member's own concern, and only
+		// a member that is written raises it.
+		if _, inside, err := pathscope.PlaceBeneath(dest, hdr.Name); err == nil && !inside {
+			return nil, fmt.Errorf("member %q of %s@%s leaves the bundle: %w", hdr.Name, b.ref, b.version, oci.ErrFetchIntegrity())
+		}
+		rel, beneath := strings.CutPrefix(hdr.Name, dir+"/")
+		if !beneath || rel == "" {
+			continue
+		}
+		if _, inside, err := pathscope.PlaceBeneath(dest, rel); err != nil {
+			return nil, err
+		} else if !inside {
+			return nil, fmt.Errorf("member %q of %s@%s leaves %s: %w", hdr.Name, b.ref, b.version, dest, oci.ErrFetchIntegrity())
+		}
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			members = append(members, extractMember{name: hdr.Name, rel: rel, isDir: true})
+		case tar.TypeReg:
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, fmt.Errorf("read member %q of %s@%s: %w", hdr.Name, b.ref, b.version, err)
+			}
+			mode := fs.FileMode(0o644)
+			if hdr.Mode&0o111 != 0 {
+				mode = 0o755
+			}
+			members = append(members, extractMember{name: hdr.Name, rel: rel, mode: mode, data: data})
+		case tar.TypeSymlink, tar.TypeLink:
+			return nil, fmt.Errorf("member %q of %s@%s is a link, and an extraction writes only files and "+
+				"directories: %w", hdr.Name, b.ref, b.version, oci.ErrFetchIntegrity())
+		default:
+			return nil, fmt.Errorf("member %q of %s@%s is neither a file nor a directory: %w",
+				hdr.Name, b.ref, b.version, oci.ErrFetchIntegrity())
+		}
+	}
+}
+
+// refuseOccupied refuses a destination that holds anything: a file, a link, or a
+// directory with an entry in it. A destination that does not exist, or is an empty
+// directory, is free.
+func refuseOccupied(dest string) error {
+	info, err := os.Lstat(dest)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", dest, pathless(err))
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s already exists and is not a directory; name a new or empty directory", dest)
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", dest, pathless(err))
+	}
+	if len(entries) > 0 {
+		return fmt.Errorf("%s already exists and is not empty; name a new or empty directory", dest)
+	}
+	return nil
+}
+
 // ReadPage returns the bytes and MIME type of a single page inside the cached
 // documentation bundle for (ref, version) under cacheRoot, for a reader whose
 // check is admit. It is [Open] followed by [Bundle.Page], for a reader that wants
@@ -614,9 +867,9 @@ func ReadPage(cacheRoot, ref, version, page string, admit AdmitAtRead) ([]byte, 
 // (a name escaping the archive root via `..` or a leading `/`) are rejected with
 // a wrapped ErrFetchIntegrity, so a hostile bundle cannot smuggle an escaping
 // entry past the lookup. It is deliberately separate from the disk-extracting
-// walker the source-artifact cache uses: this sink is an in-memory page lookup,
-// that one materialises a directory tree — different outputs, so unifying them
-// would force one to carry the other's concern.
+// walkers — the source-artifact cache's, and [Bundle.ExtractDirectory] here: this
+// sink is an in-memory page lookup, those materialise a directory tree — different
+// outputs, so unifying them would force one to carry the other's concern.
 func readTarEntry(bundleBytes []byte, target string) ([]byte, bool, error) {
 	want := path.Clean(target)
 	gz, err := gzip.NewReader(strings.NewReader(string(bundleBytes)))

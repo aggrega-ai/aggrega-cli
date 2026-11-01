@@ -36,6 +36,10 @@ var commandToolWrites = map[string]bool{
 	// which its operation only renders.
 	"cli-build": true,
 
+	// The scaffold command prints a starter document, and with --example writes a
+	// runnable example into the new directory the caller names.
+	"cli-scaffold": true,
+
 	// Commands that only read.
 	"cli-cache-status":  false,
 	"cli-config-show":   false,
@@ -45,7 +49,6 @@ var commandToolWrites = map[string]bool{
 	"cli-lint":          false,
 	"cli-plugin-list":   false,
 	"cli-registry-list": false,
-	"cli-scaffold":      false,
 	"cli-search":        false,
 	"cli-skills-list":   false,
 	"cli-validate":      false,

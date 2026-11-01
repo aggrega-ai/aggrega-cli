@@ -205,4 +205,10 @@ var commandReach = map[string]opsurface.Reach{
 	// trust record and fills the workspace's cache, which is the class a
 	// dependency resolution declares.
 	"build": opsurface.ReachWorkspace,
+
+	// The scaffold command only prints a starter document, which is the drafting
+	// operation's answer; with --example it writes one of the documentation's
+	// runnable examples into the new directory the caller names, as the stated
+	// effect of that flag.
+	"scaffold-entity": opsurface.ReachWorkspace,
 }
