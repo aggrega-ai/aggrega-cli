@@ -42,6 +42,27 @@ func NoMarker() error { return errNoMarker }
 // find.
 func IsNoMarker(err error) bool { return errors.Is(err, errNoMarker) }
 
+// unreadError marks a failure as one to READ rather than a verdict: the registry
+// did not answer, so what was not read says nothing about what is there. It reads
+// as the failure it wraps, so a caller that only reports the failure reports the
+// same words either way.
+type unreadError struct{ err error }
+
+func (e unreadError) Error() string { return e.err.Error() }
+
+func (e unreadError) Unwrap() error { return e.err }
+
+// IsUnread reports whether a failure from this package's reads is a failure to
+// read — a listing, a referrer or a payload the registry did not deliver — rather
+// than a verdict on what was read. A caller that keeps an answer, such as an index,
+// must not keep one a passing failure shaped, and reads this to tell the two
+// apart: a marker that did not verify is an answer; a marker whose signature could
+// not be fetched is not.
+func IsUnread(err error) bool {
+	var u unreadError
+	return errors.As(err, &u)
+}
+
 // LatestMarker fetches and decodes each candidate marker referrer and returns
 // the descriptor and decoded marker carrying the newest issuedOn. A blank or
 // unparseable issuedOn sorts oldest; the marker manifest digest is the
@@ -50,6 +71,28 @@ func IsNoMarker(err error) bool { return errors.Is(err, errNoMarker) }
 // fetch or decode are skipped; the last such error surfaces only when no marker
 // decoded at all.
 func LatestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []ocispec.Descriptor) (ocispec.Descriptor, deprecation.Marker, error) {
+	desc, marker, _, err := latestMarker(ctx, target, markers)
+	return desc, marker, err
+}
+
+// LatestMarkerFully is LatestMarker for a caller that keeps the answer until the
+// referrers change, and so must not keep one a passing failure shaped. It selects
+// the same marker, and returns a failure to read (IsUnread) instead wherever a
+// candidate marker's payload could not be fetched: the newest of the markers that
+// were read may then not be the newest attached. A marker that was fetched and does
+// not decode is still passed over, since reading it again decodes the same bytes
+// the same way.
+func LatestMarkerFully(ctx context.Context, target oras.ReadOnlyTarget, markers []ocispec.Descriptor) (ocispec.Descriptor, deprecation.Marker, error) {
+	desc, marker, unfetched, err := latestMarker(ctx, target, markers)
+	if unfetched != nil {
+		return ocispec.Descriptor{}, deprecation.Marker{}, unreadError{unfetched}
+	}
+	return desc, marker, err
+}
+
+// latestMarker is the one walk over candidate markers both readings share.
+// unfetched is the last payload fetch that failed, if any.
+func latestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []ocispec.Descriptor) (ocispec.Descriptor, deprecation.Marker, error, error) {
 	var (
 		bestDesc    ocispec.Descriptor
 		bestMarker  deprecation.Marker
@@ -57,11 +100,13 @@ func LatestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []oci
 		bestHasTime bool
 		found       bool
 		lastErr     error
+		unfetched   error
 	)
 	for _, mk := range markers {
 		payload, ferr := oci.FetchReferrerPayload(ctx, target, mk)
 		if ferr != nil {
 			lastErr = fmt.Errorf("fetch deprecation marker payload: %w", ferr)
+			unfetched = lastErr
 			continue
 		}
 		decoded, derr := deprecation.Unmarshal(payload)
@@ -76,11 +121,11 @@ func LatestMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []oci
 	}
 	if !found {
 		if lastErr != nil {
-			return ocispec.Descriptor{}, deprecation.Marker{}, lastErr
+			return ocispec.Descriptor{}, deprecation.Marker{}, unfetched, lastErr
 		}
-		return ocispec.Descriptor{}, deprecation.Marker{}, errNoMarker
+		return ocispec.Descriptor{}, deprecation.Marker{}, unfetched, errNoMarker
 	}
-	return bestDesc, bestMarker, nil
+	return bestDesc, bestMarker, unfetched, nil
 }
 
 // LaterMarker reports whether a candidate marker (aHasTime/aTime/aDigest) ranks
@@ -117,6 +162,12 @@ func LaterMarker(aHasTime bool, aTime time.Time, aDigest string, bHasTime bool, 
 // identities. Returns the no-signature sentinel for a marker with no signature at
 // all, and the verification error for one whose signature does not verify — so an
 // unsigned marker and an untrusted one stay distinguishable to the caller.
+//
+// Where no signature verifies and the answer is not known — the signature listing
+// could not be read, or a signature could not be fetched, or could not be judged
+// for a reason other than the bundle itself (as FindVerifiedSigner tells them
+// apart) — the error is a failure to read (IsUnread): the marker is not shown to
+// be untrusted, only not shown to be honored.
 func VerifyMarkerSignature(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -127,18 +178,19 @@ func VerifyMarkerSignature(
 ) (*lockfile.VerifiedSignature, error) {
 	sigRefs, err := oci.ListReferrers(ctx, target, markerDigest, signing.BundleMediaType)
 	if err != nil {
-		return nil, fmt.Errorf("list marker signature referrers: %w", err)
+		return nil, unreadError{fmt.Errorf("list marker signature referrers: %w", err)}
 	}
 	if len(sigRefs) == 0 {
 		return nil, signing.ErrNoSignatureFound()
 	}
 
 	markerPolicy := markerTrustPolicy(policy, origSigner)
-	var lastErr error
+	var lastErr, unanswered error
 	for _, ref := range sigRefs {
 		bundle, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		if ferr != nil {
 			lastErr = ferr
+			unanswered = ferr
 			continue
 		}
 		res, verr := pullverify.VerifyBundle(wsCfg, bundle, markerDigest, markerPolicy)
@@ -151,6 +203,12 @@ func VerifyMarkerSignature(
 			}, nil
 		}
 		lastErr = verr
+		if !doesNotVerify(bundle, verr) {
+			unanswered = verr
+		}
+	}
+	if unanswered != nil {
+		return nil, unreadError{unanswered}
 	}
 	if lastErr == nil {
 		lastErr = signing.ErrSignatureVerificationFailed()
@@ -170,7 +228,8 @@ func VerifyMarkerSignature(
 // honor one original signer. The index build has not, and it needs the same fact
 // for the same reason — a keyless registry honors a marker signed by the
 // artifact's own publisher, so without it a publisher withdrawing their own
-// artifact would go unhonored and the withdrawal would never be recorded.
+// artifact would go unhonored and the withdrawal would never be recorded. It reads
+// the fact through ReadArtifactSigner, which says when the read did not finish.
 //
 // Every step is best-effort and nil is a complete answer: it narrows the honored
 // signer set to the registry's configured deprecation identities rather than
@@ -183,16 +242,40 @@ func VerifiedArtifactSigner(
 	subjectRef string,
 	policy workspaceconfig.RegistryConfig,
 ) *pullverify.Result {
+	res, _ := ReadArtifactSigner(ctx, wsCfg, target, subjectRef, policy)
+	return res
+}
+
+// ReadArtifactSigner is VerifiedArtifactSigner for a caller that must know whether
+// the answer is complete. The signer is the same; err is non-nil, and a failure to
+// read (IsUnread), where the version could not be resolved or FindVerifiedSigner
+// could not finish the question. A caller judging a withdrawal against the honored
+// set reads it so that a set narrowed by a passing failure is not mistaken for one
+// that excludes the marker's signer.
+func ReadArtifactSigner(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	target oras.ReadOnlyTarget,
+	subjectRef string,
+	policy workspaceconfig.RegistryConfig,
+) (*pullverify.Result, error) {
 	// Referrers are listed against the subject REFERENCE, matching the discovery
 	// pass, while the signature is verified against the resolved MANIFEST digest,
 	// which is what a bundle commits to. The two are deliberately different inputs:
 	// listing by reference is what the sibling path does, and it does not require
 	// the target to resolve a bare digest.
 	digest, exists, err := oci.Resolve(ctx, target, subjectRef)
-	if err != nil || !exists {
-		return nil
+	if err != nil {
+		return nil, unreadError{err}
 	}
-	return VerifiedSignerAt(ctx, wsCfg, target, subjectRef, digest, policy)
+	if !exists {
+		return nil, nil
+	}
+	res, err := FindVerifiedSigner(ctx, wsCfg, target, subjectRef, digest, policy)
+	if err != nil {
+		return nil, unreadError{err}
+	}
+	return res, nil
 }
 
 // VerifiedSignerAt is VerifiedArtifactSigner for a caller that has already

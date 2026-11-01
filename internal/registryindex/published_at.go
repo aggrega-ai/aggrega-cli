@@ -54,9 +54,10 @@ func PublicationDate(ctx context.Context, target oras.ReadOnlyTarget, subjectRef
 // ReadPublicationDate is PublicationDate for a caller that must know whether the
 // answer is complete. The date and source are the same; err is non-nil where the
 // published-at referrers could not all be read (oci.ReadPublishedAtFully), and the
-// date returned beside it is then only the best of what was read. An index refresh
-// reads it so a version whose date read did not finish is read again on the next
-// refresh rather than kept with a date a passing failure chose.
+// date returned beside it is then only the best of what was read. The index walk
+// reads it so a version whose date read did not finish is never recorded with a
+// date a passing failure chose: nothing of its repository is recorded from that
+// walk.
 func ReadPublicationDate(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string, verified *pullverify.Result) (at, source string, err error) {
 	if verified != nil && !verified.LoggedAt.IsZero() {
 		return oci.FormatPublishedAt(verified.LoggedAt), PublishedAtFromTransparencyLog, nil

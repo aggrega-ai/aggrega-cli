@@ -58,6 +58,17 @@ published manifest. A repository with no conforming version is skipped; a
 repository that cannot be read is skipped with a note, so one unreadable
 repository does not abandon the whole index.
 
+A read the registry refuses or drops in passing — a 429 or 5xx answer, a
+connection reset or timed out, an answer cut short — is asked again a few times,
+with a growing wait between attempts, and where the registry says how long to
+wait (Retry-After) the wait is as long as it says. A repository with a read still
+failing after that is not recorded from this run: it keeps the record the index
+already holds for it, where that record was judged under the trust policy now in
+force, and is otherwise left out of the index; either way it is named as a
+repository that could not be read. So a version is never recorded unsigned,
+undated or without its deprecation marker because a read failed, with or without
+--upgrade.
+
 A registry whose repository listing repeats itself — naming a repository it has
 already named, or answering two pages in a row with no repository while still
 pointing to a next page — is not followed round again. That registry is reported
@@ -113,9 +124,10 @@ registry's trust policy reads every version again under the policy now in force,
 so does a repository whose entry in the index records none of these checks. An
 unchanged registry therefore costs one conditional request per repository and two
 small requests per version (three where a deprecation marker was judged), with
-nothing downloaded. A version whose reads did not all complete, or that carries a
-deprecation marker that was not honored, is read again on the next refresh, and so
-is every version of a registry that offers no way to revalidate attachments.
+nothing downloaded. A version is read again on the next refresh where it carries a
+deprecation marker that was not honored, or where this run got no way to
+revalidate its attachments — which, on a registry that offers none, is every
+version.
 
 Several repositories are read at a time. Everything the command records and prints
 comes out in repository order, so the index and the output are the same as reading

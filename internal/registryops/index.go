@@ -208,11 +208,16 @@ func (s remoteIndexSource) ConditionalReferrers(ctx context.Context, repo, diges
 // It is the one seam for every surface, so a test that points it somewhere
 // points it for the command line and the session alike, and the two cannot end
 // up driving different registries.
+//
+// Every read the source makes goes through readRetryingTransport, so a read the
+// registry refused or dropped in passing is asked again before the walk decides
+// anything from it.
 var IndexTarget = func(cfg workspaceconfig.Config, host string) (IndexSource, error) {
 	httpClient, err := egress.HTTPClient(cfg)
 	if err != nil {
 		return nil, err
 	}
+	httpClient = retryingReadClient(httpClient)
 	reg, err := oci.NewRemoteRegistry(host, httpClient)
 	if err != nil {
 		return nil, err
@@ -494,11 +499,16 @@ func updateHostIndex(
 	if err != nil {
 		return hu, err
 	}
-	var prior priorIndex
-	if !opts.Upgrade {
-		if prior, err = loadPriorIndex(root, cacheDir, host); err != nil {
+	// The prior index is loaded on every walk: a refresh compares against it, and
+	// every walk, a full re-read included, keeps a repository's earlier record when
+	// the repository cannot be read this time. A full re-read compares nothing with
+	// it, so a prior index the read hold refuses is, there, simply not kept from.
+	prior, err := loadPriorIndex(root, cacheDir, host)
+	if err != nil {
+		if !opts.Upgrade {
 			return hu, err
 		}
+		prior = priorIndex{}
 	}
 	// The host's own trust policy, resolved once for the whole walk: it decides
 	// which signers may withdraw a version of anything this host serves, so every
@@ -515,6 +525,7 @@ func updateHostIndex(
 		host:   host,
 		src:    src,
 		prior:  prior,
+		reuse:  !opts.Upgrade,
 	}
 	idx, err := buildHostIndex(ctx, hw, workers, &hu, notices)
 	if err != nil {
@@ -588,8 +599,9 @@ func loadPriorIndex(root, cacheDir, host string) (priorIndex, error) {
 
 // hostWalk is what every repository of one registry's walk is read against: the
 // workspace configuration, the host's resolved trust policy and its fingerprint,
-// the host, its index source, and the index the refresh compares against. It is
-// shared by the walk's workers and none of them changes it.
+// the host, its index source, the index already on disk, and whether the walk
+// keeps from that index what is unchanged (a refresh) or reads everything (a full
+// re-read). It is shared by the walk's workers and none of them changes it.
 type hostWalk struct {
 	wsCfg  workspaceconfig.Config
 	policy workspaceconfig.RegistryConfig
@@ -597,6 +609,30 @@ type hostWalk struct {
 	host   string
 	src    IndexSource
 	prior  priorIndex
+	reuse  bool
+}
+
+// unreadable settles a repository the walk could not read: one of its reads
+// failed, and still failed once asked again. Nothing this walk read of it is
+// recorded or reported — a record built around a read that failed would state the
+// failure as a fact about the repository: a version with no signature, no date or
+// no deprecation marker, or no repository at all. The repository keeps the record
+// the index already holds for it, with what was stored beside that record, where
+// that record was judged under the trust policy in force; a record judged under
+// another policy, or none, leaves the repository out of this index. Either way it
+// is named as a repository that could not be read, with the read that failed.
+func (hw *hostWalk) unreadable(w *repoWalk, repo, uri string, err error) {
+	w.notes = nil
+	w.text.Reset()
+	p, hasPrior := hw.prior.records[uri]
+	pr, hasRevalidation := hw.prior.revalidations[uri]
+	if !hasPrior || !hasRevalidation || pr.TrustPolicy != hw.trust {
+		w.skip(repo, err.Error())
+		return
+	}
+	w.rec, w.revalidation, w.ok = p, pr, true
+	w.skipped = &SkippedRepo{Repo: repo, Reason: err.Error()}
+	fmt.Fprintf(&w.text, "  could not read %s: %v; its earlier record is kept\n", repo, err)
 }
 
 // repoWalk is one repository's share of a host's walk: its record and the
@@ -729,28 +765,37 @@ func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpda
 // A verdict is therefore reused only where neither the version's bytes, nor
 // anything attached to it, nor the policy judging it changed — the same basis on
 // which a recorded verdict is trusted when the index is read. A version whose
-// reads did not all complete, or whose marker is present and not honored, stores
-// no validator and is read again on every refresh, so a failure that might pass
-// is never kept as though it were the answer. A registry serving no
+// marker is present and not honored stores no validator and is read again on
+// every refresh, since a signature attached to the marker later changes the
+// verdict without changing the version's referrers. A registry serving no
 // validators has every version read again on every refresh: nothing can then say
 // the version is unchanged. Without a prior index — the first build, or a full
 // read forced by the caller — every repository is read in full.
 //
+// 🔴 A read that fails is never taken as an answer. Every read goes through the
+// walk's retrying transport, which asks again where the registry refused or
+// dropped it in passing; a read still failing after that leaves the repository
+// unreadable (hostWalk.unreadable), never recorded with what the failure left out
+// — a version with no signer, no date or no marker, or a repository dropped from
+// the index. Only what the registry ANSWERED is recorded as absent: a listing that
+// names no signature, no marker, no tag.
+//
 // A repository with no strict-SemVer version is skipped silently (a deterministic
-// non-error). A repository that cannot be read — no per-repo target, a tag-list
-// failure, a version that no longer resolves, or a manifest read failure — is
-// skipped with a note so one unreadable repository does not abandon the walk,
-// mirroring the enumeration primitive's partial-on-error posture.
+// non-error). A repository the registry answers is not what the index can record —
+// a version that no longer resolves, or a manifest whose label map does not decode
+// — is skipped with a note, and so is one that cannot be read and has no earlier
+// record to keep, so one such repository does not abandon the walk, mirroring the
+// enumeration primitive's partial-on-error posture.
 func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
+	uri := "oci://" + hw.host + "/" + repo
 	target, err := hw.src.Repository(repo)
 	if err != nil {
-		w.skip(repo, err.Error())
+		hw.unreadable(w, repo, uri, err)
 		return
 	}
-	uri := "oci://" + hw.host + "/" + repo
 	p, hasPrior := hw.prior.records[uri]
 	pr, hasRevalidation := hw.prior.revalidations[uri]
-	reusable := hasPrior && hasRevalidation && pr.TrustPolicy == hw.trust && p.CoversVersions()
+	reusable := hw.reuse && hasPrior && hasRevalidation && pr.TrustPolicy == hw.trust && p.CoversVersions()
 
 	priorListing := ""
 	if reusable {
@@ -758,7 +803,7 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 	}
 	tags, listingDigest, notModified, truncated, err := hw.src.ConditionalTags(ctx, repo, priorListing)
 	if err != nil {
-		w.skip(repo, err.Error())
+		hw.unreadable(w, repo, uri, err)
 		return
 	}
 	var version string
@@ -775,7 +820,7 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 		if truncated {
 			tags, err = oci.ListTags(ctx, target)
 			if err != nil {
-				w.skip(repo, err.Error())
+				hw.unreadable(w, repo, uri, err)
 				return
 			}
 			listingDigest = ""
@@ -787,8 +832,13 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 		versions = oci.SortedSemverTags(tags)
 	}
 
-	digests, ok := resolveVersions(ctx, target, repo, versions, version, w)
-	if !ok {
+	digests, gone, err := resolveVersions(ctx, target, versions, version)
+	if err != nil {
+		hw.unreadable(w, repo, uri, err)
+		return
+	}
+	if gone != "" {
+		w.skip(repo, gone)
 		return
 	}
 	latest := slices.Index(versions, version)
@@ -801,7 +851,7 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 	} else {
 		annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
 		if err != nil {
-			w.skip(repo, err.Error())
+			hw.unreadable(w, repo, uri, err)
 			return
 		}
 		if rec, err = recordFromAnnotations(hw.host, repo, version, annotations); err != nil {
@@ -832,7 +882,11 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 			pv, vr, dep, kept = keepVersion(ctx, hw, repo, p, pr, v, digests[i])
 		}
 		if !kept {
-			pv, vr, dep = readVersion(ctx, hw, target, repo, v, digests[i], w)
+			var unread error
+			if pv, vr, dep, unread = readVersion(ctx, hw, target, repo, v, digests[i], w); unread != nil {
+				hw.unreadable(w, repo, uri, fmt.Errorf("version %s: %w", v, unread))
+				return
+			}
 		}
 		rec.Published = append(rec.Published, pv)
 		revalidation.Versions = append(revalidation.Versions, vr)
@@ -844,29 +898,27 @@ func indexRepo(ctx context.Context, hw *hostWalk, repo string, w *repoWalk) {
 }
 
 // resolveVersions resolves every version's tag to the manifest digest it names
-// now, in the order given. A version that cannot be resolved, or no longer
-// resolves, skips the whole repository rather than leaving a gap: a record
-// listing a version it gives no digest for would send a reader addressing
-// versions by digest to a version it cannot address.
-func resolveVersions(ctx context.Context, target oras.ReadOnlyTarget, repo string, versions []string, latest string, w *repoWalk) ([]string, bool) {
-	digests := make([]string, len(versions))
+// now, in the order given. A version that no longer resolves is the registry's
+// answer, and gone says which: the whole repository is skipped rather than
+// recorded with a gap, since a record listing a version it gives no digest for
+// would send a reader addressing versions by digest to a version it cannot
+// address. A resolve that fails is returned as the error: that is no answer.
+func resolveVersions(ctx context.Context, target oras.ReadOnlyTarget, versions []string, latest string) (digests []string, gone string, err error) {
+	digests = make([]string, len(versions))
 	for i, v := range versions {
-		d, exists, err := oci.Resolve(ctx, target, v)
-		if err != nil {
-			w.skip(repo, err.Error())
-			return nil, false
+		d, exists, rerr := oci.Resolve(ctx, target, v)
+		if rerr != nil {
+			return nil, "", rerr
 		}
 		if !exists {
 			if v == latest {
-				w.skip(repo, fmt.Sprintf("selected version %s no longer resolves", v))
-			} else {
-				w.skip(repo, fmt.Sprintf("version %s no longer resolves", v))
+				return nil, fmt.Sprintf("selected version %s no longer resolves", v), nil
 			}
-			return nil, false
+			return nil, fmt.Sprintf("version %s no longer resolves", v), nil
 		}
 		digests[i] = d
 	}
-	return digests, true
+	return digests, "", nil
 }
 
 // keepVersion decides whether one version's recorded signer, date and marker
@@ -917,25 +969,31 @@ func keepVersion(
 // before its signature is verified, so anything attached while the version is
 // being read changes a validator the next refresh compares against rather than
 // slipping in under one taken afterwards. Validators are stored only where every
-// read was answered.
+// validator was served and the marker, if any, was honored.
+//
+// unread is non-nil where a read the version's record rests on failed — the
+// signature walk, the publication date, or the deprecation judgement could not be
+// completed — and then nothing else it returns is to be recorded: it is what a
+// failure left, not what the version carries. A failed validator read is not one
+// of those: the version's record is complete, and with no validator stored it is
+// simply read again on the next refresh.
 func readVersion(
 	ctx context.Context,
 	hw *hostWalk,
 	target oras.ReadOnlyTarget,
 	repo, version, digest string,
 	w *repoWalk,
-) (registryindex.PublishedVersion, registryindex.VersionRevalidation, *registryindex.VersionDeprecation) {
+) (pv registryindex.PublishedVersion, vr registryindex.VersionRevalidation, dep *registryindex.VersionDeprecation, unread error) {
 	referrers, answered := currentReferrers(ctx, hw.src, repo, digest)
-	pv, perr := readPublishedVersion(ctx, hw.wsCfg, hw.policy, target, version, digest)
-	if perr != nil {
-		answered = false
+	pv, unread = readPublishedVersion(ctx, hw.wsCfg, hw.policy, target, version, digest)
+	if unread != nil {
+		return registryindex.PublishedVersion{}, registryindex.VersionRevalidation{}, nil, unread
 	}
-	vr := registryindex.VersionRevalidation{Version: version}
-	var dep *registryindex.VersionDeprecation
+	vr = registryindex.VersionRevalidation{Version: version}
 	if deprecationScanEnabled(hw.wsCfg, hw.policy) {
 		var note *DeprecationNote
 		var settled bool
-		dep, note, settled = collectVersionDeprecation(ctx, hw.wsCfg, hw.policy, target, repo, version, &w.text, func(markerDigest string) {
+		dep, note, settled, unread = collectVersionDeprecation(ctx, hw.wsCfg, hw.policy, target, repo, version, &w.text, func(markerDigest string) {
 			vr.MarkerDigest = markerDigest
 			var markerAnswered bool
 			vr.MarkerReferrers, markerAnswered = currentReferrers(ctx, hw.src, repo, markerDigest)
@@ -943,6 +1001,9 @@ func readVersion(
 				answered = false
 			}
 		})
+		if unread != nil {
+			return registryindex.PublishedVersion{}, registryindex.VersionRevalidation{}, nil, unread
+		}
 		if note != nil {
 			w.notes = append(w.notes, *note)
 		}
@@ -951,10 +1012,10 @@ func readVersion(
 		}
 	}
 	if !answered {
-		return pv, registryindex.VersionRevalidation{Version: version}, dep
+		return pv, registryindex.VersionRevalidation{Version: version}, dep, nil
 	}
 	vr.Referrers = referrers
-	return pv, vr, dep
+	return pv, vr, dep, nil
 }
 
 // referrersUnchanged asks the registry whether a digest's referrer listing is
@@ -1093,9 +1154,11 @@ func signerVerificationEnabled(wsCfg workspaceconfig.Config, policy workspacecon
 // than whichever signature the registry lists first.
 //
 // Every step stays best-effort: a referrer-listing, decode or verification failure
-// skips that version rather than failing the index build, mirroring the walk's
-// partial-on-error posture. A version with no honored marker contributes nothing, so
-// the slice is empty when no version is withdrawn or deprecated.
+// skips that version rather than failing the scan. The index walk does not read it
+// this way: it reads collectVersionDeprecation's failure to read and records nothing
+// of a repository whose marker could not be read. A version with no honored marker
+// contributes nothing, so the slice is empty when no version is withdrawn or
+// deprecated.
 //
 // A marker that is PRESENT but not honored is noted rather than dropped in silence.
 // Silence there would be the worst of the three outcomes: the operator would see an
@@ -1135,7 +1198,7 @@ func CollectVersionDeprecations(
 	var deprecations []registryindex.VersionDeprecation
 	var notes []DeprecationNote
 	for _, version := range versions {
-		dep, note, _ := collectVersionDeprecation(ctx, wsCfg, policy, target, repo, version, notices, nil)
+		dep, note, _, _ := collectVersionDeprecation(ctx, wsCfg, policy, target, repo, version, notices, nil)
 		if note != nil {
 			notes = append(notes, *note)
 		}
@@ -1152,11 +1215,20 @@ func CollectVersionDeprecations(
 // judgement, so the scan over a version list and an index refresh reading one
 // version again cannot come to judge a marker differently.
 //
-// answered is false where the referrer listing could not be read, where a marker
-// is present and could not be read, and where a marker is present and not
-// honored: none of those is an answer a later read could not change, since a
-// passing failure and a signature attached to the marker afterwards both turn into
-// a different verdict without the version's own referrers changing.
+// answered is false where a marker is present and not honored, and wherever the
+// judgement could not be completed: neither is an answer a later read could not
+// change, since a passing failure and a signature attached to the marker
+// afterwards both turn into a different verdict without the version's own
+// referrers changing.
+//
+// unread is non-nil where the judgement could not be completed because a read it
+// needed failed — the marker listing, a marker's payload, the marker's signatures,
+// or, on a keyless policy, the version's own signer that the honored set folds in —
+// and the verdict beside it is then no verdict: a withdrawal that could not be
+// read is not shown to be absent, and a caller that keeps what it records must not
+// record its absence. The note and the commentary say what they said before for a
+// marker that could not be read or not honored, so a caller reporting them reports
+// the same words.
 //
 // markerSelected, when non-nil, is called with the authoritative marker's digest
 // once it is chosen and before its signature is verified, so a caller can note
@@ -1170,35 +1242,52 @@ func collectVersionDeprecation(
 	repo, version string,
 	notices io.Writer,
 	markerSelected func(markerDigest string),
-) (dep *registryindex.VersionDeprecation, note *DeprecationNote, answered bool) {
+) (dep *registryindex.VersionDeprecation, note *DeprecationNote, answered bool, unread error) {
 	markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, false, fmt.Errorf("list deprecation markers: %w", err)
 	}
 	if len(markers) == 0 {
-		return nil, nil, true
+		return nil, nil, true, nil
 	}
-	markerDesc, marker, err := registryindex.LatestMarker(ctx, target, markers)
+	markerDesc, marker, err := registryindex.LatestMarkerFully(ctx, target, markers)
 	if err != nil {
 		fmt.Fprintf(notices, "  deprecation: %s:%s: marker present but not readable (%v); not recorded\n", repo, version, err)
-		return nil, &DeprecationNote{Repo: repo, Version: version, Reason: err.Error()}, false
+		note := &DeprecationNote{Repo: repo, Version: version, Reason: err.Error()}
+		if registryindex.IsUnread(err) {
+			return nil, note, false, err
+		}
+		return nil, note, false, nil
 	}
 	if markerSelected != nil {
 		markerSelected(markerDesc.Digest.String())
 	}
+	// The version's own signer joins the honored set only on a keyless policy with an
+	// anchor to verify it against; with no anchor no signature could verify, so it
+	// is not read and the set is the configured deprecation identities alone.
 	var origSigner *pullverify.Result
-	if policy.PublicKey == "" {
-		origSigner = registryindex.VerifiedArtifactSigner(ctx, wsCfg, target, version, policy)
+	var origUnread error
+	if policy.PublicKey == "" && signerVerificationEnabled(wsCfg, policy) {
+		origSigner, origUnread = registryindex.ReadArtifactSigner(ctx, wsCfg, target, version, policy)
 	}
 	signer, err := registryindex.VerifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
 	if err != nil {
 		fmt.Fprintf(notices, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
-		return nil, &DeprecationNote{Repo: repo, Version: version, Reason: err.Error()}, false
+		note := &DeprecationNote{Repo: repo, Version: version, Reason: err.Error()}
+		switch {
+		case registryindex.IsUnread(err):
+			return nil, note, false, err
+		case origUnread != nil:
+			// The honored set lacked the version's own signer only because reading it
+			// failed, so "not honored" is not known.
+			return nil, note, false, fmt.Errorf("read the version's own signer: %w", origUnread)
+		}
+		return nil, note, false, nil
 	}
 	fmt.Fprintf(notices, "  deprecation: %s:%s: marker present and honored; recorded as %s\n", repo, version, marker.Severity.StatedAs())
 	return &registryindex.VersionDeprecation{Version: version, Marker: marker, Signer: signer},
 		&DeprecationNote{Repo: repo, Version: version, Recorded: true, Severity: marker.Severity.StatedAs()},
-		true
+		true, nil
 }
 
 // deprecationScanEnabled reports whether this run examines a host's published

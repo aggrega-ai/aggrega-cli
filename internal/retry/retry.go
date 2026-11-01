@@ -4,19 +4,23 @@
 // Package retry calls an operation again when it fails in a way a later attempt
 // can succeed, with a small fixed budget and an exponential backoff.
 //
-// It holds the one retry loop the publication path uses. Which failures are worth
-// another attempt is not decided here: the caller passes the classifier, because
-// that answer belongs to whoever knows what the operation talks to.
+// It holds the one retry loop the publication path and the registry index walk
+// use. Which failures are worth another attempt is not decided here: the caller
+// passes the classifier, because that answer belongs to whoever knows what the
+// operation talks to.
 package retry
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
 // MaxAttempts bounds how many times Transient calls an operation before it
 // returns the operation's last error: the first call plus at most two retries.
-// A publication is a timeout-bounded job, so the budget is small and fixed.
+// A publication is a timeout-bounded job, so the budget is small and fixed; the
+// registry index walk reads under the same budget, so one bound says how often
+// any registry request is attempted.
 const MaxAttempts = 3
 
 // BaseDelay is the first backoff interval; each later retry doubles it, so an
@@ -33,6 +37,13 @@ var BaseDelay = 500 * time.Millisecond
 // timeout-bounded job's budget. A transient error is followed by a backoff and
 // another call. After the last attempt the last error is returned unwrapped, so
 // the caller's own wrapping applies to the underlying failure.
+//
+// A transient error that says how long the party that refused asked to be left
+// alone — an error carrying a RetryAfter method, as one built from an HTTP
+// Retry-After header does — is waited out for that long where it is longer than
+// the backoff. The request is not shortened by any cap: a party asked to be left
+// alone is left alone for as long as it asked, and the caller's context is what
+// bounds the wait.
 //
 // A context that is cancelled or past its deadline during a backoff ends the
 // wait at once: Transient returns the context's error rather than sleeping out
@@ -52,7 +63,12 @@ func Transient[T any](ctx context.Context, fn func() (T, error), transient func(
 		if attempt == MaxAttempts-1 {
 			break
 		}
-		timer := time.NewTimer(BaseDelay << attempt)
+		delay := BaseDelay << attempt
+		var asked interface{ RetryAfter() time.Duration }
+		if errors.As(err, &asked) && asked.RetryAfter() > delay {
+			delay = asked.RetryAfter()
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()

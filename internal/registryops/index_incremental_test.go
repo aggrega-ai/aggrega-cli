@@ -62,6 +62,7 @@ type validatingRegistry struct {
 	referrers map[string][]ocispec.Descriptor // keyed "<repo>@<subject digest>"
 	failTags  map[string]bool                 // repositories whose tag listing fails
 	slowTags  map[string]time.Duration        // repositories whose tag listing is delayed
+	faults    []*readFault                    // reads the registry fails in passing or for good
 }
 
 func newValidatingRegistry(t *testing.T) *validatingRegistry {
@@ -137,6 +138,9 @@ const (
 )
 
 func (r *validatingRegistry) serve(w http.ResponseWriter, req *http.Request) {
+	if r.injectFault(w, req) {
+		return
+	}
 	path := req.URL.Path
 	switch {
 	case path == "/v2/_catalog":
