@@ -13,7 +13,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -155,9 +154,8 @@ type Written struct {
 // and one the bundle carries no example under, is refused as a page the bundle
 // does not carry (docscache.ErrPageNotFound).
 func (e *Examples) Write(name, dir string) (Written, error) {
-	if !pathsegment.Valid(name) {
-		return Written{}, fmt.Errorf("%q is not an example name — an example is named by its one directory name, "+
-			"as the list of examples prints it: %w", name, docscache.ErrPageNotFound())
+	if err := CheckName(name); err != nil {
+		return Written{}, err
 	}
 	if dir == "" {
 		dir = name

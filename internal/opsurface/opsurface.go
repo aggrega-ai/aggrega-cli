@@ -220,7 +220,11 @@ var operations = []Operation{
 	{"explain-error", ReachNone, "Explain a diagnostic a build emitted, and what to change."},
 	// The drafting layer touches no filesystem: what it returns is a document to
 	// write, and where that goes is the caller's decision rather than this
-	// operation's effect.
+	// operation's effect. The example form widens it: a call that writes one of
+	// the documentation's runnable examples writes a new directory inside the
+	// workspace, and each surface carrying that form says so beside its own
+	// record — the command line's class for the command, the tool's widening by
+	// its arguments.
 	{"scaffold-entity", ReachNone, "Generate a minimal starter skeleton for an entity kind from its schema."},
 	{"describe-capabilities", ReachNone, "Reveal the tool definitions the default listing withholds."},
 }

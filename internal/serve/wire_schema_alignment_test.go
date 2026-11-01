@@ -302,6 +302,7 @@ func wireSubjects() []wireSubject {
 		{name: "resolveResult", typ: reflect.TypeOf(resolveResult{}), def: "#/$defs/ResolveResult"},
 		{name: "scaffoldEntityParams", typ: reflect.TypeOf(scaffoldEntityParams{}), def: "#/$defs/ScaffoldEntityParams"},
 		{name: "scaffoldEntityResult", typ: reflect.TypeOf(scaffoldEntityResult{}), def: "#/$defs/ScaffoldEntityResult"},
+		{name: "scaffoldExample", typ: reflect.TypeOf(scaffoldExample{}), def: "#/$defs/ScaffoldExample"},
 		{name: "serverCapabilities", typ: reflect.TypeOf(serverCapabilities{}), def: "#/$defs/ServerCapabilities"},
 		{name: "setActiveReleaseParams", typ: reflect.TypeOf(setActiveReleaseParams{}), def: "#/$defs/SetActiveReleaseParams"},
 		{name: "signArtifactsParams", typ: reflect.TypeOf(signArtifactsParams{}), def: "#/$defs/SignArtifactsParams"},

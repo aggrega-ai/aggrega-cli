@@ -17,13 +17,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // Member is one entry of a bundle's archive.
@@ -119,6 +123,61 @@ func NewSigner(t testing.TB) *Signer {
 // pin.
 func (s *Signer) PublicKeyPEM() []byte {
 	return s.signer.PublicKeyPEM()
+}
+
+// ExampleReadme is the page of the example ExampleMembers carries as demo: a
+// header, a shell block before the Build section that is not a next command, and
+// the Build section's own block.
+const ExampleReadme = "---\nexample:\n  level: start\n---\n\n# Demo\n\nA demo example.\n\n" +
+	"```sh\nnot a next command\n```\n\n## Build\n\n```sh\n# Compose\naggrega build --release release-compose.yaml --auto-pull\n```\n\n" +
+	"## Notes\n"
+
+// ExampleNext is the Build section's block of ExampleReadme, line by line: the
+// next commands an example written from it reports.
+var ExampleNext = []string{"# Compose", "aggrega build --release release-compose.yaml --auto-pull"}
+
+// ExampleFiles are the files of the demo example ExampleMembers carries, by name
+// relative to the example's directory, each with its content.
+var ExampleFiles = map[string]string{
+	"README.md":            ExampleReadme,
+	"aggregate.yaml":       "kind: Aggregate\n",
+	"release-compose.yaml": "kind: Release\n",
+}
+
+// ExampleMembers is a documentation bundle carrying the list of examples — which
+// names demo twice, under a product and under a capability, as the published list
+// does — and two examples, demo and other, with extra appended after them.
+func ExampleMembers(extra ...Member) []Member {
+	return append([]Member{
+		{Name: "language-reference/examples/by-product-and-capability.md", Body: "# Examples by product and capability\n\n" +
+			"## By product\n\n### `core/x`\n\n" +
+			"- [demo](demo/README.md) (`start`) — A demo example.\n" +
+			"- [other](other/README.md) (`intermediate`) — Another example.\n\n" +
+			"## By capability\n\n### `credentials`\n\n" +
+			"- [demo](demo/README.md) (`start`) — A demo example.\n"},
+		{Name: "language-reference/examples/demo/README.md", Body: ExampleReadme},
+		{Name: "language-reference/examples/demo/aggregate.yaml", Body: ExampleFiles["aggregate.yaml"]},
+		{Name: "language-reference/examples/demo/release-compose.yaml", Body: ExampleFiles["release-compose.yaml"]},
+		{Name: "language-reference/examples/other/README.md", Body: "# Other\n\nAnother example.\n"},
+	}, extra...)
+}
+
+// WriteTrustingWorkspace writes into dir the configuration of a workspace whose
+// default registry is host and whose policy for it requires a signature verifying
+// under trusted's key.
+func WriteTrustingWorkspace(t testing.TB, dir, host string, trusted *Signer) {
+	t.Helper()
+	var key strings.Builder
+	for _, line := range strings.Split(strings.TrimSpace(string(trusted.PublicKeyPEM())), "\n") {
+		key.WriteString("      " + line + "\n")
+	}
+	config := "default_registry: " + host + "\nworkspace: {}\nregistries:\n" +
+		"  - host: " + host + "\n" +
+		"    signing:\n      required: true\n" +
+		"    public_key: |\n" + key.String()
+	if err := os.WriteFile(filepath.Join(dir, workspaceconfig.ConfigFilename), []byte(config), 0o644); err != nil {
+		t.Fatalf("write the workspace configuration: %v", err)
+	}
 }
 
 // Publish publishes bundle as the documentation bundle at version and, where by

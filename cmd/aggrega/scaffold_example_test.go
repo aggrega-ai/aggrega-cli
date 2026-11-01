@@ -44,25 +44,12 @@ const exampleRegistryHost = "examples.example.invalid"
 // exampleDemoReadme is the page of the example the cases write out: a header, a
 // shell block before the Build section that is not the next commands, and the
 // Build section's own block.
-const exampleDemoReadme = "---\nexample:\n  level: start\n---\n\n# Demo\n\nA demo example.\n\n" +
-	"```sh\nnot a next command\n```\n\n## Build\n\n```sh\n# Compose\naggrega build --release release-compose.yaml --auto-pull\n```\n\n" +
-	"## Notes\n"
+const exampleDemoReadme = docsbundletest.ExampleReadme
 
 // exampleMembers is a documentation bundle carrying the list of examples and two
 // examples, with extra appended after them.
 func exampleMembers(extra ...docsbundletest.Member) []docsbundletest.Member {
-	return append([]docsbundletest.Member{
-		{Name: "language-reference/examples/by-product-and-capability.md", Body: "# Examples by product and capability\n\n" +
-			"## By product\n\n### `core/x`\n\n" +
-			"- [demo](demo/README.md) (`start`) — A demo example.\n" +
-			"- [other](other/README.md) (`intermediate`) — Another example.\n\n" +
-			"## By capability\n\n### `credentials`\n\n" +
-			"- [demo](demo/README.md) (`start`) — A demo example.\n"},
-		{Name: "language-reference/examples/demo/README.md", Body: exampleDemoReadme},
-		{Name: "language-reference/examples/demo/aggregate.yaml", Body: "kind: Aggregate\n"},
-		{Name: "language-reference/examples/demo/release-compose.yaml", Body: "kind: Release\n"},
-		{Name: "language-reference/examples/other/README.md", Body: "# Other\n\nAnother example.\n"},
-	}, extra...)
+	return docsbundletest.ExampleMembers(extra...)
 }
 
 // exampleFixture is one case's registry, workspace and cache.
@@ -79,18 +66,7 @@ func newExampleFixture(t *testing.T, members []docsbundletest.Member, signer, tr
 	t.Helper()
 	f := &exampleFixture{ws: t.TempDir(), cacheRoot: t.TempDir(), reg: docsbundletest.NewRegistry()}
 	f.reg.Publish(t, provenanceCompilerVersion(), docsbundletest.Bundle(t, members), signer)
-
-	var key strings.Builder
-	for _, line := range strings.Split(strings.TrimSpace(string(trusted.PublicKeyPEM())), "\n") {
-		key.WriteString("      " + line + "\n")
-	}
-	config := "default_registry: " + exampleRegistryHost + "\nworkspace: {}\nregistries:\n" +
-		"  - host: " + exampleRegistryHost + "\n" +
-		"    signing:\n      required: true\n" +
-		"    public_key: |\n" + key.String()
-	if err := os.WriteFile(filepath.Join(f.ws, workspaceconfig.ConfigFilename), []byte(config), 0o644); err != nil {
-		t.Fatalf("write the workspace configuration: %v", err)
-	}
+	docsbundletest.WriteTrustingWorkspace(t, f.ws, exampleRegistryHost, trusted)
 	return f
 }
 

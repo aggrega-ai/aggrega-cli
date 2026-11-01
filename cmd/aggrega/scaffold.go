@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -80,7 +79,11 @@ func newScaffoldCmd() *cobra.Command {
 			"example is written only from a copy already cached on this machine.\n\n" +
 			"An example's files are written only as files and directories inside the directory " +
 			"named: a bundle carrying an entry that would land outside it, or a link, is refused " +
-			"whole and nothing is written.",
+			"whole and nothing is written.\n\n" +
+			"The scaffold tool that aggrega mcp exposes, and the editor's language server that " +
+			"aggrega serve runs, write and list the examples on the same terms, with the directory " +
+			"named relative to the workspace root, and answer with the files written and these same " +
+			"commands.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			switch {
 			case list && !example:
@@ -155,9 +158,8 @@ func openExamples(ctx context.Context, notes io.Writer, version string) (*exampl
 	if err != nil {
 		return nil, err
 	}
-	if examples.Version != examples.Requested {
-		fmt.Fprintf(notes, "note: no documentation is published for %s; the examples are read from the "+
-			"documentation published for %s, the newest before it\n", examples.Requested, examples.Version)
+	if note := examples.Note(); note != "" {
+		fmt.Fprintf(notes, "note: %s\n", note)
 	}
 	return examples, nil
 }
@@ -174,12 +176,8 @@ func listExamples(ctx context.Context, out, notes io.Writer, version string) err
 		return fmt.Errorf("the documentation bundle %s@%s carries no readable list of examples: %w",
 			examples.Ref, examples.Version, err)
 	}
-	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "EXAMPLE\tLEVEL\tDESCRIPTION")
-	for _, e := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Name, e.Level, e.Summary)
-	}
-	return tw.Flush()
+	_, err = io.WriteString(out, exampleops.ListReport(list))
+	return err
 }
 
 // writeExample writes the example name into dir — a directory named after it in
@@ -197,23 +195,6 @@ func writeExample(ctx context.Context, out, notes io.Writer, version, name, dir 
 		}
 		return err
 	}
-	files := "files"
-	if len(written.Files) == 1 {
-		files = "file"
-	}
-	fmt.Fprintf(out, "Wrote the example %s into %s (%d %s).\n\nNext:\n\n  cd %s\n",
-		written.Name, written.Dir, len(written.Files), files, written.Dir)
-	if len(written.Next) == 0 {
-		fmt.Fprintf(out, "\nIts page, %s/README.md, says how to build it.\n", written.Dir)
-		return nil
-	}
-	for _, line := range written.Next {
-		if line == "" {
-			fmt.Fprintln(out)
-			continue
-		}
-		fmt.Fprintf(out, "  %s\n", line)
-	}
-	fmt.Fprintf(out, "\nIts page, %s/README.md, explains what it shows.\n", written.Dir)
-	return nil
+	_, err = io.WriteString(out, written.Report())
+	return err
 }

@@ -1272,6 +1272,7 @@ func hostLocationEveryTool() []hostLocationTool {
 		{tool: "scaffold", calls: []hostLocationCall{
 			{scenario: "a kind", args: map[string]any{"kind": "component", "name": "fixture/misc/scaffolded-q7x3"}},
 			{scenario: "an unknown kind is refused", args: map[string]any{"kind": "bogus-q7x3"}},
+			{scenario: "a kind beside an example is refused", args: map[string]any{"kind": "component", "example": "demo-q7x3"}},
 		}},
 		{tool: "describe-capabilities", calls: []hostLocationCall{
 			{scenario: "the index", args: map[string]any{}, bytesOnly: byDefinition},

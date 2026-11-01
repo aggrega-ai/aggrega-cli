@@ -186,6 +186,18 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"scaffold", "a kind and a seed name", `{"kind":"component","name":"api"}`, true},
 		{"scaffold", "no kind", `{}`, false},
 		{"scaffold", "a blank kind", `{"kind":""}`, false},
+		// scaffold's example form: an example to write, with or without its
+		// directory, or the list. Fields of two forms sent together are admitted by
+		// the schema and refused by the tool itself, in the words every surface
+		// taking these fields refuses them in.
+		{"scaffold", "an example", `{"example":"redis-cache"}`, true},
+		{"scaffold", "an example and its directory", `{"example":"redis-cache","dir":"apps/cache"}`, true},
+		{"scaffold", "the list of examples", `{"list":true}`, true},
+		{"scaffold", "list explicitly false, and nothing else", `{"list":false}`, false},
+		{"scaffold", "a blank example", `{"example":""}`, false},
+		{"scaffold", "a blank directory", `{"example":"redis-cache","dir":""}`, false},
+		{"scaffold", "a directory alone", `{"dir":"apps/cache"}`, false},
+		{"scaffold", "a kind beside an example, refused by the tool itself", `{"kind":"component","example":"redis-cache"}`, true},
 		{"build", "a Release", `{"release":"r.yaml"}`, true},
 		{"build", "no Release", `{}`, false},
 		{"build", "a blank Release", `{"release":""}`, false},
