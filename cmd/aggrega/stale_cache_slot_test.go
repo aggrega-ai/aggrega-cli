@@ -223,7 +223,9 @@ spec:
 
 // staleSlotRun is what one command over the fixture returned and wrote: its
 // error, its diagnostic and status streams, and what the run wrote to the
-// process's standard error, which is where the catalog view's notices go.
+// process's standard error. A build shows the catalog view's notices on the
+// diagnostic writer it is handed; the pull command shows them on the process's
+// standard error.
 type staleSlotRun struct {
 	err    error
 	diag   string
@@ -340,7 +342,8 @@ var staleSlotMappingKeys = []struct {
 // held it: the pull pins the catalog directory's body, and its own discovery
 // render then meets the slot.
 func TestAStaleCacheSlotIsPassedOverForTheCatalogDirectoryHoldingThePin(t *testing.T) {
-	// Not parallel: the notices it asserts are written to the process stderr, which it reads by replacing that stream.
+	// Not parallel: it reads the process's standard error by replacing that stream —
+	// the pull's notice is shown there, and the build's must not be.
 	for _, row := range staleSlotMappingKeys {
 		t.Run(row.name, func(t *testing.T) {
 			f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: row.key, shadowed: true, config: "offline: true\n"})
@@ -369,8 +372,11 @@ func TestAStaleCacheSlotIsPassedOverForTheCatalogDirectoryHoldingThePin(t *testi
 			if build.err != nil {
 				t.Fatalf("the build refused a stale slot the catalog directory holding the pinned bytes outranks: %v\n%s%s", build.err, build.diag, build.stderr)
 			}
-			if !strings.Contains(build.stderr, f.skipNotice()) || !strings.Contains(build.stderr, wantHolder) {
-				t.Errorf("the build did not name the stale slot it passed over; want %q … %q in:\n%s", f.skipNotice(), wantHolder, build.stderr)
+			if !strings.Contains(build.diag, f.skipNotice()) || !strings.Contains(build.diag, wantHolder) {
+				t.Errorf("the build did not name the stale slot it passed over; want %q … %q in:\n%s", f.skipNotice(), wantHolder, build.diag)
+			}
+			if strings.Contains(build.stderr, f.skipNotice()) {
+				t.Errorf("the build wrote its notice to the process's standard error rather than to the writer it was handed:\n%s", build.stderr)
 			}
 			rendered := readDistTree(t, filepath.Join(f.root, "dist"))
 			if !strings.Contains(rendered, staleSlotPinnedImage) {
@@ -558,8 +564,9 @@ func TestAPinNoSourceHoldsHaltsNamingEverySourceItRead(t *testing.T) {
 // build and the pull all complete offline, the build renders the pinned body, and
 // no command reports the slot as one it passed over.
 func TestACacheSlotHoldingThePinStillStandsInForARemovedEntity(t *testing.T) {
-	// Not parallel: it asserts what the build writes to the process stderr, which it reads by replacing that stream.
-	// The laid slot stands in for a hub fetch that recorded no signature.
+	// Not parallel: it reads the process's standard error by replacing that stream,
+	// because the build's notices must reach neither the writer it is handed nor
+	// that stream. The laid slot stands in for a hub fetch that recorded no signature.
 	f := writeStaleSlotFixture(t, staleSlotOptions{mappingKey: staleSlotEntry, config: "offline: true\n" + fakeRegistryTrust})
 	if seed := f.pull(t, false, nil); seed.err != nil {
 		t.Fatalf("seed pull: %v\n%s", seed.err, seed.diag)
@@ -576,8 +583,8 @@ func TestACacheSlotHoldingThePinStillStandsInForARemovedEntity(t *testing.T) {
 	if build.err != nil {
 		t.Fatalf("the build refused a slot holding the pinned bytes: %v\n%s%s", build.err, build.diag, build.stderr)
 	}
-	if strings.Contains(build.stderr, "passed over") {
-		t.Errorf("the build passed over a slot holding the pinned bytes:\n%s", build.stderr)
+	if strings.Contains(build.diag+build.stderr, "passed over") {
+		t.Errorf("the build passed over a slot holding the pinned bytes:\n%s%s", build.diag, build.stderr)
 	}
 	if rendered := readDistTree(t, filepath.Join(f.root, "dist")); !strings.Contains(rendered, staleSlotPinnedImage) {
 		t.Errorf("the build did not render the pinned body (%q); got:\n%s", staleSlotPinnedImage, rendered)

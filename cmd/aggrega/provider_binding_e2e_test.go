@@ -320,6 +320,11 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 // capability no Recipe in this Release uses — a binding another Release in the
 // workspace would read — which must be reported as nothing.
 //
+// Each command reports on the diagnostic writer it is handed, so that is where
+// every row reads the report. The process's own standard error is read as well,
+// and must carry none of it: a report written there instead would reach whoever
+// launched a long-running process rather than the caller that asked.
+//
 // Not parallel: it mutates the process-global terminal seam and redirects the
 // process diagnostic stream.
 func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
@@ -363,14 +368,20 @@ func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
 			}
 
 			var buildErr error
+			var buildDiag bytes.Buffer
 			buildStderr := captureStderr(t, func() {
-				buildErr = dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, rootedBuildOptions(t, root, buildops.RunOptions{}), io.Discard, io.Discard)
+				buildErr = dispatchBuildWithDiag(context.Background(), rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, rootedBuildOptions(t, root, buildops.RunOptions{}), &buildDiag, io.Discard)
 			})
 			var validateErr error
 			var diag, out bytes.Buffer
 			validateStderr := captureStderr(t, func() {
 				validateErr = validateRelease(context.Background(), rw, releasePath, catDirs, compilerops.VerbosityDetailed, false, false, &diag, &out)
 			})
+			for surface, stream := range map[string]string{"build": buildStderr, "validate": validateStderr} {
+				if strings.Contains(stream, advisory.Error()) || strings.Contains(stream, halt.Error()) {
+					t.Errorf("%s: the binding was reported on the process's standard error rather than on the writer the command was handed:\n%s", surface, stream)
+				}
+			}
 
 			switch {
 			case tc.halts:
@@ -393,7 +404,7 @@ func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
 				if validateErr != nil {
 					t.Fatalf("validate: an advisory must not fail validation; got %v\n%s", validateErr, diag.String())
 				}
-				for surface, stream := range map[string]string{"build": buildStderr, "validate": validateStderr} {
+				for surface, stream := range map[string]string{"build": buildDiag.String(), "validate": diag.String()} {
 					if !strings.Contains(stream, "warning: "+advisory.Error()) || !strings.Contains(stream, `"hlem", which is one edit from "helm"`) {
 						t.Errorf("%s: the warning must carry the condition's sentence and the near miss; got:\n%s", surface, stream)
 					}
@@ -405,7 +416,7 @@ func TestProviderBinding_JudgedWhetherOrNotARecipeConsultsIt(t *testing.T) {
 				if validateErr != nil {
 					t.Fatalf("validate: a legal binding failed validation: %v\n%s", validateErr, diag.String())
 				}
-				for surface, stream := range map[string]string{"build": buildStderr, "validate": validateStderr + diag.String()} {
+				for surface, stream := range map[string]string{"build": buildDiag.String(), "validate": diag.String()} {
 					if strings.Contains(stream, advisory.Error()) || strings.Contains(stream, halt.Error()) {
 						t.Errorf("%s: a legal binding was reported:\n%s", surface, stream)
 					}
