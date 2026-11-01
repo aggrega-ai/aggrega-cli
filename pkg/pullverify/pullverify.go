@@ -411,7 +411,7 @@ func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, pol
 		bundleBytes, ferr := oci.FetchReferrerPayload(ctx, target, ref)
 		candidates = append(candidates, candidate{bundle: bundleBytes, err: ferr})
 	}
-	return earliestVerified(cfg, e, candidates, policy, keylessAnchor)
+	return earliestVerified(cfg, e, candidates, policy, keylessAnchorContext(ctx))
 }
 
 // candidate is one signature an artifact carries, as it was obtained: its bundle
@@ -498,12 +498,12 @@ func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest
 // refusals are VerifyBundle's own; only where the live root comes from differs,
 // and under a context carrying no shared root, not even that.
 func VerifyBundleWithin(ctx context.Context, cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
-	return verifyBundle(cfg, bundleBytes, artifactDigest, policy, keylessAnchorWithin(ctx))
+	return verifyBundle(cfg, bundleBytes, artifactDigest, policy, keylessAnchorContext(ctx))
 }
 
 // verifyBundle is [VerifyBundle] building its keyless trust anchor with anchor: a
 // read of kept bundles passes the one its [HeldRoot] builds, a verification made
-// under a context passes the one keylessAnchorWithin builds for it, and every
+// under a context passes the one keylessAnchorContext builds for it, and every
 // other verification passes keylessAnchor.
 func verifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig, anchor anchorFor) (*Result, error) {
 	digest := blobDigest(bundleBytes)
@@ -604,17 +604,20 @@ type anchorFor func(cfg workspaceconfig.Config, policy workspaceconfig.RegistryC
 // before any dial. An air-gapped deployment pins a trusted_root and never
 // reaches the live branch; the pinned-root branch and the verification logic
 // that consumes either anchor are fully exercised offline.
+//
+// It is keylessAnchorContext for a verification whose caller holds no context.
 func keylessAnchor(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
-	return keylessAnchorWithin(context.Background())(cfg, policy)
+	return keylessAnchorContext(context.Background())(cfg, policy)
 }
 
-// keylessAnchorWithin is keylessAnchor for a verification made under ctx: the
+// keylessAnchorContext is keylessAnchor for a verification made under ctx: the
 // pinned trust root is read exactly as keylessAnchor reads it, and the live one is
 // taken through livetrust.TrustedRootWithin, which shares one fetch among the
 // verifications under a context carrying a shared root and otherwise fetches as
 // livetrust.TrustedRoot does — so under a context carrying none, it is
-// keylessAnchor.
-func keylessAnchorWithin(ctx context.Context) anchorFor {
+// keylessAnchor. Only the shared root is read from ctx: cancelling ctx neither
+// ends a fetch under way nor refuses one about to start.
+func keylessAnchorContext(ctx context.Context) anchorFor {
 	return func(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
 		if policy.TrustedRoot != "" {
 			return signing.TrustedMaterialFromRootPath(policy.TrustedRoot)
