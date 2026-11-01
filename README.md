@@ -25,7 +25,7 @@ binary.
 `curl -fsSL https://aggrega.ai/install.sh | sh` on Linux and macOS, or
 `irm https://aggrega.ai/install.ps1 | iex` in PowerShell on Windows, installs the
 `aggrega` binary for the current user.
-[Setup](https://aggrega.ai/docs/authoring/setup/#install-the-binary) covers what
+[Install Aggrega](https://aggrega.ai/docs/install/#install-the-binary) covers what
 the command does, the manual download, and connecting an AI assistant.
 
 ## Use it with your AI assistant
@@ -33,9 +33,9 @@ the command does, the manual download, and connecting an AI assistant.
 An assistant that can run commands on your machine can install Aggrega, add the
 Aggrega skill to itself and connect itself to the Aggrega MCP server, from one
 prompt you paste into it:
-[Use Aggrega from your AI assistant](https://aggrega.ai/docs/authoring/ai-assistant/)
+[Set up Aggrega with your AI assistant](https://aggrega.ai/docs/ai-assistants/set-up/)
 gives the prompt. To connect a client yourself, follow
-[Connect an MCP client](https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client).
+[Connect an MCP client](https://aggrega.ai/docs/install/#connect-an-mcp-client).
 
 ## Use it in your editor
 

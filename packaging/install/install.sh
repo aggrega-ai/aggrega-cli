@@ -456,7 +456,7 @@ next_steps() {
     printf '    aggrega skills install --global\n'
   fi
   printf '  Connect your AI client to the Aggrega MCP server, as this page describes:\n'
-  printf '    https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client\n'
+  printf '    https://aggrega.ai/docs/install/#connect-an-mcp-client\n'
   printf '\n'
 }
 

@@ -12,10 +12,10 @@ import (
 	"strings"
 )
 
-// SetupPage is the published page that says how to connect an assistant to the
-// aggrega MCP server, which is the route for an assistant no skill folder is
-// known for.
-const SetupPage = "https://aggrega.ai/docs/authoring/setup/"
+// SetupPage is the published page that says how to install aggrega and connect
+// an assistant to its MCP server, which is the route for an assistant no skill
+// folder is known for.
+const SetupPage = "https://aggrega.ai/docs/install/"
 
 // InstallRequest is what one installation writes.
 type InstallRequest struct {

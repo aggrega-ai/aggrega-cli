@@ -3,7 +3,7 @@
 `mcpb/` holds the source of an installable MCP bundle for Aggrega. Its `manifest.json` describes a
 Model Context Protocol server as a single file that a client installs and adds from its own extension
 settings, which is how some clients take a local server. The client table on the
-[setup page](https://aggrega.ai/docs/authoring/setup/#where-each-client-keeps-its-server-list) says
+[MCP server page](https://aggrega.ai/docs/ai-assistants/mcp-server/#where-each-client-keeps-its-server-list) says
 which clients take it this way and how every other client connects.
 
 **The bundle carries no Aggrega program.** It launches the `aggrega` executable already installed on

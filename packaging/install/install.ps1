@@ -305,7 +305,7 @@ param([switch]$Completion, [switch]$Skills)
             Write-Host '    aggrega skills install --global'
         }
         Write-Host '  Connect your AI client to the Aggrega MCP server, as this page describes:'
-        Write-Host '    https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client'
+        Write-Host '    https://aggrega.ai/docs/install/#connect-an-mcp-client'
         Write-Host ''
     }
 

@@ -311,7 +311,7 @@ func repositoryReadme() ([]byte, error) {
 		fmt.Fprintf(&b, "| `%s` | %s | `%s` | `~/%s` |\n", a.ID, a.Name, a.ProjectDir, a.UserDir)
 	}
 	b.WriteString("\nAn assistant that is not listed can still use Aggrega through its MCP server: connect it to\n")
-	b.WriteString("`aggrega mcp` as [the setup page](" + SetupPage + ") describes.\n\n")
+	b.WriteString("`aggrega mcp` as [the install page](" + SetupPage + ") describes.\n\n")
 	b.WriteString("## Where these files come from\n\n")
 	b.WriteString("Every file in this repository is generated from the skills built into the `aggrega` binary,\n")
 	b.WriteString("whose source is [aggrega-ai/aggrega-cli](https://github.com/aggrega-ai/aggrega-cli), and a\n")
