@@ -29,32 +29,64 @@ type Agent struct {
 	// assistant reads the user's own skills from in every project,
 	// slash-separated.
 	UserDir string
+
+	// ConfigDir is the folder, relative to the user's home directory and
+	// slash-separated, that the assistant keeps its own configuration in. Its
+	// presence is one of the two signs [Detect] reads the assistant as installed
+	// by. It is empty where no such folder belongs to this assistant alone.
+	ConfigDir string
+
+	// Command is the name of the program the assistant installs on PATH. Its
+	// presence there is the other sign [Detect] reads. It is empty where the
+	// assistant installs no command of its own.
+	Command string
 }
 
 // agents are the assistants this package installs skills for, ordered by ID.
 //
-// Each folder is the one the assistant's own documentation names. Where an
-// assistant documents a folder of its own beside the shared .agents/skills, the
-// row takes the assistant's own, so a skill installed for one assistant is not
-// also picked up by every other assistant reading the shared folder; a row takes
-// the shared folder where it is the only one the assistant documents for that
-// scope, or the one it recommends. An assistant whose documentation names no
-// skill folder has no row: its users connect it to the aggrega MCP server
+// Each skill folder is the one the assistant's own documentation names. Where
+// an assistant documents a folder of its own beside the shared .agents/skills,
+// the row takes the assistant's own, so a skill installed for one assistant is
+// not also picked up by every other assistant reading the shared folder; a row
+// takes the shared folder where it is the only one the assistant documents for
+// that scope, or the one it recommends. An assistant whose documentation names
+// no skill folder has no row: its users connect it to the aggrega MCP server
 // instead, which every listed assistant can reach as well.
+//
+// The two detection signs follow one rule: a sign is recorded only where it
+// belongs to that assistant alone, so finding it cannot be read as a different
+// assistant being installed. A skill folder several assistants share is
+// therefore never a sign — .agents/skills is read by Codex, Goose and Zed alike —
+// and neither is .gemini, which both Gemini CLI and Antigravity keep files in:
+// Gemini CLI is found by its command alone, and each Antigravity product by a
+// folder beneath .gemini that only it writes.
 var agents = []Agent{
-	{ID: "amp", Name: "Amp", ProjectDir: ".agents/skills", UserDir: ".config/amp/skills"},
-	{ID: "antigravity", Name: "Antigravity", ProjectDir: ".agents/skills", UserDir: ".gemini/config/skills"},
-	{ID: "antigravity-cli", Name: "Antigravity CLI", ProjectDir: ".agents/skills", UserDir: ".gemini/antigravity-cli/skills"},
-	{ID: "claude-code", Name: "Claude Code", ProjectDir: ".claude/skills", UserDir: ".claude/skills"},
-	{ID: "cline", Name: "Cline", ProjectDir: ".cline/skills", UserDir: ".cline/skills"},
-	{ID: "codex", Name: "Codex", ProjectDir: ".agents/skills", UserDir: ".agents/skills"},
-	{ID: "cursor", Name: "Cursor", ProjectDir: ".cursor/skills", UserDir: ".cursor/skills"},
-	{ID: "gemini-cli", Name: "Gemini CLI", ProjectDir: ".gemini/skills", UserDir: ".gemini/skills"},
-	{ID: "github-copilot", Name: "GitHub Copilot", ProjectDir: ".github/skills", UserDir: ".copilot/skills"},
-	{ID: "goose", Name: "Goose", ProjectDir: ".agents/skills", UserDir: ".agents/skills"},
-	{ID: "opencode", Name: "OpenCode", ProjectDir: ".opencode/skills", UserDir: ".config/opencode/skills"},
-	{ID: "windsurf", Name: "Windsurf", ProjectDir: ".devin/skills", UserDir: ".codeium/windsurf/skills"},
-	{ID: "zed", Name: "Zed", ProjectDir: ".agents/skills", UserDir: ".agents/skills"},
+	{ID: "amp", Name: "Amp", ProjectDir: ".agents/skills", UserDir: ".config/amp/skills",
+		ConfigDir: ".config/amp", Command: "amp"},
+	{ID: "antigravity", Name: "Antigravity", ProjectDir: ".agents/skills", UserDir: ".gemini/config/skills",
+		ConfigDir: ".gemini/antigravity", Command: "antigravity"},
+	{ID: "antigravity-cli", Name: "Antigravity CLI", ProjectDir: ".agents/skills", UserDir: ".gemini/antigravity-cli/skills",
+		ConfigDir: ".gemini/antigravity-cli"},
+	{ID: "claude-code", Name: "Claude Code", ProjectDir: ".claude/skills", UserDir: ".claude/skills",
+		ConfigDir: ".claude", Command: "claude"},
+	{ID: "cline", Name: "Cline", ProjectDir: ".cline/skills", UserDir: ".cline/skills",
+		ConfigDir: ".cline", Command: "cline"},
+	{ID: "codex", Name: "Codex", ProjectDir: ".agents/skills", UserDir: ".agents/skills",
+		ConfigDir: ".codex", Command: "codex"},
+	{ID: "cursor", Name: "Cursor", ProjectDir: ".cursor/skills", UserDir: ".cursor/skills",
+		ConfigDir: ".cursor", Command: "cursor"},
+	{ID: "gemini-cli", Name: "Gemini CLI", ProjectDir: ".gemini/skills", UserDir: ".gemini/skills",
+		Command: "gemini"},
+	{ID: "github-copilot", Name: "GitHub Copilot", ProjectDir: ".github/skills", UserDir: ".copilot/skills",
+		ConfigDir: ".copilot", Command: "copilot"},
+	{ID: "goose", Name: "Goose", ProjectDir: ".agents/skills", UserDir: ".agents/skills",
+		ConfigDir: ".config/goose", Command: "goose"},
+	{ID: "opencode", Name: "OpenCode", ProjectDir: ".opencode/skills", UserDir: ".config/opencode/skills",
+		ConfigDir: ".config/opencode", Command: "opencode"},
+	{ID: "windsurf", Name: "Windsurf", ProjectDir: ".devin/skills", UserDir: ".codeium/windsurf/skills",
+		ConfigDir: ".codeium/windsurf", Command: "windsurf"},
+	{ID: "zed", Name: "Zed", ProjectDir: ".agents/skills", UserDir: ".agents/skills",
+		ConfigDir: ".config/zed", Command: "zed"},
 }
 
 // Agents returns the assistants this package installs skills for, ordered by ID.

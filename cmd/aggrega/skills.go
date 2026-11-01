@@ -4,11 +4,14 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -42,7 +45,10 @@ version you have.`,
   aggrega skills install --agent claude-code
 
   # Install it for Codex and Cursor in every project of yours
-  aggrega skills install --agent codex --agent cursor --global`,
+  aggrega skills install --agent codex --agent cursor --global
+
+  # Install it, in every project of yours, for the assistants on this machine
+  aggrega skills install --global`,
 	}
 	mustAttachGroup(parent, c)
 	mustAttach(c, newSkillsInstallCmd(), "skills-install")
@@ -75,6 +81,17 @@ nothing is written.
 --agent may be given more than once. Where several of the named assistants read
 the same folder, the skill is written there once.
 
+With --global and no --agent, the skill is installed for the assistants found
+on this machine: each one whose configuration folder is in your home directory
+or whose command is on your PATH, as the table below names them. The command
+prints each assistant it found and what found it. At a terminal it then asks
+before writing: press Enter to install for those, or type the identifiers of
+other assistants to add them. Where standard input is not a terminal it
+installs for the assistants found without asking. Where it finds none and is
+given none, it writes nothing and says so. A project installation is for the
+assistants a project's people use rather than those on one machine, so it
+always names them with --agent.
+
 The skill is written as a folder named aggrega holding SKILL.md, and every file
 written carries a comment line saying where it comes from. Running the command
 again replaces a copy carrying that line, which is how a newer aggrega brings
@@ -84,7 +101,9 @@ writes nothing; move it aside or remove it, then run the command again. Every
 target is checked before anything is written, so a refusal leaves every folder
 as it was.
 
-The assistants it installs for, and the folders each one reads:
+The assistants it installs for, the folders each one reads, and what finds each
+on this machine — its configuration folder in your home directory, or its
+command on your PATH:
 
 ` + agentTable() + `
 An assistant that is not listed is refused by name. It can still use Aggrega
@@ -94,12 +113,25 @@ through its MCP server: connect it to "aggrega mcp" as
   aggrega skills install --agent claude-code
 
   # Every project, for Gemini CLI and Cursor
-  aggrega skills install --agent gemini-cli --agent cursor --global`,
+  aggrega skills install --agent gemini-cli --agent cursor --global
+
+  # Every project, for the assistants on this machine
+  aggrega skills install --global`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(agentIDs) == 0 && !global {
+				return fmt.Errorf("aggrega skills install: name the assistants to install the skill for with --agent, " +
+					"or add --global to install it, in every project of yours, for the assistants on this machine")
+			}
 			base, err := skillsInstallBase(cmd, global)
 			if err != nil {
 				return fmt.Errorf("aggrega skills install: %w", err)
+			}
+			if len(agentIDs) == 0 {
+				agentIDs, err = skillsDetectedAgents(cmd)
+				if err != nil {
+					return fmt.Errorf("aggrega skills install: %w", err)
+				}
 			}
 			req := skills.InstallRequest{
 				Skill:  skills.InstalledSkill,
@@ -122,11 +154,57 @@ through its MCP server: connect it to "aggrega mcp" as
 		},
 	}
 	c.Flags().StringArrayVar(&agentIDs, "agent", nil,
-		"Assistant to install the skill for, by identifier (for example claude-code, codex, cursor or gemini-cli). Repeatable; the help lists every identifier and the folder each one writes.")
+		"Assistant to install the skill for, by identifier (for example claude-code, codex, cursor or gemini-cli). Repeatable; the help lists every identifier and the folder each one writes. Required without --global; with --global and none given, the skill is installed for the assistants found on this machine.")
 	c.Flags().BoolVar(&global, "global", false,
 		"Install into each assistant's per-user skill folder in your home directory, which it reads in every project, instead of the project skill folder at the root of your workspace.")
-	_ = c.MarkFlagRequired("agent")
 	return c
+}
+
+// skillsDetectedAgents returns the assistants a --global installation naming no
+// --agent installs for: the ones found on this machine, each printed with what
+// found it, and at a terminal the ones the person at it confirms or adds.
+//
+// The question is asked only where standard input is a terminal. A caller with
+// nobody at its input — a script, an assistant running the command, the
+// assistant's own tool for it — gets the assistants found, which is what the
+// printed lines already said would be installed, rather than a prompt nobody can
+// answer.
+func skillsDetectedAgents(cmd *cobra.Command) ([]string, error) {
+	platform, lookup := machineFromContext(cmd.Context())
+	if lookup == nil {
+		lookup = os.Getenv
+	}
+	found, err := skills.Detect(platform, lookup)
+	if err != nil {
+		return nil, err
+	}
+	out := cmd.OutOrStdout()
+	for _, d := range found {
+		fmt.Fprintf(out, "Found %s (%s), from %s\n", d.Agent.Name, d.Agent.ID, d.Evidence())
+	}
+	ids := skills.DetectionIDs(found)
+	if !isTerminal() {
+		if len(ids) == 0 {
+			return nil, skills.NoAssistantFound()
+		}
+		return ids, nil
+	}
+
+	question := "Install the Aggrega skill for these assistants? Press Enter to confirm, or type the identifiers " +
+		"of others to add, separated by spaces or commas (aggrega skills list prints them): "
+	if len(ids) == 0 {
+		question = "Found no AI assistant on this machine. Type the identifiers of the assistants to install the " +
+			"Aggrega skill for, separated by spaces or commas (aggrega skills list prints them), or press Enter " +
+			"to install it for none: "
+	}
+	fmt.Fprint(cmd.ErrOrStderr(), question)
+	line, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	added := strings.FieldsFunc(line, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	ids = append(ids, added...)
+	if len(ids) == 0 {
+		return nil, errors.New("no assistant was named, so nothing was written")
+	}
+	return ids, nil
 }
 
 // skillsInstallBase returns the folder the assistants' skill folders are taken
@@ -163,13 +241,21 @@ func writeSkillsInstalled(out io.Writer, installed []skills.Installed) {
 }
 
 // agentTable renders the assistants the install command knows as an indented
-// table for its help, from the one table the installation reads.
+// table for its help, from the one table the installation and the detection
+// read.
 func agentTable() string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "  --agent\tassistant\tproject folder\tper-user folder")
+	fmt.Fprintln(w, "  --agent\tassistant\tproject folder\tper-user folder\tfound by")
 	for _, a := range skills.Agents() {
-		fmt.Fprintf(w, "  %s\t%s\t%s\t~/%s\n", a.ID, a.Name, a.ProjectDir, a.UserDir)
+		var signs []string
+		if a.ConfigDir != "" {
+			signs = append(signs, "~/"+a.ConfigDir)
+		}
+		if a.Command != "" {
+			signs = append(signs, a.Command)
+		}
+		fmt.Fprintf(w, "  %s\t%s\t%s\t~/%s\t%s\n", a.ID, a.Name, a.ProjectDir, a.UserDir, strings.Join(signs, ", "))
 	}
 	_ = w.Flush()
 	return b.String()

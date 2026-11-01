@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -157,6 +158,105 @@ func TestSkillsInstallOnTheDaemonGlobalWritesUnderTheHomeDirectory(t *testing.T)
 	}
 	if tree := treeOf(t, root); len(tree) != 0 {
 		t.Errorf("a per-user installation wrote into the workspace: %v", tree)
+	}
+}
+
+// TestSkillsInstallOnTheDaemonGlobalWithNoAgentsInstallsForTheAssistantsFound is
+// the daemon's half of the detection parity: a global request naming no agents
+// installs for the assistants found on this machine, by the detection the
+// command line runs, read through the daemon's environment — Claude Code by its
+// folder, Codex by its command — and not for an assistant that is absent. With
+// none found it is refused with nothing written.
+//
+// 🔴 It redirects the home directory and PATH, which are environment variables,
+// so it cannot be parallel; without the redirect it would write into the real
+// user's folders.
+func TestSkillsInstallOnTheDaemonGlobalWithNoAgentsInstallsForTheAssistantsFound(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		plant   bool
+		params  map[string]any
+		want    []string // "agents@folder" entries, in order
+		refusal string
+	}{
+		{
+			name:   "the assistants found",
+			plant:  true,
+			params: map[string]any{"global": true},
+			want:   []string{"claude-code@.claude/skills/aggrega", "codex@.agents/skills/aggrega"},
+		},
+		{
+			name:   "an empty list is no list",
+			plant:  true,
+			params: map[string]any{"global": true, "agents": []string{}},
+			want:   []string{"claude-code@.claude/skills/aggrega", "codex@.agents/skills/aggrega"},
+		},
+		{
+			name:   "named agents skip detection",
+			plant:  true,
+			params: map[string]any{"global": true, "agents": []string{"cursor"}},
+			want:   []string{"cursor@.cursor/skills/aggrega"},
+		},
+		{
+			name:    "none found",
+			params:  map[string]any{"global": true},
+			refusal: "found no AI assistant",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, bin := t.TempDir(), t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			t.Setenv("PATH", bin)
+			t.Setenv("PATHEXT", ".EXE")
+			if tc.plant {
+				if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				name := "codex"
+				if runtime.GOOS == "windows" {
+					name += ".exe"
+				}
+				if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			srv := newTestServer(t, t.TempDir(), nil, nil)
+			before := treeOf(t, home)
+
+			resp := callDaemonMethod(t, srv, "aggrega/skillsInstall", tc.params)
+			if tc.refusal != "" {
+				if resp.Error == nil || resp.Error.Code != jsonRPCInvalidParams || !strings.Contains(resp.Error.Message, tc.refusal) {
+					t.Fatalf("response = %+v / %s; want an invalid-params refusal mentioning %q", resp.Error, resp.Result, tc.refusal)
+				}
+				if after := treeOf(t, home); strings.Join(after, "|") != strings.Join(before, "|") {
+					t.Errorf("a refused installation changed the home directory:\nbefore %v\nafter  %v", before, after)
+				}
+				return
+			}
+			var res skillsInstallResult
+			decodeDaemonResult(t, resp, &res)
+			var got []string
+			for _, in := range res.Installed {
+				rel, err := filepath.Rel(home, in.Folder)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = append(got, strings.Join(in.Agents, ",")+"@"+filepath.ToSlash(rel))
+			}
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Errorf("installed = %v; want %v", got, tc.want)
+			}
+			for _, entry := range tc.want {
+				folder := filepath.Join(home, filepath.FromSlash(entry[strings.Index(entry, "@")+1:]))
+				if _, err := os.Stat(installedSkillFile(folder)); err != nil {
+					t.Errorf("the installation reported %s and nothing is there: %v", folder, err)
+				}
+			}
+			if !res.Scope.MachineWide {
+				t.Error("scope.machineWide = false for a per-user installation")
+			}
+		})
 	}
 }
 

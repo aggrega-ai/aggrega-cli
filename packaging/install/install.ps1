@@ -15,7 +15,7 @@
 # Options, given to the script as a script block, since Invoke-Expression
 # passes none:
 #
-#   & ([scriptblock]::Create((irm https://aggrega.ai/install.ps1))) -Completion
+#   & ([scriptblock]::Create((irm https://aggrega.ai/install.ps1))) -Completion -Skills
 #
 #   -Completion            also set up shell completion, for you alone, for the
 #                          PowerShell the script runs in, using the installed
@@ -34,6 +34,22 @@
 #                          never changes the policy. Run again, it rewrites the
 #                          script only when it changed and adds the lines to
 #                          the profile only once.
+#   -Skills                also install the Aggrega skill, in every project of
+#                          yours, for the AI assistants on this machine, by
+#                          running the installed aggrega's own
+#                          `aggrega skills install --global`. It prints each
+#                          assistant it found and what found it. In a window
+#                          someone is at it then asks before writing: press
+#                          Enter to install for those, or type the identifiers
+#                          of others to add them. With nobody to ask it
+#                          installs for those it found. It prints each skill
+#                          folder it wrote.
+#   -Skills <list>         install the skill for the assistants the list names
+#                          instead, such as -Skills claude-code,cursor, without
+#                          looking for others; `aggrega skills list` prints
+#                          the identifiers. Run again, either form replaces the
+#                          copies an earlier run wrote, which is how a newer
+#                          aggrega brings the skill up to its own version.
 #
 # Exit status. The script never closes the window it runs in, so it does not
 # exit with a number: it leaves the number in $LASTEXITCODE, and every outcome
@@ -42,12 +58,13 @@
 #
 #   0  aggrega is installed, and every step an option asked for succeeded
 #   1  nothing was installed, or the installed aggrega did not run
-#   3  aggrega is installed and runs, but setting up shell completion failed,
-#      as the warning before the next steps says
+#   2  an option the script does not take, or a list naming no assistant;
+#      nothing was done
+#   3  aggrega is installed and runs, but setting up shell completion failed
+#   4  aggrega is installed and runs, but installing the skill failed
+#   5  aggrega is installed and runs, but both of those failed
 #
-# An option the script does not take is refused by PowerShell itself, which
-# names it, before anything runs. install.sh exits 2 for one, which is why the
-# numbers here skip 2.
+# A failed step says why in the warning before the next steps.
 #
 # Settings, read from the environment:
 #
@@ -68,30 +85,66 @@
 # open. Everything runs inside one script block, so none of its variables or
 # preferences outlive it in the session that ran it; what it leaves in that
 # session is the folder added to its PATH, $LASTEXITCODE as above, the
-# $Completion switch its options declare, which Invoke-Expression defines in
-# the session it runs in, and, in Windows PowerShell 5.1, TLS 1.2 added to the
-# protocols the session's web requests may use.
+# $Completion and $Skills switches its options declare, which
+# Invoke-Expression defines in the session it runs in, and, in Windows
+# PowerShell 5.1, TLS 1.2 added to the protocols the session's web requests may
+# use.
 #
 # The script is kept to ASCII: Windows PowerShell 5.1 reads a file without a
 # byte-order mark in the system's legacy code page.
 
-param([switch]$Completion)
+# The script declares no [CmdletBinding()], so PowerShell hands it every
+# argument its two switches do not take in $args rather than refusing it: the
+# assistants a list after -Skills names, and anything else, which the script
+# refuses itself, naming it.
+param([switch]$Completion, [switch]$Skills)
 
 & {
-    param([bool]$WantCompletion)
+    param([bool]$WantCompletion, [bool]$WantSkills, [object[]]$Rest)
 
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell 5.1 redraws a progress bar for every block it
     # downloads, which slows a large download many times over.
     $ProgressPreference = 'SilentlyContinue'
 
-    function Stop-Install([string]$Message) {
-        $global:LASTEXITCODE = 1
+    function Stop-Install([string]$Message, [int]$Status = 1) {
+        $global:LASTEXITCODE = $Status
         throw "aggrega install: $Message"
     }
 
     function Write-Step([string]$Message) {
         Write-Host "aggrega install: $Message"
+    }
+
+    # The assistants a list after -Skills names. A value of -Skills a,b reaches
+    # the script as one argument holding both, and a quoted 'a,b' as one string,
+    # so every argument is flattened and split on commas and spaces.
+    $skillsList = @()
+    $listGiven = $false
+    $usage = "; it takes -Completion and -Skills [<list>], given to the script as a script block: & ([scriptblock]::Create((irm https://aggrega.ai/install.ps1))) -Completion -Skills"
+    foreach ($argument in $Rest) {
+        foreach ($part in @($argument)) {
+            $listGiven = $true
+            $text = "$part"
+            if ($text.StartsWith('-')) {
+                Stop-Install "'$text' is not an option install.ps1 takes$usage" 2
+            }
+            if (-not $WantSkills) {
+                Stop-Install "'$text' is not an option install.ps1 takes$usage" 2
+            }
+            foreach ($id in ($text -split '[,\s]+')) {
+                if (-not $id) {
+                    continue
+                }
+                if ($id -cnotmatch '^[a-z0-9-]+$') {
+                    Stop-Install "-Skills names '$id', which is not an assistant identifier such as claude-code$usage" 2
+                }
+                $skillsList += $id
+            }
+        }
+    }
+    if ($listGiven -and $skillsList.Count -eq 0) {
+        Stop-Install '-Skills names no assistant' 2
     }
 
     if ($PSVersionTable.PSEdition -eq 'Core') {
@@ -217,8 +270,26 @@ param([switch]$Completion)
         }
     }
 
+    # Install-Skills runs the installed aggrega's own skill installation, for the
+    # assistants the list after -Skills names or for the ones it finds on this
+    # machine, and returns $null, or returns why it did not succeed. Finding
+    # them, asking whoever is at the window and writing are all the command's
+    # own; its output is sent to the host rather than returned, so what it
+    # prints is shown as it happens.
+    function Install-Skills {
+        $skillArgs = @('skills', 'install', '--global')
+        foreach ($id in $skillsList) {
+            $skillArgs += @('--agent', $id)
+        }
+        & $dest @skillArgs | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            return "could not install the Aggrega skill: 'aggrega skills install' did not succeed, as it says above"
+        }
+        return $null
+    }
+
     # Write-NextSteps prints one command for each thing left to set up.
-    function Write-NextSteps([bool]$CompletionDone) {
+    function Write-NextSteps([bool]$CompletionDone, [bool]$SkillsDone) {
         Write-Step 'next steps:'
         Write-Host ''
         if ($CompletionDone) {
@@ -227,8 +298,12 @@ param([switch]$Completion)
             Write-Host "  Set up shell completion for ${shellName}:"
             Write-Host "    & ([scriptblock]::Create((irm $base/latest/download/install.ps1))) -Completion"
         }
-        Write-Host '  Install the Aggrega skill for your AI assistant, one of those aggrega skills list names:'
-        Write-Host '    aggrega skills install --global --agent <assistant>'
+        if ($SkillsDone) {
+            Write-Host '  The Aggrega skill is installed; a new session of each assistant reads it.'
+        } else {
+            Write-Host '  Install the Aggrega skill for the AI assistants on this machine:'
+            Write-Host '    aggrega skills install --global'
+        }
         Write-Host '  Connect your AI client to the Aggrega MCP server, as this page describes:'
         Write-Host '    https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client'
         Write-Host ''
@@ -439,9 +514,24 @@ param([switch]$Completion)
             $completionDone = $true
         }
     }
-    Write-NextSteps $completionDone
+    $skillsDone = $false
+    if ($WantSkills) {
+        $failure = Install-Skills
+        if ($failure) {
+            Write-Warning "aggrega install: $failure"
+            if ($status -eq 3) {
+                $status = 5
+            } else {
+                $status = 4
+            }
+        } else {
+            $skillsDone = $true
+        }
+    }
+    Write-NextSteps $completionDone $skillsDone
     $global:LASTEXITCODE = $status
     if ($status -ne 0) {
-        throw "aggrega install: installed $dest, and it runs, but setting up shell completion failed, as the warning above says"
+        $failed = @{ 3 = 'setting up shell completion'; 4 = 'installing the Aggrega skill'; 5 = 'setting up shell completion and installing the Aggrega skill' }[$status]
+        throw "aggrega install: installed $dest, and it runs, but $failed failed, as the warning above says"
     }
-} ([bool]$Completion)
+} ([bool]$Completion) ([bool]$Skills) $args

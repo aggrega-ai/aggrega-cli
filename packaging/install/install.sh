@@ -18,7 +18,7 @@
 #
 # Options, written after `sh -s --` when the script is piped into sh:
 #
-#   curl -fsSL https://aggrega.ai/install.sh | sh -s -- --completion
+#   curl -fsSL https://aggrega.ai/install.sh | sh -s -- --completion --skills
 #
 #   --completion           also set up shell completion, for you alone, for the
 #                          shell your SHELL setting names, using the installed
@@ -39,14 +39,35 @@
 #                          folders as each shell reads them. Run again, it
 #                          rewrites a script only when it changed and adds the
 #                          lines to ~/.zshrc only once.
+#   --skills               also install the Aggrega skill, in every project of
+#                          yours, for the AI assistants on this machine, by
+#                          running the installed aggrega's own
+#                          `aggrega skills install --global`. It prints each
+#                          assistant it found and what found it. At a terminal
+#                          it then asks before writing: press Enter to install
+#                          for those, or type the identifiers of others to add
+#                          them. With no terminal it installs for those it
+#                          found. It prints each skill folder it wrote.
+#   --skills <list>        install the skill for the assistants the
+#                          comma-separated list names instead, such as
+#                          --skills claude-code,cursor, without looking for
+#                          others; `aggrega skills list` prints the
+#                          identifiers. --skills=<list> is the same. Run again,
+#                          either form replaces the copies an earlier run wrote,
+#                          which is how a newer aggrega brings the skill up to
+#                          its own version.
 #
 # Exit status:
 #
 #   0  aggrega is installed, and every step an option asked for succeeded
 #   1  nothing was installed, or the installed aggrega did not run
-#   2  an option the script does not take; nothing was done
-#   3  aggrega is installed and runs, but setting up shell completion failed,
-#      as the message before the next steps says
+#   2  an option the script does not take, or a list naming no assistant;
+#      nothing was done
+#   3  aggrega is installed and runs, but setting up shell completion failed
+#   4  aggrega is installed and runs, but installing the skill failed
+#   5  aggrega is installed and runs, but both of those failed
+#
+# A failed step says why in the message before the next steps.
 #
 # Settings, read from the environment:
 #
@@ -78,19 +99,46 @@ complain() {
   printf 'aggrega install: %s\n' "$*" >&2
 }
 
-# Sets want_completion from the options, or refuses with exit status 2 before
-# anything is done.
+# usage_refusal reports an option the script cannot use and stops with exit
+# status 2, before anything is done.
+usage_refusal() {
+  printf "aggrega install: %s; it takes --completion and --skills [<list>], written after 'sh -s --' when the script is piped into sh\n" "$*" >&2
+  exit 2
+}
+
+# Sets want_completion, want_skills and skills_list from the options, or
+# refuses with exit status 2 before anything is done. A value after --skills
+# that does not start with a dash is its list of assistants.
 parse_options() {
-  want_completion=''
-  for option in "$@"; do
-    case "$option" in
+  want_completion='' want_skills='' skills_list=''
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
       --completion) want_completion=1 ;;
-      *)
-        printf "aggrega install: '%s' is not an option install.sh takes; it takes --completion, written after 'sh -s --' when the script is piped into sh\n" "$option" >&2
-        exit 2
+      --skills=*)
+        want_skills=1 skills_list="${1#--skills=}"
+        [ -n "$skills_list" ] || usage_refusal "--skills= names no assistant"
         ;;
+      --skills)
+        want_skills=1
+        case "${2:-}" in
+          '' | -*) ;;
+          *)
+            skills_list="$2"
+            shift
+            ;;
+        esac
+        ;;
+      *) usage_refusal "'$1' is not an option install.sh takes" ;;
     esac
+    shift
   done
+  case "$skills_list" in
+    '' | *[a-z0-9]*) ;;
+    *) usage_refusal "--skills names '$skills_list', which names no assistant" ;;
+  esac
+  case "$skills_list" in
+    *[!a-z0-9,-]*) usage_refusal "--skills names '$skills_list', which is not a comma-separated list of assistant identifiers such as claude-code,cursor" ;;
+  esac
 }
 
 # sh_quote <text> prints text quoted for a POSIX shell, quotes left off when
@@ -338,6 +386,35 @@ setup_completion() {
   esac
 }
 
+# install_skills runs the installed aggrega's own skill installation: for the
+# assistants the --skills list names, or for the ones it finds on this machine.
+# Finding them, asking at a terminal and writing are all the command's own, so
+# what it prints is what it did. A person at a terminal is asked through it even
+# when the script itself is read from a pipe, as under curl | sh; with no
+# terminal to ask through, the command reads nothing and installs for the
+# assistants it found.
+install_skills() {
+  set -- skills install --global
+  if [ -n "$skills_list" ]; then
+    saved_ifs="$IFS"
+    IFS=,
+    for id in $skills_list; do
+      if [ -n "$id" ]; then
+        set -- "$@" --agent "$id"
+      fi
+    done
+    IFS="$saved_ifs"
+    "$dest" "$@" </dev/null
+  elif (exec </dev/tty) 2>/dev/null; then
+    "$dest" "$@" </dev/tty
+  else
+    "$dest" "$@" </dev/null
+  fi || {
+    complain "could not install the Aggrega skill: 'aggrega skills install' did not succeed, as it says above"
+    return 1
+  }
+}
+
 # next_steps prints one command for each thing left to set up.
 next_steps() {
   settings=''
@@ -367,8 +444,12 @@ next_steps() {
         ;;
     esac
   fi
-  printf '  Install the Aggrega skill for your AI assistant, one of those aggrega skills list names:\n'
-  printf '    aggrega skills install --global --agent <assistant>\n'
+  if [ "$skills_done" = 1 ]; then
+    printf '  The Aggrega skill is installed; a new session of each assistant reads it.\n'
+  else
+    printf '  Install the Aggrega skill for the AI assistants on this machine:\n'
+    printf '    aggrega skills install --global\n'
+  fi
   printf '  Connect your AI client to the Aggrega MCP server, as this page describes:\n'
   printf '    https://aggrega.ai/docs/authoring/setup/#connect-an-mcp-client\n'
   printf '\n'
@@ -468,12 +549,21 @@ main() {
     *) path_hint ;;
   esac
 
-  status=0 completion_done=''
+  status=0 completion_done='' skills_done=''
   if [ -n "$want_completion" ]; then
     if setup_completion; then
       completion_done=1
     else
       status=3
+    fi
+  fi
+  if [ -n "$want_skills" ]; then
+    if install_skills; then
+      skills_done=1
+    elif [ "$status" = 3 ]; then
+      status=5
+    else
+      status=4
     fi
   fi
   next_steps

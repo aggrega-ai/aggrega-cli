@@ -19,7 +19,9 @@ import (
 // flag it mirrors may be repeated, and the plural is what a caller sending one
 // list reads it as. global selects each assistant's per-user skill folder; absent,
 // the skill lands in each assistant's project folder inside the workspace the
-// request names.
+// request names. A global request may leave agents empty, as the command line's
+// --global may leave --agent out, and is then answered for the assistants found
+// on this machine.
 type skillsInstallParams struct {
 	Agents []string `json:"agents"`
 	Global bool     `json:"global"`
@@ -85,15 +87,22 @@ type skillsInstallResult struct {
 // table, the same refusals — an assistant no folder is known for, a file at the
 // target that does not carry the banner — and the same rule that every
 // target is checked before anything is written. Nothing is prompted for.
+//
+// A global request naming no agents installs for the assistants found on this
+// machine, by the one detection the command line runs, read through the same
+// environment as the home directory; the answer's entries name the assistants it
+// installed for. A project request still names its agents, as the command line's
+// does.
 func (s *Server) dispatchSkillsInstall(ctx context.Context, req *jsonRPCRequest) error {
 	var params skillsInstallParams
 	if err := decodeParams(req, &params); err != nil {
 		return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "invalid params: ", err)
 	}
-	if len(params.Agents) == 0 {
+	if len(params.Agents) == 0 && !params.Global {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"skills install: agents is required (one or more identifiers of the assistants to install "+
-				"the skill for; aggrega/skillsList reports every identifier)")
+			"skills install: agents is required for a project installation (one or more identifiers of the "+
+				"assistants to install the skill for; aggrega/skillsList reports every identifier); a global "+
+				"request naming none installs the skill for the assistants found on this machine")
 	}
 	if s.workspaceRoot == "" {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError,
@@ -106,11 +115,22 @@ func (s *Server) dispatchSkillsInstall(ctx context.Context, req *jsonRPCRequest)
 		Global: params.Global,
 	}
 	if params.Global {
-		home, err := skills.UserHome(machinedirs.Host(), s.flags.Lookup(nil))
+		lookup := s.flags.Lookup(nil)
+		home, err := skills.UserHome(machinedirs.Host(), lookup)
 		if err != nil {
 			return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "skills install: ", err)
 		}
 		install.Base = home
+		if len(install.Agents) == 0 {
+			found, err := skills.Detect(machinedirs.Host(), lookup)
+			if err != nil {
+				return s.writeRefusal(ctx, req.ID, jsonRPCInternalError, "skills install: ", err)
+			}
+			if len(found) == 0 {
+				return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "skills install: ", skills.NoAssistantFound())
+			}
+			install.Agents = skills.DetectionIDs(found)
+		}
 	} else {
 		root := s.workspaceRoot
 		install.Base = root
