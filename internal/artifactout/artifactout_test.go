@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -185,7 +187,7 @@ func TestWriteBuildOutputClearsTheBoundariesSubtree(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 
-	if err := WriteBuildOutput(tmp, tmp, map[string][]byte{
+	if _, err := WriteBuildOutput(tmp, tmp, map[string][]byte{
 		"boundaries/prod/old.yaml": []byte("from the previous variant"),
 	}); err != nil {
 		t.Fatalf("first WriteBuildOutput: %v", err)
@@ -195,7 +197,7 @@ func TestWriteBuildOutputClearsTheBoundariesSubtree(t *testing.T) {
 		t.Fatalf("precondition: the first build left nothing to clear: %v", err)
 	}
 
-	if err := WriteBuildOutput(tmp, tmp, map[string][]byte{
+	if _, err := WriteBuildOutput(tmp, tmp, map[string][]byte{
 		"boundaries/dev/new.yaml": []byte("from this variant"),
 	}); err != nil {
 		t.Fatalf("second WriteBuildOutput: %v", err)
@@ -224,7 +226,7 @@ func TestWriteBuildOutputLeavesTheRestOfTheOutputRootAlone(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	if err := WriteBuildOutput(tmp, tmp, map[string][]byte{"boundaries/prod/app.yaml": []byte("x")}); err != nil {
+	if _, err := WriteBuildOutput(tmp, tmp, map[string][]byte{"boundaries/prod/app.yaml": []byte("x")}); err != nil {
 		t.Fatalf("WriteBuildOutput: %v", err)
 	}
 
@@ -244,12 +246,90 @@ func TestWriteBuildOutputLeavesTheRestOfTheOutputRootAlone(t *testing.T) {
 func TestWriteBuildOutputRefusesAnEscapingName(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	err := WriteBuildOutput(tmp, tmp, map[string][]byte{"../escape.yaml": []byte("x")})
+	_, err := WriteBuildOutput(tmp, tmp, map[string][]byte{"../escape.yaml": []byte("x")})
 	if err == nil {
 		t.Fatal("WriteBuildOutput accepted a name that escapes the output root")
 	}
 	if !strings.Contains(err.Error(), "escapes the output root") {
 		t.Errorf("refusal = %v; want it to name the output root", err)
+	}
+}
+
+// TestWriteBuildOutputNamesTheFilesItDidNotWriteAndRemovesNone pins what a build
+// does to a file in its output it did not write this run: it names it and leaves
+// it. The tree is the one a second build into a populated output meets — a file
+// beside a written directory, one beside the output root's own contents, one in a
+// written directory itself, and one under the boundaries subtree the build clears
+// — together with a directory the build writes nothing into and nothing beneath.
+//
+// The named list is compared whole, so a file missing from it and a file named
+// that should not be both fail; every planted file outside the boundaries subtree
+// is read back afterwards, so naming a file and removing it would fail too.
+func TestWriteBuildOutputNamesTheFilesItDidNotWriteAndRemovesNone(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	out := filepath.Join(ws, DefaultOutputDir)
+	kept := map[string]string{
+		"app/stale-from-earlier-run.yaml":   "an earlier run's",
+		"beside-the-tree.txt":               "the author's",
+		"app/compose/older-compose.yaml":    "an earlier run's, beside this one's",
+		"untouched/kept-by-the-author.yaml": "in a directory the build never writes into",
+	}
+	for name, content := range kept {
+		plant(t, filepath.Join(out, filepath.FromSlash(name)), content)
+	}
+	cleared := filepath.Join(out, "boundaries", "app", "stale-under-boundaries.yaml")
+	plant(t, cleared, "an earlier variant's")
+
+	files := map[string][]byte{"app/compose/docker-compose.yaml": []byte("services: {}\n")}
+	unwritten, err := WriteBuildOutput(ws, out, files)
+	if err != nil {
+		t.Fatalf("WriteBuildOutput: %v", err)
+	}
+
+	want := []string{"app/compose/older-compose.yaml", "app/stale-from-earlier-run.yaml", "beside-the-tree.txt"}
+	if !slices.Equal(unwritten, want) {
+		t.Errorf("named %q; want %q — every file in a directory the build wrote into that it did not write, "+
+			"and none from a directory it never reached", unwritten, want)
+	}
+	for name, content := range kept {
+		got, rerr := os.ReadFile(filepath.Join(out, filepath.FromSlash(name)))
+		if rerr != nil || string(got) != content {
+			t.Errorf("%s holds %q (read error %v) after the build; want it left as %q", name, got, rerr, content)
+		}
+	}
+	if _, serr := os.Stat(cleared); !os.IsNotExist(serr) {
+		t.Errorf("the boundaries subtree was not cleared: stat %s err = %v", cleared, serr)
+	}
+
+	advisory := UnwrittenAdvisory(unwritten)
+	for _, name := range want {
+		if !strings.Contains(advisory, strconv.Quote(name)) {
+			t.Errorf("the advisory %q does not name %q", advisory, name)
+		}
+	}
+	if strings.Contains(advisory, "untouched") || strings.Contains(advisory, ws) {
+		t.Errorf("the advisory %q names a directory the build never reached or a host path", advisory)
+	}
+	if got := UnwrittenAdvisory(nil); got != "" {
+		t.Errorf("the advisory for no file = %q; want none", got)
+	}
+
+	// An empty set writes into no directory, so nothing is looked into — not even
+	// an output root the write never created.
+	if got, err := WriteBuildOutput(ws, filepath.Join(ws, "never-created"), nil); err != nil || got != nil {
+		t.Errorf("an empty set named %q with error %v; want nothing and no error", got, err)
+	}
+}
+
+// plant writes content at p, creating its directory.
+func plant(t *testing.T, p, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("plant %s: %v", p, err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatalf("plant %s: %v", p, err)
 	}
 }
 

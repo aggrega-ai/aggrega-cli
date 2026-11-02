@@ -122,7 +122,10 @@ type buildParams struct {
 // the workspace configuration lists for the Release where nothing exists is named
 // by one of them, in the line `aggrega build` prints for it: under the catalog
 // surface, leading the rest, on a build that did not fill, and among the fill's
-// own lines on one that did.
+// own lines on one that did. The files the write found in the directories it
+// wrote into and did not write itself are named by one of them too, after the
+// run's own advisories, in the words `aggrega build` prints its warning in; they
+// are left where they are, and Files never names them.
 //
 // DependencyResolution is what the build's own fill step resolved, in the shape
 // aggrega/resolveDependencies answers with, and it is absent on a build that did
@@ -206,9 +209,11 @@ func (s *Server) dispatchBuild(ctx context.Context, req *jsonRPCRequest) error {
 // point the write out of it.
 //
 // The write then goes through the shared build-output entry point, which clears
-// the boundaries subtree a previous build left and refuses a rendered name that
-// resolves outside the output root. Both belong to what a build's write is, so
-// both happen here exactly as they happen on the command line.
+// the boundaries subtree a previous build left, refuses a rendered name that
+// resolves outside the output root, and reports the files it finds beside its
+// own that it did not write, removing none of them. All three belong to what a
+// build's write is, so all three happen here exactly as they happen on the
+// command line.
 //
 // # Whether the lockfile is filled is the request's to say, or the workspace's
 //
@@ -406,7 +411,8 @@ func (s *Server) buildAndWrite(ctx context.Context, params buildParams, outRoot 
 	// decides. The directory a request names as outputParent has already been held
 	// inside the session's workspace, so the root picked is that workspace's.
 	writeRoot := writescope.RootFor(s.workspaceRoot, filepath.Dir(outRoot))
-	if err := artifactout.WriteBuildOutput(writeRoot, outRoot, completed.Artifacts); err != nil {
+	unwritten, err := artifactout.WriteBuildOutput(writeRoot, outRoot, completed.Artifacts)
+	if err != nil {
 		// A write failure is reported as the workspace-not-resolvable class the
 		// daemon already carries for a workspace it cannot read as expected, and
 		// the wrapped error is kept as the cause so a client matching on the
@@ -423,9 +429,25 @@ func (s *Server) buildAndWrite(ctx context.Context, params buildParams, outRoot 
 	return buildResult{
 		OutputDirectory:      outRoot,
 		Files:                renderedArtifactNames(completed),
-		Notices:              slices.Concat(absent, dependencyResolutionNotices(fillNotices), buildNotices(preview)),
+		Notices:              slices.Concat(absent, dependencyResolutionNotices(fillNotices), buildNotices(preview), unwrittenNotices(unwritten)),
 		DependencyResolution: fillReport,
 	}, nil
+}
+
+// unwrittenNotices carries the files the write found in the directories it wrote
+// into and did not write itself onto a build's answer, as the one notice the
+// command line prints as a warning for the same files, in the same words
+// (artifactout.UnwrittenAdvisory). It comes last because the write it reports on
+// is the last thing a build does, which is also where the command line prints it.
+// None answers no notice.
+//
+// It travels under no class: it is not raised by any advisory surface this daemon
+// names, and a client renders a notice without one as its bare text.
+func unwrittenNotices(unwritten []string) []buildNotice {
+	if len(unwritten) == 0 {
+		return nil
+	}
+	return []buildNotice{{Text: artifactout.UnwrittenAdvisory(unwritten)}}
 }
 
 // fillDependencies resolves the Release's dependencies and returns what the

@@ -44,8 +44,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
@@ -106,25 +109,118 @@ const boundariesDir = "boundaries"
 // boundaries subtree is theirs, and a write that emptied the root would destroy
 // content this package never produced.
 //
+// # What it reports instead of removing
+//
+// Once the set is written, it returns every file this write did not produce that
+// sits directly in a directory the write put a file in, or passed through to put
+// one deeper: the output root itself, and each directory between it and a file
+// written. Each is named by its slash-separated path relative to the output root,
+// in sorted order, so the same tree is reported identically on every run and every
+// platform. Nothing is removed — a file the build cannot prove is its own may be
+// one the author keeps there — but a directory mixing this build's files with
+// others is no longer silent: [UnwrittenAdvisory] is the one wording every surface
+// performing a build tells it in.
+//
+// The directories looked into are only those the write reached. A subdirectory
+// the write put nothing in, and nothing beneath, is not opened, so a tree the
+// author keeps beside the build's output is not listed file by file merely for
+// sitting there; the boundaries subtree is cleared before the write and holds only
+// this build's files after it.
+//
 // root is the workspace the build runs in. The subtree to clear and every file to
 // write are held to it before the clear, so an output directory leading out of
 // the workspace through a link halts the build with nothing removed and nothing
 // written; see the package documentation.
 //
-// Errors from either half are returned wrapped and name the path they concern.
-func WriteBuildOutput(root, outRoot string, files map[string][]byte) error {
+// Errors from either half, and from reading a directory back, are returned
+// wrapped and name the path they concern.
+func WriteBuildOutput(root, outRoot string, files map[string][]byte) ([]string, error) {
 	if err := CheckBuildOutput(root, outRoot, files); err != nil {
-		return err
+		return nil, err
 	}
 	outRoot, err := pathscope.DirectoryPath(outRoot)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	boundaries := filepath.Join(outRoot, boundariesDir)
 	if err := os.RemoveAll(boundaries); err != nil {
-		return fmt.Errorf("clean %q: %w", boundaries, err)
+		return nil, fmt.Errorf("clean %q: %w", boundaries, err)
 	}
-	return writeChecked(outRoot, files)
+	if err := writeChecked(outRoot, files); err != nil {
+		return nil, err
+	}
+	return unwrittenBeside(outRoot, files)
+}
+
+// unwrittenBeside lists, relative to outRoot, every file directly in a directory
+// the write of files reached that is not one of files. A directory is reached
+// when a file was written in it or beneath it, so the output root is reached by
+// any write of one file or more — and by none of an empty set, which wrote into
+// no directory and may have left the output root uncreated.
+//
+// Every name is placed by [place] again, so the paths compared are the paths
+// writeChecked wrote — a name spelled with a redundant segment is matched as the
+// file it produced, not as its spelling.
+func unwrittenBeside(outRoot string, files map[string][]byte) ([]string, error) {
+	written := make(map[string]bool, len(files))
+	reached := map[string]bool{}
+	var dirs []string
+	for _, name := range sortedNames(files) {
+		full, err := place(outRoot, name)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(outRoot, full)
+		if err != nil {
+			return nil, fmt.Errorf("relate %q to %q: %w", full, outRoot, err)
+		}
+		rel = filepath.ToSlash(rel)
+		written[rel] = true
+		for dir := path.Dir(rel); !reached[dir]; dir = path.Dir(dir) {
+			reached[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	var unwritten []string
+	for _, dir := range dirs {
+		host := filepath.Join(outRoot, filepath.FromSlash(dir))
+		entries, err := os.ReadDir(host)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", host, err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			rel := path.Join(dir, entry.Name())
+			if !written[rel] {
+				unwritten = append(unwritten, rel)
+			}
+		}
+	}
+	sort.Strings(unwritten)
+	return unwritten, nil
+}
+
+// UnwrittenAdvisory is the one sentence a surface performing a build tells a
+// reader the files [WriteBuildOutput] reported in: how many, and each by its
+// quoted path relative to the output directory, in the order given. It is empty
+// for none, which is the case where a surface tells the reader nothing.
+//
+// It names no host path, so the same sentence is true on whichever surface relays
+// it, and it is the same sentence on all of them: a surface wording its own would
+// agree with this one the day it was written and drift into telling a reader on
+// one surface something another does not.
+func UnwrittenAdvisory(unwritten []string) string {
+	if len(unwritten) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(unwritten))
+	for i, name := range unwritten {
+		quoted[i] = strconv.Quote(name)
+	}
+	return fmt.Sprintf("the output directory holds %d file(s) this build did not write, in directories it wrote into; "+
+		"nothing was removed, so they sit beside this build's output: %s", len(unwritten), strings.Join(quoted, ", "))
 }
 
 // CheckBuildOutput is the judgement [WriteBuildOutput] makes before it removes or

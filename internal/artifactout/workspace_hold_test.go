@@ -26,7 +26,10 @@ import (
 func TestBuildOutputAndTraceAreHeldToTheWorkspace(t *testing.T) {
 	files := map[string][]byte{"app/compose/docker-compose.yaml": []byte("services: {}\n")}
 	type write func(root, dir string) error
-	build := write(func(root, dir string) error { return WriteBuildOutput(root, dir, files) })
+	build := write(func(root, dir string) error {
+		_, err := WriteBuildOutput(root, dir, files)
+		return err
+	})
 	trace := write(func(root, dir string) error { return ReplaceAll(root, dir, files) })
 
 	rows := []struct {

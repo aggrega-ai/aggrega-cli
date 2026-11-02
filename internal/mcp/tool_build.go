@@ -200,9 +200,12 @@ type buildResultPayload struct {
 	// that fills carries that line among the resolution's diagnostics instead);
 	// then the render's own advisories, in the order the render raised them; then
 	// the findings the shared preview raised about the Release and what it
-	// reaches, in the order it raised them. A terminal prints the last group once
-	// the render has returned, although the preview raised it earlier, so this
-	// list follows the display rather than the moment of raising.
+	// reaches, in the order it raised them; and last, on a call that writes its
+	// artifacts, the warning naming the files the write found in the directories it
+	// wrote into and did not write itself, which it leaves in place. A terminal
+	// prints the preview's group once the render has returned, although the preview
+	// raised it earlier, so this list follows the display rather than the moment of
+	// raising.
 	// None of them changes the outcome: a build carrying advisories and nothing
 	// else still succeeded, and the files above are the files it produced.
 	//
@@ -822,7 +825,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// this point, so a call refused anywhere earlier wrote no artifact, and the
 	// "nothing was written to disk" its answer carries stays true.
 	if a.writesArtifacts() {
-		outDir, werr := tw.writeRenderedArtifacts(completed, &payload)
+		outDir, unwritten, werr := tw.writeRenderedArtifacts(completed, &payload)
 		if werr != nil {
 			// The rendered set is dropped, as the language server drops it on a
 			// failed write: what the write stopped at may be on disk, and listing the
@@ -831,6 +834,12 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			return tw.answer(structuredErrorResult(fmt.Sprintf(
 				"The build rendered this Release and could not write its artifacts to %s, so no file is reported "+
 					"as written: %v", outDir, werr), payload))
+		}
+		// The files the write found beside its own and did not produce close the
+		// advisories, where a command-line build prints its warning about them: after
+		// the write, which is the last thing a build does.
+		if advisory := artifactout.UnwrittenAdvisory(unwritten); advisory != "" {
+			payload.Advisories = append(payload.Advisories, buildAdvisory{Severity: abi.SeverityWarn, Message: tw.reportedText(advisory)})
 		}
 	}
 	text := renderBuildText(payload)
@@ -858,11 +867,14 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 // language server ask of their own; for the default that is the workspace root.
 //
 // The directory is recorded before the write, so a write that fails still names
-// it: a caller is told which directory the failure concerns.
-func (tw *toolWorkspace) writeRenderedArtifacts(completed *pipeline.Result, payload *buildResultPayload) (string, error) {
+// it: a caller is told which directory the failure concerns. What it returns
+// beside the directory is what the write reports — the files it found in the
+// directories it wrote into and did not write itself, which it leaves in place.
+func (tw *toolWorkspace) writeRenderedArtifacts(completed *pipeline.Result, payload *buildResultPayload) (string, []string, error) {
 	outDir := artifactout.DefaultOutputDirIn(tw.root)
 	payload.OutputDir, payload.OutputDirWithheld = tw.reportedLocationField(outDir)
-	return outDir, artifactout.WriteBuildOutput(writescope.RootFor(tw.root, filepath.Dir(outDir)), outDir, completed.Artifacts)
+	unwritten, err := artifactout.WriteBuildOutput(writescope.RootFor(tw.root, filepath.Dir(outDir)), outDir, completed.Artifacts)
+	return outDir, unwritten, err
 }
 
 // previewWarningTexts returns the text of each of a preview's warnings of one

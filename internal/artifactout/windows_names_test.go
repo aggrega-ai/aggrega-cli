@@ -33,7 +33,7 @@ func TestARenderedNameWindowsCannotHoldIsRefusedOnWindowsAndWrittenElsewhere(t *
 		t.Cleanup(windowshost.SetForTest(true))
 		ws := t.TempDir()
 		out := filepath.Join(ws, DefaultOutputDir)
-		err := WriteBuildOutput(ws, out, files)
+		_, err := WriteBuildOutput(ws, out, files)
 		if !errors.Is(err, pathscope.ErrNameWindowsCannotHold()) {
 			t.Fatalf("WriteBuildOutput refused with %v; want the halt naming a name Windows cannot hold", err)
 		}
@@ -51,7 +51,7 @@ func TestARenderedNameWindowsCannotHoldIsRefusedOnWindowsAndWrittenElsewhere(t *
 		t.Cleanup(windowshost.SetForTest(false))
 		ws := t.TempDir()
 		out := filepath.Join(ws, DefaultOutputDir)
-		if err := WriteBuildOutput(ws, out, files); err != nil {
+		if _, err := WriteBuildOutput(ws, out, files); err != nil {
 			t.Fatalf("WriteBuildOutput refused a name off Windows, which it never has: %v", err)
 		}
 		if got, rerr := os.ReadFile(filepath.Join(out, filepath.FromSlash(name))); rerr != nil || string(got) != "aux\n" {

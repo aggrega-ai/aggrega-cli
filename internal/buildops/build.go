@@ -337,7 +337,9 @@ type Config struct {
 // and on its own stream.
 type Result struct {
 	// Summary is the one-line completion sentence: how many files were written
-	// and where, or — for a dry run — how many would have been.
+	// and where, and how many files the directories written into hold beside them
+	// that this build did not write, where there are any — or, for a dry run, how
+	// many would have been written.
 	Summary string
 }
 
@@ -804,10 +806,19 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 		// Write output. The boundaries subtree from a prior build of a different
 		// variant is cleared as part of the write, so GitOps consumers see exactly
 		// what the compiler just produced.
-		if err := artifactout.WriteBuildOutput(outRoot, outDir, result.Artifacts); err != nil {
-			return Result{}, fmt.Errorf("write output: %w", err)
+		unwritten, werr := artifactout.WriteBuildOutput(outRoot, outDir, result.Artifacts)
+		if werr != nil {
+			return Result{}, fmt.Errorf("write output: %w", werr)
 		}
 		summary = fmt.Sprintf("Build completed: %d files written to %s", len(result.Artifacts), outDir)
+		// A file the write found beside its own and did not produce is left where it
+		// is and told once, in the sentence every surface performing a build uses,
+		// and the summary counts it: a directory mixing this build's files with
+		// others reads as one build's output unless something says otherwise.
+		if len(unwritten) > 0 {
+			fmt.Fprintf(diagOut, "  warning: %s\n", artifactout.UnwrittenAdvisory(unwritten))
+			summary += fmt.Sprintf(", beside %d file(s) this build did not write", len(unwritten))
+		}
 	}
 
 	// Trace surface — write the collected per-step intermediate state
