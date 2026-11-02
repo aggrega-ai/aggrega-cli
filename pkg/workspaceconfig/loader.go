@@ -517,7 +517,7 @@ func checkProviderBindingForms(probe any, path string) error {
 				continue
 			}
 			capability, _ := entry["capability"].(string)
-			return fmt.Errorf("workspaceconfig: %s: plugins.%s[%d] binds capability %q to %q, which is where a plugin is published rather than which plugin it is; a provider binding names its plugin by its identity — write `uri: provider/<name>`, with an optional `:<version>`: %w",
+			return fmt.Errorf("%s: plugins.%s[%d] binds capability %q to %q, which is where a plugin is published rather than which plugin it is; a provider binding names its plugin by its identity — write `uri: provider/<name>`, with an optional `:<version>`: %w",
 				path, key, i, capability, uri, ErrConfigInvalid())
 		}
 	}

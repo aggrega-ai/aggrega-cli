@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package validator
+// Package documentview presents one authored Recipe or FeatureRecipe to a
+// document-stage check as the named facts that kind carries.
+//
+// It is the one presentation of each kind, and it sits below every package that
+// reads such a document so that each of them presents it through the same
+// producers: the load-time shape rules and the document envelope's gate both
+// present a Recipe here, and a fact one of them reads cannot come to be produced
+// differently for the other.
+package documentview
 
 import (
 	"fmt"
@@ -13,10 +21,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// recipeDocumentView presents one authored Recipe to a check as named facts:
+// Recipe presents one authored Recipe to a check as named facts:
 // whether it declares a values overlay, a source pointer, a workload body or
 // artifact entries, the kind its structured source names, the reference its
-// source names, and the keys each of its two output-label blocks declares.
+// source names, the keys each of its two output-label blocks declares, and the
+// id each of its pipeline steps declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -42,7 +51,7 @@ import (
 // itself carries is the obligation asserted at the bottom of this file: a Recipe
 // fact added to the registry stops this type compiling, and a fact carried by
 // any other kind does not reach it.
-type recipeDocumentView struct {
+type Recipe struct {
 	// RecipeDocumentBase supplies the document-stage facts a Recipe does not
 	// carry, and declares nothing for the ones it does — so this type writes
 	// bodies for exactly the Recipe's own facts.
@@ -83,6 +92,10 @@ type recipeDocumentView struct {
 	// outputComponentLabelKeys are the label keys the promoted block declares,
 	// in the order the author wrote them.
 	outputComponentLabelKeys []string
+
+	// pipelineStepIDs are the ids the pipeline's steps declare, one per step, in
+	// the order the steps are written.
+	pipelineStepIDs []string
 }
 
 // authoredOutputLabelKeys returns the keys a literal output-label block
@@ -120,17 +133,35 @@ func authoredOutputComponentLabelKeys(block []string) []string {
 	return keys
 }
 
-// newRecipeDocumentView presents the Recipe a load is holding: the file it was
-// read from, and the answers read out of that document.
+// authoredPipelineStepIDs returns the id each step of a pipeline declares, in the
+// order the steps are written, so the entry at a position is the id of the step
+// at that position.
+//
+// It is the one reader of that question for both authored kinds that write a
+// pipeline. It copies the ids out rather than handing back the steps, so a value
+// presented to a rule is the ids and nothing else a step declares.
+func authoredPipelineStepIDs(steps []types.PipelineStep) []string {
+	if len(steps) == 0 {
+		return nil
+	}
+	ids := make([]string, len(steps))
+	for i, step := range steps {
+		ids[i] = step.ID
+	}
+	return ids
+}
+
+// NewRecipe presents the Recipe a reader is holding: the file it was read from,
+// and the answers read out of that document.
 //
 // The answers are read here rather than taken from the caller because each has
 // exactly one producer in this package, and routing the presentation through
 // those producers is what keeps each fact single-valued. A caller passing its own
 // answers could pass ones read from a different document, or read differently.
-func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
+func NewRecipe(path string, r *types.Recipe) Recipe {
 	kind, written := authoredSourceKind(r.Spec.Source)
 	reference, inURLKey := authoredSourceReference(r.Spec.Source)
-	return recipeDocumentView{
+	return Recipe{
 		path:                     path,
 		valuesMapping:            !r.Spec.ValuesMapping.IsEmpty(),
 		source:                   !sourceIsEmpty(r.Spec.Source),
@@ -142,7 +173,21 @@ func newRecipeDocumentView(path string, r *types.Recipe) recipeDocumentView {
 		sourceReferenceInURLKey:  inURLKey,
 		outputLabelKeys:          authoredOutputLabelKeys(r.Spec.OutputLabels),
 		outputComponentLabelKeys: authoredOutputComponentLabelKeys(r.Spec.OutputComponentLabels),
+		pipelineStepIDs:          authoredPipelineStepIDs(r.Spec.Pipeline),
 	}
+}
+
+// sourceIsEmpty reports whether a Spec.Source field carries no value. Source is
+// any and can be a string URI, a structured object, or nil; any non-nil
+// non-empty value counts as a declared source.
+func sourceIsEmpty(src any) bool {
+	if src == nil {
+		return true
+	}
+	if s, ok := src.(string); ok && s == "" {
+		return true
+	}
+	return false
 }
 
 // authoredSourceKind reads the kind a structured source names under its `kind:`
@@ -193,49 +238,49 @@ func authoredSourceReference(src any) (string, bool) {
 
 // RecipeValuesMappingDeclared reports whether the presented Recipe declares a
 // values overlay.
-func (v recipeDocumentView) RecipeValuesMappingDeclared(document string) bool {
+func (v Recipe) RecipeValuesMappingDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeValuesMappingDeclared")
 	return v.valuesMapping
 }
 
 // RecipeSourceDeclared reports whether the presented Recipe declares a source
 // pointer.
-func (v recipeDocumentView) RecipeSourceDeclared(document string) bool {
+func (v Recipe) RecipeSourceDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeSourceDeclared")
 	return v.source
 }
 
 // RecipeWorkloadDeclared reports whether the presented Recipe declares a
 // workload body.
-func (v recipeDocumentView) RecipeWorkloadDeclared(document string) bool {
+func (v Recipe) RecipeWorkloadDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeWorkloadDeclared")
 	return v.workload
 }
 
 // RecipeArtifactsDeclared reports whether the presented Recipe declares any
 // artifact entry.
-func (v recipeDocumentView) RecipeArtifactsDeclared(document string) bool {
+func (v Recipe) RecipeArtifactsDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeArtifactsDeclared")
 	return v.artifacts
 }
 
 // RecipeAuthoredSourceKind is the kind the presented Recipe's structured source
 // names, as authored, and whether it names one.
-func (v recipeDocumentView) RecipeAuthoredSourceKind(document string) (string, bool) {
+func (v Recipe) RecipeAuthoredSourceKind(document string) (string, bool) {
 	v.refuseOtherDocument(document, "RecipeAuthoredSourceKind")
 	return v.sourceKind, v.sourceKindWritten
 }
 
 // RecipeAuthoredSourceReference is the reference the presented Recipe's source
 // names, as authored, and whether it sits under the structured form's `url:` key.
-func (v recipeDocumentView) RecipeAuthoredSourceReference(document string) (string, bool) {
+func (v Recipe) RecipeAuthoredSourceReference(document string) (string, bool) {
 	v.refuseOtherDocument(document, "RecipeAuthoredSourceReference")
 	return v.sourceReference, v.sourceReferenceInURLKey
 }
 
 // RecipeSourceKindServed reports whether this program serves kind, read from the
 // served set's one declaration.
-func (v recipeDocumentView) RecipeSourceKindServed(kind string) bool {
+func (v Recipe) RecipeSourceKindServed(kind string) bool {
 	return sourcekind.Served(kind)
 }
 
@@ -245,27 +290,34 @@ func (v recipeDocumentView) RecipeSourceKindServed(kind string) bool {
 // They are the keys as authored, whatever namespace they sit in, so a key
 // claiming a reserved one is among them — which is the whole of what a rule over
 // them reports on.
-func (v recipeDocumentView) RecipeOutputLabelKeys(document string) []string {
+func (v Recipe) RecipeOutputLabelKeys(document string) []string {
 	v.refuseOtherDocument(document, "RecipeOutputLabelKeys")
 	return v.outputLabelKeys
 }
 
 // RecipeOutputComponentLabelKeys returns the component label keys the presented
 // Recipe promotes onto its rendered output, in the order the author wrote them.
-func (v recipeDocumentView) RecipeOutputComponentLabelKeys(document string) []string {
+func (v Recipe) RecipeOutputComponentLabelKeys(document string) []string {
 	v.refuseOtherDocument(document, "RecipeOutputComponentLabelKeys")
 	return v.outputComponentLabelKeys
+}
+
+// RecipePipelineStepIds returns the ids the presented Recipe's pipeline steps
+// declare, one per step, in the order the steps are written.
+func (v Recipe) RecipePipelineStepIds(document string) []string {
+	v.refuseOtherDocument(document, "RecipePipelineStepIds")
+	return v.pipelineStepIDs
 }
 
 // refuseOtherDocument refuses an accessor call naming a document this value was
 // not built for, because answering would hand back this document's fact under
 // another document's name.
-func (v recipeDocumentView) refuseOtherDocument(document, accessor string) {
+func (v Recipe) refuseOtherDocument(document, accessor string) {
 	if document == v.path {
 		return
 	}
 	panic(fmt.Sprintf(
-		"recipeDocumentView.%s asked about document %q while presenting %q: "+
+		"Recipe.%s asked about document %q while presenting %q: "+
 			"a view presents one document, so present the document being asked about",
 		accessor, document, v.path))
 }
@@ -279,6 +331,6 @@ func (v recipeDocumentView) refuseOtherDocument(document, accessor string) {
 // is what makes a Recipe fact added to the registry fail here, and on no
 // presentation of another kind.
 var (
-	_ constraint.DocumentView        = recipeDocumentView{}
-	_ constraint.RecipeDocumentFacts = recipeDocumentView{}
+	_ constraint.DocumentView        = Recipe{}
+	_ constraint.RecipeDocumentFacts = Recipe{}
 )

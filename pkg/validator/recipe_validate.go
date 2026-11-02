@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/documentview"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -86,7 +87,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 // document the load is holding and render whatever came back into the failure
 // shape this package's callers read.
 func validateRecipeSourceURL(r *types.Recipe, sourcePath string) error {
-	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	var presented constraint.DocumentView = documentview.NewRecipe(sourcePath, r)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,
@@ -115,7 +116,7 @@ func validateRecipeSourceURL(r *types.Recipe, sourcePath string) error {
 // load is holding and render whatever came back into the failure shape this
 // package's callers read.
 func validateRecipeSourceKind(r *types.Recipe, sourcePath string) error {
-	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	var presented constraint.DocumentView = documentview.NewRecipe(sourcePath, r)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,
@@ -149,7 +150,7 @@ func validateRecipeSourceKind(r *types.Recipe, sourcePath string) error {
 // them declares — the block is a mapping and has no author order to carry, so the
 // sort is what makes the first-reported key the same one on every run.
 func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
-	presented := newRecipeDocumentView(sourcePath, r)
+	presented := documentview.NewRecipe(sourcePath, r)
 	// The presentation is held as the view the rule declared rather than as its
 	// own concrete type, because the entry takes the check and the view together
 	// and infers one type from both. Handing over the concrete type would infer
@@ -203,7 +204,7 @@ func isReservedLabelKey(key string) bool {
 // enumerating them declares: the block is a sequence, so the author wrote an
 // order and it is the one the findings appear in.
 func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) error {
-	presented := newRecipeDocumentView(sourcePath, r)
+	presented := documentview.NewRecipe(sourcePath, r)
 	var view constraint.DocumentView = presented
 	keys := presented.RecipeOutputComponentLabelKeys(sourcePath)
 
@@ -293,7 +294,7 @@ func validateRecipeValuesMapping(r *types.Recipe, sourcePath string) error {
 	// own concrete type, because the entry takes the check and the view together
 	// and infers one type from both. Handing over the concrete type would infer
 	// that type and then refuse the rule, which declares the view.
-	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	var presented constraint.DocumentView = documentview.NewRecipe(sourcePath, r)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,
@@ -329,7 +330,7 @@ func validateRecipeValuesMapping(r *types.Recipe, sourcePath string) error {
 // The rule raises at most one objection, for the reason validateRecipeValuesMapping
 // states.
 func validateRecipeInputKinds(r *types.Recipe, sourcePath string) error {
-	var presented constraint.DocumentView = newRecipeDocumentView(sourcePath, r)
+	var presented constraint.DocumentView = documentview.NewRecipe(sourcePath, r)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,
@@ -347,17 +348,4 @@ func validateRecipeInputKinds(r *types.Recipe, sourcePath string) error {
 		return nil
 	}
 	return failures[0]
-}
-
-// sourceIsEmpty reports whether the Recipe's Spec.Source field carries no
-// value. Source is any and can be a string URI, a structured object,
-// or nil; any non-nil non-empty value counts as a declared source.
-func sourceIsEmpty(src any) bool {
-	if src == nil {
-		return true
-	}
-	if s, ok := src.(string); ok && s == "" {
-		return true
-	}
-	return false
 }

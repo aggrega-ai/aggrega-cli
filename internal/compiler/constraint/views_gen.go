@@ -1364,6 +1364,19 @@ type DocumentView interface {
 	// types.RecipeSpec.OutputComponentLabels.
 	RecipeOutputComponentLabelKeys(document string) []string
 
+	// RecipePipelineStepIds are the ids the presented Recipe's pipeline steps
+	// declare, one per step, in the order the steps are written.
+	//
+	// The entry at a position is the id of the step at that position, so a
+	// rule over the set can name the step an id was declared on as well as the
+	// id. The order is the author's because the pipeline is a sequence and
+	// runs in that order: a later step reads an earlier step's outputs by its
+	// id, which is why the ids are a question about the document as written. A
+	// Recipe declaring no pipeline declares none.
+	//
+	// Keyed by document; read from types.RecipeSpec.Pipeline.
+	RecipePipelineStepIds(document string) []string
+
 	// ManifestRecipeMappingEntries are the entries of the presented Manifest's
 	// recipe mapping table, in author order within each axis: the components
 	// tier before the features tier, and within each tier the type axis before
@@ -1471,6 +1484,19 @@ type DocumentView interface {
 	//
 	// Keyed by document; read from types.FeatureRecipeSpec.Source.
 	FeatureRecipeAuthoredSourceReference(document string) (string, bool)
+
+	// FeatureRecipePipelineStepIds are the ids the presented FeatureRecipe's
+	// pipeline steps declare, one per step, in the order the steps are
+	// written.
+	//
+	// It is the Recipe's fact for the other authored kind that writes a
+	// pipeline, declared twice because a fact is filed under exactly one
+	// document kind. What it reads, and why its order is the steps' own, is
+	// what the Recipe's fact states; it is not restated here, because a fact's
+	// documentation has one home.
+	//
+	// Keyed by document; read from types.FeatureRecipeSpec.Pipeline.
+	FeatureRecipePipelineStepIds(document string) []string
 
 	// ReleaseBoundaryPlacements is everything the presented Release's
 	// boundaries place, in the order the document declares it — a boundary's

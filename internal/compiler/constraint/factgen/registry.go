@@ -1366,6 +1366,23 @@ var facts = []factDecl{
 			"because the two blocks differ in shape, not because either rule " +
 			"wanted a different one.",
 	},
+	{
+		Name:        "recipe-pipeline-step-ids",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Pipeline",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "RecipePipelineStepIds are the ids the presented Recipe's pipeline " +
+			"steps declare, one per step, in the order the steps are written.\n\n" +
+			"The entry at a position is the id of the step at that position, so " +
+			"a rule over the set can name the step an id was declared on as well " +
+			"as the id. The order is the author's because the pipeline is a " +
+			"sequence and runs in that order: a later step reads an earlier " +
+			"step's outputs by its id, which is why the ids are a question " +
+			"about the document as written. A Recipe declaring no pipeline " +
+			"declares none.",
+	},
 
 	{
 		Name:        "manifest-recipe-mapping-entries",
@@ -1577,6 +1594,21 @@ var facts = []factDecl{
 			"fact is filed under exactly one document kind. What it reads is what " +
 			"the Recipe's own fact states; it is not restated here, because a " +
 			"fact's documentation has one home.",
+	},
+	{
+		Name:        "feature-recipe-pipeline-step-ids",
+		Stage:       "document",
+		SourceField: "types.FeatureRecipeSpec.Pipeline",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "FeatureRecipePipelineStepIds are the ids the presented " +
+			"FeatureRecipe's pipeline steps declare, one per step, in the order " +
+			"the steps are written.\n\nIt is the Recipe's fact for the other " +
+			"authored kind that writes a pipeline, declared twice because a fact " +
+			"is filed under exactly one document kind. What it reads, and why its " +
+			"order is the steps' own, is what the Recipe's fact states; it is not " +
+			"restated here, because a fact's documentation has one home.",
 	},
 	{
 		Name:        "release-boundary-placements",

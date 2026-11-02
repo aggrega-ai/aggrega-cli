@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package validator
+package documentview
 
 import (
 	"fmt"
@@ -11,9 +11,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// featureRecipeDocumentView presents one authored FeatureRecipe to a check as
+// FeatureRecipe presents one authored FeatureRecipe to a check as
 // named facts: whether it declares a source pointer or a values overlay, the kind
-// its structured source names, and the reference its source names.
+// its structured source names, the reference its source names, and the id each
+// of its pipeline steps declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -47,7 +48,7 @@ import (
 // FeatureRecipe itself carries is the obligation asserted at the bottom of this
 // file: a FeatureRecipe fact added to the registry stops this type compiling, and a
 // fact carried by any other kind does not reach it.
-type featureRecipeDocumentView struct {
+type FeatureRecipe struct {
 	// FeatureRecipeDocumentBase supplies the document-stage facts a
 	// FeatureRecipe does not carry, and declares nothing for the ones it does —
 	// so this type writes bodies for exactly the FeatureRecipe's own facts.
@@ -74,19 +75,23 @@ type featureRecipeDocumentView struct {
 	// `url:` key rather than being the source itself.
 	sourceReference         string
 	sourceReferenceInURLKey bool
+
+	// pipelineStepIDs are the ids the pipeline's steps declare, one per step, in
+	// the order the steps are written.
+	pipelineStepIDs []string
 }
 
-// newFeatureRecipeDocumentView presents the FeatureRecipe a load is holding: the
+// NewFeatureRecipe presents the FeatureRecipe a load is holding: the
 // file it was read from, and the answers produced out of that document.
 //
 // The answers are produced here rather than taken from the caller because each
 // has exactly one producer in this package, and routing the presentation through
 // those producers is what keeps each fact single-valued. A caller passing its own
 // answers could pass ones taken from a different document, or derived differently.
-func newFeatureRecipeDocumentView(path string, fr *types.FeatureRecipe) featureRecipeDocumentView {
+func NewFeatureRecipe(path string, fr *types.FeatureRecipe) FeatureRecipe {
 	kind, written := authoredSourceKind(fr.Spec.Source)
 	reference, inURLKey := authoredSourceReference(fr.Spec.Source)
-	return featureRecipeDocumentView{
+	return FeatureRecipe{
 		path:                    path,
 		source:                  !sourceIsEmpty(fr.Spec.Source),
 		valuesMapping:           !fr.Spec.ValuesMapping.IsEmpty(),
@@ -94,26 +99,34 @@ func newFeatureRecipeDocumentView(path string, fr *types.FeatureRecipe) featureR
 		sourceKindWritten:       written,
 		sourceReference:         reference,
 		sourceReferenceInURLKey: inURLKey,
+		pipelineStepIDs:         authoredPipelineStepIDs(fr.Spec.Pipeline),
 	}
+}
+
+// FeatureRecipePipelineStepIds returns the ids the presented FeatureRecipe's
+// pipeline steps declare, one per step, in the order the steps are written.
+func (v FeatureRecipe) FeatureRecipePipelineStepIds(document string) []string {
+	v.refuseOtherDocument(document, "FeatureRecipePipelineStepIds")
+	return v.pipelineStepIDs
 }
 
 // FeatureRecipeSourceDeclared reports whether the presented FeatureRecipe
 // declares a source pointer.
-func (v featureRecipeDocumentView) FeatureRecipeSourceDeclared(document string) bool {
+func (v FeatureRecipe) FeatureRecipeSourceDeclared(document string) bool {
 	v.refuseOtherDocument(document, "FeatureRecipeSourceDeclared")
 	return v.source
 }
 
 // FeatureRecipeValuesMappingDeclared reports whether the presented FeatureRecipe
 // declares a values overlay.
-func (v featureRecipeDocumentView) FeatureRecipeValuesMappingDeclared(document string) bool {
+func (v FeatureRecipe) FeatureRecipeValuesMappingDeclared(document string) bool {
 	v.refuseOtherDocument(document, "FeatureRecipeValuesMappingDeclared")
 	return v.valuesMapping
 }
 
 // FeatureRecipeAuthoredSourceKind is the kind the presented FeatureRecipe's
 // structured source names, as authored, and whether it names one.
-func (v featureRecipeDocumentView) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
+func (v FeatureRecipe) FeatureRecipeAuthoredSourceKind(document string) (string, bool) {
 	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceKind")
 	return v.sourceKind, v.sourceKindWritten
 }
@@ -121,26 +134,26 @@ func (v featureRecipeDocumentView) FeatureRecipeAuthoredSourceKind(document stri
 // FeatureRecipeAuthoredSourceReference is the reference the presented
 // FeatureRecipe's source names, as authored, and whether it sits under the
 // structured form's `url:` key.
-func (v featureRecipeDocumentView) FeatureRecipeAuthoredSourceReference(document string) (string, bool) {
+func (v FeatureRecipe) FeatureRecipeAuthoredSourceReference(document string) (string, bool) {
 	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceReference")
 	return v.sourceReference, v.sourceReferenceInURLKey
 }
 
 // FeatureRecipeSourceKindServed reports whether this program serves kind, read
 // from the served set's one declaration.
-func (v featureRecipeDocumentView) FeatureRecipeSourceKindServed(kind string) bool {
+func (v FeatureRecipe) FeatureRecipeSourceKindServed(kind string) bool {
 	return sourcekind.Served(kind)
 }
 
 // refuseOtherDocument refuses an accessor call naming a document this value was
 // not built for, because answering would hand back this document's fact under
 // another document's name.
-func (v featureRecipeDocumentView) refuseOtherDocument(document, accessor string) {
+func (v FeatureRecipe) refuseOtherDocument(document, accessor string) {
 	if document == v.path {
 		return
 	}
 	panic(fmt.Sprintf(
-		"featureRecipeDocumentView.%s asked about document %q while presenting %q: "+
+		"FeatureRecipe.%s asked about document %q while presenting %q: "+
 			"a view presents one document, so present the document being asked about",
 		accessor, document, v.path))
 }
@@ -154,6 +167,6 @@ func (v featureRecipeDocumentView) refuseOtherDocument(document, accessor string
 // is what makes a FeatureRecipe fact added to the registry fail here, and on no
 // presentation of another kind.
 var (
-	_ constraint.DocumentView               = featureRecipeDocumentView{}
-	_ constraint.FeatureRecipeDocumentFacts = featureRecipeDocumentView{}
+	_ constraint.DocumentView               = FeatureRecipe{}
+	_ constraint.FeatureRecipeDocumentFacts = FeatureRecipe{}
 )

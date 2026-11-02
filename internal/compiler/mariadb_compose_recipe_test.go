@@ -135,8 +135,12 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	valuesMapping := types.OrderedMap[json.RawMessage]{}
 	valuesMapping.Set("db", json.RawMessage(`{"database":"appdb","charset":"utf8mb4","collation":"utf8mb4_general_ci","port":3306}`))
 
+	// The graph is built by hand, so nothing applies the Component's infra
+	// defaults: every key a Recipe assertion reads carries its default here, as
+	// a resolved graph would. credentials and credentials_secret hold the
+	// defaults the Recipe accepts, generated and empty.
 	infraMapping := types.OrderedMap[json.RawMessage]{}
-	infraMapping.Set("db", json.RawMessage(`{"engine_version":"11.4","compute":{"cpu":"250m","memory":"512Mi"},"storage":{"size":"10Gi","type":"gp3"},"ha":{"enabled":false,"read_replicas":0},"backup":{"enabled":true,"retention_days":7}}`))
+	infraMapping.Set("db", json.RawMessage(`{"engine_version":"11.4","compute":{"cpu":"250m","memory":"512Mi"},"storage":{"size":"10Gi","type":"gp3"},"ha":{"enabled":false,"read_replicas":0},"backup":{"enabled":true,"retention_days":7},"credentials":"generated","credentials_secret":""}`))
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{

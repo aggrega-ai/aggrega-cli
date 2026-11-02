@@ -21,7 +21,7 @@ entities:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - uri: helm/prometheus-exporter:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:7a65740775513666fc6a9a6bcfc792d0cab3fb8666ccd7a9b5a0f4a488ea2afa
+      digest: sha256:e4df11f46e851395422fc6b3adcac298c1b9b9cf6b722d42632b29c21b5f360e
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: helm/service:1.0.0
