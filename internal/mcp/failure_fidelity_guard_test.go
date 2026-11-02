@@ -226,8 +226,16 @@ var proseOnlyFailureReturns = map[string]int{
 	// Release scope and its entity scope. Each is asked once the call's paths are
 	// resolved and before the lookup, the resolution or the check runs, so nothing
 	// has been looked up, resolved or validated at that return.
-	"tool_validate.go": 23,
-	"tool_describe.go": 19,
+	//
+	// Each refuses a catalog directory the workspace configuration lists for the
+	// stack it reads that is not a directory: description once, in its Release
+	// scope, and validation three times, in its Release, entity and catalog scopes.
+	// The refusal is the configuration's own, decided from the listing before the
+	// resolution, the check or the catalog pass runs, so nothing has been resolved,
+	// validated or described at that return. In the two Release scopes it is asked
+	// ahead of the withdrawal report as well, so not even that report is in hand.
+	"tool_validate.go": 26,
+	"tool_describe.go": 20,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.

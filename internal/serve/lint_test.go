@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -335,6 +336,11 @@ func TestConventionsLayerDoesNotOverFire(t *testing.T) {
 			root := t.TempDir()
 			writeFixtureFile(t, filepath.Join(root, workspaceconfig.ConfigFilename),
 				"workspace:\n  catalog_dirs:\n    - ./catalog\n")
+			// The listed catalog directory exists in every leg, as a listed one must,
+			// including the legs whose subject sits outside it.
+			if err := os.MkdirAll(filepath.Join(root, "catalog"), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			writeFixtureFile(t, filepath.Join(root, tc.file), tc.content)
 
 			srv := conventionsServer(t, root, true)

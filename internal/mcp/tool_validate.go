@@ -319,18 +319,19 @@ func validateReleaseScope(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	deprecations, refusal := tw.releaseDeprecations(lf, releasePath)
-	if refusal != "" {
-		return errorResult(refusal)
-	}
 	// A directory the workspace configuration lists for this Release that is not a
 	// directory is refused, as `aggrega validate --release` refuses it, rather than
-	// validated past.
+	// validated past. It is asked ahead of the withdrawal report, so the refusal is
+	// answered before anything the answer would report has been read.
 	if _, err := tw.catalogDirsFor(releasePath); err != nil {
 		return tw.answer(errorResult(catalogDirsGuidance(
 			"Validation did not run: the workspace configuration lists a catalog directory this Release reads that "+
 				"is not a directory, and `aggrega validate` refuses the same directory.",
 			err)))
+	}
+	deprecations, refusal := tw.releaseDeprecations(lf, releasePath)
+	if refusal != "" {
+		return errorResult(refusal)
 	}
 	view := tw.newView(releasePath, lf)
 
