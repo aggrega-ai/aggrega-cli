@@ -176,7 +176,7 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 		return res, perr
 	}
 	if verr != nil {
-		return res, fmt.Errorf("schema: %w", verr)
+		return res, fmt.Errorf("%s: %w", envelopeStageLabel(verr), verr)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Schema: valid")
 
@@ -198,6 +198,25 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 	}
 	res.Valid = true
 	return res, nil
+}
+
+// envelopeStageLabel names the stage a refusal by the document-envelope gate is
+// reported under, read off the condition the refusal reports.
+//
+// The gate refuses most documents for failing their kind's schema, and those are
+// labelled schema. It also applies rules a schema cannot state — a step id
+// repeated within one pipeline is one — under conditions of their own, and the
+// schema accepts such a document, so labelling that refusal schema would tell the
+// reader the schema refused something it accepts. Those are labelled shape, the
+// stage this report already uses for a kind's rules beyond its schema. A refusal
+// that is not a violation at all — a document that will not parse, an engine
+// that could not run — keeps the schema label it has always had.
+func envelopeStageLabel(refusal error) string {
+	var violation *envelope.Error
+	if errors.As(refusal, &violation) && violation != nil && violation.Condition() != envelope.ErrEntityEnvelope() {
+		return "shape"
+	}
+	return "schema"
 }
 
 // singleEntityKinds is the set of kinds the single-entity scope validates, in
