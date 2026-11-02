@@ -17,12 +17,18 @@ import (
 // would be silently skipped at every such call site. This test is what fails
 // instead.
 //
-// The four cases are the four failure returns ValidateBytes has: a document
+// The five cases are the five failure returns ValidateBytes has: a document
 // that will not parse, an empty document, a document that violates its
-// schema, and an engine that could not run. A fifth return path added later
-// with no sentinel is caught here only if it is also added to this table, so
-// the table is deliberately exhaustive over the function's returns rather
-// than over interesting inputs.
+// schema, an engine that could not run, and a document the schema accepts
+// whose pipeline repeats a step id. A sixth return path added later with no
+// sentinel is caught here only if it is also added to this table, so the
+// table is deliberately exhaustive over the function's returns rather than
+// over interesting inputs.
+//
+// Every return opens with the sentence of the condition it reports. For four
+// of them that is ErrEntityEnvelope's; the repeated step id reports a
+// condition of its own, whose sentence it opens with instead, and it matches
+// ErrEntityEnvelope all the same.
 func TestValidateBytes_EveryFailureCarriesTheSentinel(t *testing.T) {
 	t.Parallel()
 
@@ -45,6 +51,9 @@ spec:
 		// wantMessageFragment is asserted so a case cannot silently start
 		// exercising a different return path than the one it names.
 		wantMessageFragment string
+		// wantCondition is the condition the return reports, when it is not
+		// ErrEntityEnvelope itself.
+		wantCondition error
 	}{
 		{
 			// Mixed tabs and spaces defeats both the generic decode and the
@@ -78,6 +87,13 @@ spec:
 			doc:                 valid,
 			wantMessageFragment: "no embedded schema for kind",
 		},
+		{
+			name:                "repeated pipeline step id",
+			kind:                KindRecipe,
+			doc:                 []byte(duplicateStepRecipe),
+			wantMessageFragment: adviceDistinctStepIDs,
+			wantCondition:       ErrDuplicatePipelineStepID(),
+		},
 	}
 
 	for _, tc := range cases {
@@ -93,13 +109,20 @@ spec:
 			if !errors.Is(err, ErrEntityEnvelope()) {
 				t.Errorf("%s: error must match ErrEntityEnvelope; got %v", tc.name, err)
 			}
-			// Every return path opens with the condition's registered
-			// sentence, whichever of them a document reaches. Asserted here
-			// rather than in a test of its own because this is the one place
-			// that enumerates all four returns: a fifth return added without
-			// the sentence fails here, where a separate test exercising one
-			// path would not see it.
-			if want := ErrEntityEnvelope().Error(); !strings.HasPrefix(err.Error(), want) {
+			// Every return path opens with the registered sentence of the
+			// condition it reports, whichever of them a document reaches.
+			// Asserted here rather than in a test of its own because this is the
+			// one place that enumerates every return: a further return added
+			// without its sentence fails here, where a separate test exercising
+			// one path would not see it.
+			condition := ErrEntityEnvelope()
+			if tc.wantCondition != nil {
+				condition = tc.wantCondition
+				if !errors.Is(err, tc.wantCondition) {
+					t.Errorf("%s: error must match its own condition %v; got %v", tc.name, tc.wantCondition, err)
+				}
+			}
+			if want := condition.Error(); !strings.HasPrefix(err.Error(), want) {
 				t.Errorf("%s: every failure must open with the registered sentence %q; got %v", tc.name, want, err)
 			}
 		})

@@ -50,7 +50,9 @@ import (
 
 // ErrEntityEnvelope is the sentinel for a document failing its
 // kind's envelope schema. errors.Is-recoverable at the pipeline
-// boundary.
+// boundary. Every refusal this package's gate makes matches it, including
+// one reported under a condition of its own, such as
+// ErrDuplicatePipelineStepID.
 func ErrEntityEnvelope() error { return errEntityEnvelope }
 
 // The sentence states the condition and stops there. Three paths raise this
@@ -198,8 +200,19 @@ func compiledValidator(key compiledKey) (jsonvalidator.Validator, error) {
 }
 
 // Error is the structured envelope violation: the file, the entity
-// kind, the engine's path-pointed findings, and where in the document
-// each of those paths sits. Unwraps to ErrEntityEnvelope.
+// kind, the path-pointed findings, and where in the document each of
+// those paths sits. Matches ErrEntityEnvelope.
+//
+// Most violations are the document failing its kind's schema, and their
+// findings are the schema engine's. A few rules the gate applies cannot be
+// written in a schema at all — a step id repeated within one pipeline is one —
+// and a violation of such a rule reports its own registered condition rather
+// than the schema one, because the schema accepts the document and advice to
+// correct it against the schema would send the author to something that
+// confirms nothing. Such a violation still matches ErrEntityEnvelope, so a
+// caller gating on the gate's one sentinel keeps catching every refusal the
+// gate makes; the condition it names first, and therefore the short code a
+// diagnostic prints, is its own.
 type Error struct {
 	Kind     Kind
 	Path     string
@@ -222,6 +235,26 @@ type Error struct {
 	// The map is only ever looked up, never iterated, so it introduces no
 	// ordering into the rendered message.
 	Positions map[string]aggerrors.SourceLocation
+
+	// condition is the registered condition the findings report when it is
+	// not the schema one, and advice the advice true of it; both are empty for
+	// a schema violation. They are unexported so that only this package, which
+	// applies the rules behind them, can raise one; a copy of the whole value
+	// carries them along.
+	condition error
+	advice    string
+}
+
+// Condition returns the registered condition the violation reports: the one
+// the rule it broke is registered under, or ErrEntityEnvelope for a document
+// failing its kind's schema. A surface composing its own wording for the
+// violation reads the sentence through this, so it opens with the same
+// condition the error's own rendering and its short code name.
+func (e *Error) Condition() error {
+	if e.condition != nil {
+		return e.condition
+	}
+	return ErrEntityEnvelope()
 }
 
 // Error renders the violation as one grouped report: the condition's
@@ -247,7 +280,7 @@ func (e *Error) Error() string {
 		values = append(values, "at "+e.Path)
 	}
 	var b strings.Builder
-	b.WriteString(aggerrors.ComposeMessage(ErrEntityEnvelope(), values, ""))
+	b.WriteString(aggerrors.ComposeMessage(e.Condition(), values, ""))
 	for i, f := range e.Findings {
 		if i >= 4 {
 			fmt.Fprintf(&b, "; (+%d more)", len(e.Findings)-4)
@@ -263,11 +296,28 @@ func (e *Error) Error() string {
 		}
 		fmt.Fprintf(&b, "%s: %s", fp, f.Message)
 	}
-	b.WriteString(". " + adviceCorrectDocument)
+	advice := adviceCorrectDocument
+	if e.condition != nil {
+		advice = e.advice
+	}
+	if advice != "" {
+		b.WriteString(". " + advice)
+	}
 	return b.String()
 }
 
-func (e *Error) Unwrap() error { return ErrEntityEnvelope() }
+// Unwrap reports the condition the violation names, so the first registered
+// identity in its chain — the one a short code is read from — is that
+// condition.
+func (e *Error) Unwrap() error { return e.Condition() }
+
+// Is reports a violation of a rule with a condition of its own as
+// ErrEntityEnvelope too, so a caller gating on the gate's one sentinel matches
+// every refusal the gate makes. A schema violation needs no such report: its
+// condition is ErrEntityEnvelope, reached through Unwrap.
+func (e *Error) Is(target error) bool {
+	return e.condition != nil && target == ErrEntityEnvelope()
+}
 
 // envelopeFailure attaches ErrEntityEnvelope to a validation failure that has
 // no per-field findings to report — a document that will not parse, or an
@@ -318,6 +368,12 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 // failure and an engine failure have no per-field findings, so the sentence is
 // followed by the underlying failure's own message and nothing else.
 //
+// A Recipe or FeatureRecipe the schema accepts is then held to the one rule its
+// schema cannot state: no two steps of its pipeline share an id. A document
+// breaking it returns *Error under ErrDuplicatePipelineStepID, one finding per
+// repeated id positioned at the repeat and naming the step that declared the id
+// first, and that error matches ErrEntityEnvelope as well.
+//
 // A document whose anchor is aliased inside its own content is refused as a
 // parse failure, naming that anchor. It describes an infinite tree rather
 // than a malformed one, so there is nothing to validate and no position to
@@ -367,6 +423,12 @@ func validateBytes(key compiledKey, data []byte, path string) (any, error) {
 	}
 	if len(findings) > 0 {
 		return instance, newSchemaError(kind, path, data, findings)
+	}
+	// The rules no schema can state run on a document the schema accepted, so
+	// each reads a shape the schema has already confirmed, and a document
+	// failing both reports the schema's findings first.
+	if err := pipelineStepIDsUnique(key, instance, path, data); err != nil {
+		return instance, err
 	}
 	return instance, nil
 }

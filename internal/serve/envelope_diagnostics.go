@@ -239,7 +239,15 @@ func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content 
 	// to the file it was raised on. Nor is the advice the grouped report closes
 	// with: this surface emits one diagnostic per finding, so advice would be
 	// repeated once per squiggle and add lines without adding facts.
-	header := cerrors.ComposeMessage(envelope.ErrEntityEnvelope(), []string{string(kind)}, "")
+	//
+	// The condition is read off the rejection itself, because the gate refuses
+	// some documents under a condition of its own rather than the schema one —
+	// a repeated pipeline step id, say — and the sentence must be the one the
+	// diagnostic's codes name.
+	var header string
+	if envErr != nil {
+		header = cerrors.ComposeMessage(envErr.Condition(), []string{string(kind)}, "")
+	}
 	var diags []Diagnostic
 	if envErr != nil {
 		// One rejection, one condition: every finding beneath it reports the same

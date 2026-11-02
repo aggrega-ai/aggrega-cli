@@ -67,7 +67,15 @@ func (e *placeholderError) Error() string {
 		b.WriteString(e.rest)
 		b.WriteString("\n  ")
 	case e.schema != nil:
-		b.WriteString(aggerrors.ComposeMessage(envelope.ErrEntityEnvelope(), nil, ""))
+		// The sentence is the condition the gate's refusal reports: the gate
+		// refuses some documents under a condition of its own rather than the
+		// schema one.
+		condition := envelope.ErrEntityEnvelope()
+		var gate *envelope.Error
+		if errors.As(e.schema, &gate) && gate != nil {
+			condition = gate.Condition()
+		}
+		b.WriteString(aggerrors.ComposeMessage(condition, nil, ""))
 		b.WriteString(": ")
 	}
 	noun, owes := "placeholders", "each of these needs one"
@@ -116,7 +124,11 @@ func placeholderRefusal(kind envelope.Kind, data []byte, path string, schemaErr 
 	refusal := &placeholderError{path: path, placeholders: found, schema: schemaErr}
 	if gate != nil {
 		if rest := findingsAwayFrom(gate.Findings, found); len(rest) > 0 {
-			remaining := &envelope.Error{Kind: gate.Kind, Path: gate.Path, Findings: rest, Positions: gate.Positions}
+			// A copy of the refusal rather than a fresh one, so the condition it
+			// reports and the advice true of that condition travel with the
+			// findings that remain.
+			remaining := *gate
+			remaining.Findings = rest
 			refusal.rest = remaining.Error()
 		}
 	}
