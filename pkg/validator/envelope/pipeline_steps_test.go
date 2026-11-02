@@ -219,6 +219,33 @@ func TestDuplicatePipelineStepID(t *testing.T) {
 	}
 }
 
+// TestDuplicatePipelineStepIDAddsNoRefusalToADocumentItsKindCannotDecode pins
+// what the rule does with a document that does not decode into its kind's type:
+// it is not asked, so whatever already refuses that document is the refusal the
+// author reads. The document here repeats a step id and writes its capability as
+// a list, which its kind's type cannot hold: the rule's own entry yields nothing
+// for it, and the gate reports the schema's refusal and not this condition.
+func TestDuplicatePipelineStepIDAddsNoRefusalToADocumentItsKindCannotDecode(t *testing.T) {
+	t.Parallel()
+
+	doc := []byte(strings.Replace(duplicateStepRecipe, "capability: helm", "capability: [helm]", 1))
+
+	if err := pipelineStepIDsUnique(compiledKey{kind: KindRecipe}, "recipe.yaml", doc); err != nil {
+		t.Fatalf("a document its kind's type cannot hold must not be asked about its step ids; got %v", err)
+	}
+
+	_, err := ValidateBytes(KindRecipe, doc, "recipe.yaml")
+	if err == nil {
+		t.Fatal("a document whose capability is not a string must be refused")
+	}
+	if errors.Is(err, ErrDuplicatePipelineStepID()) {
+		t.Fatalf("the refusal must be the one that already refuses the document, not a repeated id; got %v", err)
+	}
+	if !errors.Is(err, ErrEntityEnvelope()) {
+		t.Fatalf("the refusal must be the schema's; got %v", err)
+	}
+}
+
 // TestDuplicatePipelineStepIDWithheld pins the withholding entry point: where
 // every value of a document may carry data an author declared sensitive, the
 // refusal still names both positions but quotes no id.

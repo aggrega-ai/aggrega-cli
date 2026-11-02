@@ -5,6 +5,7 @@ package validator
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/documentview"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -75,7 +76,7 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 // document the load is holding and render whatever came back into the failure
 // shape this package's callers read.
 func validateFeatureRecipeSourceURL(fr *types.FeatureRecipe, sourcePath string) error {
-	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
+	var presented constraint.DocumentView = documentview.NewFeatureRecipe(sourcePath, fr)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,
@@ -104,7 +105,7 @@ func validateFeatureRecipeSourceURL(fr *types.FeatureRecipe, sourcePath string) 
 // document the load is holding and render whatever came back into the failure
 // shape this package's callers read.
 func validateFeatureRecipeSourceKind(fr *types.FeatureRecipe, sourcePath string) error {
-	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
+	var presented constraint.DocumentView = documentview.NewFeatureRecipe(sourcePath, fr)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,
@@ -143,7 +144,7 @@ func validateFeatureRecipeValuesMapping(fr *types.FeatureRecipe, sourcePath stri
 	// own concrete type, because the entry takes the check and the view together
 	// and infers one type from both. Handing over the concrete type would infer
 	// that type and then refuse the rule, which declares the view.
-	var presented constraint.DocumentView = newFeatureRecipeDocumentView(sourcePath, fr)
+	var presented constraint.DocumentView = documentview.NewFeatureRecipe(sourcePath, fr)
 	failures := shapeRuleErrorsFrom(
 		constraint.RunOnDocument(
 			sourcePath,

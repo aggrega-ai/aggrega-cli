@@ -427,7 +427,7 @@ func validateBytes(key compiledKey, data []byte, path string) (any, error) {
 	// The rules no schema can state run on a document the schema accepted, so
 	// each reads a shape the schema has already confirmed, and a document
 	// failing both reports the schema's findings first.
-	if err := pipelineStepIDsUnique(key, instance, path, data); err != nil {
+	if err := pipelineStepIDsUnique(key, path, data); err != nil {
 		return instance, err
 	}
 	return instance, nil
