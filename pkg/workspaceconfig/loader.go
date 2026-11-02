@@ -17,12 +17,18 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// ErrConfigInvalid wraps every structural-validation failure raised
-// by Load. Errors satisfying errors.Is(err, ErrConfigInvalid()) carry
-// a wrapped message naming the offending field path and the
-// validation diagnostic.
+// ErrConfigInvalid wraps every refusal raised as the workspace configuration is
+// read: a layer the schema rejects, a value a further check refuses, and a value
+// the composed layers cannot use. Errors satisfying errors.Is(err,
+// ErrConfigInvalid()) carry a wrapped message naming the file or the environment
+// variable that carried the value, and what is wrong with it.
 //
-// A lockfile's load registers a near-identical sentence under a separate
+// Its message is a head true of every one of those refusals, rather than one
+// naming the schema: several of the checks run ahead of the schema precisely
+// because the schema admits the value, so a head blaming the schema would be
+// false on exactly the refusals that explain themselves best.
+//
+// A lockfile's load registers its own sentence under a separate
 // condition, and that split is deliberate and is not to be unified. A workspace
 // configuration is written by an author, so a file that fails validation is
 // something its author can correct — a real rule, which this condition declares
@@ -32,7 +38,7 @@ func ErrConfigInvalid() error { return errConfigInvalid }
 
 var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta{
 	ShortCode: "E0224",
-	Message:   "file failed schema validation",
+	Message:   "workspace configuration is invalid",
 	RulePlace: cerrors.RuleNoStageReaches("Reading the workspace configuration evaluates the rule — each layer against the schema, and " +
 		"against the further shape and value checks that layer carries, and the composed layers against " +
 		"the checks no single layer can answer, such as what the default registry names. The configuration " +
