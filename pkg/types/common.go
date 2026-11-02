@@ -124,10 +124,11 @@ const IgnoreRuleFromPlugin = "plugin"
 // when it is absent. It is the provider's support claim for that key, and the
 // published support matrix is rendered from it.
 //
-// The compiler reads the claim in one way: a Scope entry naming an input kind
+// The compiler reads the claim in two ways: a Scope entry naming an input kind
 // the provider's own ProviderContract.InputKinds does not claim contradicts an
-// adjacent claim in the same entity, and the load halts. Nothing else about a
-// build branches on the claim.
+// adjacent claim in the same entity, and the load halts; and
+// [WellKnownAnnotationHonoured] answers whether the claim covers an authored
+// key, which a render reads to warn about one the provider ignores.
 type WellKnownAnnotation struct {
 	Key             string `json:"key" yaml:"key"`
 	Purpose         string `json:"purpose" yaml:"purpose"`

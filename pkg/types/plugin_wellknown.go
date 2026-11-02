@@ -112,19 +112,30 @@ func ValidateWellKnownAnnotationScopes(p Plugin) error {
 // A provider that declares a support claim which names no entry for the key is
 // not covered: it has said which keys it reads, and this is not one of them.
 //
+// A provider declaring ReadsNoWellKnownAnnotations covers no key at any scope:
+// it has said, in its own words, that it reads none of them. That declaration is
+// a field of its own rather than an empty list, so the statement survives every
+// encoding the entity passes through — an empty list and an absent one both hold
+// no entry, and an encoder that omits empty fields writes the two identically, so
+// a meaning carried by that difference would be lost without a trace. The schema
+// refuses the declaration beside a list, so the two never compete here; it is
+// read first only because it settles the answer.
+//
 // An ABSENT claim is a different thing from a claim that omits the key, and it
 // reports covered. Collapsing the two is the mistake this distinction exists to
 // prevent. A provider that declares no support claim at all has said
 // nothing, and inferring "this key is not read" from silence would put a negative
 // claim in the provider author's mouth and report it to a Release author as
-// the provider's own word. The residue is real and is not papered over: a
-// provider that reads none of these keys and declares nothing is indistinguishable
-// here from one that reads them all, so its authors get no advisory. That gap is
-// closed by the provider declaring its claim, never by this read guessing at one.
+// the provider's own word. A provider that reads none of these keys says so with
+// ReadsNoWellKnownAnnotations; one that declares nothing gets no advisory, and
+// that is the cost of its silence rather than something this read guesses past.
 // An entity carrying no provider block reports covered for the same reason, one
 // level up: it makes no render claim to compare against, and its zero block
 // declares an empty annotation list, which is the same silence.
 func WellKnownAnnotationHonoured(p Plugin, key, inputKindScope string) bool {
+	if p.Spec.Provider.ReadsNoWellKnownAnnotations {
+		return false
+	}
 	if len(p.Spec.Provider.WellKnownAnnotations) == 0 {
 		return true
 	}

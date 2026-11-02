@@ -96,6 +96,57 @@ func TestValidateWellKnownAnnotationScopes(t *testing.T) {
 	}
 }
 
+// TestWellKnownAnnotationHonouredDeclaresNone pins the three claim shapes against
+// one another: a provider declaring that it reads no well-known annotation covers
+// no key at any scope, while a provider declaring nothing — no list, or an empty
+// one — still covers every key, because its silence says nothing. The silent rows
+// are the positive controls that keep the declares-none rows from passing on a
+// predicate that answers not-covered for everything.
+func TestWellKnownAnnotationHonouredDeclaresNone(t *testing.T) {
+	all := types.PluginInputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+	declaresNone := types.Plugin{
+		Metadata: types.PluginMetadata{Name: "probe", PluginType: "provider"},
+		Spec: types.PluginSpec{Provider: types.PluginProvider{
+			ReadsNoWellKnownAnnotations: true,
+			Contract:                    types.ProviderContract{InputKinds: all},
+		}},
+	}
+	silent := types.Plugin{
+		Metadata: types.PluginMetadata{Name: "probe", PluginType: "provider"},
+		Spec:     types.PluginSpec{Provider: types.PluginProvider{Contract: types.ProviderContract{InputKinds: all}}},
+	}
+	emptyList := silent
+	emptyList.Spec.Provider.WellKnownAnnotations = []types.WellKnownAnnotation{}
+
+	scopes := []string{
+		types.WellKnownAnnotationScopeSourced,
+		types.WellKnownAnnotationScopeSynthesized,
+		types.WellKnownAnnotationScopeArtifactsStandalone,
+	}
+	keys := []string{"aggrega.ai/namespace", "aggrega.ai/image-registry", "aggrega.ai/probe"}
+
+	cases := []struct {
+		name string
+		in   types.Plugin
+		want bool
+	}{
+		{"declares none covers no key", declaresNone, false},
+		{"declares nothing covers every key", silent, true},
+		{"an empty list is still silence", emptyList, true},
+	}
+	for _, c := range cases {
+		for _, scope := range scopes {
+			for _, key := range keys {
+				t.Run(c.name+"/"+scope+"/"+key, func(t *testing.T) {
+					if got := types.WellKnownAnnotationHonoured(c.in, key, scope); got != c.want {
+						t.Errorf("WellKnownAnnotationHonoured(%s, %q, %q) = %v, want %v", c.name, key, scope, got, c.want)
+					}
+				})
+			}
+		}
+	}
+}
+
 // TestValidateWellKnownAnnotationScopesDoesNotPanicOnAnEmptyEntity pins the
 // negative-input contract: a zero entity is invalid input, and invalid input
 // produces an error or nil rather than a panic. testing.T does not fail on a

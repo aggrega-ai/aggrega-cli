@@ -201,6 +201,56 @@ func TestWarnUnhonorableAnnotations_AbsentClaimStaysSilent(t *testing.T) {
 	}
 }
 
+// TestWarnUnhonorableAnnotations_DeclaresNoneAdvisesEveryKey proves a provider
+// declaring that it reads no well-known annotation draws one advisory per
+// authored bare-prefix key, in author order, naming every input kind the render
+// declares — while a sub-prefixed key stays silent, because the prefix rule is
+// unchanged by the declaration. The control renders the same node through a
+// provider declaring nothing, which must stay silent: the declaration, not the
+// node, is what makes the advisory fire.
+func TestWarnUnhonorableAnnotations_DeclaresNoneAdvisesEveryKey(t *testing.T) {
+	t.Parallel()
+	declaresNone := func(ref string) (types.Plugin, bool, error) {
+		if ref != "terraform" {
+			return types.Plugin{}, false, nil
+		}
+		return types.Plugin{Spec: types.PluginSpec{
+			Provider: types.PluginProvider{ReadsNoWellKnownAnnotations: true},
+		}}, true, nil
+	}
+	kinds := declaredNodeInputKinds(true, false, true)
+	authored := annotations(t,
+		"aggrega.ai/namespace", "prod",
+		"acme.aggrega.ai/team", "payments",
+		"aggrega.ai/image-registry", "registry.example.com",
+	)
+
+	sink, got := collect()
+	warnUnhonorableAnnotations("db", "terraform", "terraform", kinds, authored, declaresNone, sink)
+	if len(*got) != 2 {
+		t.Fatalf("advisory count = %d, want one per bare-prefix key (2): %+v", len(*got), *got)
+	}
+	for i, key := range []string{"aggrega.ai/namespace", "aggrega.ai/image-registry"} {
+		d := (*got)[i]
+		if d.SourceRef != key {
+			t.Errorf("advisory %d SourceRef = %q, want %q in author order", i, d.SourceRef, key)
+		}
+		if d.Code != UnsupportedFieldCode {
+			t.Errorf("advisory %d code = %q, want %q", i, d.Code, UnsupportedFieldCode)
+		}
+		if !strings.Contains(d.Message, `"terraform"`) || !strings.Contains(d.Message, "sourced") {
+			t.Errorf("advisory %d message %q does not name the target and the declared input kind", i, d.Message)
+		}
+	}
+
+	// Control: the same node through a provider declaring nothing stays silent.
+	controlSink, control := collect()
+	warnUnhonorableAnnotations("db", "quiet", "quiet", kinds, authored, annotationLookup("quiet"), controlSink)
+	if len(*control) != 0 {
+		t.Fatalf("control: a provider declaring nothing advised %d times, want 0: %+v", len(*control), *control)
+	}
+}
+
 // TestWarnUnhonorableAnnotations_NothingToCompareStaysSilent proves each shape
 // that leaves nothing to compare emits nothing rather than guessing: no sink, no
 // lookup, no resolving entity, no annotations, and a node declaring no input kind
