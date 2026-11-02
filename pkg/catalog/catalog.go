@@ -393,6 +393,11 @@ func LoadPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, erro
 // the header, and a document whose identity could not be read is never matched
 // to a reference — it is reported by path alone, which is still enough to open
 // the file.
+//
+// A document declaring the Aggrega envelope and a kind no catalog holds is
+// recorded too, with ErrUnknownCatalogDocumentKind as its Err (see KindNotHeld).
+// Its Kind is the kind it declares, which names no identity, so SoleRefusalFor
+// never matches it; UnheldKindDocumentsFor matches it by name instead.
 type SkippedEntity struct {
 	Path string
 	Kind string
@@ -1150,10 +1155,21 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 // The header UnloadableDocument decodes into is indexFile's own, so the
 // document it refuses is exactly the one indexFile passes over, and the
 // document is read a second time only on that refusal's path.
+//
+// A document whose header does unmarshal and declares a kind no catalog holds is
+// answered the same way, with ErrUnknownCatalogDocumentKind, where its text
+// declares the Aggrega envelope: indexFile passes over it and so does this walk,
+// but the record says which file was passed over and why, so a reference
+// to the entity it meant to declare can be explained. The envelope is looked
+// for only once the kind is known to be one no catalog holds, so a document of
+// a held kind costs nothing more than it did.
 func (c *Catalog) tolerantIndexFile(data []byte, path string) error {
 	var header entityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		return UnloadableDocument(path, data, nil, &entityHeader{})
+	}
+	if kindNotHeld(header.Kind) && declaresAggregaEnvelope(data) {
+		return unheldKindError(path, header.Kind)
 	}
 	return c.indexKind(header.Kind, data, path)
 }
@@ -1329,7 +1345,11 @@ func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 		c.pluginSources[wkey] = path
 		c.entityBytes[entityBytesKey("Plugin", wkey)] = data
 	}
-	// Unknown kinds silently skipped (Manifest, Release handled separately)
+	// Every other kind is passed over here: a Manifest, a Release or a Workload,
+	// which a catalog directory may carry, and a kind no catalog holds, which
+	// tolerantIndexFile records and a whole-catalog check reports through
+	// UnloadableDocument. heldKinds states the arms above, and a coverage test
+	// holds the two together.
 	return nil
 }
 

@@ -523,8 +523,18 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 		return Result{}, fmt.Errorf("catalog load: %w", err)
 	}
 	report.note("catalog search dirs: %d", len(dirs))
-	if len(skipped) > 0 {
-		report.note("catalog files skipped at load: %d", len(skipped))
+	// The count is of files the load refused while indexing them. A file of a kind
+	// no catalog holds is in the record too, so a failure it explains can name it,
+	// but it was never a candidate for the catalog, and counting it would report
+	// as refused a file every load passes over.
+	refused := 0
+	for _, s := range skipped {
+		if !s.KindNotHeld() {
+			refused++
+		}
+	}
+	if refused > 0 {
+		report.note("catalog files skipped at load: %d", refused)
 	}
 
 	// When more than one catalog directory is searched, report which entities a

@@ -35,8 +35,10 @@ type documentHeader struct {
 // UnloadableDocument is the one answer to whether a file a whole-catalog check
 // read is an Aggrega document the check cannot load. data and readErr are what
 // reading the file at path returned. It returns nil when the file loads, or when
-// it is not an Aggrega document at all, and otherwise the
-// [resolver.ErrYAMLLoad] occurrence naming the file and the reason.
+// it is not an Aggrega document at all; the [ErrUnknownCatalogDocumentKind]
+// occurrence naming the file and the kind when it loads and declares a kind a
+// catalog does not hold; and otherwise the [resolver.ErrYAMLLoad] occurrence
+// naming the file and the reason.
 //
 // A file is an Aggrega document when its text declares the envelope: a line at
 // column 0 reading `apiVersion:` whose value, quoted or not, begins
@@ -53,6 +55,13 @@ type documentHeader struct {
 // decode into header — the caller's own header, so a check that reads more of the
 // envelope than its identity cannot pass in silence over a document its own
 // decode refuses. A nil header decodes into the envelope's identity fields alone.
+//
+// A document that loads and declares a kind no catalog holds is answered too,
+// because every load passes over it and the check would otherwise report a clean
+// catalog over a document no catalog read. A Manifest, a Release or a Workload is
+// not such a document: a catalog directory may hold one beside the entities — a
+// Workload in the directory of the Recipe that imports it — and every load
+// passes over it by design.
 //
 // A file that could not be read at all is answered as not loading whatever it
 // holds: nothing was read, so nothing shows it is not an Aggrega document, and a
@@ -71,7 +80,7 @@ func UnloadableDocument(path string, data []byte, readErr error, header any) err
 	if err := yaml.Unmarshal(data, header); err != nil {
 		return unloadableDocumentError(path, unloadableDocumentReason(err, data))
 	}
-	return nil
+	return unheldKindDocument(path, data, header)
 }
 
 // unloadableDocumentReason says why a document that declares the envelope did
@@ -94,8 +103,8 @@ func unloadableDocumentReason(err error, data []byte) string {
 // It returns nil for an empty found.
 //
 // The head takes no identity of its own: each finding beneath it is the
-// [resolver.ErrYAMLLoad] occurrence naming its file and the reason, so the
-// condition the halt reports is the one its findings name. The head counts them
+// [resolver.ErrYAMLLoad] or [ErrUnknownCatalogDocumentKind] occurrence naming its
+// file, so the conditions the halt reports are the ones its findings name. The head counts them
 // and names their files as well, because a surface printing only the head's own
 // line — a one-line answer to a tool call — would otherwise say how many
 // documents failed and not which.
@@ -134,8 +143,8 @@ func unloadableDocumentError(path, reason string) error {
 	)
 }
 
-// unloadableDocumentPath is the file an occurrence names, or "" for an error no
-// [unloadableDocumentError] produced.
+// unloadableDocumentPath is the file an occurrence names, or "" for an error
+// neither [unloadableDocumentError] nor [unheldKindError] produced.
 func unloadableDocumentPath(err error) string {
 	var ce *cerrors.CompilerError
 	if errors.As(err, &ce) {

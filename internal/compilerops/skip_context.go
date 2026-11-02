@@ -163,21 +163,33 @@ func (e *SkipContextError) PromotedRefusal() (catalog.SkippedEntity, bool) {
 // explain, and what the reader is told once it does. Every surface that reports
 // a resolution failure — a terminal, a tool response — reaches this one home, so
 // an author meets the same account of what went wrong wherever they are reading.
+//
+// A file the load skipped because it declares a kind no catalog holds is a
+// different record, and it is reported only where it explains this failure. It
+// never entered the catalog under any kind, so it is listed beneath the failure
+// when it declares the name the failing reference asks for — whatever kind that
+// reference was collected as — and is otherwise left out, exactly as the load
+// left it out. It is never promoted: the kind it declares names no identity, so
+// the failure keeps leading and the file is what the note points at. Where one
+// is listed, the account of where local entities are read from is not, because
+// the file is already where the catalog reads.
 func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalogNote string) error {
 	if err == nil {
 		return err
 	}
 	localCatalogNote = localCatalogAdviceFor(err, skipped, localCatalogNote)
-	if len(skipped) == 0 && localCatalogNote == "" {
+	refused, misdeclared := partitionSkipped(err, skipped)
+	if len(refused) == 0 && len(misdeclared) == 0 && localCatalogNote == "" {
 		return err
 	}
 	var b strings.Builder
-	cause, promoted := refusalExplaining(err, skipped)
+	cause, promoted := refusalExplaining(err, refused)
 	if promoted {
 		b.WriteString("\n  note: " + RefusedDocumentNote + ".")
 		b.WriteString("\n  This Release reaches that identity, so what failed is the attempt to resolve the reference to it:")
 		fmt.Fprintf(&b, "\n    %s", indentContinuations(cerrors.CauseChain(err), "    "))
-		if rest := refusalsBesides(skipped, cause); len(rest) > 0 {
+		writeMisdeclared(&b, misdeclared)
+		if rest := refusalsBesides(refused, cause); len(rest) > 0 {
 			b.WriteString("\n  note: other catalog files were skipped at load too. A refusal outside this Release's closure is")
 			b.WriteString("\n  tolerated and never fails a build:")
 			writeRefusals(&b, rest)
@@ -185,13 +197,52 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalo
 		b.WriteString(localCatalogNote)
 		return &SkipContextError{err: err, promoted: &cause, note: b.String()}
 	}
-	if len(skipped) > 0 {
+	writeMisdeclared(&b, misdeclared)
+	if len(refused) > 0 {
 		b.WriteString("\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build,")
 		b.WriteString("\n  so this failure is explained only by a refusal naming something this Release reaches:")
-		writeRefusals(&b, skipped)
+		writeRefusals(&b, refused)
 	}
 	b.WriteString(localCatalogNote)
 	return &SkipContextError{err: err, note: b.String()}
+}
+
+// partitionSkipped splits the load's record into the files it refused while
+// indexing them, in the record's order, and the files of a kind no catalog holds
+// that declare the name the reference err failed on — the only ones of that kind
+// this failure is reported with. A failure carrying no reference is explained by
+// none of them.
+func partitionSkipped(err error, skipped []catalog.SkippedEntity) (refused, misdeclared []catalog.SkippedEntity) {
+	refused = make([]catalog.SkippedEntity, 0, len(skipped))
+	for _, s := range skipped {
+		if !s.KindNotHeld() {
+			refused = append(refused, s)
+		}
+	}
+	if len(refused) == len(skipped) {
+		return skipped, nil
+	}
+	var unresolved *closure.UnresolvedEntityError
+	if stderrors.As(err, &unresolved) && unresolved != nil {
+		misdeclared = catalog.UnheldKindDocumentsFor(skipped, unresolved.URI, unresolved.KindHint)
+	}
+	return refused, misdeclared
+}
+
+// writeMisdeclared renders the note naming each file that declares the name the
+// failing reference asks for under a kind no catalog holds, or nothing for none.
+func writeMisdeclared(b *strings.Builder, misdeclared []catalog.SkippedEntity) {
+	if len(misdeclared) == 0 {
+		return
+	}
+	if len(misdeclared) == 1 {
+		b.WriteString("\n  note: a catalog file declares the name this reference asks for under a kind a catalog does not hold,")
+		b.WriteString("\n  so the load skipped it:")
+	} else {
+		b.WriteString("\n  note: catalog files declare the name this reference asks for under a kind a catalog does not hold,")
+		b.WriteString("\n  so the load skipped them:")
+	}
+	writeRefusals(b, misdeclared)
 }
 
 // RefusedDocumentNote is the sentence that follows a refused document's fault
@@ -218,7 +269,8 @@ const RefusedDocumentNote = "this file was skipped at load, so the catalog holds
 // The account says the document is not where the catalog reads. That is false
 // for a document the catalog read and refused, and every such document is in the
 // refusal record skipped — so where a refusal there declares the identity uri
-// names, the document was found where the catalog reads, moving it is the wrong
+// names, or a file there of a kind no catalog holds declares the name it asks
+// for, the document was found where the catalog reads, moving it is the wrong
 // remedy, and nothing is returned. Deciding it from the record rather than from
 // the configured directories is what keeps it free of a second walk of those
 // directories: the record is the part of that walk that already happened.
@@ -313,20 +365,23 @@ func SoleRefusal(skipped []catalog.SkippedEntity, uri, kindHint string) (catalog
 }
 
 // refusalDeclares reports whether any refusal in skipped declares the identity
-// uri names.
+// uri names, or any file there of a kind no catalog holds declares the name it
+// asks for.
 //
 // It asks catalog.SoleRefusalFor of each record on its own, which is that
 // function's own match applied one record at a time rather than a second
 // statement of it. The question here is whether any document declaring the
 // identity was read, so two refused documents declaring it answer yes, where
-// promotion — which needs exactly one — declines.
+// promotion — which needs exactly one — declines. A file of a kind no catalog
+// holds was read where the catalog reads too, and catalog.UnheldKindDocumentsFor
+// is the one match for it.
 func refusalDeclares(skipped []catalog.SkippedEntity, uri, kindHint string) bool {
 	for _, s := range skipped {
 		if _, ok := catalog.SoleRefusalFor([]catalog.SkippedEntity{s}, uri, kindHint); ok {
 			return true
 		}
 	}
-	return false
+	return len(catalog.UnheldKindDocumentsFor(skipped, uri, kindHint)) > 0
 }
 
 // KindHintFor returns the kind hint catalog.SoleRefusalFor reads for an entity

@@ -63,35 +63,20 @@ func SoleRefusalFor(skipped []SkippedEntity, uri, kindHint string) (SkippedEntit
 	if kind == "" {
 		return SkippedEntity{}, false
 	}
-	base, version, hasVersion := resolver.SplitVersionedURI(uri)
-	provider, name := "", base
-	if kind == "Recipe" || kind == "FeatureRecipe" {
-		// A recipe reference may be provider-qualified. The provider is the
-		// leading segment, split the way the identity key composes it, and the
-		// naming convention keeps it out of metadata.name.
-		if i := strings.IndexByte(base, '/'); i > 0 {
-			provider, name = base[:i], base[i+1:]
-		}
-	}
+	ref := parseReference(uri, kind)
 	// A reference with no name left names no document, so nothing can match it.
 	// Requiring a name here is also what keeps a refusal whose header yielded no
 	// identity out of the candidate set, since its empty name can then never
 	// equal the reference's.
-	if name == "" {
+	if ref.name == "" {
 		return SkippedEntity{}, false
 	}
 	var match SkippedEntity
 	candidates := 0
 	for _, s := range skipped {
-		if s.Kind != kind || s.Name != name {
-			continue
-		}
-		if hasVersion && s.Version != version {
-			continue
-		}
-		// The capability a recipe's identity carries is its binding with any
-		// version pin removed, which is how the catalog keys it.
-		if provider != "" && types.BareCapability(s.Capability) != provider {
+		// A document of a kind no catalog holds declares no identity, whatever
+		// kind it names, so it is never the refusal a report leads with.
+		if s.KindNotHeld() || s.Kind != kind || !ref.namedBy(s) {
 			continue
 		}
 		candidates++
@@ -101,4 +86,78 @@ func SoleRefusalFor(skipped []SkippedEntity, uri, kindHint string) (SkippedEntit
 		return SkippedEntity{}, false
 	}
 	return match, true
+}
+
+// UnheldKindDocumentsFor returns the documents in skipped that declare a kind a
+// catalog does not hold under the name the reference uri asks for, in the
+// record's order, or nil when none does.
+//
+// It answers the question SoleRefusalFor declines for such a document. The kind
+// such a document declares is not one a reference can name, so it is matched by
+// what it declares beside the kind — its name, its version where the reference
+// states one, and for a recipe reference the provider that scopes it — whatever
+// kind the reference was collected as. kindHint is read only to split the
+// reference the way its kind composes it.
+//
+// Every match is returned rather than a sole one, because a caller lists these
+// beneath the failure it explains and never leads with one: a reader weighs a
+// list, and a second file of the same name is a second thing to open rather than
+// a reason to name neither.
+func UnheldKindDocumentsFor(skipped []SkippedEntity, uri, kindHint string) []SkippedEntity {
+	if len(skipped) == 0 || uri == "" {
+		return nil
+	}
+	ref := parseReference(uri, EntityKindForHint(kindHint))
+	if ref.name == "" {
+		return nil
+	}
+	var out []SkippedEntity
+	for _, s := range skipped {
+		if s.KindNotHeld() && ref.namedBy(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// referenceParts is a reference split into the parts of an identity it states.
+// A part it leaves open — a version, a provider — is empty and unconstrained.
+type referenceParts struct {
+	provider   string
+	name       string
+	version    string
+	hasVersion bool
+}
+
+// parseReference splits uri into the identity parts it states for a reference
+// of the given kind.
+func parseReference(uri, kind string) referenceParts {
+	base, version, hasVersion := resolver.SplitVersionedURI(uri)
+	ref := referenceParts{name: base, version: version, hasVersion: hasVersion}
+	if kind == "Recipe" || kind == "FeatureRecipe" {
+		// A recipe reference may be provider-qualified. The provider is the
+		// leading segment, split the way the identity key composes it, and the
+		// naming convention keeps it out of metadata.name.
+		if i := strings.IndexByte(base, '/'); i > 0 {
+			ref.provider, ref.name = base[:i], base[i+1:]
+		}
+	}
+	return ref
+}
+
+// namedBy reports whether every part of the identity the reference states agrees
+// with what s declares, leaving the kind to the caller.
+func (r referenceParts) namedBy(s SkippedEntity) bool {
+	if s.Name != r.name {
+		return false
+	}
+	if r.hasVersion && s.Version != r.version {
+		return false
+	}
+	// The capability a recipe's identity carries is its binding with any
+	// version pin removed, which is how the catalog keys it.
+	if r.provider != "" && types.BareCapability(s.Capability) != r.provider {
+		return false
+	}
+	return true
 }
