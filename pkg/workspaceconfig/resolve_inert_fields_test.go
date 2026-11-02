@@ -37,19 +37,19 @@ func TestCheckInertProviderFieldsRefusesBothFields(t *testing.T) {
 	}{
 		{
 			name:      "function alone",
-			providers: []PluginRef{{Capability: "helm", URI: "oci://h/helm:1", Function: "custom_render"}},
+			providers: []PluginRef{{Capability: "helm", URI: "provider/helm:1", Function: "custom_render"}},
 			wantField: "function",
 		},
 		{
 			name:      "with alone",
-			providers: []PluginRef{{Capability: "helm", URI: "oci://h/helm:1", With: &PluginRefWith{Settings: map[string]any{"k": "v"}}}},
+			providers: []PluginRef{{Capability: "helm", URI: "provider/helm:1", With: &PluginRefWith{Settings: map[string]any{"k": "v"}}}},
 			wantField: "with",
 		},
 		{
 			name: "both fields report function first",
 			providers: []PluginRef{{
 				Capability: "helm",
-				URI:        "oci://h/helm:1",
+				URI:        "provider/helm:1",
 				Function:   "custom_render",
 				With:       &PluginRefWith{Settings: map[string]any{"k": "v"}},
 			}},
@@ -57,7 +57,7 @@ func TestCheckInertProviderFieldsRefusesBothFields(t *testing.T) {
 		},
 		{
 			name:      "later binding is reached",
-			providers: []PluginRef{{Capability: "helm", URI: "oci://h/helm:1"}, {Capability: "compose", URI: "oci://h/compose:1", Function: "custom_render"}},
+			providers: []PluginRef{{Capability: "helm", URI: "provider/helm:1"}, {Capability: "compose", URI: "provider/compose:1", Function: "custom_render"}},
 			wantField: "function",
 		},
 	} {
@@ -88,8 +88,8 @@ func TestCheckInertProviderFieldsRefusesBothFields(t *testing.T) {
 func TestCheckInertProviderFieldsAcceptsACleanBinding(t *testing.T) {
 	t.Parallel()
 	providers := []PluginRef{
-		{Capability: "helm", URI: "oci://h/helm:1"},
-		{Capability: "compose", URI: "oci://h/compose:1"},
+		{Capability: "helm", URI: "provider/helm:1"},
+		{Capability: "compose", URI: "provider/compose:1"},
 	}
 	if err := checkInertProviderFields(providers); err != nil {
 		t.Fatalf("provider bindings carrying neither inert field must pass: %v", err)

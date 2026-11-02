@@ -86,7 +86,7 @@ func TestPluginRemoveRun_ConfigSocket(t *testing.T) {
 // capability it serves.
 func TestPluginRemoveRun_Provider(t *testing.T) {
 	rw, _ := seedWorkspaceConfig(t, "workspace: {}\nplugins:\n  providers:\n"+
-		"    - capability: helm\n      uri: oci://hub.aggrega.ai/plugin/provider/helm\n")
+		"    - capability: helm\n      uri: provider/helm\n")
 	var out bytes.Buffer
 
 	if err := pluginRemoveRun(pluginRemoveConfig{

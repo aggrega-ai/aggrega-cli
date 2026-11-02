@@ -293,8 +293,8 @@ func TestNamedConfigLeavesProviderBindingInTheProject(t *testing.T) {
 
 	wsCfg := rw.Config()
 	candidates := []types.Plugin{
-		{Metadata: types.PluginMetadata{Name: "provider/helm", Version: "1.0.0", PluginType: "provider"}},
-		{Metadata: types.PluginMetadata{Name: "provider/helm-alt", Version: "1.0.0", PluginType: "provider"}},
+		{Metadata: types.PluginMetadata{Name: "helm", Version: "1.0.0", PluginType: "provider"}},
+		{Metadata: types.PluginMetadata{Name: "helm-alt", Version: "1.0.0", PluginType: "provider"}},
 	}
 	if err := runProviderBindingHelper("helm", candidates, rw, &wsCfg, &bytes.Buffer{}); err != nil {
 		t.Fatalf("runProviderBindingHelper: %v", err)
@@ -305,8 +305,10 @@ func TestNamedConfigLeavesProviderBindingInTheProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the project config %q: %v", projectFile, err)
 	}
-	if !strings.Contains(string(body), "provider/helm") {
-		t.Errorf("the binding did not land in the project config %q:\n%s", projectFile, body)
+	// The answer is recorded as the chosen plugin's identity, the form capability
+	// resolution reads a binding in, rather than as its bare name.
+	if !strings.Contains(string(body), "uri: provider/helm\n") {
+		t.Errorf("the binding did not land in the project config %q as the plugin's identity:\n%s", projectFile, body)
 	}
 	named, err := os.ReadFile(c.named)
 	if err != nil {

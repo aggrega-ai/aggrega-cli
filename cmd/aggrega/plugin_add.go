@@ -51,9 +51,11 @@ What add writes depends on the type:
     ` + pluginops.GovernanceRolesHint() + `.
     An importer the plugins.importer list already names keeps its one entry,
     moved to the pinned version with its place and what it carries under with.
-  - The provider type writes the plugin's oci:// identity as a plugins.providers
-    entry; --capability names the capability the binding serves, preserving
-    existing settings.
+  - The provider type adds a plugins.providers entry naming the plugin by its
+    bare identity (provider/<name>) with no version; --capability names the
+    capability the binding serves, preserving existing settings. The version is
+    the one the Recipe pins, or else the highest available, and the lockfile
+    records the one a pull chose.
   - The cli type fetches the plugin from the registry, verifies it, and caches
     its bytes, then pins it into the plugins.cli list as a top-level aggrega
     command — no separate pull step. Its resolved reference and the content
@@ -70,9 +72,9 @@ configuration the write would have produced, creating and modifying nothing. The
 answer names the file that content is for — which matters here, because a
 --global attachment targets the config shared across every workspace. A caller
 that keeps its own document model puts the content there, where it is visible
-before it is saved and can be amended or undone. The registry is still searched
-and the version still resolved, since the returned document carries the identity
-a write would have pinned.
+before it is saved and can be amended or undone. The registry is still searched,
+and for a socket type the version still resolved, since the returned document
+carries the identity a write would have written.
 
 Under --dry-run standard output carries that content and nothing else, so it stays
 parseable; a version substitution is announced on standard error instead. The cli
@@ -160,8 +162,8 @@ type pluginAddConfig struct {
 // The operation itself lives in the plugin operations layer, which every surface
 // reaches; this translates the command's flags into that layer's options and turns
 // the result into the sentence a terminal expects. Which field the result filled
-// is what says what landed — a bare version-pinned identity for a config socket, an
-// oci:// artifact identity for a provider binding, a pinned reference for a
+// is what says what landed — a bare version-pinned identity for a config socket, a
+// bare identity with no version for a provider binding, a pinned reference for a
 // command extension — so the sentence is chosen from the answer rather than
 // re-derived from the arguments.
 //

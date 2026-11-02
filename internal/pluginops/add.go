@@ -164,7 +164,8 @@ func (o AddOptions) noticeStreams() noticeStreams {
 //
 // Exactly one of Identity and URI is filled, and which one says what kind of
 // attachment landed: a config socket attaches the bare version-pinned entity
-// identity, and a provider binding carries the plugin's oci:// artifact identity.
+// identity, and a provider binding carries the plugin's bare identity with no
+// version, under the capability it serves.
 // A command-extension install fills Reference instead, because what it landed is
 // a command rather than a configuration attachment.
 //
@@ -313,11 +314,19 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		return res, err
 	}
 
+	// Strip the default's repository path and the plugin/ path prefix to the
+	// plugin coordinate identity (<pluginType>/<name>) — the identity a pull binds
+	// back under that same path, and the one every binding and attachment names.
+	entity := strings.TrimPrefix(repoPath, under.Repository(catalog.KindPathSegment("Plugin")+"/"))
 	if isProvider {
-		// The provider binding carries the oci:// artifact identity built from the
-		// repository path; a config-socket attachment instead carries the bare
-		// entity identity, which an oci:// reference is refused for.
-		uri := "oci://" + host + "/" + repoPath
+		// A provider binding names its plugin by that identity alone, with no
+		// version. The binding selects which plugin serves the capability; the
+		// version comes from the Recipe's own pin, or is the highest the build can
+		// reach, and the lockfile records the one a pull chose. Pinning the latest
+		// published version here would refuse every build whose compiler carries
+		// that provider at another version, because a provider the compiler carries
+		// is served at the compiler's own version.
+		uri := entity
 		out := AddResult{
 			Socket:              socket,
 			URI:                 uri,
@@ -342,11 +351,8 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		return out, nil
 	}
 
-	// Config socket: strip the default's repository path and the plugin/ path
-	// prefix to the plugin coordinate identity (<pluginType>/<name>) — the
-	// identity a pull binds back under that same path — and pin the latest
-	// published version so the attachment is version-pinned.
-	entity := strings.TrimPrefix(repoPath, under.Repository(catalog.KindPathSegment("Plugin")+"/"))
+	// Config socket: pin the latest published version so the attachment is
+	// version-pinned.
 	var recorder retractionRecorder
 	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.noticeStreams(), &recorder)
 	if err != nil {

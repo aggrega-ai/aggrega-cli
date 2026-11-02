@@ -29,7 +29,7 @@ func guardrailFrozenLookup(vars map[string]string) func(string) string {
 func TestBuildReproducibilityGuardrailWarnsAndSucceeds(t *testing.T) {
 	xdg := t.TempDir()
 	writeFixture(t, filepath.Join(xdg, "aggrega", "config.yaml"),
-		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n")
+		"plugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n")
 
 	root := t.TempDir()
 	// A workspace-anchoring config with no provider binding of its own, so the

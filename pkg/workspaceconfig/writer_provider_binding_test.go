@@ -23,7 +23,7 @@ default_registry: hub.aggrega.ai
 		t.Fatalf("seed: %v", err)
 	}
 
-	if err := UpsertProviderBinding(path, "helm", "oci://hub.aggrega.ai/plugin/provider/helm"); err != nil {
+	if err := UpsertProviderBinding(path, "helm", "provider/helm"); err != nil {
 		t.Fatalf("UpsertProviderBinding (add): %v", err)
 	}
 	rw, err := Resolve(dir, "")
@@ -31,7 +31,7 @@ default_registry: hub.aggrega.ai
 		t.Fatalf("resolve after add: %v", err)
 	}
 	cfg := rw.Config()
-	if cfg.Plugins.ProviderTargetURIs()["helm"] != "oci://hub.aggrega.ai/plugin/provider/helm" {
+	if cfg.Plugins.ProviderTargetURIs()["helm"] != "provider/helm" {
 		t.Fatalf("binding not written; got %+v", cfg.Plugins.Providers)
 	}
 	if cfg.DefaultRegistry != "hub.aggrega.ai" || !cfg.Offline {
@@ -39,7 +39,7 @@ default_registry: hub.aggrega.ai
 	}
 
 	// Update in place must not add a second entry.
-	if err := UpsertProviderBinding(path, "helm", "oci://hub.aggrega.ai/plugin/provider/compose"); err != nil {
+	if err := UpsertProviderBinding(path, "helm", "provider/compose"); err != nil {
 		t.Fatalf("UpsertProviderBinding (update): %v", err)
 	}
 	rw, err = Resolve(dir, "")
@@ -47,7 +47,7 @@ default_registry: hub.aggrega.ai
 		t.Fatalf("resolve after update: %v", err)
 	}
 	cfg = rw.Config()
-	if cfg.Plugins.ProviderTargetURIs()["helm"] != "oci://hub.aggrega.ai/plugin/provider/compose" {
+	if cfg.Plugins.ProviderTargetURIs()["helm"] != "provider/compose" {
 		t.Fatalf("binding not updated; got %+v", cfg.Plugins.Providers)
 	}
 	if len(cfg.Plugins.Providers) != 1 {
@@ -60,14 +60,14 @@ default_registry: hub.aggrega.ai
 func TestUpsertProviderBinding_CreatesMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
-	if err := UpsertProviderBinding(path, "compose", "oci://hub.aggrega.ai/plugin/provider/compose"); err != nil {
+	if err := UpsertProviderBinding(path, "compose", "provider/compose"); err != nil {
 		t.Fatalf("UpsertProviderBinding: %v", err)
 	}
 	rw, err := Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("resolve created file: %v", err)
 	}
-	if got := rw.Config().Plugins.ProviderTargetURIs()["compose"]; got != "oci://hub.aggrega.ai/plugin/provider/compose" {
+	if got := rw.Config().Plugins.ProviderTargetURIs()["compose"]; got != "provider/compose" {
 		t.Fatalf("binding not written to fresh file; got %q", got)
 	}
 }

@@ -283,6 +283,60 @@ plugins:
 	}
 }
 
+// TestPluginAddProvider_WrittenBindingSelectsThePluginAPullResolves drives the
+// writer and the reader of a provider binding together: `plugin add provider`
+// writes the binding into the workspace configuration, and a pull over that same
+// file reads it, resolves the bound plugin's entity and selects it to serve the
+// capability. The capability is served by two plugins, so a pull that ignored the
+// binding, or could not read it, halts on the ambiguity rather than passing; the
+// assertion is the plugin the lockfile records, which only the binding chooses.
+func TestPluginAddProvider_WrittenBindingSelectsThePluginAPullResolves(t *testing.T) {
+	// Not parallel: mutates the process-global isTerminal, registry-target and display seams.
+	nonInteractive(t)
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/provider/helm", "plugin/provider/helm-renderer-alt"}}, nil)
+	root := t.TempDir()
+	releasePath, catalogRoot := providerBindingFixture(t, root, true)
+	catDirs := []string{catalogRoot}
+	rw := resolveWorkspaceWithConfig(t, root, "workspace: {}\noffline: true\n")
+
+	if err := pluginAddRun(context.Background(), pluginAddConfig{
+		Socket:     "provider",
+		Query:      "helm-renderer-alt",
+		Capability: "helm",
+		ws:         rw,
+		Out:        io.Discard,
+	}); err != nil {
+		t.Fatalf("plugin add provider: %v", err)
+	}
+
+	// The reader starts from the file, as the next command does.
+	reread, err := workspaceconfig.Resolve(root, "")
+	if err != nil {
+		t.Fatalf("resolve the configuration plugin add wrote: %v", err)
+	}
+	written := reread.Config().Plugins.Providers
+	if len(written) != 1 || written[0].Capability != "helm" || written[0].URI != "provider/helm-renderer-alt" {
+		t.Fatalf("plugin add wrote %+v; want one binding {helm, provider/helm-renderer-alt}", written)
+	}
+
+	if err := pullRun(context.Background(), pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: reread, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("pull over the binding plugin add wrote: %v", err)
+	}
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+	got := ""
+	for _, b := range lf.Providers {
+		if b.Capability == "helm" {
+			got = b.Plugin
+		}
+	}
+	if got != "provider/helm-renderer-alt" {
+		t.Fatalf("the pull recorded providers[helm]=%q; want the plugin the written binding names, provider/helm-renderer-alt", got)
+	}
+}
+
 // TestProviderBinding_AmbiguousTargetHaltsLoudly proves that when two provider
 // plugins serve one target and no binding disambiguates, a non-interactive pull
 // halts loudly with ErrAmbiguousProviderPlugin, naming both candidate plugins.

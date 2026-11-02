@@ -76,10 +76,14 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, rw *work
 	if err != nil {
 		return err
 	}
-	if err := workspaceconfig.UpsertProviderBinding(configPath, target, chosen.Metadata.Name); err != nil {
+	// The binding names the chosen plugin by its identity, <pluginType>/<name> —
+	// the coordinate capability resolution compares a binding against — and not by
+	// its bare name, which no binding is matched on.
+	identity := chosen.Coordinate()
+	if err := workspaceconfig.UpsertProviderBinding(configPath, target, identity); err != nil {
 		return fmt.Errorf("provider binding helper: write %s: %w", configPath, err)
 	}
-	wsCfg.Plugins.Providers = workspaceconfig.UpsertProviderRef(wsCfg.Plugins.Providers, target, chosen.Metadata.Name)
-	fmt.Fprintf(out, "Recorded plugins.providers entry for %q = %s in %s\n", target, chosen.Metadata.Name, configPath)
+	wsCfg.Plugins.Providers = workspaceconfig.UpsertProviderRef(wsCfg.Plugins.Providers, target, identity)
+	fmt.Fprintf(out, "Recorded plugins.providers entry for %q = %s in %s\n", target, identity, configPath)
 	return nil
 }

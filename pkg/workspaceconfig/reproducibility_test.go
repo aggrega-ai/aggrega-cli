@@ -49,7 +49,7 @@ func fieldsOf(bindings []workspaceconfig.BuildCriticalBinding) []string {
 func TestGlobalOnlyBuildCriticalProviderGlobalOnly(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
+		"plugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n",
 		"",
 	)
 	got, err := rw.GlobalOnlyBuildCritical(false)
@@ -72,8 +72,8 @@ func TestGlobalOnlyBuildCriticalProviderGlobalOnly(t *testing.T) {
 func TestGlobalOnlyBuildCriticalProviderInBoth(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
-		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
+		"plugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n",
+		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n",
 	)
 	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
@@ -164,7 +164,7 @@ func TestGlobalOnlyBuildCriticalFullyLocal(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
 		"",
-		"workspace:\n  catalog_dirs:\n    - ./cat\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n",
+		"workspace:\n  catalog_dirs:\n    - ./cat\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n",
 	)
 	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
@@ -233,7 +233,7 @@ func TestGlobalOnlyBuildCriticalEnvScalarOutOfScope(t *testing.T) {
 func TestGlobalOnlyBuildCriticalDeterministic(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n    - uri: oci://h/pol:1\n      role: ir-verdict\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
+		"plugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n    - uri: oci://h/pol:1\n      role: ir-verdict\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
 		"",
 	)
 	// The all-plugins scope so every socket field participates in the order check.

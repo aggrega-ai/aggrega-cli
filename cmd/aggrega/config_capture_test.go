@@ -28,7 +28,7 @@ func writeGlobalConfig(t *testing.T, path, catalog string) {
 		"plugins:\n" +
 		"  providers:\n" +
 		"    - capability: helm\n" +
-		"      uri: oci://hub.aggrega.ai/plugin/provider/helm:1.0.0\n" +
+		"      uri: provider/helm:1.0.0\n" +
 		"  governance:\n" +
 		"    - uri: governance/tag-injector:1.0.0\n" +
 		"      role: label-transform\n" +
@@ -75,7 +75,7 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	wsFile := filepath.Join(wsDir, workspaceconfig.ConfigFilename)
 	body, _ := os.ReadFile(wsFile)
 	for _, want := range []string{
-		"oci://hub.aggrega.ai/plugin/provider/helm:1.0.0",
+		"provider/helm:1.0.0",
 		"governance/tag-injector:1.0.0",
 		catalog,
 	} {
@@ -97,7 +97,7 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 		t.Fatalf("tree-only resolve: %v", err)
 	}
 	tc := treeOnly.Config()
-	if uris := tc.Plugins.ProviderTargetURIs(); uris["helm"] != "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0" {
+	if uris := tc.Plugins.ProviderTargetURIs(); uris["helm"] != "provider/helm:1.0.0" {
 		t.Errorf("provider binding not yielded by tree-only resolve: %+v", tc.Plugins.Providers)
 	}
 	if len(tc.Plugins.Governance) != 1 || tc.Plugins.Governance[0].URI != "governance/tag-injector:1.0.0" {
@@ -123,7 +123,7 @@ func TestConfigCaptureScopeByTier(t *testing.T) {
 		"plugins:\n" +
 		"  providers:\n" +
 		"    - capability: helm\n" +
-		"      uri: oci://h/provider-helm:1\n" +
+		"      uri: provider/helm-plugin:1\n" +
 		"  governance:\n" +
 		"    - uri: oci://h/mutator-plugin:1\n" +
 		"      role: label-transform\n" +
@@ -134,7 +134,7 @@ func TestConfigCaptureScopeByTier(t *testing.T) {
 		"  importer:\n" +
 		"    - uri: oci://h/importer-plugin:1\n"
 
-	byteDetermining := []string{"oci://h/provider-helm:1", "oci://h/mutator-plugin:1"}
+	byteDetermining := []string{"provider/helm-plugin:1", "oci://h/mutator-plugin:1"}
 	gates := []string{"oci://h/policy-plugin:1", "oci://h/linter-plugin:1", "oci://h/importer-plugin:1"}
 
 	capture := func(t *testing.T, allPlugins bool) (workspaceFile string, out string) {

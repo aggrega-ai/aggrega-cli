@@ -146,8 +146,8 @@ func TestRemoveProviderBinding_ByCapabilityAndURI(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
 	seed := "workspace: {}\nplugins:\n  providers:\n" +
-		"    - capability: helm\n      uri: oci://hub.aggrega.ai/plugin/provider/helm\n" +
-		"    - capability: compose\n      uri: oci://hub.aggrega.ai/plugin/provider/compose\n"
+		"    - capability: helm\n      uri: provider/helm\n" +
+		"    - capability: compose\n      uri: provider/compose\n"
 	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestRemoveProviderBinding_ByCapabilityAndURI(t *testing.T) {
 	}
 
 	// Remove the last binding by its full URI.
-	removed, err = RemoveProviderBinding(path, "oci://hub.aggrega.ai/plugin/provider/compose")
+	removed, err = RemoveProviderBinding(path, "provider/compose")
 	if err != nil || !removed {
 		t.Fatalf("RemoveProviderBinding(uri) = %v, %v; want true, nil", removed, err)
 	}

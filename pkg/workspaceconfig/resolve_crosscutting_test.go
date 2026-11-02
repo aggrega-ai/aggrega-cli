@@ -110,13 +110,13 @@ func TestResolveCapabilityOnProviderSocketResolves(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n")
+		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n")
 
 	rw, err := workspaceconfig.Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("Resolve over a capability-bound provider socket: %v", err)
 	}
-	if got := rw.Config().Plugins.ProviderTargetURIs()["helm"]; got != "oci://h/helm:1" {
+	if got := rw.Config().Plugins.ProviderTargetURIs()["helm"]; got != "provider/helm:1" {
 		t.Errorf("provider capability binding must survive: got %q", got)
 	}
 }
@@ -189,7 +189,7 @@ func TestResolveInertFieldOnProviderSocketHalts(t *testing.T) {
 		field string
 		yaml  string
 	}{
-		{"with", "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n      with:\n        settings:\n          foo: bar\n"},
+		{"with", "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n      with:\n        settings:\n          foo: bar\n"},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -226,10 +226,10 @@ func TestResolveInertFieldOnProviderSocketViaAppendHalts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n")
+		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n")
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config.yaml"),
-		"plugins:\n  providers_append:\n    - capability: compose\n      uri: oci://h/compose:1\n      with:\n        settings:\n          foo: bar\n")
+		"plugins:\n  providers_append:\n    - capability: compose\n      uri: provider/compose:1\n      with:\n        settings:\n          foo: bar\n")
 
 	_, err := workspaceconfig.Resolve(child, "")
 	if err == nil {
@@ -268,13 +268,13 @@ func TestResolveFunctionOnFixedEntrySocketRefusedBySchema(t *testing.T) {
 	}{
 		{
 			name:     "providers",
-			base:     "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n      function: custom_render\n",
+			base:     "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n      function: custom_render\n",
 			position: "plugins.providers[0].function",
 		},
 		{
 			name:     "providers_append",
-			base:     "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
-			child:    "plugins:\n  providers_append:\n    - capability: compose\n      uri: oci://h/compose:1\n      function: custom_render\n",
+			base:     "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: provider/helm:1\n",
+			child:    "plugins:\n  providers_append:\n    - capability: compose\n      uri: provider/compose:1\n      function: custom_render\n",
 			position: "plugins.providers_append[0].function",
 		},
 		{

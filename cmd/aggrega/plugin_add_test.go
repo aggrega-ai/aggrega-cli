@@ -105,8 +105,9 @@ func withWithdrawals(t *testing.T, withdrawn map[string]string) *[]string {
 
 // TestPluginAddRun_Provider proves the provider path searches, resolves the
 // plugin repository, and writes a well-formed, schema-valid plugins.providers
-// {capability, uri} binding. It asserts only the write — a subsequent provider
-// resolve is not exercised here.
+// {capability, uri} binding naming the plugin by its bare identity with no
+// version. It asserts only the write; a pull reading the written binding is
+// driven by TestPluginAddProvider_WrittenBindingSelectsThePluginAPullResolves.
 func TestPluginAddRun_Provider(t *testing.T) {
 	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
@@ -132,8 +133,8 @@ func TestPluginAddRun_Provider(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want exactly one provider binding; got %+v", got)
 	}
-	if got[0].Capability != "helm" || got[0].URI != "oci://hub.aggrega.ai/plugin/provider/helm" {
-		t.Errorf("provider binding = %+v; want {helm, oci://hub.aggrega.ai/plugin/provider/helm}", got[0])
+	if got[0].Capability != "helm" || got[0].URI != "provider/helm" {
+		t.Errorf("provider binding = %+v; want {helm, provider/helm}", got[0])
 	}
 	if body, rerr := os.ReadFile(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)); rerr == nil {
 		t.Logf("written .aggrega-config.yaml:\n%s", body)

@@ -28,7 +28,7 @@ workspace:
 plugins:
     providers:
         - capability: helm-chart
-          uri: oci://example.test/plugin/provider/helm-chart:1.0.0
+          uri: provider/helm-chart:1.0.0
     governance:
         - uri: oci://example.test/plugin/governance/label-injector:1.0.0
           role: label-transform
@@ -73,7 +73,7 @@ func TestConfigCaptureOnTheDaemonWritesTheDocumentItReports(t *testing.T) {
 		}
 	}
 	want := []string{
-		"providers=oci://example.test/plugin/provider/helm-chart:1.0.0",
+		"providers=provider/helm-chart:1.0.0",
 		"governance=oci://example.test/plugin/governance/label-injector:1.0.0",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
@@ -117,7 +117,7 @@ func TestConfigCaptureOnTheDaemonWidensToEverySocket(t *testing.T) {
 		}
 	}
 	want := []string{
-		"providers=oci://example.test/plugin/provider/helm-chart:1.0.0",
+		"providers=provider/helm-chart:1.0.0",
 		"governance=oci://example.test/plugin/governance/label-injector:1.0.0",
 		"governance=oci://example.test/plugin/governance/gate:1.0.0",
 		"linter=oci://example.test/plugin/linter/publishing:1.0.0",

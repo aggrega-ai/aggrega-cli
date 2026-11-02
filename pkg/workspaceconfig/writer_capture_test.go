@@ -30,7 +30,7 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 		Workspace: WorkspaceConfig{CatalogDirs: []string{catalog}},
 		Plugins: PluginsConfig{
 			Providers: []PluginRef{
-				{Capability: "helm", URI: "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0"},
+				{Capability: "helm", URI: "provider/helm:1.0.0"},
 			},
 			Governance: []PluginRef{
 				{
@@ -60,7 +60,7 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 		t.Errorf("pre-existing key not preserved: default_registry=%q", got.DefaultRegistry)
 	}
 	if len(got.Plugins.Providers) != 1 || got.Plugins.Providers[0].Capability != "helm" ||
-		got.Plugins.Providers[0].URI != "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0" {
+		got.Plugins.Providers[0].URI != "provider/helm:1.0.0" {
 		t.Fatalf("provider binding not captured: %+v", got.Plugins.Providers)
 	}
 	if len(got.Plugins.Governance) != 1 {
@@ -88,7 +88,7 @@ func TestCaptureBuildCritical_Idempotent(t *testing.T) {
 	}
 	cfg := Config{
 		Plugins: PluginsConfig{
-			Providers:  []PluginRef{{Capability: "helm", URI: "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0"}},
+			Providers:  []PluginRef{{Capability: "helm", URI: "provider/helm:1.0.0"}},
 			Governance: []PluginRef{{URI: "governance/tag-injector:1.0.0", Role: plugintype.RoleLabelTransform}},
 		},
 		Workspace: WorkspaceConfig{CatalogDirs: []string{filepath.Join(dir, "catalog")}},

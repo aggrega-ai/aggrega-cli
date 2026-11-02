@@ -318,7 +318,7 @@ func TestMachineStateCapabilitiesWriteDirectly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read the frozen configuration: %v", err)
 		}
-		if !strings.Contains(string(body), "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0") {
+		if !strings.Contains(string(body), "provider/helm:1.0.0") {
 			t.Errorf("the frozen configuration does not carry the previously global-only binding:\n%s", body)
 		}
 	})

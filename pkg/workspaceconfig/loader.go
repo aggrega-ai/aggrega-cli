@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -367,6 +368,9 @@ func validateBytes(data []byte, path string) error {
 	if err := checkRegistryHosts(probe, path); err != nil {
 		return err
 	}
+	if err := checkProviderBindingForms(probe, path); err != nil {
+		return err
+	}
 	_, err := envelope.ValidateBytes(envelope.KindAggregaConfig, data, path)
 	var envErr *envelope.Error
 	if errors.As(err, &envErr) {
@@ -451,6 +455,60 @@ func checkRegistryHosts(probe any, path string) error {
 			if err := registryhost.Check(fmt.Sprintf("registries[%d].host", i), v); err != nil {
 				return fmt.Errorf("%s: %v: %w", path, err, ErrConfigInvalid())
 			}
+		}
+	}
+	return nil
+}
+
+// ociScheme is the scheme a registry location is written with. A provider
+// binding written with it names where a plugin is published rather than which
+// plugin it is.
+const ociScheme = "oci://"
+
+// checkProviderBindingForms refuses a plugins.providers or providers_append entry
+// whose uri is written with the oci:// scheme, naming the file, the entry, the
+// capability it binds, the uri as written and the form to write.
+//
+// A provider binding names its plugin by the plugin's identity — the
+// provider/<name> coordinate, optionally followed by :<version> — because that is
+// what capability resolution compares a binding against and what the lockfile
+// records. A registry location is a different thing: it says where a plugin is
+// published, and no plugin's identity is spelled that way, so a binding written
+// as one could never select anything. Refusing it as the file is read names the
+// fix where it was written, rather than leaving a later resolution to fail on a
+// value it was never meant to receive.
+//
+// It keys on the explicit scheme and on nothing broader. LooksLikeOCIURI answers
+// whether a value is a registry reference rather than a path to anchor, and it
+// answers true for any value carrying a slash and a colon — which a legitimate
+// provider/<name>:<version> binding does. Using it here would refuse the very
+// form this check names as the one to write.
+//
+// Like checkRegistryHosts it runs ahead of the schema, which admits any string
+// as a uri, and it leaves an entry of another shape to the schema to report.
+func checkProviderBindingForms(probe any, path string) error {
+	root, ok := probe.(map[string]any)
+	if !ok {
+		return nil
+	}
+	plugins, ok := root["plugins"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, key := range []string{"providers", "providers_append"} {
+		entries, _ := plugins[key].([]any)
+		for i, item := range entries {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			uri, ok := entry["uri"].(string)
+			if !ok || !strings.HasPrefix(uri, ociScheme) {
+				continue
+			}
+			capability, _ := entry["capability"].(string)
+			return fmt.Errorf("workspaceconfig: %s: plugins.%s[%d] binds capability %q to %q, which is where a plugin is published rather than which plugin it is; a provider binding names its plugin by its identity — write `uri: provider/<name>`, with an optional `:<version>`: %w",
+				path, key, i, capability, uri, ErrConfigInvalid())
 		}
 	}
 	return nil
