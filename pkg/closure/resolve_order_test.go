@@ -6,7 +6,6 @@ package closure_test
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,7 +107,7 @@ func TestTheWalkResolvesReferencesInAnOrderTheInputFixes(t *testing.T) {
 		release   string
 		aggregate string
 		// observe reads what one run shows its reader that the resolve order decides.
-		observe func(t *testing.T, stderr string, err error) string
+		observe func(t *testing.T, notices string, err error) string
 		want    string
 	}{
 		{
@@ -141,13 +140,13 @@ spec:
             edge:
               type: test/alpha:1.0.0
 `,
-			observe: func(t *testing.T, stderr string, err error) string {
+			observe: func(t *testing.T, notices string, err error) string {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("both references are in the catalog, so the walk resolves them; got: %v", err)
 				}
 				var seen []string
-				for _, line := range strings.Split(stderr, "\n") {
+				for _, line := range strings.Split(notices, "\n") {
 					if !strings.Contains(line, shadowNoticeMarker) {
 						continue
 					}
@@ -205,41 +204,17 @@ spec:
 				agg = types.Normalize(loadAggregate(t, tc.aggregate))
 			}
 			for run := 1; run <= resolveOrderRuns; run++ {
-				var err error
-				stderr := captureStderr(t, func() {
-					view := catalog.NewLazyLookup(ws, ".aggrega/cache", dirs, nil)
-					lookup := view.ClosureLookup(nil, ws, ".aggrega/cache", nil, nil, nil)
-					_, err = closure.ComputeClosure(context.Background(), rel, nil, agg, workspaceconfig.Config{}, lookup)
-				})
-				if got := tc.observe(t, stderr, err); got != tc.want {
-					t.Fatalf("run %d of %d: got %q; want %q on every run\nstderr:\n%s", run, resolveOrderRuns, got, tc.want, stderr)
+				// The view writes its notices where the surface directs them, as a
+				// command directs them to its error stream.
+				var notices strings.Builder
+				view := catalog.NewLazyLookup(ws, ".aggrega/cache", dirs, nil)
+				view.WriteNoticesTo(&notices)
+				lookup := view.ClosureLookup(nil, ws, ".aggrega/cache", nil, nil, nil)
+				_, err := closure.ComputeClosure(context.Background(), rel, nil, agg, workspaceconfig.Config{}, lookup)
+				if got := tc.observe(t, notices.String(), err); got != tc.want {
+					t.Fatalf("run %d of %d: got %q; want %q on every run\nnotices:\n%s", run, resolveOrderRuns, got, tc.want, notices.String())
 				}
 			}
 		})
 	}
-}
-
-// captureStderr runs fn with os.Stderr redirected, and returns what was written.
-// The catalog writes its notices to stderr directly, so reading it is the only way
-// to assert what a reader sees. The test that calls it is not parallel, because
-// the redirection is process-wide.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	saved := os.Stderr
-	os.Stderr = w
-	done := make(chan string, 1)
-	go func() {
-		b, _ := io.ReadAll(r)
-		done <- string(b)
-	}()
-	fn()
-	os.Stderr = saved
-	_ = w.Close()
-	out := <-done
-	_ = r.Close()
-	return out
 }
