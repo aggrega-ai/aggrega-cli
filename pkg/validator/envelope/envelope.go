@@ -460,30 +460,44 @@ func validateBytes(key compiledKey, data []byte, path string) (any, error) {
 // the key path.
 func newSchemaError(kind Kind, path string, data []byte, findings []jsonvalidator.Finding) *Error {
 	e := &Error{Kind: kind, Path: path, Findings: findings}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	locate, ok := fieldLocator(data, path)
+	if !ok {
 		// The document did not re-parse as a node tree, so nothing can be
 		// positioned. The findings still stand: they came from an instance
 		// the generic decode did produce.
 		return e
 	}
-	idx := yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32)
 	e.Positions = make(map[string]aggerrors.SourceLocation, len(findings))
 	for _, f := range findings {
 		if _, done := e.Positions[f.FieldPath]; done {
 			continue
 		}
-		span, ok := yamlpos.FieldRange(&doc, idx, f.FieldPath)
-		if !ok {
-			continue
-		}
-		e.Positions[f.FieldPath] = aggerrors.SourceLocation{
-			File:   path,
-			Line:   span.Line,
-			Column: span.Column,
+		if loc, ok := locate(f.FieldPath); ok {
+			e.Positions[f.FieldPath] = loc
 		}
 	}
 	return e
+}
+
+// fieldLocator returns a lookup from a field path to its position in data, the
+// one way a finding this package reports acquires a position: through the shared
+// walk, in characters, as newSchemaError describes. ok is false when data does
+// not re-parse as a node tree; the lookup returned then resolves nothing, so its
+// findings render without a position rather than with one a reader would have to
+// distrust.
+func fieldLocator(data []byte, path string) (locate func(string) (aggerrors.SourceLocation, bool), ok bool) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return func(string) (aggerrors.SourceLocation, bool) { return aggerrors.SourceLocation{}, false }, false
+	}
+	idx := yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32)
+	return func(fieldPath string) (aggerrors.SourceLocation, bool) {
+		span, ok := yamlpos.FieldRange(&doc, idx, fieldPath)
+		if !ok {
+			return aggerrors.SourceLocation{}, false
+		}
+		return aggerrors.SourceLocation{File: path, Line: span.Line, Column: span.Column}, true
+	}, true
 }
 
 // ValidateInstance validates an already-parsed, normalised generic

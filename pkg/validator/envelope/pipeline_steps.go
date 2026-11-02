@@ -6,11 +6,8 @@ package envelope
 import (
 	"fmt"
 
-	"go.yaml.in/yaml/v3"
-
 	aggerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
-	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // ErrDuplicatePipelineStepID is the sentinel for a Recipe or FeatureRecipe
@@ -89,7 +86,7 @@ func pipelineStepIDsUnique(key compiledKey, instance any, path string, data []by
 		condition: ErrDuplicatePipelineStepID(),
 		advice:    adviceDistinctStepIDs,
 	}
-	locate := stepIDLocator(data, path)
+	locate, _ := fieldLocator(data, path)
 	e.Positions = make(map[string]aggerrors.SourceLocation, 2*len(repeats))
 	for _, r := range repeats {
 		firstPath := stepIDPath(r.first)
@@ -117,23 +114,3 @@ func pipelineStepIDsUnique(key compiledKey, instance any, path string, data []by
 // stepIDPath spells the field path of the id of the step at index i, in the
 // spelling the schema engine's findings use and yamlpos resolves.
 func stepIDPath(i int) string { return fmt.Sprintf("spec.pipeline[%d].id", i) }
-
-// stepIDLocator returns a lookup from a field path to its position in data,
-// resolved through the same walk and in the same unit — characters — as a
-// schema finding's position. A document that does not re-parse as a node tree
-// yields a lookup that resolves nothing, and its findings render without a
-// position rather than with one a reader would have to distrust.
-func stepIDLocator(data []byte, path string) func(string) (aggerrors.SourceLocation, bool) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return func(string) (aggerrors.SourceLocation, bool) { return aggerrors.SourceLocation{}, false }
-	}
-	idx := yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32)
-	return func(fieldPath string) (aggerrors.SourceLocation, bool) {
-		span, ok := yamlpos.FieldRange(&doc, idx, fieldPath)
-		if !ok {
-			return aggerrors.SourceLocation{}, false
-		}
-		return aggerrors.SourceLocation{File: path, Line: span.Line, Column: span.Column}, true
-	}
-}
