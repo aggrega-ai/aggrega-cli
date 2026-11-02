@@ -587,7 +587,7 @@ func checkVerdictAttachmentsNamePlugin(probe any, path string) error {
 				if socket.RefTier(PluginRef{Role: plugintype.Role(role)}) != SocketTierVerdict {
 					continue
 				}
-				return fmt.Errorf("workspaceconfig: %s: plugins.%s[%d] names the entry function %q but no plugin `uri`; an attachment on this list selects its plugin by `uri`, so this one attaches no plugin and %q is never called — add the `uri` of the plugin that exports it: %w",
+				return fmt.Errorf("%s: plugins.%s[%d] names the entry function %q but no plugin `uri`; an attachment on this list selects its plugin by `uri`, so this one attaches no plugin and %q is never called — add the `uri` of the plugin that exports it: %w",
 					path, key, i, function, function, ErrConfigInvalid())
 			}
 		}
