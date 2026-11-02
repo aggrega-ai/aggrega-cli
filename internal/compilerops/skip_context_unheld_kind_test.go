@@ -20,16 +20,7 @@ import (
 // decoration exactly what a build hands it.
 func misdeclaredRecord(t *testing.T, kind, name, version string) []catalog.SkippedEntity {
 	t.Helper()
-	ws := t.TempDir()
-	dir := filepath.Join(ws, "catalog")
-	p := filepath.Join(dir, "feature", "nightly-backup", "feature.yaml")
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: " + name + "\n  version: " + version + "\nspec: {}\n"
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	ws, dir := misdeclaredCatalog(t, kind, name, version)
 	_, skipped, err := catalog.LoadPassOneTolerant(ws, "", dir)
 	if err != nil {
 		t.Fatalf("the tolerant load failed: %v", err)
@@ -38,6 +29,80 @@ func misdeclaredRecord(t *testing.T, kind, name, version string) []catalog.Skipp
 		t.Fatalf("the load did not record the document as one of a kind no catalog holds: %+v", skipped)
 	}
 	return skipped
+}
+
+// misdeclaredCatalog writes a catalog directory holding one document that
+// declares the given kind, name and version, and returns the workspace and the
+// directory.
+func misdeclaredCatalog(t *testing.T, kind, name, version string) (ws, dir string) {
+	t.Helper()
+	ws = t.TempDir()
+	dir = filepath.Join(ws, "catalog")
+	p := filepath.Join(dir, "feature", "nightly-backup", "feature.yaml")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: " + name + "\n  version: " + version + "\nspec: {}\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return ws, dir
+}
+
+// TestMisdeclaredNoteIsOneAccountOnEveryBacking holds the account of a file of a
+// kind no catalog holds to one answer whichever catalog backing recorded it: the
+// eager load behind a build that reads a lockfile, and the lazy view behind a
+// build that fills one, a pull, a Release-scoped validate, the assistant tools
+// and the editor. The same failure annotated from either record reads the same,
+// so a reader is told the same thing however the build reached the reference.
+//
+// It also holds the one-line rendering a single-line message carries to the
+// same sentence and the same refusal, spelled with the surface's own path, on
+// one line; to nothing for a failure carrying no reference or a name no such
+// file declares; and the multi-line rendering to the shape the workspace's
+// account takes, opening with a line break.
+func TestMisdeclaredNoteIsOneAccountOnEveryBacking(t *testing.T) {
+	t.Parallel()
+	miss := answeringLookup{res: closure.Resolution{NotFound: true}}
+	failure := walkFailure(t, miss)
+	ws, dir := misdeclaredCatalog(t, "Featur", "local/nightly-backup", "1.0.0")
+	_, eager, err := catalog.LoadPassOneTolerant(ws, "", dir)
+	if err != nil {
+		t.Fatalf("the tolerant load failed: %v", err)
+	}
+	lazy := catalog.NewLazyLookup(ws, filepath.Join(ws, "cache"), []string{dir}, nil).SkippedEntities()
+	if len(lazy) != 1 || !lazy[0].KindNotHeld() || !stderrors.Is(lazy[0].Err, catalog.ErrUnknownCatalogDocumentKind()) {
+		t.Fatalf("the lazy view did not record the document as one of a kind no catalog holds: %+v", lazy)
+	}
+	fromEager := AnnotateSkipContext(failure, eager, localCatalogNoteFixture)
+	fromLazy := AnnotateSkipContext(failure, lazy, localCatalogNoteFixture)
+	if fromEager.Error() != fromLazy.Error() {
+		t.Errorf("the two backings tell the same failure differently\n--- eager ---\n%s\n--- lazy ---\n%s", fromEager, fromLazy)
+	}
+	if !strings.Contains(fromLazy.Error(), "a kind a catalog does not hold") {
+		t.Errorf("the lazy record did not name the file beneath the failure:\n%s", fromLazy)
+	}
+
+	report := func(string) string { return "catalog/feature/nightly-backup/feature.yaml" }
+	line := MisdeclaredFailureLine(failure, lazy, report)
+	wantHead := "note: a catalog file declares the name this reference asks for under a kind a catalog does not hold, " +
+		"so the load skipped it: [CATALOG_ERROR E0371] catalog/feature/nightly-backup/feature.yaml: " +
+		"catalog document declares a kind a catalog does not hold (kind \"Featur\")"
+	if !strings.HasPrefix(line, wantHead) || strings.Contains(line, "\n") {
+		t.Errorf("the one-line note reads\n  %s\nwant one line opening\n  %s", line, wantHead)
+	}
+	if byName := MisdeclaredDocumentsLine(lazy, "local/nightly-backup", "", report); byName != line {
+		t.Errorf("the note for the name differs from the note for the failure carrying it:\n  %s\n  %s", byName, line)
+	}
+	if got := MisdeclaredDocumentsLine(lazy, "local/other", "", report); got != "" {
+		t.Errorf("a name no such file declares got a note: %s", got)
+	}
+	if got := MisdeclaredFailureLine(closure.ErrUnresolvableURI(), lazy, report); got != "" {
+		t.Errorf("a failure carrying no reference got a note: %s", got)
+	}
+	if note := MisdeclaredDocumentsNote(lazy, "local/nightly-backup", ""); !strings.HasPrefix(note, "\n  note: a catalog file declares") {
+		t.Errorf("the multi-line note does not take the account's shape: %q", note)
+	}
 }
 
 // TestAnnotateSkipContextNamesAKindNoCatalogHoldsOnlyWhereItExplains holds the

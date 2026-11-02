@@ -357,7 +357,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
-			Message:        "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
+			Message:        "Dependencies: " + s.skipContextFor(view, vr.PillarError),
 			ConditionCodes: conditionCodesOf(vr.PillarError),
 		})
 	}

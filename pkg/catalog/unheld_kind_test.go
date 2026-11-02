@@ -199,8 +199,72 @@ func TestUnloadableDocumentsHaltCarriesBothConditions(t *testing.T) {
 // walk builds is the same.
 func TestTolerantLoadRecordsAKindNoCatalogHolds(t *testing.T) {
 	t.Parallel()
-	ws := t.TempDir()
-	dir := filepath.Join(ws, "catalog")
+	ws, dir, misspelled := unheldKindCatalog(t)
+
+	strict, err := loadAllPassOne(ws, "", dir)
+	if err != nil {
+		t.Fatalf("the strict load halted on a document it passes over: %v", err)
+	}
+	tolerant, skipped, err := LoadPassOneTolerant(ws, "", dir)
+	if err != nil {
+		t.Fatalf("the tolerant load failed: %v", err)
+	}
+	for name, c := range map[string]*Catalog{"strict": strict, "tolerant": tolerant} {
+		if _, ok := c.Components["acc/clean:1.0.0"]; !ok || len(c.Components) != 1 {
+			t.Errorf("positive control: the %s load must index the clean Component and nothing else; got %d", name, len(c.Components))
+		}
+	}
+	assertSoleUnheldKindRecord(t, skipped, misspelled)
+}
+
+// TestLazyLookupRecordsAKindNoCatalogHolds drives the lazy view — the catalog a
+// build that fills its own lockfile, a pull, a Release-scoped validate, the
+// assistant tools and the editor read — over the directory the eager test above
+// reads, and holds its skip record to the same answer: the misspelled document
+// alone, recorded with the unknown-kind condition and the identity it declares.
+// The view still resolves the clean Component, so the record is not a symptom
+// of a walk that read nothing.
+func TestLazyLookupRecordsAKindNoCatalogHolds(t *testing.T) {
+	t.Parallel()
+	ws, dir, misspelled := unheldKindCatalog(t)
+	view := NewLazyLookup(ws, filepath.Join(ws, "cache"), []string{dir}, nil)
+	if _, ok := view.Component("acc/clean:1.0.0"); !ok {
+		t.Fatal("positive control: the clean Component must resolve through the lazy view")
+	}
+	if _, ok := view.Component("example/datastore/mariadb-probe:1.0.0"); ok {
+		t.Fatal("the misspelled document resolved as a Component; nothing about it may change what resolves")
+	}
+	if skip, ok := view.Skips()[misspelled]; !ok || !errors.Is(skip, ErrUnknownCatalogDocumentKind()) {
+		t.Errorf("the raw record does not hold the misspelled document under the unknown-kind condition: %v, %v", skip, ok)
+	}
+	assertSoleUnheldKindRecord(t, view.SkippedEntities(), misspelled)
+}
+
+// assertSoleUnheldKindRecord holds a skip record to exactly one entry: the
+// misspelled document, as a file of a kind no catalog holds, with the identity
+// it declares.
+func assertSoleUnheldKindRecord(t *testing.T, skipped []SkippedEntity, misspelled string) {
+	t.Helper()
+	if len(skipped) != 1 {
+		t.Fatalf("skipped = %+v; want exactly the misspelled document — the Manifest, the Workload and the chart template are passed over", skipped)
+	}
+	s := skipped[0]
+	if !s.KindNotHeld() || !errors.Is(s.Err, ErrUnknownCatalogDocumentKind()) {
+		t.Errorf("the record is not a file of a kind no catalog holds: %v", s.Err)
+	}
+	if s.Path != misspelled || s.Kind != "Componnent" || s.Name != "example/datastore/mariadb-probe" || s.Version != "1.0.0" {
+		t.Errorf("the record does not carry the identity the document declares: %+v", s)
+	}
+}
+
+// unheldKindCatalog writes a catalog directory holding a misspelled-kind Aggrega
+// document beside a held Component, a Manifest, a Workload file a Recipe would
+// import, and a chart template, and returns the workspace, the directory and the
+// misspelled document's path.
+func unheldKindCatalog(t *testing.T) (ws, dir, misspelled string) {
+	t.Helper()
+	ws = t.TempDir()
+	dir = filepath.Join(ws, "catalog")
 	write := func(rel, body string) string {
 		t.Helper()
 		p := filepath.Join(dir, rel)
@@ -212,7 +276,7 @@ func TestTolerantLoadRecordsAKindNoCatalogHolds(t *testing.T) {
 		}
 		return p
 	}
-	misspelled := write("example/datastore/mariadb-probe/1.0.0/component.yaml",
+	misspelled = write("example/datastore/mariadb-probe/1.0.0/component.yaml",
 		"apiVersion: aggrega.ai/v1alpha1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n  version: 1.0.0\nspec: {}\n")
 	write("acc/clean/component.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -231,30 +295,7 @@ spec:
 	write("recipe/helm/web/1.0.0/workload/workload.yaml",
 		"apiVersion: aggrega.ai/v1alpha1\nkind: Workload\nform: stateless\ncontainers:\n  app: { image: \"nginx:1.27\" }\n")
 	write("charts/web/templates/deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n")
-
-	strict, err := loadAllPassOne(ws, "", dir)
-	if err != nil {
-		t.Fatalf("the strict load halted on a document it passes over: %v", err)
-	}
-	tolerant, skipped, err := LoadPassOneTolerant(ws, "", dir)
-	if err != nil {
-		t.Fatalf("the tolerant load failed: %v", err)
-	}
-	for name, c := range map[string]*Catalog{"strict": strict, "tolerant": tolerant} {
-		if _, ok := c.Components["acc/clean:1.0.0"]; !ok || len(c.Components) != 1 {
-			t.Errorf("positive control: the %s load must index the clean Component and nothing else; got %d", name, len(c.Components))
-		}
-	}
-	if len(skipped) != 1 {
-		t.Fatalf("skipped = %+v; want exactly the misspelled document — the Manifest, the Workload and the chart template are passed over", skipped)
-	}
-	s := skipped[0]
-	if !s.KindNotHeld() || !errors.Is(s.Err, ErrUnknownCatalogDocumentKind()) {
-		t.Errorf("the record is not a file of a kind no catalog holds: %v", s.Err)
-	}
-	if s.Path != misspelled || s.Kind != "Componnent" || s.Name != "example/datastore/mariadb-probe" || s.Version != "1.0.0" {
-		t.Errorf("the record does not carry the identity the document declares: %+v", s)
-	}
+	return ws, dir, misspelled
 }
 
 // TestRefusalMatchingKeepsAKindNoCatalogHoldsApart holds the two matchers to

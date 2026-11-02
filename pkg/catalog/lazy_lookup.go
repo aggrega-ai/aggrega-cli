@@ -702,9 +702,10 @@ type LazyLookup struct {
 	// recipeSkips records every catalog file this backing refused, keyed by file
 	// path, with the reason. It spans more kinds than its name suggests: recipe,
 	// FeatureRecipe, Aggregate, mapping / workload / artifacts / schema library,
-	// plugin, a document no walk could index, and — recorded on a per-URI cascade
-	// read rather than an enumeration walk — Component and Feature. A file
-	// shadowed by an earlier catalog directory is never recorded here.
+	// plugin, a document no walk could index, a document of a kind no catalog
+	// holds, and — recorded on a per-URI cascade read rather than an enumeration
+	// walk — Component and Feature. A file shadowed by an earlier catalog directory
+	// is never recorded here.
 	recipeSkips      map[string]error
 	recipeIndexBuilt bool
 
@@ -2027,9 +2028,13 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // explains. Every catalog-directory file passes through this walk, so it is
 // recorded here, with the refusal the whole-catalog load records for it
 // (loadRefusal): a file that load would not refuse — one that is no catalog
-// entity at all — records nothing. The record is written without a warning line,
-// because the whole-catalog load warns about none of these either: a refused file
-// is reported by the failure it explains, never on its own.
+// entity at all — records nothing. A document declaring the Aggrega envelope and
+// a kind no catalog holds is recorded here too, with the refusal the
+// whole-catalog load records for it (unheldKindRefusal), so a failing reference
+// to the name it declares can be explained on every surface that reads this
+// record. The record is written without a warning line, because the
+// whole-catalog load warns about none of these either: a refused file is
+// reported by the failure it explains, never on its own.
 //
 // A link leading out of a directory's root is the one thing this walk meets and
 // does not read: it is passed over, and the first one met is recorded as the halt
@@ -2062,6 +2067,10 @@ func (l *LazyLookup) buildRecipeIndex() {
 				if refusal := loadRefusal(l.workspaceRoot, data, path); refusal != nil {
 					l.recipeSkips[path] = refusal
 				}
+				return nil
+			}
+			if refusal := unheldKindRefusal(path, data, hdr.Kind); refusal != nil {
+				l.recipeSkips[path] = refusal
 				return nil
 			}
 			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "", "", position)
@@ -3082,8 +3091,9 @@ func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.R
 // catalog file the lazy enumeration refused (a recipe/FR/aggregate/
 // provider/mapping-library that failed to parse, a duplicate identity within one
 // catalog directory, a schema library that failed its forbidden-keyword /
-// template-body checks, or a document too malformed for any walk to index), plus
-// every Component or Feature file a cascade read has refused so far. Each is
+// template-body checks, a document too malformed for any walk to index, or one
+// declaring a kind no catalog holds), plus every Component or Feature file a
+// cascade read has refused so far. Each is
 // recorded with the refusal the whole-catalog load records for the same file. A
 // file shadowed by an earlier catalog directory is not here: its identity is
 // held, by that directory's file, so it is no refusal. A refused

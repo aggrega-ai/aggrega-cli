@@ -335,7 +335,12 @@ func (s *server) describeCatalogEntity(a describeArgs, name, release string) (*c
 		// The Release is spelled the way every reported path is, which is how the
 		// account beside it spells the same Release; over a listener the answer's
 		// prose is then told the way the rest of it is.
-		note := compilerops.LocalCatalogAdvice(tw.rw.LocalCatalogAdviceNote(releasePath), view.SkippedEntities(), name, "")
+		// A file declaring the name under a kind no catalog holds is named in place of
+		// the account of where local entities are read from, which the advice withholds
+		// for it: the file is already where the catalog reads.
+		skipped := view.SkippedEntities()
+		note := compilerops.MisdeclaredDocumentsNote(skipped, name, "") +
+			compilerops.LocalCatalogAdvice(tw.rw.LocalCatalogAdviceNote(releasePath), skipped, name, "")
 		return tw.answer(errorResult(explainDiagnostic(fmt.Sprintf(
 			"No catalog entity named %q resolved, in any kind (%s), in the terms of the Release %s; check the "+
 				"type URI and that the catalog directories that Release reads cover it.%s",

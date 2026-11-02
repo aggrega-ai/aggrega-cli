@@ -126,6 +126,24 @@ func unheldKindDocument(path string, data []byte, header any) error {
 	return unheldKindError(path, kind)
 }
 
+// unheldKindRefusal is the refusal a tolerant walk records for the document read
+// from path whose header declares kind: the [ErrUnknownCatalogDocumentKind]
+// occurrence where kind is one no catalog holds and the text declares the Aggrega
+// envelope, and nil for every other document — YAML that is not an Aggrega
+// document among them, whatever kind it names. The envelope is looked for only
+// once the kind is known to be one no catalog holds, so a document of a held kind
+// costs a walk nothing more.
+//
+// It is the one answer both tolerant walks give — the eager load's and the lazy
+// view's — so the build that reads a lockfile and the one that fills it are told
+// about the same file in the same words.
+func unheldKindRefusal(path string, data []byte, kind string) error {
+	if !kindNotHeld(kind) || !declaresAggregaEnvelope(data) {
+		return nil
+	}
+	return unheldKindError(path, kind)
+}
+
 // KindNotHeld reports whether the file was skipped because it declares the
 // Aggrega envelope and a kind a catalog does not hold, rather than refused while
 // the load indexed it.

@@ -222,11 +222,31 @@ func partitionSkipped(err error, skipped []catalog.SkippedEntity) (refused, misd
 	if len(refused) == len(skipped) {
 		return skipped, nil
 	}
+	return refused, misdeclaredFor(err, skipped)
+}
+
+// misdeclaredFor returns the files in skipped that declare, under a kind no
+// catalog holds, the name the reference err failed on, or nil where err carries
+// no reference.
+func misdeclaredFor(err error, skipped []catalog.SkippedEntity) []catalog.SkippedEntity {
 	var unresolved *closure.UnresolvedEntityError
-	if stderrors.As(err, &unresolved) && unresolved != nil {
-		misdeclared = catalog.UnheldKindDocumentsFor(skipped, unresolved.URI, unresolved.KindHint)
+	if !stderrors.As(err, &unresolved) || unresolved == nil {
+		return nil
 	}
-	return refused, misdeclared
+	return catalog.UnheldKindDocumentsFor(skipped, unresolved.URI, unresolved.KindHint)
+}
+
+// misdeclaredSentence is the note naming files that declare the name a failing
+// reference asks for under a kind no catalog holds, split where the multi-line
+// rendering breaks it. Both renderings are composed from it, so a terminal and
+// a single-line message say the same thing in the same words.
+func misdeclaredSentence(n int) (head, tail string) {
+	if n == 1 {
+		return "a catalog file declares the name this reference asks for under a kind a catalog does not hold",
+			"so the load skipped it"
+	}
+	return "catalog files declare the name this reference asks for under a kind a catalog does not hold",
+		"so the load skipped them"
 }
 
 // writeMisdeclared renders the note naming each file that declares the name the
@@ -235,14 +255,61 @@ func writeMisdeclared(b *strings.Builder, misdeclared []catalog.SkippedEntity) {
 	if len(misdeclared) == 0 {
 		return
 	}
-	if len(misdeclared) == 1 {
-		b.WriteString("\n  note: a catalog file declares the name this reference asks for under a kind a catalog does not hold,")
-		b.WriteString("\n  so the load skipped it:")
-	} else {
-		b.WriteString("\n  note: catalog files declare the name this reference asks for under a kind a catalog does not hold,")
-		b.WriteString("\n  so the load skipped them:")
-	}
+	head, tail := misdeclaredSentence(len(misdeclared))
+	b.WriteString("\n  note: " + head + ",")
+	b.WriteString("\n  " + tail + ":")
 	writeRefusals(b, misdeclared)
+}
+
+// MisdeclaredDocumentsNote returns the note naming each file in skipped that
+// declares, under a kind no catalog holds, the name the reference uri asks for —
+// in the multi-line shape the workspace's account of where it reads local
+// entities takes, opening with a line break — or the empty string where none
+// does. kindHint is the hint the reference was collected with, read only to
+// split a recipe reference the way its kind composes it.
+//
+// It is what a surface reporting a lookup that matched nothing appends where
+// LocalCatalogAdvice withholds that account because such a file declares the
+// name: the account would send the reader to move a file the catalog already
+// reads, and this names the file and what is wrong with it instead.
+func MisdeclaredDocumentsNote(skipped []catalog.SkippedEntity, uri, kindHint string) string {
+	var b strings.Builder
+	writeMisdeclared(&b, catalog.UnheldKindDocumentsFor(skipped, uri, kindHint))
+	return b.String()
+}
+
+// MisdeclaredDocumentsLine is MisdeclaredDocumentsNote on one line, for a
+// surface whose message is a single line: `note: <sentence>: <refusal>; …`,
+// each refusal stated once with its short code in its head and its document
+// named as report spells a path. It returns the empty string where no file
+// matches.
+func MisdeclaredDocumentsLine(skipped []catalog.SkippedEntity, uri, kindHint string, report func(path string) string) string {
+	return misdeclaredLine(catalog.UnheldKindDocumentsFor(skipped, uri, kindHint), report)
+}
+
+// MisdeclaredFailureLine is MisdeclaredDocumentsLine for the reference a
+// resolution failure carries, read off the failure rather than out of its text.
+// A failure carrying no reference is explained by no such file, and gets the
+// empty string.
+func MisdeclaredFailureLine(err error, skipped []catalog.SkippedEntity, report func(path string) string) string {
+	return misdeclaredLine(misdeclaredFor(err, skipped), report)
+}
+
+// misdeclaredLine renders the one-line note over the files already matched.
+func misdeclaredLine(misdeclared []catalog.SkippedEntity, report func(path string) string) string {
+	if len(misdeclared) == 0 {
+		return ""
+	}
+	if report == nil {
+		report = func(p string) string { return p }
+	}
+	head, tail := misdeclaredSentence(len(misdeclared))
+	var b strings.Builder
+	b.WriteString("note: " + head + ", " + tail + ":")
+	for _, s := range misdeclared {
+		fmt.Fprintf(&b, " %s;", RefusedDocumentLine(report(s.Path), s.Err))
+	}
+	return b.String()
 }
 
 // RefusedDocumentNote is the sentence that follows a refused document's fault

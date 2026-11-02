@@ -1168,8 +1168,8 @@ func (c *Catalog) tolerantIndexFile(data []byte, path string) error {
 	if err := yaml.Unmarshal(data, &header); err != nil {
 		return UnloadableDocument(path, data, nil, &entityHeader{})
 	}
-	if kindNotHeld(header.Kind) && declaresAggregaEnvelope(data) {
-		return unheldKindError(path, header.Kind)
+	if refusal := unheldKindRefusal(path, data, header.Kind); refusal != nil {
+		return refusal
 	}
 	return c.indexKind(header.Kind, data, path)
 }

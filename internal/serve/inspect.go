@@ -446,7 +446,16 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 // release is the Release the lookup was made in the terms of, as an absolute
 // path, or empty for a lookup that named none; the account is the one the
 // workspace gives for that Release.
+//
+// A file the view skipped because it declares the name under a kind no catalog
+// holds was read where the catalog reads, so the account is withheld for it as
+// it is for a refused document — and the file is named in its place, with what
+// is wrong with it, because a reader told nothing about where to look would be
+// left with less than the account gave them.
 func (s *Server) localCatalogContext(msg string, skipped []catalog.SkippedEntity, name, kindHint, release string) string {
+	if line := compilerops.MisdeclaredDocumentsLine(skipped, name, kindHint, s.reportedPath); line != "" {
+		msg += "; " + line
+	}
 	note := strings.TrimSpace(compilerops.LocalCatalogAdvice(
 		s.resolvedWorkspace.LocalCatalogAdviceNote(release), skipped, name, kindHint))
 	if note == "" {

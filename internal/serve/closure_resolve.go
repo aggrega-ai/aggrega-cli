@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -75,7 +76,7 @@ func (s *Server) resolveReleaseClosure(ctx context.Context, view *catalog.LazyLo
 		if cerr.Stage == compilerops.ClosureStageComputeClosure {
 			return nil, &jsonRPCError{
 				Code:    errEntityNotResolvable,
-				Message: s.skipContext(view, cerr.Error()),
+				Message: s.skipContextFor(view, cerr),
 				cause:   cerr,
 			}
 		}
@@ -148,13 +149,13 @@ func (s *Server) previewFailureEnvelope(view *catalog.LazyLookup, releasePath st
 		}
 		return &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: s.skipContext(view, err.Error()),
+			Message: s.skipContextFor(view, err),
 			cause:   err,
 		}
 	case compilerops.GateAxisReconstruction:
 		return &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: s.skipContext(view, err.Error()),
+			Message: s.skipContextFor(view, err),
 			cause:   err,
 		}
 	default:
@@ -272,15 +273,41 @@ func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	return s.skipContextBesides(view, msg, "")
 }
 
+// skipContextFor is skipContext for the failure err, rendered from err's own
+// text, with the files the view skipped for declaring a kind no catalog holds
+// named ahead of the other skips where one declares the name the reference err
+// failed on — the account a terminal gives the same failure, folded onto the
+// one line an envelope message carries. A failure carrying no reference is
+// annotated exactly as skipContext annotates it.
+func (s *Server) skipContextFor(view *catalog.LazyLookup, err error) string {
+	msg := err.Error()
+	if line := compilerops.MisdeclaredFailureLine(err, view.SkippedEntities(), s.reportedPath); line != "" {
+		msg += "; " + line
+	}
+	return s.skipContext(view, msg)
+}
+
+// reportedPath spells a path the way this daemon reports every document it
+// names: relative to the workspace root for one inside it.
+func (s *Server) reportedPath(path string) string {
+	return pathscope.ReportedName(s.workspaceRoot, path)
+}
+
 // skipContextBesides is skipContext listing every refusal except the one
 // recorded under promoted, which the message already leads with. Naming it again
 // in the list would state the same refusal twice in one line. An empty promoted
 // lists every refusal.
+//
+// A file the view skipped because it declares a kind no catalog holds is not
+// listed. It never entered the catalog under any kind, so it explains only a
+// failure on a reference to the name it declares, and the message for such a
+// failure names it through skipContextFor; listed here it would be named
+// beside every failure, the ones it has nothing to do with included.
 func (s *Server) skipContextBesides(view *catalog.LazyLookup, msg, promoted string) string {
 	skips := view.Skips()
 	paths := make([]string, 0, len(skips))
-	for p := range skips {
-		if p != promoted {
+	for p, reason := range skips {
+		if p != promoted && !stderrors.Is(reason, catalog.ErrUnknownCatalogDocumentKind()) {
 			paths = append(paths, p)
 		}
 	}
