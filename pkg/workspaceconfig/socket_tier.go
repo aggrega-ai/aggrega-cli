@@ -179,7 +179,9 @@ type VerdictAttachment struct {
 // the verdict governance roles (ir-verdict / render-verdict) and the linter
 // socket alike, because the verdict tier is a property of the attachment rather
 // than of one socket. An attachment carrying no plugin URI is omitted: it has
-// nothing to fetch and nothing to identify.
+// nothing to fetch and nothing to identify. In a configuration Resolve produced,
+// such an attachment names no entry function either: one at this tier naming a
+// function and no URI is refused as the file carrying it is read.
 //
 // It is the one spelling of "the verdict attachment set", so the pull's plugin
 // caching and the recorded provenance of what shaped a verdict read the same

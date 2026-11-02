@@ -12,6 +12,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"go.yaml.in/yaml/v3"
@@ -377,6 +378,9 @@ func validateBytes(data []byte, path string) error {
 	if err := checkProviderBindingForms(probe, path); err != nil {
 		return err
 	}
+	if err := checkVerdictAttachmentsNamePlugin(probe, path); err != nil {
+		return err
+	}
 	_, err := envelope.ValidateBytes(envelope.KindAggregaConfig, data, path)
 	var envErr *envelope.Error
 	if errors.As(err, &envErr) {
@@ -515,6 +519,77 @@ func checkProviderBindingForms(probe any, path string) error {
 			capability, _ := entry["capability"].(string)
 			return fmt.Errorf("workspaceconfig: %s: plugins.%s[%d] binds capability %q to %q, which is where a plugin is published rather than which plugin it is; a provider binding names its plugin by its identity — write `uri: provider/<name>`, with an optional `:<version>`: %w",
 				path, key, i, capability, uri, ErrConfigInvalid())
+		}
+	}
+	return nil
+}
+
+// entryFunctionSockets are the sockets whose attachments may name an entry
+// function — the lists the schema shapes as PluginRef. Each is authored under
+// its socket's own name and under that name's `_append` companion.
+var entryFunctionSockets = []Socket{SocketGovernance, SocketLinter}
+
+// checkVerdictAttachmentsNamePlugin refuses an attachment at the verdict tier
+// that names an entry function with `function:` and no plugin `uri:`, naming the
+// file, the list and the entry's position in it, the function as written, and
+// the fix.
+//
+// The verdict tier is read per attachment through Socket.RefTier, so it is the
+// set the tier classification places there — every linter entry, and a
+// governance entry whose role is a verdict role — and a role later classified as
+// a verdict role is judged without an edit here. A cross-cutting socket selects
+// its plugin by uri alone, so such an entry attaches no plugin and the function
+// it names is never called: the lint goes on as though the entry were not there,
+// and a governance verdict attachment fails only when the build comes to resolve
+// a plugin the entry never named. An author who named a function expects it to
+// run, so the entry is refused where it was written.
+//
+// It reads every authored list of one layer, the `_append` companions included,
+// so the refusal names the file whichever list carried the entry and whichever
+// layer — a tree file, the global file or a CI-owned overlay — it sits in. Left
+// to other checks: an entry carrying a capability, which the cross-cutting socket
+// check refuses on the composed list; a governance entry with no role or an
+// unknown one, which is no verdict attachment and which the role check refuses;
+// and a value of another type, which the schema reports. An entry naming neither
+// a function nor a uri is not judged, and neither is a governance entry in a
+// transform role, which is not at the verdict tier.
+//
+// Like checkProviderBindingForms it runs ahead of the schema, which admits an
+// entry carrying no uri.
+func checkVerdictAttachmentsNamePlugin(probe any, path string) error {
+	root, ok := probe.(map[string]any)
+	if !ok {
+		return nil
+	}
+	plugins, ok := root["plugins"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, socket := range entryFunctionSockets {
+		for _, key := range []string{string(socket), string(socket) + "_append"} {
+			entries, _ := plugins[key].([]any)
+			for i, item := range entries {
+				entry, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				function, ok := entry["function"].(string)
+				if !ok || function == "" {
+					continue
+				}
+				if uri, present := entry["uri"]; present && uri != "" {
+					continue
+				}
+				if capability, present := entry["capability"]; present && capability != "" {
+					continue
+				}
+				role, _ := entry["role"].(string)
+				if socket.RefTier(PluginRef{Role: plugintype.Role(role)}) != SocketTierVerdict {
+					continue
+				}
+				return fmt.Errorf("workspaceconfig: %s: plugins.%s[%d] names the entry function %q but no plugin `uri`; an attachment on this list selects its plugin by `uri`, so this one attaches no plugin and %q is never called — add the `uri` of the plugin that exports it: %w",
+					path, key, i, function, function, ErrConfigInvalid())
+			}
 		}
 	}
 	return nil

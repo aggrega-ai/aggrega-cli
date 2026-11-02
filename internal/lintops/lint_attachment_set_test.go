@@ -214,7 +214,9 @@ func TestResolveLinterPluginsHaltsOnAnyAttachment(t *testing.T) {
 // identifies no plugin, so it is not in the set and its export function — which
 // would name an entry point on a plugin nothing named — is not carried either.
 // The socket is therefore unconfigured, and the built-in guest serves it under
-// that guest's own default export.
+// that guest's own default export. A configuration read from its files never
+// arrives here with such an attachment, because the load refuses one naming a
+// function and no URI; this holds the gate for a configuration built in code.
 func TestResolveLinterPluginsSkipsAttachmentWithoutURI(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{{Function: "some_export"}}
