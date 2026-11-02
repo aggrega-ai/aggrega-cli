@@ -112,7 +112,7 @@ func TestCatalogWideRunsOncePerRelease(t *testing.T) {
 			"variant-a/component/api-server.yaml": perReleaseComponent,
 			"variant-b/component/api-server.yaml": plantedComponent,
 		})
-	passes := rw.WholeCatalogPasses(func() []string {
+	passes := passesOf(t, rw, func() []string {
 		return []string{"release-a.yaml", "release-b.yaml", "release-b2.yaml", "release-off.yaml"}
 	}, nil)
 
@@ -223,7 +223,7 @@ func TestCatalogWideRefusesOnlyWhenNoPassReads(t *testing.T) {
 			t.Parallel()
 			rw := perReleaseWorkspace(t, tc.config, tc.releases,
 				map[string]string{"variant-b/component/api-server.yaml": perReleaseComponent})
-			passes := rw.WholeCatalogPasses(func() []string { return tc.releases }, nil)
+			passes := passesOf(t, rw, func() []string { return tc.releases }, nil)
 			var out, diag bytes.Buffer
 			err := RunCatalogWide(t.Context(), rw, passes, nil, &out, &diag, nil)
 			if tc.want == "" {
@@ -294,7 +294,7 @@ func TestCatalogWideTakesTheCommandLineSuppressions(t *testing.T) {
 				}
 				rw := perReleaseWorkspace(t, config, layout.releases,
 					map[string]string{"variant-b/component/api-server.yaml": plantedComponent})
-				passes := rw.WholeCatalogPasses(func() []string { return layout.releases }, nil)
+				passes := passesOf(t, rw, func() []string { return layout.releases }, nil)
 				if got := len(passes); got != 1 {
 					t.Fatalf("the layout yields %d pass(es); want 1, so the row reads one pass's findings", got)
 				}

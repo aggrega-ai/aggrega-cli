@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
-	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -107,7 +106,7 @@ func TestWholeCatalogValidationRunsOncePerRelease(t *testing.T) {
 			"variant-a/feature/secret-value.yaml": perReleaseFeature(""),
 			"variant-b/feature/secret-value.yaml": perReleaseFeature("core/no-such-parent"),
 		})
-	passes := serve.WholeCatalogPasses(rw, nil)
+	passes := passesFor(t, rw, nil)
 
 	var out, diag bytes.Buffer
 	err := validateCatalogPasses(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes, &diag, &out)
@@ -147,7 +146,7 @@ func TestWholeCatalogPerReleasePassesHaltOnAnAggregaDocumentTheyCannotLoad(t *te
 			"variant-b/feature/secret-value.yaml": perReleaseFeature(""),
 			"variant-b/component/broken.yaml":     unloadableSyntaxComponent,
 		})
-	passes := serve.WholeCatalogPasses(rw, nil)
+	passes := passesFor(t, rw, nil)
 	broken := filepath.Join("variant-b", "component", "broken.yaml")
 
 	var lintOut, lintDiag bytes.Buffer
@@ -189,7 +188,7 @@ func TestWholeCatalogScopesRefuseWhenNoReleaseReadsADirectory(t *testing.T) {
 		{"aggrega validate (whole catalog)", func() error { return validateCatalogWideFromWorkspace(rw, nil) }},
 		{"aggrega lint (whole catalog)", func() error {
 			var out, diag bytes.Buffer
-			return lintops.RunCatalogWide(context.Background(), rw, serve.WholeCatalogPasses(rw, nil), nil, &out, &diag, nil)
+			return lintops.RunCatalogWide(context.Background(), rw, passesFor(t, rw, nil), nil, &out, &diag, nil)
 		}},
 	}
 	for _, s := range scopes {

@@ -62,7 +62,7 @@ func TestTheNamedPartOfAStackSaysWhetherTheConventionalDirectoryWasNamed(t *test
 			}
 			conventional := filepath.Join(ws, workspaceconfig.ConventionalCatalogDir)
 
-			stack, named := rw.ResolveCatalogDirs(release, flags), rw.NamedCatalogDirs(release, flags)
+			stack, named := stackOf(t, rw, release, flags), namedOf(t, rw, release, flags)
 			if !slices.Contains(stack, conventional) {
 				t.Fatalf("precondition: the stack %v does not hold %s, so the row is about nothing", stack, conventional)
 			}
@@ -82,11 +82,11 @@ func TestTheNamedPartOfAStackSaysWhetherTheConventionalDirectoryWasNamed(t *test
 				t.Errorf("CatalogDirRoot over the named part = %s, want %s", got, want)
 			}
 
-			passes := rw.WholeCatalogPasses(func() []string { return []string{"release.yaml"} }, flags)
+			passes := passesOf(t, rw, func() []string { return []string{"release.yaml"} }, flags)
 			if len(passes) != 1 {
 				t.Fatalf("WholeCatalogPasses returned %d passes; want 1", len(passes))
 			}
-			wantPass := rw.NamedCatalogDirs("", flags)
+			wantPass := namedOf(t, rw, "", flags)
 			if passes[0].NamesReleases() {
 				wantPass = named
 			}

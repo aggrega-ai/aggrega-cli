@@ -68,8 +68,8 @@ func TestEachReleaseReadsTheConventionalCatalogAsItsOwnStackNamesIt(t *testing.T
 			var out bytes.Buffer
 			srv := catalogDirsServer(t, ws, &out)
 			for _, release := range []string{unlisted, listing} {
-				if dirs := srv.catalogDirsFor(release); !slices.Equal(dirs, []string{conventional}) {
-					t.Fatalf("precondition: %s reads %v; want the conventional directory alone, so both stacks spell one list", release, dirs)
+				if dirs, err := srv.catalogDirsFor(release); err != nil || !slices.Equal(dirs, []string{conventional}) {
+					t.Fatalf("precondition: %s reads %v (refused: %v); want the conventional directory alone, so both stacks spell one list", release, dirs, err)
 				}
 			}
 
@@ -164,8 +164,8 @@ func TestAConventionalCatalogLinkedToAListedPlaceIsReadThroughTheListing(t *test
 			if row.halts {
 				want = append(want, conventional)
 			}
-			if dirs := srv.catalogDirsFor(release); !slices.Equal(dirs, want) {
-				t.Errorf("the stack is %v; want %v", dirs, want)
+			if dirs, err := srv.catalogDirsFor(release); err != nil || !slices.Equal(dirs, want) {
+				t.Errorf("the stack is %v (refused: %v); want %v", dirs, err, want)
 			}
 			lookup := srv.catalogFor(release)
 			linkErr := lookup.CheckLinks()

@@ -66,10 +66,22 @@ func (p CatalogPass) NamesReleases() bool {
 // or as an absolute path, and each pass names its Releases in that spelling.
 // Passes come in the order of the first Release each one names, so identical
 // input yields identical passes.
-func (r *ResolvedWorkspace) WholeCatalogPasses(releases func() []string, flagDirs []string) []CatalogPass {
-	workspace := []CatalogPass{{Dirs: r.ResolveCatalogDirs("", flagDirs), Named: r.NamedCatalogDirs("", flagDirs)}}
+//
+// A stack a pass reads that the resolver refuses — a configured directory that is
+// not a directory — refuses the whole check with that refusal, the first one met
+// in pass order: a check of the whole catalog that left a Release's pass out would
+// read as a check of all of it. A stack no pass reads — the workspace's own list,
+// where every Release replaces it — is not asked, so it refuses nothing.
+func (r *ResolvedWorkspace) WholeCatalogPasses(releases func() []string, flagDirs []string) ([]CatalogPass, error) {
+	workspacePass := func() ([]CatalogPass, error) {
+		pass, err := r.catalogPass("", flagDirs)
+		if err != nil {
+			return nil, err
+		}
+		return []CatalogPass{pass}, nil
+	}
 	if r.config.Workspace.Releases.Len() == 0 || releases == nil {
-		return workspace
+		return workspacePass()
 	}
 	var passes []CatalogPass
 	for _, release := range releases() {
@@ -77,7 +89,11 @@ func (r *ResolvedWorkspace) WholeCatalogPasses(releases func() []string, flagDir
 		if !filepath.IsAbs(file) {
 			file = filepath.Join(r.root, file)
 		}
-		dirs, named := r.ResolveCatalogDirs(file, flagDirs), r.NamedCatalogDirs(file, flagDirs)
+		pass, err := r.catalogPass(file, flagDirs)
+		if err != nil {
+			return nil, err
+		}
+		dirs, named := pass.Dirs, pass.Named
 		shared := slices.IndexFunc(passes, func(p CatalogPass) bool {
 			return slices.Equal(p.Dirs, dirs) && slices.Equal(p.Named, named)
 		})
@@ -88,9 +104,23 @@ func (r *ResolvedWorkspace) WholeCatalogPasses(releases func() []string, flagDir
 		passes = append(passes, CatalogPass{Releases: []string{release}, Dirs: dirs, Named: named})
 	}
 	if len(passes) == 0 {
-		return workspace
+		return workspacePass()
 	}
-	return passes
+	return passes, nil
+}
+
+// catalogPass returns the pass over the stack the resolver returns for release
+// and flagDirs, naming no Release, or the resolver's refusal of that stack.
+func (r *ResolvedWorkspace) catalogPass(release string, flagDirs []string) (CatalogPass, error) {
+	dirs, err := r.ResolveCatalogDirs(release, flagDirs)
+	if err != nil {
+		return CatalogPass{}, err
+	}
+	named, err := r.NamedCatalogDirs(release, flagDirs)
+	if err != nil {
+		return CatalogPass{}, err
+	}
+	return CatalogPass{Dirs: dirs, Named: named}, nil
 }
 
 // AnyCatalogPassReads reports whether at least one of passes has a directory to

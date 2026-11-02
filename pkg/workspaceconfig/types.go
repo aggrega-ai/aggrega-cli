@@ -547,6 +547,14 @@ type WorkspaceConfig struct {
 type ReleaseCatalogConfig struct {
 	CatalogDirs       []string `yaml:"catalog_dirs"`
 	CatalogDirsAppend []string `yaml:"catalog_dirs_append"`
+
+	// dirsFrom and appendFrom record where each entry of CatalogDirs and
+	// CatalogDirsAppend was written, entry for entry, so a refusal of one of the
+	// directories can name the file and line listing it. They are filled where the
+	// entry is anchored to its file and composed where the entries are, and are
+	// never read from or written to a document.
+	dirsFrom   []catalogDirEntry
+	appendFrom []catalogDirEntry
 }
 
 // MarshalYAML writes an entry the way a configuration file states it: a list the

@@ -323,6 +323,15 @@ func validateReleaseScope(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	// A directory the workspace configuration lists for this Release that is not a
+	// directory is refused, as `aggrega validate --release` refuses it, rather than
+	// validated past.
+	if _, err := tw.catalogDirsFor(releasePath); err != nil {
+		return tw.answer(errorResult(catalogDirsGuidance(
+			"Validation did not run: the workspace configuration lists a catalog directory this Release reads that "+
+				"is not a directory, and `aggrega validate` refuses the same directory.",
+			err)))
+	}
 	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
@@ -391,12 +400,10 @@ func validateReleaseScope(
 // configuration gives that Release instead of the workspace's own, and changes
 // nothing else.
 //
-// A directory the workspace configuration lists for that stack where nothing
-// exists is not in it, so the check reads it as holding nothing and gives the
-// verdict it gives with that directory not listed. The line naming it, the one
-// `aggrega pull` and `aggrega build` print for it (absentCatalogDirLines), leads
-// Notices ahead of the check's own advisory lines, since the stack is decided
-// before the check reads anything. It never moves Valid.
+// A directory the workspace configuration lists for that stack that is not a
+// directory — nothing exists there, say — is refused before the check reads
+// anything, as `aggrega validate <entity>` refuses it, with the resolver's
+// refusal naming the entry and the file and line listing it.
 //
 // What the check reports as a warning — a failed assertion, which the core
 // decides is not its verdict — follows the advisory lines in Notices, in the
@@ -427,7 +434,6 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 	if tw, err = s.subjectWorkspace(tw, subject); err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for validation.", err, "component"))
 	}
-	dirs, named := tw.dirs, tw.named
 	if release != "" {
 		// Asking for the Release's reach is what refuses a value naming no
 		// Release file; the reach itself is set aside, since the check reads no
@@ -435,9 +441,16 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 		if _, refusal = tw.releaseReach("validate", releasePath); refusal != "" {
 			return errorResult(refusal)
 		}
-		dirs, named = tw.catalogDirsFor(releasePath), tw.namedCatalogDirsFor(releasePath)
 	}
-	absent := tw.absentCatalogDirLines(releasePath)
+	dirs, err := tw.catalogDirsFor(releasePath)
+	if err != nil {
+		return tw.answer(errorResult(catalogDirsGuidance(
+			"Validation did not run: a catalog directory the entity is checked against is listed in the workspace "+
+				"configuration and is not a directory, and `aggrega validate` refuses the same directory.",
+			err)))
+	}
+	// The named part is refused exactly when the stack is, with the same refusal.
+	named, _ := tw.namedCatalogDirsFor(releasePath)
 
 	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false,
 		validateops.WithDisplay(s.runDisplay()))
@@ -459,7 +472,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 		Valid:       len(diags) == 0,
 		Diagnostics: tw.reportedTexts(diags),
 		Artifacts:   artifactKeys,
-		Notices:     tw.reportedTexts(slices.Concat(absent, res.Notes, warnings)),
+		Notices:     tw.reportedTexts(slices.Concat(res.Notes, warnings)),
 	}
 	payload.Target, payload.TargetWithheld = tw.reportedLocationField(entityPath)
 	if releasePath != "" {
@@ -530,7 +543,13 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for catalog validation.", err, "component"))
 	}
-	passes := serve.WholeCatalogPasses(tw.rw, tw.flagDirs)
+	passes, err := serve.WholeCatalogPasses(tw.rw, tw.flagDirs)
+	if err != nil {
+		return tw.answer(errorResult(catalogDirsGuidance(
+			"Catalog validation did not run: the workspace configuration lists a catalog directory that is not a "+
+				"directory, and `aggrega validate` refuses the same directory.",
+			err)))
+	}
 	if len(passes) > 0 && passes[0].NamesReleases() {
 		return validateCatalogPasses(tw, passes)
 	}

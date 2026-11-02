@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -18,10 +19,11 @@ import (
 
 // The graph request answers a catalog directory the workspace configuration
 // lists for a Release as `aggrega inspect` answers it for the same Release: a
-// listed directory where nothing exists is not in the stack the Release reads, so
-// the graph is the one drawn without it; a listed directory that is there and
-// cannot be walked is refused with the whole-catalog load's own refusal; and the
-// same list with the directory there, empty, draws the graph.
+// listed directory where nothing exists is refused with the resolver's refusal,
+// naming the entry, the file and line listing it and the setting; a listed
+// directory that is there and cannot be walked is refused with the whole-catalog
+// load's own refusal; and the same list with the directory there, empty, draws
+// the graph.
 //
 // The server here is built by the constructor every request naming a workspace
 // is answered from, over a resolution of the fixture's own configuration file, so
@@ -31,6 +33,17 @@ import (
 // catalogDirsListing is the configuration line that lists the directory under
 // test after the fixture's own catalog directory.
 const catalogDirsListing = "workspace:\n  catalog_dirs:\n    - ./catalog\n    - ./no-such-catalog\n"
+
+// listedRefusal is the message a wire refusal carries for the stack
+// catalogDirsListing writes into the configuration of the workspace at ws, listed
+// being the path its second entry resolves to: the refusal every surface gives the
+// entry on line 4, under `workspace.catalog_dirs`, headed by the condition's short
+// code as every wire refusal naming a condition is.
+func listedRefusal(ws, listed string) string {
+	short, _ := cerrors.ShortCodeOf(workspaceconfig.ErrConfigInvalid())
+	return short + ": " + fmt.Sprintf("%s:4: the `workspace.catalog_dirs` entry %q names %s, which does not exist; create that directory, or remove the entry: %v",
+		filepath.Join(ws, workspaceconfig.ConfigFilename), "./no-such-catalog", listed, workspaceconfig.ErrConfigInvalid())
+}
 
 // catalogDirsServer resolves the workspace at ws from its own configuration, with
 // no global layer and a frozen environment, and returns the entry a request naming
@@ -76,28 +89,29 @@ func drawnGraph(t *testing.T, resp jsonRPCResponse) json.RawMessage {
 }
 
 // TestIrGraphAnswersAListedCatalogDirectoryAsInspectDoes is the invocation proof:
-// two rows draw and one refuses, and each row's fixture differs from the others in
+// one row draws and two refuse, and each row's fixture differs from the others in
 // what is at the listed directory's path and in nothing else.
 //
-// The drawing rows are held to more than "a graph came back": the graph drawn
-// over the listing — with nothing at the listed path, or with the directory there
-// and empty — must be the graph drawn over the fixture's own list, byte for byte,
-// so a reading of the listing that changed what a graph reads fails here even
-// where it refuses nothing. The row with nothing there also holds the stack to
-// leaving the directory out.
+// The drawing row is held to more than "a graph came back": the graph drawn over
+// the listing with the directory there and empty must be the graph drawn over the
+// fixture's own list, byte for byte, so a reading of the listing that changed what
+// a graph reads fails here even where it refuses nothing.
 //
-// The refusal names no registered condition — the load wraps the filesystem's own
-// error under the catalog category — so it is identified through the accessors it
-// does carry: the category and the directory the load reports, and the
-// filesystem's permission condition beneath them. Its message is asserted to name
-// the directory and the load, which is what a reader is shown.
+// The row with nothing at the listed path is refused with the resolver's refusal,
+// exactly, under ErrConfigInvalid, as a failure to resolve what the Release
+// reaches. The row with an unreadable directory is refused by the load, which
+// names no registered condition — it wraps the filesystem's own error under the
+// catalog category — so it is identified through the accessors it does carry: the
+// category and the directory the load reports, and the filesystem's permission
+// condition beneath them. Its message is asserted to name the directory and the
+// load, which is what a reader is shown.
 func TestIrGraphAnswersAListedCatalogDirectoryAsInspectDoes(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		state listedDirectoryState
 	}{
-		{name: "a listed directory where nothing exists is read as holding nothing", state: listedAbsent},
+		{name: "a listed directory where nothing exists is refused, naming the entry and its line", state: listedAbsent},
 		{name: "the same list with the directory there draws the graph the fixture draws without it", state: listedEmpty},
 		{name: "a listed directory that cannot be read is refused, naming it", state: listedUnreadable},
 	} {
@@ -109,7 +123,7 @@ func TestIrGraphAnswersAListedCatalogDirectoryAsInspectDoes(t *testing.T) {
 			// The baseline, over the fixture's own configuration, read before the
 			// listing is written so both answers come from one workspace path.
 			var baseline json.RawMessage
-			if tc.state != listedUnreadable {
+			if tc.state == listedEmpty {
 				writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace:\n  catalog_dirs:\n    - ./catalog\n")
 				var out bytes.Buffer
 				baseline = drawnGraph(t, irGraphAnswer(t, catalogDirsServer(t, ws, &out), &out, release))
@@ -119,15 +133,33 @@ func TestIrGraphAnswersAListedCatalogDirectoryAsInspectDoes(t *testing.T) {
 
 			var out bytes.Buffer
 			srv := catalogDirsServer(t, ws, &out)
-			if reads := containsPath(srv.catalogDirsFor(filepath.Join(ws, release)), listed); reads != (tc.state != listedAbsent) {
-				t.Fatalf("precondition: the stack the Release reads is %v, and whether it lists %s is not what the row is about",
-					srv.catalogDirsFor(filepath.Join(ws, release)), listed)
+			dirs, stackErr := srv.catalogDirsFor(filepath.Join(ws, release))
+			if !containsPath(dirs, listed) || (stackErr != nil) != (tc.state == listedAbsent) {
+				t.Fatalf("precondition: the stack the Release reads is %v, refused with %v, which is not what the row is about", dirs, stackErr)
 			}
 			resp := irGraphAnswer(t, srv, &out, release)
 
-			if tc.state != listedUnreadable {
+			switch tc.state {
+			case listedEmpty:
 				if got := drawnGraph(t, resp); !bytes.Equal(got, baseline) {
 					t.Errorf("the listing changed the graph:\n with it:    %s\n without it: %s", got, baseline)
+				}
+				return
+			case listedAbsent:
+				if resp.Error == nil {
+					t.Fatalf("a graph was drawn over a stack listing %s, where nothing exists: %s", listed, resp.Result)
+				}
+				if resp.Error.Code != errEntityNotResolvable {
+					t.Errorf("the refusal carries code %d; want %d, a failure to resolve what the Release reaches", resp.Error.Code, errEntityNotResolvable)
+				}
+				if want := listedRefusal(ws, listed); resp.Error.Message != want {
+					t.Errorf("the refusal reads\n %s\nwant\n %s", resp.Error.Message, want)
+				}
+				ctx, flush := serializerContext(t, &bytes.Buffer{})
+				_, envelope := srv.handleIrGraph(ctx, irGraphParams{Release: release})
+				flush()
+				if envelope == nil || !errors.Is(envelope.cause, workspaceconfig.ErrConfigInvalid()) {
+					t.Errorf("the handler's refusal does not carry ErrConfigInvalid: %+v", envelope)
 				}
 				return
 			}

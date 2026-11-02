@@ -421,9 +421,14 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) plug
 	}
 	wsCfg := rw.Config()
 	// CLI plugins belong to the workspace rather than to a Release, so their
-	// entities are read from the workspace's own stack.
-	dirs := rw.ResolveCatalogDirs("", nil)
-	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs("", nil)...)
+	// entities are read from the workspace's own stack. These inputs are built for
+	// every command, including the many that read no catalog, so a stack the
+	// resolver refuses is not refused here: the stack is taken as listed, and the
+	// lookup treats the refused directory as it treats any directory it cannot
+	// walk. A command that reads the catalog refuses it where it builds the stack.
+	dirs, _ := rw.ResolveCatalogDirs("", nil)
+	named, _ := rw.NamedCatalogDirs("", nil)
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
 	lazyView.WriteNoticesTo(processStderr{})
 	var pins map[string]string
 	for _, ref := range wsCfg.Plugins.CLI {

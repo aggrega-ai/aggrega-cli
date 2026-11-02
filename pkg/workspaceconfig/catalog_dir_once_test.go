@@ -89,7 +89,7 @@ func TestResolveCatalogDirsNamesADirectoryOnce(t *testing.T) {
 			for _, f := range tc.flags {
 				flags = append(flags, filepath.Join(root, f)+suffixOf(f))
 			}
-			got := rw.ResolveCatalogDirs("", flags)
+			got := stackOf(t, rw, "", flags)
 			want := make([]string, 0, len(tc.want))
 			for _, w := range tc.want {
 				want = append(want, filepath.Join(root, w))
@@ -97,7 +97,7 @@ func TestResolveCatalogDirsNamesADirectoryOnce(t *testing.T) {
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("stack = %v\nwant    %v", got, want)
 			}
-			if named := rw.NamedCatalogDirs("", flags); !reflect.DeepEqual(named, want) {
+			if named := namedOf(t, rw, "", flags); !reflect.DeepEqual(named, want) {
 				t.Errorf("named part = %v\nwant         %v", named, want)
 			}
 		})

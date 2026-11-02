@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -367,6 +366,11 @@ type toolWorkspace struct {
 	// directory is read as named or not where the stack was built.
 	named []string
 
+	// dirsRefusal is the resolver's refusal of dirs — the workspace configuration
+	// lists a directory in it that is not a directory — or nil. dirs and named are
+	// then the stack as listed.
+	dirsRefusal error
+
 	// flagDirs are the call's own catalog_dirs argument, each resolved by
 	// workspacePath against the root of the call's first resolution — a relative
 	// one read from that workspace root, an absolute one used as given — and kept
@@ -546,8 +550,12 @@ func (s *server) toolWorkspaceOf(rw *workspaceconfig.ResolvedWorkspace, catalogD
 	if err != nil {
 		return nil, err
 	}
-	tw.dirs = rw.ResolveCatalogDirs("", dirs)
-	tw.named = rw.NamedCatalogDirs("", dirs)
+	// A workspace's own stack the resolver refuses does not refuse the call: a
+	// tool that reads no catalog is answered all the same. The refusal is kept and
+	// handed to every reader of the stack (catalogDirsFor, catalogDirsRefusal), and
+	// the stack is kept as listed.
+	tw.dirs, tw.dirsRefusal = rw.ResolveCatalogDirs("", dirs)
+	tw.named, _ = rw.NamedCatalogDirs("", dirs)
 	tw.flagDirs = dirs
 	return tw, nil
 }
@@ -698,40 +706,25 @@ func (tw *toolWorkspace) namedUnread(walked []string) []string {
 // the one resolver every command and the daemon read a Release's directories
 // through, from this call's own catalog_dirs argument. An empty release is the
 // workspace's own stack.
-func (tw *toolWorkspace) catalogDirsFor(release string) []string {
+//
+// The resolver's refusal of the stack is returned beside it, as the resolver
+// gives it (ResolveCatalogDirs): a call reading the catalog reports it and reads
+// nothing.
+func (tw *toolWorkspace) catalogDirsFor(release string) ([]string, error) {
 	if release == "" {
-		return tw.dirs
+		return tw.dirs, tw.dirsRefusal
 	}
 	return tw.rw.ResolveCatalogDirs(release, tw.flagDirs)
 }
 
 // namedCatalogDirsFor returns the part of catalogDirsFor's stack for release
-// somebody named, asked of the resolver in the same terms. An empty release is
-// the workspace's own.
-func (tw *toolWorkspace) namedCatalogDirsFor(release string) []string {
+// somebody named, asked of the resolver in the same terms, with the same refusal.
+// An empty release is the workspace's own.
+func (tw *toolWorkspace) namedCatalogDirsFor(release string) ([]string, error) {
 	if release == "" {
-		return tw.named
+		return tw.named, tw.dirsRefusal
 	}
 	return tw.rw.NamedCatalogDirs(release, tw.flagDirs)
-}
-
-// absentCatalogDirLines returns one line for each directory the workspace
-// configuration lists for release where nothing exists, or none where every listed
-// directory exists. Those are the directories the stack catalogDirsFor returns
-// leaves out, so the call reads them as holding nothing, and each line is what
-// tells a caller so: the line `aggrega pull` and `aggrega build` print for that
-// directory, without the indentation a terminal nests it under (diagnosticLines).
-// An empty release is the workspace's own stack.
-//
-// The lines are the resolver's own (NoteAbsentCatalogDirs), asked for the same
-// Release and this call's own catalog_dirs argument, exactly as catalogDirsFor
-// asks the stack, so what they name and what the stack leaves out cannot come to
-// disagree, and a line here reads exactly as the line a dependency resolution
-// writes for the same directory.
-func (tw *toolWorkspace) absentCatalogDirLines(release string) []string {
-	var lines bytes.Buffer
-	tw.rw.NoteAbsentCatalogDirs(&lines, release, tw.flagDirs)
-	return diagnosticLines(lines.String())
 }
 
 // releaseReach reports which workspace documents an answer given in the terms of
@@ -750,6 +743,14 @@ func (tw *toolWorkspace) absentCatalogDirLines(release string) []string {
 // through are one Release's.
 func (tw *toolWorkspace) releaseReach(tool, releasePath string) (workspaceconfig.ReleaseReach, string) {
 	reach, err := tw.rw.ReleaseReach(releasePath, tw.flagDirs)
+	if errors.Is(err, workspaceconfig.ErrConfigInvalid()) {
+		// The Release is one, and the stack it reads is what was refused: a
+		// directory the workspace configuration lists that is not a directory.
+		return workspaceconfig.ReleaseReach{}, catalogDirsGuidance(
+			fmt.Sprintf("%s refused before reading the catalog: the workspace configuration lists a catalog "+
+				"directory this Release reads that is not a directory, and every command reading it refuses it.", tool),
+			err)
+	}
 	if err != nil {
 		return workspaceconfig.ReleaseReach{}, explainToolError(
 			fmt.Sprintf("%s's 'release' names no Release.", tool), err, "release")
@@ -770,8 +771,16 @@ func (tw *toolWorkspace) releaseReach(tool, releasePath string) (workspaceconfig
 // same non-networking one, held to the pins that step wrote. So the render is
 // hermetic given a filled lockfile however the lockfile came to be filled, which
 // is the same posture the command-line build holds after its own fill.
+//
+// A stack the resolver refuses is still the stack the view is built over, as
+// listed, and the view treats the refused directory as it treats any directory it
+// cannot walk; a tool that refuses such a directory asks catalogDirsRefusal, and a
+// tool reading the stack's directories directly is handed the refusal by
+// catalogDirsFor.
 func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog.LazyLookup {
-	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, tw.catalogDirsFor(release), nil, tw.namedCatalogDirsFor(release)...)
+	dirs, _ := tw.catalogDirsFor(release)
+	named, _ := tw.namedCatalogDirsFor(release)
+	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, dirs, nil, named...)
 	if lf != nil {
 		v.SetPins(catalog.PinsFromLockfile(lf))
 	}
@@ -779,14 +788,13 @@ func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog
 	return v
 }
 
-// catalogDirsRefusal returns the refusal a whole-catalog load gives the first
-// directory of the catalog search stack for release that it cannot walk — one the
-// call's own catalog directories name and that does not exist, or one that exists
-// and cannot be read, say — or nil where it can walk every one. A directory the
-// workspace configuration lists and where nothing exists is not in the stack, so
-// it is never refused here, as `aggrega build` never refuses it. release is
-// resolved as newView resolves it, and the empty string is the workspace's own
-// stack.
+// catalogDirsRefusal returns the resolver's refusal of the catalog search stack
+// for release — the workspace configuration lists a directory in it that is not a
+// directory — as `aggrega build` refuses it; else the refusal a whole-catalog load
+// gives the first directory of the stack that it cannot walk — one the call's own
+// catalog directories name and that does not exist, or one that exists and cannot
+// be read, say; or nil where it can walk every one. release is resolved as newView
+// resolves it, and the empty string is the workspace's own stack.
 //
 // A tool asks it where its command-line twin loads the whole catalog, and so
 // refuses such a directory before it does anything else: the build, as `aggrega
@@ -804,6 +812,9 @@ func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog
 // test of whether a directory exists would be free to answer differently from the
 // load the twin runs.
 func (tw *toolWorkspace) catalogDirsRefusal(release string) error {
+	if _, err := tw.catalogDirsFor(release); err != nil {
+		return err
+	}
 	return tw.newView(release, nil).CheckDirectories()
 }
 

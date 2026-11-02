@@ -46,7 +46,7 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	releasePath := filepath.Join(f.root, "release.yaml")
-	dirs := rw.ResolveCatalogDirs(releasePath, nil)
+	dirs := stackFor(t, rw, releasePath, nil)
 
 	// The build side, through the build's own computation: the lazy view pinned to
 	// the lockfile, a nil puller, the lockfile held as one that was on disk.

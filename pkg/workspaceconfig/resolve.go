@@ -170,6 +170,12 @@ type ResolvedWorkspace struct {
 	// resolution no surface overlaid, which is every surface that has no
 	// command line.
 	flags FlagOverlay
+
+	// catalogDirsFrom records where each entry of config.Workspace.CatalogDirs
+	// was written, entry for entry (catalogDirEntries), so a refusal of a listed
+	// catalog directory names the file and line listing it. It is nil on a
+	// resolution that kept no record, and a refusal then names the setting.
+	catalogDirsFrom []catalogDirEntry
 }
 
 // Root returns the absolute workspace root directory.
@@ -376,6 +382,9 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 	// Where each importer entry the composition below assembles was written,
 	// recorded as each layer is read and before any path in it is anchored.
 	var importerFrom importerEntries
+	// Where each catalog directory of the workspace's composed list was written,
+	// recorded the same way.
+	var catalogDirsFrom catalogDirEntries
 
 	// Global layer (the explicitly named file, or the platform's default
 	// location), beneath all tree files. Suppressed for the tree-only provenance
@@ -389,6 +398,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 		if globalLoaded {
 			gdir := filepath.Dir(globalPath)
 			importerFrom.fromConfigFile(globalPath, globalCfg)
+			catalogDirsFrom.fromConfigFile(globalPath, globalCfg)
 			ga := captureAppends(globalCfg)
 			resolveAppendPaths(&ga, gdir)
 			appendLayers = append(appendLayers, ga)
@@ -435,6 +445,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 				return nil, lerr
 			}
 			importerFrom.fromConfigFile(basePath, raw)
+			catalogDirsFrom.fromConfigFile(basePath, raw)
 			la := captureAppends(raw)
 			resolveAppendPaths(&la, dir)
 			appendLayers = append(appendLayers, la)
@@ -468,6 +479,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 				return nil, cerr
 			}
 			importerFrom.fromCIOverlay(ciPath, ciCfg)
+			catalogDirsFrom.fromCIOverlay(ciPath, ciCfg)
 			ci := foldCIAdditive(ciCfg)
 			resolveAppendPaths(&ci, dir)
 			appendLayers = append(appendLayers, ci)
@@ -542,6 +554,7 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 	if err != nil {
 		return nil, err
 	}
+	catalogDirsFrom.fromEnvironment(envContributing, merged.Workspace.CatalogDirs)
 	// Everything collected so far is a config file path. The environment
 	// pseudo-entries start here, so this is the boundary between the two and the
 	// one place it can be recorded without re-deriving it from how an entry reads.
@@ -567,14 +580,15 @@ func resolve(start, flagRoot string, lookup func(string) string, platform machin
 	signingPolicy.composeInto(&merged)
 
 	return &ResolvedWorkspace{
-		root:        root,
-		config:      merged,
-		source:      source,
-		marker:      marker,
-		files:       contributing,
-		warnings:    warnings,
-		configFiles: configFiles,
-		platform:    platform,
+		root:            root,
+		config:          merged,
+		source:          source,
+		marker:          marker,
+		files:           contributing,
+		warnings:        warnings,
+		configFiles:     configFiles,
+		platform:        platform,
+		catalogDirsFrom: catalogDirsFrom.composed(),
 	}, nil
 }
 

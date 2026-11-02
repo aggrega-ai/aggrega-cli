@@ -117,8 +117,15 @@ func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs 
 	// An Aggregate is not a Release — several Releases may deploy one — so it is
 	// inspected over the workspace's own stack; --catalog selects another for one
 	// invocation.
-	dirs := rw.ResolveCatalogDirs("", catalogDirs)
-	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, rw.NamedCatalogDirs("", catalogDirs), dirs...)
+	dirs, err := rw.ResolveCatalogDirs("", catalogDirs)
+	if err != nil {
+		return resolver.CatalogLookup{}, nil, "", err
+	}
+	named, err := rw.NamedCatalogDirs("", catalogDirs)
+	if err != nil {
+		return resolver.CatalogLookup{}, nil, "", err
+	}
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("catalog load: %w", err)
 	}

@@ -6,6 +6,7 @@ package serve
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,57 +42,53 @@ func listedDirWorkspace(t *testing.T, config string) (*Server, string) {
 	return srv, root
 }
 
-// TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing is
+// TestValidateAnswersAListedCatalogDirectoryWhereNothingExistsWithItsRefusal is
 // the invocation proof of what a catalog entity file carries when a catalog
 // directory the Release reads is listed and nothing exists there: one request over
 // the real framing per row, and the answer read whole.
 //
-// A listed directory where nothing exists is not in the stack the check is
-// handed, so the check's verdict is the one it gives with that directory not
-// listed at all — wherever the configuration lists it, for the workspace or for
-// the Release the request named. A clean Component stays free of any error, and a
-// finding the check makes keeps the check's own words, with nothing about the
-// directory. The directory is named instead in one warning entry, leading the
-// answer, whose text is the line the resolver composes for that Release's stack —
-// the line `aggrega pull` and `aggrega build` print for it.
+// The request is answered, not refused: the file carries exactly one entry, at the
+// error tier, whose words are the resolver's refusal of the stack — the entry as
+// written, the path it resolved to, the configuration file and line listing it and
+// the setting — wherever the configuration lists it, for the workspace or for the
+// Release the request named. The check itself does not run, so no verdict over
+// fewer catalogs than the configuration lists is drawn, a finding the check would
+// make included.
 //
 // The first row is the positive control: every directory there, the Component is
-// clean and the answer carries no entry at all. The last row is the control on the
-// other side: a Component the check does refuse is refused for its own fault, the
-// listing beside it notwithstanding. Each row in between carries one listing where
-// nothing exists, somewhere different, and must reach the control's verdict.
-func TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing(t *testing.T) {
+// clean and the answer carries no entry at all.
+func TestValidateAnswersAListedCatalogDirectoryWhereNothingExistsWithItsRefusal(t *testing.T) {
 	t.Parallel()
+	const (
+		wsSetting    = "`workspace.catalog_dirs`"
+		sizedSetting = "`catalog_dirs` of the `workspace.releases` entry \"release-sized.yaml\""
+	)
 	cases := []struct {
 		name    string
 		config  string
 		release string
 		// absent is the listed directory where nothing exists, empty for the row
-		// listing none.
-		absent string
-		// carries are phrases the error entry must carry, and lacks phrases it may
-		// not. A row with neither must carry no error entry.
-		carries []string
-		lacks   []string
+		// listing none; line is its line in config and setting the list it sits in.
+		absent  string
+		line    int
+		setting string
 	}{
 		{name: "every directory the Release reads exists, and the answer carries no entry",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n",
 			release: "release-sized.yaml"},
-		{name: "a directory the workspace's list names where nothing exists leaves the Component clean and is named once",
+		{name: "a directory the workspace's list names where nothing exists is the one entry, in the refusal's words",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			release: "release-sized.yaml", absent: "no-such-catalog"},
-		{name: "a directory the Release's own list names where nothing exists leaves the Component clean and is named once",
+			release: "release-sized.yaml", absent: "no-such-catalog", line: 4, setting: wsSetting},
+		{name: "a directory the Release's own list names where nothing exists is the one entry, in the refusal's words",
 			config:  "workspace:\n  releases:\n    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n        - gone-for-sized\n",
-			release: "release-sized.yaml", absent: "gone-for-sized"},
-		{name: "a directory the workspace's list names, for a Release given no list of its own, leaves the Component clean and is named once",
+			release: "release-sized.yaml", absent: "gone-for-sized", line: 6, setting: sizedSetting},
+		{name: "a directory the workspace's list names, for a Release given no list of its own, is the one entry",
 			config: "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n" +
 				"  releases:\n    release-plain.yaml:\n      catalog_dirs:\n        - variant-plain\n",
-			release: "release-sized.yaml", absent: "no-such-catalog"},
-		{name: "a finding the check makes keeps the check's own words beside a listing where nothing exists",
+			release: "release-sized.yaml", absent: "no-such-catalog", line: 4, setting: wsSetting},
+		{name: "the refusal stands in place of a finding the check would make",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n    - no-such-catalog\n",
-			release: "release-sized.yaml", absent: "no-such-catalog",
-			carries: []string{"SchemaLibrary Sizing not found in catalog"},
-			lacks:   []string{"no-such-catalog", "does not exist"}},
+			release: "release-sized.yaml", absent: "no-such-catalog", line: 4, setting: wsSetting},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,63 +97,20 @@ func TestValidateReadsAListedCatalogDirectoryWhereNothingExistsAsHoldingNothing(
 			file := filepath.Join(root, "variant-sized", "component", "db.yaml")
 			res := validateContentOverTheWire(t, srv, file, mustRead(t, file), tc.release)
 			messages := diagMessages(res.Diagnostics)
-
-			// The line the resolver composes for this Release's stack, as the entry
-			// naming the directory must read once the editor's prefix is laid on it.
-			var composed bytes.Buffer
-			srv.resolvedWorkspace.NoteAbsentCatalogDirs(&composed, filepath.Join(root, tc.release), nil)
-			line := strings.TrimSpace(composed.String())
 			if tc.absent == "" {
-				if line != "" || len(res.Diagnostics) != 0 {
-					t.Fatalf("want a clean answer over a stack leaving nothing out; the resolver composes %q and the answer carries %q",
-						line, messages)
+				if len(res.Diagnostics) != 0 {
+					t.Fatalf("want a clean answer over a stack whose directories are all there; the answer carries %q", messages)
 				}
 				return
 			}
-			// The directory as the line names it: its last element, then the setting.
-			names := string(filepath.Separator) + tc.absent + " is listed under "
-			if !strings.Contains(line, names) {
-				t.Fatalf("precondition: the resolver composes %q, which does not name %s", line, tc.absent)
+			want := fmt.Sprintf("%s:%d: the %s entry %q names %s, which does not exist; create that directory, or remove the entry: %v",
+				filepath.Join(root, workspaceconfig.ConfigFilename), tc.line, tc.setting, tc.absent, filepath.Join(root, tc.absent),
+				workspaceconfig.ErrConfigInvalid())
+			if len(res.Diagnostics) != 1 {
+				t.Fatalf("want one entry, the refusal; the answer carries %q", messages)
 			}
-			want := closureAdvisoryDiagnostic(line).Message
-			var named []int
-			for i, d := range res.Diagnostics {
-				if strings.Contains(d.Message, names) {
-					named = append(named, i)
-				}
-			}
-			if len(named) != 1 {
-				t.Fatalf("want one entry naming %s; the answer carries %q", tc.absent, messages)
-			}
-			if got := res.Diagnostics[named[0]]; named[0] != 0 || got.Severity != editorSeverityWarning || got.Message != want {
-				t.Errorf("the entry naming %s is entry %d at severity %v reading %q; want the first entry, a warning, reading %q",
-					tc.absent, named[0], got.Severity, got.Message, want)
-			}
-
-			var entry string
-			for _, d := range res.Diagnostics {
-				if d.Severity == editorSeverityError {
-					entry = d.Message
-				}
-			}
-			if len(tc.carries) == 0 {
-				if entry != "" {
-					t.Errorf("want no error entry beside a listing where nothing exists; got %q", entry)
-				}
-				return
-			}
-			if entry == "" {
-				t.Fatalf("want an error entry; the answer carries %q", messages)
-			}
-			for _, phrase := range tc.carries {
-				if !strings.Contains(entry, phrase) {
-					t.Errorf("the entry does not carry %q:\n%s", phrase, entry)
-				}
-			}
-			for _, phrase := range tc.lacks {
-				if strings.Contains(entry, phrase) {
-					t.Errorf("the entry carries %q:\n%s", phrase, entry)
-				}
+			if got := res.Diagnostics[0]; got.Severity != editorSeverityError || got.Message != want {
+				t.Errorf("the entry is at severity %v reading\n %q\nwant an error reading\n %q", got.Severity, got.Message, want)
 			}
 		})
 	}

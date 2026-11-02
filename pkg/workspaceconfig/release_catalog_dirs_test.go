@@ -154,7 +154,7 @@ func TestResolveCatalogDirsForARelease(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := rw.ResolveCatalogDirs(tc.release, tc.flag); !sameStack(got, tc.want) {
+			if got := stackOf(t, rw, tc.release, tc.flag); !sameStack(got, tc.want) {
 				t.Errorf("ResolveCatalogDirs(%q, %v) = %v; want %v", tc.release, tc.flag, got, tc.want)
 			}
 		})
@@ -170,7 +170,7 @@ func TestResolveCatalogDirsForARelativeReleaseReadsTheWorkingDirectory(t *testin
 		[]string{"release-own.yaml", "release-adds.yaml", "release-both.yaml", "release-off.yaml"}, []string{"shared", "variant"})
 	t.Chdir(rw.Root())
 	want := []string{filepath.Join(rw.Root(), "variant")}
-	if got := rw.ResolveCatalogDirs("release-own.yaml", nil); !sameStack(got, want) {
+	if got := stackOf(t, rw, "release-own.yaml", nil); !sameStack(got, want) {
 		t.Errorf("ResolveCatalogDirs(%q, nil) = %v; want %v", "release-own.yaml", got, want)
 	}
 }
@@ -258,7 +258,7 @@ func TestReleaseCatalogEntryNamingNoFileIsRefusedAtLoad(t *testing.T) {
 			"workspace:\n  releases:\n    release-renamed.yaml:\n      catalog_dirs:\n        - ./variant\n",
 			[]string{"release-renamed.yaml"}, []string{"variant"})
 		want := []string{filepath.Join(rw.Root(), "variant")}
-		if got := rw.ResolveCatalogDirs(filepath.Join(rw.Root(), "release-renamed.yaml"), nil); !sameStack(got, want) {
+		if got := stackOf(t, rw, filepath.Join(rw.Root(), "release-renamed.yaml"), nil); !sameStack(got, want) {
 			t.Errorf("ResolveCatalogDirs = %v; want %v", got, want)
 		}
 	})
@@ -277,8 +277,8 @@ func TestReleaseCatalogEntriesComposeAcrossTheCascade(t *testing.T) {
 	write(t, filepath.Join(root, "release-a.yaml"), "kind: Release\n")
 	write(t, filepath.Join(root, "release-b.yaml"), "kind: Release\n")
 	// Every directory either file lists is there, because a configured directory
-	// where nothing exists is left out of the stack, and this test is about how the
-	// entries compose rather than about what is on disk.
+	// where nothing exists is refused, and this test is about how the entries
+	// compose rather than about what is on disk.
 	for _, dir := range []string{
 		filepath.Join(global, "far-variant"), filepath.Join(global, "far-extra"), filepath.Join(global, "far-b"),
 		filepath.Join(root, "near-variant"), filepath.Join(root, "near-extra"),
@@ -318,7 +318,7 @@ func TestReleaseCatalogEntriesComposeAcrossTheCascade(t *testing.T) {
 			want:    []string{filepath.Join(global, "far-b")},
 		},
 	} {
-		if got := rw.ResolveCatalogDirs(tc.release, nil); !sameStack(got, tc.want) {
+		if got := stackOf(t, rw, tc.release, nil); !sameStack(got, tc.want) {
 			t.Errorf("ResolveCatalogDirs(%q, nil) = %v; want %v", tc.release, got, tc.want)
 		}
 	}

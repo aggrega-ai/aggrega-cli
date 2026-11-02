@@ -327,8 +327,9 @@ func WalkReleaseCandidates(root string, cfg workspaceconfig.Config) ReleaseCandi
 // is offered, decided by the same walk. The walk runs only where the workspace's
 // configuration gives a Release directories of its own; see
 // [workspaceconfig.ResolvedWorkspace.WholeCatalogPasses] for the passes that
-// follow.
-func WholeCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, flagDirs []string) []workspaceconfig.CatalogPass {
+// follow, and for the refusal of a stack the workspace configuration lists a
+// directory in that is not one.
+func WholeCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, flagDirs []string) ([]workspaceconfig.CatalogPass, error) {
 	return rw.WholeCatalogPasses(func() []string { return ReleaseCandidates(rw.Root(), rw.Config()) }, flagDirs)
 }
 

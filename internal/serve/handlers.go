@@ -1137,8 +1137,8 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // build refuses the directory too. So the stack is asked first, through the load's
 // own walk (catalogDirsRefusal), and the refusal is the command's, ahead of the
 // lockfile gate as the command line reaches its stack before any lockfile. A
-// configured directory where nothing exists is not in the stack at all, so the
-// graph, the command and the build all read it as holding nothing.
+// configured directory that is not a directory is refused at the same moment, with
+// the resolver's refusal, as the command and the build refuse it.
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	if errEnvelope := s.catalogDirsRefusal(params.Release); errEnvelope != nil {
 		return irGraphResult{}, errEnvelope
@@ -1308,6 +1308,11 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, s.wsConfig, release)
 	if paramErr != nil {
 		return nil, paramErr
+	}
+	// A stack the resolver refuses is refused before anything is resolved over it,
+	// as `aggrega inspect` refuses it.
+	if refusal := s.catalogStackRefusal(releasePath); refusal != nil {
+		return nil, refusal
 	}
 
 	// 1. Lockfile-absent gate. Blocking — no IR graph is produced until the

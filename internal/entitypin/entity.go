@@ -256,8 +256,15 @@ func WorkspaceServingProvider(rw *workspaceconfig.ResolvedWorkspace, notices io.
 		if view == nil {
 			// Pinning concerns one entity rather than a Release, so the
 			// workspace's own stack is the one read.
-			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), rw.ResolveCatalogDirs("", nil), nil,
-				rw.NamedCatalogDirs("", nil)...)
+			dirs, err := rw.ResolveCatalogDirs("", nil)
+			if err != nil {
+				return catalog.ServingProvider{}, false, err
+			}
+			named, err := rw.NamedCatalogDirs("", nil)
+			if err != nil {
+				return catalog.ServingProvider{}, false, err
+			}
+			view = catalog.NewLazyLookup(rw.Root(), cfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
 			view.WriteNoticesTo(notices)
 		}
 		return view.ServingProvider(capability, cfg.Plugins.ProviderTargetURIs())

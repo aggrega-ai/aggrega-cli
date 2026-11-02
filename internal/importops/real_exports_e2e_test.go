@@ -714,7 +714,11 @@ func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 
 			// The stack is read only now, once the drafts are on disk: the catalog
 			// folder joins it only when it exists.
-			pass := target.WholeCatalogPasses(nil, nil)[0]
+			passes, err := target.WholeCatalogPasses(nil, nil)
+			if err != nil {
+				t.Fatalf("the whole-catalog passes were refused: %v", err)
+			}
+			pass := passes[0]
 			cacheDir := target.Config().ResolvedArtifactCacheDir()
 
 			for _, path := range written {

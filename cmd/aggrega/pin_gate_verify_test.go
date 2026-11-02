@@ -57,7 +57,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(releasePath, []string{catalogDir})
+	dirs := stackFor(t, rw, releasePath, []string{catalogDir})
 
 	resolve := func(withLockfile *lockfile.Lockfile) (compilerops.ResolvedClosure, error) {
 		view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)

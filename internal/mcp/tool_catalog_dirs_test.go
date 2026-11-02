@@ -6,6 +6,7 @@ package mcp
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,22 +15,22 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
-
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The two tools whose command-line twin loads the whole catalog answer a catalog
 // directory as that twin answers it: `build` as `aggrega build` does, and
-// `describe` looking a name up as `aggrega inspect` does.
+// `describe` looking a name up, or describing a Release's closure, as `aggrega
+// inspect` does.
 //
-// A directory the workspace configuration lists where nothing exists is not in
-// the stack the call reads, so it is read as holding nothing and the call answers
-// exactly what it answers over the fixture's own list. A directory the call
-// itself names, as a command line names one with --catalog, and where nothing
-// exists, is refused with the load's own refusal before anything is resolved or
-// written — the lockfile a filling build writes included.
+// A directory the workspace configuration lists for the stack the call reads,
+// where nothing exists, is refused with the resolver's refusal — the entry, the
+// file and line listing it and the setting — before anything is resolved or
+// written. A directory the call itself names, as a command line names one with
+// --catalog, and where nothing exists, is refused with the load's own refusal
+// before anything is resolved or written — the lockfile a filling build writes
+// included.
 //
 // The fixture is the hermetic end-to-end workspace, copied and configured offline,
 // carrying no lockfile. A row writes one configuration and passes the call one
@@ -62,30 +63,26 @@ func writeCatalogDirsConfig(t *testing.T, root, config string) {
 }
 
 // TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo is the
-// invocation proof for both tools: nine rows answer and three refuse.
+// invocation proof for both tools: four rows answer and eight refuse.
 //
 // An answering row is held to more than "it answered": its answer must be the
 // answer the same call gives over the fixture's own list, so a reading of the
 // listing that changed what a call reads fails here even where it refuses
-// nothing. A row listing a directory where nothing exists also holds the stack
-// the call reads to leaving it out.
+// nothing; and a building row names the listed directory nowhere.
 //
-// A building row is held to naming such a directory exactly once, in the line the
-// resolver composes for the call's stack — the line `aggrega build` prints for it:
-// as the first of the build's advisories, at warning severity, where no fill runs,
-// and among the resolution's own diagnostics where the fill runs and writes that
-// line itself. A building row with the directory there names it nowhere. A lookup
-// by name answers in a shape that carries no advisory, so its whole answer is held
-// to the one given over the fixture's own list, which names no directory.
+// A row refused for the configuration's listing is held to the resolver's
+// refusal, carried whole in the answer's text and matching ErrConfigInvalid where
+// the stack is asked, and to leaving every file in the workspace as it was — no
+// lockfile from a fill.
 //
-// A refusing row is held to the whole of what the twin does with the same stack:
-// the refusal is a failure naming the directory, the load and the filesystem's
-// reason, and carrying the whole-catalog load's own refusal of that stack —
-// identified through the accessors it carries, since it names no registered
-// condition: the catalog category, the directory the load reports, and the
-// filesystem's not-exist condition beneath them. It leaves every file in the
-// workspace as it was — no lockfile from a fill. A refused build answers in its
-// refusal shape: the Release named, no file, and no finding, since nothing had run.
+// A row refused for the call's own directory is held to the whole of what the
+// twin does with the same stack: the refusal is a failure naming the directory,
+// the load and the filesystem's reason, and carrying the whole-catalog load's own
+// refusal of that stack — identified through the accessors it carries, since it
+// names no registered condition: the catalog category, the directory the load
+// reports, and the filesystem's not-exist condition beneath them. It leaves every
+// file in the workspace as it was. A refused build answers in its refusal shape:
+// the Release named, no file, and no finding, since nothing had run.
 func TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo(t *testing.T) {
 	const listed = "no-such-catalog"
 	const releaseFile = "release.yaml"
@@ -112,22 +109,22 @@ func TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo(t *test
 		// refuses is the twin's answer to the stack this call reads.
 		refuses bool
 	}{
-		{name: "the build reads a listed directory where nothing exists as holding nothing"},
-		{name: "the build asked to fill reads it as holding nothing", autoPull: true},
-		{name: "a lookup by name reads it as holding nothing", describe: true, entity: name},
-		{name: "a lookup by name in a Release's terms reads the directory that Release lists as holding nothing",
-			forRelease: releaseFile, describe: true, entity: name, inRelease: true},
+		{name: "the build refuses a listed directory where nothing exists and writes nothing", refuses: true},
+		{name: "the build asked to fill refuses it before the fill writes the lockfile", autoPull: true, refuses: true},
+		{name: "a lookup by name refuses it", describe: true, entity: name, refuses: true},
+		{name: "a lookup by name in a Release's terms refuses the directory that Release lists",
+			forRelease: releaseFile, describe: true, entity: name, inRelease: true, refuses: true},
 		{name: "a lookup by name in the workspace's terms answers past a directory only a Release lists",
 			forRelease: releaseFile, describe: true, entity: name},
-		{name: "a Release's dependency closure is described past it, as inspect describes it", describe: true},
+		{name: "a Release's dependency closure is refused, as inspect refuses it", describe: true, refuses: true},
 		{name: "the build renders what it renders without the listed directory, once it is there", present: true},
 		{name: "the build asked to fill renders what it renders without the listed directory, once it is there",
 			autoPull: true, present: true},
 		{name: "a lookup by name answers what it answers without the listed directory, once it is there",
 			describe: true, entity: name, present: true},
 		{name: "the build refuses a directory the call names that does not exist and writes nothing", byCall: true, refuses: true},
-		{name: "the build asked to fill refuses it before the fill writes the lockfile", byCall: true, autoPull: true, refuses: true},
-		{name: "a lookup by name refuses it", byCall: true, describe: true, entity: name, refuses: true},
+		{name: "the build asked to fill refuses the call's directory before the fill writes the lockfile", byCall: true, autoPull: true, refuses: true},
+		{name: "a lookup by name refuses the call's directory", byCall: true, describe: true, entity: name, refuses: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, root, _, releasePath := pullWorkspace(t)
@@ -178,13 +175,15 @@ func TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo(t *test
 			if err != nil {
 				t.Fatalf("resolve the fixture workspace: %v", err)
 			}
-			// The stack holds the directory exactly where it is there and listed for
-			// this stack, or where the call names it.
+			// The stack holds the directory wherever it is listed for this stack, or
+			// where the call names it, and the resolver refuses it exactly where it
+			// is listed for this stack and nothing is there.
 			listedHere := tc.forRelease == "" || tc.inRelease || tc.entity == ""
-			wantReads := tc.byCall || (tc.present && listedHere)
-			if readsIt := slices.Contains(tw.catalogDirsFor(stackRelease), listedDir); readsIt != wantReads {
-				t.Fatalf("precondition: the stack this call reads is %v, and whether it lists %s is not what the "+
-					"row is about", tw.catalogDirsFor(stackRelease), listedDir)
+			configRefused := !tc.byCall && !tc.present && listedHere
+			dirs, stackErr := tw.catalogDirsFor(stackRelease)
+			if slices.Contains(dirs, listedDir) != (tc.byCall || listedHere) || (stackErr != nil) != configRefused {
+				t.Fatalf("precondition: the stack this call reads is %v, refused with %v, which is not what the row is about",
+					dirs, stackErr)
 			}
 
 			before := hashTree(t, root)
@@ -205,56 +204,9 @@ func TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo(t *test
 				if gotFiles, wantFiles := payload.Files, unmarshalBuildPayload(t, want).Files; !reflect.DeepEqual(gotFiles, wantFiles) || len(wantFiles) == 0 {
 					t.Errorf("the listing changed what the build renders\n with it:    %v\n without it: %v", gotFiles, wantFiles)
 				}
-
-				// The line the resolver composes for the stack this call reads, with
-				// the indentation a terminal nests it under dropped.
-				var composed bytes.Buffer
-				tw.rw.NoteAbsentCatalogDirs(&composed, stackRelease, callDirs)
-				line := strings.TrimSpace(composed.String())
-				absentHere := !tc.present && !tc.byCall && listedHere
-				if (line != "") != absentHere {
-					t.Fatalf("precondition: the resolver composes %q for this stack, and whether it names %s is not what the row is about",
-						line, listedDir)
-				}
-				names := string(filepath.Separator) + listed + " is listed under "
-				var advised []buildAdvisory
 				for _, a := range payload.Advisories {
-					if strings.Contains(a.Message, names) {
-						advised = append(advised, a)
-					}
-				}
-				var resolved []string
-				if payload.DependencyResolution != nil {
-					for _, d := range payload.DependencyResolution.Diagnostics {
-						if strings.Contains(d, names) {
-							resolved = append(resolved, d)
-						}
-					}
-				}
-				wantAdvised, wantResolved := 0, 0
-				if absentHere {
-					if tc.autoPull {
-						wantResolved = 1
-					} else {
-						wantAdvised = 1
-					}
-				}
-				if len(advised) != wantAdvised || len(resolved) != wantResolved {
-					t.Fatalf("the build names %s in %d advisory(ies) and %d resolution line(s); want %d and %d\nadvisories: %+v\nresolution: %+v",
-						listedDir, len(advised), len(resolved), wantAdvised, wantResolved, payload.Advisories, payload.DependencyResolution)
-				}
-				for _, a := range advised {
-					if a.Severity != abi.SeverityWarn || a.Message != line || a.Code != "" || a.KeyPath != "" {
-						t.Errorf("the advisory naming %s is %+v; want severity %q, no code and no key, reading the resolver's own line %q",
-							listedDir, a, abi.SeverityWarn, line)
-					}
-					if payload.Advisories[0] != a {
-						t.Errorf("the advisory naming %s does not lead the build's advisories: %+v", listedDir, payload.Advisories)
-					}
-				}
-				for _, d := range resolved {
-					if d != line {
-						t.Errorf("the resolution's line naming %s reads %q; want the resolver's own line %q", listedDir, d, line)
+					if strings.Contains(a.Message, listedDir) {
+						t.Errorf("the build names %s, which is there, in an advisory: %+v", listedDir, a)
 					}
 				}
 				return
@@ -264,28 +216,43 @@ func TestBuildAndLookupByNameAnswerAListedCatalogDirectoryAsTheirTwinsDo(t *test
 				t.Fatalf("%s answered over a stack naming %s, which does not exist: %s", tool, listedDir, got.Content[0].Text)
 			}
 			text := got.Content[0].Text
-			for _, phrase := range []string{listedDir, "catalog load", "no such file or directory"} {
-				if !strings.Contains(text, phrase) {
-					t.Errorf("the refusal does not say %q:\n%s", phrase, text)
-				}
-			}
-
 			refusal := tw.catalogDirsRefusal(stackRelease)
-			var load *cerrors.CompilerError
-			if !errors.As(refusal, &load) {
-				t.Fatalf("the stack's refusal carries no compiler error: %v", refusal)
-			}
-			if load.Category() != cerrors.CatalogError {
-				t.Errorf("the refusal is filed under %q; want %q", load.Category(), cerrors.CatalogError)
-			}
-			if load.Source().File != listedDir {
-				t.Errorf("the refusal names %q; want the directory the call names %q", load.Source().File, listedDir)
-			}
-			if !errors.Is(refusal, fs.ErrNotExist) {
-				t.Errorf("the refusal does not carry the filesystem's not-exist condition: %v", refusal)
-			}
-			if chain := cerrors.CauseChain(refusal); !strings.Contains(text, chain) {
-				t.Errorf("the answer does not carry the load's refusal on one line, %q:\n%s", chain, text)
+
+			if configRefused {
+				line, setting := 4, "`workspace.catalog_dirs`"
+				if tc.forRelease != "" {
+					line, setting = 8, fmt.Sprintf("`catalog_dirs` of the `workspace.releases` entry %q", tc.forRelease)
+				}
+				wantText := fmt.Sprintf("%s:%d: the %s entry %q names %s, which does not exist; create that directory, or remove the entry: %v",
+					filepath.Join(root, workspaceconfig.ConfigFilename), line, setting, "./"+listed, listedDir, workspaceconfig.ErrConfigInvalid())
+				if !strings.Contains(text, wantText) {
+					t.Errorf("the refusal does not carry the resolver's refusal\n%s\nin:\n%s", wantText, text)
+				}
+				if !errors.Is(refusal, workspaceconfig.ErrConfigInvalid()) {
+					t.Errorf("the stack's refusal is not ErrConfigInvalid: %v", refusal)
+				}
+			} else {
+				for _, phrase := range []string{listedDir, "catalog load", "no such file or directory"} {
+					if !strings.Contains(text, phrase) {
+						t.Errorf("the refusal does not say %q:\n%s", phrase, text)
+					}
+				}
+				var load *cerrors.CompilerError
+				if !errors.As(refusal, &load) {
+					t.Fatalf("the stack's refusal carries no compiler error: %v", refusal)
+				}
+				if load.Category() != cerrors.CatalogError {
+					t.Errorf("the refusal is filed under %q; want %q", load.Category(), cerrors.CatalogError)
+				}
+				if load.Source().File != listedDir {
+					t.Errorf("the refusal names %q; want the directory the call names %q", load.Source().File, listedDir)
+				}
+				if !errors.Is(refusal, fs.ErrNotExist) {
+					t.Errorf("the refusal does not carry the filesystem's not-exist condition: %v", refusal)
+				}
+				if chain := cerrors.CauseChain(refusal); !strings.Contains(text, chain) {
+					t.Errorf("the answer does not carry the load's refusal on one line, %q:\n%s", chain, text)
+				}
 			}
 
 			if after := hashTree(t, root); after != before {

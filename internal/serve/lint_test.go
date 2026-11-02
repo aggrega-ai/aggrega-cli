@@ -104,7 +104,10 @@ func conventionsServer(t *testing.T, root string, lintOnValidate bool) *Server {
 	if err != nil {
 		t.Fatalf("resolve the workspace at %s: %v", root, err)
 	}
-	catalogDirs := rw.ResolveCatalogDirs("", nil)
+	catalogDirs, err := rw.ResolveCatalogDirs("", nil)
+	if err != nil {
+		t.Fatalf("the workspace's own stack at %s was refused: %v", root, err)
+	}
 	sess := newTestSession(t, root, &bytes.Buffer{}, &bytes.Buffer{})
 	srv := newTestWorkspace(sess, root)
 	srv.wsConfig = rw.Config()

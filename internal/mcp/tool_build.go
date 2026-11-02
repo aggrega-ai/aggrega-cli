@@ -194,11 +194,7 @@ type buildResultPayload struct {
 
 	// Advisories carries every exit-code-neutral finding the build raised — the
 	// same findings, in the same order, a command-line build prints. That order is
-	// the terminal's: first a line for each catalog directory the workspace
-	// configuration lists for the Release where nothing exists, which the build
-	// reads as holding nothing, on a build that does not fill its lockfile (one
-	// that fills carries that line among the resolution's diagnostics instead);
-	// then the render's own advisories, in the order the render raised them; then
+	// the terminal's: first the render's own advisories, in the order the render raised them; then
 	// the findings the shared preview raised about the Release and what it
 	// reaches, in the order it raised them; and last, on a call that writes its
 	// artifacts, the warning naming the files the write found in the directories it
@@ -542,7 +538,8 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	}
 
 	// The catalog directories this Release reads, before the fill and the render.
-	// `aggrega build` loads every one of them first and stops at one it cannot walk
+	// `aggrega build` refuses a directory the workspace configuration lists that is
+	// not a directory, then loads every one of them and stops at one it cannot walk
 	// — a directory this call names that does not exist, or one that cannot be read —
 	// while the view this tool renders through passes over such a directory and
 	// would build from the ones that remain. So the stack is asked first, the way the
@@ -578,18 +575,6 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	var filled *compilerops.PreviewResult
 	lockfileFilled := false
 	fills := tw.cfg.FillsLockfile(a.AutoPull)
-	// A directory the workspace configuration lists for this Release where nothing
-	// exists is named once, as `aggrega build` names it once. A fill is the
-	// dependency resolution that writes that line among its own diagnostics, so a
-	// build that fills carries it there, and one that does not carries it among its
-	// advisories — read off the same decision that runs the fill, so the two cannot
-	// disagree about which of them speaks for it.
-	var absent []buildAdvisory
-	if !fills {
-		for _, line := range tw.absentCatalogDirLines(releasePath) {
-			absent = append(absent, buildAdvisory{Severity: abi.SeverityWarn, Message: line})
-		}
-	}
 	if fills {
 		report, render, fillErr := runDependencyResolution(ctx, s, tw, releasePath,
 			pullArgs{Release: a.Release, WorkspaceRoot: a.WorkspaceRoot, CatalogDirs: a.CatalogDirs}, nil)
@@ -767,10 +752,8 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// through the accessor that answers on either verdict, and the preview's own
 	// classed warnings — joined in the order a terminal prints them. A run that
 	// halted raised whatever the phases ahead of it found, and those are exactly
-	// the findings a caller has to act on to get past the halt. The lines naming a
-	// listed catalog directory where nothing exists lead them, where a command-line
-	// build prints them: before it reads the catalog at all.
-	payload.Advisories = slices.Concat(absent, buildAdvisories(preview.PipelineOutcome().Advisories()), previewAdvisories(preview))
+	// the findings a caller has to act on to get past the halt.
+	payload.Advisories = slices.Concat(buildAdvisories(preview.PipelineOutcome().Advisories()), previewAdvisories(preview))
 	// An advisory's message is prose the compiler composed, so it may name a place
 	// on this host; it is told the way the rest of this answer is.
 	for i := range payload.Advisories {

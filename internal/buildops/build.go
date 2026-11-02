@@ -502,14 +502,15 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 	// prepended to the directories the workspace configuration gives it, with
 	// the workspace's conventional catalog directory appended last when it
 	// exists. Its named part travels beside it to every reader of it, unjudged.
-	dirs := rw.ResolveCatalogDirs(releasePath, cfg.CatalogDirs)
-	namedDirs := rw.NamedCatalogDirs(releasePath, cfg.CatalogDirs)
-	// A configured directory where nothing exists is not in the stack, so it is read
-	// as holding nothing, as the pull that filled the lockfile read it. The reader is
-	// told which, once: where this build's own fill runs, the fill says it, because
-	// it is the pull and resolves the same stack moments later.
-	if !fillRuns(wsCfg, run) {
-		rw.NoteAbsentCatalogDirs(diagOut, releasePath, cfg.CatalogDirs)
+	// A configured directory that is not a directory is refused here, before the
+	// catalog is read or the lockfile filled, as the pull refuses it.
+	dirs, err := rw.ResolveCatalogDirs(releasePath, cfg.CatalogDirs)
+	if err != nil {
+		return Result{}, err
+	}
+	namedDirs, err := rw.NamedCatalogDirs(releasePath, cfg.CatalogDirs)
+	if err != nil {
+		return Result{}, err
 	}
 
 	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is

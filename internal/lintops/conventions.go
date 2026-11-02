@@ -243,8 +243,14 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
-	named := rw.NamedCatalogDirs(releasePath, catalogFlagDirs)
+	dirs, err := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
+	if err != nil {
+		return err
+	}
+	named, err := rw.NamedCatalogDirs(releasePath, catalogFlagDirs)
+	if err != nil {
+		return err
+	}
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...)
 	lazyView.WriteNoticesTo(diagOut)

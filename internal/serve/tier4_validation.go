@@ -144,6 +144,23 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	if lf != nil {
 		pins = catalog.PinsFromLockfile(lf)
 	}
+	// A stack the resolver refuses — the workspace configuration lists a directory
+	// this Release reads that is not a directory — is reported as a closure that
+	// does not resolve, in the resolver's words, as `aggrega validate --release`
+	// refuses it: validating against the directories that remain would check the
+	// Release against fewer catalogs than the configuration lists.
+	if _, stackErr := s.catalogDirsFor(releasePath); stackErr != nil {
+		if _, ours := classifyBuffer(file, releasePath, doc); !ours && !onReleaseDocument {
+			return nil
+		}
+		return []Diagnostic{{
+			Line:           1,
+			Column:         1,
+			Severity:       editorSeverityError,
+			Message:        s.dependencyFailureMessage(releasePath, onReleaseDocument, stackErr.Error()),
+			ConditionCodes: conditionCodesOf(stackErr),
+		}}
+	}
 	// Forked from the lookup over the named Release's own catalog stack, so the
 	// validation reads the directories a build of that Release reads.
 	view := s.catalogFor(releasePath).ForRequest(pins)

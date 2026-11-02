@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
-	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -104,13 +103,13 @@ func TestWholeCatalogScopesRefuseAnEmptyStack(t *testing.T) {
 			run: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) error {
 				t.Helper()
 				var out, diag bytes.Buffer
-				dirs := rw.ResolveCatalogDirs("", nil)
+				dirs := stackFor(t, rw, "", nil)
 				if len(dirs) == 0 {
 					return validateCatalogWideFromWorkspace(rw, nil)
 				}
 				// With a stack to scan, the core is driven against buffers so the
 				// summary line does not reach the runner's own output.
-				return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, rw.NamedCatalogDirs("", nil), &diag, &out)
+				return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, namedStackFor(t, rw, "", nil), &diag, &out)
 			},
 		},
 		{
@@ -118,7 +117,7 @@ func TestWholeCatalogScopesRefuseAnEmptyStack(t *testing.T) {
 			run: func(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) error {
 				t.Helper()
 				var out, diag bytes.Buffer
-				return lintops.RunCatalogWide(context.Background(), rw, serve.WholeCatalogPasses(rw, nil), nil, &out, &diag, nil)
+				return lintops.RunCatalogWide(context.Background(), rw, passesFor(t, rw, nil), nil, &out, &diag, nil)
 			},
 		},
 	}

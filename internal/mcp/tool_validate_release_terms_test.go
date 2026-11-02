@@ -4,7 +4,7 @@
 package mcp
 
 import (
-	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,113 +138,70 @@ func TestValidateChecksAnEntityInTheTermsOfTheReleaseNamed(t *testing.T) {
 	}
 }
 
-// TestValidateNamesAListedCatalogDirectoryWhereNothingExistsAmongItsNotices is the
-// tool protocol's half of the proof `aggrega validate` gives on its error stream:
-// what one entity's check answers when a catalog directory its stack reads is
-// listed and nothing exists there, read off the structured payload.
+// TestValidateRefusesAListedCatalogDirectoryWhereNothingExists is the tool
+// protocol's half of the proof `aggrega validate` gives: what one entity's check
+// answers when a catalog directory its stack reads is listed and nothing exists
+// there.
 //
-// The directory is not in the stack the check is handed, so the check reads it as
-// holding nothing and its verdict is the one it gives with the directory not
-// listed. It is named in one entry leading `notices`, which is exactly the line the
-// resolver composes for the stack the call reads — the line `aggrega pull` and
-// `aggrega build` print for it, without the indentation a terminal nests it under —
-// and in no diagnostic.
+// The call is refused before the check reads anything, and its text carries the
+// resolver's refusal whole — the entry as written, the path it resolved to, the
+// configuration file and line listing it and the setting — so no verdict over
+// fewer catalogs than the configuration lists is given.
 //
-// The first row is the control: every listed directory is there, the resolver
-// composes nothing, and no notice names a listed directory. Each row after it
-// carries one listing where nothing exists, somewhere different; the finding row
-// keeps the check's own refusal beside the notice, and the last row checks the
-// entity in no Release's terms, over the workspace's own stack.
-func TestValidateNamesAListedCatalogDirectoryWhereNothingExistsAmongItsNotices(t *testing.T) {
+// The first row is the control: every listed directory is there and the check
+// answers valid. Each row after it carries one listing where nothing exists,
+// somewhere different; the last checks the entity in no Release's terms, over the
+// workspace's own stack.
+func TestValidateRefusesAListedCatalogDirectoryWhereNothingExists(t *testing.T) {
 	t.Parallel()
-	const (
-		sized          = "variant-sized/component/db.yaml"
-		libraryMissing = "SchemaLibrary Sizing not found in catalog"
-		listedUnder    = " is listed under "
-	)
+	const sized = "variant-sized/component/db.yaml"
 	cases := []struct {
 		name    string
 		config  string
 		release string
-		// absent is the listed directory where nothing exists, empty for the control.
+		// absent is the listed directory where nothing exists, empty for the
+		// control; line is its line in config and setting the list it sits in.
 		absent  string
-		valid   bool
-		finding string
+		line    int
+		setting string
 	}{
-		{name: "control: every directory the Release reads exists, and no notice names one",
+		{name: "control: every directory the Release reads exists, and the check answers valid",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n",
-			release: "release-sized.yaml", valid: true},
-		{name: "a directory the workspace's list names where nothing exists leaves the Component clean and leads the notices",
+			release: "release-sized.yaml"},
+		{name: "a directory the workspace's list names where nothing exists is refused",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			release: "release-sized.yaml", absent: "no-such-catalog", valid: true},
-		{name: "a directory the Release's own list names where nothing exists leaves the Component clean and leads the notices",
+			release: "release-sized.yaml", absent: "no-such-catalog", line: 4, setting: "`workspace.catalog_dirs`"},
+		{name: "a directory the Release's own list names where nothing exists is refused",
 			config:  "workspace:\n  releases:\n    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n        - gone-for-sized\n",
-			release: "release-sized.yaml", absent: "gone-for-sized", valid: true},
-		{name: "a finding the check makes keeps its own words beside the notice naming the directory",
-			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n    - no-such-catalog\n",
-			release: "release-sized.yaml", absent: "no-such-catalog", finding: libraryMissing},
-		{name: "an entity checked in no Release's terms is told of a directory the workspace's list names where nothing exists",
+			release: "release-sized.yaml", absent: "gone-for-sized", line: 6,
+			setting: "`catalog_dirs` of the `workspace.releases` entry \"release-sized.yaml\""},
+		{name: "an entity checked in no Release's terms is refused over a directory the workspace's list names where nothing exists",
 			config: "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			absent: "no-such-catalog", valid: true},
+			absent: "no-such-catalog", line: 4, setting: "`workspace.catalog_dirs`"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			root := entityCheckWorkspaceWith(t, tc.config)
 			s := newTestServer(t)
-
-			// The line the resolver composes for the stack this call reads, with the
-			// indentation a terminal nests it under dropped.
-			tw, err := s.resolveToolWorkspace(root, nil)
-			if err != nil {
-				t.Fatalf("resolve the fixture workspace: %v", err)
-			}
-			release := ""
-			if tc.release != "" {
-				release = filepath.Join(root, tc.release)
-			}
-			var composed bytes.Buffer
-			tw.rw.NoteAbsentCatalogDirs(&composed, release, nil)
-			line := strings.TrimSpace(composed.String())
-			names := string(filepath.Separator) + tc.absent + listedUnder
-			if (tc.absent == "") != (line == "") || (tc.absent != "" && (strings.Contains(line, "\n") || !strings.Contains(line, names))) {
-				t.Fatalf("precondition: the resolver composes %q for this stack, which is not one line naming %q", line, tc.absent)
-			}
-
 			res := callTool(t, s, "validate", validateArgs{Entity: sized, Release: tc.release, WorkspaceRoot: root})
-			if res.IsError {
-				t.Fatalf("validate was refused: %s", res.Content[0].Text)
-			}
-			payload := unmarshalValidatePayload(t, res)
-			if payload.Valid != tc.valid {
-				t.Fatalf("valid = %v, want %v; diagnostics %v", payload.Valid, tc.valid, payload.Diagnostics)
-			}
-			if tc.finding != "" && (len(payload.Diagnostics) != 1 || !strings.Contains(payload.Diagnostics[0], tc.finding)) {
-				t.Errorf("diagnostics = %v, want one carrying %q", payload.Diagnostics, tc.finding)
-			}
-			for _, d := range payload.Diagnostics {
-				if strings.Contains(d, listedUnder) {
-					t.Errorf("a diagnostic names a listed directory, which never moves the verdict: %q", d)
-				}
-			}
-
 			if tc.absent == "" {
-				for _, n := range payload.Notices {
-					if strings.Contains(n, listedUnder) {
-						t.Errorf("a call over a stack leaving nothing out carries the notice %q", n)
-					}
+				if res.IsError {
+					t.Fatalf("validate was refused: %s", res.Content[0].Text)
+				}
+				if payload := unmarshalValidatePayload(t, res); !payload.Valid {
+					t.Fatalf("valid = false over a stack whose directories are all there; diagnostics %v", payload.Diagnostics)
 				}
 				return
 			}
-			var named []int
-			for i, n := range payload.Notices {
-				if strings.Contains(n, names) {
-					named = append(named, i)
-				}
+			want := fmt.Sprintf("%s:%d: the %s entry %q names %s, which does not exist; create that directory, or remove the entry: %v",
+				filepath.Join(root, workspaceconfig.ConfigFilename), tc.line, tc.setting, tc.absent, filepath.Join(root, tc.absent),
+				workspaceconfig.ErrConfigInvalid())
+			if !res.IsError {
+				t.Fatalf("validate answered over a listed directory where nothing exists: %s", res.Content[0].Text)
 			}
-			if len(named) != 1 || named[0] != 0 || payload.Notices[0] != line {
-				t.Errorf("notices %q name %s at %v; want exactly one, leading, reading the resolver's own line %q",
-					payload.Notices, tc.absent, named, line)
+			if text := res.Content[0].Text; !strings.Contains(text, want) {
+				t.Errorf("the refusal does not carry the resolver's refusal\n%s\nin:\n%s", want, text)
 			}
 		})
 	}

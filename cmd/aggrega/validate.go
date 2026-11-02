@@ -227,13 +227,10 @@ func validatePluginBinary(ctx context.Context, pluginPath, declaredType, entityP
 // terms the entity is checked in, and selects nothing else: the checks are this
 // scope's either way.
 //
-// A directory the workspace configuration lists for that stack where nothing
-// exists is not in the stack the check is handed, so the check reads it as holding
-// nothing and gives the verdict it gives with that directory not listed. The line
-// naming it is the one `aggrega pull` and `aggrega build` print for it, composed by
-// the resolver that left it out and written to stderr ahead of the check's own
-// advisory notes, since the stack is decided before the check reads anything. It
-// changes what a reader is told and never the verdict or the exit code.
+// A directory the workspace configuration lists for that stack that is not a
+// directory — nothing exists there, say — is refused before the check reads
+// anything, with the resolver's refusal naming the entry and the file and line
+// listing it, as every command reading that stack refuses it.
 //
 // What the core reports as a warning — a failed assertion, which the core decides
 // is not its verdict — is written to stderr after the advisory notes, opened by
@@ -255,9 +252,14 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	if _, err := rw.ReleaseReach(release, catalogFlagDirs); err != nil {
 		return err
 	}
-	dirs := rw.ResolveCatalogDirs(release, catalogFlagDirs)
-	named := rw.NamedCatalogDirs(release, catalogFlagDirs)
-	rw.NoteAbsentCatalogDirs(os.Stderr, release, catalogFlagDirs)
+	dirs, err := rw.ResolveCatalogDirs(release, catalogFlagDirs)
+	if err != nil {
+		return err
+	}
+	named, err := rw.NamedCatalogDirs(release, catalogFlagDirs)
+	if err != nil {
+		return err
+	}
 
 	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings,
 		validateops.WithDisplay(os.Stderr))

@@ -393,7 +393,12 @@ func (s *Server) dispatchLint(ctx context.Context, req *jsonRPCRequest) error {
 		}
 		runErr = lintops.RunRelease(ctx, s.resolvedWorkspace, abs, nil, nil, io.Discard, io.Discard, collect)
 	default:
-		runErr = lintops.RunCatalogWide(ctx, s.resolvedWorkspace, WholeCatalogPasses(s.resolvedWorkspace, nil), nil, io.Discard, io.Discard, collect)
+		passes, passErr := WholeCatalogPasses(s.resolvedWorkspace, nil)
+		if passErr != nil {
+			runErr = passErr
+			break
+		}
+		runErr = lintops.RunCatalogWide(ctx, s.resolvedWorkspace, passes, nil, io.Discard, io.Discard, collect)
 	}
 	// The request's own context is what the arms above were given, so by the time
 	// this is read the run has already abandoned its remaining work rather than

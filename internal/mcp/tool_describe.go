@@ -514,6 +514,15 @@ func (s *server) describeRelease(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
+	// A directory the workspace configuration lists for this Release that is not a
+	// directory is refused, as `aggrega inspect --closure` refuses it, rather than
+	// described past.
+	if _, err := tw.catalogDirsFor(releasePath); err != nil {
+		return tw.answer(errorResult(catalogDirsGuidance(
+			"The closure was not described: the workspace configuration lists a catalog directory this Release "+
+				"reads that is not a directory, and `aggrega inspect --closure` refuses the same directory.",
+			err)))
+	}
 	view := tw.newView(releasePath, lf)
 
 	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{

@@ -54,7 +54,9 @@ type ReleaseReach struct {
 // can be a Release, and answering anyway would answer in the terms of a Release
 // the configuration does not name — the workspace's own list — while reading to
 // its asker as an answer in the terms of the one they named. The refusals are the
-// two the configuration's own entries are held to when it loads.
+// two the configuration's own entries are held to when it loads. A Release whose
+// stack the resolver refuses is refused with that refusal, since the reach is
+// read through that stack.
 func (r *ResolvedWorkspace) ReleaseReach(release string, flagDirs []string) (ReleaseReach, error) {
 	if r == nil || release == "" {
 		return ReleaseReach{}, nil
@@ -62,10 +64,14 @@ func (r *ResolvedWorkspace) ReleaseReach(release string, flagDirs []string) (Rel
 	if err := r.requireReleaseFile(release); err != nil {
 		return ReleaseReach{}, err
 	}
+	reached, err := r.ResolveCatalogDirs(release, flagDirs)
+	if err != nil {
+		return ReleaseReach{}, err
+	}
 	return ReleaseReach{
 		root:     r.root,
 		narrowed: true,
-		reached:  r.ResolveCatalogDirs(release, flagDirs),
+		reached:  reached,
 		catalogs: r.CatalogDirsOfEveryStack(flagDirs),
 	}, nil
 }
@@ -80,13 +86,20 @@ func (r *ResolvedWorkspace) ReleaseReach(release string, flagDirs []string) (Rel
 // directories returned are exactly the ones each stack is searched in, and a
 // caller needing the whole set — to tell a catalog directory from any other, or
 // to recognise one in prose — reads it here rather than walking the map itself.
+//
+// It never refuses. A stack the resolver refuses contributes its directories as
+// listed, the refused one among them: this answers which directories are catalog
+// directories, which a directory that does not exist, or is not a directory,
+// changes nothing about, since nothing lies beneath it. A read of a stack the
+// resolver refuses is refused where that stack is asked for.
 func (r *ResolvedWorkspace) CatalogDirsOfEveryStack(flagDirs []string) []string {
 	if r == nil {
 		return nil
 	}
-	dirs := r.ResolveCatalogDirs("", flagDirs)
+	dirs, _ := r.ResolveCatalogDirs("", flagDirs)
 	for release := range r.config.Workspace.Releases.All() {
-		dirs = append(dirs, r.ResolveCatalogDirs(release, flagDirs)...)
+		stack, _ := r.ResolveCatalogDirs(release, flagDirs)
+		dirs = append(dirs, stack...)
 	}
 	return dirs
 }

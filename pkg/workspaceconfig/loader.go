@@ -20,9 +20,12 @@ import (
 
 // ErrConfigInvalid wraps every refusal raised as the workspace configuration is
 // read: a layer the schema rejects, a value a further check refuses, and a value
-// the composed layers cannot use. Errors satisfying errors.Is(err,
-// ErrConfigInvalid()) carry a wrapped message naming the file or the environment
-// variable that carried the value, and what is wrong with it.
+// the composed layers cannot use — a catalog directory the configuration lists
+// that is not a directory among them, refused where a catalog search stack is
+// built from the configuration ([ResolvedWorkspace.ResolveCatalogDirs]). Errors
+// satisfying errors.Is(err, ErrConfigInvalid()) carry a wrapped message naming the
+// file or the environment variable that carried the value, and what is wrong with
+// it.
 //
 // Its message is a head true of every one of those refusals, rather than one
 // naming the schema: several of the checks run ahead of the schema precisely
@@ -42,9 +45,10 @@ var errConfigInvalid = cerrors.Register("workspace-config-invalid", cerrors.Meta
 	Message:   "workspace configuration is invalid",
 	RulePlace: cerrors.RuleNoStageReaches("Reading the workspace configuration evaluates the rule — each layer against the schema, and " +
 		"against the further shape and value checks that layer carries, and the composed layers against " +
-		"the checks no single layer can answer, such as what the default registry names. The configuration " +
-		"is read before any build begins, and by commands that run no build at all, so no declared stage " +
-		"of a compilation holds the document being judged."),
+		"the checks no single layer can answer, such as what the default registry names, or whether each " +
+		"catalog directory they list is a directory, which is asked when a catalog search stack is built " +
+		"from them. The configuration is read, and a stack built from it, before any build begins, and by " +
+		"commands that run no build at all, so no declared stage of a compilation holds the document being judged."),
 })
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds

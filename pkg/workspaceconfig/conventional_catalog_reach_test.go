@@ -96,7 +96,7 @@ func TestTheConventionalDirectoryIsAppendedOnlyWhereNothingNamedReachesItsPlace(
 				typed = row.typed(ws, shared)
 			}
 
-			stack, named := rw.ResolveCatalogDirs("", typed), rw.NamedCatalogDirs("", typed)
+			stack, named := stackOf(t, rw, "", typed), namedOf(t, rw, "", typed)
 			if got := slices.Contains(stack, conventional); got != row.appended {
 				t.Fatalf("the stack %v holds %s: %v, want %v", stack, conventional, got, row.appended)
 			}

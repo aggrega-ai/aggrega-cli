@@ -57,9 +57,16 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
+	dirs, err := rw.ResolveCatalogDirs(releasePath, catalogDirs)
+	if err != nil {
+		return err
+	}
+	named, err := rw.NamedCatalogDirs(releasePath, catalogDirs)
+	if err != nil {
+		return err
+	}
 
-	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, rw.NamedCatalogDirs(releasePath, catalogDirs)...)
+	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, named...)
 	view.WriteNoticesTo(os.Stderr)
 	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {

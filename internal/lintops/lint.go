@@ -256,8 +256,15 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// nothing until it is asked something — the walk happens on the first query,
 	// which for a non-Recipe entity on the --plugin path never comes.
 	// This pass names no Release, so it reads the workspace's own stack.
-	dirs := rw.ResolveCatalogDirs("", nil)
-	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs("", nil)...)
+	dirs, err := rw.ResolveCatalogDirs("", nil)
+	if err != nil {
+		return err
+	}
+	named, err := rw.NamedCatalogDirs("", nil)
+	if err != nil {
+		return err
+	}
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
 	lazyView.WriteNoticesTo(cfg.DiagOut)
 
 	// Every configured linter URI is a Plugin entity URI; the entity-front derives

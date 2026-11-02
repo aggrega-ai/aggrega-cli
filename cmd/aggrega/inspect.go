@@ -572,8 +572,15 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	if _, err := rw.ReleaseReach(opts.release, catalogDirs); err != nil {
 		return err
 	}
-	dirs := rw.ResolveCatalogDirs(opts.release, catalogDirs)
-	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, rw.NamedCatalogDirs(opts.release, catalogDirs), dirs...)
+	dirs, err := rw.ResolveCatalogDirs(opts.release, catalogDirs)
+	if err != nil {
+		return err
+	}
+	named, err := rw.NamedCatalogDirs(opts.release, catalogDirs)
+	if err != nil {
+		return err
+	}
+	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		// A load that stopped on one document reports that document's refusal once:
 		// the document and the fault it carries, in the words every other surface
@@ -917,8 +924,14 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load over this Release's first-win stack (--catalog dirs prepended to
 	// the directories the workspace configuration gives it).
-	dirs := rw.ResolveCatalogDirs(releasePath, catalogDirs)
-	named := rw.NamedCatalogDirs(releasePath, catalogDirs)
+	dirs, err := rw.ResolveCatalogDirs(releasePath, catalogDirs)
+	if err != nil {
+		return err
+	}
+	named, err := rw.NamedCatalogDirs(releasePath, catalogDirs)
+	if err != nil {
+		return err
+	}
 	cat, err := catalog.LoadAllWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)

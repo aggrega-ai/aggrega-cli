@@ -170,7 +170,11 @@ status is the same under either format.`,
 			if path == "" {
 				// No entity argument → whole-catalog conventions, one pass for each
 				// Release where the workspace gives its Releases directories of their own.
-				return emit(lintops.RunCatalogWide(cmd.Context(), rw, serve.WholeCatalogPasses(rw, opts.catalogDirs), makeResolverFromCobra(cmd), opOut, os.Stderr, collect))
+				passes, err := serve.WholeCatalogPasses(rw, opts.catalogDirs)
+				if err != nil {
+					return err
+				}
+				return emit(lintops.RunCatalogWide(cmd.Context(), rw, passes, makeResolverFromCobra(cmd), opOut, os.Stderr, collect))
 			}
 			if opts.baseline != "" && !opts.prePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a

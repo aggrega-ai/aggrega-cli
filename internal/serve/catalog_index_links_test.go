@@ -101,7 +101,10 @@ func TestTheCatalogIndexListsNoEntityItNamesAsNotRead(t *testing.T) {
 			srv := linkedFilesServer(t, root, config)
 			// The session lookup is the one a request naming no Release resolves
 			// through, built over the configuration's directories as a session builds it.
-			named := srv.namedCatalogDirsFor("")
+			named, err := srv.namedCatalogDirsFor("")
+			if err != nil {
+				t.Fatalf("the workspace's own stack was refused: %v", err)
+			}
 			srv.lazyCatalog = catalog.NewLazyLookup(root, srv.wsConfig.ArtifactCacheDir, srv.wsConfig.Workspace.CatalogDirs, nil, named...)
 			srv.releaseCatalogs = newReleaseCatalogs(srv.wsConfig.Workspace.CatalogDirs, named, srv.lazyCatalog)
 

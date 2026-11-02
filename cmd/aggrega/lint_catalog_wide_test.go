@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
-	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -144,8 +143,8 @@ type wholeCatalogScope struct {
 
 // wholeCatalogScopes is each whole-catalog scope's core over rw, writing what it
 // says for the reader to out and its diagnostics to diag.
-func wholeCatalogScopes(rw *workspaceconfig.ResolvedWorkspace) []wholeCatalogScope {
-	passes := serve.WholeCatalogPasses(rw, nil)
+func wholeCatalogScopes(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) []wholeCatalogScope {
+	passes := passesFor(t, rw, nil)
 	return []wholeCatalogScope{
 		{"aggrega validate (whole catalog)", func(out, diag *bytes.Buffer) error {
 			return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes[0].Dirs, passes[0].Named, diag, out)
@@ -183,7 +182,7 @@ func TestWholeCatalogScopesHaltOnEveryAggregaDocumentTheyCannotLoad(t *testing.T
 		"component/broken.yaml": unloadableSyntaxComponent,
 		"component/listed.yaml": unloadableListedComponent,
 	})
-	for _, scope := range wholeCatalogScopes(rw) {
+	for _, scope := range wholeCatalogScopes(t, rw) {
 		name := scope.name
 		out, diag, err := scope.runGuarded(t)
 		if err == nil {
@@ -221,7 +220,7 @@ func TestWholeCatalogScopesHaltOnEveryAggregaDocumentTheyCannotLoad(t *testing.T
 func TestWholeCatalogScopesPassOverAChartTemplate(t *testing.T) {
 	t.Parallel()
 	rw := unloadableWorkspace(t, nil)
-	for _, scope := range wholeCatalogScopes(rw) {
+	for _, scope := range wholeCatalogScopes(t, rw) {
 		name := scope.name
 		out, diag, err := scope.runGuarded(t)
 		if err != nil {

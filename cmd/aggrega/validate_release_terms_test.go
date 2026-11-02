@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,84 +157,62 @@ func TestValidateChecksAnEntityInTheTermsOfTheReleaseNamed(t *testing.T) {
 	}
 }
 
-// TestValidateNamesAListedCatalogDirectoryWhereNothingExistsOnStderr is the
-// command line's proof of what one entity's check prints when a catalog directory
-// its stack reads is listed and nothing exists there, driven through the real
-// command tree with every sink a run speaks through read: cobra's two writers,
-// the process error stream, and the status.
+// TestValidateRefusesAListedCatalogDirectoryWhereNothingExists is the command
+// line's proof of what one entity's check does when a catalog directory its stack
+// reads is listed and nothing exists there, driven through the real command tree
+// with every sink a run speaks through read: cobra's two writers, the process
+// error stream, and the status.
 //
-// The directory is not in the stack the check is handed, so the check reads it as
-// holding nothing and its verdict is the one it gives with the directory not
-// listed. It is named on the process error stream, where the check writes its
-// other advisory notes, in one line that is exactly the line the resolver
-// composes for that stack — the line `aggrega pull` and `aggrega build` print for
-// it — and on no other sink.
+// The check is refused before it reads anything, with the one refusal every
+// command reading that stack gives — the entry as written, the path it resolved
+// to, the configuration file and line listing it, and the list it sits in — so no
+// verdict over fewer catalogs than the configuration lists is printed.
 //
-// The first row is the control: every listed directory is there, the resolver
-// composes nothing, and no sink carries a line naming a listed directory. Each row
-// after it carries one listing where nothing exists, somewhere different; the
-// finding row keeps the check's own refusal beside the line, and the last row
-// checks the entity in no Release's terms, over the workspace's own stack.
-func TestValidateNamesAListedCatalogDirectoryWhereNothingExistsOnStderr(t *testing.T) {
+// The first row is the control: every listed directory is there and the check
+// runs to its verdict. Each row after it carries one listing where nothing exists,
+// somewhere different; the last checks the entity in no Release's terms, over the
+// workspace's own stack.
+func TestValidateRefusesAListedCatalogDirectoryWhereNothingExists(t *testing.T) {
 	// Not parallel, rows included: captureStderr swaps process-global os.Stderr,
 	// and the environment seams below are process-global too.
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	const (
-		sized          = "variant-sized/component/db.yaml"
-		libraryMissing = "SchemaLibrary Sizing not found in catalog"
-		listedUnder    = " is listed under "
+		sized   = "variant-sized/component/db.yaml"
+		verdict = "Pillars: valid"
 	)
 	cases := []struct {
 		name    string
 		config  string
 		release string
-		// absent is the listed directory where nothing exists, empty for the control.
-		absent string
-		code   int
-		// carries is a phrase the run's streams must carry beside the line.
-		carries string
+		// absent is the listed directory where nothing exists, empty for the
+		// control; line is its line in config, and setting the list it sits in.
+		absent  string
+		line    int
+		setting string
 	}{
-		{name: "control: every directory the Release reads exists, and nothing names one",
+		{name: "control: every directory the Release reads exists, and the check runs to its verdict",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n",
-			release: "release-sized.yaml", carries: "Pillars: valid"},
-		{name: "a directory the workspace's list names where nothing exists leaves the Component clean and is named once on stderr",
+			release: "release-sized.yaml"},
+		{name: "a directory the workspace's list names where nothing exists is refused",
 			config:  "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			release: "release-sized.yaml", absent: "no-such-catalog", carries: "Pillars: valid"},
-		{name: "a directory the Release's own list names where nothing exists leaves the Component clean and is named once on stderr",
+			release: "release-sized.yaml", absent: "no-such-catalog", line: 4, setting: "`workspace.catalog_dirs`"},
+		{name: "a directory the Release's own list names where nothing exists is refused",
 			config:  "workspace:\n  releases:\n    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n        - gone-for-sized\n",
-			release: "release-sized.yaml", absent: "gone-for-sized", carries: "Pillars: valid"},
-		{name: "a finding the check makes keeps its own words beside the line naming the directory",
-			config:  "workspace:\n  catalog_dirs:\n    - variant-plain\n    - no-such-catalog\n",
-			release: "release-sized.yaml", absent: "no-such-catalog", code: 1, carries: libraryMissing},
-		{name: "an entity checked in no Release's terms is told of a directory the workspace's list names where nothing exists",
+			release: "release-sized.yaml", absent: "gone-for-sized", line: 6,
+			setting: "`catalog_dirs` of the `workspace.releases` entry \"release-sized.yaml\""},
+		{name: "an entity checked in no Release's terms is refused over a directory the workspace's list names where nothing exists",
 			config: "workspace:\n  catalog_dirs:\n    - variant-sized\n    - no-such-catalog\n",
-			absent: "no-such-catalog", carries: "Pillars: valid"},
+			absent: "no-such-catalog", line: 4, setting: "`workspace.catalog_dirs`"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := entityCheckWorkspaceWith(t, tc.config)
 			at := func(name string) string { return filepath.Join(root, name) }
 			args := []string{"validate", at(sized)}
-			release := ""
 			if tc.release != "" {
-				release = at(tc.release)
-				args = append(args, "--release", release)
-			}
-
-			// The line the resolver composes for the stack this run reads, as a
-			// terminal prints it.
-			rw, err := workspaceconfig.ResolveWithoutGlobal(root, root, func(string) string { return "" })
-			if err != nil {
-				t.Fatalf("resolve the fixture workspace: %v", err)
-			}
-			var composed bytes.Buffer
-			rw.NoteAbsentCatalogDirs(&composed, release, nil)
-			line := strings.TrimSuffix(composed.String(), "\n")
-			names := string(filepath.Separator) + tc.absent + listedUnder
-			if (tc.absent == "") != (line == "") || (tc.absent != "" && (strings.Contains(line, "\n") || !strings.Contains(line, names))) {
-				t.Fatalf("precondition: the resolver composes %q for this stack, which is not one line naming %q", line, tc.absent)
+				args = append(args, "--release", at(tc.release))
 			}
 
 			cmd := newRootCmd()
@@ -247,32 +226,23 @@ func TestValidateNamesAListedCatalogDirectoryWhereNothingExistsOnStderr(t *testi
 				code = executeRoot(context.Background(), cmd)
 			})
 			streams := out.String() + errOut.String() + process
-			if code != tc.code {
-				t.Fatalf("`aggrega %s` exited %d; want %d\nstreams:\n%s", strings.Join(args, " "), code, tc.code, streams)
-			}
-			if !strings.Contains(streams, tc.carries) {
-				t.Errorf("`aggrega %s` does not carry %q:\n%s", strings.Join(args, " "), tc.carries, streams)
-			}
 
 			if tc.absent == "" {
-				if strings.Contains(streams, listedUnder) {
-					t.Errorf("a run over a stack leaving nothing out names a listed directory:\n%s", streams)
+				if code != 0 || !strings.Contains(streams, verdict) {
+					t.Fatalf("`aggrega %s` exited %d without its verdict %q\nstreams:\n%s", strings.Join(args, " "), code, verdict, streams)
 				}
 				return
 			}
-			if strings.Contains(out.String()+errOut.String(), names) {
-				t.Errorf("the line naming %s reached a sink other than the process error stream\nstdout:\n%s\nstderr writer:\n%s",
-					tc.absent, out.String(), errOut.String())
+			want := fmt.Sprintf("%s:%d: the %s entry %q names %s, which does not exist; create that directory, or remove the entry",
+				at(workspaceconfig.ConfigFilename), tc.line, tc.setting, tc.absent, at(tc.absent))
+			if code == 0 {
+				t.Fatalf("`aggrega %s` exited 0 over a listed directory where nothing exists\nstreams:\n%s", strings.Join(args, " "), streams)
 			}
-			var named []string
-			for _, l := range strings.Split(process, "\n") {
-				if strings.Contains(l, names) {
-					named = append(named, l)
-				}
+			if !strings.Contains(streams, want) {
+				t.Errorf("`aggrega %s` does not carry the refusal\n%s\nstreams:\n%s", strings.Join(args, " "), want, streams)
 			}
-			if len(named) != 1 || named[0] != line {
-				t.Errorf("the process error stream carries %q naming %s; want exactly the resolver's line %q\nstderr:\n%s",
-					named, tc.absent, line, process)
+			if strings.Contains(streams, verdict) {
+				t.Errorf("`aggrega %s` printed a verdict over a refused stack:\n%s", strings.Join(args, " "), streams)
 			}
 		})
 	}

@@ -208,7 +208,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := rw.ResolveCatalogDirs(releasePath, []string{catalogDir})
+	dirs := stackFor(t, rw, releasePath, []string{catalogDir})
 
 	view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)
 	view.SetPins(catalog.PinsFromLockfile(lf))

@@ -53,7 +53,10 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	// directory is scanned rather than refused, and a workspace that switched the
 	// local catalog off with an empty `catalog_dirs` is refused rather than
 	// silently scanning nothing.
-	passes := serve.WholeCatalogPasses(rw, catalogFlagDirs)
+	passes, err := serve.WholeCatalogPasses(rw, catalogFlagDirs)
+	if err != nil {
+		return err
+	}
 	perRelease := len(passes) > 0 && passes[0].NamesReleases()
 	if !workspaceconfig.AnyCatalogPassReads(passes) {
 		// A workspace that gives its Releases directories of their own is also told
@@ -290,9 +293,16 @@ type releaseDependencies struct {
 func resolveReleaseDependencies(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string) (releaseDependencies, error) {
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
-	dirs := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
+	dirs, err := rw.ResolveCatalogDirs(releasePath, catalogFlagDirs)
+	if err != nil {
+		return releaseDependencies{}, err
+	}
+	named, err := rw.NamedCatalogDirs(releasePath, catalogFlagDirs)
+	if err != nil {
+		return releaseDependencies{}, err
+	}
 
-	view := catalog.NewLazyLookup(wsRoot, wsCfg.ResolvedArtifactCacheDir(), dirs, nil, rw.NamedCatalogDirs(releasePath, catalogFlagDirs)...)
+	view := catalog.NewLazyLookup(wsRoot, wsCfg.ResolvedArtifactCacheDir(), dirs, nil, named...)
 	view.WriteNoticesTo(os.Stderr)
 	lf, err := lockfile.LoadIfReadable(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {

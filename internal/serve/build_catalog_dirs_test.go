@@ -23,12 +23,12 @@ import (
 
 // The two build methods answer a catalog directory the workspace configuration
 // lists for a Release as `aggrega build` answers it for the same Release. A
-// listed directory where nothing exists is not in the stack the Release reads, so
-// it is read as holding nothing and the build writes exactly what the fixture
-// builds without it, and the answer names the directory once, in the line
-// `aggrega build` prints for it. A listed directory that is there and cannot be walked is
-// refused with the whole-catalog load's own refusal before anything is written —
-// the lockfile a filling build writes included.
+// listed directory where nothing exists is refused with the resolver's refusal,
+// naming the entry, the file and line listing it and the setting, before anything
+// is written. A listed directory that is there and cannot be walked is refused
+// with the whole-catalog load's own refusal before anything is written — the
+// lockfile a filling build writes included. A listed directory that is there and
+// empty builds exactly what the fixture builds without it.
 //
 // Every row starts from one state: the rendering fixture filled and built once
 // over its own catalog directory alone, so its lockfile matches its closure and a
@@ -155,31 +155,27 @@ func makeListedDirectory(t *testing.T, listed string, state listedDirectoryState
 }
 
 // TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes is the invocation
-// proof for both methods, the build with and without its dependency fill: five
-// rows build and three refuse, and each row's workspace differs from the state
+// proof for both methods, the build with and without its dependency fill: two
+// rows build and six refuse, and each row's workspace differs from the state
 // every row starts from in the listed directory and in nothing else.
 //
 // A building row is held to more than "it built": what the build reports and
 // writes must be what it reported and wrote over the fixture's own list, byte for
 // byte, and the preview must name the same files and write nothing, so a reading
 // of the listing that changed what a build reads fails here even where it refuses
-// nothing. Where nothing exists at the listed path, the row also holds the stack to
-// leaving it out, and the answer to carrying the notice that names it exactly once,
-// in the line the resolver composes for it — the line `aggrega pull` and `aggrega
-// build` print: under the catalog surface and leading every other notice, on a
-// build that does not fill and on the preview; and under the resolution's surface,
-// as the fill's own line, on a build that fills. A row with the directory there
-// carries no such notice, whichever method it sends.
+// nothing; and no notice names the listed directory.
 //
 // A refusing row is held to the whole of what `aggrega build` does with the same
-// stack: the refusal names the directory and the load, carries the code a
-// failure to resolve what the Release reaches carries and no document, reads
-// exactly as the graph request's refusal of the same stack reads, and leaves
-// every file in the workspace as it was — no lockfile from a fill, no output
-// directory. The refusal names no registered condition — the load wraps the
-// filesystem's own error under the catalog category — so it is identified through
-// the accessors it does carry: the category, the directory the load reports, and
-// the filesystem's permission condition beneath them.
+// stack: the refusal carries the code a failure to resolve what the Release
+// reaches carries and no document, reads exactly as the graph request's refusal of
+// the same stack reads, and leaves every file in the workspace as it was — no
+// lockfile from a fill, no output directory. Where nothing exists at the listed
+// path the refusal is the resolver's, exactly, under ErrConfigInvalid. Where the
+// directory cannot be read the refusal names the directory and the load, and
+// names no registered condition — the load wraps the filesystem's own error under
+// the catalog category — so it is identified through the accessors it does carry:
+// the category, the directory the load reports, and the filesystem's permission
+// condition beneath them.
 func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -189,9 +185,9 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 		autoPull bool
 		state    listedDirectoryState
 	}{
-		{name: "the build reads a listed directory where nothing exists as holding nothing and its answer says so once", state: listedAbsent},
-		{name: "the build asked to fill reads it as holding nothing and its answer says so once", autoPull: true, state: listedAbsent},
-		{name: "the preview reads it as holding nothing and its answer says so once", preview: true, state: listedAbsent},
+		{name: "the build refuses a listed directory where nothing exists and writes nothing", state: listedAbsent},
+		{name: "the build asked to fill refuses it before the fill writes the lockfile", autoPull: true, state: listedAbsent},
+		{name: "the preview refuses a listed directory where nothing exists", preview: true, state: listedAbsent},
 		{name: "the build asked to fill writes what it writes without the listed directory, once it is there", autoPull: true, state: listedEmpty},
 		{name: "the preview names what the build writes without the listed directory, once it is there", preview: true, state: listedEmpty},
 		{name: "the build refuses a listed directory that cannot be read and writes nothing", state: listedUnreadable},
@@ -207,18 +203,9 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 			makeListedDirectory(t, listed, tc.state)
 			writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), config+testOwnedRegistryConfig(t))
 			probe := catalogDirsServer(t, ws, &bytes.Buffer{})
-			dirs := probe.catalogDirsFor(filepath.Join(ws, release))
-			if reads := containsPath(dirs, listed); reads != (tc.state != listedAbsent) {
-				t.Fatalf("precondition: the stack the Release reads is %v, and whether it lists %s is not what the row is about", dirs, listed)
-			}
-			// The line the resolver composes for this Release's stack, as every
-			// surface that names the directory prints it, with the indentation a
-			// terminal nests it under dropped.
-			var composed bytes.Buffer
-			probe.resolvedWorkspace.NoteAbsentCatalogDirs(&composed, filepath.Join(ws, release), nil)
-			wantLine := strings.TrimSpace(composed.String())
-			if (wantLine != "") != (tc.state == listedAbsent) || (wantLine != "" && !strings.Contains(wantLine, listed)) {
-				t.Fatalf("precondition: the resolver composes %q for this stack, and whether it names %s is not what the row is about", wantLine, listed)
+			dirs, stackErr := probe.catalogDirsFor(filepath.Join(ws, release))
+			if !containsPath(dirs, listed) || (stackErr != nil) != (tc.state == listedAbsent) {
+				t.Fatalf("precondition: the stack the Release reads is %v, refused with %v, which is not what the row is about", dirs, stackErr)
 			}
 
 			method := "aggrega/build"
@@ -231,7 +218,7 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 			before := treeSnapshot(t, ws)
 			resp := buildCatalogDirsAnswer(t, ws, method, params)
 
-			if tc.state != listedUnreadable {
+			if tc.state == listedEmpty {
 				var files []string
 				var notices []buildNotice
 				if tc.preview {
@@ -252,35 +239,10 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 				if !slices.Equal(files, wantFiles) {
 					t.Errorf("the listed directory changed the files %s reports:\n with it:    %v\n without it: %v", method, files, wantFiles)
 				}
-				var noted []buildNotice
 				for _, n := range notices {
-					if strings.Contains(n.Text, listed+" is listed under") {
-						noted = append(noted, n)
+					if strings.Contains(n.Text, listed) {
+						t.Errorf("the answer carries a notice naming %s, which is there: %+v", listed, n)
 					}
-				}
-				// Named once wherever nothing exists at the listed path: by the build
-				// itself under the catalog surface where no fill runs, and by the fill,
-				// under its own surface, where one does.
-				wantNoted, wantClass := 0, ""
-				if tc.state == listedAbsent {
-					wantNoted, wantClass = 1, noticeClassCatalog
-					if tc.autoPull {
-						wantClass = noticeClassDependencyResolution
-					}
-				}
-				if len(noted) != wantNoted {
-					t.Errorf("the answer carries %d notice(s) naming %s; want %d: %+v", len(noted), listed, wantNoted, notices)
-				}
-				for _, n := range noted {
-					if n.Class != wantClass {
-						t.Errorf("the notice naming %s travels under class %q; want %q", listed, n.Class, wantClass)
-					}
-					if n.Text != wantLine {
-						t.Errorf("the notice naming %s reads\n %q\nwant the resolver's own line\n %q", listed, n.Text, wantLine)
-					}
-				}
-				if wantClass == noticeClassCatalog && len(noted) == 1 && notices[0] != noted[0] {
-					t.Errorf("the notice naming %s does not lead the answer's notices: %+v", listed, notices)
 				}
 				return
 			}
@@ -291,9 +253,15 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 			if resp.Error.Code != errEntityNotResolvable {
 				t.Errorf("the refusal carries code %d; want %d, a failure to resolve what the Release reaches", resp.Error.Code, errEntityNotResolvable)
 			}
-			for _, want := range []string{listed, "catalog load"} {
-				if !strings.Contains(resp.Error.Message, want) {
-					t.Errorf("the refusal does not say %q: %s", want, resp.Error.Message)
+			if tc.state == listedAbsent {
+				if want := listedRefusal(ws, listed); resp.Error.Message != want {
+					t.Errorf("the refusal reads\n %s\nwant\n %s", resp.Error.Message, want)
+				}
+			} else {
+				for _, want := range []string{listed, "catalog load"} {
+					if !strings.Contains(resp.Error.Message, want) {
+						t.Errorf("the refusal does not say %q: %s", want, resp.Error.Message)
+					}
 				}
 			}
 			if d := resp.Error.Data; d != nil && (d.File != "" || d.Line != 0 || d.Lockfile != "") {
@@ -316,6 +284,18 @@ func TestBuildMethodsAnswerAListedCatalogDirectoryAsBuildDoes(t *testing.T) {
 			flush()
 			if envelope == nil {
 				t.Fatal("the handler answered a request the wire refused")
+			}
+			if tc.state == listedAbsent {
+				if !errors.Is(envelope.cause, workspaceconfig.ErrConfigInvalid()) {
+					t.Errorf("the refusal does not carry ErrConfigInvalid: %v", envelope.cause)
+				}
+				if changes := snapshotChanges(before, treeSnapshot(t, ws)); len(changes) != 0 {
+					t.Errorf("the refused %s wrote into the workspace: %v", method, changes)
+				}
+				if _, err := os.Stat(dist); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("the refused %s left an output directory; stat err = %v", method, err)
+				}
+				return
 			}
 			var load *cerrors.CompilerError
 			if !errors.As(envelope.cause, &load) {

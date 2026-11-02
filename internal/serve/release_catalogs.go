@@ -4,7 +4,7 @@
 package serve
 
 import (
-	"bytes"
+	"errors"
 	"strings"
 	"sync"
 
@@ -101,11 +101,18 @@ func catalogStackKey(dirs, named []string) string {
 // A Server holding no resolved workspace — the in-memory test harness and a
 // request whose subject is not a workspace — has nothing to resolve a stack
 // from, and is answered from the one lookup it holds.
+//
+// A stack the resolver refuses — the workspace configuration lists a directory
+// in it that is not a directory — is still the stack the lookup is built over,
+// as listed, and the lookup treats the refused directory as it treats any
+// directory it cannot walk. Every request that refuses such a directory asks
+// catalogDirsRefusal first, which refuses this one with the resolver's refusal.
 func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 	if s.resolvedWorkspace == nil || s.releaseCatalogs == nil {
 		return s.lazyCatalog
 	}
-	dirs, named := s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath)
+	dirs, _ := s.resolvedWorkspace.ResolveCatalogDirs(releasePath, nil)
+	named, _ := s.resolvedWorkspace.NamedCatalogDirs(releasePath, nil)
 	return s.releaseCatalogs.lookupFor(dirs, named, func() *catalog.LazyLookup {
 		l := catalog.NewLazyLookup(s.workspaceRoot, s.wsConfig.ArtifactCacheDir, dirs, nil, named...)
 		l.WriteNoticesTo(s.stderr)
@@ -114,11 +121,12 @@ func (s *Server) catalogFor(releasePath string) *catalog.LazyLookup {
 }
 
 // catalogDirsRefusal refuses a request naming release whose catalog search stack
-// holds a directory a whole-catalog load cannot walk — one that exists and cannot
-// be read, say — with that load's own refusal, and returns nil where every
-// directory can be walked. A configured directory where nothing exists is not in
-// the stack, so it is never refused here. A release value that cannot name a
-// Release is refused as every Release parameter is.
+// the resolver refuses — the workspace configuration lists a directory in it that
+// is not a directory — with the resolver's refusal, the one every command gives;
+// refuses one whose stack holds a directory a whole-catalog load cannot walk —
+// one that exists and cannot be read, say — with that load's own refusal; and
+// returns nil where every directory can be walked. A release value that cannot
+// name a Release is refused as every Release parameter is.
 //
 // The stack is read off the lookup the request is answered from (catalogFor), so
 // the directories checked are the directories resolved through, and the check is
@@ -137,12 +145,27 @@ func (s *Server) catalogDirsRefusal(release string) *jsonRPCError {
 	if paramErr != nil {
 		return paramErr
 	}
+	if refusal := s.catalogStackRefusal(releasePath); refusal != nil {
+		return refusal
+	}
 	if err := s.catalogFor(releasePath).CheckDirectories(); err != nil {
 		return &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: cerrors.CauseChain(err),
 			cause:   err,
 		}
+	}
+	return nil
+}
+
+// catalogStackRefusal refuses a request whose Release, at releasePath, reads a
+// stack the resolver refuses — the workspace configuration lists a directory in
+// it that is not a directory — with the resolver's refusal, as a failure to
+// resolve what the Release reaches, in the words every command refuses it in; and
+// returns nil where the resolver refuses nothing. releasePath is absolute.
+func (s *Server) catalogStackRefusal(releasePath string) *jsonRPCError {
+	if _, err := s.catalogDirsFor(releasePath); err != nil {
+		return &jsonRPCError{Code: errEntityNotResolvable, Message: cerrors.CauseChain(err), cause: err}
 	}
 	return nil
 }
@@ -161,32 +184,14 @@ func (s *Server) catalogDirsRefusal(release string) *jsonRPCError {
 //
 // A Server holding no resolved workspace — the in-memory test harness — has no
 // resolver to ask, and answers the list its configuration carries.
-func (s *Server) catalogDirsFor(releasePath string) []string {
+//
+// The resolver's refusal of the stack is returned as it gives it; see
+// ResolveCatalogDirs.
+func (s *Server) catalogDirsFor(releasePath string) ([]string, error) {
 	if s.resolvedWorkspace == nil {
-		return s.wsConfig.Workspace.CatalogDirs
+		return s.wsConfig.Workspace.CatalogDirs, nil
 	}
 	return s.resolvedWorkspace.ResolveCatalogDirs(releasePath, nil)
-}
-
-// absentCatalogDirLines returns one line for each directory the workspace
-// configuration lists for the Release at releasePath where nothing exists, or none
-// where every listed directory exists. Those are the directories the stack
-// catalogDirsFor returns leaves out, so a request reads them as holding nothing,
-// and each line is what tells a reader so: the line `aggrega pull` and `aggrega
-// build` print for that directory, without the indentation a terminal nests it
-// under (noticeLines). releasePath is absolute, and the empty string asks for the
-// workspace's own stack.
-//
-// The lines are the resolver's own (NoteAbsentCatalogDirs), asked for the same
-// Release and with the same absence of command-line directories catalogDirsFor
-// asks the stack with. So what they name and what the stack leaves out cannot come
-// to disagree, and a line here reads exactly as the line a dependency resolution
-// writes for the same directory. A Server holding no resolved workspace — the
-// in-memory test harness — has no resolver to ask, and answers none.
-func (s *Server) absentCatalogDirLines(releasePath string) []string {
-	var lines bytes.Buffer
-	s.resolvedWorkspace.NoteAbsentCatalogDirs(&lines, releasePath, nil)
-	return noticeLines(lines.String())
 }
 
 // namedCatalogDirsFor returns the part of catalogDirsFor's stack somebody named,
@@ -194,9 +199,9 @@ func (s *Server) absentCatalogDirLines(releasePath string) []string {
 // that stack reads the conventional catalog directory as the resolver says. A
 // Server holding no resolved workspace answers the list its configuration
 // carries, which is the whole of the stack it reads, every entry of it named.
-func (s *Server) namedCatalogDirsFor(releasePath string) []string {
+func (s *Server) namedCatalogDirsFor(releasePath string) ([]string, error) {
 	if s.resolvedWorkspace == nil {
-		return s.wsConfig.Workspace.CatalogDirs
+		return s.wsConfig.Workspace.CatalogDirs, nil
 	}
 	return s.resolvedWorkspace.NamedCatalogDirs(releasePath, nil)
 }
@@ -225,7 +230,8 @@ func (s *Server) workspaceTerms() releaseTerms {
 }
 
 // termsFor returns the terms a request naming release is answered within, or the
-// refusal for a value that cannot name one. release is the request's own value: a
+// refusal for a value that cannot name one, or the refusal of the stack that
+// Release reads where the resolver refuses it. release is the request's own value: a
 // path relative to the workspace root, refused in the shapes every Release
 // parameter is refused in, or empty for a request that names none.
 //
@@ -245,6 +251,10 @@ func (s *Server) termsFor(release string) (releaseTerms, *jsonRPCError) {
 		return releaseTerms{}, paramErr
 	}
 	reach, err := s.resolvedWorkspace.ReleaseReach(releasePath, nil)
+	if errors.Is(err, workspaceconfig.ErrConfigInvalid()) {
+		// The Release is one, and the stack it reads is what was refused.
+		return releaseTerms{}, s.catalogStackRefusal(releasePath)
+	}
 	if err != nil {
 		return releaseTerms{}, &jsonRPCError{Code: jsonRPCInvalidParams, Message: "invalid params: " + err.Error(), cause: err}
 	}

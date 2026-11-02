@@ -201,7 +201,7 @@ func TestWholeCatalogPasses(t *testing.T) {
 				flag = append(flag, f)
 			}
 
-			got := rw.WholeCatalogPasses(func() []string { return releases }, flag)
+			got := passesOf(t, rw, func() []string { return releases }, flag)
 			want := tc.want(at)
 			if len(got) != len(want) {
 				t.Fatalf("WholeCatalogPasses returned %d pass(es) %+v; want %d %+v", len(got), got, len(want), want)
@@ -243,7 +243,7 @@ func TestWholeCatalogPassesAsksNothingOfAWorkspaceNamingNoRelease(t *testing.T) 
 			t.Parallel()
 			rw := releaseWorkspace(t, tc.config, []string{"release-a.yaml"}, []string{"shared"})
 			asked := false
-			rw.WholeCatalogPasses(func() []string { asked = true; return []string{"release-a.yaml"} }, nil)
+			passesOf(t, rw, func() []string { asked = true; return []string{"release-a.yaml"} }, nil)
 			if asked != tc.wantAsk {
 				t.Errorf("the Release list was asked for = %v; want %v", asked, tc.wantAsk)
 			}

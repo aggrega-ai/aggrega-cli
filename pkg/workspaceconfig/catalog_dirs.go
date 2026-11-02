@@ -6,7 +6,6 @@ package workspaceconfig
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -35,12 +34,18 @@ const ReleaseCatalogsSetting = "workspace.releases"
 // `catalog` directory at the workspace root APPENDED last when that directory
 // exists.
 //
-// A configured directory where nothing exists is left out of the stack: it is
-// read as holding nothing, by every surface alike, because every surface reads
-// the stack from here. [ResolvedWorkspace.NoteAbsentCatalogDirs] is what tells a
-// reader which directories were left out. A `--catalog` directory is kept
-// whether or not it exists, so a load of the stack still reports one that is
-// not there.
+// A configured directory that is not a directory — nothing exists there, or a
+// file does, or a link leading nowhere — is refused, by every surface alike,
+// because every surface reads the stack from here: the error names the entry, the
+// file and line that list it, and what to do ([namedCatalogDirs]). Every caller
+// able to report the refusal reports it and reads nothing. The stack is returned
+// beside the refusal, every configured directory in it as listed, for a holder
+// that keeps a lookup over the stack whatever it is told — one serving requests
+// that have no way to carry a refusal, such as a listing: its lookup is then over
+// the directories the configuration lists, and treats the refused one as it treats
+// any directory it cannot walk, while a strict load of the stack still refuses it.
+// A `--catalog` directory is kept whether or not it exists, so a load of the stack
+// still reports one that is not there.
 //
 // The configured directories are the Release's own when the workspace
 // configuration names release under `workspace.releases`, and the workspace's
@@ -99,45 +104,16 @@ const ReleaseCatalogsSetting = "workspace.releases"
 // file, so they resolve against the working directory here — the one place flag
 // paths are anchored, which keeps the resolved set identical across
 // build/pull/inspect for the same flags and CWD.
-func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string) []string {
-	dirs, configured, _ := r.namedCatalogDirs(release, flagDirs)
+func (r *ResolvedWorkspace) ResolveCatalogDirs(release string, flagDirs []string) ([]string, error) {
+	dirs, configured, refusal := r.namedCatalogDirs(release, flagDirs)
 	if authoredEmpty(configured) {
-		return dirs
+		return dirs, refusal
 	}
 	conventional := filepath.Join(r.root, ConventionalCatalogDir)
 	if presenceOf(conventional) == presentDirectory && !Reaches(dirs, conventional) {
 		dirs = append(dirs, conventional)
 	}
-	return dirs
-}
-
-// NoteAbsentCatalogDirs writes to w one notice for each configured directory the
-// stack [ResolvedWorkspace.ResolveCatalogDirs] returns for release and flagDirs
-// left out because nothing exists there, naming the directory and the setting
-// that lists it, in the order the configuration lists them. It writes nothing
-// where every configured directory exists.
-//
-// It is the one place that notice is composed and written, so every surface that
-// reports it — a pull and a build alike — prints the same line for the same
-// directory. The directories it names are the ones the stack builder left out,
-// read from the same build of the stack, so what it reports and what the stack
-// holds cannot disagree.
-//
-// The notice carries no verdict: a directory that is not there is read as one
-// that holds nothing, which is what the run does, and writing the notice changes
-// what a reader is told and never what the run decides.
-func (r *ResolvedWorkspace) NoteAbsentCatalogDirs(w io.Writer, release string, flagDirs []string) {
-	if r == nil || w == nil {
-		return
-	}
-	_, _, absent := r.namedCatalogDirs(release, flagDirs)
-	if len(absent) == 0 {
-		return
-	}
-	setting := r.CatalogDirsSettingWordsFor(release)
-	for _, dir := range absent {
-		fmt.Fprintf(w, "  catalog: %s is listed under %s and does not exist, so nothing is read from it\n", dir, setting)
-	}
+	return dirs, refusal
 }
 
 // NamedCatalogDirs returns the part of the catalog search stack
@@ -160,9 +136,13 @@ func (r *ResolvedWorkspace) NoteAbsentCatalogDirs(w io.Writer, release string, f
 // unjudged. A reader handed none treats the conventional directory as nobody's
 // naming, so a reader that was not handed it refuses a link there rather than
 // following it.
-func (r *ResolvedWorkspace) NamedCatalogDirs(release string, flagDirs []string) []string {
-	dirs, _, _ := r.namedCatalogDirs(release, flagDirs)
-	return dirs
+//
+// It refuses a configured directory exactly as ResolveCatalogDirs does, with the
+// same error, and returns the list as listed beside it, for the reason given
+// there.
+func (r *ResolvedWorkspace) NamedCatalogDirs(release string, flagDirs []string) ([]string, error) {
+	dirs, _, refusal := r.namedCatalogDirs(release, flagDirs)
+	return dirs, refusal
 }
 
 // CatalogDirRoot returns the root everything read beneath the catalog directory
@@ -215,27 +195,30 @@ func isConventionalCatalogDir(workspaceRoot, dir string) bool {
 
 // namedCatalogDirs builds the named part of the stack, a fresh list, and returns
 // it with the configured directories it was built from, whose nil-ness
-// [authoredEmpty] reads, and with the configured directories it left out because
-// nothing exists there.
+// [authoredEmpty] reads, and with the refusal of the first configured directory
+// that is not a directory, in list order, or nil.
 //
-// # A configured directory where nothing exists
+// # A configured directory that is not a directory
 //
-// It is left out of the stack and returned in absent, so it is read as holding
-// nothing, exactly as an empty directory there would be, and the reader is told
-// so by [ResolvedWorkspace.NoteAbsentCatalogDirs]. This is the one place that
-// decision is made: every surface that reads a catalog — a pull, a build, a
-// check, an inspection, the daemon and the assistant-facing tools — reads the
-// stack built here, so none of them can come to read the same configuration a
-// second way. A configured directory a pull resolves past is therefore one its
-// build resolves past too.
+// A directory the configuration lists — the workspace's `catalog_dirs`, or a
+// Release's own entry under `workspace.releases`, an append included, at any
+// layer of the cascade — where nothing exists, or where a file or a link leading
+// nowhere stands ([presenceOf]), is refused ([ResolvedWorkspace.catalogDirRefusal]).
+// A listed directory is a statement that entities are read from there, so reading
+// on without it would build against fewer catalogs than the reader listed, with
+// nothing to tell them which. This is the one place that decision is made: every
+// surface that reads a catalog — a pull, a build, a check, an inspection, the
+// daemon and the assistant-facing tools — reads the stack built here, so none of
+// them can come to read the same configuration a second way.
 //
-// Only a path where nothing exists at all is left out ([presenceOf]). One that
-// exists and cannot be read, or that is a file, stays in the stack, and a load
-// of the stack reports it as it always has. A `--catalog` directory stays too,
-// whether or not it exists: the flag is typed for one invocation, and the
-// load's refusal of a directory that is not there is the answer to a mistyped
-// one. A configured directory a flag also names is the flag's entry, so it
-// stays for the same reason.
+// The refused directory stays in the stack, at the place it was listed, so a
+// strict load of a stack whose refusal was not reported still refuses it. A directory
+// that exists and cannot be read is not refused here — whether it is a directory
+// is all this asks — and a load of the stack reports it as it always has. A
+// `--catalog` directory is not judged here either, whether or not it exists: the
+// flag is typed for one invocation, and the load's refusal of a directory that is
+// not there is the answer to a mistyped one. A configured directory a flag also
+// names is the flag's entry, so it is not judged for the same reason.
 //
 // A directory named more than once — by a `--catalog` flag and by the
 // configuration, or twice by the configuration — is one entry, at the position it
@@ -251,13 +234,16 @@ func isConventionalCatalogDir(workspaceRoot, dir string) bool {
 // distinguish case — in another case, is the directory it leads to. A directory
 // that is not there is compared by its spelling made absolute and cleaned, so
 // naming it twice still names it once: a flag directory is reported missing once
-// by the load, and a configured one is left out and noted once.
+// by the load, and a configured one is refused at its first entry.
 //
 // Only the same directory is folded. A directory that lies beneath another the
 // stack names is a different directory and keeps its own entry, even though the
 // walk of the one above it reads its files too.
-func (r *ResolvedWorkspace) namedCatalogDirs(release string, flagDirs []string) (dirs, configured, absent []string) {
-	configured = r.configuredCatalogDirs(release)
+func (r *ResolvedWorkspace) namedCatalogDirs(release string, flagDirs []string) (dirs, configured []string, refusal error) {
+	configured, from := r.configuredCatalogDirEntries(release)
+	if len(from) != len(configured) {
+		from = nil
+	}
 	dirs = make([]string, 0, len(flagDirs)+len(configured)+1)
 	for _, d := range flagDirs {
 		if abs, err := filepath.Abs(d); err == nil {
@@ -265,14 +251,19 @@ func (r *ResolvedWorkspace) namedCatalogDirs(release string, flagDirs []string) 
 		}
 		dirs = appendDistinctDir(dirs, d)
 	}
-	for _, d := range configured {
-		if !holdsDir(dirs, d) && presenceOf(d) == nothingThere {
-			absent = appendDistinctDir(absent, d)
-			continue
+	for i, d := range configured {
+		if refusal == nil && !holdsDir(dirs, d) {
+			if fault, refused := faultOf(presenceOf(d)); refused {
+				var entry *catalogDirEntry
+				if from != nil {
+					entry = &from[i]
+				}
+				refusal = r.catalogDirRefusal(release, d, fault, entry)
+			}
 		}
 		dirs = appendDistinctDir(dirs, d)
 	}
-	return dirs, configured, absent
+	return dirs, configured, refusal
 }
 
 // appendDistinctDir appends dir to dirs unless an entry of dirs is the same
@@ -313,28 +304,66 @@ const (
 	presentDirectory presence = iota
 	// nothingThere is a path where nothing exists, not even a link.
 	nothingThere
-	// somethingElse is anything else: a file, a link leading nowhere, or a path
-	// the file system will not say anything about.
-	somethingElse
+	// danglingLink is a link leading to a path where nothing exists.
+	danglingLink
+	// notADirectory is something that exists and is not a directory: a file, or
+	// a link leading to one.
+	notADirectory
+	// unknownPresence is a path the file system will not say anything about —
+	// one beneath a directory that cannot be read, say.
+	unknownPresence
 )
 
 // presenceOf answers what is at path, and it is the one question the stack
-// builder asks the file system about a directory it may carry. The two entries
-// the stack can leave out read it differently, and that difference is the whole
-// of the rule. The conventional directory nobody named joins the stack only where
-// it is a directory: a workspace that does not use the convention, or holds a
-// file of that name, has none to read, and handing the loader one would make its
-// walk fail on a workspace that simply does not use the convention. A configured
-// directory is left out only where nothing exists at all, so a directory that
-// exists and cannot be read still reaches the load that reports it.
+// builder asks the file system about a directory it may carry. The two kinds of
+// entry read it differently, and that difference is the whole of the rule. The
+// conventional directory nobody named joins the stack only where it is a
+// directory: a workspace that does not use the convention, or holds a file of
+// that name, has none to read, and handing the loader one would make its walk
+// fail on a workspace that simply does not use the convention. A configured
+// directory is refused where the answer says it is not one ([faultOf]), and is
+// kept where the file system will not say, so a directory that exists and cannot
+// be read still reaches the load that reports it.
 func presenceOf(path string) presence {
-	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+	fi, err := os.Stat(path)
+	switch {
+	case err == nil && fi.IsDir():
 		return presentDirectory
+	case err == nil:
+		return notADirectory
+	case !errors.Is(err, fs.ErrNotExist):
+		return unknownPresence
 	}
-	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
-		return nothingThere
+	if _, lerr := os.Lstat(path); lerr == nil {
+		return danglingLink
 	}
-	return somethingElse
+	return nothingThere
+}
+
+// catalogDirFault is what a refusal of a configured catalog directory says about
+// it: what stands at the path instead of a directory, and what to do about it.
+type catalogDirFault struct {
+	what   string
+	remedy string
+}
+
+// faultOf returns what a refusal says about a configured catalog directory whose
+// path holds p, and whether p is refused at all: a directory is not, and nor is a
+// path the file system will not say anything about, which the load's walk reports
+// in its own words.
+func faultOf(p presence) (catalogDirFault, bool) {
+	switch p {
+	case nothingThere:
+		return catalogDirFault{what: "which does not exist", remedy: "create that directory"}, true
+	case danglingLink:
+		return catalogDirFault{
+			what:   "which is a link leading to a path that does not exist",
+			remedy: "point the link at a directory",
+		}, true
+	case notADirectory:
+		return catalogDirFault{what: "which is not a directory", remedy: "list the directory you meant"}, true
+	}
+	return catalogDirFault{}, false
 }
 
 // configuredCatalogDirs returns the directories the configuration lists for
@@ -347,19 +376,29 @@ func presenceOf(path string) presence {
 // entry that adds directories yields a fresh list, so neither the entry nor the
 // workspace list is ever written through.
 func (r *ResolvedWorkspace) configuredCatalogDirs(release string) []string {
-	workspace := r.config.Workspace.CatalogDirs
+	dirs, _ := r.configuredCatalogDirEntries(release)
+	return dirs
+}
+
+// configuredCatalogDirEntries returns the directories configuredCatalogDirs
+// returns, with where each was written beside it, entry for entry, composed by
+// the same choice of list. The record is nil where the resolution carries none,
+// and a caller treats a record that does not line up with the directories as
+// absent.
+func (r *ResolvedWorkspace) configuredCatalogDirEntries(release string) ([]string, []catalogDirEntry) {
+	workspace, workspaceFrom := r.config.Workspace.CatalogDirs, r.catalogDirsFrom
 	entry, ok := r.releaseCatalog(release)
 	if !ok {
-		return workspace
+		return workspace, workspaceFrom
 	}
-	base := workspace
+	base, baseFrom := workspace, workspaceFrom
 	if entry.CatalogDirs != nil {
-		base = entry.CatalogDirs
+		base, baseFrom = entry.CatalogDirs, entry.dirsFrom
 	}
 	if len(entry.CatalogDirsAppend) == 0 {
-		return base
+		return base, baseFrom
 	}
-	return concat(base, entry.CatalogDirsAppend)
+	return concat(base, entry.CatalogDirsAppend), concat(baseFrom, entry.appendFrom)
 }
 
 // releaseCatalog returns the configuration's entry for release and whether it
@@ -441,6 +480,8 @@ func anchorReleaseCatalogs(entries types.OrderedMap[ReleaseCatalogConfig], path 
 		anchored.Set(canonical, ReleaseCatalogConfig{
 			CatalogDirs:       anchorDirs(dir, entry.CatalogDirs),
 			CatalogDirsAppend: anchorDirs(dir, entry.CatalogDirsAppend),
+			dirsFrom:          releaseCatalogDirsWritten(path, key, "catalog_dirs", entry.CatalogDirs),
+			appendFrom:        releaseCatalogDirsWritten(path, key, "catalog_dirs_append", entry.CatalogDirsAppend),
 		})
 	}
 	return *anchored, nil
@@ -465,14 +506,17 @@ func anchorDirs(dir string, dirs []string) []string {
 // replaces it, and every layer's `catalog_dirs_append` for that Release is
 // concatenated in cascade order. A Release first named by a later layer takes
 // its place after the ones already named, so the composed entries keep the order
-// the cascade met them in.
+// the cascade met them in. Where each directory was written is composed in the
+// same steps, so an entry's record stays entry for entry with its lists.
 func foldReleaseCatalogs(into *types.OrderedMap[ReleaseCatalogConfig], layer types.OrderedMap[ReleaseCatalogConfig]) {
 	for file, entry := range layer.All() {
 		composed, _ := into.Get(file)
 		if entry.CatalogDirs != nil {
 			composed.CatalogDirs = append([]string{}, entry.CatalogDirs...)
+			composed.dirsFrom = append([]catalogDirEntry{}, entry.dirsFrom...)
 		}
 		composed.CatalogDirsAppend = append(composed.CatalogDirsAppend, entry.CatalogDirsAppend...)
+		composed.appendFrom = append(composed.appendFrom, entry.appendFrom...)
 		into.Set(file, composed)
 	}
 }

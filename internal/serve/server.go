@@ -1566,7 +1566,15 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 	// asked of the resolver like every other stack's rather than read off the
 	// configuration here: the resolver is where a directory the configuration lists
 	// twice becomes one entry, and a lookup handed the raw list would read it twice.
-	sessionNamed := resolved.NamedCatalogDirs("", nil)
+	//
+	// A list the resolver refuses — it names a directory that is not one — does not
+	// stop the workspace being served: the configuration still loads, and a request
+	// that reads no catalog is still answered. The lookup is built over the list as
+	// listed and treats the refused directory as it treats any directory it cannot
+	// walk, and every request that refuses such a directory refuses this one with the
+	// resolver's refusal, asked of it per request (catalogDirsRefusal,
+	// runEntityValidation).
+	sessionNamed, _ := resolved.NamedCatalogDirs("", nil)
 	sessionCatalog := catalog.NewLazyLookup(root, cfg.ArtifactCacheDir, sessionNamed, nil, sessionNamed...)
 	// The lookup's notices go where the process says what it has to say, and each
 	// request's view forked from it writes there too.

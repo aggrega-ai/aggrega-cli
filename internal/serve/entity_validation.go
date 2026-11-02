@@ -45,7 +45,8 @@ func isSingleEntityDocument(doc *yaml.Node) bool {
 // which catalog it is read against.
 //
 // A Release naming no file, or naming a directory, is answered with the sentence
-// the other two surfaces refuse it with, on this file, rather than refused: this
+// the other two surfaces refuse it with, on this file, rather than refused as a
+// request: this
 // handler reports a Release it cannot read as something the author can fix, and
 // checking the entity anyway would check it in the workspace's terms while
 // answering as though in the Release's.
@@ -61,30 +62,32 @@ func isSingleEntityDocument(doc *yaml.Node) bool {
 // stand. This handler reads which of the two the check reported and decides
 // nothing about severity.
 //
-// A configured catalog directory where nothing exists is not in the stack the
-// check is handed, so it is read as holding nothing, as the command line's check
-// reads it, and the verdict is the one
-// given with that directory not listed. Each such directory is named at the warning
-// tier ahead of every other entry — the stack is decided before the check reads
-// anything — in the line `aggrega pull` and `aggrega build` print for it, so an
-// author whose listing is mistyped is told which directory was not read. A clean
-// check over a stack that leaves none out reports nothing. A request withdrawn while
-// the check runs reports nothing either, and the caller leaves what the file last
-// showed in place.
+// A stack the resolver refuses — the workspace configuration lists a directory in
+// it that is not a directory, nothing existing there, say — is answered the same
+// way: the check is not run, and the file carries the one finding the command
+// line's check refuses with, at the error tier, naming the entry, the file and
+// line listing it, and the setting it sits under. Checking the entity anyway
+// would check it against fewer catalogs than the configuration lists. A clean
+// check reports nothing. A request withdrawn while the check runs reports nothing
+// either, and the caller leaves what the file last showed in place.
 func (s *Server) runEntityValidation(ctx context.Context, releasePath, file string, content []byte) []Diagnostic {
 	if _, err := s.resolvedWorkspace.ReleaseReach(releasePath, nil); err != nil {
 		return []Diagnostic{s.entityCheckFinding(file, content, err, editorSeverityError)}
 	}
-	dirs, named, absent := s.catalogDirsFor(releasePath), s.namedCatalogDirsFor(releasePath), s.absentCatalogDirLines(releasePath)
+	dirs, err := s.catalogDirsFor(releasePath)
+	if err != nil {
+		return []Diagnostic{s.entityCheckFinding(file, content, err, editorSeverityError)}
+	}
+	named, err := s.namedCatalogDirsFor(releasePath)
+	if err != nil {
+		return []Diagnostic{s.entityCheckFinding(file, content, err, editorSeverityError)}
+	}
 	res, err := validateops.ValidateEntityContent(ctx, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(),
 		dirs, named, file, content, false, validateops.WithDisplay(s.runDisplay()))
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}
 	var diags []Diagnostic
-	for _, line := range absent {
-		diags = append(diags, closureAdvisoryDiagnostic(line))
-	}
 	for _, note := range res.Notes {
 		diags = append(diags, closureAdvisoryDiagnostic(strings.TrimSpace(note)))
 	}

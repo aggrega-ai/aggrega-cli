@@ -91,13 +91,19 @@ func (s *server) readCatalogResource(uri string) (readResourceResult, *rpcError)
 // loadWorkspaceCatalog resolves the server's workspace and runs a tolerant
 // Pass-1 catalog load over its catalog search stack, offline. It is the same
 // single-sourced reader the catalog-facing tools use; a resolution or load
-// failure surfaces as an internal error the caller can report.
+// failure, and the resolver's refusal of the stack, surface as an internal error
+// the caller can report.
 func (s *server) loadWorkspaceCatalog() (*catalog.Catalog, *rpcError) {
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
 		return nil, &rpcError{Code: codeInternalError, Message: err.Error()}
 	}
-	cat, _, err := catalog.LoadPassOneTolerantWithNamedDirs(tw.root, tw.cacheDir, tw.named, tw.dirs...)
+	dirs, err := tw.catalogDirsFor("")
+	if err != nil {
+		return nil, &rpcError{Code: codeInternalError, Message: err.Error()}
+	}
+	named, _ := tw.namedCatalogDirsFor("")
+	cat, _, err := catalog.LoadPassOneTolerantWithNamedDirs(tw.root, tw.cacheDir, named, dirs...)
 	if err != nil {
 		return nil, &rpcError{Code: codeInternalError, Message: "load catalog: " + err.Error()}
 	}
