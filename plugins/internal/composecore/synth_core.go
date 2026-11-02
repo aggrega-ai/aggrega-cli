@@ -1238,13 +1238,22 @@ const loopbackHostIP = "127.0.0.1"
 //   - Loopback                    → ports published on the host's loopback
 //     address only, as 127.0.0.1:host:container
 //
-// Multiple Workload.Services entries with overlapping ports collapse to a
-// single ports list on the main service, one entry per container port. Any
-// entry with type NodePort, LoadBalancer or Loopback triggers publishing for
-// ALL of its ports, and the widest reach wins per port: a port that a NodePort
-// or LoadBalancer entry publishes is published on every interface even when a
-// Loopback entry names it too, since every interface already includes the
-// loopback one. That holds whichever of the entries was authored first.
+// A service entry names a container port and gives it a number, the way a
+// Kubernetes Service maps its port onto a targetPort: the entry's number is the
+// host side of the published pair, and the number of the container port the
+// name resolves to is the container side. So an entry publishing the container
+// port http (8080) as 8081 renders 8081:8080, and an entry carrying the
+// container port's own number renders that number on both sides. An entry
+// naming no declared container port has no container number to map onto, and
+// publishes its own number on both sides.
+//
+// Multiple Workload.Services entries publishing the same pair collapse to one
+// entry on the main service. Any entry with type NodePort, LoadBalancer or
+// Loopback triggers publishing for ALL of its ports, and the widest reach wins
+// per pair: a pair that a NodePort or LoadBalancer entry publishes is published
+// on every interface even when a Loopback entry names it too, since every
+// interface already includes the loopback one. That holds whichever of the
+// entries was authored first.
 //
 // A published port carries the transport declared on the container port its
 // name resolves to, as compose's `/protocol` suffix. A port with no declared
@@ -1260,18 +1269,20 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 
 	containerPorts := w.ContainerPortsByName()
 
-	// Collect (port, container-port) pairs from publishing service entries.
+	// Collect (host, container) pairs from publishing service entries.
 	// Iterate Workload.Services in author order for determinism on inputs;
-	// dedup keyed by container port number.
+	// dedup keyed by the pair.
+	type portPair struct {
+		host int
+		ctr  int
+	}
 	type publishedPort struct {
-		host  int
-		ctr   int
 		proto string
-		// loopback is true while every entry publishing this port is a
+		// loopback is true while every entry publishing this pair is a
 		// Loopback one; a single wider entry clears it for good.
 		loopback bool
 	}
-	publishedByCtr := map[int]publishedPort{}
+	publishedByPair := map[portPair]publishedPort{}
 
 	for _, svc := range w.Services.All() {
 		var loopback bool
@@ -1290,40 +1301,46 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 			// protocol is empty — the same no-suffix publish as before, and
 			// the missing-name condition itself is reported by the helm side's
 			// own resolution rather than invented here.
-			suffix, err := composePortProtocolSuffix(containerPorts[portName].Protocol)
+			declared, named := containerPorts[portName]
+			suffix, err := composePortProtocolSuffix(declared.Protocol)
 			if err != nil {
 				return err
 			}
-			// Compose maps host:container 1:1: the same number is used on
-			// both sides. An explicit per-port host-port authoring field is
-			// not implemented.
-			prev, seen := publishedByCtr[portNum]
-			publishedByCtr[portNum] = publishedPort{
-				host:     portNum,
-				ctr:      portNum,
+			pair := portPair{host: portNum, ctr: portNum}
+			if named {
+				pair.ctr = declared.Port
+			}
+			prev, seen := publishedByPair[pair]
+			publishedByPair[pair] = publishedPort{
 				proto:    suffix,
 				loopback: loopback && (!seen || prev.loopback),
 			}
 		}
 	}
 
-	if len(publishedByCtr) == 0 {
+	if len(publishedByPair) == 0 {
 		return nil
 	}
 
-	// Emit ports in container-port-ascending order for byte-identical output.
-	keys := make([]int, 0, len(publishedByCtr))
-	for k := range publishedByCtr {
+	// Emit ports in container-port-ascending order, then by host port, for
+	// byte-identical output.
+	keys := make([]portPair, 0, len(publishedByPair))
+	for k := range publishedByPair {
 		keys = append(keys, k)
 	}
-	sort.Ints(keys)
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].ctr != keys[j].ctr {
+			return keys[i].ctr < keys[j].ctr
+		}
+		return keys[i].host < keys[j].host
+	})
 	for _, k := range keys {
-		p := publishedByCtr[k]
+		p := publishedByPair[k]
 		hostIP := ""
 		if p.loopback {
 			hostIP = loopbackHostIP + ":"
 		}
-		main.Ports = append(main.Ports, fmt.Sprintf("%s%d:%d%s", hostIP, p.host, p.ctr, p.proto))
+		main.Ports = append(main.Ports, fmt.Sprintf("%s%d:%d%s", hostIP, k.host, k.ctr, p.proto))
 	}
 
 	frag.Services[mainServiceName] = main
