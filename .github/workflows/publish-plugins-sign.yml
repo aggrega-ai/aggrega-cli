@@ -3744,7 +3744,12 @@ jobs:
           for script in "$INSTALL_SH" "$INSTALL_PS1"; do
             attach "$script" "${script##*/}" "the checkout of the commit the build job built"
           done
-          LATEST="https://github.com/$GH_REPO/releases/latest/download"
+          # Where this release's own files download from: the install commands
+          # in the release notes fetch the scripts attached to this release and
+          # set AGGREGA_VERSION, the scripts' own setting for the release to
+          # install, so a release page's commands install that release and not
+          # whichever is the latest when they are run.
+          RELEASE_DOWNLOAD="https://github.com/$GH_REPO/releases/download/$TAG"
 
           # SHA256SUMS, written from the files RELEASE_DIR now holds, which are
           # exactly the ones in ASSETS, then held to ASSETS by name and digest.
@@ -3759,28 +3764,31 @@ jobs:
           # The release notes, written once as GitHub Markdown: the dry run
           # prints them, and the creation below gives them to the release. The
           # tap and the bucket they name are the ones publish-package-channels
-          # commits this release's formula and manifest to.
+          # commits the newest release's formula and manifest to, so the notes
+          # say they install the newest release rather than this one.
           OWNER="${GH_REPO%%/*}"
           NOTES="$(cat <<EOF
           ## Install
 
+          These commands install this release, $BIN_VERSION.
+
           Linux and macOS:
 
           \`\`\`sh
-          curl -fsSL $LATEST/${INSTALL_SH##*/} | sh
+          curl -fsSL $RELEASE_DOWNLOAD/${INSTALL_SH##*/} | AGGREGA_VERSION=$BIN_VERSION sh
           \`\`\`
 
           Windows (PowerShell):
 
           \`\`\`powershell
-          irm $LATEST/${INSTALL_PS1##*/} | iex
+          \$env:AGGREGA_VERSION = '$BIN_VERSION'; irm $RELEASE_DOWNLOAD/${INSTALL_PS1##*/} | iex
           \`\`\`
 
           Both install the default \`aggrega\` for the current user and check it against \`SHA256SUMS\`.
 
-          - **Windows installer:** run \`$WINDOWS_SETUP\`. No administrator rights; installs into \`%LOCALAPPDATA%\Programs\aggrega\` and adds it to your PATH. \`/S\` installs silently; \`uninstall.exe /S\` in that folder removes it.
-          - **Homebrew:** \`brew install $OWNER/${HOMEBREW_TAP_REPOSITORY#homebrew-}/aggrega\`
-          - **Scoop:** \`scoop bucket add aggrega https://github.com/$OWNER/$SCOOP_BUCKET_REPOSITORY\`, then \`scoop install aggrega\`
+          **Windows installer:** run \`$WINDOWS_SETUP\`. No administrator rights; installs into \`%LOCALAPPDATA%\Programs\aggrega\` and adds it to your PATH. \`/S\` installs silently; \`uninstall.exe /S\` in that folder removes it.
+
+          Homebrew and Scoop install the newest release: \`brew install $OWNER/${HOMEBREW_TAP_REPOSITORY#homebrew-}/aggrega\`, or \`scoop bucket add aggrega https://github.com/$OWNER/$SCOOP_BUCKET_REPOSITORY\` then \`scoop install aggrega\`.
 
           ## Files
 
