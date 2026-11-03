@@ -3807,6 +3807,15 @@ jobs:
           **Signing:** Windows files carry a timestamped Authenticode signature from Cognitio S.r.l.; $MACOS_NOTE.
           EOF
           )"
+          # What changed in this release, above how to install it: the release's
+          # changelog section, which the release commit carries as
+          # .github/release-notes/<tag>.md in the checkout of the commit the build
+          # job built. A commit with no such file gets no Changes section; nothing
+          # is written in its place.
+          CHANGES_FILE="aggrega-cli/.github/release-notes/$TAG.md"
+          if [ -f "$CHANGES_FILE" ]; then
+            NOTES="$(printf '## Changes\n\n%s\n\n%s' "$(cat "$CHANGES_FILE")" "$NOTES")"
+          fi
 
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
