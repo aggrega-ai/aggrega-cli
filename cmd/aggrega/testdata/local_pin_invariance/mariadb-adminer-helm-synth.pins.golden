@@ -16,12 +16,12 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
+      digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - aggregate.spec.components.web.type
     - uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
+      digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
@@ -46,7 +46,7 @@ entities:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
     - uri: helm/adminer-helm:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:5b5ef85ff6a0fcc4e2395de18e88584b62bad974e202dd2ecaa25259e5a773bf
+      digest: sha256:3948ddad34bebf7c19c75a2b94d9fd6833656e276dc813621d68f22f0594f3fd
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: helm/env-secret:1.0.0

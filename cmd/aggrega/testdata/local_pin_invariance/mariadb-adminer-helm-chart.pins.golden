@@ -16,12 +16,12 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
+      digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - aggregate.spec.components.web.type
     - uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
+      digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
@@ -46,7 +46,7 @@ entities:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
     - uri: helm-chart/adminer-chart:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:cd266550ddcf49676ef40799b2640505d973c39739effb8cbd58ae510faf391f
+      digest: sha256:6c374fbdd25202cb6d58b5046241651f8c1ba50b6b85704ea127b1435e69a1a8
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: helm-chart/mariadb-chart:1.0.0

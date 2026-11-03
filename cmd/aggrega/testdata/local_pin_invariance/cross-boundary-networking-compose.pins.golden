@@ -28,7 +28,7 @@ entities:
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:fc2592108838974d447e45a72f9a56b713be9fd8c92f4ab9fef11ba2e34163d0
+      digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - aggregate.spec.components.adminer.type
         - manifest.spec.mappings.components.type.core/devtool/adminer
