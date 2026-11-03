@@ -720,6 +720,12 @@ permissions:
 # the temporary directory itself at the start and end of every job.
 env:
   RELEASE_HANDOVER: aggrega-release-handover/${{ github.run_id }}-${{ github.run_attempt }}
+  # The Homebrew tap's and the Scoop bucket's repository names, in this
+  # repository's owner: the one statement of them, which
+  # publish-package-channels commits to and the release notes tell users to
+  # install from.
+  HOMEBREW_TAP_REPOSITORY: homebrew-tap
+  SCOOP_BUCKET_REPOSITORY: scoop-bucket
 
 jobs:
   registry-credential:
@@ -3706,8 +3712,8 @@ jobs:
           # The macOS binaries as sign-macos signed them, or, while macOS
           # signing is off, as the build wrote them; the release notes say which.
           case "$MACOS_SIGNING" in
-            sign) MACOS_NOTE="the macOS files are signed with the Developer ID of COGNITIO SRL and notarized by Apple" ;;
-            unsigned) MACOS_NOTE="the macOS files are not signed or notarized" ;;
+            sign) MACOS_NOTE="macOS files are signed with the Developer ID of COGNITIO SRL and notarized by Apple" ;;
+            unsigned) MACOS_NOTE="macOS files are not signed or notarized" ;;
             *) echo "sign-and-publish: the macOS signing decision is '$MACOS_SIGNING', neither sign nor unsigned" >&2; exit 1 ;;
           esac
           for target in darwin/arm64 darwin/amd64; do
@@ -3750,9 +3756,49 @@ jobs:
           smoke_check_sums "$RELEASE_DIR/SHA256SUMS" "$RELEASE_DIR" "${asset_names[@]}"
           ASSETS+=("$RELEASE_DIR/SHA256SUMS")
 
-          # The release notes, written once: the dry run prints them, and the
-          # creation below gives them to the release.
-          NOTES="Release $TAG. Downloadable binaries for Linux on x86-64 (linux/amd64) and on ARM (linux/arm64), for windows/amd64 (the Windows files end in .exe and carry an Authenticode signature, timestamped, whose publisher Windows shows as Cognitio S.r.l.), and for macOS on Apple silicon (darwin/arm64) and on Intel (darwin/amd64) ($MACOS_NOTE): aggrega (the default build, with embedded plugin guests and without debug information; for linux/amd64 and linux/arm64, the same bytes the tooling image carries for that platform), aggrega-debug (the same build with its debug information, for a debugger or a profiler) and aggrega-light (no embedded plugins; resolves plugins through the cascade). $WINDOWS_SETUP is the Windows installer, signed as the Windows files are: it installs the default aggrega for the current user, with no administrator rights, into %LOCALAPPDATA%\Programs\aggrega, adds that folder to the user PATH and registers an uninstaller in the list of installed apps; run it with /S to install without a window, and uninstall.exe /S in that folder to uninstall the same way. $(basename "$MCP_BUNDLE") is the desktop extension package: added from Claude Desktop's extension settings, it runs an aggrega binary already installed as a local MCP server. It carries no program of its own, so the one file serves macOS, Windows and Linux. ${INSTALL_SH##*/} and ${INSTALL_PS1##*/} install the default aggrega for the current user, checked against SHA256SUMS: run curl -fsSL $LATEST/${INSTALL_SH##*/} | sh on Linux or macOS, and irm $LATEST/${INSTALL_PS1##*/} | iex in PowerShell on Windows. SHA256SUMS lists the SHA-256 digest of every other file attached here, in the form sha256sum -c reads."
+          # The release notes, written once as GitHub Markdown: the dry run
+          # prints them, and the creation below gives them to the release. The
+          # tap and the bucket they name are the ones publish-package-channels
+          # commits this release's formula and manifest to.
+          OWNER="${GH_REPO%%/*}"
+          NOTES="$(cat <<EOF
+          ## Install
+
+          Linux and macOS:
+
+          \`\`\`sh
+          curl -fsSL $LATEST/${INSTALL_SH##*/} | sh
+          \`\`\`
+
+          Windows (PowerShell):
+
+          \`\`\`powershell
+          irm $LATEST/${INSTALL_PS1##*/} | iex
+          \`\`\`
+
+          Both install the default \`aggrega\` for the current user and check it against \`SHA256SUMS\`.
+
+          - **Windows installer:** run \`$WINDOWS_SETUP\`. No administrator rights; installs into \`%LOCALAPPDATA%\Programs\aggrega\` and adds it to your PATH. \`/S\` installs silently; \`uninstall.exe /S\` in that folder removes it.
+          - **Homebrew:** \`brew install $OWNER/${HOMEBREW_TAP_REPOSITORY#homebrew-}/aggrega\`
+          - **Scoop:** \`scoop bucket add aggrega https://github.com/$OWNER/$SCOOP_BUCKET_REPOSITORY\`, then \`scoop install aggrega\`
+
+          ## Files
+
+          Binaries for linux/amd64, linux/arm64, darwin/arm64, darwin/amd64 and windows/amd64 (\`.exe\`):
+
+          | File | What it is |
+          |---|---|
+          | \`aggrega-$BIN_VERSION-<os>-<arch>\` | The default build, with the core plugins embedded |
+          | \`aggrega-debug-$BIN_VERSION-<os>-<arch>\` | The same build with debug information, for a debugger or a profiler |
+          | \`aggrega-light-$BIN_VERSION-<os>-<arch>\` | No embedded plugins; resolves plugins through the cascade |
+          | \`$WINDOWS_SETUP\` | Windows installer |
+          | \`$(basename "$MCP_BUNDLE")\` | Claude Desktop extension: runs an installed \`aggrega\` as a local MCP server; one file for every OS |
+          | \`${INSTALL_SH##*/}\`, \`${INSTALL_PS1##*/}\` | Install scripts |
+          | \`SHA256SUMS\` | SHA-256 of every other file; check with \`sha256sum -c SHA256SUMS\` |
+
+          **Signing:** Windows files carry a timestamped Authenticode signature from Cognitio S.r.l.; $MACOS_NOTE.
+          EOF
+          )"
 
           if [ "$DRY" = "true" ]; then
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
@@ -4236,8 +4282,8 @@ jobs:
     # GitHub's own create-github-app-token and no program but git and the
     # shell's own utilities.
     #
-    # The two repositories' names are written once, in this job's env, which
-    # the token step and the commit step both read.
+    # The two repositories' names are written once, in the workflow's env,
+    # which the token step and the commit step both read.
     #
     # The if: names the job it needs as having succeeded rather than leaving
     # it to the default, since sign-and-publish may run beside a sign-macos
@@ -4248,9 +4294,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    env:
-      HOMEBREW_TAP_REPOSITORY: homebrew-tap
-      SCOOP_BUCKET_REPOSITORY: scoop-bucket
 
     steps:
       - name: Mint the token that writes the tap and the bucket
