@@ -591,7 +591,7 @@ func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugi
 // resolution looked in, and that none of them holds it. It names only the places
 // this Resolver was given — the binary always; the catalog folders and the content
 // cache a pull fetches into where the construction supplied them — so a surface
-// that consults fewer, such as a lint reading only the binary, does not claim to
+// that consults fewer, such as a lint reading no content cache, does not claim to
 // have looked where it did not.
 func (r Resolver) notOnMachine(uri string) error {
 	at := r.colocatedDirs[uri]

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -19,6 +20,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
+	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -57,7 +59,8 @@ type Config struct {
 	// note, the pre-release-only warning, and the
 	// findings report). Nil defaults to os.Stderr at the top of RunEntity;
 	// callers pass a buffer to capture diagnostics without mutating a process
-	// global.
+	// global. io.Discard also skips a Plugin entity's under-declaration advisory,
+	// whose only output is here, so its guest is not loaded for nothing.
 	DiagOut io.Writer
 
 	// Out is the sink for lint's success confirmation, kept separate from DiagOut
@@ -310,8 +313,13 @@ func RunEntity(ctx context.Context, cfg Config) error {
 	// resolvable, report where the binary offers more than the entity curates
 	// (binary ⊇ entity). It never halts and never changes the exit status; when the
 	// .wasm is not resolvable it skips with a one-line note.
-	if header.Kind == "Plugin" {
-		pluginUnderDeclarationAdvisory(ctx, proposedBytes, wsCfg, cfg.DiagOut)
+	//
+	// Its whole output is that report on DiagOut, so a caller that discards DiagOut
+	// is not asked to pay for it: resolving the guest and running its describe()
+	// would produce lines nobody reads, and an editor checking a Plugin entity on
+	// every edit would otherwise load the guest beside it each time.
+	if header.Kind == "Plugin" && cfg.DiagOut != io.Discard {
+		pluginUnderDeclarationAdvisory(ctx, proposedBytes, cfg.EntityPath, rw.Root(), cfg.DiagOut)
 	}
 
 	policyResolve := cfg.PolicyResolver
@@ -747,17 +755,20 @@ func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, trusted resolver.
 // pluginUnderDeclarationAdvisory reports, as advisory notices, where a Plugin
 // entity's .wasm describe() self-report offers more than the entity curates
 // (binary ⊇ entity — the inverse of the load-gate cross-check). It resolves the
-// entity's .wasm through the plugin cascade by the entity's identity (embed,
-// colocated, cache, or a local path); a .wasm that does not resolve is skipped with
-// a one-line note rather than treated as an error. It never halts and never
-// changes the exit status — under-declaration of a curated surface is legitimate.
-// The derivation is single-sourced with the publish advisory (wasm.UnderDeclaredNotices).
+// entity's .wasm through the plugin cascade by the entity's identity: from the
+// binary where the binary embeds the plugin, and otherwise from beside the entity
+// document at entityPath, under the filename pluginpath.PluginLeaf derives — the
+// one place an unpublished guest sits while it is being authored. A .wasm that does
+// not resolve is skipped with a one-line note rather than treated as an error. It
+// never halts and never changes the exit status — under-declaration of a curated
+// surface is legitimate. The derivation is single-sourced with the publish
+// advisory (wasm.UnderDeclaredNotices).
 //
 // ctx reaches the describe() call, which instantiates the entity's own guest and
 // is the only step here that runs anything. An advisory the caller has stopped
 // waiting for is still work, so it is abandoned on the same signal the run it
 // belongs to is.
-func pluginUnderDeclarationAdvisory(ctx context.Context, entityBytes []byte, wsCfg workspaceconfig.Config, diagOut io.Writer) {
+func pluginUnderDeclarationAdvisory(ctx context.Context, entityBytes []byte, entityPath, workspaceRoot string, diagOut io.Writer) {
 	var entity types.Plugin
 	if err := yaml.Unmarshal(entityBytes, &entity); err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped (entity does not parse as a Plugin)\n")
@@ -769,7 +780,9 @@ func pluginUnderDeclarationAdvisory(ctx context.Context, entityBytes []byte, wsC
 	// auditing — so a record of the identities trusted for the gates holds nothing
 	// addressed to it. And this advisory never halts and never changes the exit
 	// status, so a mismatch would have nothing it could do about one.
-	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
+	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
+		ColocatedDirs: besideLintedEntity(entity, entityPath, workspaceRoot),
+	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	resolved, err := cascade.Resolve(entity.ArtifactReference())
 	if err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm is not resolvable locally: %v)\n",
@@ -784,6 +797,27 @@ func pluginUnderDeclarationAdvisory(ctx context.Context, entityBytes []byte, wsC
 	}
 	for _, notice := range wasm.UnderDeclaredNotices(resolver.ProjectCuratedSurface(entity), desc) {
 		fmt.Fprintf(diagOut, "  notice: %s: %s\n", entity.Metadata.Name, notice)
+	}
+}
+
+// besideLintedEntity is the co-located directory map for the one Plugin entity a
+// lint names by path: the entity's artifact reference mapped to the directory its
+// document sits in, so the cascade reads the guest beside it exactly as it reads one
+// beside an entity found in a catalog directory. The read is held to the root a
+// document named by path picks (entitypin.NamedDocumentRoot), the root everything
+// read and written beside such a document is held to, so a .wasm there that is a
+// link leading out of that root is refused rather than read.
+func besideLintedEntity(entity types.Plugin, entityPath, workspaceRoot string) map[string]pluginpath.ColocatedDir {
+	abs, err := filepath.Abs(entityPath)
+	if err != nil {
+		abs = filepath.Clean(entityPath)
+	}
+	return map[string]pluginpath.ColocatedDir{
+		entity.ArtifactReference(): {
+			Dir:     filepath.Dir(abs),
+			Root:    entitypin.NamedDocumentRoot(workspaceRoot, entityPath),
+			Version: entity.Metadata.Version,
+		},
 	}
 }
 

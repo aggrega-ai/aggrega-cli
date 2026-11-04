@@ -82,7 +82,8 @@ type ResolutionContext struct {
 // in under the filename [PluginLeaf] derives from the reference. Root is the root a
 // read there is held to: the one the catalog directory holding that document picks
 // (workspaceconfig.CatalogDirRoot) — the root the catalog's own walk read the
-// document under — so a .wasm that is a link leading out of it is refused rather
+// document under — or, for a document somebody named by path, the one its own
+// directory picks; so a .wasm that is a link leading out of it is refused rather
 // than read. The root comes from whoever found the entity, because only the walk
 // that found it knows which catalog directory it was found in; the tier never
 // decides one. An empty Root holds nothing.
