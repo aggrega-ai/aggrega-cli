@@ -82,7 +82,7 @@ func (s *Server) runEntityValidation(ctx context.Context, releasePath, file stri
 	if err != nil {
 		return []Diagnostic{s.entityCheckFinding(file, content, err, editorSeverityError)}
 	}
-	res, err := validateops.ValidateEntityContent(ctx, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(),
+	res, err := compilerops.ValidateSingleEntityContent(ctx, s.workspaceRoot, s.wsConfig.ResolvedArtifactCacheDir(),
 		dirs, named, file, content, false, validateops.WithDisplay(s.runDisplay()))
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil

@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -65,6 +66,16 @@ type RenderedArtifact struct {
 // condition exactly as it would a blocking error's, and routes it to the stream
 // its advisories go to. A result carrying one is Valid, and the error returned
 // beside it is nil.
+//
+// Refused is the record of the catalog files the tolerant catalog load refused,
+// in the order the load recorded them, and nil where the check loaded no catalog
+// or the load refused nothing. It is filled on every scope that loads a catalog —
+// Component, Feature and Recipe — and this check reports nothing from it itself.
+// The one failure it is read for today is a Recipe's spec.implements target the
+// catalog does not hold, which is returned carrying that reference as a
+// closure.UnresolvedEntityError; the account of which refused file explains it
+// is composed by the caller that renders the failure, so it reads as every other
+// surface's account of a refused file does.
 type EntityResult struct {
 	Path        string
 	Kind        string
@@ -73,6 +84,7 @@ type EntityResult struct {
 	Artifacts   []RenderedArtifact
 	Notes       []string
 	Warnings    []error
+	Refused     []catalog.SkippedEntity
 }
 
 // ValidateEntity reads the entity file, dispatches on its kind, and runs the
@@ -104,6 +116,12 @@ type EntityResult struct {
 // pipeline twice, loading and running provider guests, so ending the caller's
 // run ends that work: a guest call whose context ends unwinds rather than being
 // noticed only once the guest next returns.
+//
+// A surface that reports the result calls compilerops.ValidateSingleEntity
+// rather than this. The result hands back the catalog load's refusals raw, in
+// Refused, and the failure they explain carries only its reference: the
+// account naming the refused file is composed there, so a surface calling this
+// directly reports that failure without naming the file that caused it.
 func ValidateEntity(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, suppressUnsupportedFieldWarnings bool, opts ...EntityOption) (EntityResult, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -143,6 +161,10 @@ func WithDisplay(w io.Writer) EntityOption {
 // It is the one implementation of the single-entity check; ValidateEntity reads
 // the file and calls it, so a check of a saved file and a check of the same
 // bytes held unsaved cannot come to differ.
+//
+// A surface that reports the result calls compilerops.ValidateSingleEntityContent
+// rather than this, for the reason ValidateEntity gives: Refused is handed back
+// raw, and the account naming a refused file is composed there.
 func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, path string, data []byte, suppressUnsupportedFieldWarnings bool, opts ...EntityOption) (EntityResult, error) {
 	var o entityOptions
 	for _, opt := range opts {
@@ -330,29 +352,31 @@ func joinKinds(kinds []string) string {
 }
 
 // loadResolvedCatalog loads the catalog over the first-win search stack and
-// resolves extends, returning the catalog and an advisory note (empty when
-// extends resolved cleanly). It is the single catalog entry point for the
-// validate tiers that need catalog context (pillar libraries for
-// Component / Feature, and the implements target plus provider Plugin for the
-// render tiers).
+// resolves extends, returning the catalog, the load's record of the files it
+// refused, and an advisory note (empty when extends resolved cleanly). It is the
+// single catalog entry point for the validate tiers that need catalog context
+// (pillar libraries for Component / Feature, and the implements target plus
+// provider Plugin for the render tiers).
 //
 // The load is tolerant: a catalog file that fails to parse or index is skipped
 // rather than aborting the walk, so an unrelated broken entity elsewhere in the
 // catalog never blocks validating the target in isolation — the same posture
-// the build path takes over a catalog it does not fully own. Extends resolution
-// runs best-effort: a broken extends chain on an unrelated entity is surfaced
-// as the returned note and does not fail the load, while the target's own
-// merged shape still resolves.
-func loadResolvedCatalog(wsRoot, cacheDir string, dirs, named []string) (*catalog.Catalog, string, error) {
-	cat, _, err := catalog.LoadPassOneTolerantWithNamedDirs(wsRoot, cacheDir, named, dirs...)
+// the build path takes over a catalog it does not fully own. What it skipped is
+// returned rather than dropped, because a reference to an entity whose only
+// document was refused resolves to nothing, and that record is the one place
+// the reason is held. Extends resolution runs best-effort: a broken extends
+// chain on an unrelated entity is surfaced as the returned note and does not
+// fail the load, while the target's own merged shape still resolves.
+func loadResolvedCatalog(wsRoot, cacheDir string, dirs, named []string) (*catalog.Catalog, []catalog.SkippedEntity, string, error) {
+	cat, skipped, err := catalog.LoadPassOneTolerantWithNamedDirs(wsRoot, cacheDir, named, dirs...)
 	if err != nil {
-		return nil, "", fmt.Errorf("catalog load: %w", err)
+		return nil, nil, "", fmt.Errorf("catalog load: %w", err)
 	}
 	var note string
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		note = fmt.Sprintf("  note: %d catalog extends resolution error(s); first: %s", len(extErrs), extErrs[0].Error())
 	}
-	return cat, note, nil
+	return cat, skipped, note, nil
 }
 
 // validateComponentEntity runs the Component shape and pillar checks. The
@@ -371,7 +395,8 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, n
 		return fmt.Errorf("parse Component at %q: %w", path, err)
 	}
 	noteSchemaAdvisories(res, comp.Metadata.Name, &comp.Spec.Schema)
-	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
+	cat, refused, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
+	res.Refused = refused
 	if note != "" {
 		res.Notes = append(res.Notes, note)
 	}
@@ -400,7 +425,8 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, nam
 		return fmt.Errorf("parse Feature at %q: %w", path, err)
 	}
 	noteSchemaAdvisories(res, feat.Metadata.Name, &feat.Spec.Schema)
-	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
+	cat, refused, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
+	res.Refused = refused
 	if note != "" {
 		res.Notes = append(res.Notes, note)
 	}
@@ -569,7 +595,8 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 	}
 	res.Diagnostics = append(res.Diagnostics, "Shape:  valid")
 
-	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
+	cat, refused, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
+	res.Refused = refused
 	if note != "" {
 		res.Notes = append(res.Notes, note)
 	}
@@ -594,7 +621,11 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		if pe, malformed := types.ParseVersionPin(rec.Spec.Implements).Malformed(); malformed {
 			return fmt.Errorf("render: %w", pe.At("in the recipe's spec.implements"))
 		}
-		return fmt.Errorf("render: implements target %q not found in catalog", rec.Spec.Implements)
+		// The reference rides on the failure so a caller holding the load's record
+		// of refused files can tell whether one of them declares this Component. It
+		// adds no condition: the message and what the failure matches are unchanged.
+		return closure.NewUnresolvedEntityError(rec.Spec.Implements, closure.ComponentKindHint,
+			fmt.Errorf("render: implements target %q not found in catalog", rec.Spec.Implements))
 	}
 
 	recipeURI := catalog.RecipeMappingURI(rec.Metadata.Name, rec.Metadata.Version)

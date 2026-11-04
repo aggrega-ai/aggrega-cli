@@ -38,6 +38,13 @@ const aggregateKindHint = "aggregate"
 // It is not serialised to the lockfile.
 const ReleaseAggregateKindHint = "release_aggregate"
 
+// ComponentKindHint marks a reference collected where a Component type is named:
+// an Aggregate's component instance, and a Manifest's component mapping key. A
+// check that resolves a Component reference outside the walk carries the same
+// hint, so a reporter matching the reference against the catalog's refused files
+// reads it as the walk's own.
+const ComponentKindHint = "component"
+
 // maxSubAggregateDepth bounds DescendSubAggregates' transitive recursion. It
 // shares the value of the topology flattener's inclusion-depth bound: the two
 // are independent constants over the same authoring graph (one bounds closure

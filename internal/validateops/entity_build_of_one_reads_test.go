@@ -294,7 +294,7 @@ func probeBuildOfOneReads(t *testing.T, root, cache, dir, path string) buildOfOn
 	if err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	cat, _, err := loadResolvedCatalog(root, cache, []string{dir}, nil)
+	cat, _, _, err := loadResolvedCatalog(root, cache, []string{dir}, nil)
 	if err != nil {
 		t.Fatalf("load catalog: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestBuildOfOneReadsUseTheProvidersArtifactDelimiters(t *testing.T) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create %s: %v", dir, err)
 		}
-		cat, _, err := loadResolvedCatalog(root, filepath.Join(root, "cache"), []string{dir}, nil)
+		cat, _, _, err := loadResolvedCatalog(root, filepath.Join(root, "cache"), []string{dir}, nil)
 		if err != nil {
 			t.Fatalf("load catalog: %v", err)
 		}

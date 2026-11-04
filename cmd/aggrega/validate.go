@@ -261,7 +261,7 @@ func dispatchValidate(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 		return err
 	}
 
-	res, verr := validateops.ValidateEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings,
+	res, verr := compilerops.ValidateSingleEntity(ctx, rw.Root(), cacheDir, dirs, named, path, suppressUnsupportedFieldWarnings,
 		validateops.WithDisplay(os.Stderr))
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)

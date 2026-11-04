@@ -177,7 +177,68 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalo
 	if err == nil {
 		return err
 	}
-	localCatalogNote = localCatalogAdviceFor(err, skipped, localCatalogNote)
+	return annotateSkips(err, skipped, localCatalogAdviceFor(err, skipped, localCatalogNote), releaseSkipWording)
+}
+
+// AnnotateEntitySkipContext is AnnotateSkipContext for a check of one entity on
+// its own: err is a failure to find, in the catalog, what that entity refers to,
+// carrying that reference as a closure.UnresolvedEntityError exactly as a failure
+// the closure walk raises does.
+//
+// The account is the one AnnotateSkipContext gives, cause before consequence:
+// where exactly one refused file declares the identity the reference names, that
+// refusal leads and the failure moves into the note beneath it; where none or
+// several do, the failure leads and every refusal is listed beneath it. Only the
+// sentences that would speak of a Release say instead what this check has: an
+// entity, and what it refers to. The workspace's account of where it reads local
+// entities is not carried, because this check reads only the catalog directories
+// it is handed.
+//
+// It returns err unchanged when err is nil, and when the load refused nothing and
+// no file of a kind no catalog holds declares the name the reference asks for.
+func AnnotateEntitySkipContext(err error, skipped []catalog.SkippedEntity) error {
+	if err == nil {
+		return err
+	}
+	return annotateSkips(err, skipped, "", entitySkipWording)
+}
+
+// skipWording is the sentences of a skip account that name what reached the
+// identity a failure could not resolve. Each opens with the line break and
+// indentation it is printed at.
+type skipWording struct {
+	// promoted follows the promoted refusal's note and introduces the failure it
+	// explains.
+	promoted string
+	// others introduces the refusals listed after a promoted one.
+	others string
+	// listed introduces every refusal where none was promoted.
+	listed string
+}
+
+// releaseSkipWording is the wording for a failure raised while resolving what a
+// Release reaches.
+var releaseSkipWording = skipWording{
+	promoted: "\n  This Release reaches that identity, so what failed is the attempt to resolve the reference to it:",
+	others: "\n  note: other catalog files were skipped at load too. A refusal outside this Release's closure is" +
+		"\n  tolerated and never fails a build:",
+	listed: "\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build," +
+		"\n  so this failure is explained only by a refusal naming something this Release reaches:",
+}
+
+// entitySkipWording is the wording for a failure raised while checking one
+// entity on its own, where no Release is being resolved.
+var entitySkipWording = skipWording{
+	promoted: "\n  This entity refers to that identity, so what failed is the attempt to resolve the reference to it:",
+	others:   "\n  note: other catalog files were skipped at load too:",
+	listed: "\n  note: catalog files skipped at load. This failure is explained only by a refusal naming something this entity" +
+		"\n  refers to:",
+}
+
+// annotateSkips is the account AnnotateSkipContext and AnnotateEntitySkipContext
+// give, over the failure err, the load's record skipped and the already-decided
+// local-catalog note, in the wording words.
+func annotateSkips(err error, skipped []catalog.SkippedEntity, localCatalogNote string, words skipWording) error {
 	refused, misdeclared := partitionSkipped(err, skipped)
 	if len(refused) == 0 && len(misdeclared) == 0 && localCatalogNote == "" {
 		return err
@@ -186,12 +247,11 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalo
 	cause, promoted := refusalExplaining(err, refused)
 	if promoted {
 		b.WriteString("\n  note: " + RefusedDocumentNote + ".")
-		b.WriteString("\n  This Release reaches that identity, so what failed is the attempt to resolve the reference to it:")
+		b.WriteString(words.promoted)
 		fmt.Fprintf(&b, "\n    %s", indentContinuations(cerrors.CauseChain(err), "    "))
 		writeMisdeclared(&b, misdeclared)
 		if rest := refusalsBesides(refused, cause); len(rest) > 0 {
-			b.WriteString("\n  note: other catalog files were skipped at load too. A refusal outside this Release's closure is")
-			b.WriteString("\n  tolerated and never fails a build:")
+			b.WriteString(words.others)
 			writeRefusals(&b, rest)
 		}
 		b.WriteString(localCatalogNote)
@@ -199,12 +259,23 @@ func AnnotateSkipContext(err error, skipped []catalog.SkippedEntity, localCatalo
 	}
 	writeMisdeclared(&b, misdeclared)
 	if len(refused) > 0 {
-		b.WriteString("\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build,")
-		b.WriteString("\n  so this failure is explained only by a refusal naming something this Release reaches:")
+		b.WriteString(words.listed)
 		writeRefusals(&b, refused)
 	}
 	b.WriteString(localCatalogNote)
 	return &SkipContextError{err: err, note: b.String()}
+}
+
+// referenceOf returns the reference a failure carries — the decoration the
+// closure walk raises for one unresolved reference, which a check resolving a
+// reference outside the walk raises too — and whether err carries one. It is the
+// one place the decoration is read.
+func referenceOf(err error) (*closure.UnresolvedEntityError, bool) {
+	var unresolved *closure.UnresolvedEntityError
+	if !stderrors.As(err, &unresolved) || unresolved == nil {
+		return nil, false
+	}
+	return unresolved, true
 }
 
 // partitionSkipped splits the load's record into the files it refused while
@@ -229,11 +300,11 @@ func partitionSkipped(err error, skipped []catalog.SkippedEntity) (refused, misd
 // catalog holds, the name the reference err failed on, or nil where err carries
 // no reference.
 func misdeclaredFor(err error, skipped []catalog.SkippedEntity) []catalog.SkippedEntity {
-	var unresolved *closure.UnresolvedEntityError
-	if !stderrors.As(err, &unresolved) || unresolved == nil {
+	ref, ok := referenceOf(err)
+	if !ok {
 		return nil
 	}
-	return catalog.UnheldKindDocumentsFor(skipped, unresolved.URI, unresolved.KindHint)
+	return catalog.UnheldKindDocumentsFor(skipped, ref.URI, ref.KindHint)
 }
 
 // misdeclaredSentence is the note naming files that declare the name a failing
@@ -364,11 +435,11 @@ func localCatalogAdviceFor(err error, skipped []catalog.SkippedEntity, note stri
 	if !namesAnUnresolvedEntity(err) {
 		return ""
 	}
-	var unresolved *closure.UnresolvedEntityError
-	if !stderrors.As(err, &unresolved) || unresolved == nil {
+	ref, ok := referenceOf(err)
+	if !ok {
 		return note
 	}
-	return LocalCatalogAdvice(note, skipped, unresolved.URI, unresolved.KindHint)
+	return LocalCatalogAdvice(note, skipped, ref.URI, ref.KindHint)
 }
 
 // namesAnUnresolvedEntity reports whether err failed because a reference named
@@ -406,11 +477,11 @@ func namesAnUnresolvedEntity(err error) bool {
 // refusal, so it reports false: a validation failure over an entity that DID
 // load names no missing entity, and blaming a refusal for it would be a guess.
 func refusalExplaining(err error, skipped []catalog.SkippedEntity) (catalog.SkippedEntity, bool) {
-	var unresolved *closure.UnresolvedEntityError
-	if !stderrors.As(err, &unresolved) || unresolved == nil {
+	ref, ok := referenceOf(err)
+	if !ok {
 		return catalog.SkippedEntity{}, false
 	}
-	return SoleRefusal(skipped, unresolved.URI, unresolved.KindHint)
+	return SoleRefusal(skipped, ref.URI, ref.KindHint)
 }
 
 // SoleRefusal reports the one refused catalog file declaring the identity a

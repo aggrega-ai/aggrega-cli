@@ -380,9 +380,8 @@ func (s *Server) unresolvedEntityEnvelope(ctx context.Context, view *catalog.Laz
 		// and its short code already stands in the head the message opens with.
 		var cause error
 		if refusal, found := compilerops.SoleRefusal(skipped, name, hint); found {
-			message = s.skipContextBesides(view, fmt.Sprintf("%s; note: %s, and %q resolved to no entity",
-				compilerops.RefusedDocumentLine(pathscope.ReportedName(s.workspaceRoot, refusal.Path), refusal.Err),
-				compilerops.RefusedDocumentNote, name), refusal.Path)
+			message = s.skipContextBesides(view, compilerops.RefusedReferenceLine(
+				pathscope.ReportedName(s.workspaceRoot, refusal.Path), refusal.Err, name), refusal.Path)
 			cause = refusal.Err
 		} else {
 			message = s.skipContext(view, fmt.Sprintf(

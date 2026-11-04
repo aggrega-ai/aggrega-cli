@@ -5,6 +5,7 @@ package compilerops
 
 import (
 	stderrors "errors"
+	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -47,6 +48,18 @@ func RefusedDocument(path string, refusal error) *cerrors.CompilerError {
 // not run.
 func RefusedDocumentLine(path string, refusal error) string {
 	return refusalReason(RefusedDocument(path, refusal))
+}
+
+// RefusedReferenceLine is the one-line message for a reference that resolved to
+// no entity because the one document declaring what it names was refused: that
+// refusal first, as RefusedDocumentLine states it, then why the refusal explains
+// the reference resolving to nothing, then the reference itself.
+//
+// It is the single-line counterpart of the note AnnotateSkipContext writes for a
+// promoted refusal, for a surface whose answer is one line, so every such surface
+// says it in the same words.
+func RefusedReferenceLine(path string, refusal error, reference string) string {
+	return fmt.Sprintf("%s; note: %s, and %q resolved to no entity", RefusedDocumentLine(path, refusal), RefusedDocumentNote, reference)
 }
 
 // RefusedCatalogDocument reports the one document a strict catalog load stopped

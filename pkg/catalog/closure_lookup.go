@@ -642,7 +642,7 @@ func embeddedEntityResolution(p types.Plugin) (closure.Resolution, bool) {
 // binding).
 func ociKindForHint(hint string) string {
 	switch hint {
-	case "component":
+	case closure.ComponentKindHint:
 		return "Component"
 	case "feature":
 		return "Feature"

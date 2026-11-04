@@ -453,7 +453,7 @@ func validateEntityScope(ctx context.Context, s *server, a validateArgs, entity,
 	// The named part is refused exactly when the stack is, with the same refusal.
 	named, _ := tw.namedCatalogDirsFor(releasePath)
 
-	res, verr := validateops.ValidateEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false,
+	res, verr := compilerops.ValidateSingleEntity(ctx, tw.root, tw.cacheDir, dirs, named, entityPath, false,
 		validateops.WithDisplay(s.runDisplay()))
 
 	var diags []string

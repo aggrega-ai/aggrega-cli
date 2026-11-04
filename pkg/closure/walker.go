@@ -199,7 +199,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			},
 			Visit: func(ci types.ComponentInstance, name, subPath string, _ bool, _ struct{}) error {
 				if ci.Type != "" {
-					s.addEntityKind(ci.Type, fmt.Sprintf("%s.components.%s.type", subPath, name), "component")
+					s.addEntityKind(ci.Type, fmt.Sprintf("%s.components.%s.type", subPath, name), ComponentKindHint)
 				}
 				s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", subPath, name))
 				return nil
@@ -263,7 +263,7 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 	if m.Spec.Extends != "" {
 		s.addEntity(m.Spec.Extends, "manifest.spec.extends")
 	}
-	s.walkMapping(m.Spec.Mappings.Components, "components", "component", "recipe")
+	s.walkMapping(m.Spec.Mappings.Components, "components", ComponentKindHint, "recipe")
 	s.walkMapping(m.Spec.Mappings.Features, "features", "feature", "feature_recipe")
 }
 
@@ -620,11 +620,11 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		// rendered message, so a reporter can say WHICH entity went unresolved
 		// without parsing its own output back. The message is unchanged.
 		if err != nil {
-			return unresolvedEntity(uri, pending.kindHint,
+			return NewUnresolvedEntityError(uri, pending.kindHint,
 				fmt.Errorf("resolve entity %q: %w", uri, err))
 		}
 		if res.NotFound {
-			return unresolvedEntity(uri, pending.kindHint,
+			return NewUnresolvedEntityError(uri, pending.kindHint,
 				entityNotFound(uri, referencedFromPreview(pending.referencedFrom), res.UnsatisfiedPin))
 		}
 		pending.resolution = &res

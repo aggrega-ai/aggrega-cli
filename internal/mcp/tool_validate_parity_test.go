@@ -55,6 +55,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -98,8 +99,11 @@ func assertHaltParity(t *testing.T, payload validateResultPayload, coreErr error
 }
 
 // TestValidateToolEntityScopeCoreParity proves the single-entity scope's MCP
-// payload carries the validateops.ValidateEntity core's verdict and blocking
-// diagnostic verbatim, for both a clean entity and one the core rejects.
+// payload carries the core's verdict and blocking diagnostic verbatim, for both a
+// clean entity and one the core rejects. The core is reached through
+// compilerops.ValidateSingleEntity, the entry every surface that checks one
+// entity calls, so the comparison holds the same failure the tool reports —
+// refused catalog files named — rather than the check's raw one.
 func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 	s := newTestServer(t)
 	root, catalogDir, releasePath := fullstackWorkspace(t)
@@ -119,7 +123,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
+		_, coreErr := compilerops.ValidateSingleEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
 			resolvedEntityPath(t, tw, entityPath), false)
 		if coreErr != nil {
 			t.Fatalf("core rejected the clean fixture: %v", coreErr)
@@ -139,7 +143,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 		})
 		payload := unmarshalValidatePayload(t, res)
 
-		_, coreErr := validateops.ValidateEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
+		_, coreErr := compilerops.ValidateSingleEntity(context.Background(), tw.root, tw.cacheDir, tw.dirs, tw.named,
 			resolvedEntityPath(t, tw, entityPath), false)
 		if coreErr == nil {
 			t.Fatalf("expected the core to reject a Release as a single-entity target")

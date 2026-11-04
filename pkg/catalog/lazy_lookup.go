@@ -3717,7 +3717,7 @@ func (x *lazyClosureLookup) resolveEntity(uri, kindHint string, base func() (clo
 			return res, err
 		}
 	}
-	if kindHint != "component" {
+	if kindHint != closure.ComponentKindHint {
 		if res, ok, err := x.l.resolveFeatureForClosure(uri); err != nil || ok {
 			return res, err
 		}
@@ -3742,7 +3742,7 @@ func (l *LazyLookup) localVersionRefusal(uri, kindHint string) error {
 			return err
 		}
 	}
-	if kindHint != "component" {
+	if kindHint != closure.ComponentKindHint {
 		if _, _, err := l.localFeatureVersion(uri); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
 			return err
 		}

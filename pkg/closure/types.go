@@ -550,7 +550,10 @@ var errUnresolvableURI = cerrors.Register("unresolvable-uri", cerrors.Meta{
 
 // UnresolvedEntityError is a resolution failure the walk raises for ONE
 // catalog-entity reference, carrying that reference where a caller can read it
-// rather than only inside the rendered message.
+// rather than only inside the rendered message. A check that resolves one
+// reference outside the walk — the check of one entity on its own looking up the
+// Component a Recipe implements — raises it too, through
+// NewUnresolvedEntityError, so a reporter reads one shape whichever raised it.
 //
 // The reference is the fact a reporter needs to explain the failure. A catalog
 // file a tolerant load refused never enters the catalog at all, so what fails is
@@ -582,10 +585,16 @@ func (e *UnresolvedEntityError) Error() string { return e.err.Error() }
 // errors.As reach the condition it raised.
 func (e *UnresolvedEntityError) Unwrap() error { return e.err }
 
-// unresolvedEntity attaches a reference and its kind hint to a resolution
-// failure. Returns err unchanged when it is nil, so a call site can wrap
-// unconditionally.
-func unresolvedEntity(uri, kindHint string, err error) error {
+// NewUnresolvedEntityError attaches a reference and its kind hint to a
+// resolution failure. Returns err unchanged when it is nil, so a call site can
+// wrap unconditionally.
+//
+// It is exported for a check that resolves a reference outside the walk — the
+// check of one entity on its own looking up the Component a Recipe implements —
+// so that failure carries its reference in the one shape a reporter reads.
+// Attaching a reference adds no condition: err keeps whatever condition it
+// raised, or none.
+func NewUnresolvedEntityError(uri, kindHint string, err error) error {
 	if err == nil {
 		return nil
 	}
