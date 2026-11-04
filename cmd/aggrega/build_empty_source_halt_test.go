@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // writeEmptySourceWorkspace lays down the minimal buildable workspace of
@@ -23,12 +23,10 @@ import (
 // cases the empty-source halt has to separate differ in exactly that one line and
 // in nothing else.
 //
-// The Recipe keeps its workload alongside whatever source the case declares,
-// because a Recipe carrying an empty source and NOTHING else is refused by the
-// input-kinds rule when the document is read and so never reaches rendering at
-// all. Pairing the empty source with a workload is what makes the ambiguity
-// reachable: the document is well-shaped, one input kind is declared, and the
-// only open question is which of the two modes the empty source selected.
+// The Recipe keeps its workload alongside whatever source the case declares, so
+// every case declares an input kind whatever its source line says: the sourceless
+// and real-source cases build, and the empty-source case is refused for the empty
+// source alone rather than for anything else the document lacks.
 func writeEmptySourceWorkspace(t *testing.T, root, sourceLine string) (releasePath, catalogRoot string) {
 	t.Helper()
 	releasePath, catalogRoot = writeValidWorkspace(t, root)
@@ -69,17 +67,20 @@ func primeLockfile(t *testing.T, root, releasePath, catalogRoot string) {
 	}
 }
 
-// renderInMemory drives the render entry that renders a Release to in-memory
+// renderInMemoryOver drives the render entry that renders a Release to in-memory
 // buffers with no lockfile freshness gate — the one the editor build tool and the
-// daemon both call. That is what lets this test hand an empty-string source
-// straight to rendering: a command-line build reads a lockfile and refuses one
-// that no longer matches the catalog, and filling that lockfile means a pull,
-// whose lock-time source descent refuses an empty source URL for its own
-// unrelated reason (it cannot infer a source kind from one). Both are constraints
-// on the build command rather than on the halt itself, which the validate command
-// also reaches: over a Recipe file it renders that Recipe in isolation and refuses
-// the same ambiguity.
-func renderInMemory(t *testing.T, root, releasePath, catalogRoot string) error {
+// daemon both call — and returns the catalog view it read, the closure's failure
+// and the render's. That is what lets a test hand a workspace straight to
+// rendering: a command-line build reads a lockfile and refuses one that no longer
+// matches the catalog, which is a constraint on the build command rather than on
+// whatever the render itself decides.
+//
+// A closure failure leaves the render undriven, so at most one of the two
+// failures is set. The view is returned because the surfaces calling this entry
+// report a failure with the catalog files that view's load refused.
+func renderInMemoryOver(
+	t *testing.T, root, releasePath, catalogRoot string,
+) (*catalog.LazyLookup, *compilerops.ClosureError, error) {
 	t.Helper()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	view := catalog.NewLazyLookup(root, filepath.Join(root, ".aggrega", "cache"), []string{catalogRoot}, nil)
@@ -91,7 +92,7 @@ func renderInMemory(t *testing.T, root, releasePath, catalogRoot string) error {
 		Augment:         true,
 	})
 	if cerr != nil {
-		t.Fatalf("resolve closure: %v", cerr)
+		return view, cerr, nil
 	}
 	_, err := compilerops.BuildToBuffer(context.Background(), compilerops.BuildInputs{
 		View:                             view,
@@ -102,29 +103,111 @@ func renderInMemory(t *testing.T, root, releasePath, catalogRoot string) error {
 		CompilerVersion:                  "test",
 		TolerateCatalogViewInconsistency: true,
 	}, pipeline.Options{})
+	return view, nil, err
+}
+
+// renderInMemory renders through the in-memory entry and returns the render's
+// failure, stopping the test on a closure that does not resolve: every caller
+// hands it a workspace whose closure is sound, so such a failure is a broken
+// harness rather than the result under test.
+func renderInMemory(t *testing.T, root, releasePath, catalogRoot string) error {
+	t.Helper()
+	_, cerr, err := renderInMemoryOver(t, root, releasePath, catalogRoot)
+	if cerr != nil {
+		t.Fatalf("resolve closure: %v", cerr)
+	}
 	return err
 }
 
-// TestBuild_EmptySourceRecipeHalts is the halt's end-to-end proof: a Recipe that
-// authors an empty-string source is refused by a real build over a real
-// workspace, and the refusal names the condition rather than surfacing as a
-// filesystem error from an attempt to read the empty path.
+// leadingFailure is the failure a reader of err meets first: the refused catalog
+// file a skip account promoted ahead of the failure it explains, where one was
+// promoted, and err itself otherwise.
 //
-// The emitted text is logged rather than only matched, so the message a reader
-// meets is readable from the test output and can be checked against the reference
-// page that documents it.
-func TestBuild_EmptySourceRecipeHalts(t *testing.T) {
+// A Recipe refused while it is loaded never reaches the dependency resolution
+// that asked for it, so what that resolution reports is the reference it could
+// not bind, with the refusal promoted ahead of it. The refusal is what names the
+// author's fault, so it is the failure the condition is matched on.
+func leadingFailure(err error) error {
+	var skipped *compilerops.SkipContextError
+	if errors.As(err, &skipped) {
+		return skipped.Leading()
+	}
+	return err
+}
+
+// renderInMemoryReportingRefusals renders through the in-memory entry and reports
+// its failure the way the surfaces that call that entry report one: annotated
+// with the catalog files the load refused, so a refusal that explains the failure
+// leads it.
+//
+// It returns the closure's failure rather than stopping the test on it, because a
+// Recipe the load refused is one the closure can no longer find, and that miss is
+// part of the failure being asserted rather than a broken harness.
+func renderInMemoryReportingRefusals(t *testing.T, root, releasePath, catalogRoot string) error {
+	t.Helper()
+	view, cerr, err := renderInMemoryOver(t, root, releasePath, catalogRoot)
+	if cerr != nil {
+		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), "")
+	}
+	return compilerops.AnnotateSkipContext(err, view.SkippedEntities(), "")
+}
+
+// TestRenderInMemory_EmptySourceRecipeIsRefusedAtRecipeLoad holds the premise
+// the empty-source halt rests on for the render entry that reads no lockfile —
+// the one the editor build tool and the long-running service call: the render
+// reaches its Recipes only through the Recipe load, so a Recipe whose source entry
+// is empty is refused there and never rendered.
+//
+// The render itself carries no refusal of the entry and reads an empty one as
+// declaring no source, so an entry that reached a Recipe without loading it would
+// render this workspace successfully. That is the failure this test exists to
+// make loud: it fails on a build that succeeds, and on any refusal other than the
+// empty-source condition leading the report.
+func TestRenderInMemory_EmptySourceRecipeIsRefusedAtRecipeLoad(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "  source: \"\"\n")
 
-	err := renderInMemory(t, root, releasePath, catalogRoot)
+	err := renderInMemoryReportingRefusals(t, root, releasePath, catalogRoot)
 	if err == nil {
-		t.Fatal("a Recipe authoring an empty-string source must halt the build; it built instead")
+		t.Fatal("the in-memory render built a Recipe whose source entry is empty, so it reached that Recipe " +
+			"without the Recipe load refusing it")
 	}
 	t.Logf("emitted diagnostic:\n%v", err)
-	if !errors.Is(err, renderer.ErrEmptySource()) {
-		t.Fatalf("the halt must carry the empty-source condition; got: %v", err)
+	if !errors.Is(leadingFailure(err), validator.ErrEmptySource()) {
+		t.Fatalf("the in-memory render must lead with the empty-source condition; got: %v", err)
+	}
+}
+
+// TestPull_EmptySourceRecipeHaltsAtRecipeLoad is the halt's end-to-end proof: a
+// Recipe that authors an empty-string source is refused by a real pull over a real
+// workspace, and the refusal names the empty-source condition rather than the
+// lock-time refusal of a source whose kind cannot be inferred, which a pull would
+// meet if the Recipe reached the source descent.
+//
+// A pull is the command a build depends on — a build reads the lockfile a pull
+// writes — so a Recipe refused here never reaches a build, and the condition a
+// pull names is the one the author meets on the command line.
+//
+// The emitted text is logged rather than only matched, so the message a reader
+// meets is readable from the test output and can be checked against the reference
+// page that documents it.
+func TestPull_EmptySourceRecipeHaltsAtRecipeLoad(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath, catalogRoot := writeEmptySourceWorkspace(t, root, "  source: \"\"\n")
+
+	err := pullRun(context.Background(), pullConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+		ReleasePath: releasePath,
+		CatalogDirs: []string{catalogRoot},
+	})
+	if err == nil {
+		t.Fatal("a Recipe authoring an empty-string source must halt the pull; it pulled instead")
+	}
+	t.Logf("emitted diagnostic:\n%v", err)
+	if !errors.Is(leadingFailure(err), validator.ErrEmptySource()) {
+		t.Fatalf("the halt must lead with the empty-source condition; got: %v", err)
 	}
 }
 

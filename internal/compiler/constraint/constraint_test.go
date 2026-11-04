@@ -199,6 +199,52 @@ func TestRunOnDocumentParametersOverNoDeclaredParametersInvokesNothing(t *testin
 	}
 }
 
+// TestRunOnDocumentRecipeSourceFieldPositionsAtTheEntry pins the push entry over
+// a Recipe's source-entry position: the check runs exactly once against the
+// presented document, its subject carries the entry's key as its coordinate, and
+// both the subject and every objection it raises are positioned at .spec.source in
+// that document's file.
+//
+// The position is asserted because it is the whole reason the kind exists rather
+// than the document subject, whose locator is empty: a rule over the entry
+// positioned at the file alone would leave a reader a sentence with no key to go
+// to. The single invocation is asserted because the position is fixed by the
+// authoring surface — one per document, whatever was written at it — so a second
+// invocation would report one fault twice and none would leave the rule unasked.
+func TestRunOnDocumentRecipeSourceFieldPositionsAtTheEntry(t *testing.T) {
+	t.Parallel()
+
+	const sourceFile = "catalog/recipe.yaml"
+
+	var transcript []string
+
+	got := RunOnDocumentRecipeSourceField(sourceFile, struct{}{},
+		Check[struct{}, DocumentRecipeSourceFieldSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityFatal,
+			Run: func(_ struct{}, s DocumentRecipeSourceFieldSubject) []Objection {
+				transcript = append(transcript, s.SourceFile()+"|"+s.Locator()+"|"+s.RecipeSourceField())
+				return []Objection{s.Raise(errRuleBroken)}
+			},
+		})
+
+	want := sourceFile + "|.spec.source|source"
+	if len(transcript) != 1 || transcript[0] != want {
+		t.Fatalf("the entry invoked the check as %v; want exactly one invocation carrying %q.\n"+
+			"INVARIANT: a Recipe has one position its source entry is written at, and the framework positions "+
+			"the subject at it.\n"+
+			"CONSEQUENCE: a missing invocation leaves the rule unasked over the document; a wrong locator "+
+			"points a reader at a key the file does not contain.", transcript, want)
+	}
+	if len(got) != 1 {
+		t.Fatalf("objections returned = %d; want 1", len(got))
+	}
+	if got[0].SourceFile() != sourceFile || got[0].Locator() != ".spec.source" {
+		t.Errorf("objection provenance = (%q, %q); want (%q, %q) — the objection carries the position the "+
+			"framework assembled for the entry", got[0].SourceFile(), got[0].Locator(), sourceFile, ".spec.source")
+	}
+}
+
 // TestZeroObjectionIsNotARaisedObjection pins the acknowledged bound of the
 // unforgeable-currency property. The zero value of a Go struct is always
 // constructible, so an Objection can be brought into existence outside this

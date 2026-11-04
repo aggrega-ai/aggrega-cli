@@ -12,8 +12,8 @@ import (
 // the identifier the diagnostic prints and the reference documentation heads
 // its entry with.
 //
-// Shape rules surfaced at Recipe load time: values-mapping and input-kinds.
-// The workload-requires-provider-workloadSchema constraint is enforced at
+// Shape rules surfaced at Recipe load time: the source entry, values-mapping and
+// input-kinds. The workload-requires-provider-workloadSchema constraint is enforced at
 // render time by the central input-kind gate (a synthesized Recipe bound to a
 // provider with no workload-synthesis capability halts loudly there).
 // The filename-collision rule is enforced once each emitting document's own
@@ -23,6 +23,40 @@ import (
 //
 // Every rule here reports through NewShapeRuleError, so a Recipe failure is a
 // *ValidationError whatever stage detected it.
+
+// ErrEmptySource is the Loud Guardrail halt raised when a Recipe writes its
+// source entry and leaves it an empty string. A Recipe's source selects between
+// two authoring modes: sourceless, where the output is built entirely from the
+// Recipe's other input kinds, and sourced, where the source names a chart, module,
+// or file to render from. An absent source selects the first; a non-empty value
+// selects the second; an empty string selects neither, so it is an authoring
+// ambiguity rather than a value with a meaning.
+//
+// Admitting it as sourceless is the failure this halt exists to stop: the
+// commonest way to write it is to delete a URI and leave the key behind, where
+// the author meant sourced mode and the build would have shipped without the
+// artifact, never saying which of the two readings it took. Silently resolving
+// two authoring intents onto one behaviour is the silent reinterpretation the
+// no-ghost-infrastructure invariant forbids, and its answer is a halt naming
+// what to write instead.
+//
+// One condition, provider-agnostic: the ambiguity is a property of the authored
+// Recipe and is identical whichever target renders it, so a reader comparing two
+// providers meets one identity for one mistake rather than one per provider. It
+// is raised by ValidateRecipe as the Recipe is loaded, so a pull, a build and a
+// check of one Recipe or of a Release all name this condition, before anything
+// tries to read the empty value as a path or infer a source kind from it. The
+// diagnostic is positioned at the Recipe's source entry and names both
+// valid authoring paths — omit the field, or give it a real path — so the
+// correction is readable from the halt. Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrEmptySource()).
+func ErrEmptySource() error { return errEmptySource }
+
+var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
+	ShortCode: "E0251",
+	Message:   "recipe source is an empty string, which names neither sourceless mode nor sourced mode",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
 
 // ErrRecipeValuesMappingRequiresSource: valuesMapping requires source.
 func ErrRecipeValuesMappingRequiresSource() error { return errRecipeValuesMappingRequiresSource }

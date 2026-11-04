@@ -1500,43 +1500,17 @@ type RecipeImportFieldEnumerator interface {
 	RecipeImportFields(node string) []AuthoredCoordinate
 }
 
-// RecipeSourceFieldEnumerator supplies the position one node's own Recipe
-// declares its source entry at, named by the spec-root key that position is.
-//
-// It presents one coordinate per node with a bound Recipe, and it presents it
-// whether or not the author wrote anything at the position. That is the whole
-// reason it is an axis rather than a narrowing of one: a rule about an entry the
-// author may have left behind with nothing in it has to be invoked where the entry
-// WOULD be, so an enumeration yielding only the entries that carry something would
-// be invoked zero times for exactly the documents such a rule exists to refuse —
-// which reports what a rule that ran and approved reports.
-//
-// It is a separate axis from [RecipeImportFieldEnumerator] beside it because a
-// source entry carries a path rather than an import, so it is absent from that
-// enumeration by construction; and a separate axis from
-// [NodeTemplateFieldEnumerator] because that one enumerates the fields carrying
-// template text a rule parses, and this position is presented whether it carries
-// text or not.
-//
-// Whether the entry was written is a declared fact over this coordinate and never
-// a property of the enumeration. Folding it in would put half of one rule's
-// predicate in an axis nothing declares, where no reader of the rule could see it.
-type RecipeSourceFieldEnumerator interface {
-	// RecipeSourceFields returns the position a node's own Recipe declares its
-	// source entry at — one coordinate for a node with a bound Recipe, and none
-	// for a node with no Recipe to declare one.
-	RecipeSourceFields(node string) []AuthoredCoordinate
-}
-
 // RecipeBoundaryBlockEnumerator supplies the position one node's own Recipe
 // writes its boundary block at — the files it contributes to the shared output of
 // the boundary it renders in — named by the spec-root key that position is.
 //
 // It presents one coordinate per node with a bound Recipe, whether or not the
-// Recipe declares the block, on the reading [RecipeSourceFieldEnumerator] gives
-// for its own position: whether the block was declared is a declared fact over
-// this coordinate and never a property of the enumeration, where a reader of the
-// rule can see it.
+// Recipe declares the block. That is the whole reason it is an axis rather than a
+// narrowing of one: an enumeration yielding only the Recipes that declare the block
+// would be invoked zero times for a Recipe that does not, which reports what a rule
+// that ran and approved reports. Whether the block was declared is a declared fact
+// over this coordinate and never a property of the enumeration, where a reader of
+// the rule can see it.
 //
 // It is a separate axis from the template-field one because that enumerates the
 // block's inline entries one by one, and a rule about the block as a whole — about

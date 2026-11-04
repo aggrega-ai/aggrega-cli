@@ -369,17 +369,12 @@ spec:
 		// axes over this document expressible at once: a field is written inline or
 		// supplied by an import and never both, so the two axes name different keys.
 		//
-		// It also writes a source entry, which the source-position axis walks. That
-		// axis presents the position whether or not anything is written at it, so
-		// the entry is here for the walk to resolve rather than to model the axis:
-		// a document with no such key would fail the walk while the axis stayed
-		// correct, which is the one thing this corpus must not do.
-		//
-		// It writes a boundary block for the same reason. The boundary-block axis
-		// presents the block's position for every node's Recipe, and the rule over it
-		// objects only where the Recipe declares the block — so a locator over that
-		// axis reaches a reader only from a document that writes the key, which is the
-		// document this walk has to resolve it in.
+		// It writes a boundary block. The boundary-block axis presents the block's
+		// position for every node's Recipe, and the rule over it objects only where
+		// the Recipe declares the block — so a locator over that axis reaches a reader
+		// only from a document that writes the key, which is the document this walk
+		// has to resolve it in. A document with no such key would fail the walk while
+		// the axis stayed correct, which is the one thing this corpus must not do.
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -418,12 +413,7 @@ spec:
 		// coordinate on that axis. Neither is claimed by the inline template-field
 		// axis, so nothing about this document has to be read two ways.
 		//
-		// Its source entry is written in the other of the two authoring forms the
-		// entry admits — a workspace path, where the Recipe above writes a registry
-		// address. The source-position axis does not read either, so the contrast is
-		// for the walk rather than for the axis: the position is one key whatever
-		// the author wrote at it. It writes a boundary block for the reason the
-		// Recipe above does.
+		// It writes a boundary block for the reason the Recipe above does.
 		"recipes/api.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

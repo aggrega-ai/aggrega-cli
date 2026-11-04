@@ -274,29 +274,6 @@ func (v *describedView) NodeDeclaresAuthoredSource(node string) bool {
 	return recipeSourceDeclared(v.recipes[node])
 }
 
-// RecipeSourceEntryWritten reports whether a node's own Recipe writes the source
-// entry at all, reading the presence of the key and nothing about what it holds.
-//
-// It is deliberately not the emptiness reading beside it. That one answers whether
-// the entry NAMES anything, which is false for an absent entry and for one holding
-// an empty string alike; this one separates those two states, and a rule telling
-// them apart reads both. Answering emptiness here would be a second copy of a
-// condition that has one home, free to differ from it with nothing comparing them.
-//
-// A coordinate naming any other field reports false, which is what leaves a rule
-// over this axis declining a position it does not govern. A node with no bound
-// Recipe reports false too: there is no document to have written the entry in.
-func (v *describedView) RecipeSourceEntryWritten(node string, field string) bool {
-	if field != recipeFieldSource {
-		return false
-	}
-	recipe, ok := v.recipes[node]
-	if !ok || recipe == nil {
-		return false
-	}
-	return recipe.Spec.Source != nil
-}
-
 // StepPluginCompatibleCapabilities returns the provider capabilities the plugin
 // behind one step of a node's own Recipe pipeline declares its step is
 // compatible with, in declared order.

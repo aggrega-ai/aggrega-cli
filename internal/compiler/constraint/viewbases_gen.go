@@ -161,6 +161,12 @@ func (AggregateDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
+}
+
 // RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeWorkloadDeclared(document string) bool {
@@ -399,6 +405,12 @@ func (ComponentDocumentBase) RecipeValuesMappingDeclared(document string) bool {
 // recipe-source-declared, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
 }
 
 // RecipeWorkloadDeclared panics. This view does not carry
@@ -653,6 +665,12 @@ func (FeatureDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
+}
+
 // RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeWorkloadDeclared(document string) bool {
@@ -881,6 +899,12 @@ func (ManifestDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
+}
+
 // RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeWorkloadDeclared(document string) bool {
@@ -1104,6 +1128,12 @@ func (ReleaseDocumentBase) RecipeValuesMappingDeclared(document string) bool {
 // recipe-source-declared, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
 }
 
 // RecipeWorkloadDeclared panics. This view does not carry
@@ -1581,6 +1611,12 @@ func (FeatureRecipeDocumentBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
 }
 
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
+}
+
 // RecipeWorkloadDeclared panics. This view does not carry
 // recipe-workload-declared, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeWorkloadDeclared(document string) bool {
@@ -1811,6 +1847,12 @@ func (CatalogViewBase) RecipeValuesMappingDeclared(document string) bool {
 // recipe-source-declared, which a Recipe document carries.
 func (CatalogViewBase) RecipeSourceDeclared(document string) bool {
 	panic("this view does not carry recipe-source-declared, which a Recipe document carries")
+}
+
+// RecipeSourceEntryWritten panics. This view does not carry
+// recipe-source-entry-written, which a Recipe document carries.
+func (CatalogViewBase) RecipeSourceEntryWritten(document string) bool {
+	panic("this view does not carry recipe-source-entry-written, which a Recipe document carries")
 }
 
 // RecipeWorkloadDeclared panics. This view does not carry
@@ -3066,12 +3108,6 @@ func (HydratedViewBase) RecipeWorkloadEntryDeclared(node string, field string) b
 	panic("this view does not carry recipe-workload-entry-declared, which is read from renderer.RenderInput.WorkloadLibraries")
 }
 
-// RecipeSourceEntryWritten panics. This view does not carry
-// recipe-source-entry-written, which is read from types.RecipeSpec.Source.
-func (HydratedViewBase) RecipeSourceEntryWritten(node string, field string) bool {
-	panic("this view does not carry recipe-source-entry-written, which is read from types.RecipeSpec.Source")
-}
-
 // EmittedViewBase is a base for an implementation of EmittedView.
 //
 // It declares a refusing method for every fact complete before the emitted
@@ -3508,6 +3544,7 @@ type ReleaseDocumentFacts interface {
 type RecipeDocumentFacts interface {
 	RecipeValuesMappingDeclared(document string) bool
 	RecipeSourceDeclared(document string) bool
+	RecipeSourceEntryWritten(document string) bool
 	RecipeWorkloadDeclared(document string) bool
 	RecipeArtifactsDeclared(document string) bool
 	RecipeAuthoredSourceKind(document string) (string, bool)
@@ -3769,7 +3806,6 @@ type DescribedStageFacts interface {
 	RecipeWorkloadImportReference(node string, field string) string
 	RecipeWorkloadLibraryDeclared(node string, field string) bool
 	RecipeWorkloadEntryDeclared(node string, field string) bool
-	RecipeSourceEntryWritten(node string, field string) bool
 }
 
 // HydratedStageFacts are the facts the hydrated stage declares itself, and

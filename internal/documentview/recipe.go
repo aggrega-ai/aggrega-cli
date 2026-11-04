@@ -23,9 +23,10 @@ import (
 
 // Recipe presents one authored Recipe to a check as named facts:
 // whether it declares a values overlay, a source pointer, a workload body or
-// artifact entries, the kind its structured source names, the reference its
-// source names, the keys each of its two output-label blocks declares, and the
-// id each of its pipeline steps declares.
+// artifact entries, whether it writes the source entry at all, the kind its
+// structured source names, the reference its source names, the keys each of its
+// two output-label blocks declares, and the id each of its pipeline steps
+// declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -67,6 +68,10 @@ type Recipe struct {
 
 	// source is whether the document declares a source pointer.
 	source bool
+
+	// sourceWritten is whether the document writes the source entry at all,
+	// whatever it holds.
+	sourceWritten bool
 
 	// workload is whether the document declares a workload body.
 	workload bool
@@ -164,7 +169,8 @@ func NewRecipe(path string, r *types.Recipe) Recipe {
 	return Recipe{
 		path:                     path,
 		valuesMapping:            !r.Spec.ValuesMapping.IsEmpty(),
-		source:                   !sourceIsEmpty(r.Spec.Source),
+		source:                   sourceref.Declared(r.Spec.Source),
+		sourceWritten:            sourceEntryWritten(r.Spec.Source),
 		workload:                 !r.Spec.Workload.IsEmpty(),
 		artifacts:                r.Spec.Artifacts.Len() > 0,
 		sourceKind:               kind,
@@ -177,17 +183,16 @@ func NewRecipe(path string, r *types.Recipe) Recipe {
 	}
 }
 
-// sourceIsEmpty reports whether a Spec.Source field carries no value. Source is
-// any and can be a string URI, a structured object, or nil; any non-nil
-// non-empty value counts as a declared source.
-func sourceIsEmpty(src any) bool {
-	if src == nil {
-		return true
-	}
-	if s, ok := src.(string); ok && s == "" {
-		return true
-	}
-	return false
+// sourceEntryWritten reports whether a Spec.Source field was written at all,
+// whatever it holds. An absent entry and one written as null both decode to nil,
+// and both are how an author declares no source.
+//
+// It answers presence and never emptiness: sourceref.Declared is the one reading
+// of whether the entry names anything, and it answers alike for an absent entry
+// and an empty string. The two readings disagree on exactly one input — an entry written
+// and left empty — which is the one a rule telling them apart exists to find.
+func sourceEntryWritten(src any) bool {
+	return src != nil
 }
 
 // authoredSourceKind reads the kind a structured source names under its `kind:`
@@ -248,6 +253,13 @@ func (v Recipe) RecipeValuesMappingDeclared(document string) bool {
 func (v Recipe) RecipeSourceDeclared(document string) bool {
 	v.refuseOtherDocument(document, "RecipeSourceDeclared")
 	return v.source
+}
+
+// RecipeSourceEntryWritten reports whether the presented Recipe writes the
+// source entry at all, whatever the entry holds.
+func (v Recipe) RecipeSourceEntryWritten(document string) bool {
+	v.refuseOtherDocument(document, "RecipeSourceEntryWritten")
+	return v.sourceWritten
 }
 
 // RecipeWorkloadDeclared reports whether the presented Recipe declares a

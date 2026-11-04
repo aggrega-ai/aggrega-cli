@@ -2765,7 +2765,8 @@ func pillarRefMatches(ref, pillar string) bool {
 // alone and singles the empty string out as a reference it cannot place, so it never
 // reaches this helper. The two sides therefore disagree about one input — an entry
 // written and left empty, which the render reads as no source and the descent reads
-// as a source it cannot resolve.
+// as a source it cannot resolve. Neither reading is reached for an authored Recipe:
+// loading the Recipe refuses that entry first, under its own condition.
 //
 // A source that evaluated to an empty string leaves the entity with none just as
 // an absent source does, and an author cannot tell the two apart from the
@@ -3601,65 +3602,6 @@ var WorkloadImportNamesADeclaredEntry = constraint.Check[
 			ErrWorkloadEntryNotFound(),
 			constraint.Uncaptioned(entry),
 			constraint.Captioned("WorkloadLibrary", library),
-		)}
-	},
-}
-
-// RecipeSourceEntryNamesAValue reports a Recipe that writes a source entry and
-// leaves it naming nothing.
-//
-// A Recipe selects between two authoring modes at that entry: sourceless, where the
-// output is built entirely from the Recipe's other input kinds, and sourced, where
-// the entry names a chart, module or file to render from. Omitting the entry selects
-// the first and giving it a real value selects the second. Writing the entry and
-// leaving it empty selects neither, and the commonest way to reach that state is
-// deleting a URI and leaving the key behind — where the author meant sourced mode and
-// a build admitting the entry as sourceless would ship without the artifact, never
-// saying which of the two readings it took.
-//
-// # Why two facts rather than one
-//
-// The reading that answers whether the entry names anything is false for an absent
-// entry and for an empty one alike, which is the right answer for every reader asking
-// what a node renders from and cannot tell this fault from a Recipe that simply
-// declares no source. So the presence of the entry is read beside it, and the rule is
-// the pair: written, and naming nothing. Folding the pair into one fact would report
-// two authoring situations as one.
-//
-// # What it raises
-//
-// No detail value at all, and that is the finding's shape rather than an omission.
-// The registered sentence already names the fault and the two modes it is ambiguous
-// between, the locator names the entry's own position in the Recipe, and the value
-// the entry holds is the empty string — quoting it would put an empty pair of quotes
-// where a reader expects the thing they wrote. The advice names both valid paths,
-// because the remedy is a single edit either way and which one to make is the whole
-// of what the author has to decide.
-//
-// The node is a coordinate the subject carries and the locator does not, and it is
-// deliberately absent from the finding: the fault is in the Recipe's text rather than
-// in any one node that binds it, so naming a node would point an author at an instance
-// when the edit is in the entry every instance shares.
-var RecipeSourceEntryNamesAValue = constraint.Check[
-	constraint.DescribedView,
-	constraint.NodeRecipeSourceFieldSubject,
-]{
-	Sentinel: ErrEmptySource(),
-	Severity: constraint.SeverityFatal,
-	Run: func(
-		v constraint.DescribedView,
-		s constraint.NodeRecipeSourceFieldSubject,
-	) []constraint.Objection {
-		if !v.RecipeSourceEntryWritten(s.NodeID(), s.RecipeSourceField()) {
-			return nil
-		}
-		if v.NodeDeclaresAuthoredSource(s.NodeID()) {
-			return nil
-		}
-		return []constraint.Objection{s.RaiseWithAdvice(
-			ErrEmptySource(),
-			"omit the source field for sourceless mode, or name a non-empty path or "+
-				"URI for sourced mode",
 		)}
 	},
 }

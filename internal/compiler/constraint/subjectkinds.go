@@ -237,6 +237,63 @@ func newDocumentOutputLabelSubject(
 	}
 }
 
+// DocumentRecipeSourceFieldSubject is the subject of a check invoked once per
+// presented Recipe at the position its source entry is written at, named by the
+// spec-root key that position is.
+//
+// It is a separate kind from the document itself for the reason a declared
+// parameter is: the subject names the authored site inside the file, where a
+// document subject names only the file. A rule about the source entry is about
+// that one key, so its finding belongs at that key.
+//
+// # Why the kind's content is a position rather than a name
+//
+// Every other document-rooted kind is keyed by something the author chose — a
+// parameter, an assertion, a schema key, a label key, a binding, a mapping entry.
+// This one is keyed by a position the authoring surface fixes: exactly one source
+// entry exists per Recipe, whether or not anything was written at it, so the
+// coordinate's value is the same key on every instance and there is one instance
+// per presented Recipe. That is what the kind is for. A rule about an entry the
+// author may have left behind empty has to be invoked where the entry WOULD be,
+// and a kind keyed by what the author named cannot reach a position they named
+// nothing at. Whether the entry was written is a fact over the coordinate.
+//
+// # What the locator names
+//
+// A finding is positioned at .spec.source in the Recipe's own file. The key is
+// the authoring surface's own and carries no separator, so the locator is exact
+// rather than truncated, and a rule over this kind owes no captioned stand-in for
+// a position it could not reach.
+type DocumentRecipeSourceFieldSubject interface {
+	Subject
+
+	// RecipeSourceField is the Recipe spec-root key the check was invoked for:
+	// the key a source entry is written under. The document itself is the other
+	// coordinate, and SourceFile names it.
+	RecipeSourceField() string
+
+	documentRecipeSourceField()
+}
+
+type documentRecipeSourceFieldSubject struct {
+	provenance
+	field string
+}
+
+func (documentRecipeSourceFieldSubject) documentRecipeSourceField() {}
+
+func (s documentRecipeSourceFieldSubject) RecipeSourceField() string { return s.field }
+
+func newDocumentRecipeSourceFieldSubject(
+	sourceFile, field string,
+	segments ...string,
+) DocumentRecipeSourceFieldSubject {
+	return documentRecipeSourceFieldSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		field:      field,
+	}
+}
+
 // DocumentAnnotationBindingSubject is the subject of a check invoked once per
 // annotation binding the presented Manifest's registry declares.
 //
@@ -2427,96 +2484,16 @@ func newNodeRecipeImportFieldSubject(
 	}
 }
 
-// NodeRecipeSourceFieldSubject is the subject of a check invoked once per source
-// entry a node's own Recipe declares a position for, named by the spec-root key
-// that position is.
-//
-// # Why the kind's content is a position rather than a name
-//
-// Every other Recipe-rooted kind is keyed by something the author chose — a
-// provides key, a local, a step id, an artifacts key, the field an `$import:` was
-// written under. This one is keyed by a position the authoring surface fixes:
-// exactly one source entry exists per Recipe, whether or not anything was written
-// at it. So the coordinate's value is the same key on every instance, and the
-// instance count is the bound-Recipe count rather than anything the document
-// declares.
-//
-// That is what the kind is for. A rule about an entry the author may have left
-// behind empty has to be invoked where the entry WOULD be, and a kind keyed by
-// what the author named cannot reach a position they named nothing at.
-//
-// # Why it is a separate kind from the import field beside it
-//
-// [NodeRecipeImportFieldSubject] is keyed by a spec-root field supplied by
-// `$import:`, and a source entry carries a path rather than an import — so it is
-// absent from that axis by construction. Widening that axis to admit it would make
-// it mean one rule rather than the document, which its own enumeration refuses in
-// terms.
-//
-// # Why it is a separate kind from the node
-//
-// [NodeSubject] is the component instance, and its locator names the Aggregate the
-// instance was authored in. A source entry is written in the Recipe, so a finding
-// keyed by the node would send an author to a document that holds no source entry
-// at all — and to a position inside it that names the instance rather than the
-// entry every instance shares.
-//
-// # What the locator names
-//
-// A finding is positioned at .spec.source in the Recipe's own file. The key is the
-// authoring surface's own and carries no separator, so the locator is exact rather
-// than truncated, and a rule over this kind owes no captioned stand-in for a
-// position it could not reach.
-//
-// The node contributes no segment, on the reading every node-rooted kind whose
-// locator names a Recipe carries: the fault is in the Recipe's text rather than in
-// any one node that binds it, so a node key spliced onto a Recipe-rooted locator
-// would point an author at an instance when the edit is in the entry every instance
-// shares.
-type NodeRecipeSourceFieldSubject interface {
-	Subject
-
-	// NodeID identifies the node whose Recipe declares the position, as every
-	// keyed fact takes it.
-	NodeID() string
-
-	// RecipeSourceField is the Recipe spec-root key the check was invoked for:
-	// the key a source entry is written under.
-	RecipeSourceField() string
-
-	nodeRecipeSourceField()
-}
-
-type nodeRecipeSourceFieldSubject struct {
-	provenance
-	node  string
-	field string
-}
-
-func (nodeRecipeSourceFieldSubject) nodeRecipeSourceField() {}
-
-func (s nodeRecipeSourceFieldSubject) NodeID() string { return s.node }
-
-func (s nodeRecipeSourceFieldSubject) RecipeSourceField() string { return s.field }
-
-func newNodeRecipeSourceFieldSubject(
-	sourceFile, node, field string, segments ...string,
-) NodeRecipeSourceFieldSubject {
-	return nodeRecipeSourceFieldSubject{
-		provenance: newProvenance(sourceFile, segments...),
-		node:       node,
-		field:      field,
-	}
-}
-
 // NodeRecipeBoundaryBlockSubject is the subject of a check invoked once per
 // boundary block a node's own Recipe has a position for, named by the spec-root
 // key that position is.
 //
-// It is keyed by a position the authoring surface fixes, for the reason
-// [NodeRecipeSourceFieldSubject] is: one such position exists per Recipe, whether
-// or not anything was written at it, so the instance count is the bound-Recipe
-// count and whether the block was declared is a fact over the coordinate.
+// It is keyed by a position the authoring surface fixes rather than by anything the
+// author chose: one such position exists per Recipe, whether or not anything was
+// written at it, so the instance count is the bound-Recipe count and whether the
+// block was declared is a fact over the coordinate. A kind keyed by what the author
+// named could not reach a Recipe that names nothing there, and a rule invoked zero
+// times reports what a rule that ran and approved reports.
 //
 // It is a separate kind from the node because the block is written in the Recipe:
 // a finding keyed by the node would send an author to the Aggregate the component

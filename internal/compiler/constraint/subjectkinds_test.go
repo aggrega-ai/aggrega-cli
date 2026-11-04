@@ -1082,6 +1082,15 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", OutputLabelBlockPromoted, "hosting")
 		},
 	},
+	SubjectDocumentRecipeSourceField: {
+		iface: reflect.TypeOf((*DocumentRecipeSourceFieldSubject)(nil)).Elem(),
+		// The coordinate is a position the authoring surface fixes, so it carries
+		// no dialect separator and the locator assembles in full — which is what
+		// reaches the constructor's deepest argument.
+		make: func(f string) Subject {
+			return newDocumentRecipeSourceFieldSubject(f, "source", "spec", "source")
+		},
+	},
 	SubjectDocumentMappingEntry: {
 		iface: reflect.TypeOf((*DocumentMappingEntrySubject)(nil)).Elem(),
 		// The features tier on the name axis, because it is the arm whose two
@@ -1289,19 +1298,11 @@ var subjectKindBindings = map[SubjectKind]struct {
 			return newNodeRecipeImportFieldSubject(f, "web", "valuesMapping", "spec", "valuesMapping")
 		},
 	},
-	SubjectNodeRecipeSourceField: {
-		iface: reflect.TypeOf((*NodeRecipeSourceFieldSubject)(nil)).Elem(),
+	SubjectNodeRecipeBoundaryBlock: {
+		iface: reflect.TypeOf((*NodeRecipeBoundaryBlockSubject)(nil)).Elem(),
 		// The coordinate is a position the authoring surface fixes, so it carries
 		// no dialect separator and the locator assembles in full — which is what
 		// reaches the constructor's deepest argument.
-		make: func(f string) Subject {
-			return newNodeRecipeSourceFieldSubject(f, "web", "source", "spec", "source")
-		},
-	},
-	SubjectNodeRecipeBoundaryBlock: {
-		iface: reflect.TypeOf((*NodeRecipeBoundaryBlockSubject)(nil)).Elem(),
-		// A position the authoring surface fixes, as the source field's is, so the
-		// locator assembles in full and reaches the constructor's deepest argument.
 		make: func(f string) Subject {
 			return newNodeRecipeBoundaryBlockSubject(f, "web", "boundary", "spec", "boundary")
 		},

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -93,7 +94,7 @@ func NewFeatureRecipe(path string, fr *types.FeatureRecipe) FeatureRecipe {
 	reference, inURLKey := authoredSourceReference(fr.Spec.Source)
 	return FeatureRecipe{
 		path:                    path,
-		source:                  !sourceIsEmpty(fr.Spec.Source),
+		source:                  sourceref.Declared(fr.Spec.Source),
 		valuesMapping:           !fr.Spec.ValuesMapping.IsEmpty(),
 		sourceKind:              kind,
 		sourceKindWritten:       written,

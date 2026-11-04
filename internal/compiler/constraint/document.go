@@ -274,6 +274,42 @@ func RunOnDocumentOutputLabels[V View](
 	return out
 }
 
+// RunOnDocumentRecipeSourceField invokes check once for the presented Recipe, at
+// the position its source entry is written at.
+//
+// It is a push entry like [RunOnDocument], and for the same reason: the
+// coordinate it is rooted at is the document, which no point in the compilation
+// holds a set of. What differs is the coordinate inside it, and here nothing is
+// enumerated: a Recipe has exactly one position a source entry is written at, so
+// the entry is invoked once per document, and it is invoked whether or not the
+// author wrote anything there. That is the axis rather than an oversight — a rule
+// about an entry left behind with nothing in it has to be invoked where the entry
+// would be, and an entry presenting the position only where something was written
+// would be invoked no times for exactly the documents such a rule exists to
+// refuse, which reports what a rule that ran and approved reports. Whether the
+// entry was written is a declared fact over this coordinate, where a reader of the
+// rule can see it.
+//
+// A locator names .spec.source, assembled through the same helper every other
+// document-level site uses so one authored shape has one spelling. The key is the
+// authoring surface's own and carries no separator, so the locator is exact.
+//
+// It takes no [Cancellation] and returns no error, for the reason
+// [RunOnDocumentParameters] states: the signal is read once per outermost
+// coordinate, the outermost coordinate here is the document, and the loop over
+// documents is the caller's.
+func RunOnDocumentRecipeSourceField[V View](
+	sourceFile string,
+	view V,
+	check Check[V, DocumentRecipeSourceFieldSubject],
+) []Objection {
+	subject := newDocumentRecipeSourceFieldSubject(
+		sourceFile, authoredKeySource,
+		documentSpecSegments(authoredKeySource)...,
+	)
+	return check.Run(view, subject)
+}
+
 // RunOnDocumentAnnotationBindings invokes check once per annotation binding the
 // presented Manifest's registry declares, in the order the bindings are given.
 //

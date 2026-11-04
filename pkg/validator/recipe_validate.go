@@ -24,7 +24,8 @@ import (
 // a property of what each names rather than a list to keep here — a rule about
 // the document as a whole has only the file to give.
 //
-// Rules enforced here: values-mapping, input-kinds, source-kind and source-url. The
+// Rules enforced here: the source entry, values-mapping, input-kinds, source-kind and
+// source-url. The
 // workload-requires-provider-workloadSchema constraint is enforced at render time
 // by the central input-kind gate (a synthesized Recipe bound to a provider that
 // does not implement workload synthesis halts loudly there). The
@@ -32,7 +33,8 @@ import (
 // emission time by feature rendering.
 //
 // What is deliberately NOT checked: the contents of `source:`, with two readings
-// excepted. Whether a source is present is a shape question and is answered here,
+// excepted. Whether a source is present is a shape question and is answered here —
+// an entry written and left empty is present and names nothing, which is refused —
 // and so is whether a structured source's `kind:` names a kind a source adapter
 // serves — that word selects the adapter the host fetches the artifact with, so it
 // is the host's contract rather than an engine's. So is whether the reference the
@@ -63,6 +65,13 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return err
 	}
 
+	// The source entry is asked ahead of the rules that read whether a source is
+	// declared: a Recipe that wrote the entry and left it empty declares none, so
+	// those rules would report a consequence of the empty entry — an overlay with
+	// nothing to overlay, a Recipe with no input kind — rather than the entry itself.
+	if err := validateRecipeSourceEntry(r, sourcePath); err != nil {
+		return err
+	}
 	if err := validateRecipeValuesMapping(r, sourcePath); err != nil {
 		return err
 	}
@@ -76,6 +85,30 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return err
 	}
 	return nil
+}
+
+// validateRecipeSourceEntry enforces the rule over the source entry: an entry
+// written is not left empty.
+//
+// The rule itself is declared rather than written out here: see
+// recipeSourceEntryNamesAValue, which names the facts it reads and is invoked once
+// per presented document, at the position its source entry is written at. What
+// this function does is present the document the load is holding and render
+// whatever came back into the failure shape this package's callers read,
+// positioned at the file AND at the entry, as the output-label rules' failures are.
+//
+// It sets no rule identifier on the failure. The condition's own identity — its
+// sentence and its short code — is what names this fault wherever it is reported.
+func validateRecipeSourceEntry(r *types.Recipe, sourcePath string) error {
+	var presented constraint.DocumentView = documentview.NewRecipe(sourcePath, r)
+	return firstKeyedFailure(
+		constraint.RunOnDocumentRecipeSourceField(
+			sourcePath,
+			presented,
+			recipeSourceEntryNamesAValue,
+		),
+		r, sourcePath, "",
+	)
 }
 
 // validateRecipeSourceURL enforces the source-url rule: the reference a source
@@ -156,7 +189,7 @@ func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
 	// and infers one type from both. Handing over the concrete type would infer
 	// that type and then refuse the rule, which declares the view.
 	var view constraint.DocumentView = presented
-	return firstOutputLabelFailure(
+	return firstKeyedFailure(
 		constraint.RunOnDocumentOutputLabels(
 			sourcePath,
 			constraint.OutputLabelBlockLiteral,
@@ -208,7 +241,7 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 	var view constraint.DocumentView = presented
 	keys := presented.RecipeOutputComponentLabelKeys(sourcePath)
 
-	if failure := firstOutputLabelFailure(
+	if failure := firstKeyedFailure(
 		constraint.RunOnDocumentOutputLabels(
 			sourcePath,
 			constraint.OutputLabelBlockPromoted,
@@ -221,7 +254,7 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 		return failure
 	}
 
-	return firstOutputLabelFailure(
+	return firstKeyedFailure(
 		constraint.RunOnDocumentOutputLabels(
 			sourcePath,
 			constraint.OutputLabelBlockPromoted,
@@ -233,25 +266,27 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 	)
 }
 
-// firstOutputLabelFailure renders the first objection an output-label rule
+// firstKeyedFailure renders the first objection a rule over an authored key
 // raised into the failure this function's callers return, positioned at the file
-// AND at the authored key.
+// AND at the authored key — the output-label rules, invoked once per label key,
+// and the rule over the source entry, invoked once at that entry's position.
 //
 // It returns the FIRST finding rather than the set, because the caller returns
 // one error and a block with two offending keys is two edits the author makes
-// from the same file. The rules are invoked once per key regardless, so which
-// finding is first is the order the keys were presented in rather than an
-// artifact of the walk.
+// from the same file. A rule invoked once per key is invoked for every key
+// regardless, so which finding is first is the order the keys were presented in
+// rather than an artifact of the walk.
 //
 // The two halves of the position travel in separate fields of one location
 // because a single string cannot be both: folding the key into the file would
 // displace the path a reader opens the file with, and dropping the file for the
-// key would leave a reader holding a path into a document nothing names. What the
-// locator carries is bounded by the dialect rather than by this rule — a label
-// key routinely contains the dialect's own separator, and the assembly then names
-// the block rather than the entry. The key itself is never lost: it is what the
-// advice opens with.
-func firstOutputLabelFailure(
+// key would leave a reader holding a path into a document nothing names. Both
+// halves are the objection's own, as the framework positioned it. What the
+// locator carries is bounded by the dialect rather than by this function — a
+// label key routinely contains the dialect's own separator, and the assembly then
+// names the block rather than the entry; the key itself is never lost, because it
+// is what that rule's advice opens with.
+func firstKeyedFailure(
 	objections []constraint.Objection,
 	r *types.Recipe,
 	sourcePath string,

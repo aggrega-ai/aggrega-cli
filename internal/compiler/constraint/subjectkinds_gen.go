@@ -55,6 +55,9 @@ const (
 	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 6 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
+	// SubjectDocumentRecipeSourceField is the subject kind (document, recipe-source-field), keyed by 1 declared fact.
+	SubjectDocumentRecipeSourceField SubjectKind = "(document, recipe-source-field)"
+
 	// SubjectDocumentOutputLabel is the subject kind (document, output-label), keyed by 2 declared facts.
 	SubjectDocumentOutputLabel SubjectKind = "(document, output-label)"
 
@@ -163,9 +166,6 @@ const (
 	// SubjectNodeRecipeImportField is the subject kind (node, recipe-import-field), keyed by 6 declared facts.
 	SubjectNodeRecipeImportField SubjectKind = "(node, recipe-import-field)"
 
-	// SubjectNodeRecipeSourceField is the subject kind (node, recipe-source-field), keyed by 1 declared fact.
-	SubjectNodeRecipeSourceField SubjectKind = "(node, recipe-source-field)"
-
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 5 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 
@@ -198,6 +198,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectDocumentAssertion, Coordinates: []string{"document", "assertion"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentSchemaPillar, Coordinates: []string{"document", "schema-pillar"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentAnnotationBinding, Coordinates: []string{"document", "annotation-binding"}, Traversal: TraversalPush},
+	{Kind: SubjectDocumentRecipeSourceField, Coordinates: []string{"document", "recipe-source-field"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentOutputLabel, Coordinates: []string{"document", "output-label"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentMappingEntry, Coordinates: []string{"document", "mapping-entry"}, Traversal: TraversalPush},
 	{Kind: SubjectBoundaryPlacement, Coordinates: []string{"boundary-placement"}, Traversal: TraversalPull},
@@ -234,7 +235,6 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeRecipeBoundaryBlock, Coordinates: []string{"node", "recipe-boundary-block"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifactsEntry, Coordinates: []string{"node", "artifacts-entry"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeRecipeImportField, Coordinates: []string{"node", "recipe-import-field"}, Traversal: TraversalPull},
-	{Kind: SubjectNodeRecipeSourceField, Coordinates: []string{"node", "recipe-source-field"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},

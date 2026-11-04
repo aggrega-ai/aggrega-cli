@@ -36,14 +36,6 @@ const (
 	omitFieldName      = "name"
 	omitFieldNamespace = "namespace"
 	omitFieldSubchart  = "subchart"
-
-	// recipeFieldSource is the spec-root key a Recipe's source entry is written
-	// under. It joins the constants above because two surfaces spell it — the
-	// axis presenting the position and the reading that answers for it — and not
-	// because the enumeration below carries it: a source entry is neither an
-	// inline template field nor an import, so it appears in neither enumeration
-	// in this file.
-	recipeFieldSource = "source"
 )
 
 // artifactsLabelPrefix opens the label of every field written inside a Recipe's

@@ -1303,37 +1303,6 @@ var errBoundaryFeatureNameNotADirectory = cerrors.Register("boundary-feature-nam
 const boundaryFeatureNameAdvice = "rename the Feature instance under the boundary's features to an ordinary " +
 	"name, such as \"audit\""
 
-// ErrEmptySource is the Loud Guardrail halt raised when a Recipe declares
-// `source:` and gives it an empty string. The two authoring modes a Recipe's
-// source field selects between are sourceless — no external artifact, output
-// built entirely from the Recipe's other input kinds — and sourced, where the
-// source names a chart, module, or file to render from. An absent source selects
-// the first; a non-empty value selects the second; an empty string selects
-// neither, so it is an authoring ambiguity rather than a value with a meaning.
-//
-// Admitting it as sourceless is the failure this halt exists to stop: the
-// commonest way to write it is to delete a URI and leave the key behind, where
-// the author meant sourced mode and the build would have shipped without the
-// artifact, never saying which of the two readings it took. Silently resolving
-// two authoring intents onto one behaviour is the silent reinterpretation the
-// no-ghost-infrastructure invariant forbids, and its answer is a halt naming
-// what to write instead.
-//
-// One condition, host-side and provider-agnostic: the ambiguity is a property of
-// the authored Recipe and is identical whichever target renders it, so a reader
-// comparing two providers meets one identity for one mistake rather than one per
-// provider. The diagnostic is positioned at the Recipe document and names both
-// valid authoring paths — omit the field, or give it a real path — so the
-// correction is readable from the halt. Category: CATALOG_ERROR. Match with
-// errors.Is(err, ErrEmptySource()).
-func ErrEmptySource() error { return errEmptySource }
-
-var errEmptySource = cerrors.Register("recipe-source-is-empty", cerrors.Meta{
-	ShortCode: "E0251",
-	Message:   "recipe source is an empty string, which names neither sourceless mode nor sourced mode",
-	RulePlace: cerrors.RuleOverAuthoredInput(),
-})
-
 // ErrArtifactLibraryFileEscapesKey is the Loud Guardrail halt raised when a
 // file inside an ArtifactLibrary bundle carries a name that does not name a file
 // of its own beneath the artifacts key the bundle was consumed at. One artifacts

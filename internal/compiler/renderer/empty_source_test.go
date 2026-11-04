@@ -12,8 +12,8 @@ import (
 // TestPhaseB0AdmitsTheTwoDeclaredModes holds the source sub-pass to both
 // authoring modes a Recipe's source entry selects between: an absent entry, and
 // one naming a path or a structured source. An entry written and left empty is
-// refused ahead of the node walk by the rule declared over the source entry, so
-// this sub-pass is never the place that ambiguity is decided.
+// refused when the Recipe is loaded, before any render is handed it, so this
+// sub-pass is never the place that ambiguity is decided.
 func TestPhaseB0AdmitsTheTwoDeclaredModes(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -78,7 +78,7 @@ func TestSourceValueDeclaredIsTheOneEmptinessDefinition(t *testing.T) {
 // TestResolveSourceForNodeTreatsAnEmptySourceAsNone is the reader-unification
 // regression: source resolution used to test its subject for a nil source only,
 // while the named predicate reads nil-or-empty, and the two disagreed on exactly
-// the value the rule declared over the source entry refuses. This pins the
+// the value Recipe load refuses as an empty source entry. This pins the
 // agreement so the narrower reading cannot come back — an empty source is no
 // source here, so nothing downstream is handed an empty string to treat as a path.
 func TestResolveSourceForNodeTreatsAnEmptySourceAsNone(t *testing.T) {

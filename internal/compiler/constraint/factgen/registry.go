@@ -1226,6 +1226,40 @@ var facts = []factDecl{
 			"to define, so nothing here reads inside it.",
 	},
 	{
+		Name:        "recipe-source-entry-written",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Source",
+		Subject:     []string{"document", "recipe-source-field"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "bool",
+		Doc: "RecipeSourceEntryWritten reports whether the presented Recipe " +
+			"writes the source entry at all, taking the presence of the key the " +
+			"author typed and nothing about what that key holds. An entry written " +
+			"as null is not written: it is how an author spells the absent " +
+			"entry.\n\nIt is keyed by the entry's POSITION in the Recipe rather " +
+			"than by the document alone, because a rule reading it is about that " +
+			"one key and its finding belongs at the key's site. The position " +
+			"exists once per Recipe whether or not anything was written at it, " +
+			"which is what lets a fact about the entry's presence be keyed there; " +
+			"a Recipe has one such position, so the fact takes the document and " +
+			"nothing more.\n\nIt is presence and never emptiness, and the two are " +
+			"declared apart because they are two different questions with two " +
+			"different answers for one document. Whether a source is declared is " +
+			"the fact above, and it answers false for an absent entry and for an " +
+			"entry holding an empty string alike — which is the right reading for " +
+			"every rule asking whether the Recipe renders from a source, and the " +
+			"wrong one for the single rule asking whether the author left the key " +
+			"behind with nothing in it. A rule telling those two states apart " +
+			"reads both facts; one fact answering both would have to report two " +
+			"authoring situations as one.\n\nIt is deliberately not the emptiness " +
+			"condition in a second spelling. That condition has one home, " +
+			"sourceref.Declared, which the fact above reads, and a copy here " +
+			"would agree the day it was written and would be free to differ " +
+			"afterwards with nothing comparing " +
+			"them — so this reads the entry's presence and composes with the " +
+			"declared reading for the rest.",
+	},
+	{
 		Name:        "recipe-workload-declared",
 		Stage:       "document",
 		SourceField: "types.RecipeSpec.Workload",
@@ -6002,47 +6036,6 @@ var facts = []factDecl{
 			"folded into a single resolution verdict because the two are separate " +
 			"remedies: one is a library to publish or to pin, the other an entry " +
 			"name to correct inside a library that is already there.",
-	},
-
-	// The fact below is keyed by the source POSITION of a node's own Recipe, a
-	// coordinate distinct from the import-field one above it. A Recipe's source
-	// entry carries a path rather than an import, so the import axis does not name
-	// it and its own contract refuses the widening: an axis narrowed to admit one
-	// more rule would mean that rule rather than the document. The position exists
-	// once per bound Recipe whether or not the author wrote anything at it, which
-	// is what lets a fact about the entry's PRESENCE be keyed there at all.
-	{
-		Name:        "recipe-source-entry-written",
-		Stage:       "described",
-		SourceField: "types.RecipeSpec.Source",
-		Subject:     []string{"node", "recipe-source-field"},
-		Params: []paramDecl{
-			{Name: "node", Type: "string"},
-			{Name: "field", Type: "string"},
-		},
-		Returns: "bool",
-		Doc: "RecipeSourceEntryWritten reports whether a node's own Recipe writes " +
-			"the source entry at all, taking the presence of the key the author " +
-			"typed and nothing about what that key holds.\n\nIt is presence and " +
-			"never emptiness, and the two are declared apart because they are two " +
-			"different questions with two different answers for one document. " +
-			"Whether the entry NAMES anything is already declared, over the node, " +
-			"and it answers false for an absent entry and for an entry holding an " +
-			"empty string alike — which is the right reading for every rule asking " +
-			"what a node renders from, and the wrong one for the single rule asking " +
-			"whether the author left a key behind with nothing in it. A rule " +
-			"telling those two states apart reads both facts; one fact answering " +
-			"both would have to report two authoring situations as one.\n\nIt is " +
-			"deliberately not the emptiness condition in a second spelling. That " +
-			"condition has one home, which every reader of it reaches, and a copy " +
-			"here would agree the day it was written and would be free to differ " +
-			"afterwards with nothing comparing them — so this reads the entry's " +
-			"presence and composes with the declared reading for the rest.\n\nA " +
-			"node with no bound Recipe answers false: there is no document to have " +
-			"written the entry in. A coordinate naming a field other than the " +
-			"source entry answers false for the same reason the other Recipe " +
-			"spec-root facts do, so a rule over this axis is handed the one " +
-			"position it governs.",
 	},
 
 	// ---------------------------------------------------------------- hydrated
