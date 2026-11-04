@@ -615,10 +615,16 @@ func validateCatalogPasses(tw *toolWorkspace, passes []workspaceconfig.CatalogPa
 
 // catalogDiagnostics flattens a whole-catalog result into its ordered diagnostic
 // lines, each carrying the category it failed in.
+//
+// A refused selector is rendered with its condition's code at the head, as the
+// command line renders it, so the code a reader resolves is the same on both.
 func catalogDiagnostics(res validateops.CatalogResult) []string {
 	var diags []string
 	for _, e := range res.ExtendsErrs {
 		diags = append(diags, "extends: "+e.Error())
+	}
+	for _, e := range res.SelectorErrs {
+		diags = append(diags, "selector: "+cerrors.HeadedCauseChain(e))
 	}
 	if res.OCICollision != nil {
 		diags = append(diags, "oci-location: "+res.OCICollision.Error())

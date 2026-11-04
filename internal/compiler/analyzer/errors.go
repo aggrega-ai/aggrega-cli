@@ -22,6 +22,13 @@ import (
 // framework. So a caller matching on identity alone learns that a label
 // constraint went unsatisfied and not which surface declared it; the locator on
 // the violation is what separates the two.
+//
+// Two further rules raise it over one entity's own document rather than over a
+// compilation: [ComponentSocketSelectorsAreReadable] and
+// [FeatureSocketSelectorsAreReadable] report a socket's selector the selector
+// grammar refuses, whether or not anything wires the socket, with the values the
+// socket rule above reports the same selector with when an edge reaches it and a
+// remedy naming the declaration to correct.
 func ErrSelectorViolation() error { return errSelectorViolation }
 
 var errSelectorViolation = cerrors.Register("selector-violation", cerrors.Meta{
@@ -36,8 +43,8 @@ var errSelectorViolation = cerrors.Register("selector-violation", cerrors.Meta{
 // selector violation, evaluated against the attached Feature's labels at
 // Step 4.
 //
-// It has two emission sites, one per place a slot is declared, and both raise
-// it through the framework over the presentation of the finalised graph:
+// Two of its emission sites raise it through the framework over the presentation
+// of the finalised graph, one per place a slot is declared:
 // [SlotFillSatisfiesSlotSelector] for a component type's own slot, and
 // [ConnectionAttachmentSatisfiesSocketSlotSelector] for a slot a dependency
 // socket declares, filled per connection. The two are one condition on two
@@ -46,6 +53,13 @@ var errSelectorViolation = cerrors.Register("selector-violation", cerrors.Meta{
 // two rules sharing [ErrSelectorViolation]: a caller matching on identity alone
 // already knows a slot's constraint went unsatisfied, and the locator says which
 // slot.
+//
+// Two more raise it over one entity's own document rather than over a
+// compilation: [ComponentSlotSelectorsAreReadable] and
+// [FeatureSlotSelectorsAreReadable] report a slot's selector the selector grammar
+// refuses, whether or not anything fills the slot. They report only that outcome,
+// since no fill is in hand to fail the constraint, with the values the graph
+// rules report it with and a remedy naming the declaration to correct.
 //
 // The rule reports both an unsatisfied constraint and one the label matcher
 // cannot evaluate at all, under this one identity. Both carry the same number of

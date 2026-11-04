@@ -18,20 +18,29 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/declaredselector"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // CatalogResult is the structured outcome of whole-catalog validation.
 //
 // Exactly one failing category is populated on failure, in the halt-at-first
-// order the pass applies: ExtendsErrs, then OCICollision, then InputKindErrs.
-// Each carries the full ordered diagnostic detail for its category so a caller
-// renders it faithfully; the count-summary phrasing is the caller's to compose.
-// On a clean pass, Valid is true and Notices carries the advisory lines
-// (schema-pillar overlap, narrowing-on-extend) in deterministic order. A load
-// failure is returned as the function's error, not in this result.
+// order the pass applies: ExtendsErrs, then SelectorErrs, then OCICollision,
+// then InputKindErrs. Each carries the full ordered diagnostic detail for its
+// category so a caller renders it faithfully; the count-summary phrasing is the
+// caller's to compose. On a clean pass, Valid is true and Notices carries the
+// advisory lines (schema-pillar overlap, narrowing-on-extend) in deterministic
+// order. A load failure is returned as the function's error, not in this result.
+//
+// SelectorErrs carries one error per label selector a Component or Feature
+// document under the catalog directories declares on a dependency socket or an
+// attachment slot that the selector grammar refuses, each naming its document,
+// the socket or slot, and the grammar's reason — the findings the single-entity
+// check reports for that document, in the order the documents are walked.
 type CatalogResult struct {
 	Valid         bool
 	ExtendsErrs   []error
+	SelectorErrs  []error
 	OCICollision  error
 	InputKindErrs []error
 	Notices       []string
@@ -39,14 +48,16 @@ type CatalogResult struct {
 
 // ValidateCatalog runs the whole-catalog correctness pass over the catalog under
 // dirs: it loads every entity and applies the schema-pillar (Pass-2) and library
-// resolution/rejection checks, resolves the extends chains, rejects OCI-location
+// resolution/rejection checks, resolves the extends chains, refuses a socket or
+// slot selector the selector grammar does not read, rejects OCI-location
 // collisions, and reports provider input-kind capability mismatches. This is the
 // catalog-wide counterpart to a build's per-Release closure validation — the home
 // where a broken catalog entity is meant to surface.
 //
 // It halts at the first failing category and reports that category's full detail
-// in the result; the categories are checked in order (extends, oci-location,
-// input-kind). A catalog that cannot load at all is returned as an error. The
+// in the result; the categories are checked in order (extends, selector,
+// oci-location, input-kind). A catalog that cannot load at all is returned as an
+// error. The
 // caller supplies the already-resolved workspace root, cache directory, catalog
 // search directories, and the part of them somebody named.
 //
@@ -75,6 +86,9 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 			errs[i] = e
 		}
 		return CatalogResult{ExtendsErrs: errs}, nil
+	}
+	if errs := declaredSelectorRefusals(wsRoot, cacheDir, dirs, named); len(errs) > 0 {
+		return CatalogResult{SelectorErrs: errs}, nil
 	}
 	if err := VerifyNoOCILocationCollision(cat); err != nil {
 		return CatalogResult{OCICollision: err}, nil
@@ -184,6 +198,26 @@ func (e *remediedLoadError) Unwrap() error { return e.err }
 // the same link and reports it in the words a whole-catalog load always has.
 func unloadableCatalogDocuments(wsRoot, cacheDir string, dirs, named []string) error {
 	var found []error
+	complete := readCatalogDocuments(wsRoot, cacheDir, dirs, named, func(path string, data []byte, readErr error) {
+		if f := catalog.UnloadableDocument(path, data, readErr, nil); f != nil {
+			found = append(found, f)
+		}
+	})
+	if !complete {
+		return nil
+	}
+	return catalog.UnloadableDocumentsHalt(found)
+}
+
+// readCatalogDocuments walks dirs as the catalog's own walk reads them and hands
+// visit every document beneath them once, with what reading it returned. A file
+// reached twice — catalog directories may overlap — is read and handed over once.
+//
+// It reports whether every walk completed. A walk stops early on a link leading
+// out of a directory's root, and the whole-catalog checks reading documents this
+// way then raise nothing of their own, for the reason unloadableCatalogDocuments
+// gives.
+func readCatalogDocuments(wsRoot, cacheDir string, dirs, named []string, visit func(path string, data []byte, readErr error)) bool {
 	seen := map[string]struct{}{}
 	for _, dir := range dirs {
 		err := catalog.WalkDocuments(wsRoot, dir, cacheDir, named, func(path string) error {
@@ -196,16 +230,72 @@ func unloadableCatalogDocuments(wsRoot, cacheDir string, dirs, named []string) e
 			}
 			seen[abs] = struct{}{}
 			data, rerr := os.ReadFile(path)
-			if f := catalog.UnloadableDocument(path, data, rerr, nil); f != nil {
-				found = append(found, f)
-			}
+			visit(path, data, rerr)
 			return nil
 		})
 		if err != nil {
-			return nil
+			return false
 		}
 	}
-	return catalog.UnloadableDocumentsHalt(found)
+	return true
+}
+
+// declaredSelectorRefusals reads dirs as unloadableCatalogDocuments does and
+// returns, for every Component and Feature document beneath them, the selectors
+// that document declares that the selector grammar refuses — the findings the
+// single-entity check reports for the same document, in walk order and, within
+// one document, in the order it reports them.
+//
+// It reads the documents rather than the loaded catalog, for two reasons that
+// point the same way. A finding names the file to edit, which the document in
+// hand carries and an entry in the catalog does not; and a selector belongs to
+// the document that writes it, so reading each document as authored reports one
+// fault once — against the base that declares it — rather than once for every
+// entity extending that base.
+//
+// It runs after the load has succeeded, so a document it reads but cannot parse
+// is one the load passed over by design — a file under a catalog directory that
+// is not an Aggrega document — and it is passed over here too. A walk that stops
+// early raises nothing of its own, as unloadableCatalogDocuments explains, and a
+// file that cannot be read is passed over: unloadableCatalogDocuments has already
+// halted the pass on one.
+func declaredSelectorRefusals(wsRoot, cacheDir string, dirs, named []string) []error {
+	var refusals []error
+	complete := readCatalogDocuments(wsRoot, cacheDir, dirs, named, func(path string, data []byte, readErr error) {
+		if readErr == nil {
+			refusals = append(refusals, documentSelectorRefusals(path, data)...)
+		}
+	})
+	if !complete {
+		return nil
+	}
+	return refusals
+}
+
+// documentSelectorRefusals is what the single-entity check reports about the
+// selectors of one document under a catalog directory: a Component's or a
+// Feature's refused selectors, and nothing for a document of any other kind or
+// one that does not parse as either.
+func documentSelectorRefusals(path string, data []byte) []error {
+	kind, err := catalog.DocumentKindOf(data)
+	if err != nil {
+		return nil
+	}
+	switch envelope.Kind(kind) {
+	case envelope.KindComponent:
+		comp, err := catalog.ParseComponentEntity(data, path)
+		if err != nil {
+			return nil
+		}
+		return declaredselector.ComponentRefusals(path, &comp)
+	case envelope.KindFeature:
+		feat, err := catalog.ParseFeatureEntity(data, path)
+		if err != nil {
+			return nil
+		}
+		return declaredselector.FeatureRefusals(path, &feat)
+	}
+	return nil
 }
 
 // InputKindCapabilityErrors reports each Recipe / FeatureRecipe that declares a

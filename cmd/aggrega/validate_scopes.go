@@ -110,8 +110,9 @@ func validateCatalogPasses(wsRoot, cacheDir string, passes []workspaceconfig.Cat
 
 // validateCatalogWide runs the whole-catalog correctness pass core and renders
 // its structured result: it halts loudly on any schema-pillar violation,
-// unresolvable or invalid library, extends-resolution failure, location
-// collision, or input-kind capability error, checked in that halt-at-first order.
+// unresolvable or invalid library, extends-resolution failure, socket or slot
+// selector the selector grammar refuses, location collision, or input-kind
+// capability error, checked in that halt-at-first order.
 // Advisory and error diagnostics are written to diagOut (os.Stderr in
 // production); the final success summary is written to out (os.Stdout in
 // production). The count-summary phrasing is composed here at the render seam;
@@ -127,6 +128,12 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs, named []string, diagOut,
 			fmt.Fprintf(diagOut, "  extends: %s\n", cerrors.CauseChain(e))
 		}
 		return fmt.Errorf("catalog validation failed: %d extends resolution error(s)", len(res.ExtendsErrs))
+	}
+	if len(res.SelectorErrs) > 0 {
+		for _, e := range res.SelectorErrs {
+			fmt.Fprintf(diagOut, "  selector: %s\n", cerrors.HeadedCauseChain(e))
+		}
+		return fmt.Errorf("catalog validation failed: %d selector error(s)", len(res.SelectorErrs))
 	}
 	if res.OCICollision != nil {
 		return fmt.Errorf("catalog validation failed: %w", res.OCICollision)

@@ -50,6 +50,30 @@ func (AggregateDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (AggregateDocumentBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (AggregateDocumentBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
+}
+
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (AggregateDocumentBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (AggregateDocumentBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
+}
+
 // ComponentExtendsChainCycleEdge panics. This view does not carry
 // component-extends-chain-cycle-edge, which a Component document carries.
 func (AggregateDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
@@ -308,6 +332,18 @@ func (ComponentDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (ComponentDocumentBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (ComponentDocumentBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
+}
+
 // FeatureExtendsChainCycleEdge panics. This view does not carry
 // feature-extends-chain-cycle-edge, which a Feature document carries.
 func (ComponentDocumentBase) FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
@@ -564,6 +600,18 @@ func (FeatureDocumentBase) EntityAssertionDeclaringEntity(document string, asser
 // component-schema-pillar-keys, which a Component document carries.
 func (FeatureDocumentBase) ComponentSchemaPillarKeys(document string) []string {
 	panic("this view does not carry component-schema-pillar-keys, which a Component document carries")
+}
+
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (FeatureDocumentBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (FeatureDocumentBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
 }
 
 // ComponentExtendsChainCycleEdge panics. This view does not carry
@@ -830,6 +878,30 @@ func (ManifestDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (ManifestDocumentBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (ManifestDocumentBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
+}
+
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (ManifestDocumentBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (ManifestDocumentBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
+}
+
 // ComponentExtendsChainCycleEdge panics. This view does not carry
 // component-extends-chain-cycle-edge, which a Component document carries.
 func (ManifestDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
@@ -1050,6 +1122,30 @@ func (ReleaseDocumentBase) ComponentSchemaPillarKeys(document string) []string {
 // feature-schema-pillar-keys, which a Feature document carries.
 func (ReleaseDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (ReleaseDocumentBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (ReleaseDocumentBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
+}
+
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (ReleaseDocumentBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (ReleaseDocumentBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
 }
 
 // ComponentExtendsChainCycleEdge panics. This view does not carry
@@ -1289,6 +1385,30 @@ func (RecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
 }
 
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (RecipeDocumentBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (RecipeDocumentBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
+}
+
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (RecipeDocumentBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (RecipeDocumentBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
+}
+
 // ComponentExtendsChainCycleEdge panics. This view does not carry
 // component-extends-chain-cycle-edge, which a Component document carries.
 func (RecipeDocumentBase) ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool) {
@@ -1498,6 +1618,30 @@ func (FeatureRecipeDocumentBase) ComponentSchemaPillarKeys(document string) []st
 // feature-schema-pillar-keys, which a Feature document carries.
 func (FeatureRecipeDocumentBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (FeatureRecipeDocumentBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (FeatureRecipeDocumentBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
+}
+
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (FeatureRecipeDocumentBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (FeatureRecipeDocumentBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
 }
 
 // ComponentExtendsChainCycleEdge panics. This view does not carry
@@ -1736,6 +1880,30 @@ func (CatalogViewBase) ComponentSchemaPillarKeys(document string) []string {
 // feature-schema-pillar-keys, which a Feature document carries.
 func (CatalogViewBase) FeatureSchemaPillarKeys(document string) []string {
 	panic("this view does not carry feature-schema-pillar-keys, which a Feature document carries")
+}
+
+// ComponentSocketSelectors panics. This view does not carry
+// component-socket-selectors, which a Component document carries.
+func (CatalogViewBase) ComponentSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-socket-selectors, which a Component document carries")
+}
+
+// ComponentSlotSelectors panics. This view does not carry
+// component-slot-selectors, which a Component document carries.
+func (CatalogViewBase) ComponentSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry component-slot-selectors, which a Component document carries")
+}
+
+// FeatureSocketSelectors panics. This view does not carry
+// feature-socket-selectors, which a Feature document carries.
+func (CatalogViewBase) FeatureSocketSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-socket-selectors, which a Feature document carries")
+}
+
+// FeatureSlotSelectors panics. This view does not carry
+// feature-slot-selectors, which a Feature document carries.
+func (CatalogViewBase) FeatureSlotSelectors(document string) []DeclaredSelector {
+	panic("this view does not carry feature-slot-selectors, which a Feature document carries")
 }
 
 // ComponentExtendsChainCycleEdge panics. This view does not carry
@@ -3462,6 +3630,8 @@ type ComponentDocumentFacts interface {
 	EntityAssertionNameSet(document string) []string
 	EntityAssertionDeclaringEntity(document string, assertion string) (string, bool)
 	ComponentSchemaPillarKeys(document string) []string
+	ComponentSocketSelectors(document string) []DeclaredSelector
+	ComponentSlotSelectors(document string) []DeclaredSelector
 	ComponentExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
 	ComponentExtendsChainLength(document string) (int, bool)
 }
@@ -3480,6 +3650,8 @@ type ComponentDocumentFacts interface {
 // and a second copy would be the one that drifts.
 type FeatureDocumentFacts interface {
 	FeatureSchemaPillarKeys(document string) []string
+	FeatureSocketSelectors(document string) []DeclaredSelector
+	FeatureSlotSelectors(document string) []DeclaredSelector
 	FeatureExtendsChainCycleEdge(document string) (ExtendsChainCycleEdge, bool)
 	FeatureExtendsChainLength(document string) (int, bool)
 }

@@ -118,12 +118,9 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 		}
 		match, err := selector.MatchString(labelConstraint, v.NodeLabels(target))
 		if err != nil {
-			return []constraint.Objection{s.RaiseWithAdvice(
-				ErrSelectorViolation(),
-				"Correct the selector on the socket's declaration in the component type's usesSchema.",
-				constraint.Uncaptioned(labelConstraint),
-				constraint.Captioned("declared on socket", s.SocketName()),
-				constraint.Captioned("which could not be evaluated:", err.Error()),
+			return []constraint.Objection{unreadableSelectorObjection(
+				s, ErrSelectorViolation(), labelConstraint, err, componentSocketSelectorCorrection,
+				constraint.Captioned(captionDeclaredOnSocket, s.SocketName()),
 			)}
 		}
 		if match {
@@ -134,7 +131,7 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 			"Add the labels the selector requires to the target's component type, "+
 				"or wire the socket to a component that already carries them.",
 			constraint.Uncaptioned(labelConstraint),
-			constraint.Captioned("declared on socket", s.SocketName()),
+			constraint.Captioned(captionDeclaredOnSocket, s.SocketName()),
 			constraint.Captioned("not satisfied by the labels of", target),
 		)}
 	},
@@ -180,7 +177,7 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 				"Correct the appliesTo selector on the Feature's catalog entity.",
 				constraint.Uncaptioned(appliesTo),
 				constraint.Captioned("declared by Feature", featureType),
-				constraint.Captioned("which could not be evaluated:", unevaluable.Error()),
+				constraint.Captioned(captionCouldNotBeEvaluated, unevaluable.Error()),
 			)}
 		}
 		if applies {
@@ -236,8 +233,8 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 			return nil
 		}
 		return slotSelectorObjections(s, labelConstraint, v.AttachmentFeatureLabels(fillType), fillType,
-			"Correct the selector on the slot's declaration in the component's catalog entity.",
-			constraint.Captioned("declared on slot", s.SlotName()))
+			componentSlotSelectorCorrection,
+			constraint.Captioned(captionDeclaredOnSlot, s.SlotName()))
 	},
 }
 
@@ -289,10 +286,9 @@ var ConnectionAttachmentSatisfiesSocketSlotSelector = constraint.Check[
 			return nil
 		}
 		return slotSelectorObjections(s, labelConstraint, v.AttachmentFeatureLabels(fillType), fillType,
-			"Correct the selector on the slot's declaration in the socket's featuresSchema on the "+
-				"component's catalog entity.",
-			constraint.Captioned("declared on slot", connection.Slot),
-			constraint.Captioned("of socket", connection.Socket),
+			socketSlotSelectorCorrection,
+			constraint.Captioned(captionDeclaredOnSlot, connection.Slot),
+			constraint.Captioned(captionOfSocket, connection.Socket),
 			constraint.Captioned("filled on the connection", connection.Alias))
 	},
 }
@@ -311,7 +307,9 @@ var ConnectionAttachmentSatisfiesSocketSlotSelector = constraint.Check[
 //
 // declaredOn names where the slot is declared, after the constraint and before
 // the reason; correction is the remedy for a constraint the matcher cannot
-// evaluate, which is an edit to that declaration and so differs by surface.
+// evaluate, which is an edit to that declaration and so differs by surface. That
+// finding is [unreadableSelectorObjection]'s, the one every rule reading a
+// selector reports an unreadable one with.
 func slotSelectorObjections(
 	s constraint.Subject,
 	labelConstraint string,
@@ -320,18 +318,16 @@ func slotSelectorObjections(
 	correction string,
 	declaredOn ...constraint.DetailValue,
 ) []constraint.Objection {
-	detail := append([]constraint.DetailValue{constraint.Uncaptioned(labelConstraint)}, declaredOn...)
 	match, err := resolver.SlotSelectorAdmits(labelConstraint, fillLabels)
 	if err != nil {
-		return []constraint.Objection{s.RaiseWithAdvice(
-			ErrSlotSelectorUnsatisfied(),
-			correction,
-			append(detail, constraint.Captioned("which could not be evaluated:", err.Error()))...,
+		return []constraint.Objection{unreadableSelectorObjection(
+			s, ErrSlotSelectorUnsatisfied(), labelConstraint, err, correction, declaredOn...,
 		)}
 	}
 	if match {
 		return nil
 	}
+	detail := append([]constraint.DetailValue{constraint.Uncaptioned(labelConstraint)}, declaredOn...)
 	return []constraint.Objection{s.RaiseWithAdvice(
 		ErrSlotSelectorUnsatisfied(),
 		"Add the labels the slot's selector requires to the Feature's labels, "+

@@ -541,6 +541,25 @@ var records = []recordDecl{
 		},
 	},
 	{
+		Name: "DeclaredSelector",
+		Doc: "DeclaredSelector is one label selector an entity's document " +
+			"declares, together with the place it is declared at: the dependency " +
+			"socket, the attachment slot, or the slot a socket declares.\n\nIt is " +
+			"one fact rather than several because a selector without its place " +
+			"sends an author nowhere — one entity commonly writes the same " +
+			"expression on several sockets — and a reader handed the places and " +
+			"the selectors as separate lists would have to re-pair them by " +
+			"position, which is the re-derivation a declared fact exists to " +
+			"close.\n\nThe selector is carried as the author wrote it, unparsed: " +
+			"whether the grammar reads it is the question a rule over this fact " +
+			"asks, so a parsed form would have answered it before any rule could.",
+		Fields: []recordField{
+			{Name: "Socket", Type: "string", Doc: "Socket is the dependency socket the selector is declared on or under, as the author named it, and empty for a slot the entity declares on itself."},
+			{Name: "Slot", Type: "string", Doc: "Slot is the attachment slot the selector is declared on, as the author named it, and empty for a socket's own selector."},
+			{Name: "Selector", Type: "string", Doc: "Selector is the label selector as the author wrote it, empty where the declaration writes none."},
+		},
+	},
+	{
 		Name: "AnnotationBindingRoute",
 		Doc: "AnnotationBindingRoute is one routing slot an annotation binding " +
 			"claims on the Feature it targets: the pillar the value lands in " +
@@ -860,6 +879,83 @@ var facts = []factDecl{
 			"carried in the author's order, is what the Component's own fact " +
 			"states; it is not restated here, because a fact's documentation has " +
 			"one home and a second copy would be the one that drifts.",
+	},
+	{
+		Name:         "component-socket-selectors",
+		Stage:        "document",
+		SourceField:  "types.UsesSchemaEntry.Selector",
+		DocumentKind: "Component",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]DeclaredSelector",
+		Doc: "ComponentSocketSelectors are the label selectors the presented " +
+			"Component's own document declares on its dependency sockets, one per " +
+			"declared socket in author order, each carrying the socket's name and " +
+			"its selector as written — empty where the socket writes none.\n\nThey " +
+			"are read off the document the author wrote rather than off the " +
+			"chain it extends, because a selector a base declares is that base's " +
+			"to answer for, in its own file, and a rule reading a merged chain " +
+			"would report one fault once per entity extending it.\n\nEvery " +
+			"declared socket is carried, whether or not anything wires it. That is " +
+			"the whole of what the fact is for: the selector on a socket no build " +
+			"wires is evaluated by no rule over a compilation, so a rule over this " +
+			"fact is the one place such a selector is read at all.",
+	},
+	{
+		Name:         "component-slot-selectors",
+		Stage:        "document",
+		SourceField:  "types.AttachmentSlot.Selector",
+		DocumentKind: "Component",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]DeclaredSelector",
+		Doc: "ComponentSlotSelectors are the label selectors the presented " +
+			"Component's own document declares on attachment slots, one per " +
+			"declared slot: the slots the Component declares on itself first, in " +
+			"author order, then the slots each dependency socket declares, socket " +
+			"by socket in author order. Each carries the slot's name, the socket's " +
+			"for a slot a socket declares, and its selector as written — empty " +
+			"where the slot writes none.\n\nThe two places are one fact because " +
+			"they are one declaration written in two places: the same slot shape, " +
+			"the same grammar and the same reading, with the socket naming which " +
+			"place a slot sits in. What is read off the document and why every " +
+			"declared slot is carried is what the socket fact beside this one " +
+			"states.",
+	},
+	{
+		Name:         "feature-socket-selectors",
+		Stage:        "document",
+		SourceField:  "types.UsesSchemaEntry.Selector",
+		DocumentKind: "Feature",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]DeclaredSelector",
+		Doc: "FeatureSocketSelectors are the label selectors the presented " +
+			"Feature's own document declares on its dependency sockets, one per " +
+			"declared socket in author order, each carrying the socket's name and " +
+			"its selector as written — empty where the socket writes none.\n\nIt is " +
+			"a second fact rather than one over both authored kinds because a fact " +
+			"is filed under exactly one authored document kind, so a single fact " +
+			"would be readable from one kind's view and would refuse the other at " +
+			"the point a rule read it. What is read and why is what the " +
+			"Component's own fact states.",
+	},
+	{
+		Name:         "feature-slot-selectors",
+		Stage:        "document",
+		SourceField:  "types.AttachmentSlot.Selector",
+		DocumentKind: "Feature",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "document", Type: "string"}},
+		Returns:      "[]DeclaredSelector",
+		Doc: "FeatureSlotSelectors are the label selectors the presented " +
+			"Feature's own document declares on its attachment slots, one per " +
+			"declared slot in author order, each carrying the slot's name and its " +
+			"selector as written — empty where the slot writes none. A Feature's " +
+			"dependency sockets declare no slots, so no entry carries a " +
+			"socket.\n\nIt is a second fact for the reason the Feature's socket " +
+			"fact gives, and what is read and why is what the Component's own slot " +
+			"fact states.",
 	},
 	{
 		Name:        "component-extends-chain-cycle-edge",

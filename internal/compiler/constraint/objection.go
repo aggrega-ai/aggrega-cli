@@ -331,6 +331,31 @@ func ObjectionMessage(o Objection) string {
 	return cerrors.ComposeMessage(condition, o.RenderedDetail(), o.Advice())
 }
 
+// ObjectionHalt renders one raised objection as the halt a surface reports for
+// it: the condition it was raised under, filed under category, positioned at the
+// file and the authored locator the subject carries, with [ObjectionMessage] as
+// its text.
+//
+// It is the per-objection wrap, and it lives here, beside the message it carries,
+// because it is one mechanic whoever reports the finding: the condition, the
+// position and the text are each derived from the objection the same way whatever
+// rule raised it. A second copy at a reporting boundary would agree on the day it
+// was written and be free to drift the moment either gained a term, and the drift
+// would surface as two surfaces reporting one fault in two shapes.
+//
+// The category is the caller's because it is the one thing a reporting boundary
+// legitimately decides: which author's surface the fault is filed under. A
+// boundary joining several findings under an envelope of its own does so around
+// what this returns, so the joining stays the boundary's and the wrap does not.
+func ObjectionHalt(o Objection, category cerrors.Category) *cerrors.CompilerError {
+	return cerrors.Wrap(
+		o.Sentinel(),
+		category,
+		cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()},
+		ObjectionMessage(o),
+	)
+}
+
 // unregisteredCondition presents a sentinel carrying no registered identity to
 // the shared composition, so the composition has a sentence to open with.
 //

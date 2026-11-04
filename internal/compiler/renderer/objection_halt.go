@@ -36,7 +36,9 @@ import (
 // either half gains a term — a severity read, a second locator segment, a change
 // to how a detail is rendered — and the drift would surface as two rules
 // reporting the same class of fault in two shapes, which is exactly what a reader
-// comparing them cannot tell from a deliberate difference.
+// comparing them cannot tell from a deliberate difference. The wrap itself is
+// [constraint.ObjectionHalt], beside the message it carries, so a reporting
+// boundary outside this package reaches the same one.
 //
 // The category is this function's rather than its caller's, and it is the catalog
 // one. Every rule reaching here is about what an entity declares, so the fault is
@@ -60,8 +62,8 @@ func objectionsAsHalt(objections []constraint.Objection, envelope string) error 
 //
 // It is unexported and takes the category as its only variable so no reading can
 // arrive at a different message shape by writing its own loop: the per-objection
-// wrap, the position it is reported at, and the envelope several findings are
-// joined under are one mechanic, in [objectionsAsHaltFiledBy], and cannot be
+// wrap ([constraint.ObjectionHalt]) and the envelope several findings are joined
+// under are one mechanic, in [objectionsAsHaltFiledBy], and cannot be
 // re-implemented per category. The category itself is genuinely per-reading — a
 // rule about a catalog document and a rule about produced output send an author
 // to different places — which is the one axis on which the callers legitimately
@@ -93,12 +95,7 @@ func objectionsAsHaltFiledBy(
 	}
 	halts := make([]error, 0, len(objections))
 	for _, o := range objections {
-		halts = append(halts, cerrors.Wrap(
-			o.Sentinel(),
-			categoryOf(o),
-			cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()},
-			constraint.ObjectionMessage(o),
-		))
+		halts = append(halts, constraint.ObjectionHalt(o, categoryOf(o)))
 	}
 	if len(halts) == 1 {
 		return halts[0]

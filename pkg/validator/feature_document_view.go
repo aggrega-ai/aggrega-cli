@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -35,7 +36,8 @@ func authoredSchemaPillarKeys(mapping *yaml.Node) []string {
 }
 
 // featureDocumentView presents one authored Feature to a check as named facts:
-// the top-level keys its schema block declares.
+// the top-level keys its schema block declares, the shape of its extends chain,
+// and the label selectors its own document declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a document
@@ -77,6 +79,7 @@ type featurePresentation string
 const (
 	featureSchemaBlock       featurePresentation = "the Feature's authored schema block"
 	featureExtendsChainShape featurePresentation = "the shape of the chain the Feature extends"
+	featureDeclaredSelectors featurePresentation = "the selectors the Feature's own document declares"
 )
 
 type featureDocumentView struct {
@@ -101,6 +104,12 @@ type featureDocumentView struct {
 	// shape is what the walk found about the chain's structure, on a
 	// presentation built from that walk and empty on every other.
 	shape extendsChainShape
+
+	// socketSelectors and slotSelectors are the selectors the document declares
+	// on its sockets and on its slots, on a presentation built from the
+	// document's own declarations and empty on every other.
+	socketSelectors []constraint.DeclaredSelector
+	slotSelectors   []constraint.DeclaredSelector
 }
 
 // newFeatureSchemaBlockView presents the schema block a load is holding: the file
@@ -160,6 +169,45 @@ func (v featureDocumentView) FeatureExtendsChainLength(document string) (int, bo
 	v.refuseOtherDocument(document, "FeatureExtendsChainLength")
 	v.refuseOtherPresentation(featureExtendsChainShape, "FeatureExtendsChainLength")
 	return v.shape.length()
+}
+
+// PresentFeatureDeclaredSelectors presents the label selectors one Feature
+// document declares, on the terms [PresentComponentDeclaredSelectors] presents a
+// Component's: the Feature as its own document declares it, every socket and
+// every slot presented with its selector as written, in the author's order —
+// the sockets, then the slots.
+//
+// A Feature's sockets declare no slots of their own, so no presented slot names
+// a socket. Its applicability selectors are not presented: they are a different
+// declaration with rules of their own, read wherever an attachment of the
+// Feature is evaluated.
+func PresentFeatureDeclaredSelectors(path string, feat *types.Feature) constraint.DocumentView {
+	v := featureDocumentView{presents: featureDeclaredSelectors, path: path}
+	for socket, entry := range feat.Spec.UsesSchema.All() {
+		v.socketSelectors = append(v.socketSelectors,
+			constraint.DeclaredSelector{Socket: socket, Selector: entry.Selector})
+	}
+	for slot, declared := range feat.Spec.FeaturesSchema.All() {
+		v.slotSelectors = append(v.slotSelectors,
+			constraint.DeclaredSelector{Slot: slot, Selector: declared.Selector})
+	}
+	return v
+}
+
+// FeatureSocketSelectors returns the selectors the presented Feature's own
+// document declares on its dependency sockets, one per socket in author order.
+func (v featureDocumentView) FeatureSocketSelectors(document string) []constraint.DeclaredSelector {
+	v.refuseOtherDocument(document, "FeatureSocketSelectors")
+	v.refuseOtherPresentation(featureDeclaredSelectors, "FeatureSocketSelectors")
+	return v.socketSelectors
+}
+
+// FeatureSlotSelectors returns the selectors the presented Feature's own
+// document declares on its attachment slots, one per slot in author order.
+func (v featureDocumentView) FeatureSlotSelectors(document string) []constraint.DeclaredSelector {
+	v.refuseOtherDocument(document, "FeatureSlotSelectors")
+	v.refuseOtherPresentation(featureDeclaredSelectors, "FeatureSlotSelectors")
+	return v.slotSelectors
 }
 
 // refuseOtherPresentation refuses an accessor call for a fact this value was not

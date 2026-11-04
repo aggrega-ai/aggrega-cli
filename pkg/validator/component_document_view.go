@@ -12,7 +12,9 @@ import (
 )
 
 // componentDocumentView presents one authored Component to a check as named
-// facts: the assertion names the entity declares across the chain it extends.
+// facts: the assertion names the entity declares across the chain it extends,
+// the keys of its authored schema block, the shape of its extends chain, and the
+// label selectors its own document declares.
 //
 // It answers about the one document it was built for, which is the framework's
 // contract rather than a simplification of it. The subject a check over a
@@ -55,6 +57,7 @@ const (
 	componentExtendsChain      componentPresentation = "the assertions declared across the chain the Component extends"
 	componentExtendsChainShape componentPresentation = "the shape of the chain the Component extends"
 	componentSchemaBlock       componentPresentation = "the Component's authored schema block"
+	componentDeclaredSelectors componentPresentation = "the selectors the Component's own document declares"
 )
 
 type componentDocumentView struct {
@@ -99,6 +102,12 @@ type componentDocumentView struct {
 	// shape is what the walk found about the chain's structure, on a
 	// presentation built from that walk and empty on every other.
 	shape extendsChainShape
+
+	// socketSelectors and slotSelectors are the selectors the document declares
+	// on its sockets and on its slots, on a presentation built from the
+	// document's own declarations and empty on every other.
+	socketSelectors []constraint.DeclaredSelector
+	slotSelectors   []constraint.DeclaredSelector
 }
 
 // newComponentDocumentView presents the Component a resolve is holding: the file
@@ -234,6 +243,57 @@ func newComponentSchemaBlockView(path string, mapping *yaml.Node) componentDocum
 		path:       path,
 		pillarKeys: authoredSchemaPillarKeys(mapping),
 	}
+}
+
+// PresentComponentDeclaredSelectors presents the label selectors one Component
+// document declares, for a rule asking whether each of them is one the selector
+// grammar reads: the file the Component was read from, and the Component as that
+// document declares it.
+//
+// comp is the Component the document itself declares, before the chain it
+// extends is merged in, so a selector its base declares is not presented here —
+// that one is the base's to answer for, in the base's own file.
+//
+// Every declared socket and slot is presented, whether or not anything wires the
+// socket or fills the slot, and with its selector as written: a declaration
+// writing none is presented with an empty selector rather than left out. The
+// order is the document's own — the sockets in author order; then the slots the
+// Component declares on itself, then each socket's slots, socket by socket — so
+// what a rule raises over them reaches the reader in the order the author wrote.
+func PresentComponentDeclaredSelectors(path string, comp *types.Component) constraint.DocumentView {
+	v := componentDocumentView{presents: componentDeclaredSelectors, path: path}
+	for socket, entry := range comp.Spec.UsesSchema.All() {
+		v.socketSelectors = append(v.socketSelectors,
+			constraint.DeclaredSelector{Socket: socket, Selector: entry.Selector})
+	}
+	for slot, declared := range comp.Spec.FeaturesSchema.All() {
+		v.slotSelectors = append(v.slotSelectors,
+			constraint.DeclaredSelector{Slot: slot, Selector: declared.Selector})
+	}
+	for socket, entry := range comp.Spec.UsesSchema.All() {
+		for slot, declared := range entry.FeaturesSchema.All() {
+			v.slotSelectors = append(v.slotSelectors,
+				constraint.DeclaredSelector{Socket: socket, Slot: slot, Selector: declared.Selector})
+		}
+	}
+	return v
+}
+
+// ComponentSocketSelectors returns the selectors the presented Component's own
+// document declares on its dependency sockets, one per socket in author order.
+func (v componentDocumentView) ComponentSocketSelectors(document string) []constraint.DeclaredSelector {
+	v.refuseOtherDocument(document, "ComponentSocketSelectors")
+	v.refuseOtherPresentation(componentDeclaredSelectors, "ComponentSocketSelectors")
+	return v.socketSelectors
+}
+
+// ComponentSlotSelectors returns the selectors the presented Component's own
+// document declares on attachment slots: its own slots in author order, then
+// each socket's slots, socket by socket.
+func (v componentDocumentView) ComponentSlotSelectors(document string) []constraint.DeclaredSelector {
+	v.refuseOtherDocument(document, "ComponentSlotSelectors")
+	v.refuseOtherPresentation(componentDeclaredSelectors, "ComponentSlotSelectors")
+	return v.slotSelectors
 }
 
 // refuseOtherPresentation refuses an accessor call for a fact this value was not

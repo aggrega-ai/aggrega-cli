@@ -26,6 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/declaredselector"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
@@ -173,18 +174,16 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 	var res EntityResult
 	res.Path = path
 
-	var preamble struct {
-		Kind string `yaml:"kind"`
-	}
-	if err := yaml.Unmarshal(data, &preamble); err != nil {
+	declaredKind, err := catalog.DocumentKindOf(data)
+	if err != nil {
 		return res, fmt.Errorf("parse YAML preamble in %q: %w", path, authoredshape.DescribeYAMLDecodeErrorIn(err, data))
 	}
-	if preamble.Kind == "" {
+	if declaredKind == "" {
 		return res, fmt.Errorf("couldn't determine entity kind from %q; expected an apiVersion/kind preamble", path)
 	}
-	kind, ok := knownEntityKind(preamble.Kind)
+	kind, ok := knownEntityKind(declaredKind)
 	if !ok {
-		return res, &UnacceptedKindError{kind: preamble.Kind, path: path}
+		return res, &UnacceptedKindError{kind: declaredKind, path: path}
 	}
 
 	res.Kind = string(kind)
@@ -383,6 +382,13 @@ func loadResolvedCatalog(wsRoot, cacheDir string, dirs, named []string) (*catalo
 // pillar check needs the catalog's SchemaLibraries map for cross-document $ref
 // expansion, so the catalog is loaded to supply it.
 //
+// The shape check reads every label selector the document declares on a
+// dependency socket or an attachment slot, and refuses each one the selector
+// grammar does not read, under the condition a build refuses it under once an
+// edge or a fill reaches it (declaredselector.ComponentRefusals). It needs no
+// catalog, so it runs before the catalog is loaded, and it reads the document
+// rather than the chain it extends.
+//
 // The entity is read through the shared per-entity resolve rather than
 // unmarshalled here. That is what makes this surface agree with a build about
 // what the file declares: the resolve is where an authored `$import:` on the
@@ -395,6 +401,9 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, n
 		return fmt.Errorf("parse Component at %q: %w", path, err)
 	}
 	noteSchemaAdvisories(res, comp.Metadata.Name, &comp.Spec.Schema)
+	if errs := declaredselector.ComponentRefusals(path, &comp); len(errs) > 0 {
+		return fmt.Errorf("shape: %w", errors.Join(errs...))
+	}
 	cat, refused, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	res.Refused = refused
 	if note != "" {
@@ -418,13 +427,19 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, n
 
 // validateFeatureEntity runs the Feature pillar check, loading the catalog for
 // the SchemaLibraries map exactly as the Component path does, and reading the
-// entity through the same shared per-entity resolve for the same reason.
+// entity through the same shared per-entity resolve for the same reason. Ahead
+// of it, the shape check refuses each label selector the document declares on a
+// dependency socket or an attachment slot that the selector grammar does not
+// read, as the Component path does (declaredselector.FeatureRefusals).
 func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, named []string, path string, data []byte) error {
 	feat, err := catalog.ParseFeatureEntity(data, path)
 	if err != nil {
 		return fmt.Errorf("parse Feature at %q: %w", path, err)
 	}
 	noteSchemaAdvisories(res, feat.Metadata.Name, &feat.Spec.Schema)
+	if errs := declaredselector.FeatureRefusals(path, &feat); len(errs) > 0 {
+		return fmt.Errorf("shape: %w", errors.Join(errs...))
+	}
 	cat, refused, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs, named)
 	res.Refused = refused
 	if note != "" {

@@ -315,13 +315,31 @@ func LoadAllWithNamedDirs(workspaceRoot, cacheDir string, named []string, dirs .
 // pin-driven Tier-2 enumeration to dispatch a cache-present entity by kind
 // without committing to a full parse.
 func peekEntityKind(data []byte) string {
+	kind, err := DocumentKindOf(data)
+	if err != nil {
+		return ""
+	}
+	return kind
+}
+
+// DocumentKindOf reads the `kind` a document's envelope declares from its raw
+// bytes, without committing to the kind's own parse: the shared reading of that
+// header, for a caller that has to dispatch on the kind before it knows which
+// decode to run.
+//
+// It returns the empty string with a nil error for a document that parses and
+// declares no kind, and the YAML decoder's own error for bytes that do not parse,
+// so a caller can tell the two apart — the one is a document missing its kind,
+// the other is not a document this reading could open at all — and can describe
+// the decode failure in the author's terms where it reports one.
+func DocumentKindOf(data []byte) (string, error) {
 	var hdr struct {
 		Kind string `yaml:"kind"`
 	}
 	if err := yaml.Unmarshal(data, &hdr); err != nil {
-		return ""
+		return "", err
 	}
-	return hdr.Kind
+	return hdr.Kind, nil
 }
 
 // entityMetadataVersion reads metadata.version from the bytes published at a
