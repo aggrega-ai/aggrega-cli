@@ -160,7 +160,9 @@ type BoundaryFRState struct {
 	// (boundary_path, FR-instance) tuple — the identity every resource that
 	// FeatureRecipe's output carries, composed from the instance name and the
 	// segments of the boundary path and shortened to whatever bound its own target
-	// accepts.
+	// accepts. It is also the value the boundary's subDirectory: template reads as
+	// .component_id for that attachment, so the directory an author names after it
+	// is the label the author reads on the resources inside.
 	//
 	// It is recorded here rather than recomputed where it is read, and the reason is
 	// that recomputing it is not a cheaper spelling of the same thing: the
@@ -169,11 +171,12 @@ type BoundaryFRState struct {
 	// answer, and one that skipped the asking would spell the identity differently
 	// from the one the resources already carry. Keyed exactly as Files is, so a
 	// reader iterating the emitted output reaches the identity for the contributor
-	// that emitted it.
+	// that emitted it. Written only through [BoundaryFRState.settledComponentID].
 	//
-	// A tuple whose render derived no identity carries none, which is the same state
-	// as absent: an empty value means the contributor's own dispatch identity is
-	// used as-is.
+	// A tuple whose identity was never settled carries none, which is the same
+	// state as absent: a reader stamping or assembling the contributor's output
+	// then uses its own dispatch identity as-is. The path evaluation never reads
+	// such a tuple, because the routing visits only tuples whose render settled one.
 	ComponentIDs map[boundaryFRKey]string
 
 	// DerivedKeyRepeats carries, per the same key, the names one of that
@@ -261,6 +264,44 @@ func NewBoundaryFRState() *BoundaryFRState {
 		DerivedKeys:         map[boundaryFRKey]types.OrderedMap[[]string]{},
 		DerivedKeyRepeats:   map[boundaryFRKey][]derivedKeyRepeat{},
 	}
+}
+
+// settledComponentID returns the composed component identity of one
+// boundary-scope attachment, settling it against engine and recording it in
+// ComponentIDs the first time it is asked for, and reading the record back every
+// time after.
+//
+// The identity is COMPOSED from the two things an author wrote — the instance
+// name the feature is attached under, and the segments of the boundary path it is
+// attached to — and deliberately not read out of the attachment's dispatch
+// identity ([boundaryFRNodeID]). That identity is a marker the compiler built for
+// its own dispatch, and every character it joins those two parts with is one a
+// label value refuses; substituting for them destroys the boundary between the
+// parts, so two attachments an author can tell apart would reach one identity.
+//
+// How long the identity may be is the FeatureRecipe's own target's answer rather
+// than a number the compiler holds, so the composition is settled against the
+// engine the feature renders through: composed, put to the guest, shortened to
+// whatever bound the guest returned, and put again until the guest accepts it. A
+// guest that answers no such question accepts the composition as composed.
+//
+// It is the one place a tuple's identity is settled, and both readers reach it:
+// the answer to where every attachment's output is assembled, which runs before
+// any template is evaluated because a subDirectory: may read the identity as
+// .component_id, and the attachment's own render, which stamps it on every
+// resource. A failed settlement records nothing, so the next reader settles again
+// and reports the failure where it reads the identity.
+func (s *BoundaryFRState) settledComponentID(ctx context.Context, engine any, fr *types.FeatureRecipe, key boundaryFRKey) (string, error) {
+	if id, ok := s.ComponentIDs[key]; ok {
+		return id, nil
+	}
+	id, err := SettleComposedComponentIdentity(ctx, engine, labels.BoundaryFeatureScope,
+		fr.Spec.Capability, append(splitBoundaryPath(key.BoundaryPath), key.FRInstance)...)
+	if err != nil {
+		return "", err
+	}
+	s.ComponentIDs[key] = id
+	return id, nil
 }
 
 // boundaryScopeFRScope is the reference set a boundary-scope FR template is
@@ -576,24 +617,14 @@ func dispatchBoundaryScopeFR(
 		parameters = input.ResolveResult.Parameters
 	}
 	frNodeCtx.GuestContext = buildBoundaryFRRenderCtx(key.BoundaryPath, parameters, boundaryAnnotations)
-	// The component identity is COMPOSED from the two things an author wrote —
-	// the instance name this feature is attached under, and the segments of the
-	// boundary path it is attached to — and deliberately not read out of the
-	// node id above. That node id is a marker the compiler built for its own
-	// dispatch, and every character it joins those two parts with is one a label
-	// value refuses; substituting for them destroys the boundary between the
-	// parts, so two attachments an author can tell apart reach one identity. The
-	// parts are in hand right here, so composing from them is both cheaper and
-	// exact, and it is why this label's own prefix is a free choice rather than
-	// an echo of how the marker happens to be spelled.
-	//
-	// How long that identity may be is the FR's own target's answer rather than a
-	// number the compiler holds, so the composition is settled against the engine
-	// this feature renders through: composed, put to the guest, shortened to
-	// whatever bound the guest returned, and put again until the guest accepts it.
-	// A guest that answers no such question accepts the composition as composed.
-	frComponentID, err := SettleComposedComponentIdentity(ctx, frEngine, labels.BoundaryFeatureScope,
-		fr.Spec.Capability, append(splitBoundaryPath(key.BoundaryPath), frInstance)...)
+	// The component identity is the one settled for this tuple
+	// ([BoundaryFRState.settledComponentID]): composed from what the author wrote
+	// rather than read out of the node id above, and settled against the engine
+	// this feature renders through. The render that answers where every
+	// attachment's output is assembled has normally settled it already, because the
+	// boundary's subDirectory: reads it as .component_id; it is read back here, and
+	// settled here only where that earlier settlement did not reach an answer.
+	frComponentID, err := boundaryFRState.settledComponentID(ctx, frEngine, fr, key)
 	if err != nil {
 		return err
 	}
@@ -607,14 +638,6 @@ func dispatchBoundaryScopeFR(
 	// per-component attachment is the opposite case and leaves the basis empty, so
 	// its author's own chart keeps rendering against the host component's name.
 	frNodeCtx.DerivedNameBasis = frComponentID
-	// The same settled value is recorded against this tuple, because the surfaces
-	// that place this contribution's output and hand it to an assembler run after
-	// this render has returned and hold the tuple rather than this context. Recorded
-	// rather than re-composed there: the composition is settled against this
-	// FeatureRecipe's own plugin, so a second composition either asks that plugin a
-	// second time for one answer or skips the asking and spells the identity
-	// differently from the one the emitted resources already carry.
-	boundaryFRState.ComponentIDs[key] = frComponentID
 	// That label value is a name the compiler derived, and it lands on every
 	// resource this feature's output carries — so it joins the injectivity check
 	// the names a guest declares go through. Two features whose identities reach

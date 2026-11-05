@@ -80,16 +80,128 @@ func boundaryScopeHelmBridgeFR(t *testing.T) *types.FeatureRecipe {
 func TestBoundaryScopeFR_HelmProvenanceUsesTheComposedComponentID(t *testing.T) {
 	t.Parallel()
 
+	input, lookup := boundaryScopeHelmBridgeRender(t, "")
+	result, err := renderer.RenderAll(context.Background(), input, lookup, helmOrComposeFactory(t))
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+
+	// Locate the helm-rendered ConfigMap among the emitted files (the
+	// boundary-FR's chart output). The file key carries the synthetic node-ID
+	// marker, so select by content, not path.
+	cm, cmPath := renderedConfigMap(t, result)
+
+	// Written out rather than computed from the derivation: a value taken from the
+	// derivation would agree with it whatever it did.
+	const wantID = "bfr--cluster--bridge"
+	for _, key := range []string{"aggrega.ai/component-id: " + wantID, "app.kubernetes.io/name: " + wantID} {
+		if !strings.Contains(cm, key) {
+			t.Errorf("rendered ConfigMap (%s) missing composed provenance %q\n--- body ---\n%s", cmPath, key, cm)
+		}
+	}
+	// The raw synthetic node-ID must never reach a rendered label value — its
+	// ":" / "@" / "<>" are charset-invalid for Kubernetes labels.
+	for _, bad := range []string{"<boundary-fr>", "bridge@cluster"} {
+		if strings.Contains(cm, bad) {
+			t.Errorf("rendered ConfigMap (%s) leaked the raw synthetic node-ID fragment %q (charset-invalid label value)\n--- body ---\n%s", cmPath, bad, cm)
+		}
+	}
+
+	// The emitted file KEY must also use the composed id: a synthetic NodeID's
+	// ":" / "@" / "<>" are illegal in filenames on some platforms (Windows
+	// reserves ":", "<", ">") and break archive tooling, and this output lands
+	// in cross-platform GitOps repos. Reverting the file-key change makes the
+	// key revert to "<boundary-fr>:bridge@cluster-configmap.yaml" → these go red.
+	for _, bad := range []string{":", "@", "<", ">"} {
+		if strings.Contains(cmPath, bad) {
+			t.Errorf("emitted file key %q contains the filesystem-hostile char %q from a raw synthetic NodeID", cmPath, bad)
+		}
+	}
+	if !strings.Contains(cmPath, wantID+"-") {
+		t.Errorf("emitted file key %q should carry the composed prefix %q-", cmPath, wantID)
+	}
+}
+
+// TestBoundaryScopeFR_SubDirectoryComponentIDIsTheComposedIdentity is the
+// end-to-end proof of what a boundary's subDirectory: reads as .component_id for
+// a boundary-scope attachment: the composed identity the attachment's resources
+// are labelled with, so its output lands in a directory named after the label
+// the reader finds on the resources inside — never the dispatch marker, whose
+// "<", ">" and ":" a path refuses on some platforms. The component beside it
+// keeps reading its own name.
+//
+// It drives the real RenderAll pipeline through the helm guest and reads the
+// emitted file keys. Hand the path evaluation the dispatch marker again and the
+// ConfigMap lands under "<boundary-fr>:bridge/", which the assertions refuse.
+func TestBoundaryScopeFR_SubDirectoryComponentIDIsTheComposedIdentity(t *testing.T) {
+	t.Parallel()
+
+	input, lookup := boundaryScopeHelmBridgeRender(t, "{{ .component_id }}")
+	result, err := renderer.RenderAll(context.Background(), input, lookup, helmOrComposeFactory(t))
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+	cm, cmPath := renderedConfigMap(t, result)
+
+	// Written out rather than computed from the derivation, for the reason the
+	// provenance test above states.
+	const wantID = "bfr--cluster--bridge"
+	if !strings.Contains(cm, "aggrega.ai/component-id: "+wantID) {
+		t.Errorf("rendered ConfigMap (%s) does not carry the composed identity %q\n--- body ---\n%s", cmPath, wantID, cm)
+	}
+	if !strings.Contains(cmPath, "cluster/"+wantID+"/") {
+		t.Errorf("the attachment's ConfigMap landed at %q; its subDirectory reads .component_id, so it belongs under %q",
+			cmPath, "dist/cluster/"+wantID+"/")
+	}
+	for _, bad := range []string{":", "@", "<", ">"} {
+		if strings.Contains(cmPath, bad) {
+			t.Errorf("emitted file key %q carries %q from the dispatch marker", cmPath, bad)
+		}
+	}
+	var componentUnderOwnName bool
+	for path := range result.Files {
+		if strings.Contains(path, "cluster/api/") {
+			componentUnderOwnName = true
+		}
+	}
+	if !componentUnderOwnName {
+		t.Errorf("no file under %q; the component beside the attachment reads its own name as .component_id; got files %v",
+			"dist/cluster/api/", keysOfFiles(result.Files))
+	}
+}
+
+// renderedConfigMap returns the one helm-rendered ConfigMap among a render's
+// emitted files — the boundary-scope attachment's chart output — and its key,
+// selected by content because the key is what the tests above assert on.
+func renderedConfigMap(t *testing.T, result *renderer.RenderResult) (body, path string) {
+	t.Helper()
+	for p, f := range result.Files {
+		if strings.Contains(string(f.Content), "kind: ConfigMap") {
+			return string(f.Content), p
+		}
+	}
+	t.Fatalf("expected a helm-rendered ConfigMap from the boundary-scope FR; got files %v", keysOfFiles(result.Files))
+	return "", ""
+}
+
+// boundaryScopeHelmBridgeRender builds the render input the tests above share: a
+// boundary "cluster" (directory dist/cluster, and subDirectory as given — empty
+// for the default) holding the compose component "api" and the boundary-scope
+// helm attachment "bridge", with the lookup serving both recipes.
+func boundaryScopeHelmBridgeRender(t *testing.T, subDirectory string) (renderer.RendererInput, renderer.RecipeLookup) {
+	t.Helper()
+
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
 
 	boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
 	boundaryFeatures.Set("bridge", types.BoundaryFeature{Type: "core/compose-bridge:1.0.0", Infra: types.OrderedMap[any]{}})
 	clusterBoundary := types.Boundary{
-		Directory:  "dist/cluster",
-		Features:   boundaryFeatures,
-		Components: types.OrderedMap[types.BoundaryComponent]{},
-		Boundaries: types.OrderedMap[types.Boundary]{},
+		Directory:    "dist/cluster",
+		SubDirectory: subDirectory,
+		Features:     boundaryFeatures,
+		Components:   types.OrderedMap[types.BoundaryComponent]{},
+		Boundaries:   types.OrderedMap[types.Boundary]{},
 	}
 	clusterBoundary.Components.Set("api", types.BoundaryComponent{})
 	boundaries := types.OrderedMap[types.Boundary]{}
@@ -101,7 +213,7 @@ func TestBoundaryScopeFR_HelmProvenanceUsesTheComposedComponentID(t *testing.T) 
 	bfProj.Set("cluster", clusterBFProj)
 
 	bi := map[string]*resolver.BoundaryInfra{
-		"api": {BoundaryPath: "cluster", Directory: "dist/cluster"},
+		"api": {BoundaryPath: "cluster", Directory: "dist/cluster", SubDirectory: subDirectory},
 	}
 
 	bridgeEntry := types.IRFeatureEntry{Type: "core/compose-bridge:1.0.0"}
@@ -146,55 +258,5 @@ func TestBoundaryScopeFR_HelmProvenanceUsesTheComposedComponentID(t *testing.T) 
 			return nil, false
 		},
 	}
-
-	result, err := renderer.RenderAll(context.Background(), input, lookup, helmOrComposeFactory(t))
-	if err != nil {
-		t.Fatalf("RenderAll: %v", err)
-	}
-
-	// Locate the helm-rendered ConfigMap among the emitted files (the
-	// boundary-FR's chart output). The file key carries the synthetic node-ID
-	// marker, so select by content, not path.
-	var cm string
-	var cmPath string
-	for path, body := range result.Files {
-		if strings.Contains(string(body.Content), "kind: ConfigMap") {
-			cm = string(body.Content)
-			cmPath = path
-			break
-		}
-	}
-	if cm == "" {
-		t.Fatalf("expected a helm-rendered ConfigMap from the boundary-scope FR; got files %v", keysOfFiles(result.Files))
-	}
-
-	// Written out rather than computed from the derivation: a value taken from the
-	// derivation would agree with it whatever it did.
-	const wantID = "bfr--cluster--bridge"
-	for _, key := range []string{"aggrega.ai/component-id: " + wantID, "app.kubernetes.io/name: " + wantID} {
-		if !strings.Contains(cm, key) {
-			t.Errorf("rendered ConfigMap (%s) missing composed provenance %q\n--- body ---\n%s", cmPath, key, cm)
-		}
-	}
-	// The raw synthetic node-ID must never reach a rendered label value — its
-	// ":" / "@" / "<>" are charset-invalid for Kubernetes labels.
-	for _, bad := range []string{"<boundary-fr>", "bridge@cluster"} {
-		if strings.Contains(cm, bad) {
-			t.Errorf("rendered ConfigMap (%s) leaked the raw synthetic node-ID fragment %q (charset-invalid label value)\n--- body ---\n%s", cmPath, bad, cm)
-		}
-	}
-
-	// The emitted file KEY must also use the composed id: a synthetic NodeID's
-	// ":" / "@" / "<>" are illegal in filenames on some platforms (Windows
-	// reserves ":", "<", ">") and break archive tooling, and this output lands
-	// in cross-platform GitOps repos. Reverting the file-key change makes the
-	// key revert to "<boundary-fr>:bridge@cluster-configmap.yaml" → these go red.
-	for _, bad := range []string{":", "@", "<", ">"} {
-		if strings.Contains(cmPath, bad) {
-			t.Errorf("emitted file key %q contains the filesystem-hostile char %q from a raw synthetic NodeID", cmPath, bad)
-		}
-	}
-	if !strings.Contains(cmPath, wantID+"-") {
-		t.Errorf("emitted file key %q should carry the composed prefix %q-", cmPath, wantID)
-	}
+	return input, lookup
 }

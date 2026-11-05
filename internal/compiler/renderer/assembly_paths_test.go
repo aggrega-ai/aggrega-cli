@@ -4,8 +4,11 @@
 package renderer
 
 import (
+	"context"
+	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -96,6 +99,18 @@ func TestAssemblyPaths_AreTheDispatchPathsThePerNodeLoopEvaluates(t *testing.T) 
 	}
 }
 
+// unansweringProvider is a provider engine that answers no name-bound question,
+// so the composed identity settled against it is the composition as composed.
+// Nothing in these tests renders through it.
+type unansweringProvider struct{ Provider }
+
+// boundingProvider is a provider engine that answers the name-bound question
+// from its oracle. Nothing in these tests renders through it.
+type boundingProvider struct {
+	Provider
+	*boundOracle
+}
+
 // TestBoundaryFRAssemblyPath_IsTheRoutingsOwnDispatchPath attaches a
 // boundary-scope compose FeatureRecipe at both of the fixture's boundaries and
 // reads, for each attachment, the dispatch key the routing places its output
@@ -120,16 +135,20 @@ func TestBoundaryFRAssemblyPath_IsTheRoutingsOwnDispatchPath(t *testing.T) {
 	lookup := RecipeLookup{FeatureRecipe: func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
 		return fr, instanceName == "gateway" && featureType == "example/gateway:1.0.0"
 	}}
-	own := assemblyPathsByBoundaryFR(graph, lookup, input, dirEvals, perBoundary)
+	factory := func(string) (Provider, error) { return unansweringProvider{}, nil }
+	state := NewBoundaryFRState()
+	own := assemblyPathsByBoundaryFR(context.Background(), graph, lookup, factory, input, dirEvals, perBoundary, state)
 
 	for _, tc := range []struct {
 		boundary, want string
 	}{
 		{"bridge", "bridge/compose"},
-		{"apart", "apart/" + boundaryFRNodePrefix + "gateway"},
+		// Written out rather than computed from the composition: a value taken from
+		// it would agree with it whatever it did.
+		{"apart", "apart/bfr--apart--gateway"},
 	} {
 		key := boundaryFRKey{BoundaryPath: tc.boundary, FRInstance: "gateway"}
-		routed, eval, err := boundaryFRDispatch(key, fr, input, dirEvals, perBoundary)
+		routed, eval, err := boundaryFRDispatch(key, fr, state.ComponentIDs[key], input, dirEvals, perBoundary)
 		if err != nil {
 			t.Fatalf("%s: the routing's evaluation: %v", tc.boundary, err)
 		}
@@ -153,6 +172,125 @@ func TestBoundaryFRAssemblyPath_IsTheRoutingsOwnDispatchPath(t *testing.T) {
 	if len(own) != 2 {
 		t.Errorf("answers for %d attachment(s), want 2: %v", len(own), own)
 	}
+}
+
+// TestBoundaryFRComponentID_ReadsTheSettledIdentityAndGroupsAsBefore attaches one
+// boundary-scope FeatureRecipe under the same instance name at two boundaries
+// whose directories evaluate alike, and reads where each attachment's output is
+// routed under two subDirectory: templates.
+//
+// Where the template does not read .component_id, the two attachments reach one
+// dispatch key, exactly as they always have: the grouping is the evaluated path,
+// and nothing the attachment is identified by enters it.
+//
+// Where it does, each attachment's .component_id is the composed identity
+// settled for it against its own engine — the value recorded for its render to
+// stamp on its resources — and never the dispatch marker. The engine here bounds
+// names, so the settled identity is a SHORTENED composition: a path that
+// recomposed the identity instead of reading the settled one would carry the
+// unbounded form and fail below, and one handed the dispatch marker would carry
+// `<`, `>` and `:` and put both attachments in one directory. The identity is
+// settled once: reading it again asks the engine nothing.
+func TestBoundaryFRComponentID_ReadsTheSettledIdentityAndGroupsAsBefore(t *testing.T) {
+	t.Parallel()
+	const bound = 40
+	east, west := strings.Repeat("east", 12), strings.Repeat("west", 12)
+
+	route := func(t *testing.T, subDirectory string) (map[string]dispatchKey, *BoundaryFRState, *boundOracle) {
+		t.Helper()
+		rel := &types.Release{}
+		graph := &types.IRGraph{}
+		for _, b := range []string{east, west} {
+			rel.Spec.Boundaries.Set(b, types.Boundary{Directory: "shared", SubDirectory: subDirectory})
+			inner := types.OrderedMap[types.IRBoundaryFeature]{}
+			inner.Set("gateway", types.IRBoundaryFeature{Type: "example/gateway:1.0.0"})
+			graph.Spec.BoundaryFeatures.Set(b, inner)
+		}
+		_, perBoundary := resolver.WireBoundaryInfra(types.NormalizeRelease(rel))
+		dirEvals, err := evaluateAllBoundaryDirectories(rel, nil, perBoundary)
+		if err != nil {
+			t.Fatalf("evaluate the boundary directories: %v", err)
+		}
+		input := RendererInput{ResolveResult: &resolver.ResolveResult{Release: rel}}
+		fr := &types.FeatureRecipe{}
+		fr.Metadata.Name = "gateway-fr"
+		fr.Spec.Capability = "compose"
+		fr.Spec.ExecutionScope = executionScopeBoundary
+		lookup := RecipeLookup{FeatureRecipe: func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
+			return fr, instanceName == "gateway" && featureType == "example/gateway:1.0.0"
+		}}
+		oracle := &boundOracle{answer: func(proposed string) DerivedNameVerdict {
+			if len(proposed) > bound {
+				return DerivedNameVerdict{Kind: "service name", Usable: false, Bound: boundTo(bound), Reason: "too long"}
+			}
+			return DerivedNameVerdict{Kind: "service name", Usable: true}
+		}}
+		factory := func(string) (Provider, error) { return boundingProvider{boundOracle: oracle}, nil }
+		state := NewBoundaryFRState()
+		own := assemblyPathsByBoundaryFR(context.Background(), graph, lookup, factory, input, dirEvals, perBoundary, state)
+
+		routed := map[string]dispatchKey{}
+		for _, b := range []string{east, west} {
+			key := boundaryFRKey{BoundaryPath: b, FRInstance: "gateway"}
+			dKey, _, err := boundaryFRDispatch(key, fr, state.ComponentIDs[key], input, dirEvals, perBoundary)
+			if err != nil {
+				t.Fatalf("%s: the routing's evaluation: %v", b, err)
+			}
+			if own[key] != dKey.Path {
+				t.Errorf("%s: answered %q before the render, routed to %q after it", b, own[key], dKey.Path)
+			}
+			routed[b] = dKey
+		}
+		return routed, state, oracle
+	}
+
+	t.Run("a subDirectory that does not read the identity groups the two as before", func(t *testing.T) {
+		t.Parallel()
+		routed, _, _ := route(t, "{{ .capability }}")
+		want := dispatchKey{Path: "shared/compose", Provider: "compose"}
+		if routed[east] != want || routed[west] != want {
+			t.Errorf("routed to %+v and %+v; both must reach the one group %+v", routed[east], routed[west], want)
+		}
+	})
+
+	t.Run("a subDirectory reading the identity reads the settled composed identity", func(t *testing.T) {
+		t.Parallel()
+		routed, state, oracle := route(t, "{{ .component_id }}")
+		for _, b := range []string{east, west} {
+			key := boundaryFRKey{BoundaryPath: b, FRInstance: "gateway"}
+			id := state.ComponentIDs[key]
+			if id == "" {
+				t.Fatalf("%s: no identity was settled before the paths were answered", b)
+			}
+			if len(id) > bound {
+				t.Errorf("%s: settled %q, over the %d characters the engine accepts", b, id, bound)
+			}
+			if unbounded := labels.ComposeComponentIdentity(labels.BoundaryFeatureScope, labels.Unbounded, b, "gateway"); id == unbounded {
+				t.Errorf("%s: settled %q, the composition as composed; the engine bounds names to %d", b, id, bound)
+			}
+			if want := "shared/" + id; routed[b].Path != want {
+				t.Errorf("%s: routed to %q, want the settled identity's directory %q", b, routed[b].Path, want)
+			}
+			for _, refused := range []string{"<", ">", ":", "@", boundaryFRNodePrefix} {
+				if strings.Contains(routed[b].Path, refused) {
+					t.Errorf("%s: routed to %q, which carries %q from the dispatch marker", b, routed[b].Path, refused)
+				}
+			}
+		}
+		if routed[east] == routed[west] {
+			t.Errorf("both attachments routed to %+v; a subDirectory reading .component_id gives each its own directory", routed[east])
+		}
+		asked := len(oracle.seen)
+		key := boundaryFRKey{BoundaryPath: east, FRInstance: "gateway"}
+		again, err := state.settledComponentID(context.Background(), boundingProvider{boundOracle: oracle}, &types.FeatureRecipe{}, key)
+		if err != nil {
+			t.Fatalf("reading the settled identity back: %v", err)
+		}
+		if again != state.ComponentIDs[key] || len(oracle.seen) != asked {
+			t.Errorf("reading the identity back returned %q and asked the engine %d more time(s); the render must read %q without asking",
+				again, len(oracle.seen)-asked, state.ComponentIDs[key])
+		}
+	})
 }
 
 // TestAssemblyPaths_EdgeViewsCarryEachEndpointsOwn builds each boundary's view and

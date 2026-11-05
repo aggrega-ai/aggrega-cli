@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"context"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -86,15 +87,20 @@ func assemblyPathsByNode(
 // The attachment is attached at the boundary rather than placed per component,
 // so its placement is the boundary's own authored directory: and subDirectory:,
 // read from the Release tree, with the FeatureRecipe's bare engine kind as the
-// capability segment. The identity handed to the path evaluation is the
-// instance-only marker, which is what an operator's subDirectory: template reads
-// as .component_id, and what decides which dispatch group this contribution
-// joins. Two boundaries whose declared directories evaluate alike are meant to
-// feed one group, so the value stays instance-only rather than carrying the
-// boundary path.
+// capability segment. componentID is what an operator's subDirectory: template
+// reads as .component_id: the composed identity settled for the attachment
+// ([BoundaryFRState.settledComponentID]), the value its own resources are
+// labelled with — never the attachment's dispatch identity, a marker carrying
+// characters a path refuses on some platforms. The dispatch group the output
+// joins is keyed by the evaluated path, so two boundaries whose declarations
+// evaluate alike still feed one group, and a subDirectory: reading .component_id
+// gives each attachment a directory of its own, as it gives each component one.
+// Inside the group the contribution is held under its dispatch identity, which
+// this evaluation does not read.
 func boundaryFRDispatch(
 	key boundaryFRKey,
 	fr *types.FeatureRecipe,
+	componentID string,
 	input RendererInput,
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
@@ -115,7 +121,7 @@ func boundaryFRDispatch(
 		}
 	}
 	provider := ProviderEngineKind(fr.Spec.Capability)
-	eval, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, provider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+	eval, err := computeFinalPath(componentID, key.BoundaryPath, provider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 	if err != nil {
 		return dispatchKey{}, dispatchPathEvaluation{}, err
 	}
@@ -131,19 +137,27 @@ func boundaryFRDispatch(
 //
 // It is answered once, before any template is evaluated, because the
 // boundary-scope provides pre-pass builds the boundary view ahead of the per-node
-// loop. An attachment no FeatureRecipe binds, one whose FeatureRecipe is not
-// boundary-scope, and one whose path evaluation fails have no answer here, and
-// their view carries an empty assembly path: the routing evaluates the same
-// placement for every attachment that rendered and halts on that same failure
-// before any output is placed.
+// loop. The path may read the attachment's composed identity as .component_id,
+// so each attachment's identity is settled here, against the engine its
+// FeatureRecipe renders through, and recorded on state for the attachment's own
+// render to read back. An attachment no FeatureRecipe binds, one whose
+// FeatureRecipe is not boundary-scope, one whose engine or identity cannot be
+// settled, and one whose path evaluation fails have no answer here, and their
+// view carries an empty assembly path: the attachment's render settles the
+// identity again and the routing evaluates the same placement for every
+// attachment that rendered, so either halts on that same failure before any
+// output is placed.
 func assemblyPathsByBoundaryFR(
+	ctx context.Context,
 	graph *types.IRGraph,
 	recipeLookup RecipeLookup,
+	engineFactory EngineFactory,
 	input RendererInput,
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
+	state *BoundaryFRState,
 ) map[boundaryFRKey]string {
-	if graph == nil || recipeLookup.FeatureRecipe == nil {
+	if graph == nil || recipeLookup.FeatureRecipe == nil || engineFactory == nil || state == nil {
 		return nil
 	}
 	out := map[boundaryFRKey]string{}
@@ -154,7 +168,15 @@ func assemblyPathsByBoundaryFR(
 				continue
 			}
 			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
-			dKey, _, err := boundaryFRDispatch(key, fr, input, boundaryDirEvals, perBoundaryAnnotations)
+			engine, err := engineFactory(fr.Spec.Capability)
+			if err != nil {
+				continue
+			}
+			componentID, err := state.settledComponentID(ctx, engine, fr, key)
+			if err != nil {
+				continue
+			}
+			dKey, _, err := boundaryFRDispatch(key, fr, componentID, input, boundaryDirEvals, perBoundaryAnnotations)
 			if err != nil {
 				continue
 			}

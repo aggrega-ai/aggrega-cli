@@ -1436,7 +1436,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	boundaryFRState.assemblyPaths = assemblyPathsByNode(graph, nodeRecipes, input, boundaryDirEvals, perBoundaryAnnotations)
 	// Where each boundary-scope attachment's own output is assembled, answered by
 	// the evaluation the routing after the per-node loop places that output with.
-	boundaryFRState.ownAssemblyPaths = assemblyPathsByBoundaryFR(graph, recipeLookup, input, boundaryDirEvals, perBoundaryAnnotations)
+	// It settles each attachment's composed identity on the way, because a
+	// subDirectory: reads that identity as .component_id.
+	boundaryFRState.ownAssemblyPaths = assemblyPathsByBoundaryFR(ctx, graph, recipeLookup, engineFactory, input, boundaryDirEvals, perBoundaryAnnotations, boundaryFRState)
 
 	// Provides pre-pass: make the one evaluation of every boundary-scope
 	// FeatureRecipe's locals and provides before the per-node loop, so every
@@ -2827,7 +2829,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// evaluation is the one the attachment's boundary view read its assembly path
 		// from before any template ran (boundaryFRDispatch), so the directory a
 		// template was told and the directory the output is routed to cannot differ.
-		dKey, pathEval, err := boundaryFRDispatch(key, fr, input, boundaryDirEvals, perBoundaryAnnotations)
+		// The .component_id it reads is the identity the attachment's render settled
+		// and stamped on its resources, read back from the record of it.
+		dKey, pathEval, err := boundaryFRDispatch(key, fr, boundaryFRState.ComponentIDs[key], input, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope FR %q path eval", key.FRInstance))
 		}
@@ -3822,6 +3826,9 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
 //
 // Available template variables: .capability, .boundary_name, .parameters.<key>,
 // .component_id (subDirectory: only), .manifest.recipe_name, .parent_boundary.*.
+// componentID is the value .component_id reads: the node id for a component, and
+// the settled composed identity for a boundary-scope attachment
+// ([boundaryFRDispatch]).
 //
 // boundaryDirEvals is the precomputed per-boundary evaluated `directory:`
 // map produced by evaluateAllBoundaryDirectories; it sources
@@ -3838,7 +3845,7 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
 // beneath the output root is the rule [AssemblyPathNamesADirectoryBeneathTheOutputRoot]
 // asks of the group the path keys, once every contribution has been sorted.
 func computeFinalPath(
-	nodeID, bp, providerName, recipeName string,
+	componentID, bp, providerName, recipeName string,
 	bi *resolver.BoundaryInfra,
 	parameters map[string]any,
 	boundaryDirEvals map[string]string,
@@ -3848,7 +3855,7 @@ func computeFinalPath(
 		Capability:     providerName,
 		BoundaryName:   bp,
 		Parameters:     parameters,
-		ComponentID:    nodeID,
+		ComponentID:    componentID,
 		Manifest:       PathTemplateManifest{RecipeName: recipeName},
 		ParentBoundary: parentBoundaryData(bp, parameters, boundaryDirEvals, perBoundaryAnnotations),
 	}
@@ -3880,7 +3887,7 @@ func computeFinalPath(
 	if subTmpl == "" {
 		subTmpl = "{{ .capability }}"
 	}
-	evalSub, err := EvalPathTemplate("subDirectory:"+bp+":"+nodeID, "subDirectory", bp, subTmpl, data)
+	evalSub, err := EvalPathTemplate("subDirectory:"+bp+":"+componentID, "subDirectory", bp, subTmpl, data)
 	if err != nil {
 		return dispatchPathEvaluation{}, err
 	}
