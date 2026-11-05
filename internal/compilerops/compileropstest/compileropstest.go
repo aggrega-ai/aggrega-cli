@@ -74,7 +74,7 @@ func WriteMatchingLockfile(
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	written, _, err := lockfile.LoadLockfile(lockPath)
+	written, _, err := lockfile.Load(workspaceRoot, lockPath)
 	if err != nil {
 		t.Fatalf("the composed lockfile does not load: %v", err)
 	}

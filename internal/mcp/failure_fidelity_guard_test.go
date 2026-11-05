@@ -234,8 +234,21 @@ var proseOnlyFailureReturns = map[string]int{
 	// resolution, the check or the catalog pass runs, so nothing has been resolved,
 	// validated or described at that return. In the two Release scopes it is asked
 	// ahead of the withdrawal report as well, so not even that report is in hand.
-	"tool_validate.go": 26,
-	"tool_describe.go": 20,
+	//
+	// The Release scope of each refuses one more once the closure has resolved: a
+	// lockfile that no longer matches what the Release resolves to, held to it by
+	// the build's own drift comparison as the matching command holds it. It is
+	// decided before anything is validated or described, so there is no verdict and
+	// no description in hand. What the comparison found — every entry that drifted
+	// — is the refusal's own reason, and the prose carries every one of them in the
+	// condition's own words. The rest in hand at that return — the closure and its
+	// mapping findings, resolved through the pins the refusal rejects, and the
+	// withdrawal report — is what an answer reports beside a verdict or a
+	// description, and the matching command prints none of it at this refusal;
+	// carrying it would answer more than that command does, over pins no build of
+	// this Release uses.
+	"tool_validate.go": 27,
+	"tool_describe.go": 21,
 	// Publishing. Whether the push returns a partially-populated result
 	// alongside its error is not established, so whether these lose anything is
 	// unmeasured rather than known.
