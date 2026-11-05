@@ -226,7 +226,7 @@ func (in Inputs) reportUnrecordedPlugin(a pluginpath.UnrecordedIdentity) {
 // it wants one, and lets a consumer that cannot position it fall back without
 // having to unpick a composed sentence.
 //
-// # Why the location carries a key path and deliberately no URI
+// # Why the location carries a key path and deliberately no instance or uri
 //
 // The locator is a path into the authoring document, not a resolved line: the
 // position is recovered by the surface that holds the parsed document, which is
@@ -234,11 +234,12 @@ func (in Inputs) reportUnrecordedPlugin(a pluginpath.UnrecordedIdentity) {
 // keeps the recovery there and stops this function inventing a position it cannot
 // know.
 //
-// The URI is left empty ON PURPOSE. The shared formatter every display reads
-// interprets a location's URI as a NODE identity and its kind as a provider, so
-// filling either with a document path would make the formatter print a document
-// as though it were a graph node. With both empty the formatter renders the
-// message alone, which is exactly the line a positioning surface wants.
+// The instance, the uri and the kind are left empty ON PURPOSE. The shared
+// formatter every display reads prints a location's instance — or, on a location
+// naming none, its uri — as the node the advisory concerns, and its kind as a
+// provider; this finding concerns a document rather than an instance of the
+// build. With all three empty the formatter renders the message alone, which is
+// exactly the line a positioning surface wants.
 func advisoryFromResolverFinding(e *resolver.ResolverError, severity string) renderer.Diagnostic {
 	code, _ := cerrors.CodeOf(e)
 	d := renderer.Diagnostic{

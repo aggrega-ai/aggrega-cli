@@ -134,7 +134,7 @@ func RenderChart(
 	// reconstructs it per node), so the mutation is not an aliasing or
 	// determinism hazard across nodes.
 	if err := chartutil.ProcessDependencies(ch, common.Values(values)); err != nil {
-		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
 	}
 
 	// The omit entries the node's render was handed, prepared as soon as the
@@ -198,13 +198,13 @@ func RenderChart(
 		}
 	}
 	if err != nil {
-		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render values", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render values", nodeCtx.NodeID))
 	}
 
 	// Render
 	rendered, err := engine.Engine{}.RenderWithContext(ctx, ch, renderVals)
 	if err != nil {
-		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render", nodeCtx.NodeID))
+		return ChartRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: render", nodeCtx.NodeID))
 	}
 
 	// rendered is map[path]string. Path format: "<chart>/templates/<file>.yaml".
@@ -285,7 +285,7 @@ func RenderChart(
 
 		docs, err := splitRenderedDocuments([]byte(content), nodeCtx.YAMLIndent)
 		if err != nil {
-			sources = append(sources, chartSource{path: path, err: cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: template %q: %s", nodeCtx.NodeID, path, err.Error()))})
+			sources = append(sources, chartSource{path: path, err: cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: template %q: %s", nodeCtx.NodeID, path, err.Error()))})
 			splitFailed = true
 			break
 		}
@@ -313,7 +313,7 @@ func RenderChart(
 			}
 			docs, err := splitRenderedDocuments(crd.File.Data, nodeCtx.YAMLIndent)
 			if err != nil {
-				sources = append(sources, chartSource{path: crd.Filename, err: cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: crd %q: %s", nodeCtx.NodeID, crd.Filename, err.Error()))})
+				sources = append(sources, chartSource{path: crd.Filename, err: cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: crd %q: %s", nodeCtx.NodeID, crd.Filename, err.Error()))})
 				break
 			}
 			sources = append(sources, chartSource{path: crd.Filename, docs: docs})
@@ -351,7 +351,7 @@ func RenderChart(
 		// exactly as one whose chart writes the namespace itself.
 		for i := range docs {
 			if err := placement.place(&docs[i]); err != nil {
-				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: place a resource of %q in namespace %q", nodeCtx.NodeID, sourcePath, placement.namespace))
+				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: place a resource of %q in namespace %q", nodeCtx.NodeID, sourcePath, placement.namespace))
 			}
 		}
 
@@ -394,11 +394,11 @@ func RenderChart(
 			}
 			labeled, err := injectAggregaLabels(docs[i].content, aggregaLabels, nodeCtx.YAMLIndent)
 			if err != nil {
-				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, sourcePath))
+				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, sourcePath))
 			}
 			annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight, nodeCtx.YAMLIndent)
 			if err != nil {
-				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, sourcePath))
+				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, sourcePath))
 			}
 			outKey := prefix + "-" + id + ".yaml"
 			if prior, exists := out[outKey]; exists {
@@ -406,7 +406,7 @@ func RenderChart(
 					// Byte-identical duplicate: keeping one loses nothing.
 					continue
 				}
-				return cerrors.Wrap(plugincondition.ErrPluginOutputNameCollision(), cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content: two rendered resources derive the same output filename with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
+				return cerrors.Wrap(plugincondition.ErrPluginOutputNameCollision(), cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content: two rendered resources derive the same output filename with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
 			}
 			out[outKey] = annotated
 			keyOrigin[outKey] = sourcePath

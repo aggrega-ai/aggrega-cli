@@ -77,7 +77,7 @@ func replayDeferredPatches(
 		for _, rec := range ordered {
 			warnings = append(warnings, Diagnostic{
 				Severity: abi.SeverityWarn,
-				Location: &DiagnosticLocation{URI: rec.NodeID},
+				Location: &DiagnosticLocation{Instance: rec.NodeID},
 				Message:  fmt.Sprintf("deferred pipeline (%d steps) validated but not executed (no plugin path resolver configured)", len(rec.Steps)),
 			})
 		}
@@ -127,7 +127,7 @@ func replayDeferredPatches(
 			if label == "" {
 				label = "recipe"
 			}
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: rec.NodeID},
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: rec.NodeID},
 				fmt.Sprintf("post-assembly PATCH replay for %q on node %q", label, rec.NodeID))
 		}
 		warnings = append(warnings, pres.Warnings...)

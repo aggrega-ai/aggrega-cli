@@ -120,7 +120,7 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 
 	body, err := rendercore.MarshalYAMLIndent(merged, nodeCtx.YAMLIndent)
 	if err != nil {
-		return SourcedRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
+		return SourcedRender{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
 	}
 
 	// Output path mirrors synthesized-mode: <nodeID>.compose-fragment.yaml.

@@ -304,7 +304,7 @@ func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPat
 		// A patch against an opaque unit surfaces frp.ErrPipelineTargetOpaque; an
 		// absent target surfaces frp.ErrPipelineTargetAbsent. Both stay matchable
 		// via errors.Is through the wrap.
-		return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("cross-boundary link patch of %q", name))
 	}
 	appliedByToken := map[string][]frp.JSONPatchOp{}

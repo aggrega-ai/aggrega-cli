@@ -75,7 +75,7 @@ func TestWarnUnhonorableAnnotations_AdvisesOnUncoveredKey(t *testing.T) {
 			t.Errorf("message %q does not name %s", d.Message, want)
 		}
 	}
-	if d.Location == nil || d.Location.URI != "api" || d.Location.Kind != "helm" {
+	if d.Location == nil || d.Location.Instance != "api" || d.Location.Kind != "helm" {
 		t.Errorf("advisory not attributed to node/target: %+v", d.Location)
 	}
 }

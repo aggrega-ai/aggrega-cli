@@ -83,6 +83,59 @@ func TestSourceLocation_String_ComposesAPosition(t *testing.T) {
 	}
 }
 
+// TestSourceLocation_String_NamesTheInstanceApartFromTheFile pins the instance
+// coordinate's two printed shapes and the rows bounding them: beside a position
+// it follows in parentheses, alone it stands introduced by its own word, and a
+// pointer carrying no instance renders exactly as it did before the coordinate
+// existed. The one-line Error form is asserted too, because it composes the
+// position through the same method and is re-wrapped into enclosing frames.
+func TestSourceLocation_String_NamesTheInstanceApartFromTheFile(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		name string
+		in   cerrors.SourceLocation
+		want string
+	}{
+		{
+			"an instance beside a document and a line follows the position",
+			cerrors.SourceLocation{File: "catalog-compose/recipe/adminer-fragment.yaml", Line: 11, Instance: "adminer"},
+			"catalog-compose/recipe/adminer-fragment.yaml:11 (instance adminer)",
+		},
+		{
+			"an instance beside a document alone follows the document",
+			cerrors.SourceLocation{File: "aggregate.yaml", Instance: "shop.cart"},
+			"aggregate.yaml (instance shop.cart)",
+		},
+		{
+			"an instance beside an authoring key follows the key",
+			cerrors.SourceLocation{File: "aggregate.yaml", Locator: ".spec.components.cart", Instance: "cart"},
+			"aggregate.yaml at .spec.components.cart (instance cart)",
+		},
+		{
+			"an instance with no document stands alone under its own word",
+			cerrors.SourceLocation{Instance: "adminer"},
+			"instance adminer",
+		},
+		{
+			"a pointer with no instance is the position alone",
+			cerrors.SourceLocation{File: "catalog-compose/recipe/adminer-fragment.yaml", Line: 11},
+			"catalog-compose/recipe/adminer-fragment.yaml:11",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := c.in.String(); got != c.want {
+				t.Errorf("String() = %q, want %q", got, c.want)
+			}
+			e := cerrors.Unidentified(cerrors.TranslationError, c.in, "the occurrence's sentence", nil, nil)
+			if got, want := e.Error(), "[TRANSLATION_ERROR] "+c.want+": the occurrence's sentence"; got != want {
+				t.Errorf("Error() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestCompilerError_Error_FormatWithSource(t *testing.T) {
 	t.Parallel()
 	e := cerrors.Unidentified(

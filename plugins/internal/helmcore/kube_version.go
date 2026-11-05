@@ -64,7 +64,7 @@ func renderKubeVersion(nodeCtx rendercore.NodeRenderContext) (common.KubeVersion
 			where = fmt.Sprintf("node %q in boundary %q", nodeCtx.NodeID, nodeCtx.BoundaryPath)
 		}
 		return common.KubeVersion{}, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 			fmt.Sprintf("helm: %s: annotation %s: %q is not a Kubernetes version a chart can be rendered for: %v; "+
 				"write the version of the cluster the chart deploys to, such as \"1.31\" or \"v1.31.2\", "+
 				"on the component or on its boundary",

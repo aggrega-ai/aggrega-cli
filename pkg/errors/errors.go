@@ -88,16 +88,25 @@ const (
 )
 
 // SourceLocation points at the most specific authoring locator available for
-// the failure, which is a file path or a JSON path depending on what the
-// surface that reported it can supply.
+// the failure, and at the instance the failure concerns where there is one. The
+// two are separate coordinates because they answer separate questions: which
+// document to open, and which instance of the build the failure is about.
 //
-// File carries that locator. It is a real filesystem path where the failure
-// has a position in an authored document — the typical shape for a catalog
-// content error surfacing a YAML position. Where no file position applies it
-// is a logical identifier the reader can still act on: an entity name, a
-// Release name, a graph node id, or a JSON-path field locator such as
-// ".values.port". The dual meaning is deliberate; a caller that has only a
-// field locator should pass it rather than leave the pointer empty.
+// File carries the authoring locator. It is a real filesystem path where the
+// failure has a position in an authored document — the typical shape for a
+// catalog content error surfacing a YAML position. Where no document applies it
+// is another locator the reader can still act on: an entity name, a Release
+// name, or a JSON-path field locator such as ".values.port"; a caller that has
+// only a field locator should pass it rather than leave the pointer empty. It
+// never carries an instance: an instance in File would read as a document the
+// reader cannot open.
+//
+// Instance names the instance of the build the failure concerns — a component
+// the Aggregate declares, a component a module contributes, a component the
+// build derives, the module itself — by the identity the build gives it, which
+// for a module's component is the dotted path through the module and for a
+// derived component the identity the build composes for it. It is set beside a File where the reporting
+// site holds the document as well, and alone where it holds none.
 //
 // Locator is for the caller that has BOTH halves: a document in File and the
 // authoring key within that document. It is a dotted key such as
@@ -111,10 +120,11 @@ const (
 // pointer is file-level only, which is always the case for a logical
 // identifier.
 type SourceLocation struct {
-	File    string
-	Locator string
-	Line    int
-	Column  int
+	File     string
+	Locator  string
+	Line     int
+	Column   int
+	Instance string
 }
 
 // String formats the source location for human consumption: "path:line:col"
@@ -129,10 +139,16 @@ type SourceLocation struct {
 // position is empty the locator stands alone rather than being prefixed by a
 // separator with nothing before it.
 //
+// A non-empty Instance follows whatever the position and locator produced, as
+// "(instance <id>)", and stands alone as "instance <id>" where they produced
+// nothing. It is introduced by its own word in both shapes so that an instance
+// is never read as a file name, which is the confusion keeping it out of File
+// exists to prevent.
+//
 // This is the one place a position is composed, so every surface that names one
-// names it in the same shape. An empty Locator returns exactly what the file,
-// line and column alone produce, which is what keeps a caller that supplies no
-// locator rendering byte-identically.
+// names it in the same shape. An empty Locator and an empty Instance return
+// exactly what the file, line and column alone produce, which is what keeps a
+// caller that supplies neither rendering byte-identically.
 func (s SourceLocation) String() string {
 	var position string
 	switch {
@@ -145,11 +161,18 @@ func (s SourceLocation) String() string {
 	}
 	switch {
 	case s.Locator == "":
+	case position == "":
+		position = s.Locator
+	default:
+		position = position + " at " + s.Locator
+	}
+	switch {
+	case s.Instance == "":
 		return position
 	case position == "":
-		return s.Locator
+		return "instance " + s.Instance
 	default:
-		return position + " at " + s.Locator
+		return position + " (instance " + s.Instance + ")"
 	}
 }
 

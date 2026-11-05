@@ -383,7 +383,7 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 	sort.Strings(keys)
 	for _, key := range keys {
 		if _, has := produced.Get(key); !has {
-			return cerrors.Wrap(ErrProvidesContractUnfulfilled(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			return cerrors.Wrap(ErrProvidesContractUnfulfilled(), cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 				cerrors.ComposeMessage(ErrProvidesContractUnfulfilled(), []string{
 					contextPrefix,
 					fmt.Sprintf("%s does not publish provides key %q declared by %s's schema.provides contract", realizer, key, abstract),

@@ -39,7 +39,7 @@ func Match(err error) (string, bool) {
 // alone would leave the constructors unproven.
 func RaiseProbe(nodeID string) error {
 	return cerrors.Raise(errProbe, cerrors.CatalogError,
-		cerrors.SourceLocation{File: nodeID}, "the probe condition was reached here", nil)
+		cerrors.SourceLocation{Instance: nodeID}, "the probe condition was reached here", nil)
 }
 
 // RaiseUnidentified is the shape a raise path writes when the failure names no
@@ -48,6 +48,6 @@ func RaiseProbe(nodeID string) error {
 // side.
 func RaiseUnidentified(nodeID string, cause error) (cerrors.Category, string) {
 	ce := cerrors.Unidentified(cerrors.CatalogError,
-		cerrors.SourceLocation{File: nodeID}, "no condition names this failure", nil, cause)
+		cerrors.SourceLocation{Instance: nodeID}, "no condition names this failure", nil, cause)
 	return ce.Category(), ce.Message()
 }

@@ -217,7 +217,7 @@ func SynthesizeWorkloadCore(
 		}
 		body, err := marshalDeterministic(&ss, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q statefulset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: name + "-statefulset.yaml",
@@ -235,7 +235,7 @@ func SynthesizeWorkloadCore(
 		}
 		body, err := marshalDeterministic(&ds, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q daemonset marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q daemonset marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: name + "-daemonset.yaml",
@@ -250,7 +250,7 @@ func SynthesizeWorkloadCore(
 		}
 		body, err := marshalDeterministic(&job, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q job marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q job marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: name + "-job.yaml",
@@ -269,7 +269,7 @@ func SynthesizeWorkloadCore(
 		}
 		body, err := marshalDeterministic(&cron, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q cronjob marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q cronjob marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: name + "-cronjob.yaml",
@@ -288,7 +288,7 @@ func SynthesizeWorkloadCore(
 		}
 		body, err := marshalDeterministic(&dep, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q deployment marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: name + "-deployment.yaml",
@@ -302,7 +302,7 @@ func SynthesizeWorkloadCore(
 	for _, pvc := range pvcs {
 		body, err := marshalDeterministic(&pvc, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q pvc marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q pvc marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: pvc.Metadata.Name + "-pvc.yaml",
@@ -314,7 +314,7 @@ func SynthesizeWorkloadCore(
 	for _, svc := range services {
 		body, err := marshalDeterministic(&svc, nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q service marshal", nodeCtx.NodeID))
 		}
 		out = append(out, rendercore.EmittedFile{
 			Name: svc.Metadata.Name + "-service.yaml",
@@ -353,7 +353,7 @@ func synthesizeReference(w *types.Workload, nodeCtx rendercore.NodeRenderContext
 	}
 	body, err := marshalDeterministic(&svc, nodeCtx.YAMLIndent)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q externalname service marshal", nodeCtx.NodeID))
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q externalname service marshal", nodeCtx.NodeID))
 	}
 	return []rendercore.EmittedFile{{Name: name + "-service.yaml", Body: body}}, nil
 }
@@ -485,11 +485,11 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 		return name, nil
 	case 0:
 		return "", cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			"synthesized StatefulSet requires a headless governing Service (declare a service with type: Headless); none found: synthesized StatefulSet has no headless governing Service")
 	default:
 		return "", cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			"synthesized StatefulSet declares more than one headless Service; the governing Service is ambiguous (declare exactly one type: Headless service): synthesized StatefulSet has more than one headless Service")
 	}
 }

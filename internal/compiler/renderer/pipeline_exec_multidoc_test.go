@@ -194,7 +194,7 @@ func TestRunNodePipeline_ValidateOnlyWhenNoLookup(t *testing.T) {
 	}
 	// The notice locates itself at the node rather than naming it inside the
 	// sentence, which is what a consumer reading no terminal has to work from.
-	if loc := res.Warnings[0].Location; loc == nil || loc.URI != "node" {
+	if loc := res.Warnings[0].Location; loc == nil || loc.Instance != "node" {
 		t.Errorf("validate-only notice not located at the node: %+v", res.Warnings[0].Location)
 	}
 }

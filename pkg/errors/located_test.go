@@ -13,7 +13,7 @@ import (
 // annotation's contract, row by row: what LocatedAt reads back, and that the text
 // every rendering of the chain produces is the text of the chain without it.
 func TestLocate_StatesAPositionAndRendersNothing(t *testing.T) {
-	inner := Wrap(stderrors.New("the cause"), CatalogError, SourceLocation{File: "node-a"}, "rendering node \"a\"")
+	inner := Wrap(stderrors.New("the cause"), CatalogError, SourceLocation{Instance: "node-a"}, "rendering node \"a\"")
 	recipe := SourceLocation{File: "/w/recipe.yaml", Locator: ".spec.workload"}
 	assertion := SourceLocation{File: "/w/recipe.yaml", Locator: ".spec.assertions.check"}
 

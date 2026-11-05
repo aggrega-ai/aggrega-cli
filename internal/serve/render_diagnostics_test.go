@@ -278,7 +278,7 @@ func TestPublishRenderDiagnostics_CarriesUnhonorableAnnotationAdvisory(t *testin
 	const file = "/w/release.yaml"
 
 	d := rendercore.UnhonorableAnnotationDiagnostic("helm-chart", "aggrega.ai/namespace", "sourced")
-	d.Location = &renderer.DiagnosticLocation{URI: "frontend", Kind: "helm-chart"}
+	d.Location = &renderer.DiagnosticLocation{Instance: "frontend", Kind: "helm-chart"}
 	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil, nil)
 	flush()
 
@@ -340,7 +340,7 @@ func TestPublishRenderDiagnostics_CarriesEveryDeclaredInputKindOfTheAdvisory(t *
 			const file = "/w/release.yaml"
 
 			d := tc.diag
-			d.Location = &renderer.DiagnosticLocation{URI: "backend", Kind: "helm"}
+			d.Location = &renderer.DiagnosticLocation{Instance: "backend", Kind: "helm"}
 			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d}, nil, nil, nil)
 			flush()
 
@@ -466,12 +466,12 @@ func TestPublishRenderDiagnostics_CarriesTheRenderAdvisoriesThatCarryNoClass(t *
 			Severity:  abi.SeverityWarn,
 			Message:   `.infra key "cpu" is read by no template in recipe "ghost-recipe" — correct the spelling, or remove the key`,
 			SourceRef: "cpu",
-			Location:  &renderer.DiagnosticLocation{URI: "api"},
+			Location:  &renderer.DiagnosticLocation{Instance: "api"},
 		},
 		{
 			Severity: abi.SeverityWarn,
 			Message:  "the provider raised this while rendering",
-			Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},
+			Location: &renderer.DiagnosticLocation{Instance: "api", Kind: "compose"},
 		},
 	}, nil, nil, nil)
 

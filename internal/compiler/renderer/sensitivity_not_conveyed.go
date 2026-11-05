@@ -43,7 +43,7 @@ func warnSensitivityNotConveyed(
 	}
 	for _, coordinate := range UnconveyedValueLeafDeclarations(declared, sourced) {
 		d := build(gateName, coordinate)
-		d.Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
+		d.Location = &DiagnosticLocation{Instance: nodeID, Kind: providerName}
 		sink(d)
 	}
 }

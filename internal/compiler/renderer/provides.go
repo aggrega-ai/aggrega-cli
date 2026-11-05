@@ -100,7 +100,7 @@ func EvaluateAllProvides(
 		withheld := declared.node(nodeID).pillarKeys()
 		nodeLocals, err := EvaluateRecipeLocals(recipe, nodeID, values, infra, withheld)
 		if err != nil {
-			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q locals", nodeID))
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q locals", nodeID))
 		}
 		allLocals[nodeID] = nodeLocals
 
@@ -121,7 +121,7 @@ func EvaluateAllProvides(
 			// A node locator over an already-composed diagnostic, the same shape as
 			// the locals frame above: the wrapped error states the condition, so
 			// restating it here would put one sentence on two adjacent lines.
-			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides", nodeID))
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q provides", nodeID))
 		}
 
 		pCtx := ProvidesContext{
@@ -162,7 +162,7 @@ func EvaluateAllProvides(
 				// names, and this halt heads with its own. The text above stays in
 				// the message because a one-line rendering of the chain stops at a
 				// join and would otherwise print the frame without the reason.
-				return nil, nil, cerrors.Wrap(fmt.Errorf("%w: %w", ErrProvidesEvaluation(), err), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				return nil, nil, cerrors.Wrap(fmt.Errorf("%w: %w", ErrProvidesEvaluation(), err), cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 					cerrors.ComposeMessage(ErrProvidesEvaluation(), []string{
 						fmt.Sprintf("node %q", nodeID),
 						fmt.Sprintf("provides[%q]", key),

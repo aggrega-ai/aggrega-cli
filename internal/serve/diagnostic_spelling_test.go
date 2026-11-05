@@ -155,7 +155,7 @@ func TestDiagnosticsAnswerTheFileHoweverTheRequestSpelledIt(t *testing.T) {
 			ctx, flush := serializerContext(t, &pushed)
 			advisory := rendercore.UnhonorableAnnotationDiagnostic(
 				"helm", "aggrega.ai/namspace", "synthesized")
-			advisory.Location = &renderer.DiagnosticLocation{URI: "app", Kind: "helm"}
+			advisory.Location = &renderer.DiagnosticLocation{Instance: "app", Kind: "helm"}
 			srv.publishRenderDiagnostics(ctx, pick(tc.renderRelative),
 				[]renderer.Diagnostic{advisory}, nil, nil, nil)
 			flush()
@@ -222,7 +222,7 @@ func TestRenderPushCarriesTheAbsolutePathTheClientResolves(t *testing.T) {
 	ctx, flush := serializerContext(t, &pushed)
 	advisory := rendercore.UnhonorableAnnotationDiagnostic(
 		"helm", "aggrega.ai/namspace", "synthesized")
-	advisory.Location = &renderer.DiagnosticLocation{URI: "app", Kind: "helm"}
+	advisory.Location = &renderer.DiagnosticLocation{Instance: "app", Kind: "helm"}
 	srv.publishRenderDiagnostics(ctx, relSpelling, []renderer.Diagnostic{advisory}, nil, nil, nil)
 	flush()
 

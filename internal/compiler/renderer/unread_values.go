@@ -112,7 +112,7 @@ func unreadValueWarnings(
 			warnings = append(warnings, Diagnostic{
 				Severity:  abi.SeverityWarn,
 				SourceRef: k,
-				Location:  &DiagnosticLocation{URI: nodeID},
+				Location:  &DiagnosticLocation{Instance: nodeID},
 				// The sentence states the fact and then the two things its reader
 				// can do about it, and it names no field of the Recipe. Whoever
 				// authored the key is the developer or the operator, not the

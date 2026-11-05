@@ -308,7 +308,7 @@ metadata:
 		found = true
 		// The advisory arrives located at the node and the provider that raised
 		// it, which is what a consumer reading no terminal attributes it by.
-		if w.Location == nil || w.Location.URI == "" || w.Location.Kind == "" {
+		if w.Location == nil || w.Location.Instance == "" || w.Location.Kind == "" {
 			t.Errorf("the guest advisory reached the result unlocated: %+v", w.Location)
 		}
 		break

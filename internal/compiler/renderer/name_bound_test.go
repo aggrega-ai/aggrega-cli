@@ -182,6 +182,37 @@ func TestSettleComposedComponentIdentity_HaltsWhenNoLengthWouldHelp(t *testing.T
 	}
 }
 
+// TestSettleComposedComponentIdentity_RefusalNamesTheIdentityAsTheInstance pins
+// where a refused composed identity is reported: it is the identity the build
+// gives a derived component, so the refusal names it as the instance the failure
+// concerns and leaves the file slot empty — an identity there would read as a
+// document the reader cannot open.
+func TestSettleComposedComponentIdentity_RefusalNamesTheIdentityAsTheInstance(t *testing.T) {
+	t.Parallel()
+
+	oracle := &boundOracle{answer: func(string) DerivedNameVerdict {
+		return DerivedNameVerdict{Kind: "release name", Usable: false,
+			Reason: "the first character is one this alphabet does not admit"}
+	}}
+	_, err := SettleComposedComponentIdentity(context.Background(), oracle,
+		labels.AttachmentScope, "stub", nil, "host", "instance")
+	var ce *cerrors.CompilerError
+	if !errors.As(err, &ce) {
+		t.Fatalf("the refusal carries no diagnostic envelope; got %v", err)
+	}
+	if len(oracle.seen) != 1 {
+		t.Fatalf("the exchange took %d passes; want 1", len(oracle.seen))
+	}
+	at := ce.Source()
+	if at.Instance != oracle.seen[0] || at.File != "" {
+		t.Errorf("the refusal's position = %+v; want the composed identity %q as its instance and no file",
+			at, oracle.seen[0])
+	}
+	if got, want := at.String(), "instance "+oracle.seen[0]; got != want {
+		t.Errorf("the printed position = %q, want %q", got, want)
+	}
+}
+
 // TestSettleComposedComponentIdentity_HaltsOnAZeroBoundRatherThanLooping pins the
 // distinction between an absent bound and a bound of zero.
 //

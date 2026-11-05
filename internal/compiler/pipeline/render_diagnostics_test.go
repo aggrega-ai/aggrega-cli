@@ -17,13 +17,13 @@ func unsupportedFieldDiag() renderer.Diagnostic {
 		Severity: abi.SeverityWarn,
 		Code:     renderer.UnsupportedFieldCode,
 		Message:  `target "compose" does not support scheduling and omitted it`,
-		Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},
+		Location: &renderer.DiagnosticLocation{Instance: "api", Kind: "compose"},
 	}
 }
 
 func sensitiveByValueDiag() renderer.Diagnostic {
 	d := renderer.SensitiveByValueDiagnostic("user_password", "env", "MARIADB_PASSWORD")
-	d.Location = &renderer.DiagnosticLocation{URI: "db", Kind: "helm"}
+	d.Location = &renderer.DiagnosticLocation{Instance: "db", Kind: "helm"}
 	return d
 }
 
@@ -36,7 +36,7 @@ func TestEmitRenderWarnings_SuppressUnsupportedFieldClass(t *testing.T) {
 		Warnings: []renderer.Diagnostic{{
 			Severity: abi.SeverityWarn,
 			Message:  "some other advisory",
-			Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},
+			Location: &renderer.DiagnosticLocation{Instance: "api", Kind: "compose"},
 		}},
 		Diagnostics: []renderer.Diagnostic{unsupportedFieldDiag()},
 	}
@@ -111,7 +111,7 @@ func TestEmitRenderWarnings_DisplayBytesAreUnchanged(t *testing.T) {
 			{
 				Severity: abi.SeverityWarn,
 				Message:  `.infra key "cpu" is read by no template`,
-				Location: &renderer.DiagnosticLocation{URI: "api"},
+				Location: &renderer.DiagnosticLocation{Instance: "api"},
 			},
 		},
 		Diagnostics: []renderer.Diagnostic{unsupportedFieldDiag()},
@@ -165,7 +165,7 @@ func TestMergeRenderDiagnostics_CarriesBothStreamsInDisplayOrder(t *testing.T) {
 	uncoded := renderer.Diagnostic{
 		Severity: abi.SeverityWarn,
 		Message:  `.infra key "cpu" is read by no template`,
-		Location: &renderer.DiagnosticLocation{URI: "api"},
+		Location: &renderer.DiagnosticLocation{Instance: "api"},
 	}
 	result := &renderer.RenderResult{
 		Warnings:    []renderer.Diagnostic{uncoded},
@@ -182,7 +182,7 @@ func TestMergeRenderDiagnostics_CarriesBothStreamsInDisplayOrder(t *testing.T) {
 	}
 	// It arrives carrying its position, which is the whole reason a consumer that
 	// renders nothing can act on it.
-	if merged[0].Location == nil || merged[0].Location.URI != "api" {
+	if merged[0].Location == nil || merged[0].Location.Instance != "api" {
 		t.Errorf("the uncoded entry lost its position in the merge: %+v", merged[0].Location)
 	}
 	// It carries no code, because its raising site had none — an absent code is a
@@ -209,7 +209,7 @@ func TestMergeRenderDiagnostics_OrderMatchesTheDisplay(t *testing.T) {
 		Warnings: []renderer.Diagnostic{
 			{Severity: abi.SeverityWarn, Message: "first uncoded"},
 			{Severity: abi.SeverityWarn, Message: "second uncoded",
-				Location: &renderer.DiagnosticLocation{URI: "api"}},
+				Location: &renderer.DiagnosticLocation{Instance: "api"}},
 		},
 		Diagnostics: []renderer.Diagnostic{unsupportedFieldDiag(), sensitiveByValueDiag()},
 	}
@@ -238,8 +238,11 @@ func TestMergeRenderDiagnostics_OrderMatchesTheDisplay(t *testing.T) {
 	}
 }
 
-// TestRenderDiagnosticText_LocationForms pins the one formatter's three shapes so
-// the terminal and the editor cannot render the same advisory two ways.
+// TestRenderDiagnosticText_LocationForms pins the one formatter's shapes so the
+// terminal and the editor cannot render the same advisory two ways. A location a
+// plugin set itself, naming a document and no instance, keeps the line it printed
+// before an instance could be carried, byte for byte; one naming an instance prints
+// the instance even beside a document.
 func TestRenderDiagnosticText_LocationForms(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -248,8 +251,16 @@ func TestRenderDiagnosticText_LocationForms(t *testing.T) {
 		want string
 	}{
 		{"no location", renderer.Diagnostic{Message: "bare"}, "bare"},
-		{"node only", renderer.Diagnostic{Message: "m", Location: &renderer.DiagnosticLocation{URI: "db"}}, `node "db": m`},
-		{"node and provider", renderer.Diagnostic{Message: "m", Location: &renderer.DiagnosticLocation{URI: "db", Kind: "helm"}}, `node "db" (provider "helm"): m`},
+		{"node only", renderer.Diagnostic{Message: "m", Location: &renderer.DiagnosticLocation{Instance: "db"}}, `node "db": m`},
+		{"node and provider", renderer.Diagnostic{Message: "m", Location: &renderer.DiagnosticLocation{Instance: "db", Kind: "helm"}}, `node "db" (provider "helm"): m`},
+		{"a plugin-set location with no instance", renderer.Diagnostic{Message: "Unsupported argument",
+			Location: &renderer.DiagnosticLocation{URI: "main.tf", Line: 3, Kind: "terraform"}},
+			`node "main.tf" (provider "terraform"): Unsupported argument`},
+		{"a plugin-set document and no provider", renderer.Diagnostic{Message: "m",
+			Location: &renderer.DiagnosticLocation{URI: "main.tf"}}, `node "main.tf": m`},
+		{"an instance beside a document", renderer.Diagnostic{Message: "m",
+			Location: &renderer.DiagnosticLocation{URI: "main.tf", Kind: "terraform", Instance: "db"}},
+			`node "db" (provider "terraform"): m`},
 	}
 	for _, c := range cases {
 		if got := renderer.RenderDiagnosticText(c.in); got != c.want {

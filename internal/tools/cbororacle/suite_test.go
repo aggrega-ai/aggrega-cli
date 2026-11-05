@@ -286,11 +286,21 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// documents the reference encoder writes as byte strings too, so all of them
 	// stay anchored.
 	vec[abi.ValidateNodeOutput](t, "ValidateNodeOutput", false)
+	// A diagnostic whose location names the instance it concerns beside the
+	// document it points into. The member it adds is a text string, which the
+	// reference encoder writes the same way and leaves out when empty, so it stays
+	// anchored.
+	vec[abi.ValidateNodeOutput](t, "ValidateNodeOutputInstanceLocation", false)
 	vec[abi.CarveInput](t, "CarveInput", false)
 	vec[abi.CarveOutput](t, "CarveOutput", false)
 	vec[abi.ReassembleInput](t, "ReassembleInput", false)
 	vec[abi.ReassembleOutput](t, "ReassembleOutput", false)
 	vec[abi.NameBoundInput](t, "NameBoundInput", false)
+	// A second name-bound question, carrying the facts of a node's resolved
+	// workload — its form and its Service keys in declaration order. The members it
+	// adds are a text string and a list of text strings, which the reference
+	// encoder writes the same way and leaves out when empty, so it stays anchored.
+	vec[abi.NameBoundInput](t, "NameBoundInputWorkload", false)
 	vec[abi.NameBoundOutput](t, "NameBoundOutput", false)
 	vec[abi.RenderedNameInput](t, "RenderedNameInput", false)
 	vec[abi.RenderedNameOutput](t, "RenderedNameOutput", false)

@@ -146,7 +146,7 @@ func wrapSourceResolutionError(err error, nodeID, label string) error {
 			}
 		}
 	}
-	return cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, message)
+	return cerrors.Wrap(err, category, cerrors.SourceLocation{Instance: nodeID}, message)
 }
 
 // matchFetchSentinel walks the error chain via errors.Is against each

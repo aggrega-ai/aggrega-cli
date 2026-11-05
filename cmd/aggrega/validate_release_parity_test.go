@@ -657,7 +657,7 @@ func TestValidateReleaseCoreParity(t *testing.T) {
 // reading that returned fewer facts, or none, would pass the parity test while
 // checking nothing, so each row also states the facts it expects.
 func TestReleaseFindingFactsNameEveryDroppedFact(t *testing.T) {
-	nodeAt := cerrors.SourceLocation{File: "backend"}
+	nodeAt := cerrors.SourceLocation{Instance: "backend"}
 	recipeAt := cerrors.SourceLocation{File: "recipes/api-sourceonly.yaml"}
 	notOnMachine := errors.New("the module serving this provider is not on this machine")
 	inner := cerrors.Wrap(notOnMachine, cerrors.CatalogError, recipeAt, "reading the provider's plugin")

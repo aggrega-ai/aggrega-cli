@@ -222,7 +222,7 @@ func CollectRenderedNames(
 			// the node's own identity, which is exactly what the render does.
 		})
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 				fmt.Sprintf("node %q rendered name", nodeID))
 		}
 		if name == "" {

@@ -238,14 +238,15 @@ func TestHostGuestWireParity_FRPStep(t *testing.T) {
 // decodes the answer strictly, so the compiler side must read exactly that form —
 // and write it, so the two sides emit the same bytes for the same value.
 //
-// The diagnostics reach past the two required members — a code and a location —
-// so the structural form is exercised beyond its smallest shape.
+// The diagnostics reach past the two required members — a code and a location
+// naming a document and the instance it concerns — so the structural form is
+// exercised beyond its smallest shape.
 func TestHostGuestWireParity_FRPDiagnosticCarry(t *testing.T) {
 	t.Parallel()
 
 	diags := []abi.Diagnostic{
 		{Severity: abi.SeverityWarn, Message: "heads up", Code: "step-advisory",
-			Location: &abi.Location{URI: "payments-api", Kind: "helm", Line: 7}},
+			Location: &abi.Location{URI: "templates/deployment.yaml", Kind: "helm", Line: 7, Instance: "payments-api"}},
 		{Severity: abi.SeverityInfo, Message: "noted"},
 	}
 	hostOut := frp.FRPStepOutput{Diagnostics: append([]renderctx.Diagnostic(nil), diags...)}

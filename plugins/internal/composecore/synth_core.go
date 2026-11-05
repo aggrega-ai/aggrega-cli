@@ -99,7 +99,7 @@ func SynthesizeWorkloadCore(
 		// supported
 	default:
 		return nil, nil, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only: compose cannot express this workload form", rendercore.NormalizeWorkloadForm(w.Form)))
 	}
 
@@ -151,7 +151,7 @@ func SynthesizeWorkloadCore(
 
 		svc, cdiags, err := translateContainer(c, "containers."+containerName, w, nodeCtx, role, mainServiceName)
 		if err != nil {
-			return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
+			return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
 		}
 		diags = append(diags, cdiags...)
 
@@ -238,12 +238,12 @@ func SynthesizeWorkloadCore(
 	// publishing is a service-level field. Aggregate ports across all
 	// Workload.Services entries; the Type field decides whether to publish.
 	if err := applyWorkloadServicePorts(&frag, w, mainServiceName); err != nil {
-		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q apply service ports", nodeCtx.NodeID))
+		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q apply service ports", nodeCtx.NodeID))
 	}
 
 	body, err := marshalDeterministic(&frag, nodeCtx.YAMLIndent)
 	if err != nil {
-		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
+		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
 	}
 
 	return []rendercore.EmittedFile{
@@ -310,7 +310,7 @@ func refuseSensitiveAttachmentsAtReference(nodeCtx rendercore.NodeRenderContext)
 		noun, pronoun = "attachments", "them"
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 		fmt.Sprintf("compose: node %q is a reference workload, which compose realizes as no service, so the %s %s carrying material declared sensitive would reach no emitted file: attach %s to the component that calls %q instead",
 			nodeCtx.NodeID, noun, strings.Join(named, ", "), pronoun, nodeCtx.NodeID))
 }
@@ -456,7 +456,7 @@ func synthesizeInitServices(
 		serviceName := containerServiceName(mainServiceName, containerName)
 
 		if _, taken := frag.Services[serviceName]; taken {
-			return nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			return nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 				fmt.Sprintf("compose: node %q init container %q needs the service name %q, which another container of the same workload already uses; give every entry of containers and initContainers a distinct name",
 					nodeCtx.NodeID, containerName, serviceName),
 				nil, nil)
@@ -464,7 +464,7 @@ func synthesizeInitServices(
 
 		svc, cdiags, err := translateContainer(c, fmt.Sprintf("initContainers[%d]", i), w, nodeCtx, roleInit, mainServiceName)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q init container %q", nodeCtx.NodeID, containerName))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q init container %q", nodeCtx.NodeID, containerName))
 		}
 		diags = append(diags, cdiags...)
 
@@ -533,7 +533,7 @@ func translateContainer(
 	// compose cannot express).
 	if c.Lifecycle != nil {
 		return Service{}, nil, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive: compose has no lifecycle-hook primitive; container declares lifecycle hooks", nodeCtx.NodeID))
 	}
 
@@ -556,7 +556,7 @@ func translateContainer(
 	// reinterpretation would silently change meaning. Halt loudly.
 	if len(c.EnvFrom) > 0 {
 		return Service{}, nil, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive: compose has no env-from-object primitive; container declares envFrom", nodeCtx.NodeID))
 	}
 
@@ -571,7 +571,7 @@ func translateContainer(
 	case "IfNotPresent":
 		svc.PullPolicy = "if_not_present"
 	default:
-		return Service{}, nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q unknown imagePullPolicy %q", nodeCtx.NodeID, c.ImagePullPolicy),
 			nil, nil)
 	}
@@ -658,7 +658,7 @@ func translateContainer(
 		// prefixes the node and the container, so the sentence opens at the mount.
 		if vm.SubPath != "" && entry.Volume == nil {
 			return Service{}, nil, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-				cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+				cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeCtx.NodeID},
 				fmt.Sprintf("%s.volumeMounts[%d] mounts volume %q at %q with subPath %q, and compose delivers that volume as %s, which has no form for mounting part of it: remove subPath from the mount, or mount a persistent volume, whose subPath compose realizes",
 					containerPath, i, vm.Name, vm.Path, vm.SubPath, subpathlessPrimitive(entry.Type)))
 		}

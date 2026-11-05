@@ -618,7 +618,7 @@ func parseNodeFragments(nodeID string, intermediates []rendercore.EmittedFile) (
 func recordSectionBody(contribs map[string][]bodyContrib, entryNoun, name string, body any, party sectionContrib, yamlIndent int) error {
 	emitted, err := marshalDeterministic(body, yamlIndent)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: party.nodeID}, fmt.Sprintf("compose: node %q %s %q: marshal for collision comparison", party.nodeID, entryNoun, name))
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: party.nodeID}, fmt.Sprintf("compose: node %q %s %q: marshal for collision comparison", party.nodeID, entryNoun, name))
 	}
 	contribs[name] = append(contribs[name], bodyContrib{party: party, emitted: string(emitted)})
 	return nil

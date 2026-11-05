@@ -154,13 +154,13 @@ func omitKindOf(entry rendercore.ResolvedOmit, nodeID string) (omitKind, error) 
 	nameText := rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name)
 	if entry.Entry.Namespace != "" {
 		return omitKind{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: an omits entry (kind %s, name %s) names namespace %s, and a compose file has no namespaces: %s; remove the namespace from the entry",
 				kindText, nameText, rendercore.OmitFieldText(entry.Entry.Namespace, entry.Withheld.Namespace), omitKindsAccepted()))
 	}
 	if entry.Entry.Subchart != "" {
 		return omitKind{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: an omits entry (kind %s, name %s) names subchart %s, and a compose file has no subcharts: %s; remove the subchart from the entry",
 				kindText, nameText, rendercore.OmitFieldText(entry.Entry.Subchart, entry.Withheld.Subchart), omitKindsAccepted()))
 	}
@@ -170,7 +170,7 @@ func omitKindOf(entry rendercore.ResolvedOmit, nodeID string) (omitKind, error) 
 		}
 	}
 	return omitKind{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("compose: an omits entry (name %s) names kind %s: %s",
 			nameText, kindText, omitKindsAccepted()))
 }
@@ -269,7 +269,7 @@ func requireNoReferenceToLeftOut(doc map[string]any, left leftOutUnits, nodeID s
 		return nil
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("compose: what an omits entry left out is still named by the file: %s; compose refuses a file naming a service, a volume or a config it does not declare: leave out what names it as well, change the reference through valuesMapping, or remove the entry",
 			strings.Join(findings, "; ")))
 }

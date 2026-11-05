@@ -43,7 +43,7 @@ func TestRenderRefusal_PointsWhereTheRefusalsOwnChainPoints(t *testing.T) {
 	cause := stderrors.New("references slot \"admin_keyy\" which is not declared")
 	node := func(err error) error {
 		return fmt.Errorf("rendering: %w",
-			cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: "router"}, "rendering node \"router\""))
+			cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: "router"}, "rendering node \"router\""))
 	}
 	// A finding the graph raises: an envelope naming the document that wrote the key
 	// relative to the workspace, with the key beside it — the shape the composition

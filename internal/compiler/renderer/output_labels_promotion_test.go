@@ -215,7 +215,7 @@ func TestOutputComponentLabels_AbsentKey_ElidesAndWarns(t *testing.T) {
 	}
 	// The node and the promoted key are fields as well as words, so a consumer
 	// reading no terminal can point at the right node and the right key.
-	if raised.Location == nil || raised.Location.URI != "first" {
+	if raised.Location == nil || raised.Location.Instance != "first" {
 		t.Errorf("the advisory is not located at the node: %+v", raised.Location)
 	}
 	if raised.SourceRef != "component.aggrega.ai/hosting" {

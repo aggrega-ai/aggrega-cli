@@ -169,7 +169,7 @@ func nameBoundQuestion(proposed string, authored bool, workload *types.Workload)
 func SettleAuthoredComponentIdentity(ctx context.Context, engine any, nodeID, authoredField string, workload *types.Workload) error {
 	verdict, err := askNameBound(ctx, engine, nameBoundQuestion(nodeID, true, workload))
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("node %q name bound", nodeID))
 	}
 	if verdict.usable {
@@ -238,7 +238,7 @@ func SettleComposedComponentIdentity(
 		proposed = labels.ComposeComponentIdentity(scope, bound, parts...)
 		verdict, err := askNameBound(ctx, engine, nameBoundQuestion(proposed, false, workload))
 		if err != nil {
-			return "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: proposed},
+			return "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: proposed},
 				fmt.Sprintf("composed identity %q name bound", proposed))
 		}
 		if verdict.usable {
@@ -259,7 +259,7 @@ func SettleComposedComponentIdentity(
 				detail = append(detail, verdict.reason)
 			}
 			return "", cerrors.Wrap(ErrComponentIdentityTargetRefuses(), cerrors.CatalogError,
-				cerrors.SourceLocation{File: proposed},
+				cerrors.SourceLocation{Instance: proposed},
 				cerrors.ComposeMessage(ErrComponentIdentityTargetRefuses(), detail,
 					"rename the parts the identity is composed from so the target accepts the name they reach"))
 		}
@@ -287,14 +287,14 @@ func SettleComposedComponentIdentity(
 				detail = append(detail, verdict.reason)
 			}
 			return "", cerrors.Wrap(ErrComponentIdentityTargetRefuses(), cerrors.CatalogError,
-				cerrors.SourceLocation{File: next},
+				cerrors.SourceLocation{Instance: next},
 				cerrors.ComposeMessage(ErrComponentIdentityTargetRefuses(), detail,
 					"shorten the parts the identity is composed from"))
 		}
 		bound = verdict.bound
 	}
 	return "", cerrors.Wrap(ErrNameBoundNotConverging(), cerrors.TranslationError,
-		cerrors.SourceLocation{File: proposed},
+		cerrors.SourceLocation{Instance: proposed},
 		cerrors.ComposeMessage(ErrNameBoundNotConverging(), []string{
 			fmt.Sprintf("provider guest %q", guestName),
 			fmt.Sprintf("refused %d proposals, the last of them %q", nameBoundMaxPasses, proposed),

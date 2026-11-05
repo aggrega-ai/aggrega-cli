@@ -58,7 +58,7 @@ func resolveOutputLabels(recipe *types.Recipe, nodeID string, node types.IRNode,
 				warn(Diagnostic{
 					Severity:  abi.SeverityWarn,
 					SourceRef: key,
-					Location:  &DiagnosticLocation{URI: nodeID},
+					Location:  &DiagnosticLocation{Instance: nodeID},
 					Message: fmt.Sprintf(
 						"recipe %q promotes component label %q, which component %q does not declare; no label is stamped for it",
 						recipe.Metadata.Name, key, node.Component),

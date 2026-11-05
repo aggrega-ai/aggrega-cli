@@ -95,7 +95,7 @@ var (
 func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 	docs, err := rendercore.DecodeAllYAMLDocs(string(body))
 	if err != nil {
-		return ComposeFile{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("compose: node %q %s: parse", nodeID, origin))
+		return ComposeFile{}, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("compose: node %q %s: parse", nodeID, origin))
 	}
 	var withContent []*yaml.Node
 	for _, d := range docs {
@@ -105,7 +105,7 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 	}
 	if n := len(withContent); n > 1 {
 		return ComposeFile{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: node %q %s holds %d YAML documents, and the merge reads a fragment as one compose file, so every document after the first would be left out of the assembled file: write the fragment as one document, or give each document an artifacts: entry of its own", nodeID, origin, n))
 	}
 	if len(withContent) == 0 {
@@ -121,7 +121,7 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 	w.walk(root, composeFileType, "")
 	if refusal := w.refusal(); refusal != "" {
 		return ComposeFile{}, cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: node %q %s %s", nodeID, origin, refusal))
 	}
 
@@ -132,7 +132,7 @@ func decodeFragment(body []byte, nodeID, origin string) (ComposeFile, error) {
 	// this decode.
 	var frag ComposeFile
 	if err := doc.Decode(&frag); err != nil {
-		return ComposeFile{}, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		return ComposeFile{}, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: node %q %s: parse: %s", nodeID, origin, authoredshape.DescribeYAMLDecodeErrorIn(err, body)),
 			nil, nil)
 	}

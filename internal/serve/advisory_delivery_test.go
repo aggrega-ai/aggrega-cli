@@ -175,7 +175,7 @@ func TestPublishedAdvisoriesRecoverAKeyPathAndFallBackWithoutOne(t *testing.T) {
 		{
 			Severity: abi.SeverityWarn,
 			Message:  "an advisory that named a graph coordinate",
-			Location: &renderer.DiagnosticLocation{URI: "db", Kind: "helm"},
+			Location: &renderer.DiagnosticLocation{Instance: "db", Kind: "helm"},
 		},
 		{Severity: abi.SeverityWarn, Message: "an advisory that named nothing at all"},
 	}, nil, content, nil)

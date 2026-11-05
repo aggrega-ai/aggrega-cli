@@ -1761,7 +1761,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				Metadata: selfInjectMetadata(graph, release),
 			}
 			if err := ExecutePass2a(&inject, node.SelfInject, nodeID, allProvides[nodeID], siCtx, nodeDeclared.pillarKeys()); err != nil {
-				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 			}
 		}
 
@@ -1784,7 +1784,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
 			}, readers.feature, boundaryFRState)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment inject", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q attachment inject", nodeID))
 		}
 
 		// Retain what every surface asked this node's pipe for, then ask the rule
@@ -1816,7 +1816,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
 		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, renderedNames[nodeID], recipeLookup, input.CatalogLookup, readers.feature, boundaryFRState, node.BoundaryPath)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment provides", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q attachment provides", nodeID))
 		}
 
 		// Build template context
@@ -1968,7 +1968,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// state.Recipe with a local copy whose Spec.Source carries the resolved
 		// value.
 		if err := phaseB0(tmplCtx, state, allLocals[nodeID]); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 		recipe = state.Recipe // pick up the local copy with resolved source
 
@@ -2003,7 +2003,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		mappedDelivery, err := ExecutePhaseA(tmplCtx, featureRefs, hostWithheld{host: state.Withheld, attachment: attachmentLeaves})
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 		// Retain what each attachment's mapping said about the mechanisms this
 		// component declared, which keys it wrote that the merge did not apply,
@@ -2072,12 +2072,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// accumulator. Collection order is the delivery order, which is itself
 		// deterministic, so the stream is byte-stable across runs.
 		for i := range sensitiveByValue {
-			sensitiveByValue[i].Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
+			sensitiveByValue[i].Location = &DiagnosticLocation{Instance: nodeID, Kind: providerName}
 		}
 		state.Diagnostics = append(state.Diagnostics, sensitiveByValue...)
 		engine, err := engineFactory(providerRef)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q: selecting its rendering plugin", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q: selecting its rendering plugin", nodeID))
 		}
 
 		// Cross-boundary link placeholder stamp. For a consumer whose provider
@@ -2093,12 +2093,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// values mappings against exactly the pipe it did before. Which edges cross
 		// is the render's one classification, taken before the walk.
 		if err := stampCrossBoundaryLinkSentinels(tmplCtx, nodeID, graph, crossLinks); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("cross-boundary link stamp node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("cross-boundary link stamp node %q", nodeID))
 		}
 
 		// Phase B.1 — valuesMapping → state.ResolvedValues.
 		if err := phaseB1(tmplCtx, state); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 		values := state.ResolvedValues
 
@@ -2290,7 +2290,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if validator, ok := engine.(NodeInputValidator); ok {
 			diags, verr := validator.ValidateNodeInput(ctx, values, nodeCtx)
 			if verr != nil {
-				return nil, cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q input validation", nodeID))
+				return nil, cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q input validation", nodeID))
 			}
 			if err := routeNodeInputDiagnostics(nodeID, providerName, diags, nodeCtx.WarningSink); err != nil {
 				return nil, err
@@ -2305,7 +2305,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			var err error
 			files, err = engine.Render(ctx, values, nodeCtx)
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 			}
 		}
 		// Tag with EmitOriginSource and accumulate (deterministic across
@@ -2348,7 +2348,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// slot allowlist and, for an entry naming a connection, against the slots
 		// that connection's socket declares.
 		if err := phaseB2(tmplCtx, state, workloadSlots); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		// Advertised-only refusal of an authored identity the node's target will
@@ -2386,7 +2386,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// pass and workload synthesis because both read the parsed Workload: a pair
 		// refused here never reaches a provider.
 		if err := runWorkloadEnvironmentRule(ctx.Err, state); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		// Phase B.3 — artifacts evaluation. Each artifacts: entry (inline
@@ -2403,14 +2403,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// that it carries on the source-render and workload-synthesis
 			// crossings. renderHaltCategory is that reading, shared with every
 			// crossing that re-files a render's error.
-			return nil, cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		// The files this node's Recipe contributes to its boundary's shared output,
 		// evaluated against the same context as its artifacts and held until the
 		// node joins its dispatch group below.
 		if err := phaseB3Boundary(tmplCtx, state, engine); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		// Phase B.4 — workload synthesizer dispatch. No-op for a node with no
@@ -2420,7 +2420,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// provider's own declared contract; the dispatch asserts the interface
 		// but adds no capability check of its own.
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 		// Slot 10 is wired per-emitted-file inside that stage itself, not at
 		// the orchestrator level: the granularity is per emitted file, not per
@@ -2453,7 +2453,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		bi, parameters := nodeBoundaryInputs(input, nodeID)
 		pathEval, err := computeFinalPath(nodeID, bp, providerName, recipeName, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("path eval node %q", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("path eval node %q", nodeID))
 		}
 		finalPath := pathEval.path
 
@@ -2548,7 +2548,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			input.emitted.coordinates(), emittingNode,
 		); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,
-				cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+				cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		key := dispatchKey{Path: finalPath, Provider: providerName}
@@ -3639,7 +3639,7 @@ func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, 
 	for _, a := range advisories {
 		if sink != nil {
 			if a.Location == nil {
-				a.Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
+				a.Location = &DiagnosticLocation{Instance: nodeID, Kind: providerName}
 			}
 			sink(a)
 		}
@@ -3647,7 +3647,7 @@ func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, 
 	if len(errs) > 0 {
 		inner := fmt.Errorf("%w: node %q, provider %q: %s",
 			ErrProviderNodeInputInvalid(), nodeID, providerName, strings.Join(errs, "; "))
-		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, inner.Error())
+		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID}, inner.Error())
 	}
 	return nil
 }
@@ -3675,7 +3675,7 @@ func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, 
 // occurrence values alone.
 func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderContract) error {
 	return cerrors.Wrap(ErrUnsupportedInputKind(), cerrors.CatalogError,
-		cerrors.SourceLocation{File: nodeID},
+		cerrors.SourceLocation{Instance: nodeID},
 		cerrors.ComposeMessage(ErrUnsupportedInputKind(),
 			[]string{fmt.Sprintf("node %q", nodeID)},
 			UnsupportedInputKindMessage(providerName, mode, caps)))

@@ -117,7 +117,7 @@ func checkQuantity(value, path, nodeID string, withhold bool) error {
 			err = quantity.Withhold(err)
 		}
 		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("helm: node %q: %s: %v; %s", nodeID, path, err, quantity.Shape))
 	}
 	return nil

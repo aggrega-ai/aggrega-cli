@@ -54,14 +54,39 @@ func SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey string) rende
 // line of user-facing text, attributed to the component and target its location
 // names. Every surface that displays this channel formats through here — the
 // terminal build output and the editor's problem list both — so the two cannot
-// drift into two spellings of the same advisory. A diagnostic carrying no
-// location renders its message alone.
+// drift into two spellings of the same advisory.
+//
+// Three kinds of location reach it, and each prints its own line:
+//
+//   - A location naming an instance — the one the compiler writes when it
+//     locates an advisory at the component and provider it was rendering —
+//     prints `node "<instance>"`, followed by `(provider "<kind>")` where a kind
+//     is set.
+//   - A location a plugin set itself, naming no instance, prints its uri in that
+//     same slot: `node "<uri>"`, with the provider beside it the same way. The
+//     uri there is usually a document, and the line still says node; that wording
+//     is kept byte for byte, because a reader or a tool matching such an advisory
+//     by its line would see it move for no change in what the plugin reported.
+//   - No location, or one naming neither, prints the message alone.
+//
+// The instance is printed as `node "<id>"` rather than in the "(instance <id>)"
+// shape cerrors.SourceLocation.String composes for a position, and that
+// difference is deliberate for the same reason: it is the advisory line every
+// surface displays. This is the one place an advisory's location is put into
+// text, so the two shapes never meet in one line.
 func RenderDiagnosticText(d renderctx.Diagnostic) string {
-	if d.Location == nil || d.Location.URI == "" {
+	if d.Location == nil {
+		return d.Message
+	}
+	subject := d.Location.Instance
+	if subject == "" {
+		subject = d.Location.URI
+	}
+	if subject == "" {
 		return d.Message
 	}
 	if d.Location.Kind == "" {
-		return fmt.Sprintf("node %q: %s", d.Location.URI, d.Message)
+		return fmt.Sprintf("node %q: %s", subject, d.Message)
 	}
-	return fmt.Sprintf("node %q (provider %q): %s", d.Location.URI, d.Location.Kind, d.Message)
+	return fmt.Sprintf("node %q (provider %q): %s", subject, d.Location.Kind, d.Message)
 }

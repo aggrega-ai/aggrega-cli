@@ -176,7 +176,7 @@ func runNodeEmissionCollisionRule(
 		if !callerPresentationSupplied {
 			return nil
 		}
-		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{File: node.ID},
+		return cerrors.Unidentified(cerrors.CatalogError, cerrors.SourceLocation{Instance: node.ID},
 			"the files this node's own render emitted could not be checked for two of its blocks "+
 				"meeting on one output name — internal error: the check's inputs were incomplete. "+
 				"This is a fault in the compiler rather than in the catalog, so there is nothing to "+

@@ -183,7 +183,7 @@ func warnUnhonorableAnnotations(
 			continue
 		}
 		d := UnhonorableAnnotationDiagnostic(providerName, key, displays...)
-		d.Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
+		d.Location = &DiagnosticLocation{Instance: nodeID, Kind: providerName}
 		sink(d)
 	}
 }

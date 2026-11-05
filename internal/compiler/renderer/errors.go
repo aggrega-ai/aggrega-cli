@@ -1706,7 +1706,7 @@ func RequireRenderFactLists(reported []RenderFact, nodeID, provider string) erro
 		}
 		values = append(values, "its value is "+kind)
 		return cerrors.Wrap(ErrProviderRenderFactNotList(), cerrors.CatalogError,
-			cerrors.SourceLocation{File: nodeID},
+			cerrors.SourceLocation{Instance: nodeID},
 			cerrors.ComposeMessage(ErrProviderRenderFactNotList(), values, ""))
 	}
 	return nil

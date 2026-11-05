@@ -162,7 +162,7 @@ func runNodePipeline(
 	if lookup == nil {
 		res.Warnings = append(res.Warnings, Diagnostic{
 			Severity: abi.SeverityWarn,
-			Location: &DiagnosticLocation{URI: nodeID},
+			Location: &DiagnosticLocation{Instance: nodeID},
 			Message:  fmt.Sprintf("pipeline (%d steps) validated but not executed (no plugin path resolver configured)", len(steps)),
 		})
 		return res, nil
@@ -357,7 +357,7 @@ func runNodePipelineWithInvoker(
 	// document the fault sits, which this executor does not.
 	for _, d := range walkRes.Warnings {
 		if d.Location == nil {
-			d.Location = &DiagnosticLocation{URI: nodeID}
+			d.Location = &DiagnosticLocation{Instance: nodeID}
 		}
 		d.Message = "pipeline: " + d.Message
 		res.Warnings = append(res.Warnings, d)
@@ -941,7 +941,7 @@ func foldPatchesBack(
 		if len(patched) > 0 {
 			b, warns, err := codec.Reassemble(pf.file.Name, pf.file.Body, pf.units, patched)
 			if err != nil {
-				return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 					fmt.Sprintf("node %q: pipeline: reassemble patched file %q", nodeID, pf.file.Name))
 			}
 			body = b
@@ -949,7 +949,7 @@ func foldPatchesBack(
 				warnings = append(warnings, Diagnostic{
 					Severity:  abi.SeverityWarn,
 					SourceRef: pf.file.Name,
-					Location:  &DiagnosticLocation{URI: nodeID},
+					Location:  &DiagnosticLocation{Instance: nodeID},
 					Message:   "pipeline: " + w,
 				})
 			}
@@ -1024,7 +1024,7 @@ func sideEffectBytes(se frp.SideEffect, nodeID string, idx int) ([]byte, error) 
 	case "emit_file":
 		if se.File == nil {
 			return nil, cerrors.Wrap(ErrPipelineEmitFileAbsent(), cerrors.CatalogError,
-				cerrors.SourceLocation{File: nodeID},
+				cerrors.SourceLocation{Instance: nodeID},
 				cerrors.ComposeMessage(ErrPipelineEmitFileAbsent(), []string{
 					fmt.Sprintf("node %q", nodeID),
 					fmt.Sprintf("side effect %d", idx),
@@ -1035,7 +1035,7 @@ func sideEffectBytes(se frp.SideEffect, nodeID string, idx int) ([]byte, error) 
 		return se.Crd, nil
 	default:
 		return nil, cerrors.Wrap(ErrPipelineSideEffectKindUndefined(), cerrors.CatalogError,
-			cerrors.SourceLocation{File: nodeID},
+			cerrors.SourceLocation{Instance: nodeID},
 			cerrors.ComposeMessage(ErrPipelineSideEffectKindUndefined(), []string{
 				fmt.Sprintf("node %q", nodeID),
 				fmt.Sprintf("side effect %d", idx),
@@ -1065,7 +1065,7 @@ func mapWalkError(err error, nodeID string, hasHost bool) error {
 		// addressed it with a PATCH anyway. Chain the walk's cause so both
 		// sentinels stay matchable via errors.Is.
 		inner := fmt.Errorf("%w: %w", ErrPipelinePatchTargetNotStructured(), err)
-		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("node %q: %s", nodeID, ErrPipelinePatchTargetNotStructured().Error()))
 	}
 	if errors.Is(err, frp.ErrPipelineTargetAbsent()) {
@@ -1076,14 +1076,14 @@ func mapWalkError(err error, nodeID string, hasHost bool) error {
 		// ErrPipelineTargetAbsent stay matchable via errors.Is.
 		if !hasHost && mentionsHostScope(err) {
 			inner := fmt.Errorf("%w: %w", ErrPipelineHostScopeUnavailable(), err)
-			return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 				fmt.Sprintf("node %q: %s", nodeID, ErrPipelineHostScopeUnavailable().Error()))
 		}
 		inner := fmt.Errorf("%w: %w", ErrPipelineTargetNotEmitted(), err)
-		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("node %q: %s", nodeID, ErrPipelineTargetNotEmitted().Error()))
 	}
-	return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("node %q: pipeline step failed", nodeID))
 }
 
@@ -1096,12 +1096,12 @@ func mentionsHostScope(err error) bool {
 }
 
 func wrapPipelineErr(err error, nodeID string) error {
-	return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("node %q: pipeline document set construction", nodeID))
 }
 
 func pipelineNotStructuredErr(nodeID, token string) error {
-	return cerrors.Wrap(ErrPipelinePatchTargetNotStructured(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(ErrPipelinePatchTargetNotStructured(), cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 		cerrors.ComposeMessage(ErrPipelinePatchTargetNotStructured(), []string{
 			fmt.Sprintf("node %q", nodeID),
 			fmt.Sprintf("document %q", token),
@@ -1109,7 +1109,7 @@ func pipelineNotStructuredErr(nodeID, token string) error {
 }
 
 func pipelinePreAssemblyErr(nodeID, token, scope string) error {
-	return cerrors.Wrap(ErrPipelinePatchPreAssembly(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(ErrPipelinePatchPreAssembly(), cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 		cerrors.ComposeMessage(ErrPipelinePatchPreAssembly(), []string{
 			fmt.Sprintf("node %q", nodeID),
 			fmt.Sprintf("%s-scope document %q is rendered by an assembler provider", scope, token),
@@ -1117,7 +1117,7 @@ func pipelinePreAssemblyErr(nodeID, token, scope string) error {
 }
 
 func pipelineHostScopeErr(nodeID, name string) error {
-	return cerrors.Wrap(ErrPipelineHostScopeUnavailable(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(ErrPipelineHostScopeUnavailable(), cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 		cerrors.ComposeMessage(ErrPipelineHostScopeUnavailable(), []string{
 			fmt.Sprintf("node %q", nodeID),
 			fmt.Sprintf("emit %q", name),

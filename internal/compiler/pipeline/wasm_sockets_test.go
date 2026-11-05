@@ -211,6 +211,35 @@ func TestPolicyVerdictLocation_SpanWinsOverStructured(t *testing.T) {
 	}
 }
 
+// TestPolicyVerdictLocation_InstanceFollowsTheDocument proves a verdict that names
+// the instance it concerns renders it in the shape every position names one —
+// "(instance <id>)" after the coordinates, "instance <id>" with none — and that a
+// verdict naming none renders exactly the coordinates it rendered before the
+// instance could be carried.
+func TestPolicyVerdictLocation_InstanceFollowsTheDocument(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		loc  *abi.Location
+		want string
+	}{
+		{"a document and an instance", &abi.Location{URI: "payments-api/deployment.yaml", KeyPath: "spec.replicas", Instance: "payments-api"},
+			"payments-api/deployment.yaml spec.replicas (instance payments-api)"},
+		{"a span and an instance", &abi.Location{Span: &abi.Span{StartLine: 7, StartColumn: 3, EndLine: 7, EndColumn: 19}, Instance: "payments-api"},
+			"7:3-7:19 (instance payments-api)"},
+		{"an instance alone", &abi.Location{Instance: "payments-api"}, "instance payments-api"},
+		{"no instance", &abi.Location{URI: "payments-api/deployment.yaml", KeyPath: "spec.replicas"},
+			"payments-api/deployment.yaml spec.replicas"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := policyVerdictLocation(c.loc); got != c.want {
+				t.Errorf("policyVerdictLocation = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestPluginRefName proves the diagnostic-label derivation takes the final URI
 // segment across the reference shapes a plugin attachment may carry: a version
 // tag and a digest are removed before the segment is read, a registry host's

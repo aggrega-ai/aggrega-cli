@@ -178,7 +178,7 @@ func omitMatchedNothingErr(entry ResolvedOmit, document, nodeID, provider string
 		values = append(values, omitFieldValue("subchart", entry.Entry.Subchart, entry.Withheld.Subchart))
 	}
 	return cerrors.Wrap(ErrOmitMatchedNothing(), cerrors.CatalogError,
-		cerrors.SourceLocation{File: nodeID},
+		cerrors.SourceLocation{Instance: nodeID},
 		cerrors.ComposeMessage(ErrOmitMatchedNothing(), values, omitMatchedNothingAdvice))
 }
 
@@ -199,6 +199,6 @@ func omitReportMismatchErr(nodeID, provider, handed, returned string) error {
 	}
 	values = append(values, handed, returned)
 	return cerrors.Wrap(ErrOmitReportMismatch(), cerrors.CatalogError,
-		cerrors.SourceLocation{File: nodeID},
+		cerrors.SourceLocation{Instance: nodeID},
 		cerrors.ComposeMessage(ErrOmitReportMismatch(), values, ""))
 }

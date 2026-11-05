@@ -214,7 +214,7 @@ func TestCloudFormationTemplateSections_UnfoldableSectionsAreNamedNotDropped(t *
 		if !strings.Contains(d.Message, section) {
 			t.Errorf("the %s diagnostic does not name the section: %q", section, d.Message)
 		}
-		if d.Location == nil || d.Location.URI != "store" {
+		if d.Location == nil || d.Location.Instance != "store" {
 			t.Errorf("the %s diagnostic is not attributed to the node that authored it; got %+v", section, d.Location)
 		}
 	}

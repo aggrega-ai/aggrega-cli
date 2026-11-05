@@ -53,7 +53,7 @@ func annotationAdvisories(diags []renderer.Diagnostic) map[string][]string {
 		}
 		node := ""
 		if d.Location != nil {
-			node = d.Location.URI
+			node = d.Location.Instance
 		}
 		out[node] = append(out[node], d.SourceRef)
 	}
@@ -234,7 +234,7 @@ func TestUnhonorableAnnotation_MultiKindAdvisoryNamesEveryDeclaredKind(t *testin
 		if d.Code != renderer.UnsupportedFieldCode || d.Location == nil {
 			continue
 		}
-		switch d.Location.URI {
+		switch d.Location.Instance {
 		case "backend":
 			multi = append(multi, renderer.RenderDiagnosticText(d))
 		case "frontend":

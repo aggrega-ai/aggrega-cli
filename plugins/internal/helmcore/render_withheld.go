@@ -263,5 +263,5 @@ func withheldChartFailure(err error, nodeID string) error {
 	if errors.As(err, &ce) {
 		category = ce.Category()
 	}
-	return cerrors.Wrap(cause, category, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("helm: node %q", nodeID))
+	return cerrors.Wrap(cause, category, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("helm: node %q", nodeID))
 }

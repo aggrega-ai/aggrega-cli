@@ -258,7 +258,7 @@ func TestRenderAll_AttachmentSensitivityNotConveyed(t *testing.T) {
 		if !strings.Contains(d.Message, `FeatureRecipe "`+unconveyedFRName+`"`) {
 			t.Errorf("advisory must name the FeatureRecipe whose mapping gates the join; got %q", d.Message)
 		}
-		if d.Location == nil || d.Location.URI != declSensNode {
+		if d.Location == nil || d.Location.Instance != declSensNode {
 			t.Errorf("advisory must be located at the host node %q; got location %+v", declSensNode, d.Location)
 		}
 		for _, other := range diags {

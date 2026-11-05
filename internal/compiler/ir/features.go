@@ -1220,7 +1220,7 @@ func mergeContribution(
 		return cerrors.Wrap(
 			ErrFeatureTypeMismatch(),
 			cerrors.OpsError,
-			cerrors.SourceLocation{File: nodeID},
+			cerrors.SourceLocation{Instance: nodeID},
 			cerrors.ComposeMessage(ErrFeatureTypeMismatch(), []string{
 				fmt.Sprintf("node %q", nodeID),
 				fmt.Sprintf("attachment %q", instanceName),

@@ -170,7 +170,7 @@ func deviceCount(value, role, path, nodeID string, withhold bool) (int64, error)
 		// composeDeviceCount emits a base-10 int64 or refuses, so this is a broken
 		// conversion rather than an authored value.
 		return 0, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: the %s %s at %s did not convert to a device count: %v: %s",
 				nvidiaGPUResource, role, path, err, quantityUnconvertible))
 	}
@@ -186,7 +186,7 @@ func deviceCountDisagreement(requestPath, limitPath string, request, limit int64
 		counts = "; " + quantity.ValueWithheld
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("compose: the %s request at %s and the limit at %s ask for different counts%s; compose reserves one device count for a service, so write the same count in both or only the limit: %s",
 			nvidiaGPUResource, requestPath, limitPath, counts, quantityUnconvertible))
 }
@@ -241,20 +241,20 @@ func convertQuantity(value string, convert func(quantity.Quantity) (string, bool
 			err = quantity.Withhold(err)
 		}
 		return "", cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: the %s %s at %s: %v; %s: %s",
 				resource, role, path, err, quantity.Shape, quantityUnconvertible))
 	}
 	converted, ok := convert(q)
 	if !ok && withhold {
 		return "", cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: the %s %s at %s is a quantity compose cannot represent exactly; %s; %s: %s",
 				resource, role, path, quantity.ValueWithheld, composeRange, quantityUnconvertible))
 	}
 	if !ok {
 		return "", cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("compose: the %s %s at %s is %q, a quantity compose cannot represent exactly; %s: %s",
 				resource, role, path, value, composeRange, quantityUnconvertible))
 	}

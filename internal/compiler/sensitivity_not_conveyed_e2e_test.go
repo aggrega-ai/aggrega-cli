@@ -48,7 +48,7 @@ func notConveyedAdvisories(diags []renderer.Diagnostic) map[string][]string {
 		}
 		node := ""
 		if d.Location != nil {
-			node = d.Location.URI
+			node = d.Location.Instance
 		}
 		out[node] = append(out[node], d.SourceRef)
 	}

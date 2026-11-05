@@ -185,7 +185,7 @@ func unknownSubchartErr(entry rendercore.ResolvedOmit, charts []renderedChart, n
 		renders = "the subcharts it renders are " + strings.Join(rendered, ", ")
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("helm: node %q: an omits entry (kind %s, name %s) names subchart %s, and the chart renders no subchart of that name: %s; name one of those, or give the entry a when that applies it only where that subchart renders",
 			nodeID,
 			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),

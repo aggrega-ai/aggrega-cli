@@ -45,7 +45,7 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 	if d.Code != renderer.UnsupportedFieldCode || d.SourceRef != "scheduling" {
 		t.Errorf("unsupported-field diagnostic malformed: %+v", d)
 	}
-	if d.Location == nil || d.Location.URI != "api" || d.Location.Kind != "compose" {
+	if d.Location == nil || d.Location.Instance != "api" || d.Location.URI != "" || d.Location.Kind != "compose" {
 		t.Errorf("unsupported-field diagnostic not attributed to node/provider: %+v", d.Location)
 	}
 	// The other advisory and the info note route to the warning sink; the
@@ -67,7 +67,7 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 		other.SourceRef != "replicas" || other.Suggest != "raise it" {
 		t.Errorf("the guest's own fields did not survive the routing: %+v", other)
 	}
-	if other.Location == nil || other.Location.URI != "api" || other.Location.Kind != "compose" {
+	if other.Location == nil || other.Location.Instance != "api" || other.Location.URI != "" || other.Location.Kind != "compose" {
 		t.Errorf("warning-sink advisory not located at node/provider: %+v", other.Location)
 	}
 	// And it renders through the one display formatter as the line the terminal
@@ -93,7 +93,7 @@ func TestSurfaceNodeDiagnostics_GuestLocationSurvives(t *testing.T) {
 	diags := []renderer.Diagnostic{{
 		Severity: abi.SeverityWarn,
 		Message:  "the guest knows where this is",
-		Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose", KeyPath: "spec.replicas"},
+		Location: &renderer.DiagnosticLocation{Instance: "api", Kind: "compose", KeyPath: "spec.replicas"},
 	}}
 	if err := (&Engine{}).surfaceNodeDiagnostics(nodeCtx, diags); err != nil {
 		t.Fatalf("surfaceNodeDiagnostics: %v", err)

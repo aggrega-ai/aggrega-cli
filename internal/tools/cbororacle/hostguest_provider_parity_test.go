@@ -23,14 +23,14 @@ import (
 // same bytes for the same value.
 
 // providerDiagnostics is a pair of diagnostics a provider might report, one of
-// them carrying a code and a location, so the structural form is reached beyond
-// its two required members. The compiler side's diagnostic is the plugin side's
+// them carrying a code and a location naming both the document and the instance
+// it concerns, so the structural form is reached beyond its two required members. The compiler side's diagnostic is the plugin side's
 // shared type under another name, so one value serves both sides' fixtures; what
 // differs between the sides is how each one's codec carries it.
 func providerDiagnostics() []renderctx.Diagnostic {
 	return []renderctx.Diagnostic{
 		{Severity: abi.SeverityHalt, Message: "main.tf:3: Unsupported block type", Code: "hcl-parse",
-			Location: &renderctx.DiagnosticLocation{URI: "payments-api", Kind: "terraform", Line: 3}},
+			Location: &renderctx.DiagnosticLocation{URI: "main.tf", Kind: "terraform", Line: 3, Instance: "payments-api"}},
 		{Severity: abi.SeverityWarn, Message: "values.legacyPort is deprecated", Code: "deprecated-field"},
 	}
 }

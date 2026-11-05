@@ -160,7 +160,7 @@ func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
 			fmt.Sprintf("node %q", nodeID),
 			fmt.Sprintf("active resolved to %q", string(*active)),
 		}
-		return false, cerrors.Wrap(ErrInvalidActive(), cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID},
+		return false, cerrors.Wrap(ErrInvalidActive(), cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID},
 			cerrors.ComposeMessage(ErrInvalidActive(), values, hint))
 	}
 	return b, nil
@@ -240,7 +240,7 @@ func flattenAggregate(
 	params map[string]any,
 ) (*flattenResult, error) {
 	if depth > maxSubAggregateDepth {
-		return nil, cerrors.Wrap(ErrMaxDepth(), cerrors.DeveloperError, cerrors.SourceLocation{File: prefix},
+		return nil, cerrors.Wrap(ErrMaxDepth(), cerrors.DeveloperError, cerrors.SourceLocation{Instance: prefix},
 			cerrors.ComposeMessage(ErrMaxDepth(), []string{
 				fmt.Sprintf("depth %d", depth),
 				fmt.Sprintf("prefix %q", prefix),
@@ -278,7 +278,7 @@ func flattenAggregate(
 			}
 
 			if visited[subAgg.Type] {
-				return nil, cerrors.Wrap(ErrSubAggregateLoad(), cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix},
+				return nil, cerrors.Wrap(ErrSubAggregateLoad(), cerrors.DeveloperError, cerrors.SourceLocation{File: sourceFile, Instance: childPrefix},
 					cerrors.ComposeMessage(ErrSubAggregateLoad(), []string{
 						fmt.Sprintf("circular sub-aggregate reference %q", subAgg.Type),
 						fmt.Sprintf("at %q", childPrefix),
@@ -287,7 +287,7 @@ func flattenAggregate(
 
 			childAgg, childSourceFile, childParams, err := loader(subAgg.Type, plainParams(subAgg.Parameters))
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad()))
+				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: sourceFile, Instance: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad()))
 			}
 
 			// Recorded once the module has loaded and before its own tree is
@@ -327,7 +327,7 @@ func flattenAggregate(
 			// Merge child results — preserve child's author-order during merge.
 			for id, node := range childResult.Nodes.All() {
 				if existing, exists := result.Nodes.Get(id); exists {
-					return nil, cerrors.Wrap(ErrSubAggregateNameCollision(), cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix},
+					return nil, cerrors.Wrap(ErrSubAggregateNameCollision(), cerrors.DeveloperError, cerrors.SourceLocation{File: sourceFile, Instance: childPrefix},
 						cerrors.ComposeMessage(ErrSubAggregateNameCollision(), []string{
 							fmt.Sprintf("id %q", id),
 							fmt.Sprintf("path %q", childPrefix),
@@ -564,7 +564,7 @@ func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode]
 		}
 		chain = append(chain, cur)
 		if visited[cur] {
-			return "", cerrors.Wrap(ErrReexportCycle(), cerrors.DeveloperError, cerrors.SourceLocation{File: candidate},
+			return "", cerrors.Wrap(ErrReexportCycle(), cerrors.DeveloperError, cerrors.SourceLocation{Instance: candidate},
 				cerrors.ComposeMessage(ErrReexportCycle(), []string{
 					fmt.Sprintf("alias chain %s", strings.Join(chain, " -> ")),
 				}, ""))

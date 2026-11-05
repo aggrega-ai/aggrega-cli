@@ -287,7 +287,7 @@ func TestEveryGuestFailureCrossesWithItsConditionAndItsSentence(t *testing.T) {
 			// A raise as a guest core writes one: the generic condition beneath,
 			// and the guest's own categorised frame carrying the sentence.
 			raised := cerrors.Wrap(k.condition, cerrors.TranslationError,
-				cerrors.SourceLocation{File: "node-a"},
+				cerrors.SourceLocation{Instance: "node-a"},
 				"provider: node \"node-a\": "+k.sentence)
 
 			f := rendercore.FailureOf(raised)

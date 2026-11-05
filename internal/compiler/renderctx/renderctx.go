@@ -129,5 +129,7 @@ type Diagnostic = abi.Diagnostic
 // DiagnosticLocation pins a [Diagnostic] to a source position. It is an
 // alias for the single generated [abi.Location]: Span carries a raw-byte
 // source span, KeyPath the dotted path into a structured document, URI
-// the source artifact, Line a document line, and Kind the source surface.
+// the source artifact, Line a document line, Kind the source surface, and
+// Instance the instance of the build the diagnostic concerns — never URI,
+// which names a document.
 type DiagnosticLocation = abi.Location

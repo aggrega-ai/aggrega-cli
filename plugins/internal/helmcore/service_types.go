@@ -34,7 +34,7 @@ func checkServiceTypes(w *types.Workload, nodeID string) error {
 			continue
 		}
 		return cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("helm: node %q: services.%s: type %q publishes the service's ports on the host's loopback address only, "+
 				"and a Kubernetes Service has no type that does; declare ClusterIP to keep the ports inside the cluster, "+
 				"or NodePort or LoadBalancer to publish them outside it", nodeID, name, svc.Type))

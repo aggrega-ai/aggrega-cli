@@ -603,7 +603,7 @@ func phaseB6(
 	// reads the same facts.
 	hostRenderFacts, err := renderFactsOnContext(state.RenderFacts)
 	if err != nil {
-		return attachmentOutput{}, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		return attachmentOutput{}, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("node %q render facts", nodeID))
 	}
 
@@ -665,7 +665,7 @@ func phaseB6(
 				// the shared render's errors as well as its own, a provider's fault
 				// among them. So the category is read off the condition, exactly as the
 				// render beneath it reads it, rather than fixed here.
-				return attachmentOutput{}, nil, cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
+				return attachmentOutput{}, nil, cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
 			continue
 		}
@@ -898,7 +898,7 @@ func (p *attachmentPass) render(
 	if afterTheNodes && readsCallerRenderFacts(fr) {
 		usedBy, err := usedByWithCallerFacts(state.InboundEdges, item.CallerRenderFacts)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 				fmt.Sprintf("node %q attachment %q callers' render facts", nodeID, item.Instance))
 		}
 		frCtx.Context.UsedBy = usedBy
@@ -906,7 +906,7 @@ func (p *attachmentPass) render(
 	if afterTheNodes && readsTargetRenderFacts(fr) {
 		uses, err := usesWithTargetFacts(tmplCtx.Context.Uses, item.TargetRenderFacts)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID},
 				fmt.Sprintf("node %q attachment %q targets' render facts", nodeID, item.Instance))
 		}
 		frCtx.Context.Uses = uses
@@ -936,7 +936,7 @@ func (p *attachmentPass) render(
 		frWithheld.leaves(item.Instance, pillarsFound),
 	)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
 	}
 	frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 	// The delivery pipe and the resolved-fill provides are populated only
@@ -982,12 +982,12 @@ func (p *attachmentPass) render(
 
 	frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries, frKeys)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument, Instance: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
 	}
 
 	frEngine, err := engineFactory(fr.Spec.Capability)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frDocument, Instance: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
 	}
 
 	frNodeCtx := nodeCtx
@@ -1736,7 +1736,7 @@ func renderFeatureRecipeFiles(
 	if validator, ok := frEngine.(NodeInputValidator); ok {
 		diags, verr := validator.ValidateNodeInput(ctx, frValues, frNodeCtx)
 		if verr != nil {
-			return nil, "", cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe input validation")
+			return nil, "", cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{Instance: frNodeCtx.NodeID}, "feature recipe input validation")
 		}
 		if err := routeNodeInputDiagnostics(frNodeCtx.NodeID, fr.Spec.Capability, diags, frNodeCtx.WarningSink); err != nil {
 			return nil, "", err
@@ -1875,7 +1875,7 @@ func renderFeatureRecipeFiles(
 		// host component's.
 		files, err := frEngine.Render(ctx, frValues, synthNodeCtx)
 		if err != nil {
-			return nil, "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
+			return nil, "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{Instance: frNodeCtx.NodeID}, "feature recipe render")
 		}
 		renderIsIntermediate := RenderIsIntermediate(frEngine)
 		// Accumulate by sorted path for deterministic EmittedFile order, carrying
@@ -1912,7 +1912,7 @@ func renderFeatureRecipeFiles(
 		// reading, and the component render path's own artifacts crossing and the
 		// boundary-scope caller ask it too; each names its own crossing in the
 		// message it adds.
-		return nil, "", cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe artifacts")
+		return nil, "", cerrors.Wrap(err, renderHaltCategory(err), cerrors.SourceLocation{Instance: frNodeCtx.NodeID}, "feature recipe artifacts")
 	}
 	if err := phaseB4(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
 		return nil, "", err

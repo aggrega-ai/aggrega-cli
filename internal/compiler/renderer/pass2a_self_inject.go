@@ -76,13 +76,13 @@ func ExecutePass2a(
 
 	// Process each mechanism
 	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx, withheld); err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx, withheld); err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, withheld); err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 
 	// A mechanism the component names that is not one of the three typed ones
@@ -97,7 +97,7 @@ func ExecutePass2a(
 			dest = types.OrderedMap[string]{}
 		}
 		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, withheld); err != nil {
-			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 		}
 		inject.Additional.Set(mech, dest)
 	}

@@ -232,12 +232,13 @@ func TestBothAdvisoryClassesTravelOnTheOneChannel(t *testing.T) {
 		if !strings.HasPrefix(a.Location.KeyPath, ".spec.") {
 			t.Errorf("locator = %q; want a path into the authored document", a.Location.KeyPath)
 		}
-		// The URI stays empty on this class ON PURPOSE: the shared display
-		// formatter reads a location's URI as a graph node, so a document path
-		// there would be printed as though it were a node identity.
-		if a.Location.URI != "" {
-			t.Errorf("locator carries URI %q; a document-scoped advisory must leave it empty or the shared "+
-				"formatter prints the document as though it were a graph node", a.Location.URI)
+		// The instance and the uri stay empty on this class ON PURPOSE: the shared
+		// display formatter prints a location's instance — or, where it names none,
+		// its uri — as the node the advisory concerns, and this finding concerns a
+		// document rather than an instance.
+		if a.Location.Instance != "" || a.Location.URI != "" {
+			t.Errorf("locator carries instance %q, uri %q; a document-scoped advisory must leave both empty or the "+
+				"shared formatter prints it as though it concerned one node", a.Location.Instance, a.Location.URI)
 		}
 		if a.SourceRef == "" {
 			t.Error("binding-lint entry names no subject; the entity is what a surface showing the finding without " +

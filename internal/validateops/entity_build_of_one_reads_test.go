@@ -316,7 +316,7 @@ func TestDeclinesRenderStopKeepsTheRecipesOwnFaults(t *testing.T) {
 	stop := func(cause error) error {
 		inner := cerrors.Wrap(fmt.Errorf("template %q execute: %w", "workload[probe]", cause),
 			cerrors.CatalogError, cerrors.SourceLocation{File: "recipe.yaml"}, "recipe \"probe\" workload template")
-		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: "instance"}, "rendering node \"instance\"")
+		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{Instance: "instance"}, "rendering node \"instance\"")
 	}
 	plain := stop(errors.New("nil pointer evaluating interface {}.TAG"))
 	cases := []struct {

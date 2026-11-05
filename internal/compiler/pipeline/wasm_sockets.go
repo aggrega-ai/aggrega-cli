@@ -23,6 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -790,27 +791,38 @@ func policyVerdictDetail(d abi.Diagnostic) string {
 // empty when the verdict carried no location or an empty one. The span wins when
 // present because it is the byte-exact position; otherwise the structured
 // document coordinates render, each omitted when the plugin left it unset.
+//
+// The instance the verdict concerns is not spelled here. The coordinates are
+// handed to the one composer of a position and an instance,
+// cerrors.SourceLocation.String, which writes it after them as "(instance <id>)",
+// or alone as "instance <id>" where the verdict located nothing else — so a
+// verdict and a halting diagnostic name an instance in one shape. With no
+// instance that composer returns the coordinates exactly as composed here, so a
+// verdict naming none renders byte-identically.
 func policyVerdictLocation(loc *abi.Location) string {
 	if loc == nil {
 		return ""
 	}
+	var position string
 	if s := loc.Span; s != nil {
-		return fmt.Sprintf("%d:%d-%d:%d", s.StartLine, s.StartColumn, s.EndLine, s.EndColumn)
+		position = fmt.Sprintf("%d:%d-%d:%d", s.StartLine, s.StartColumn, s.EndLine, s.EndColumn)
+	} else {
+		var parts []string
+		if loc.URI != "" {
+			parts = append(parts, loc.URI)
+		}
+		if loc.KeyPath != "" {
+			parts = append(parts, loc.KeyPath)
+		}
+		if loc.Line != 0 {
+			parts = append(parts, "line "+strconv.Itoa(loc.Line))
+		}
+		if loc.Kind != "" {
+			parts = append(parts, loc.Kind)
+		}
+		position = strings.Join(parts, " ")
 	}
-	var parts []string
-	if loc.URI != "" {
-		parts = append(parts, loc.URI)
-	}
-	if loc.KeyPath != "" {
-		parts = append(parts, loc.KeyPath)
-	}
-	if loc.Line != 0 {
-		parts = append(parts, "line "+strconv.Itoa(loc.Line))
-	}
-	if loc.Kind != "" {
-		parts = append(parts, loc.Kind)
-	}
-	return strings.Join(parts, " ")
+	return cerrors.SourceLocation{File: position, Instance: loc.Instance}.String()
 }
 
 // mutatorCompilationContext builds the release-level context the mutator reads

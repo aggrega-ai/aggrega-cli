@@ -226,7 +226,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 			declared = append(declared, "the source carries no template")
 		}
 		return nil, cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("cloudformation-provider: the Recipe's or FeatureRecipe's valuesMapping writes %s, and no template of the source declares a parameter of that name: %s; a sourced template takes values only through the parameters it declares, so rename the key to the parameter it is meant for, or remove it from the valuesMapping",
 				pluralKeys(unknown), strings.Join(declared, "; ")))
 	}
@@ -289,7 +289,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 			}
 			if site := unresolvedDynamicReferenceSite(t.doc, name); site != "" {
 				return nil, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-					cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+					cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 					fmt.Sprintf("cloudformation-provider: the value bound to parameter %q is a dynamic reference, and template %q references the parameter in %s, where CloudFormation does not resolve a dynamic reference or shows it to whoever reads the stack; bind an intrinsic function instead, or leave the parameter unbound for a deploy-time value",
 						name, t.path, site))
 			}
@@ -338,7 +338,7 @@ func BindSourced(files []SourcedFile, rootIsDir bool, in BindInput, nodeID strin
 	if len(sensitiveLiterals) > 0 {
 		sort.Strings(sensitiveLiterals)
 		return nil, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-			cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 			fmt.Sprintf("cloudformation-provider: the Recipe's or FeatureRecipe's valuesMapping reads a value declared sensitive, so a literal it produces is refused, and %s would write a literal into the template as it stands; bind each to a dynamic reference ({{resolve:secretsmanager:…}} or {{resolve:ssm-secure:…}}) or an intrinsic function, or leave it unbound for a deploy-time value",
 				pluralParameters(sensitiveLiterals)))
 	}
@@ -519,7 +519,7 @@ func refuseRuleNamingBound(doc map[string]any, path string, values map[string]an
 		})
 		if found != "" {
 			return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+				cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 				fmt.Sprintf("cloudformation-provider: rule %q of template %q reads parameter %q through Fn::ValueOf, which names a declared parameter by its logical ID, and binding the parameter removes its declaration from the source; leave the parameter unbound so the rule can read it at deploy",
 					rule, path, found))
 		}
@@ -680,7 +680,7 @@ func bindSub(arg any, values map[string]any, path, nodeID string) (any, error) {
 	for _, variable := range added {
 		if _, isList := values[variable].([]any); isList {
 			return nil, cerrors.Wrap(plugincondition.ErrPluginValueNotRepresentable(),
-				cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+				cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 				fmt.Sprintf("cloudformation-provider: template %q names parameter %q as an Fn::Sub variable, which substitutes one string, and the value bound to it is a list; bind it where a list is accepted, or leave the parameter unbound",
 					path, variable))
 		}

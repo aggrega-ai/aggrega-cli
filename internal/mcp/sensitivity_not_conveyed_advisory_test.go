@@ -25,7 +25,7 @@ func TestBuildAdvisories_CarriesSensitivityNotConveyed(t *testing.T) {
 	t.Parallel()
 
 	d := rendercore.SensitivityNotConveyedDiagnostic("sens-mapped", "values.dbPassword")
-	d.Location = &renderer.DiagnosticLocation{URI: "mapped", Kind: "helm"}
+	d.Location = &renderer.DiagnosticLocation{Instance: "mapped", Kind: "helm"}
 
 	got := buildAdvisories([]renderer.Diagnostic{d})
 	if len(got) != 1 {

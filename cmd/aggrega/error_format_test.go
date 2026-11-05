@@ -278,9 +278,9 @@ func TestFormatCompilerError_AnalysisError_RendersAsDeveloper(t *testing.T) {
 // CompilerError via errors.Join" depends on this rendering correctness.
 func TestFormatCompilerError_ErrorsJoin_RendersAll(t *testing.T) {
 	t.Parallel()
-	ce1 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-a"}, "violation a", nil, nil)
-	ce2 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-b"}, "violation b", nil, nil)
-	ce3 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{File: "node-c"}, "violation c", nil, nil)
+	ce1 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{Instance: "node-a"}, "violation a", nil, nil)
+	ce2 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{Instance: "node-b"}, "violation b", nil, nil)
+	ce3 := cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{Instance: "node-c"}, "violation c", nil, nil)
 	joined := stderrors.Join(ce1, ce2, ce3)
 
 	got := formatCompilerError(joined)

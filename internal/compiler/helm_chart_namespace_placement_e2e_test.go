@@ -82,7 +82,7 @@ func TestHelmChartRender_PlacesNamespacedResourcesInTheDeclaredNamespace(t *test
 			continue
 		}
 		placementAdvisories = append(placementAdvisories, d.Message)
-		if d.Location == nil || d.Location.URI != "store" || d.Location.Kind != "helm" {
+		if d.Location == nil || d.Location.Instance != "store" || d.Location.Kind != "helm" {
 			t.Errorf("the advisory %q is located at %+v, want node store and provider helm", d.Message, d.Location)
 		}
 		for _, named := range []string{`kind "Probe" in API group "monitoring.example.org"`, `namespace "shop"`} {

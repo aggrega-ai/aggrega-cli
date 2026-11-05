@@ -146,7 +146,7 @@ func refuseOmitNamespace(entry rendercore.ResolvedOmit, nodeID string) error {
 		return nil
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("cloudformation-provider: an omits entry (kind %s, name %s) names namespace %s, and a CloudFormation template has no namespaces: %s; remove the namespace from the entry",
 			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),
 			rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name),
@@ -161,7 +161,7 @@ func refuseOmitSubchart(entry rendercore.ResolvedOmit, nodeID string) error {
 		return nil
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginCannotExpressInput(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("cloudformation-provider: an omits entry (kind %s, name %s) names subchart %s, and a CloudFormation template has no subcharts: %s; remove the subchart from the entry",
 			rendercore.OmitFieldText(entry.Entry.Kind, entry.Withheld.Kind),
 			rendercore.OmitFieldText(entry.Entry.Name, entry.Withheld.Name),
@@ -320,7 +320,7 @@ func requireNoReferenceToLeftOut(templates []remainingTemplate, left leftOutReso
 		return nil
 	}
 	return cerrors.Wrap(plugincondition.ErrPluginRequiredInputUnresolved(),
-		cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+		cerrors.TranslationError, cerrors.SourceLocation{Instance: nodeID},
 		fmt.Sprintf("cloudformation-provider: what an omits entry left out is still named by the source's templates: %s; CloudFormation refuses a template naming a resource it does not declare: leave out what names it as well, or remove the entry",
 			strings.Join(findings, "; ")))
 }

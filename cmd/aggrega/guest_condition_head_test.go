@@ -56,7 +56,7 @@ func TestGuestReportedConditionReachesThePrintedHead(t *testing.T) {
 	// The host frames the guest's failure the way the render path does: its own
 	// categorised envelope, pointing at the node, over the guest's error.
 	framed := cerrors.Unidentified(cerrors.TranslationError,
-		cerrors.SourceLocation{File: "web"}, "rendering node \"web\"", nil, guestErr)
+		cerrors.SourceLocation{Instance: "web"}, "rendering node \"web\"", nil, guestErr)
 
 	got := formatCompilerError(framed)
 	wantHead := "[" + string(cerrors.TranslationError) + " " + guestPlugin + "/" + guestShort + "]"
@@ -132,7 +132,7 @@ func TestTwoPluginsReportingOneCodePrintDistinguishableHeads(t *testing.T) {
 			ShortCode: sharedShort,
 		})
 		framed := cerrors.Unidentified(cerrors.TranslationError,
-			cerrors.SourceLocation{File: "web"}, "rendering node \"web\"", nil, guestErr)
+			cerrors.SourceLocation{Instance: "web"}, "rendering node \"web\"", nil, guestErr)
 		return formatCompilerError(framed)
 	}
 
@@ -217,7 +217,7 @@ func TestGuestFailureWithNoConditionPrintsTheHostCode(t *testing.T) {
 		Message: "compose-provider: a failure naming no registered condition",
 	})
 	framed := cerrors.Unidentified(cerrors.TranslationError,
-		cerrors.SourceLocation{File: "web"}, "rendering node \"web\"", nil, guestErr)
+		cerrors.SourceLocation{Instance: "web"}, "rendering node \"web\"", nil, guestErr)
 
 	got := formatCompilerError(framed)
 	hostShort, ok := cerrors.ShortCodeOf(wasm.ErrWasmGuestError())

@@ -696,7 +696,7 @@ func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diag
 			continue
 		}
 		if d.Location == nil {
-			d.Location = &renderer.DiagnosticLocation{URI: nodeCtx.NodeID, Kind: nodeCtx.ProviderName}
+			d.Location = &renderer.DiagnosticLocation{Instance: nodeCtx.NodeID, Kind: nodeCtx.ProviderName}
 		}
 		// Unsupported-field advisories route to the structured unsupported-field
 		// sink when one is attached, which is what keeps the class separately

@@ -13,7 +13,7 @@ import (
 
 func sensitivityNotConveyedDiag() renderer.Diagnostic {
 	d := renderer.SensitivityNotConveyedDiagnostic("sens-mapped", "values.dbPassword")
-	d.Location = &renderer.DiagnosticLocation{URI: "mapped", Kind: "helm"}
+	d.Location = &renderer.DiagnosticLocation{Instance: "mapped", Kind: "helm"}
 	return d
 }
 
@@ -77,7 +77,7 @@ func TestMergeRenderDiagnostics_CarriesSensitivityNotConveyed(t *testing.T) {
 	if merged[0].SourceRef != "values.dbPassword" {
 		t.Errorf("the entry lost the authored coordinate a consumer acts on: %q", merged[0].SourceRef)
 	}
-	if merged[0].Location == nil || merged[0].Location.URI != "mapped" {
+	if merged[0].Location == nil || merged[0].Location.Instance != "mapped" {
 		t.Errorf("the entry lost its position in the merge: %+v", merged[0].Location)
 	}
 	// And what a caller reads matches what a terminal printed, line for line,
