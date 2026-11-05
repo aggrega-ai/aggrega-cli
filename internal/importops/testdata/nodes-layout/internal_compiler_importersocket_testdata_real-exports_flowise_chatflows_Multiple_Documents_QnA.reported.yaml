@@ -226,7 +226,7 @@ documents:
             type: imported/component/pinecone
             uses:
               openaiembeddings-0:
-                link:
+                openaiembeddings-0:
                   target: openaiembeddings-0
           openaiembeddings-0:
             type: imported/ai-model/openaiembeddings
@@ -234,7 +234,7 @@ documents:
             type: imported/component/pinecone
             uses:
               openaiembeddings-1:
-                link:
+                openaiembeddings-1:
                   target: openaiembeddings-1
           openaiembeddings-1:
             type: imported/ai-model/openaiembeddings
@@ -244,13 +244,13 @@ documents:
             type: imported/ai-tool/retrievertool
             uses:
               pinecone-0:
-                link:
+                pinecone-0:
                   target: pinecone-0
           retrievertool-1:
             type: imported/ai-tool/retrievertool
             uses:
               pinecone-1:
-                link:
+                pinecone-1:
                   target: pinecone-1
           chatopenai-0:
             type: imported/ai-model/chatopenai
@@ -258,14 +258,14 @@ documents:
             type: imported/ai-tool/toolagent
             uses:
               buffermemory-0:
-                link:
+                buffermemory-0:
                   target: buffermemory-0
               chatopenai-0:
-                link:
+                chatopenai-0:
                   target: chatopenai-0
               retrievertool-1:
-                link:
+                retrievertool-1:
                   target: retrievertool-1
               retrievertool-2:
-                link:
+                retrievertool-2:
                   target: retrievertool-2

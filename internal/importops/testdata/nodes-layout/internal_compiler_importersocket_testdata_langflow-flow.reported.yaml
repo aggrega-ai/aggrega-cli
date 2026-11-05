@@ -74,8 +74,8 @@ documents:
             type: imported/component/custompythoncomponent
             uses:
               openaimodel-a1b2:
-                link:
+                openaimodel-a1b2:
                   target: openaimodel-a1b2
               retrieval-c3d4:
-                link:
+                retrieval-c3d4:
                   target: retrieval-c3d4

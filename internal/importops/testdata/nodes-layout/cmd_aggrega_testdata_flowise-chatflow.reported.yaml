@@ -42,5 +42,5 @@ documents:
             type: imported/component/conversationchain
             uses:
               chatopenai-0:
-                link:
+                chatopenai-0:
                   target: chatopenai-0

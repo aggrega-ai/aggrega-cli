@@ -218,22 +218,22 @@ documents:
             type: imported/ai-model/chatoutput
             uses:
               agent-9don7:
-                link:
+                agent-9don7:
                   target: agent-9don7
           agent-9don7:
             type: imported/ai-agent/agent
             uses:
               chatinput-8xmju:
-                link:
+                chatinput-8xmju:
                   target: chatinput-8xmju
               faiss-uz8o4:
-                link:
+                faiss-uz8o4:
                   target: faiss-uz8o4
               mcptools-behvj:
-                link:
+                mcptools-behvj:
                   target: mcptools-behvj
               prompt-prjbv:
-                link:
+                prompt-prjbv:
                   target: prompt-prjbv
           prompt-prjbv:
             type: imported/component/prompt
@@ -245,10 +245,10 @@ documents:
             type: imported/component/faiss
             uses:
               embeddingmodel-x6uru:
-                link:
+                embeddingmodel-x6uru:
                   target: embeddingmodel-x6uru
               remixdocumentation-deiws:
-                link:
+                remixdocumentation-deiws:
                   target: remixdocumentation-deiws
           mcptools-behvj:
             type: imported/ai-tool/mcptools

@@ -93,23 +93,26 @@ var flowFixtures = []flowFixture{
 	flowiseFixture(realExportPath(flowiseChatflow),
 		"internal_compiler_importersocket_testdata_real-exports_flowise_chatflows_Multiple_Documents_QnA",
 		map[string][]string{"model": {"chatopenai-0"}}),
+	// Its Language Model node selects no model provider, so it is wired to the
+	// model socket and written with none of the variables the platform delivers:
+	// the flow is carried as it was exported.
 	langflowFixture(realExportPath(langflowPromptingProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Basic_Prompting",
-		"c1cb7b3c-2589-4754-ac61-8cf88df4a07e", nil),
+		"c1cb7b3c-2589-4754-ac61-8cf88df4a07e", map[string][]string{"model": {"languagemodelcomponent-fleyf"}}),
 	langflowFixture(realExportPath(langflowStarterProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Research_Translation_Loop",
-		"7eb7c081-888c-4f25-ba81-c84e6aab2778", nil),
+		"7eb7c081-888c-4f25-ba81-c84e6aab2778", map[string][]string{"model": {"languagemodelcomponent-ps5yd"}}),
 	langflowFixture(realExportPath(langflowRemixProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Nvidia_Remix",
 		"faac3377-a15b-459b-a6bd-c47c318dcc78", nil),
-	// Its Language Model node names its key as the global variable OPENAI_API_KEY.
-	// No mapping row places that node, so here it is wired to nothing, and the name
-	// is carried as written with every credential value, the default; wired to the
-	// model socket, the node keeps it too, as the cases mapping it by an override
-	// show.
+	// Its Language Model node runs on OpenAI and names its key as the global
+	// variable OPENAI_API_KEY, the variable the platform delivers for the model
+	// connection: wired to the model socket, the node is written with that name and
+	// load_from_db true, which it already holds, so the flow is carried as it was
+	// exported.
 	langflowFixture(realExportPath(langflowSelectingProject),
 		"internal_compiler_importersocket_testdata_real-exports_langflow_Basic_Prompting_1.6.0",
-		"0dbee653-41ae-4e51-af2e-55757fb24be3", nil),
+		"0dbee653-41ae-4e51-af2e-55757fb24be3", map[string][]string{"model": {"languagemodelcomponent-kboja"}}),
 }
 
 // platformSockets are the sockets the standard library declares on both flow
@@ -242,8 +245,8 @@ var uuidOfAPlatform = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]
 //   - the Aggregate holds one instance of the source's platform, and its
 //     definition value, once interpolated, is the source's own bytes — double
 //     braces, a missing final line break, every credential value it holds and
-//     all — since the default writes no credential value empty and no wired part
-//     of these sources is written anew;
+//     all — since the default writes no credential value empty and what a wired
+//     part of these sources is written with is what its node already holds;
 //   - the flow's identifier is the source's own where it gives one, and a UUID of
 //     the shape the platforms take where it gives none;
 //   - each socket draws exactly the connections the table names, each reaching a

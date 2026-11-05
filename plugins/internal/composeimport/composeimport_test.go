@@ -192,7 +192,7 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 	for _, want := range []string{
 		"    db:\n      type: imported/datastore/postgres\n",
 		"    cache:\n      type: imported/datastore/redis\n",
-		"    api:\n      type: core/compute/server\n      uses:\n        db:\n          link:\n            target: db\n",
+		"    api:\n      type: core/compute/server\n      uses:\n        db:\n          db:\n            target: db\n",
 	} {
 		if !strings.Contains(aggregate, want) {
 			t.Errorf("the Aggregate does not hold\n%s\nin\n%s", want, aggregate)
@@ -366,10 +366,10 @@ func TestModelsAreDraftedAsModelComponentsAndConnected(t *testing.T) {
 	aggregate := fileContent(t, out, "aggregate.yaml")
 	for _, want := range []string{
 		"    qwen3:\n      type: imported/ai-model/qwen3\n      values:\n        model: \"ai/qwen3:14B-Q6_K\"\n",
-		"    agent:\n      type: core/compute/server\n      uses:\n        database:\n          link:\n            target: database\n" +
+		"    agent:\n      type: core/compute/server\n      uses:\n        database:\n          database:\n            target: database\n" +
 			"        # The service agent reads the address of the model qwen3 as MODEL_RUNNER_URL and its identifier as " +
 			"MODEL_RUNNER_MODEL, the names its models entry gives them; no key of the draft holds either name.\n" +
-			"        qwen3:\n          link:\n            target: qwen3\n",
+			"        qwen3:\n          qwen3:\n            target: qwen3\n",
 		"    mcp-gateway:\n      type: core/compute/server\n",
 	} {
 		if !strings.Contains(aggregate, want) {
@@ -382,6 +382,72 @@ func TestModelsAreDraftedAsModelComponentsAndConnected(t *testing.T) {
 	}
 	if !strings.Contains(release, "    mcp-gateway:\n      infra:\n        image: \"docker/mcp-gateway:latest\"\n") {
 		t.Errorf("the Release does not run the gateway's image:\n%s", release)
+	}
+}
+
+// TestEachConnectionOfAServiceIsWrittenUnderAnAliasOfItsOwn imports a Compose
+// file whose API depends on two services and uses a model: each of its three
+// connections is written under the socket and the alias of its target's key, in
+// the order of those keys, so no two of them share an alias — a component reads
+// each connection by its alias, whatever socket it is wired into, and a build
+// halts on two connections of one component under one alias. Two imports of the
+// file write the same bytes.
+//
+// 🔴 PLANTED DEFECT: in renderAggregate (render.go), write every connection under
+// the alias link again: the three connections share it, and the case fails on
+// the bytes and on the aliases.
+func TestEachConnectionOfAServiceIsWrittenUnderAnAliasOfItsOwn(t *testing.T) {
+	t.Parallel()
+	source := []byte("services:\n" +
+		"  api:\n    image: ghcr.io/example/notes-api:2.3.0\n    depends_on: [db, cache]\n    models: [llm]\n" +
+		"  db:\n    image: postgres:16\n" +
+		"  cache:\n    image: redis:7\n" +
+		"models:\n  llm:\n    model: ai/smollm2\n")
+	out := importOne(source, "")
+	if out.Error != "" || len(codes(out, "parse-failed")) > 0 {
+		t.Fatalf("the import failed: %s %+v", out.Error, out.Diagnostics)
+	}
+	aggregate := fileContent(t, out, "aggregate.yaml")
+	want := "    api:\n      type: core/compute/server\n      uses:\n" +
+		"        cache:\n          cache:\n            target: cache\n" +
+		"        db:\n          db:\n            target: db\n" +
+		"        llm:\n          llm:\n            target: llm\n"
+	if !strings.Contains(aggregate, want) {
+		t.Errorf("the API's connections are not\n%s\nin\n%s", want, aggregate)
+	}
+
+	var doc struct {
+		Spec struct {
+			Components map[string]struct {
+				Uses map[string]map[string]struct{ Target string } `yaml:"uses"`
+			} `yaml:"components"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal([]byte(aggregate), &doc); err != nil {
+		t.Fatalf("the drafted Aggregate does not read as YAML: %v\n%s", err, aggregate)
+	}
+	connections := 0
+	for key, c := range doc.Spec.Components {
+		aliases := map[string]string{}
+		for socket, entries := range c.Uses {
+			for alias, entry := range entries {
+				connections++
+				if held, ok := aliases[alias]; ok {
+					t.Errorf("%s writes the alias %s in the %s socket and in the %s socket", key, alias, held, socket)
+				}
+				aliases[alias] = socket
+				if alias != entry.Target || socket != entry.Target {
+					t.Errorf("%s writes the connection to %s under the socket %s and the alias %s, want both named %s",
+						key, entry.Target, socket, alias, entry.Target)
+				}
+			}
+		}
+	}
+	if connections != 3 {
+		t.Errorf("the Aggregate draws %d connections, want the API's three", connections)
+	}
+	if again := fileContent(t, importOne(source, ""), "aggregate.yaml"); again != aggregate {
+		t.Errorf("two imports of one file drafted different Aggregates:\n%s\nand\n%s", aggregate, again)
 	}
 }
 
@@ -417,8 +483,9 @@ func TestALongFormModelsEntryIsReportedAndAShortFormOneDraftsAsBefore(t *testing
 	}
 	aggregate := fileContent(t, out, "aggregate.yaml")
 
-	// The short-form service: the bytes a short-form entry has always drafted.
-	short := "    chat:\n      type: core/compute/server\n      uses:\n        llm:\n          link:\n            target: llm\n" +
+	// The short-form service: the bytes a short-form entry drafts, nothing above
+	// its connection.
+	short := "    chat:\n      type: core/compute/server\n      uses:\n        llm:\n          llm:\n            target: llm\n" +
 		"    search:\n"
 	if !strings.Contains(aggregate, short) {
 		t.Errorf("the short-form service does not draft as before:\n%s\nin\n%s", short, aggregate)
@@ -427,7 +494,7 @@ func TestALongFormModelsEntryIsReportedAndAShortFormOneDraftsAsBefore(t *testing
 		" and its identifier as " + longFormModelVar +
 		", the names its models entry gives them; no key of the draft holds either name"
 	long := "    search:\n      type: core/compute/server\n      uses:\n        # T" + report[1:] + ".\n" +
-		"        embedder:\n          link:\n            target: embedder\n"
+		"        embedder:\n          embedder:\n            target: embedder\n"
 	if !strings.Contains(aggregate, long) {
 		t.Errorf("the long-form service's connection is not\n%s\nin\n%s", long, aggregate)
 	}

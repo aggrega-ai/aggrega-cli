@@ -10,14 +10,14 @@ spec:
       type: core/compute/server
       uses:
         llm:
-          link:
+          llm:
             target: llm
     worker:
       type: core/compute/server
       uses:
         # The service worker reads the address of the model embed as EMBED_URL and its identifier as EMBED_MODEL, the names its models entry gives them; no key of the draft holds either name.
         embed:
-          link:
+          embed:
             target: embed
     llm:
       type: imported/ai-model/llm

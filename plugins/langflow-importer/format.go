@@ -26,7 +26,8 @@ var langflow = importer.Format{
 // Component's flow_definition and named by its flow_id, an MCP Tools node
 // reaches the MCP server it names through the tools connection of that name,
 // and no other node reaches a tools connection (wire.go), the model socket
-// draws a single connection, a referenced model is given the model its node
+// draws a single connection, which no model node naming a provider other than
+// OpenAI takes (wire.go), a referenced model is given the model its node
 // selects (model.go), the inputs the Component requires that a flow cannot
 // supply are left for the Release, and the lines the compose Recipe needs for
 // the administrator's password are shown for an author building for compose.
@@ -87,11 +88,20 @@ var detect = []aggrega.DetectSignature{{
 // MCPTools is Langflow's MCP Tools component, which calls the tools an MCP
 // server publishes; the server it reaches is core/ai-tool/mcp, a server reached
 // over HTTP that may change what it acts on.
+//
+// LanguageModelComponent is Langflow's Language Model component, the chat model
+// its starter flows call. It runs on the model provider its provider field
+// names, OpenAI by default, and maps to core/ai-model/openai, the model the
+// platform's model connection serves: that connection is delivered as
+// OPENAI_BASE_URL and OPENAI_API_KEY. A node naming another provider is refused
+// the model socket (refuseOf, wire.go), so it stays in the flow, reported with
+// the provider it names, and no model is drafted for it.
 var mappings = map[string]importer.Mapping{
-	"OpenAIModel":      {Component: "core/ai-model/openai", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
-	"AnthropicModel":   {Component: "core/ai-model/anthropic", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "anthropic"},
-	"OpenAIEmbeddings": {Component: "core/ai-model/openai-embedding", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "embedding", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
-	"Retrieval":        {Component: "core/ai-tool/retrieval", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/impact": "read-only"}, Vendor: "retrieval"},
-	"APIRequest":       {Component: "core/ai-tool/http-request", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/impact": "mutating"}, Vendor: "http"},
-	mcpToolsType:       {Component: "core/ai-tool/mcp", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/transport": "http", "tool.aggrega.ai/impact": "mutating"}, Vendor: "mcp"},
+	"OpenAIModel":            {Component: "core/ai-model/openai", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
+	"LanguageModelComponent": {Component: "core/ai-model/openai", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
+	"AnthropicModel":         {Component: "core/ai-model/anthropic", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "generative", "component.aggrega.ai/hosting": "managed"}, Vendor: "anthropic"},
+	"OpenAIEmbeddings":       {Component: "core/ai-model/openai-embedding", Category: "ai-model", Traits: map[string]string{"model.aggrega.ai/capability": "embedding", "component.aggrega.ai/hosting": "managed"}, Vendor: "openai"},
+	"Retrieval":              {Component: "core/ai-tool/retrieval", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/impact": "read-only"}, Vendor: "retrieval"},
+	"APIRequest":             {Component: "core/ai-tool/http-request", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/impact": "mutating"}, Vendor: "http"},
+	mcpToolsType:             {Component: "core/ai-tool/mcp", Category: "ai-tool", Traits: map[string]string{"tool.aggrega.ai/transport": "http", "tool.aggrega.ai/impact": "mutating"}, Vendor: "mcp"},
 }

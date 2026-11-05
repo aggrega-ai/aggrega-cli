@@ -71,8 +71,8 @@ documents:
             type: imported/ai-model/llmchain
             uses:
               chatopenai-0:
-                link:
+                chatopenai-0:
                   target: chatopenai-0
               prompttemplate-0:
-                link:
+                prompttemplate-0:
                   target: prompttemplate-0

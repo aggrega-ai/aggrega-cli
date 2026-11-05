@@ -68,9 +68,16 @@ func reachOf(tree json.RawMessage, node importer.Node) importer.Reach {
 // template carries no mcp_server field — whatever its type, and whatever a
 // mapping row or override maps it to — is refused the tools socket: a tools
 // connection wired to it would be named by no node, and the platform's build
-// halts on such a connection. Every other socket it may take.
+// halts on such a connection. A node of a type running on one of several model
+// providers that names a provider other than the one the platform delivers its
+// model connection for is refused the model socket (otherProvider). Every other
+// socket it may take.
 func refuseOf(tree json.RawMessage, node importer.Node, socket string) string {
-	if socket != "tools" {
+	switch socket {
+	case "model":
+		return otherProvider(tree, node)
+	case "tools":
+	default:
 		return ""
 	}
 	if _, template, ok := nodeTemplate(tree, node.ID); ok && template.member("mcp_server") != nil {
@@ -79,6 +86,34 @@ func refuseOf(tree json.RawMessage, node importer.Node, socket string) string {
 	return "Langflow reaches a tools connection only through an MCP Tools node naming it in its mcp_server field, " +
 		"which this node does not carry, so a tools connection wired to it would be named by no node of the flow and " +
 		"the platform's build would halt on it"
+}
+
+// otherProvider says why a node of a type running on one of several model
+// providers — the Language Model and Embedding Model components — cannot take
+// the platform's model connection where it names a provider other than the one
+// the platform delivers that connection for, as providerStanding reads it: the
+// model it names is not the model a connection of that socket reaches, and the
+// connection's key would reach a provider it is not delivered for. A node naming
+// that provider, or none the import can read — it selects none, names it through
+// a global variable, or takes its model from another node — is not refused: the
+// wiring (wireFields) writes the connection's variables into a node running on
+// that provider, and none into a node whose provider it cannot read.
+func otherProvider(tree json.RawMessage, node importer.Node) string {
+	n, known := connectionFields[node.Type]["model"]
+	if !known {
+		return ""
+	}
+	_, template, ok := nodeTemplate(tree, node.ID)
+	if !ok {
+		return ""
+	}
+	why, readable := providerStanding(template, n)
+	if !readable || why == "" {
+		return ""
+	}
+	return fmt.Sprintf("the node %s, while the platform delivers its model connection (%s) to a node running on the "+
+		"%s provider, so the model the node names is not one that connection reaches", why,
+		strings.Join(socketVariables("model", ""), ", "), n.provider)
 }
 
 // wireOf says how the flow reaches a part wired to a socket of the platform. An
@@ -297,8 +332,9 @@ type connectionNode struct {
 	// fields to be written with those variables. A node of a type running on
 	// several providers hands its key to the provider it runs on, and the
 	// platform delivers its model connection for an OpenAI-compatible client, so
-	// a node running on another provider is written with none of them: the
-	// connection's key would otherwise reach that provider.
+	// a node naming another provider is refused the socket (otherProvider), and a
+	// node whose provider the import cannot read is written with none of them
+	// (offProvider): the connection's key would otherwise reach another provider.
 	provider string
 	// environmentAddress, where set, is the variable the OpenAI client the node
 	// runs reads the part's address from in the environment where no field of
@@ -382,21 +418,36 @@ func providerOf(template flowTemplate) (string, string) {
 	return "", "selects no model provider"
 }
 
-// offProvider says why a node is written with none of the variables the
-// platform delivers for its connection, where its type runs on several model
-// providers and it does not run on the one those variables are for; empty where
-// it does, or its type runs on one.
-func offProvider(template flowTemplate, node connectionNode) string {
+// providerStanding reads a node of a type whose connection is delivered for one
+// model provider (node.provider) against that provider, through providerOf, the
+// one comparison of the two that refusing a socket and writing the variables
+// share. why is empty where the node runs on that provider, or its type on one
+// alone; otherwise it completes "the node …": the provider the node names, where
+// readable is true, or why the import can read none.
+func providerStanding(template flowTemplate, node connectionNode) (why string, readable bool) {
 	if node.provider == "" {
-		return ""
+		return "", false
 	}
-	provider, why := providerOf(template)
+	provider, unread := providerOf(template)
 	switch {
 	case provider == node.provider:
-		return ""
+		return "", true
 	case provider != "":
-		return "runs on a model provider other than " + node.provider
+		return "runs on the " + provider + " model provider", true
 	}
+	return unread, false
+}
+
+// offProvider says why a part is written with none of the variables the
+// platform delivers for its connection, where its type runs on several model
+// providers and the import cannot read the one it runs on — it selects none,
+// names it through a global variable, or takes its model from another node; empty
+// where it runs on the one those variables are for, or its type runs on one. A
+// node naming another provider is refused the socket (otherProvider) and is never
+// wired or held out of it; were one asked about, it is off the provider all the
+// same, so it is never written with the variables.
+func offProvider(template flowTemplate, node connectionNode) string {
+	why, _ := providerStanding(template, node)
 	return why
 }
 
@@ -524,8 +575,10 @@ var singleSockets = []importer.SingleSocket{
 // part's address names the variable the platform delivers for it, read as a
 // global variable, or where no field gives the address and the node's type reads
 // it from the environment; otherwise at the address that field or the node's
-// component gives — as a node running on a model provider other than the one the
-// connection's variables are delivered for does.
+// component gives — as a node whose model provider the import cannot read does.
+// A node naming a provider other than the one the connection's variables are
+// delivered for is refused the socket (otherProvider), so it is never held out of
+// it and never asked about here.
 func standingOf(tree json.RawMessage, part importer.Part) (bool, string) {
 	_, template, ok := nodeTemplate(tree, part.Node.ID)
 	if !ok {

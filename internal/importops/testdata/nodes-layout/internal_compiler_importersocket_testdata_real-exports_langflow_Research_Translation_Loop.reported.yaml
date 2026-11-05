@@ -150,13 +150,13 @@ documents:
             type: imported/component/arxivcomponent
             uses:
               chatinput-mblfd:
-                link:
+                chatinput-mblfd:
                   target: chatinput-mblfd
           chatoutput-scvyg:
             type: imported/ai-model/chatoutput
             uses:
               loopcomponent-e7ur0:
-                link:
+                loopcomponent-e7ur0:
                   target: loopcomponent-e7ur0
           chatinput-mblfd:
             type: imported/ai-model/chatinput
@@ -164,20 +164,20 @@ documents:
             type: imported/ai-model/languagemodelcomponent
             uses:
               parsercomponent-v2o48:
-                link:
+                parsercomponent-v2o48:
                   target: parsercomponent-v2o48
           loopcomponent-e7ur0:
             type: imported/component/loopcomponent
             uses:
               arxivcomponent-zgqwh:
-                link:
+                arxivcomponent-zgqwh:
                   target: arxivcomponent-zgqwh
               languagemodelcomponent-ps5yd:
-                link:
+                languagemodelcomponent-ps5yd:
                   target: languagemodelcomponent-ps5yd
           parsercomponent-v2o48:
             type: imported/component/parsercomponent
             uses:
               loopcomponent-e7ur0:
-                link:
+                loopcomponent-e7ur0:
                   target: loopcomponent-e7ur0

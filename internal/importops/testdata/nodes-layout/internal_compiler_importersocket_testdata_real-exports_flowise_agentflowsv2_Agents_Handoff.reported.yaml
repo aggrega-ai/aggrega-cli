@@ -135,23 +135,23 @@ documents:
             type: imported/ai-agent/conditionagentagentflow
             uses:
               startagentflow-0:
-                link:
+                startagentflow-0:
                   target: startagentflow-0
           agentagentflow-0:
             type: imported/ai-agent/agentagentflow
             uses:
               conditionagentagentflow-0:
-                link:
+                conditionagentagentflow-0:
                   target: conditionagentagentflow-0
           agentagentflow-1:
             type: imported/ai-agent/agentagentflow
             uses:
               conditionagentagentflow-0:
-                link:
+                conditionagentagentflow-0:
                   target: conditionagentagentflow-0
           agentagentflow-2:
             type: imported/ai-agent/agentagentflow
             uses:
               conditionagentagentflow-0:
-                link:
+                conditionagentagentflow-0:
                   target: conditionagentagentflow-0

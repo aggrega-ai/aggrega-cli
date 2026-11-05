@@ -137,8 +137,9 @@ func referencing() map[string]any {
 }
 
 // referencingLanguageModel is referencing with a mapping override mapping
-// Langflow's Language Model component to core/ai-model/openai, which no row of
-// the importer's own mapping arm does.
+// Langflow's Language Model component to core/ai-model/openai, as a row of the
+// importer's own mapping arm does too, so the cases reading it hold whatever the
+// arm maps the component to.
 func referencingLanguageModel() map[string]any {
 	return map[string]any{
 		"reuse_mode": "auto-apply-above-threshold",
@@ -634,8 +635,8 @@ func asSeeded(carried string) string {
 // one committed real export of each platform under the default layout,
 // referencing every HIGH match — the Flowise export Multiple Documents QnA, and
 // Langflow 1.6.0's Basic Prompting with a mapping override mapping Langflow's
-// Language Model component to core/ai-model/openai, which no row of the
-// importer's own mapping arm does — and builds each draft with a Release
+// Language Model component to core/ai-model/openai, as the importer's own
+// mapping arm does too — and builds each draft with a Release
 // supplying only what the draft leaves for the Release: on helm as drafted, and
 // on compose with the lines the draft's comment shows for compose uncommented,
 // which must be exactly the platform's own secret — the Flowise owner's password,
@@ -732,6 +733,166 @@ func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *te
 				}
 			})
 		}
+	}
+}
+
+// TestALangflowLanguageModelNodeIsWiredAsTheFlowsModelWithNoOverride imports
+// Langflow 1.6.0's Basic Prompting — the starter flow whose Language Model node
+// runs on OpenAI and selects gpt-4.1 — under the default layout, over the hub's
+// Components and with no mapping override, as an import naming no setting of its
+// own reads it:
+//
+//   - drafting every part, the default: the node is the flow's model, drafted as
+//     a Component of its own resembling core/ai-model/openai, its decision says it
+//     is wired to the platform's model socket, and that socket draws one
+//     connection to it, under the alias of its key;
+//   - referencing every HIGH match: the part is core/ai-model/openai written with
+//     values.model gpt-4.1, and the draft builds on compose with a Release
+//     supplying only what the draft leaves it, the model connection the platform
+//     requires drawn by the draft itself.
+//
+// 🔴 PLANTED DEFECT, rebuilt into the importer fixture from its source: in
+// mappings (plugins/langflow-importer/format.go), delete the
+// "LanguageModelComponent" row: both rows fail, the node kept in the flow and the
+// model socket drawing nothing.
+func TestALangflowLanguageModelNodeIsWiredAsTheFlowsModelWithNoOverride(t *testing.T) {
+	t.Parallel()
+	const part = "languagemodelcomponent-kboja"
+	for _, tc := range []struct {
+		name     string
+		settings map[string]any
+		partType string
+		build    bool
+	}{
+		{name: "drafting every part", partType: "imported/ai-model/languagemodelcomponent"},
+		{name: "referencing a HIGH match", settings: referencing(), partType: "core/ai-model/openai", build: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rw := hubPlatformWorkspace(t, tc.settings)
+			dir := filepath.Join(rw.Root(), "drafts")
+			res := importRealExport(t, rw, langflowSelectingProject, authoredcontent.DeliveryFor(false), dir)
+			if res.Halted() {
+				t.Fatalf("the import halted: %+v", res.Diagnostics)
+			}
+			decision := decisionNamed(t, res.Decisions, selectingNodeID)
+			if decision.Chosen == nil || decision.Chosen.Target != tc.partType {
+				t.Errorf("the Language Model node chose %+v, want %s", decision.Chosen, tc.partType)
+			}
+			if clause := "; wired to the model socket of " + langflowPlatform + " as " + part; !strings.Contains(
+				decision.Rationale, clause) {
+				t.Errorf("the node's decision reads %q, want it to carry %q", decision.Rationale, clause)
+			}
+
+			agg := readAsTheCompilerDoes(t, readDraftedAggregate(t, dir))
+			model := agg.Spec.Components["langflow"].Uses["model"]
+			if len(model) != 1 || model[part].Target != part {
+				t.Errorf("the platform's model socket draws %v, want the one connection %s reaching %s", model, part, part)
+			}
+			got := agg.Spec.Components[part]
+			if got.Type != tc.partType {
+				t.Fatalf("the model part %s is %q, want %s", part, got.Type, tc.partType)
+			}
+			if !tc.build {
+				return
+			}
+			if got.Values["model"] != "gpt-4.1" {
+				t.Errorf("the model part is written with values.model %#v, want gpt-4.1, the model its node selects",
+					got.Values["model"])
+			}
+			buildDraftOn(t, dir, platformRelease{platform: "langflow", target: "compose", parts: []string{part},
+				model: part})
+		})
+	}
+}
+
+// TestALangflowLanguageModelNodeOnAnotherProviderStaysInTheFlow imports Langflow
+// 1.6.0's Basic Prompting with its Language Model node set to run on Anthropic,
+// its key a literal — an authored flow — under the default layout, over the
+// hub's Components: drafting every part, referencing every HIGH match, and
+// referencing with the mapping override mapping the component to
+// core/ai-model/openai. In every row the node names a model the platform's model
+// connection does not reach, so:
+//
+//   - its decision chooses nothing and carries no hint, and says the flow keeps
+//     it because the model socket refuses a node running on Anthropic;
+//   - one part-not-placed warning names the node and that provider;
+//   - the drafted Aggregate holds the platform alone, its model socket draws no
+//     connection, and no Component is drafted;
+//   - the key is carried as written, in the flow and nowhere else, named in a
+//     credential-carried warning, as for any node the draft wires to nothing.
+//
+// 🔴 PLANTED DEFECT, rebuilt into the importer fixture from its source: in
+// refuseOf (plugins/langflow-importer/wire.go), replace
+// `return otherProvider(tree, node)` with `return ""`: every row fails, the node
+// wired to the model socket as a model the flow does not name.
+func TestALangflowLanguageModelNodeOnAnotherProviderStaysInTheFlow(t *testing.T) {
+	t.Parallel()
+	const plantedKey = "sk-plantedANTHROPICkeyVALUE0123456789ab"
+	flow := decoded(t, readRealExport(t, langflowSelectingProject))
+	template := langflowNode(t, flow, selectingNodeID)
+	asObject(template["provider"])["value"] = "Anthropic"
+	key := asObject(template["api_key"])
+	key["value"], key["load_from_db"] = plantedKey, false
+	source := encoded(t, flow)
+
+	reason := otherProviderReason("core/ai-model/openai", "Anthropic")
+	for _, tc := range []struct {
+		name     string
+		settings map[string]any
+	}{
+		{name: "drafting every part"},
+		{name: "referencing a HIGH match", settings: referencing()},
+		{name: "referencing it through an override", settings: referencingLanguageModel()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			res, dir := writtenImport(t, hubPlatformWorkspace(t, tc.settings), "anthropic-flow.json", source)
+			if res.Halted() {
+				t.Fatalf("the import halted: %+v", res.Diagnostics)
+			}
+			assertCarriedOnlyInTheFlow(t, []string{plantedKey}, source, res, dir)
+
+			d := decisionNamed(t, res.Decisions, selectingNodeID)
+			if want := "kept in the flow " + langflowPlatform + " carries, with no Component of its own: " + reason; d.Chosen != nil ||
+				d.SwapHint != "" || d.Rationale != want {
+				t.Errorf("the node was decided %+v, hint %q: %q; want no choice, no hint and %q", d.Chosen, d.SwapHint,
+					d.Rationale, want)
+			}
+			want := "node " + selectingNodeID + " (LanguageModelComponent) is wired to no socket of " + langflowPlatform +
+				": " + reason + "; it stays in the flow"
+			var placed []string
+			carried := false
+			for _, diag := range res.Diagnostics {
+				if diag.SourceRef != selectingNodeID {
+					continue
+				}
+				switch diag.Code {
+				case "part-not-placed":
+					placed = append(placed, diag.Message)
+				case "credential-carried":
+					carried = carried || strings.HasPrefix(diag.Message, "the value of api_key of node "+selectingNodeID+
+						" is carried as written")
+				}
+			}
+			if !slices.Equal(placed, []string{want}) {
+				t.Errorf("the node is reported as\n%q\nwant\n%q", placed, []string{want})
+			}
+			if !carried {
+				t.Errorf("the node's api_key is not reported carried as written: %+v", res.Diagnostics)
+			}
+
+			agg := readAsTheCompilerDoes(t, readDraftedAggregate(t, dir))
+			if len(agg.Spec.Components) != 1 || len(agg.Spec.Components["langflow"].Uses["model"]) != 0 {
+				t.Errorf("the draft holds %d components and the model socket draws %v; want the platform alone, "+
+					"drawing no model connection", len(agg.Spec.Components), agg.Spec.Components["langflow"].Uses["model"])
+			}
+			for _, f := range res.Files {
+				if strings.HasPrefix(f.Path, "components/") {
+					t.Errorf("the import drafted %s for a node the flow keeps", f.Path)
+				}
+			}
+		})
 	}
 }
 

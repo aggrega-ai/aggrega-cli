@@ -118,14 +118,14 @@ documents:
             type: imported/ai-model/chatoutput
             uses:
               languagemodelcomponent-fleyf:
-                link:
+                languagemodelcomponent-fleyf:
                   target: languagemodelcomponent-fleyf
           languagemodelcomponent-fleyf:
             type: imported/ai-model/languagemodelcomponent
             uses:
               chatinput-b6ucc:
-                link:
+                chatinput-b6ucc:
                   target: chatinput-b6ucc
               prompt-t2oak:
-                link:
+                prompt-t2oak:
                   target: prompt-t2oak

@@ -109,14 +109,14 @@ documents:
             type: imported/ai-model/chatoutput
             uses:
               languagemodelcomponent-kboja:
-                link:
+                languagemodelcomponent-kboja:
                   target: languagemodelcomponent-kboja
           languagemodelcomponent-kboja:
             type: imported/ai-model/languagemodelcomponent
             uses:
               chatinput-szjnt:
-                link:
+                chatinput-szjnt:
                   target: chatinput-szjnt
               prompt-toh5d:
-                link:
+                prompt-toh5d:
                   target: prompt-toh5d

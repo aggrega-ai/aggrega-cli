@@ -37,7 +37,8 @@ func aggregateText(text string) string {
 
 // renderAggregate writes the drafted Aggregate, named name: one instance per
 // service, of the Component its decision chose, in the order the projects write
-// them, connected to each service it depends on and each model it uses, a
+// them, connected to each service it depends on and each model it uses — each
+// connection under a socket and an alias both named for its target's key — a
 // comment above a connection to a model the service names in the long form
 // stating the variables it names; then one instance per model, of the Component
 // its decision chose, writing the model's identifier, context size and runtime
@@ -82,13 +83,17 @@ func renderAggregate(name string, read []*project, types map[*service]string) st
 			slices.Sort(producers)
 			producers = slices.Compact(producers)
 			if len(producers) > 0 {
+				// Each connection is written under the socket and the alias of its
+				// target's key. A component reads its connections by alias whatever
+				// socket each is wired into, so one alias shared by two connections
+				// halts the build; the keys are distinct, so the aliases are.
 				b.WriteString("      uses:\n")
 				for _, producer := range producers {
 					if report, ok := reports[producer]; ok {
 						b.WriteString(commentLine("        ", "T"+report[1:]+"."))
 					}
 					b.WriteString("        " + producer + ":\n")
-					b.WriteString("          link:\n")
+					b.WriteString("          " + producer + ":\n")
 					b.WriteString("            target: " + producer + "\n")
 				}
 			}

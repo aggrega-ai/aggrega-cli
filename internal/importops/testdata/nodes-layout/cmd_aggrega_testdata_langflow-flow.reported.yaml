@@ -37,5 +37,5 @@ documents:
             type: imported/ai-model/chatoutput
             uses:
               openaimodel-abc12:
-                link:
+                openaimodel-abc12:
                   target: openaimodel-abc12

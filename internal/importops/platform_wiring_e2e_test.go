@@ -161,6 +161,22 @@ func langflowNode(t *testing.T, flow map[string]any, id string) map[string]any {
 	return nil
 }
 
+// withoutNode returns the Langflow flow with the node whose id is id removed
+// from its node list, failing the test where it holds no such node. An edge
+// naming the node stays in the flow; the importer drops an edge naming a node it
+// did not lift.
+func withoutNode(t *testing.T, flow map[string]any, id string) map[string]any {
+	t.Helper()
+	data := asObject(flow["data"])
+	nodes := data["nodes"].([]any)
+	kept := slices.DeleteFunc(slices.Clone(nodes), func(n any) bool { return asObject(n)["id"] == id })
+	if len(kept) == len(nodes) {
+		t.Fatalf("the flow holds no node %s", id)
+	}
+	data["nodes"] = kept
+	return flow
+}
+
 // flowiseNode returns the data of the Flowise node whose id is id.
 func flowiseNode(t *testing.T, flow map[string]any, id string) map[string]any {
 	t.Helper()
@@ -319,17 +335,21 @@ func assertCarriedOnlyInTheFlow(t *testing.T, planted []string, source []byte, r
 func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *testing.T) {
 	t.Parallel()
 	source := mcpSource(t)
+	// The export's Language Model node is the flow's model, wired to the model
+	// socket beside the servers.
+	const modelPart = "languagemodelcomponent-fleyf"
 	for _, tc := range []struct {
-		name     string
-		settings map[string]any
-		partType string
-		emptied  bool
+		name                string
+		settings            map[string]any
+		partType, modelType string
+		emptied             bool
 	}{
-		{name: "drafting every part", partType: "imported/ai-tool/mcptools"},
+		{name: "drafting every part", partType: "imported/ai-tool/mcptools",
+			modelType: "imported/ai-model/languagemodelcomponent"},
 		{name: "referencing a HIGH match", settings: map[string]any{"reuse_mode": "auto-apply-above-threshold"},
-			partType: "core/ai-tool/mcp"},
+			partType: "core/ai-tool/mcp", modelType: "core/ai-model/openai"},
 		{name: "drafting every part, marked emptied", settings: map[string]any{"empty_credentials": "marked"},
-			partType: "imported/ai-tool/mcptools", emptied: true},
+			partType: "imported/ai-tool/mcptools", modelType: "imported/ai-model/languagemodelcomponent", emptied: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -385,12 +405,16 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 					continue
 				}
 				parts = append(parts, key)
-				if c.Type != tc.partType {
-					t.Errorf("the part %s is a %s, want a %s", key, c.Type, tc.partType)
+				want := tc.partType
+				if key == modelPart {
+					want = tc.modelType
+				}
+				if c.Type != want {
+					t.Errorf("the part %s is a %s, want a %s", key, c.Type, want)
 				}
 			}
-			if slices.Sort(parts); !slices.Equal(parts, []string{"docs-server", "remix"}) {
-				t.Errorf("the Aggregate's parts are %v, want the two servers", parts)
+			if slices.Sort(parts); !slices.Equal(parts, []string{"docs-server", modelPart, "remix"}) {
+				t.Errorf("the Aggregate's parts are %v, want the two servers and the model", parts)
 			}
 			for _, line := range []string{
 				"    #   - infra.endpoint of remix, the address of the MCP server the flow names remix\n",
@@ -690,8 +714,9 @@ func TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket(t *testin
 // of each kind the two platforms reach differently, how the carried flow reaches
 // it and what the import says of it:
 //
-//   - a Langflow OpenAI chat model whose address and key the export writes as
-//     literals has both fields written as the names of the variables the platform
+//   - a Langflow OpenAI chat model, in place of the export's Language Model node,
+//     whose address and key the flow writes as literals has both fields written
+//     as the names of the variables the platform
 //     delivers for its model connection, read as global variables, and neither
 //     literal reaches the draft;
 //   - a Langflow model of a type whose fields the importer does not know is
@@ -721,7 +746,9 @@ func TestEachPartWiredToAPlatformReadsItsConnectionOrIsReported(t *testing.T) {
 
 	t.Run("a Langflow OpenAI chat model whose address and key are literals", func(t *testing.T) {
 		t.Parallel()
-		flow := decoded(t, readRealExport(t, langflowPromptingProject))
+		// The export's own Language Model node is replaced by the authored chat
+		// model, so the authored node holds the model socket's one connection.
+		flow := withoutNode(t, decoded(t, readRealExport(t, langflowPromptingProject)), promptingNodeID)
 		data := asObject(flow["data"])
 		data["nodes"] = append(data["nodes"].([]any), map[string]any{"id": "OpenAIModel-pl4nt", "type": "genericNode",
 			"data": map[string]any{"id": "OpenAIModel-pl4nt", "type": "OpenAIModel", "node": map[string]any{"template": map[string]any{
@@ -827,7 +854,7 @@ func TestEachPartWiredToAPlatformReadsItsConnectionOrIsReported(t *testing.T) {
 // referencingLangflowModels is referencingLanguageModel with a second mapping
 // override mapping Langflow's Embedding Model component to
 // core/ai-model/openai-embedding, which no row of the importer's own mapping arm
-// does either.
+// does.
 func referencingLangflowModels() map[string]any {
 	settings := referencingLanguageModel()
 	overrides := settings["mapping_overrides"].(map[string]any)["langflow"].(map[string]any)
@@ -857,6 +884,19 @@ const (
 	offOpenAI       = "the node %s, while the platform delivers its model connection (OPENAI_BASE_URL, OPENAI_API_KEY) to a node running on the OpenAI provider, so none of them is written into it, and the node reaches the part at the address its own fields or its component's defaults give"
 )
 
+// otherProviderReason is why a Langflow model node mapped to target and naming
+// provider, a provider other than OpenAI, stays in the flow: the model socket,
+// whose selector target satisfies, refuses it, and no other socket takes it.
+// The sentence is written out here by hand, independently of the importer and
+// the plugin kit that compose it, on purpose: it is the oracle the cases hold
+// their output to, so it must not be replaced by a call into that code.
+func otherProviderReason(target, provider string) string {
+	return "it maps to " + target + ", which satisfies the selector of the model socket of " + langflowPlatform +
+		", but the node runs on the " + provider + " model provider, while the platform delivers its model " +
+		"connection (OPENAI_BASE_URL, OPENAI_API_KEY) to a node running on the OpenAI provider, so the model the node " +
+		"names is not one that connection reaches; no other socket of " + langflowPlatform + " takes it"
+}
+
 // TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI
 // imports, under the default layout and over a catalog whose generative and
 // embedding model Components satisfy the platform's model socket, flows whose one
@@ -874,13 +914,13 @@ const (
 //   - Nvidia Remix, whose Embedding Model node runs on OpenAI with an empty
 //     api_base and api_key: both are written with the variables the platform
 //     delivers;
-//   - a Language Model node running on another provider, its key a literal: no
-//     variable is written into it, the key is carried as written — in the flow
-//     and nowhere else — and named in a credential-carried warning, the default,
-//     and the node is reported as reached other than through its connection — the
-//     connection's key never reaches a provider it is not delivered for;
 //   - the committed Basic Prompting, whose Language Model node selects no model:
-//     no variable is written into it, and it is reported the same way.
+//     no variable is written into it, and it is reported as reached other than
+//     through its connection — the connection's key never reaches a provider it
+//     is not delivered for.
+//
+// A node naming another provider takes no model connection at all;
+// TestALangflowLanguageModelNodeOnAnotherProviderStaysInTheFlow reads it.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
@@ -891,11 +931,6 @@ const (
 //     the Basic Prompting 1.6.0 row with its api_key, no longer written as the
 //     wiring writes it, reported as carried too — and the Embedding Model row
 //     passes;
-//   - in offProvider (plugins/langflow-importer/wire.go), replace
-//     `case provider == node.provider:` with
-//     `case provider == node.provider || provider != "":`: the other-provider row
-//     fails, the node written with the variables and reported as reaching its
-//     connection;
 //   - in connectionFields (plugins/langflow-importer/wire.go), replace
 //     `{field: "api_base", variable: named("OPENAI_BASE_URL"), address: true},`
 //     with
@@ -940,17 +975,6 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 				named(template, "api_base", "OPENAI_BASE_URL")
 				named(template, "api_key", "OPENAI_API_KEY")
 			}},
-		{name: "a Language Model on another provider, its key a literal (authored)",
-			build: func(t *testing.T) []byte {
-				flow := decoded(t, readRealExport(t, langflowSelectingProject))
-				template := langflowNode(t, flow, selectingNodeID)
-				asObject(template["provider"])["value"] = "Anthropic"
-				key := asObject(template["api_key"])
-				key["value"], key["load_from_db"] = plantedKey, false
-				return encoded(t, flow)
-			},
-			node: selectingNodeID, literal: fmt.Sprintf(offOpenAI, "runs on a model provider other than OpenAI"),
-			keyCarried: true, planted: []string{plantedKey}},
 		{name: "the committed Basic Prompting, its Language Model selecting no model",
 			source: langflowPromptingProject, node: promptingNodeID,
 			literal: fmt.Sprintf(offOpenAI, "selects no model provider")},
@@ -1057,13 +1081,13 @@ func nodeCopy(t *testing.T, flow map[string]any, id, as string) map[string]any {
 // provider, and a copy of Nvidia Remix's Embedding Model node, whose api_base is
 // empty — mapped by overrides to model Components, so the platform's model
 // socket draws its single connection to the export's own Language Model node,
-// the first generative one, and each added node stays in the flow, reported with
-// how the flow reaches its part as the node is written:
+// the first generative one, and each added node stays in the flow, reported:
 //
 //   - the Language Model copy, holding no field for its API's address, and the
-//     Embedding Model copy, its api_base empty, through the connection, by the
-//     OPENAI_BASE_URL they take from the environment;
-//   - the node on another provider other than through it.
+//     Embedding Model copy, its api_base empty, as held out of that connection and
+//     reaching it, by the OPENAI_BASE_URL they take from the environment;
+//   - the node on another provider as refused the model socket, naming the
+//     provider it runs on, whatever node holds the connection.
 //
 // 🔴 PLANTED DEFECT, rebuilt into the importer fixture from its source: in
 // standingOf (plugins/langflow-importer/wire.go), replace
@@ -1097,8 +1121,8 @@ func TestALangflowModelLeftInTheFlowIsReportedAsItsProviderAndFieldsReachIt(t *t
 	want := map[string]string{
 		"LanguageModelComponent-lm2": held("LanguageModelComponent-lm2", "LanguageModelComponent", "core/ai-model/openai",
 			through),
-		"LanguageModelComponent-lm3": held("LanguageModelComponent-lm3", "LanguageModelComponent", "core/ai-model/openai",
-			"other than through the connection "+holder+": "+fmt.Sprintf(offOpenAI, "runs on a model provider other than OpenAI")),
+		"LanguageModelComponent-lm3": "node LanguageModelComponent-lm3 (LanguageModelComponent) is wired to no socket of " +
+			langflowPlatform + ": " + otherProviderReason("core/ai-model/openai", "Anthropic") + "; it stays in the flow",
 		"EmbeddingModel-em1": held("EmbeddingModel-em1", "EmbeddingModel", "core/ai-model/openai-embedding", through),
 	}
 
@@ -1133,11 +1157,11 @@ func TestALangflowModelLeftInTheFlowIsReportedAsItsProviderAndFieldsReachIt(t *t
 //     ahead of its chat model: the model socket draws one connection, to the chat
 //     model, and each embedding model stays in the flow, reported as reaching
 //     that connection, its Base Path being empty;
-//   - the committed Langflow export Basic Prompting with three authored models
-//     added — an embedding model whose address field names the variable the
-//     platform delivers, one holding an address of its own, and an OpenAI chat
-//     model after them: the connection goes to the chat model, and each embedding
-//     model is reported as its address field reads.
+//   - the committed Langflow export Basic Prompting with its Language Model node
+//     replaced by three authored models — an embedding model whose address field
+//     names the variable the platform delivers, one holding an address of its
+//     own, and an OpenAI chat model after them: the connection goes to the chat
+//     model, and each embedding model is reported as its address field reads.
 //
 // Each held-out model chooses nothing, is no Component of the draft, and its
 // decision carries the reason it is reported with.
@@ -1168,7 +1192,7 @@ func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
 		return map[string]any{"id": id, "type": "genericNode", "data": map[string]any{"id": id, "type": typ,
 			"node": map[string]any{"template": template}}}
 	}
-	langflow := decoded(t, readRealExport(t, langflowPromptingProject))
+	langflow := withoutNode(t, decoded(t, readRealExport(t, langflowPromptingProject)), promptingNodeID)
 	data := asObject(langflow["data"])
 	data["nodes"] = append(data["nodes"].([]any),
 		model("OpenAIEmbeddings-e1", "OpenAIEmbeddings", map[string]any{"openai_api_base": field(true, "OPENAI_BASE_URL")}),
@@ -1249,7 +1273,7 @@ func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
 // the committed Langflow export Basic Prompting with every line break written CR
 // LF: the platform carries the export itself, byte for byte — each CR LF written
 // as the line feed the export holds — and one warning says how many carriage
-// returns were written so.
+// returns were written so, beside the report of how the flow reaches its model.
 //
 // 🔴 PLANTED DEFECT: in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
 // `text, returns := lineFeedsFor(string(scrubbed))` with
@@ -1272,12 +1296,20 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 		t.Errorf("the carried flow is not the export with each CR LF written as its line feed (%d bytes carried, %d "+
 			"exported)", len(got), len(export))
 	}
+	// Beside the carriage returns, the one other report is the export's Language
+	// Model node, wired to the model socket and selecting no model provider,
+	// reached other than through its connection.
 	var codes []string
 	for _, d := range res.Diagnostics {
+		if d.Code == "part-address-in-flow" {
+			codes = append(codes, d.Code+" "+d.SourceRef)
+			continue
+		}
 		codes = append(codes, d.Code)
 	}
-	if !slices.Equal(codes, []string{"carriage-returns-rewritten"}) {
-		t.Fatalf("the import raised %+v, want the one warning naming the carriage returns", res.Diagnostics)
+	if !slices.Equal(codes, []string{"carriage-returns-rewritten", "part-address-in-flow " + promptingNodeID}) {
+		t.Fatalf("the import raised %+v, want the one warning naming the carriage returns and the model part's report",
+			res.Diagnostics)
 	}
 	if want := "the flow holds " + strconv.Itoa(returns) +
 		" carriage return(s), each written as a line feed in values.flow_definition, since a YAML literal block cannot " +
@@ -1558,7 +1590,9 @@ func TestWhatANodeWouldSendOverItsConnectionIsWrittenEmptyAsWiring(t *testing.T)
 		return map[string]any{"id": id, "type": "genericNode", "data": map[string]any{"id": id, "type": typ,
 			"node": map[string]any{"template": template}}}
 	}
-	held := decoded(t, readRealExport(t, langflowPromptingProject))
+	// Both Langflow flows are the export with its Language Model node replaced by
+	// the authored models, so the authored models are the flow's only ones.
+	held := withoutNode(t, decoded(t, readRealExport(t, langflowPromptingProject)), promptingNodeID)
 	data := asObject(held["data"])
 	data["nodes"] = append(data["nodes"].([]any),
 		lfModel("OpenAIEmbeddings-e1", "OpenAIEmbeddings", map[string]any{"openai_api_base": str(true, "OPENAI_BASE_URL"),
@@ -1569,7 +1603,7 @@ func TestWhatANodeWouldSendOverItsConnectionIsWrittenEmptyAsWiring(t *testing.T)
 			"default_headers": dict(map[string]any{"X-Key": lfKept})}),
 		lfModel("OpenAIModel-m1", "OpenAIModel", map[string]any{"openai_api_base": str(false, "")}))
 	heldSource := encoded(t, held)
-	sole := decoded(t, readRealExport(t, langflowPromptingProject))
+	sole := withoutNode(t, decoded(t, readRealExport(t, langflowPromptingProject)), promptingNodeID)
 	data = asObject(sole["data"])
 	data["nodes"] = append(data["nodes"].([]any), lfModel("OpenAIEmbeddings-s1", "OpenAIEmbeddings",
 		map[string]any{"default_headers": dict(map[string]any{"X-Key": lfWired})}))
