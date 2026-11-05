@@ -147,7 +147,7 @@ func TestPodUserReachesEveryService(t *testing.T) {
 			name:      "no container names a user",
 			sidecar:   none,
 			setup:     none,
-			wantUsers: map[string]string{"api": "1000:2000", "api-log": "1000:2000", "api-setup": "1000:2000"},
+			wantUsers: map[string]string{"api": "1000:2000", "api--log": "1000:2000", "api--setup": "1000:2000"},
 		},
 		{
 			name: "the sidecar names its own user and group",
@@ -155,20 +155,20 @@ func TestPodUserReachesEveryService(t *testing.T) {
 				c.SecurityContext = &types.ContainerSecurityContext{RunAsUser: ptrInt(1500), RunAsGroup: ptrInt(4000)}
 			},
 			setup:     none,
-			wantUsers: map[string]string{"api": "1000:2000", "api-log": "1500:4000", "api-setup": "1000:2000"},
+			wantUsers: map[string]string{"api": "1000:2000", "api--log": "1500:4000", "api--setup": "1000:2000"},
 		},
 		{
 			name:      "the sidecar names its own user and no group",
 			sidecar:   ownUser,
 			setup:     none,
-			wantUsers: map[string]string{"api": "1000:2000", "api-log": "1500", "api-setup": "1000:2000"},
+			wantUsers: map[string]string{"api": "1000:2000", "api--log": "1500", "api--setup": "1000:2000"},
 			wantDiags: []string{"podSecurityContext.runAsGroup"},
 		},
 		{
 			name:      "the init container names its own user and no group",
 			sidecar:   none,
 			setup:     ownUser,
-			wantUsers: map[string]string{"api": "1000:2000", "api-log": "1000:2000", "api-setup": "1500"},
+			wantUsers: map[string]string{"api": "1000:2000", "api--log": "1000:2000", "api--setup": "1500"},
 			wantDiags: []string{"podSecurityContext.runAsGroup"},
 		},
 	}

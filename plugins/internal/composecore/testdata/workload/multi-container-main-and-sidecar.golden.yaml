@@ -9,7 +9,7 @@ services:
       aggrega.ai/compiler-version: test
       aggrega.ai/component-id: api
       aggrega.ai/environment: test-env
-  api-logger:
+  api--logger:
     image: logger:1.0
     labels:
       aggrega.ai/aggregate-name: test-agg

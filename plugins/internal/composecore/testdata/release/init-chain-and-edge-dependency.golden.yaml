@@ -10,11 +10,11 @@ services:
     networks:
       - default
     depends_on:
-      api-warm-cache:
+      api--warm-cache:
         condition: service_completed_successfully
       db:
         condition: service_started
-  api-migrate:
+  api--migrate:
     image: migrate:1.0
     labels:
       aggrega.ai/aggregate-name: test-agg
@@ -25,7 +25,7 @@ services:
     networks:
       - default
     restart: "no"
-  api-warm-cache:
+  api--warm-cache:
     image: warm:1.0
     labels:
       aggrega.ai/aggregate-name: test-agg
@@ -36,7 +36,7 @@ services:
     networks:
       - default
     depends_on:
-      api-migrate:
+      api--migrate:
         condition: service_completed_successfully
     restart: "no"
   db:

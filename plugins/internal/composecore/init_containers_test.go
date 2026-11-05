@@ -95,7 +95,7 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 		t.Fatalf("parse fragment: %v", err)
 	}
 
-	seed, ok := frag.Services["platform-import-seed"]
+	seed, ok := frag.Services["platform--import-seed"]
 	if !ok {
 		t.Fatalf("no init service for the first init container; services: %v", serviceNames(frag))
 	}
@@ -136,7 +136,7 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 
 	// The shared data volume is mounted by the init services and by the main
 	// service, so what an init container writes is what the main service reads.
-	for _, name := range []string{"platform", "platform-import-seed", "platform-verify-seed"} {
+	for _, name := range []string{"platform", "platform--import-seed", "platform--verify-seed"} {
 		svc := frag.Services[name]
 		var found bool
 		for _, v := range svc.Volumes {
@@ -164,18 +164,18 @@ func TestSynthesizeWorkload_InitContainersRunToCompletion(t *testing.T) {
 		t.Fatalf("parse fragment: %v", err)
 	}
 
-	first := frag.Services["platform-import-seed"]
+	first := frag.Services["platform--import-seed"]
 	if first.DependsOn.Len() != 0 {
 		t.Errorf("the first init service waits on nothing; got %d dependencies", first.DependsOn.Len())
 	}
 
-	second := frag.Services["platform-verify-seed"]
-	assertWaitsFor(t, "platform-verify-seed", second, "platform-import-seed")
+	second := frag.Services["platform--verify-seed"]
+	assertWaitsFor(t, "platform--verify-seed", second, "platform--import-seed")
 
 	main := frag.Services["platform"]
-	assertWaitsFor(t, "platform", main, "platform-verify-seed")
+	assertWaitsFor(t, "platform", main, "platform--verify-seed")
 
-	for _, name := range []string{"platform-import-seed", "platform-verify-seed"} {
+	for _, name := range []string{"platform--import-seed", "platform--verify-seed"} {
 		if got := frag.Services[name].Restart; got != "no" {
 			t.Errorf("init service %q restart = %q, want no", name, got)
 		}
@@ -220,13 +220,13 @@ func TestSynthesizeWorkload_InitContainerUnnamedFallsBackToIndex(t *testing.T) {
 	if err := yaml.Unmarshal(files[0].Body, &frag); err != nil {
 		t.Fatalf("parse fragment: %v", err)
 	}
-	for _, name := range []string{"api-init-0", "api-init-1"} {
+	for _, name := range []string{"api--init-0", "api--init-1"} {
 		if _, ok := frag.Services[name]; !ok {
 			t.Errorf("no service %q; services: %v", name, serviceNames(frag))
 		}
 	}
-	assertWaitsFor(t, "api-init-1", frag.Services["api-init-1"], "api-init-0")
-	assertWaitsFor(t, "api", frag.Services["api"], "api-init-1")
+	assertWaitsFor(t, "api--init-1", frag.Services["api--init-1"], "api--init-0")
+	assertWaitsFor(t, "api", frag.Services["api"], "api--init-1")
 }
 
 // TestSynthesizeWorkload_InitContainersEmitNoUnsupportedFieldWarning proves the
@@ -266,8 +266,8 @@ func TestSynthesizeWorkload_InitContainersSidecarsAlsoWait(t *testing.T) {
 	if err := yaml.Unmarshal(files[0].Body, &frag); err != nil {
 		t.Fatalf("parse fragment: %v", err)
 	}
-	assertWaitsFor(t, "api", frag.Services["api"], "api-prep")
-	assertWaitsFor(t, "api-shipper", frag.Services["api-shipper"], "api-prep")
+	assertWaitsFor(t, "api", frag.Services["api"], "api--prep")
+	assertWaitsFor(t, "api--shipper", frag.Services["api--shipper"], "api--prep")
 }
 
 // TestSynthesizeWorkload_InitWaitSurvivesPortPublishing proves the main
@@ -295,12 +295,14 @@ func TestSynthesizeWorkload_InitWaitSurvivesPortPublishing(t *testing.T) {
 	if len(main.Ports) == 0 {
 		t.Fatalf("main service lost its published ports: %+v", main)
 	}
-	assertWaitsFor(t, "api", main, "api-prep")
+	assertWaitsFor(t, "api", main, "api--prep")
 }
 
 // TestSynthesizeWorkload_InitContainerNameCollision_Halts proves a name an
 // ordinary container already claimed halts loudly instead of one service
-// silently overwriting the other.
+// silently overwriting the other. Sidecars and init containers are named by one
+// derivation, so a sidecar and an init container written with the same name
+// reach the same service name — the halt is what keeps them in one namespace.
 func TestSynthesizeWorkload_InitContainerNameCollision_Halts(t *testing.T) {
 	t.Parallel()
 	w := baseDegradeWorkload()
@@ -311,7 +313,7 @@ func TestSynthesizeWorkload_InitContainerNameCollision_Halts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt for an init container colliding with a container name")
 	}
-	for _, want := range []string{"TRANSLATION_ERROR", `"prep"`, `"api-prep"`, "initContainers"} {
+	for _, want := range []string{"TRANSLATION_ERROR", `"prep"`, `"api--prep"`, "initContainers"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("halt message must contain %q, got: %v", want, err)
 		}
@@ -420,7 +422,7 @@ func TestSynthesizeWorkload_InitContainerRegistryRewriteReaches(t *testing.T) {
 	if err := yaml.Unmarshal(files[0].Body, &frag); err != nil {
 		t.Fatalf("parse fragment: %v", err)
 	}
-	got := frag.Services["api-prep"].Image
+	got := frag.Services["api--prep"].Image
 	if !strings.HasPrefix(got, "registry.example.com/") {
 		t.Errorf("init service image = %q, want the registry prefix applied", got)
 	}

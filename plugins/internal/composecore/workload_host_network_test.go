@@ -148,7 +148,7 @@ func TestSynthesizeWorkload_HostNetworkSidecarsFollowTheMain(t *testing.T) {
 	if !strings.Contains(mainBlock, "network_mode: host") {
 		t.Errorf("the main service does not carry network_mode: host:\n%s", mainBlock)
 	}
-	sidecar := serviceBlock(t, body, "media-exporter")
+	sidecar := serviceBlock(t, body, "media--exporter")
 	if !strings.Contains(sidecar, "network_mode: service:media") {
 		t.Errorf("the sidecar must keep naming the main service rather than declaring the node's network itself:\n%s", sidecar)
 	}

@@ -12,9 +12,9 @@ services:
         source: platform--data
         target: /home/node/.n8n
     depends_on:
-      platform-verify-seed:
+      platform--verify-seed:
         condition: service_completed_successfully
-  platform-import-seed:
+  platform--import-seed:
     image: platform:1.0
     command:
       - platform import:workflow --input=/seed/workflow.json
@@ -37,7 +37,7 @@ services:
     configs:
       - source: workflow-seed
         target: /seed
-  platform-verify-seed:
+  platform--verify-seed:
     image: platform:1.0
     command:
       - test -f /home/node/.n8n/database.sqlite
@@ -55,7 +55,7 @@ services:
         source: platform--data
         target: /home/node/.n8n
     depends_on:
-      platform-import-seed:
+      platform--import-seed:
         condition: service_completed_successfully
     restart: "no"
 volumes:

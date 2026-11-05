@@ -143,7 +143,7 @@ func SynthesizeWorkloadCore(
 		isMain := hasMain && containerName == mainContainerName
 
 		role := roleSidecar
-		serviceName := mainServiceName + "-" + sanitizeServiceName(containerName)
+		serviceName := containerServiceName(mainServiceName, containerName)
 		if isMain {
 			role = roleMain
 			serviceName = mainServiceName
@@ -417,13 +417,14 @@ const (
 // authoring contract, where the init containers run to completion in the order
 // they are written and every other container starts after all of them.
 //
-// Init services are named on the same `<component>-<container>` shape as
-// sidecars, so they share one namespace with them; a name already taken halts
-// rather than overwriting the service that claimed it. An unnamed entry falls
-// back to `init-<index>`, the name the authoring contract documents for a
-// positional entry — the same fallback the Kubernetes-shaped targets emit, and
-// it must stay the same on both so one authored workload yields one set of
-// container names everywhere.
+// Init services are named by the one derivation sidecars are named by,
+// containerServiceName, so the two share one namespace: an init container and a
+// container of the same name reach the same service name, and a name already
+// taken halts rather than overwriting the service that claimed it. An unnamed
+// entry falls back to `init-<index>` before the derivation runs, the name the
+// authoring contract documents for a positional entry — the same fallback the
+// Kubernetes-shaped targets emit, and it must stay the same on both so one
+// authored workload yields one set of container names everywhere.
 //
 // Pod-level configuration other than the pod's user identity is deliberately not
 // applied. An init service is a non-main service, and this synthesizer applies
@@ -452,7 +453,7 @@ func synthesizeInitServices(
 		if containerName == "" {
 			containerName = fmt.Sprintf("init-%d", i)
 		}
-		serviceName := mainServiceName + "-" + sanitizeServiceName(containerName)
+		serviceName := containerServiceName(mainServiceName, containerName)
 
 		if _, taken := frag.Services[serviceName]; taken {
 			return nil, cerrors.Unidentified(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
@@ -1407,24 +1408,62 @@ func volumeName(nodeID, name string) string {
 	return volumeNameEncoding.Name(nodeID, name)
 }
 
-// sanitizeServiceName carries a Workload container name through as the compose
-// service name it contributes to.
+// serviceNameEncoding is the segment encoding the service name of a non-main
+// container — a sidecar or an init container — is built with.
 //
-// It is an identity, and the name says what it is reserved for rather than what
-// it does: compose service names admit letters, digits, dots, underscores and
-// hyphens, and this is the one place a narrowing would belong if one were added.
+// The services: block of the assembled file is keyed by name, so two containers
+// arriving at one service name cannot both be written, and the build halts on
+// such a pair rather than choose one. A derivation that let two distinct pairs
+// of identity and container name reach one name would halt a build that
+// declared nothing in conflict. A container name is declared as a string with no character
+// constraint on it, and either it or the component identity may carry a hyphen,
+// so the derivation encodes each part rather than concatenating the two, and
+// joins the encoded parts with a sequence neither can produce.
 //
-// What it does not do is the part worth stating, because assuming otherwise is
-// how a caller comes to trust it. A container name is declared as a string with
-// no character constraint on it, so nothing upstream narrows what arrives here
-// and nothing here narrows it either — a container name carrying a character a
-// compose service name does not admit reaches the emitted file as authored. The
-// name is also joined to the node's identity by a single hyphen at the two call
-// sites that build an init service name, and a hyphen is a character a container
-// name may carry, so two distinct pairs can reach one service name and compose
-// unions services by name.
-func sanitizeServiceName(name string) string {
-	return name
+// The alphabet is stated here rather than taken from the encoding, because it
+// is a property of what compose accepts in a service name rather than of the
+// encoding: a compose service name carries letters, digits, dots, underscores
+// and hyphens. The hyphen is the encoding's own — it opens every escape and
+// composes the join — so an alphabet may not admit it; everything else compose
+// accepts is carried through, which is what keeps an ordinary name readable.
+var serviceNameEncoding = namesegment.NewEncoding('-', isServiceNameRune)
+
+// isServiceNameRune reports whether a character is carried through the encoding
+// as itself: an ASCII letter, a digit, a dot or an underscore. Every other
+// character is escaped. It matches the volume and network alphabets because
+// compose admits the same characters in all three positions; it is kept
+// separate so each key space's set can follow its own target.
+func isServiceNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' ||
+		r >= '0' && r <= '9' || r == '.' || r == '_'
+}
+
+// containerServiceName derives the compose service name of one non-main
+// container of one node, from the component identity the node's main service
+// is named after and the container's name: the key it is written under in
+// containers, or an init container's name, or the `init-<index>` fallback an
+// unnamed init entry takes. Sidecars and init containers are both named here,
+// so the two share one namespace — an init container and a container of the
+// same name reach one service name, which the init synthesis refuses.
+//
+// The derivation is injective: two calls produce one name only where both the
+// component identity and the container name match. Each part is encoded rather
+// than carried through, so a character a service name does not admit is written
+// out instead of reaching the emitted file, and the two-hyphen join is a
+// sequence no encoded part contains, so a name cannot be re-divided into a
+// different pair — which a single hyphen could not promise, since either part
+// may carry one. The name is byte-stable across builds with identical input.
+//
+// The main service is named the component identity itself, which this
+// derivation does not produce. A component node's identity arrives already
+// written out by the node-identity encoding, which never leaves two hyphens in a
+// row, so it cannot meet a name carrying this join. An identity a Feature
+// attachment's workload is named after is composed with a two-hyphen join of its
+// own, so the derivation alone does not keep that one apart; where services of
+// two contributors to one assembled file meet on a name, the collision check
+// across contributors halts naming both.
+func containerServiceName(componentID, containerName string) string {
+	return serviceNameEncoding.Name(componentID, containerName)
 }
 
 // marshalDeterministic routes through the shared indent-aware marshal helper

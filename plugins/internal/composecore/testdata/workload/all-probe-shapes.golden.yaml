@@ -15,7 +15,7 @@ services:
       timeout: 3s
       retries: 5
       start_period: 30s
-  multi-exec-side:
+  multi--exec-side:
     image: exec-probe:1.0
     labels:
       aggrega.ai/aggregate-name: test-agg
@@ -29,7 +29,7 @@ services:
         - CMD
         - check.sh
         - --ready
-  multi-tcp-side:
+  multi--tcp-side:
     image: tcp-probe:1.0
     labels:
       aggrega.ai/aggregate-name: test-agg
