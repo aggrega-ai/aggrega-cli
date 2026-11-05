@@ -228,7 +228,7 @@ func nameBound() int32 {
 	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		out = rendercore.NameBoundFailure(err)
 	} else {
-		out = helmcore.NameBoundOutput(in.Proposed, in.Authored)
+		out = helmcore.NameBoundOutput(in)
 	}
 	encoded, mErr := out.EncodeCBOR()
 	if mErr != nil {

@@ -1784,18 +1784,11 @@ func renderFeatureRecipeFiles(
 	// the compiler holds, so the composition is settled against the engine this
 	// attachment renders through: composed, put to the guest, shortened to whatever
 	// bound the guest returned, and put again until the guest accepts it. A guest
-	// that answers no such question accepts the composition as composed.
+	// that answers no such question accepts the composition as composed. It is
+	// settled once the attachment's workload is resolved, below, and before any
+	// crossing stamps it.
 	synthNodeCtx := frNodeCtx
 	derivedComponentID := ""
-	if identity.named() {
-		settled, err := SettleComposedComponentIdentity(ctx, frEngine, labels.AttachmentScope,
-			fr.Spec.Capability, identity.parts()...)
-		if err != nil {
-			return nil, "", err
-		}
-		synthNodeCtx.LabelComponentID = settled
-		derivedComponentID = settled
-	}
 
 	synth := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: fr.Metadata.Name, Version: fr.Metadata.Version},
@@ -1838,6 +1831,37 @@ func renderFeatureRecipeFiles(
 	// sourced identically from the render input — single source, no second map.
 	state.ArtifactLibraries = artifactsLibs
 
+	// The Feature's own slots and no connection: a FeatureRecipe's Workload is
+	// held to the Feature it implements, which draws none of the host
+	// component's connections, so an entry there naming a connection is refused
+	// as naming one the owner does not draw.
+	//
+	// The workload is resolved ahead of the source render because the identity
+	// settled next is asked about with it, and the source render is the first
+	// crossing that stamps that identity. Resolving it reads the template context
+	// and the state built above and nothing the source render produces, so the
+	// order changes no rendered byte — only which of two faults in one attachment
+	// is reported first.
+	if err := phaseB2(frCtx, state, validator.WorkloadSlots{Own: slots}); err != nil {
+		return nil, "", err
+	}
+
+	// The identity is settled here, once, with the facts of the workload just
+	// resolved on the question: some names a target builds from the identity —
+	// a Service named after one of the workload's keys, the job a scheduled
+	// workload emits — exist only for that workload, and a composed identity is
+	// shortened until every one of them fits. It is settled before the source
+	// render so the one value is what every crossing below stamps.
+	if identity.named() {
+		settled, err := SettleComposedComponentIdentity(ctx, frEngine, labels.AttachmentScope,
+			fr.Spec.Capability, state.ParsedWorkload, identity.parts()...)
+		if err != nil {
+			return nil, "", err
+		}
+		synthNodeCtx.LabelComponentID = settled
+		derivedComponentID = settled
+	}
+
 	// Sourced mode hits engine.Render; synthesized renders at B.4, artifacts at
 	// B.3. EmitOriginSource files accumulate by sorted filename for
 	// determinism. The Intermediate flag follows the same rule the component
@@ -1862,13 +1886,6 @@ func renderFeatureRecipeFiles(
 		}
 	}
 
-	// The Feature's own slots and no connection: a FeatureRecipe's Workload is
-	// held to the Feature it implements, which draws none of the host
-	// component's connections, so an entry there naming a connection is refused
-	// as naming one the owner does not draw.
-	if err := phaseB2(frCtx, state, validator.WorkloadSlots{Own: slots}); err != nil {
-		return nil, "", err
-	}
 	// Reduce this render's mid-render state to the projection that outlives it, at
 	// the position the component walk records its own: the synthetic Recipe above
 	// carries the resolved source, the workload has now been parsed, and no

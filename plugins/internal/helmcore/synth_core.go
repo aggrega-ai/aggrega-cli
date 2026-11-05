@@ -105,10 +105,11 @@ func SynthesizeWorkloadCore(
 	form := rendercore.NormalizeWorkloadForm(w.Form)
 
 	// A reference workload has no compute: it emits a single ExternalName
-	// Service aliasing an in-cluster name to the external endpoint. No
-	// controller, no PVCs, no Secret (the credential stays a pointer carried to
-	// consumers via provides, per the AOT boundary).
-	if form == rendercore.WorkloadFormReference {
+	// Service aliasing an in-cluster name to the external endpoint, named after
+	// the basis alone rather than after a key. No controller, no PVCs, no Secret
+	// (the credential stays a pointer carried to consumers via provides, per the
+	// AOT boundary).
+	if !namesServicesByKey(form) {
 		return synthesizeReference(w, nodeCtx)
 	}
 
@@ -194,9 +195,10 @@ func SynthesizeWorkloadCore(
 	// Controller object: one per form. stateless → Deployment, stateful →
 	// StatefulSet, daemon → DaemonSet, task → Job, scheduled → CronJob whose
 	// spec.schedule is the workload's schedule (validated by the shared
-	// companion check above).
-	switch form {
-	case rendercore.WorkloadFormStateful:
+	// companion check above). Whether a form emits a CronJob is read through
+	// emitsCronJob, the predicate the CronJob name verdict reads too.
+	switch {
+	case form == rendercore.WorkloadFormStateful:
 		governingService, gerr := statefulSetGoverningService(services, nodeCtx.NodeID)
 		if gerr != nil {
 			return nil, gerr
@@ -221,7 +223,7 @@ func SynthesizeWorkloadCore(
 			Name: name + "-statefulset.yaml",
 			Body: body,
 		})
-	case rendercore.WorkloadFormDaemon:
+	case form == rendercore.WorkloadFormDaemon:
 		ds := DaemonSet{
 			APIVersion: k8sDaemonSetAPIVersion,
 			Kind:       "DaemonSet",
@@ -239,7 +241,7 @@ func SynthesizeWorkloadCore(
 			Name: name + "-daemonset.yaml",
 			Body: body,
 		})
-	case rendercore.WorkloadFormTask:
+	case form == rendercore.WorkloadFormTask:
 		job := Job{
 			APIVersion: k8sJobAPIVersion,
 			Kind:       "Job",
@@ -254,7 +256,7 @@ func SynthesizeWorkloadCore(
 			Name: name + "-job.yaml",
 			Body: body,
 		})
-	case rendercore.WorkloadFormScheduled:
+	case emitsCronJob(form):
 		cron := CronJob{
 			APIVersion: k8sCronJobAPIVersion,
 			Kind:       "CronJob",
@@ -382,9 +384,55 @@ func synthesizeReference(w *types.Workload, nodeCtx rendercore.NodeRenderContext
 // a resource belongs to, and a label value admits the identity as written.
 func synthesizedNameBasis(nodeCtx rendercore.NodeRenderContext) string {
 	if nodeCtx.LabelComponentID != "" {
-		return rendercore.ProvenanceComponentID(nodeCtx)
+		return synthesizedNameFor(rendercore.ProvenanceComponentID(nodeCtx), true)
 	}
-	return releaseName(nodeCtx)
+	return synthesizedNameFor(rendercore.TargetNameBasis(nodeCtx), false)
+}
+
+// synthesizedNameFor is the one derivation of that name from an identity and the
+// state the identity is in: a composed identity, already in an alphabet every
+// resource name admits, names the resources as it stands; any other identity
+// names them as the release name derived from it, through [ReleaseNameFor].
+//
+// It is held apart from the render context so the answer to the name-bound
+// question measures the very name the resources will carry. That answer holds a
+// proposed identity and whether it was composed, not a context, and a second
+// spelling of this choice there would agree with this one on the day it was
+// written and let a CronJob or a Service be judged under one name and emitted
+// under another.
+func synthesizedNameFor(identity string, composed bool) string {
+	if composed {
+		return identity
+	}
+	return ReleaseNameFor(identity, "")
+}
+
+// serviceNameFor is the one spelling of the name a Service this target
+// synthesizes carries: the naming basis and the Service's key, joined by a
+// hyphen.
+//
+// The Service-name verdict measures the name this returns rather than adding up
+// its parts, so the name judged and the name emitted are one value: a change to
+// the join here moves both, and no arithmetic elsewhere is left describing the
+// old one.
+func serviceNameFor(basis, key string) string {
+	return basis + "-" + key
+}
+
+// namesServicesByKey reports whether a workload of this form names its Services
+// after the basis and each key. A reference workload does not: it emits one
+// Service aliasing an external endpoint, named after the basis alone. The
+// synthesizer dispatches on it and the Service-name verdict reads it, so the
+// form the verdict skips is the form that emits no keyed Service.
+func namesServicesByKey(form string) bool {
+	return rendercore.NormalizeWorkloadForm(form) != rendercore.WorkloadFormReference
+}
+
+// emitsCronJob reports whether a workload of this form is synthesized as a
+// CronJob. The synthesizer dispatches on it and the CronJob-name verdict reads
+// it, so the verdict judges a CronJob name exactly where one is emitted.
+func emitsCronJob(form string) bool {
+	return rendercore.NormalizeWorkloadForm(form) == rendercore.WorkloadFormScheduled
 }
 
 // externalNameHost extracts the bare DNS host from an endpoint that may carry a
@@ -940,7 +988,7 @@ func buildPVCSpec(size, class string, accessModes []string) PersistentVolumeClai
 }
 
 // translateServices walks Workload.Services in author order and produces K8s
-// Service resources, each named "<basis>-<service key>". targetPort resolution:
+// Service resources, each named by [serviceNameFor]. targetPort resolution:
 // look up the port name across all containers; error if not found.
 func translateServices(w *types.Workload, basis, namespace string, selectorLabels, resourceLabels map[string]string, resourceAnnotations map[string]string) ([]Service, error) {
 	var out []Service
@@ -973,7 +1021,7 @@ func translateServices(w *types.Workload, basis, namespace string, selectorLabel
 			APIVersion: k8sServiceAPIVersion,
 			Kind:       "Service",
 			Metadata: ObjectMeta{
-				Name:        basis + "-" + svcName,
+				Name:        serviceNameFor(basis, svcName),
 				Namespace:   namespace,
 				Labels:      resourceLabels,
 				Annotations: resourceAnnotations,

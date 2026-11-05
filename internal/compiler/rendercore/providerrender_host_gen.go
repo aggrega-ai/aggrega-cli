@@ -370,12 +370,16 @@ type ReassembleOutput struct {
 	Body []byte `json:"body" yaml:"body" cbor:"body"`
 }
 
-// NameBoundInput The payload a Provider guest receives on its optional name_bound export: one name the host proposes to use as a node's component identity, for the guest to judge against every name it would derive from that identity for its target. The guest answers with a constraint rather than with a name of its own — a derived name travelling back would put the host in the business of composing names for a target it knows nothing about, which is exactly what asking the question removes. A provider whose target bounds or restricts the names it accepts advertises the export; a provider whose target accepts any name omits it and is never asked, and its rendering is unchanged.
+// NameBoundInput The payload a Provider guest receives on its optional name_bound export: one name the host proposes to use as a node's component identity, for the guest to judge against every name it would derive from that identity for its target, together with the facts of the node's resolved workload that some of those names depend on, where the identity is settled after that workload is resolved. The guest answers with a constraint rather than with a name of its own — a derived name travelling back would put the host in the business of composing names for a target it knows nothing about, which is exactly what asking the question removes. A provider whose target bounds or restricts the names it accepts advertises the export; a provider whose target accepts any name omits it and is never asked, and its rendering is unchanged.
 type NameBoundInput struct {
 	// Proposed The name the host proposes as the node's component identity. The guest derives from it, in memory, every name it derives from a component identity and reports whether each one is a name its target accepts. A verdict speaks about the PROPOSAL rather than about the node: the host asks one question wherever it composes an identity, and it does not say which of that node's names this identity will end up being the basis for, so a guest answers as though it were the basis for all of them. That is the conservative direction, because the host only ever shortens on the answer and never lengthens — a name the node will in fact derive from some other carry is therefore judged too strictly rather than too loosely.
 	Proposed string `json:"proposed" yaml:"proposed" cbor:"proposed"`
 	// Authored Whether the proposed name is one a person wrote rather than one the compiler composed from authored parts. It is carried so a guest can phrase its reason for the reader who is able to act on it. It does not decide what a refusal does: an authored name is refused and a composed one is shortened, and that decision is the host's.
 	Authored bool `json:"authored,omitempty" yaml:"authored,omitempty" cbor:"authored,omitempty"`
+	// WorkloadForm The form of the workload the node's Recipe or FeatureRecipe resolves to, as its workload template produced it, carried when the identity is settled after that workload is resolved and the workload states a form. It is carried as written; the host does not interpret it. A guest whose target bounds a name it emits for one form only — a scheduled job, whose name the target holds shorter than its other names because a suffix is appended to it for each run — reads it to judge that name. Absent means the host carries no form for this question: the node declares no workload, its workload states none, or the identity is settled before any workload is resolved. A guest then judges no name that depends on the form, and answers exactly as it would if the field did not exist.
+	WorkloadForm string `json:"workload_form,omitempty" yaml:"workload_form,omitempty" cbor:"workload_form,omitempty"`
+	// ServiceKeys The keys of the Services the node's resolved workload declares, in the order the workload declares them, carried when the identity is settled after that workload is resolved and the workload declares any. A guest whose target names each Service it emits for the node from the component identity and the Service's key reads them to judge each such name. A key is written by the Recipe's or FeatureRecipe's author rather than by whoever wrote the identity, so a guest words a refusal a key causes for that author too. Absent means the host carries no keys for this question: the node declares no workload, its workload declares no Service, or the identity is settled before any workload is resolved. A guest then judges no name built from a Service key, and answers exactly as it would if the field did not exist.
+	ServiceKeys []string `json:"service_keys,omitempty" yaml:"service_keys,omitempty" cbor:"service_keys,omitempty"`
 }
 
 // DerivedNameVerdict One name kind's verdict on a proposed identity: whether the name the guest would derive for that kind is one its target accepts, and — where a shorter identity would be accepted — the greatest length that would be. It carries a constraint and a reason, never a name the guest built.
@@ -4244,6 +4248,30 @@ func (t NameBoundInput) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.WorkloadForm != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"workload_form\":")
+		writeJSONString(&buf, t.WorkloadForm)
+	}
+	if len(t.ServiceKeys) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"service_keys\":")
+		buf.WriteByte('[')
+		for i := range t.ServiceKeys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.ServiceKeys[i]
+			writeJSONString(&buf, ev)
+		}
+		buf.WriteByte(']')
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -4274,6 +4302,29 @@ func (t *NameBoundInput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Authored = v
 			}
+		case "workload_form":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.WorkloadForm = s
+			}
+		case "service_keys":
+			t.ServiceKeys = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					elem = s
+				}
+				t.ServiceKeys = append(t.ServiceKeys, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -4293,7 +4344,7 @@ func (t *NameBoundInput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *NameBoundInput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "proposed", "authored"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "proposed", "authored", "workload_form", "service_keys"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -9451,6 +9502,12 @@ func (t NameBoundInput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Authored != false {
 		n++
 	}
+	if len(t.ServiceKeys) != 0 {
+		n++
+	}
+	if t.WorkloadForm != "" {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	if t.Authored != false {
 		dst = appendCBORTextString(dst, "authored")
@@ -9458,6 +9515,18 @@ func (t NameBoundInput) appendCBOR(dst []byte) ([]byte, error) {
 	}
 	dst = appendCBORTextString(dst, "proposed")
 	dst = appendCBORTextString(dst, t.Proposed)
+	if len(t.ServiceKeys) != 0 {
+		dst = appendCBORTextString(dst, "service_keys")
+		dst = appendCBORHead(dst, 4, uint64(len(t.ServiceKeys)))
+		for i := range t.ServiceKeys {
+			ev := t.ServiceKeys[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	if t.WorkloadForm != "" {
+		dst = appendCBORTextString(dst, "workload_form")
+		dst = appendCBORTextString(dst, t.WorkloadForm)
+	}
 	return dst, nil
 }
 
@@ -9491,6 +9560,30 @@ func (t *NameBoundInput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Authored = v
 			}
+		case "workload_form":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.WorkloadForm = s
+			}
+		case "service_keys":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.ServiceKeys = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -9507,7 +9600,7 @@ func (t *NameBoundInput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *NameBoundInput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "proposed", "authored"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "proposed", "authored", "workload_form", "service_keys"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

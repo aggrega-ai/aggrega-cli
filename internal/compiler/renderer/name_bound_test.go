@@ -76,7 +76,7 @@ func TestSettleComposedComponentIdentity_ConvergesWhenShorteningLandsOnAGrammarE
 	}}
 
 	got, err := SettleComposedComponentIdentity(context.Background(), oracle,
-		labels.BoundaryFeatureScope, "stub",
+		labels.BoundaryFeatureScope, "stub", nil,
 		strings.Repeat("cluster", 12), strings.Repeat("bridge", 12))
 	if err != nil {
 		t.Fatalf("the exchange must converge on a name both sides accept: %v", err)
@@ -95,7 +95,7 @@ func TestSettleComposedComponentIdentity_ConvergesWhenShorteningLandsOnAGrammarE
 	// yield an identical number of passes and an identical result.
 	again := &boundOracle{answer: oracle.answer}
 	repeat, err := SettleComposedComponentIdentity(context.Background(), again,
-		labels.BoundaryFeatureScope, "stub",
+		labels.BoundaryFeatureScope, "stub", nil,
 		strings.Repeat("cluster", 12), strings.Repeat("bridge", 12))
 	if err != nil {
 		t.Fatalf("the second run must reach the same answer: %v", err)
@@ -134,7 +134,7 @@ func TestSettleComposedComponentIdentity_HaltsOnAGuestThatNeverConverges(t *test
 	}}
 
 	_, err := SettleComposedComponentIdentity(context.Background(), oracle,
-		labels.BoundaryFeatureScope, "stubbornprovider", "cluster", "bridge")
+		labels.BoundaryFeatureScope, "stubbornprovider", nil, "cluster", "bridge")
 	if err == nil {
 		t.Fatal("a guest that never accepts a name must stop the build, not be truncated around")
 	}
@@ -169,7 +169,7 @@ func TestSettleComposedComponentIdentity_HaltsWhenNoLengthWouldHelp(t *testing.T
 	}}
 
 	_, err := SettleComposedComponentIdentity(context.Background(), oracle,
-		labels.AttachmentScope, "stub", "host", "instance")
+		labels.AttachmentScope, "stub", nil, "host", "instance")
 	if !errors.Is(err, ErrComponentIdentityTargetRefuses()) {
 		t.Fatalf("a refusal no length repairs must carry the target-refuses condition; got %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSettleComposedComponentIdentity_HaltsOnAZeroBoundRatherThanLooping(t *t
 	}}
 
 	_, err := SettleComposedComponentIdentity(context.Background(), oracle,
-		labels.AttachmentScope, "stub", "host", "instance")
+		labels.AttachmentScope, "stub", nil, "host", "instance")
 	if !errors.Is(err, ErrComponentIdentityTargetRefuses()) {
 		t.Fatalf("a zero bound must stop on the target's own answer; got %v", err)
 	}
@@ -237,7 +237,7 @@ func TestSettleComposedComponentIdentity_TakesTheSmallestBoundAcrossKinds(t *tes
 	}}
 
 	got, err := SettleComposedComponentIdentity(context.Background(), &engine,
-		labels.BoundaryFeatureScope, "stub", strings.Repeat("region", 10), strings.Repeat("bridge", 10))
+		labels.BoundaryFeatureScope, "stub", nil, strings.Repeat("region", 10), strings.Repeat("bridge", 10))
 	if err != nil {
 		t.Fatalf("the exchange must converge: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestNameBound_AnEngineThatDoesNotAnswerIsNeverAsked(t *testing.T) {
 
 	parts := []string{strings.Repeat("cluster", 20), strings.Repeat("bridge", 20)}
 	got, err := SettleComposedComponentIdentity(context.Background(), silentEngine{},
-		labels.BoundaryFeatureScope, "silent", parts...)
+		labels.BoundaryFeatureScope, "silent", nil, parts...)
 	if err != nil {
 		t.Fatalf("a provider that answers no such question must not stop a build: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestNameBound_AnEngineThatDoesNotAnswerIsNeverAsked(t *testing.T) {
 	}
 
 	if err := SettleAuthoredComponentIdentity(context.Background(), silentEngine{},
-		strings.Repeat("A", 200), "spec.components.long"); err != nil {
+		strings.Repeat("A", 200), "spec.components.long", nil); err != nil {
 		t.Errorf("a provider that answers no such question must refuse no authored name: %v", err)
 	}
 }
@@ -303,7 +303,7 @@ func TestSettleAuthoredComponentIdentity_RefusesAndNamesTheAuthoredField(t *test
 	}}
 
 	err := SettleAuthoredComponentIdentity(context.Background(), oracle,
-		"PAYMENTS", "spec.components.PAYMENTS")
+		"PAYMENTS", "spec.components.PAYMENTS", nil)
 	if !errors.Is(err, ErrComponentIdentityTargetRefuses()) {
 		t.Fatalf("an authored name the target refuses must halt; got %v", err)
 	}
@@ -356,7 +356,7 @@ func TestSettleComposedComponentIdentity_ReportsABoundTheSchemeCannotReach(t *te
 	}}
 
 	_, err := SettleComposedComponentIdentity(context.Background(), oracle,
-		labels.BoundaryFeatureScope, "strict", "cluster", "bridgebridge")
+		labels.BoundaryFeatureScope, "strict", nil, "cluster", "bridgebridge")
 	if !errors.Is(err, ErrComponentIdentityTargetRefuses()) {
 		t.Fatalf("an unreachable bound must be reported as the target refusing; got %v", err)
 	}

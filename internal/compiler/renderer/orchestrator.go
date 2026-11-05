@@ -2281,18 +2281,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		warnSensitivityNotConveyed(nodeID, providerName, nodeCtx.RecipeName, SensitivityNotConveyedDiagnostic,
 			nodeCtx.DeclaredSensitivity, hasSource, nodeCtx.UnsupportedFieldSink)
 
-		// Advertised-only refusal of an authored identity the node's target will
-		// not accept. This node's identity is the one its author wrote, so it is
-		// refused rather than shortened: it is the deployed name of the workload,
-		// and the person able to change it is the person who wrote it. The refusal
-		// therefore names the Aggregate field they wrote, and carries the target's
-		// own reason for refusing, which only the guest knows. A provider whose
-		// guest answers no such question accepts every name, exactly as before.
-		if err := SettleAuthoredComponentIdentity(ctx, engine, nodeID,
-			fmt.Sprintf("spec.components.%s", nodeID)); err != nil {
-			return nil, err
-		}
-
 		// Advertised-only per-node input validation. When the resolved provider's
 		// guest declares the optional input-validation export, run it once here —
 		// after the capability gate, before any Phase B render pass — so a provider
@@ -2361,6 +2349,27 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// that connection's socket declares.
 		if err := phaseB2(tmplCtx, state, workloadSlots); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+		}
+
+		// Advertised-only refusal of an authored identity the node's target will
+		// not accept. This node's identity is the one its author wrote, so it is
+		// refused rather than shortened: it is the deployed name of the workload,
+		// and the person able to change it is the person who wrote it. The refusal
+		// therefore names the Aggregate field they wrote, and carries the target's
+		// own reason for refusing, which only the guest knows. A provider whose
+		// guest answers no such question accepts every name, exactly as before.
+		//
+		// It is asked here, immediately after the workload is resolved and before
+		// anything reads the parsed workload, because some of the names a target
+		// derives from the identity exist only for the workload the node renders —
+		// a Service named after one of its keys, the job a scheduled workload emits
+		// — and the question carries those facts as resolved. An authored identity
+		// is refused and never rewritten, so the source render above has used the
+		// very value judged here, and a refusal still halts before anything is
+		// written. A node declaring no workload is asked with none.
+		if err := SettleAuthoredComponentIdentity(ctx, engine, nodeID,
+			fmt.Sprintf("spec.components.%s", nodeID), state.ParsedWorkload); err != nil {
+			return nil, err
 		}
 
 		// Reduce this node's mid-render state to the projection that outlives it.

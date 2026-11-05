@@ -28,7 +28,7 @@ type helmOracle struct{ passes int }
 
 func (o *helmOracle) NameBound(_ context.Context, in renderer.NameBoundInput) (renderer.NameBoundOutput, error) {
 	o.passes++
-	return helmcore.NameBoundOutput(in.Proposed, in.Authored), nil
+	return helmcore.NameBoundOutput(in), nil
 }
 
 // TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts is the clause the
@@ -68,7 +68,7 @@ func TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts(t *testing.T) {
 				parts := append(append([]string{}, lead...), instance)
 
 				oracle := &helmOracle{}
-				got, err := renderer.SettleComposedComponentIdentity(context.Background(), oracle, scope, "helm", parts...)
+				got, err := renderer.SettleComposedComponentIdentity(context.Background(), oracle, scope, "helm", nil, parts...)
 				if err != nil {
 					t.Errorf("scope %q parts %v: the exchange must reach a name the target accepts: %v",
 						scope, parts, err)
@@ -83,7 +83,7 @@ func TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts(t *testing.T) {
 				// provider's own verdict rather than a length here is what makes this a
 				// proof about the agreement instead of about one number: a grammar
 				// refusal, a label-value refusal and a length refusal all fail it.
-				for _, verdict := range helmcore.NameBoundOutput(got, false).Names {
+				for _, verdict := range helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: got}).Names {
 					if !verdict.Usable {
 						t.Errorf("scope %q parts %v settled on %q, which the provider still refuses as a %s: %s",
 							scope, parts, got, verdict.Kind, verdict.Reason)
@@ -110,7 +110,7 @@ func TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts(t *testing.T) {
 func TestHelmVerdicts_ReportEveryKindTheProviderDerives(t *testing.T) {
 	t.Parallel()
 
-	out := helmcore.NameBoundOutput("web", true)
+	out := helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: "web", Authored: true})
 	kinds := make([]string, 0, len(out.Names))
 	for _, v := range out.Names {
 		kinds = append(kinds, v.Kind)
@@ -145,7 +145,7 @@ func TestHelmVerdicts_SeparateALengthRefusalFromAGrammarRefusal(t *testing.T) {
 
 	// Six capitals: the shipping breach. The first character is escaped, so no
 	// length repairs it.
-	for _, v := range helmcore.NameBoundOutput("ABCDEF", true).Names {
+	for _, v := range helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: "ABCDEF", Authored: true}).Names {
 		if v.Kind != helmcore.ReleaseNameKind {
 			continue
 		}
@@ -161,7 +161,7 @@ func TestHelmVerdicts_SeparateALengthRefusalFromAGrammarRefusal(t *testing.T) {
 	// Lowercase and long: a length refusal, which a shorter name does repair.
 	long := strings.Repeat("a", 60)
 	sawBound := false
-	for _, v := range helmcore.NameBoundOutput(long, true).Names {
+	for _, v := range helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: long, Authored: true}).Names {
 		if v.Kind != helmcore.ReleaseNameKind {
 			continue
 		}
@@ -176,7 +176,7 @@ func TestHelmVerdicts_SeparateALengthRefusalFromAGrammarRefusal(t *testing.T) {
 			t.Errorf("the stated bound is %d, which leaves nothing to compose", *v.Bound)
 		}
 		// The bound has to be actionable: a name cut to it must actually pass.
-		for _, again := range helmcore.NameBoundOutput(long[:*v.Bound], true).Names {
+		for _, again := range helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: long[:*v.Bound], Authored: true}).Names {
 			if again.Kind == helmcore.ReleaseNameKind && !again.Usable {
 				t.Errorf("a name cut to the stated bound of %d is still refused: %s", *v.Bound, again.Reason)
 			}
@@ -223,7 +223,7 @@ func TestComposedIdentitiesSettleWithinTheLabelValueBound(t *testing.T) {
 			{"a/b", "c.d", strings.Repeat("instance", 12)},
 		} {
 			got, err := renderer.SettleComposedComponentIdentity(context.Background(), chartOracle{},
-				scope, "helm-chart", parts...)
+				scope, "helm-chart", nil, parts...)
 			if err != nil {
 				t.Errorf("scope %q parts %v: the exchange must converge: %v", scope, parts, err)
 				continue
@@ -271,7 +271,7 @@ func TestSettleAuthoredComponentIdentity_HaltsWhereTheWrittenLabelWouldNotFit(t 
 	// One byte under: written as exactly the limit, so it builds.
 	fits := qualifiedIdentity(61)
 	if err := renderer.SettleAuthoredComponentIdentity(context.Background(), chartOracle{},
-		fits, "spec.components."+fits); err != nil {
+		fits, "spec.components."+fits, nil); err != nil {
 		t.Fatalf("an identity of %d written as %d is within the limit and must build: %v",
 			len(fits), len(labels.EncodeNodeIdentity(fits)), err)
 	}
@@ -279,7 +279,7 @@ func TestSettleAuthoredComponentIdentity_HaltsWhereTheWrittenLabelWouldNotFit(t 
 	// One byte over: written past the limit, so it halts.
 	over := qualifiedIdentity(62)
 	err := renderer.SettleAuthoredComponentIdentity(context.Background(), chartOracle{},
-		over, "spec.components."+over)
+		over, "spec.components."+over, nil)
 	if err == nil {
 		t.Fatalf("an identity of %d is written as %d and must halt; the label would carry %d bytes",
 			len(over), len(labels.EncodeNodeIdentity(over)), len(labels.EncodeNodeIdentity(over)))
@@ -377,7 +377,7 @@ func releaseVerdictKey(v rendercore.DerivedNameVerdict) string {
 // answer, so the test drives the shipped assembly rather than the one kind.
 func releaseVerdictOf(t *testing.T, proposed string, authored bool) rendercore.DerivedNameVerdict {
 	t.Helper()
-	for _, v := range helmcore.NameBoundOutput(proposed, authored).Names {
+	for _, v := range helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: proposed, Authored: authored}).Names {
 		if v.Kind == helmcore.ReleaseNameKind {
 			return v
 		}

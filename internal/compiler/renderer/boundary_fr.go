@@ -291,12 +291,17 @@ func NewBoundaryFRState() *BoundaryFRState {
 // .component_id, and the attachment's own render, which stamps it on every
 // resource. A failed settlement records nothing, so the next reader settles again
 // and reports the failure where it reads the identity.
+//
+// Because the first reader runs before any template is evaluated, no resolved
+// workload is in hand, and the question carries none: a name a target derives
+// only for the attachment's workload — a Service named after one of its keys, the
+// job a scheduled workload emits — is not judged for a boundary-scope attachment.
 func (s *BoundaryFRState) settledComponentID(ctx context.Context, engine any, fr *types.FeatureRecipe, key boundaryFRKey) (string, error) {
 	if id, ok := s.ComponentIDs[key]; ok {
 		return id, nil
 	}
 	id, err := SettleComposedComponentIdentity(ctx, engine, labels.BoundaryFeatureScope,
-		fr.Spec.Capability, append(splitBoundaryPath(key.BoundaryPath), key.FRInstance)...)
+		fr.Spec.Capability, nil, append(splitBoundaryPath(key.BoundaryPath), key.FRInstance)...)
 	if err != nil {
 		return "", err
 	}

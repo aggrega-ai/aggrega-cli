@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
@@ -83,13 +84,13 @@ func TestHelmNameVerdict_RefusesOnlyTheNamesItsServicesCannotBeginWith(t *testin
 			t.Parallel()
 
 			field := "spec.components." + tc.identity
-			err := renderer.SettleAuthoredComponentIdentity(context.Background(), &helmOracle{}, tc.identity, field)
+			err := renderer.SettleAuthoredComponentIdentity(context.Background(), &helmOracle{}, tc.identity, field, nil)
 
 			if tc.refusedAs == "" {
 				if err != nil {
 					t.Fatalf("%q is a name this target accepts and must build: %v", tc.identity, err)
 				}
-				for _, v := range helmcore.NameBoundOutput(tc.identity, true).Names {
+				for _, v := range helmcore.NameBoundOutput(rendercore.NameBoundInput{Proposed: tc.identity, Authored: true}).Names {
 					if !v.Usable {
 						t.Errorf("%q is refused as a %s: %s", tc.identity, v.Kind, v.Reason)
 					}
@@ -142,7 +143,7 @@ func TestServiceNameVerdict_IsStricterThanTheReleaseNameOnlyAtTheFirstCharacter(
 	if v := helmcore.ReleaseNameVerdict("1kv"); !v.Usable {
 		t.Errorf("Helm accepts a release name opening with a digit, and the release-name verdict refused one: %s", v.Reason)
 	}
-	v := helmcore.ServiceNameVerdict("1kv")
+	v := helmcore.ServiceNameVerdict(rendercore.NameBoundInput{Proposed: "1kv"})
 	if v.Usable {
 		t.Fatal("a Service named after an identity opening with a digit is refused by the cluster; the verdict accepted it")
 	}
@@ -151,7 +152,7 @@ func TestServiceNameVerdict_IsStricterThanTheReleaseNameOnlyAtTheFirstCharacter(
 	}
 
 	long := strings.Repeat("a", 60)
-	if v := helmcore.ServiceNameVerdict(long); !v.Usable {
+	if v := helmcore.ServiceNameVerdict(rendercore.NameBoundInput{Proposed: long}); !v.Usable {
 		t.Errorf("a long lowercase identity is refused as a Service name, which judges only the first character: %s", v.Reason)
 	}
 	if v := helmcore.ReleaseNameVerdict(long); v.Usable || v.Bound == nil {
@@ -159,7 +160,7 @@ func TestServiceNameVerdict_IsStricterThanTheReleaseNameOnlyAtTheFirstCharacter(
 			len(long), v.Usable, v.Bound)
 	}
 
-	if v := helmcore.ServiceNameVerdict(""); !v.Usable {
+	if v := helmcore.ServiceNameVerdict(rendercore.NameBoundInput{}); !v.Usable {
 		t.Errorf("an empty proposal names nothing and must not be refused: %s", v.Reason)
 	}
 }

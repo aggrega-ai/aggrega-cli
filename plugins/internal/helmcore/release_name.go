@@ -140,7 +140,7 @@ func ReleaseNameVerdict(proposed string) rendercore.DerivedNameVerdict {
 		}
 	}
 	if len(name) > releaseNameMaxLength {
-		bound := longestReleaseNameSource(proposed)
+		bound := longestSourceWithin(proposed, releaseNameMaxLength, releaseNameEncoding.Segment)
 		return rendercore.DerivedNameVerdict{
 			Kind:   ReleaseNameKind,
 			Usable: false,
@@ -179,10 +179,24 @@ const ServiceNameKind = "Service name"
 // both are refused. No bound comes back with a refusal, because no shortening
 // changes the first character.
 //
-// Only the first character is judged. How long a Service name may grow depends
-// on the Service key a workload declares and on what a chart appends, neither of
-// which a component identity alone determines.
-func ServiceNameVerdict(proposed string) rendercore.DerivedNameVerdict {
+// The length is judged too, wherever the question carries the Service keys of the
+// node's resolved workload: each Service this target synthesizes is named after
+// the identity and its key ([serviceNameFor]), and the cluster holds a Service
+// name to [serviceNameMaxLength]. The name measured is the one the synthesizer
+// emits, derived through the same steps, so the two cannot describe different
+// names. The key with the least room left for the identity is the one reported,
+// because an identity has to fit beside every key at once. Without the keys only
+// the first character is judged, since how long a Service name grows then depends
+// on things a component identity alone does not determine. A form that names no
+// Service after a key ([namesServicesByKey]) is bounded by none of its keys.
+//
+// A key is written by the Recipe's or FeatureRecipe's author, not by whoever
+// wrote the identity, so the reason names the key and where the workload declares
+// it. A key long enough to overflow on its own leaves no room for any identity,
+// and the bound then measured is zero: no shortening of the identity reaches a
+// name the cluster accepts, and the remedy is the key.
+func ServiceNameVerdict(in rendercore.NameBoundInput) rendercore.DerivedNameVerdict {
+	proposed := in.Proposed
 	name := releaseNameEncoding.Segment(proposed)
 	if proposed != "" && !isLowercaseLetter(name[0]) {
 		return rendercore.DerivedNameVerdict{
@@ -191,6 +205,39 @@ func ServiceNameVerdict(proposed string) rendercore.DerivedNameVerdict {
 			Reason: fmt.Sprintf("a Kubernetes Service name begins with a lowercase letter, and the Services this "+
 				"target names after this identity would begin with %q", string(name[0])),
 		}
+	}
+	if !namesServicesByKey(in.WorkloadForm) {
+		return rendercore.DerivedNameVerdict{Kind: ServiceNameKind, Usable: true}
+	}
+
+	composed := !in.Authored
+	refused := false
+	var refusal rendercore.DerivedNameVerdict
+	for _, key := range in.ServiceKeys {
+		// The name judged is the name emitted: derived through the same two steps
+		// the synthesizer names a Service by, and measured, never added up.
+		serviceName := func(identity string) string { return serviceNameFor(synthesizedNameFor(identity, composed), key) }
+		length := len(serviceName(proposed))
+		if length <= serviceNameMaxLength {
+			continue
+		}
+		bound := longestSourceWithin(proposed, serviceNameMaxLength, serviceName)
+		reason := fmt.Sprintf("a Kubernetes Service name is at most %d characters, and the Service this target "+
+			"names after this identity and the Service key %q, which the workload declares at "+
+			"spec.workload.services.%s, would be %d", serviceNameMaxLength, key, key, length)
+		// A measured bound of zero says not even the first character of the
+		// identity fits beside this key, so no identity does.
+		if bound == 0 {
+			reason += "; that key leaves no room for any identity, so it is the key that has to be shorter"
+		}
+		// Ties keep the earlier key, so identical input reports the same key.
+		if !refused || bound < *refusal.Bound {
+			refused = true
+			refusal = rendercore.DerivedNameVerdict{Kind: ServiceNameKind, Usable: false, Bound: &bound, Reason: reason}
+		}
+	}
+	if refused {
+		return refusal
 	}
 	return rendercore.DerivedNameVerdict{Kind: ServiceNameKind, Usable: true}
 }
@@ -201,29 +248,92 @@ func isLowercaseLetter(c byte) bool {
 	return c >= 'a' && c <= 'z'
 }
 
-// longestReleaseNameSource returns how many bytes of proposed still encode to a
-// release name the target accepts.
+// serviceNameMaxLength is the longest name the cluster accepts for a Service: a
+// DNS label.
+const serviceNameMaxLength = 63
+
+// CronJobNameKind is what a verdict about the name of the CronJob this target
+// synthesizes for a scheduled workload calls itself. It reaches a reader verbatim
+// in a refusal, so it is written in the target's vocabulary.
+const CronJobNameKind = "CronJob name"
+
+// cronJobNameMaxLength is the longest name the cluster accepts for a CronJob.
+//
+// It is shorter than the limit on the names of the cluster's other resources
+// because the controller creating each scheduled run names that run's Job after
+// the CronJob with a suffix appended, and the Job's name has to fit too. That is
+// the reservation this whole exchange exists to make, appearing in the target
+// itself.
+const cronJobNameMaxLength = 52
+
+// CronJobNameVerdict judges a proposed component identity as the name of the
+// CronJob this target synthesizes for the node, and reports whether it derives
+// one at all.
+//
+// It derives one only for a form the synthesizer emits a CronJob for
+// ([emitsCronJob]), which the question says through the workload form it
+// carries. Every other form, and a question carrying no
+// form, yields no CronJob, so no verdict is reported: answering as though every
+// node emitted one would bound names that are legal for the workload the node
+// actually renders.
+//
+// The CronJob is named after the identity exactly as every other resource this
+// target synthesizes is ([synthesizedNameFor]), so the length judged is the
+// length of the name the CronJob will carry, and the bound is MEASURED in bytes of
+// the identity as proposed — the unit the compiler shortens by, and the budget an
+// author choosing a new name acts on.
+func CronJobNameVerdict(in rendercore.NameBoundInput) (rendercore.DerivedNameVerdict, bool) {
+	if !emitsCronJob(in.WorkloadForm) {
+		return rendercore.DerivedNameVerdict{}, false
+	}
+	composed := !in.Authored
+	name := synthesizedNameFor(in.Proposed, composed)
+	if len(name) <= cronJobNameMaxLength {
+		return rendercore.DerivedNameVerdict{Kind: CronJobNameKind, Usable: true}, true
+	}
+	bound := longestSourceWithin(in.Proposed, cronJobNameMaxLength, func(s string) string { return synthesizedNameFor(s, composed) })
+	return rendercore.DerivedNameVerdict{
+		Kind:   CronJobNameKind,
+		Usable: false,
+		Bound:  &bound,
+		Reason: fmt.Sprintf("a CronJob name is at most %d characters, because the controller creating each scheduled "+
+			"run names that run's Job after the CronJob with a suffix appended, and the CronJob this target names "+
+			"after this identity would be %d", cronJobNameMaxLength, len(name)),
+	}, true
+}
+
+// longestSourceWithin returns how many bytes of proposed still derive, through
+// derive, to a name of at most limit characters.
 //
 // It measures rather than estimates, because what a byte costs is not uniform:
-// an admitted character costs one, a punctuation mark four, and any other
-// character nine. An estimate from a ratio would be wrong in both directions —
-// too generous on a name of capitals, which would send the compiler round the
-// loop again for nothing, and too mean on an ordinary name, which would shorten
-// one that did not need it.
+// under the release-name encoding an admitted character costs one, a punctuation
+// mark four, and any other character nine. An estimate from a ratio would be wrong
+// in both directions — too generous on a name of capitals, which would send the
+// compiler round the loop again for nothing, and too mean on an ordinary name,
+// which would shorten one that did not need it.
 //
 // The scan walks character boundaries so a cut never lands inside one, and it
 // returns the last boundary that fitted. Zero is a real answer: an identity
 // whose very first character overruns the limit yields it, and the compiler
 // reads a non-positive bound as a name no length reaches.
-func longestReleaseNameSource(proposed string) int {
+//
+// The empty prefix is never measured. No identity is empty, so it is not a
+// candidate, and the release-name encoding writes an empty input as a mark of
+// its own rather than as nothing — measuring that mark would report a budget of
+// zero wherever the mark alone overruns the limit, while a real first character
+// still fits.
+func longestSourceWithin(proposed string, limit int, derive func(string) string) int {
 	best := 0
 	for i := range proposed {
-		if len(releaseNameEncoding.Segment(proposed[:i])) > releaseNameMaxLength {
+		if i == 0 {
+			continue
+		}
+		if len(derive(proposed[:i])) > limit {
 			break
 		}
 		best = i
 	}
-	if len(releaseNameEncoding.Segment(proposed)) <= releaseNameMaxLength {
+	if len(derive(proposed)) <= limit {
 		best = len(proposed)
 	}
 	return best
@@ -248,36 +358,41 @@ func longestReleaseNameSource(proposed string) int {
 // so a reader of a refusal sees what was judged and the host needs no second
 // call to learn the rest.
 //
-// Two limits this provider's target also imposes are deliberately NOT reported
-// here, and each is absent for the same reason: neither is derivable from a
-// component identity alone. A service port name is a separate field an author
-// writes on the workload, so no identity determines it. A scheduled job's name
-// is bounded below the general limit because the controller creating each run
-// appends a suffix to it — the same reservation this whole exchange implements,
-// appearing in the target itself — but whether a node emits one is a property of
-// its workload rather than of its identity, and answering as though every node
-// did would refuse names that are legal for the workload the node actually
-// emits. Reaching them needs the node's resolved workload on the question, which
-// is a wider question than this one.
+// Two of the names depend on the node's workload rather than on its identity
+// alone, and the question carries the facts they need when the node's workload
+// was resolved before the question was asked: the Service keys, which lengthen
+// every Service name, and the workload form, which decides whether a CronJob is
+// emitted at all. A CronJob's name is bounded below the general limit, so it is
+// judged only for a scheduled workload; answering as though every node emitted
+// one would refuse names that are legal for the workload the node actually
+// renders. A question carrying neither fact is answered exactly as it was before
+// either existed. A service port name stays unjudged: it is a separate field an
+// author writes on the workload, so no identity determines it.
 //
-// Only the label kind is told whether the identity was authored, and the
-// asymmetry is deliberate. Each kind judges the value ITS OWN name is derived
-// from, and the values are not the same. The release name is derived here,
-// from the proposal, whichever way the proposal was arrived at — so the proposal
-// is what this side measures, and handing it an already-written identity would
-// put one encoding inside another and spell the name differently from the one a
-// recipe author predicts it by. The label value is not derived at all: it IS the
-// identity as stamped, which for an authored identity is the proposal written
-// into the identity alphabet. So the label kind needs to know which state the
-// proposal is in, and the release name and the Service name read from it do not.
-func NameBoundOutput(proposed string, authored bool) rendercore.NameBoundOutput {
-	return rendercore.NameBoundOutput{
-		Names: []rendercore.DerivedNameVerdict{
-			ReleaseNameVerdict(proposed),
-			ServiceNameVerdict(proposed),
-			rendercore.ComponentIDLabelVerdict(proposed, authored),
-		},
+// The release name and the first character of a Service name are not told whether
+// the identity was authored, and the asymmetry is deliberate. Each kind judges the
+// value ITS OWN name is derived from, and the values are not the same. The release
+// name is derived here, from the proposal, whichever way the proposal was arrived
+// at — so the proposal is what this side measures, and handing it an
+// already-written identity would put one encoding inside another and spell the
+// name differently from the one a recipe author predicts it by. The label value is
+// not derived at all: it IS the identity as stamped, which for an authored
+// identity is the proposal written into the identity alphabet. And the names of
+// the resources this target synthesizes — a Service's full name, a CronJob's — are
+// derived from the identity differently by its state ([synthesizedNameFor]): a
+// component's own resources are named after its release name, while an
+// attachment's composed identity names its resources as it stands. So those kinds
+// need to know which state the proposal is in, and the release name does not.
+func NameBoundOutput(in rendercore.NameBoundInput) rendercore.NameBoundOutput {
+	names := []rendercore.DerivedNameVerdict{
+		ReleaseNameVerdict(in.Proposed),
+		ServiceNameVerdict(in),
 	}
+	if cronJob, derived := CronJobNameVerdict(in); derived {
+		names = append(names, cronJob)
+	}
+	names = append(names, rendercore.ComponentIDLabelVerdict(in.Proposed, in.Authored))
+	return rendercore.NameBoundOutput{Names: names}
 }
 
 // RenderedNameOutput assembles this provider's answer to the question the host

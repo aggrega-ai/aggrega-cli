@@ -9,6 +9,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // NameBounder is the optional capability a provider engine implements to answer
@@ -86,12 +87,12 @@ type nameVerdict struct {
 //
 // An engine that does not implement the capability is reported usable without
 // being asked.
-func askNameBound(ctx context.Context, engine any, proposed string, authored bool) (nameVerdict, error) {
+func askNameBound(ctx context.Context, engine any, in NameBoundInput) (nameVerdict, error) {
 	bounder, ok := engine.(NameBounder)
 	if !ok {
 		return nameVerdict{usable: true}, nil
 	}
-	out, err := bounder.NameBound(ctx, NameBoundInput{Proposed: proposed, Authored: authored})
+	out, err := bounder.NameBound(ctx, in)
 	if err != nil {
 		return nameVerdict{}, err
 	}
@@ -120,6 +121,27 @@ func askNameBound(ctx context.Context, engine any, proposed string, authored boo
 	return verdict, nil
 }
 
+// nameBoundQuestion is the question put to a guest about one proposal: the
+// proposal, whether a person wrote it, and the facts of the node's resolved
+// workload that some of the target's names are built from.
+//
+// The workload facts are carried as the workload states them — its form as the
+// template produced it, its Service keys in the order it declares them — and
+// read by nothing here. Which names they lengthen or bring into being is the
+// target's knowledge, held in its guest; the compiler only hands over what it
+// resolved. A nil workload carries neither, which is the question a guest has
+// always been asked, so a guest that reads neither answers exactly as before.
+func nameBoundQuestion(proposed string, authored bool, workload *types.Workload) NameBoundInput {
+	in := NameBoundInput{Proposed: proposed, Authored: authored}
+	if workload != nil {
+		in.WorkloadForm = workload.Form
+		if keys := workload.Services.Keys(); len(keys) > 0 {
+			in.ServiceKeys = keys
+		}
+	}
+	return in
+}
+
 // SettleAuthoredComponentIdentity refuses an identity a person wrote that the
 // node's target will not accept.
 //
@@ -135,10 +157,17 @@ func askNameBound(ctx context.Context, engine any, proposed string, authored boo
 // to truncate, but because an author choosing a new name is better off knowing
 // the budget than discovering it a second time.
 //
+// workload is the node's resolved workload, or nil for a node declaring none. It
+// is asked here, after that workload is resolved, so a name the target derives
+// from it — a Service named after one of its keys, the job a scheduled workload
+// emits — is judged as the node will render it, and the refusal still names the
+// one field the developer wrote. Where the name the target refuses is built from
+// a part the Recipe's author wrote as well, the target's reason says so.
+//
 // A usable identity, and an engine that answers no such question, both return
 // nil.
-func SettleAuthoredComponentIdentity(ctx context.Context, engine any, nodeID, authoredField string) error {
-	verdict, err := askNameBound(ctx, engine, nodeID, true)
+func SettleAuthoredComponentIdentity(ctx context.Context, engine any, nodeID, authoredField string, workload *types.Workload) error {
+	verdict, err := askNameBound(ctx, engine, nameBoundQuestion(nodeID, true, workload))
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("node %q name bound", nodeID))
@@ -157,8 +186,11 @@ func SettleAuthoredComponentIdentity(ctx context.Context, engine any, nodeID, au
 	if verdict.reason != "" {
 		detail = append(detail, verdict.reason)
 	}
+	// A bound of zero says no name of any length is accepted, which is a budget no
+	// author can choose within, so it is not offered as one; the target's reason
+	// above says what has to change instead.
 	remedy := "choose a name the target accepts"
-	if verdict.bounded {
+	if verdict.bounded && verdict.bound > 0 {
 		remedy = fmt.Sprintf("choose a name of at most %d characters that the target accepts", verdict.bound)
 	}
 	return cerrors.Wrap(ErrComponentIdentityTargetRefuses(), cerrors.CatalogError,
@@ -187,18 +219,24 @@ func SettleAuthoredComponentIdentity(ctx context.Context, engine any, nodeID, au
 // no digest width can make shortening injective; what the digest buys is odds,
 // and what the duplicate check buys is that two identities meeting is reported
 // rather than deployed.
+//
+// workload is the derived node's resolved workload, carried on every pass so the
+// guest judges each shorter proposal against the same names; nil carries none,
+// for a node declaring no workload or an identity settled before its workload is
+// resolved.
 func SettleComposedComponentIdentity(
 	ctx context.Context,
 	engine any,
 	scope labels.ComponentIdentityScope,
 	guestName string,
+	workload *types.Workload,
 	parts ...string,
 ) (string, error) {
 	bound := labels.Unbounded
 	proposed := ""
 	for pass := 0; pass < nameBoundMaxPasses; pass++ {
 		proposed = labels.ComposeComponentIdentity(scope, bound, parts...)
-		verdict, err := askNameBound(ctx, engine, proposed, false)
+		verdict, err := askNameBound(ctx, engine, nameBoundQuestion(proposed, false, workload))
 		if err != nil {
 			return "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: proposed},
 				fmt.Sprintf("composed identity %q name bound", proposed))
@@ -236,13 +274,22 @@ func SettleComposedComponentIdentity(
 		// arithmetic, agreeing with it today and drifting when a reserve moves.
 		next := labels.ComposeComponentIdentity(scope, verdict.bound, parts...)
 		if len(next) > verdict.bound {
+			detail := []string{
+				fmt.Sprintf("composed identity %q", next),
+				fmt.Sprintf("which the target bounds to %d characters as a %s", verdict.bound, verdict.kind),
+				fmt.Sprintf("and %d is shorter than any identity the compiler can compose from these parts", verdict.bound),
+			}
+			// The target's own reason is carried here as on every other refusal, because
+			// the name it bounds can be built from more than the identity — a Service
+			// named after a key the Recipe declares — and only the reason says which part
+			// left too little room.
+			if verdict.reason != "" {
+				detail = append(detail, verdict.reason)
+			}
 			return "", cerrors.Wrap(ErrComponentIdentityTargetRefuses(), cerrors.CatalogError,
 				cerrors.SourceLocation{File: next},
-				cerrors.ComposeMessage(ErrComponentIdentityTargetRefuses(), []string{
-					fmt.Sprintf("composed identity %q", next),
-					fmt.Sprintf("which the target bounds to %d characters as a %s", verdict.bound, verdict.kind),
-					fmt.Sprintf("and %d is shorter than any identity the compiler can compose from these parts", verdict.bound),
-				}, "shorten the parts the identity is composed from"))
+				cerrors.ComposeMessage(ErrComponentIdentityTargetRefuses(), detail,
+					"shorten the parts the identity is composed from"))
 		}
 		bound = verdict.bound
 	}
