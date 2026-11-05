@@ -26,14 +26,16 @@ import (
 // the Aggregate's declared contract. The mapped type is used by no component, so
 // neither fault can be the cause of the other.
 //
-// Both must be published. The mapping verdict reaches the daemon as a finding on
-// the resolved closure, so the resolution succeeds and the pipeline still runs. If
-// that verdict were instead returned as a resolution failure, the daemon's
-// closure-level fall-back would emit ONE diagnostic at line 1 and return —
-// discarding the parameter diagnostic and everything else it had to say about the
-// buffer, on every keystroke.
+// Both must be published, each on its own document: the mapping finding on the
+// Manifest it is written in, the parameter diagnostic on the Aggregate. The mapping
+// verdict reaches the daemon as a finding on the resolved closure, so the
+// resolution succeeds and the pipeline still runs. If that verdict were instead
+// returned as a resolution failure, the daemon's closure-level fall-back would emit
+// ONE diagnostic at line 1 of the Aggregate and return — discarding the parameter
+// diagnostic and everything else it had to say about the buffer, on every
+// keystroke.
 //
-// The second assertion is therefore the load-bearing one: a test checking only
+// The Aggregate assertion is therefore the load-bearing one: a test checking only
 // that the mapping diagnostic appears would pass under exactly that regression.
 func TestRunTier4Validation_InconsistentMappingPublishesBesideOtherDiagnostics(t *testing.T) {
 	t.Parallel()
@@ -82,36 +84,37 @@ func TestRunTier4Validation_InconsistentMappingPublishesBesideOtherDiagnostics(t
 	// No separate enumeration calibration is needed here, and the reason is worth
 	// stating so nobody adds a broken one. A mapping onto a recipe the gate cannot
 	// resolve is SKIPPED rather than judged — so a fixture recipe that failed to
-	// enumerate would produce NO mapping finding, which reds the first assertion
+	// enumerate would produce NO mapping finding, which reds the Manifest assertion
 	// below rather than letting it pass on nothing. The positive assertion is its
 	// own calibration; it is the negative direction that would have needed one.
 
-	aggPath := filepath.Join(tmp, "aggregate.yaml")
-	aggBytes, err := os.ReadFile(aggPath)
-	if err != nil {
-		t.Fatalf("read aggregate: %v", err)
-	}
-	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/validate", validateParams{
-		File:    aggPath,
-		Content: string(aggBytes),
-		Release: "release.yaml",
-	}))
-	resp := runOneRequest(t, srv, &in, &out)
-	if resp.Error != nil {
-		t.Fatalf("unexpected envelope error: %+v", resp.Error)
-	}
-	var result validateResult
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
+	validate := func(name string) []Diagnostic {
+		t.Helper()
+		path := filepath.Join(tmp, name)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var in, out bytes.Buffer
+		in.Write(framedRequest(1, "aggrega/validate", validateParams{
+			File:    path,
+			Content: string(body),
+			Release: "release.yaml",
+		}))
+		resp := runOneRequest(t, srv, &in, &out)
+		if resp.Error != nil {
+			t.Fatalf("validate %s: unexpected envelope error: %+v", name, resp.Error)
+		}
+		var result validateResult
+		if err := json.Unmarshal(resp.Result, &result); err != nil {
+			t.Fatalf("unmarshal the result for %s: %v", name, err)
+		}
+		return result.Diagnostics
 	}
 
-	var sawMapping bool
+	aggDiags := validate("aggregate.yaml")
 	var sawParameter bool
-	for _, d := range result.Diagnostics {
-		if strings.Contains(d.Message, "spec.implements") {
-			sawMapping = true
-		}
+	for _, d := range aggDiags {
 		// The parameter-contract violation is recovered to the `port` key in the
 		// Aggregate (line 8), so matching on the position as well as the text keeps
 		// this from being satisfied by a closure-level fall-back at line 1 that
@@ -119,18 +122,25 @@ func TestRunTier4Validation_InconsistentMappingPublishesBesideOtherDiagnostics(t
 		if d.Line == 8 && strings.Contains(d.Message, "port") {
 			sawParameter = true
 		}
-	}
-	if !sawMapping {
-		t.Errorf("the daemon must publish the Manifest mapping finding; got %q",
-			diagMessages(result.Diagnostics))
+		if strings.Contains(d.Message, "spec.implements") {
+			t.Errorf("the mapping finding is the Manifest's to carry, yet the Aggregate carries it: %q", d.Message)
+		}
 	}
 	if !sawParameter {
-		t.Errorf("the daemon must still publish its OTHER diagnostics for the file: "+
+		t.Errorf("the daemon must still publish its OTHER diagnostics for the Aggregate: "+
 			"expected the parameter-contract violation positioned at the aggregate's port key (line 8), got %q",
-			diagMessages(result.Diagnostics))
+			diagMessages(aggDiags))
 	}
-	if len(result.Diagnostics) < 2 {
-		t.Errorf("expected the mapping finding AND the parameter diagnostic; got %d: %q",
-			len(result.Diagnostics), diagMessages(result.Diagnostics))
+
+	manifestDiags := validate("manifest.yaml")
+	var sawMapping bool
+	for _, d := range manifestDiags {
+		if strings.Contains(d.Message, "spec.implements") {
+			sawMapping = true
+		}
+	}
+	if !sawMapping {
+		t.Errorf("the daemon must publish the Manifest mapping finding on the Manifest; got %q",
+			diagMessages(manifestDiags))
 	}
 }

@@ -408,11 +408,24 @@ func RunOnDocumentMappingEntries[V View](
 	for _, entry := range entries {
 		subject := newDocumentMappingEntrySubject(
 			sourceFile, entry.Tier, entry.Axis, entry.Key,
-			documentSpecSegments(
-				authoredKeyMappings, entry.Tier, entry.Axis, entry.Key,
-			)...,
+			MappingEntrySegments(entry)...,
 		)
 		out = append(out, check.Run(view, subject)...)
 	}
 	return out
+}
+
+// MappingEntrySegments returns the segments naming one entry of a Manifest's
+// recipe mapping table in the document it is authored in:
+// spec, mappings, the entry's tier, its axis and its key.
+//
+// It is exported for the reason [ConnectionEntrySegments] is: a rule raised over
+// an entry is positioned by these segments, and a surface holding the Manifest's
+// text and placing a finding on the entry walks the same segments, so the two are
+// spelled by one rule and cannot come to name different keys. The segments are
+// handed out rather than a locator because a mapping key is a type reference whose
+// version carries the locator separator; walked key by key, the segments still
+// reach the entry.
+func MappingEntrySegments(entry ManifestRecipeMapping) []string {
+	return documentSpecSegments(authoredKeyMappings, entry.Tier, entry.Axis, entry.Key)
 }

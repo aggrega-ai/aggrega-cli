@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -66,10 +67,15 @@ import (
 // ownDocumentDiagnostics and filedIn). A request on another Aggregate document is
 // answered the same way, with the findings filed under it — a module the named
 // Release's Aggregate imports carries what the composition found in what it
-// declares. When the request file is any other document (e.g., the Manifest or
-// a library), the Tier-4 pipeline is not relevant to the requested file and the
-// function returns an empty slice once the closure has resolved — the caller's
-// existing Tier-1 diagnostics for the file already populated stay in place.
+// declares. The Manifest the named Release resolves to carries the findings the
+// closure resolution raised about its mapping table, each on the line of the
+// mapping entry it is about where the finding names one and that entry is in the
+// buffer, and at the head of the document otherwise; they are published there and
+// on the Aggregate not at all (mappingFindingDiagnostics). When the request file
+// is any other document (e.g., a library), or a Manifest with no such finding, the
+// Tier-4 pipeline is not relevant to the requested file and the function returns
+// an empty slice once the closure has resolved — the caller's existing Tier-1
+// diagnostics for the file already populated stay in place.
 //
 // A closure that does not resolve is reported at the head of the named Release's
 // own document and of every document the daemon reads as one of Aggrega's own —
@@ -178,10 +184,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// explanation. That is more than the mapping findings below can offer, which are
 	// decided BY the resolution.
 	//
-	// Past that point it is bounded exactly as every other closure-level class is:
-	// this function returns nothing once the requested file is not the named
-	// Release's Aggregate, so the notice reaches the author while the Aggregate is
-	// open rather than on whatever document they happen to be editing.
+	// Past that point it is bounded as every closure-level class naming no document
+	// is: it is published on the named Release's Aggregate and on no other document,
+	// so the notice reaches the author while the Aggregate is open rather than on
+	// whatever document they happen to be editing. A notice names a pinned reference
+	// or a trusted plugin, neither of which is a document in the workspace.
 	//
 	// The shape is closureAdvisoryDiagnostic's, shared with the other advisory
 	// classes below. One reason is this class's alone: the marker's own severity is
@@ -250,10 +257,11 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	aggPath := resolved.AggregatePath
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 
-	// The Tier-4 branch answers two documents: the named Release's Aggregate,
-	// which carries everything this validation reports bar what is positioned in
-	// the Release, and the named Release itself, which carries what is.
-	// Validating any other file against that Release produces no semantic
+	// The Tier-4 branch answers the named Release's Aggregate, which carries
+	// everything this validation reports bar what is positioned in another
+	// document, and the documents that carry what is: the named Release itself, a
+	// module its Aggregate imports, and the Manifest its mapping-table findings
+	// name. Validating any other file against that Release produces no semantic
 	// diagnostics for THAT file from this pipeline.
 	//
 	// The paths are compared in that one coordinate system rather than as the
@@ -276,39 +284,28 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// the findings filed under it, which for an Aggregate the composition never
 	// imported is none.
 	onModuleDocument := !onAggregate && !onReleaseDocument && isAggregateBuffer(file, releasePath, doc)
+	// A fourth document carries findings of its own: the Manifest the named
+	// Release resolves to, which carries what the closure resolution found wrong
+	// in its mapping table. Those findings were decided above, before any of the
+	// gates below, so the Manifest's answer needs nothing past this point; for any
+	// other document the answer is empty, as it always was.
 	if !onAggregate && !onReleaseDocument && !onModuleDocument {
-		return nil
+		return s.mappingFindingDiagnostics(resolved.ManifestConsistencyFindings, relFile, content, doc)
 	}
 
-	// Manifest mapping-table findings, decided by the closure resolution above and
-	// therefore ahead of every gate below. They are a Tier-D class: the fault is in
-	// the Manifest, not in the edited Aggregate, so it carries no position in this
-	// file and sits at 1:1 behind the "Dependencies: " prefix, the same footing the
-	// resolution-completeness findings use.
+	// The Manifest mapping-table findings, decided by the closure resolution above,
+	// are not published here. Each names the Manifest the resolution read, and is
+	// published when that Manifest is validated (mappingFindingDiagnostics): the
+	// fault is in the Manifest, not in the edited Aggregate, and the author fixes it
+	// there.
 	//
-	// The daemon ADVISES rather than halts — it publishes them and keeps going —
-	// and every early return below carries them forward. That is the whole reason
-	// the resolver hands these back as findings instead of failing: a failure at
-	// that position replaces this file's entire diagnostic set with one line, at
-	// every keystroke, so an editor would lose every other thing it had to say
-	// about the buffer in exchange for one Manifest complaint.
 	// The deprecation notices lead every set below, matching the order the facts
-	// were decided in: both stores recorded their markers at the pull, before the
-	// Manifest was judged and before any gate here read anything.
-	//
-	// Both are the Aggregate's to carry. A request on the Release's own document is
-	// answered with what is positioned in it alone, below, so neither class is
-	// published twice.
-	mappingDiags := deprecationDiags
-	for _, f := range resolved.ManifestConsistencyFindings {
-		mappingDiags = append(mappingDiags, Diagnostic{
-			Line:           1,
-			Column:         1,
-			Severity:       editorSeverityError,
-			Message:        "Dependencies: " + f.Error(),
-			ConditionCodes: conditionCodesOf(f),
-		})
-	}
+	// were decided in: both stores recorded their markers at the pull, before any
+	// gate here read anything — and every early return below carries them forward,
+	// so a gate refusing first never hides them. They are the Aggregate's to carry.
+	// A request on the Release's own document is answered with what is positioned
+	// in it alone, below, so no class is published twice.
+	leadingDiags := deprecationDiags
 
 	// Run the semantic-validation core through the shared compiler-operations
 	// layer (closure-scoped extends gate, closure-scoped schema-pillar gate,
@@ -356,7 +353,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// Tier-D closure-level diagnostic; an out-of-closure broken extends is never
 	// resolved.
 	if len(vr.ClosureExtendsErrors) > 0 {
-		return append(mappingDiags, Diagnostic{
+		return append(leadingDiags, Diagnostic{
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
@@ -370,7 +367,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// surfaces as a Tier-D closure-level diagnostic, with the skip context
 	// explaining a missing library. build remains the authoritative validator.
 	if vr.PillarError != nil {
-		return append(mappingDiags, Diagnostic{
+		return append(leadingDiags, Diagnostic{
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
@@ -386,7 +383,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// file, so it surfaces as a closure-level diagnostic at file:1:1, the same
 	// footing the two gates above use.
 	if vr.VerdictTrustError != nil {
-		return append(mappingDiags, Diagnostic{
+		return append(leadingDiags, Diagnostic{
 			Line:           1,
 			Column:         1,
 			Severity:       editorSeverityError,
@@ -406,9 +403,9 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// scalar end positions in the validated file's coordinate space.
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 
-	// The mapping findings lead the published set, matching the order they were
-	// decided in: the Manifest was judged before the pipeline ran.
-	diags := mappingDiags
+	// The deprecation notices lead the published set, matching the order they were
+	// decided in: the stores recorded them before the pipeline ran.
+	diags := leadingDiags
 	tier4 := vr.Tier4
 
 	// Resolver-class violations (Step 1) — Tier-A position recovery
@@ -704,14 +701,105 @@ func (s *Server) ownDocumentDiagnostics(runErr error, tier4 *pipeline.Tier4Resul
 // names its documents by.
 //
 // It is the one rule deciding which document a validation answers a finding
-// belongs to. A finding it answers yes for, for the named Release or for a module
-// the Aggregate imports, is published on that document, on the key that wrote it,
-// and on the Aggregate not at all; every other finding is the Aggregate's to
-// carry. A finding recording no file is never another document's: that absence
-// says nothing about which document holds the path, and publishing it there would
-// assert a place no rule positioned it at.
+// belongs to. A finding it answers yes for, for the named Release, for a module
+// the Aggregate imports, or for the Manifest the Release resolves to, is
+// published on that document, on the key that wrote it, and on the Aggregate not
+// at all; every other finding is the Aggregate's to carry. A finding recording no
+// file is never another document's: that absence says nothing about which
+// document holds the path, and publishing it there would assert a place no rule
+// positioned it at.
 func filedIn(file, document string) bool {
 	return file != "" && file == document
+}
+
+// mappingFindingFile returns the document a Manifest mapping-table finding points
+// at, in the workspace-relative form a validated file is compared in, or the empty
+// string where its chain names no document.
+//
+// It reads it through compilerops.FindingLocation, the one reading of where a
+// finding points, which the single-entity check and a refusal raised while
+// rendering are placed through too, so a mapping finding cannot come to be filed
+// under a document that reading would not name. For each of the three mapping
+// findings that document is the Manifest the resolution read: the finding's
+// envelope states that file, absolute here because the daemon resolves the
+// request's Release against its workspace root, and nothing beneath the envelope
+// names a document — beneath it are the condition itself and, for a type whose
+// extends chain could not be walked, the walk's own failure, which names an
+// entity rather than a file.
+func (s *Server) mappingFindingFile(finding error) string {
+	document, _ := compilerops.FindingLocation(finding, s.workspaceRoot)
+	if document == "" {
+		return ""
+	}
+	return catalog.RelativeToWorkspace(s.workspaceRoot, document)
+}
+
+// mappingFindingDiagnostics answers a validation of a document other than the
+// named Release's Aggregate, its own document and its modules: the Manifest
+// mapping-table findings that name it, in the order the resolution raised them,
+// and nothing else. For any document no finding names — every document but the
+// Manifest the Release resolves to, and that Manifest while its table is sound —
+// the answer is empty.
+//
+// A finding is drawn on the mapping entry it is about, spanning the entry's key,
+// where the finding names an entry and the buffer declares it. Where it names
+// none, or the entry is no longer in the buffer — an entry the Manifest inherits
+// through its extends chain, or one removed by an edit not yet saved — it is drawn
+// at the head of the document rather than on the document's kind: key, where
+// documentAnchorSpan draws an entry naming no key. That anchor stands in for a key
+// the document's own checks named; this finding was raised over the Release's
+// dependencies about an entry the buffer does not hold, so it sits at the head,
+// where every other entry about a Release's dependencies sits. Either way it is
+// published here and on the Aggregate not at all, so one fault is shown on one
+// document.
+//
+// The text is the finding's own message without the category and file the
+// terminal heads it with: the file is the document the entry is drawn in, and the
+// condition's identifiers travel on the entry's own keys.
+func (s *Server) mappingFindingDiagnostics(findings []error, file string, content []byte, doc *yaml.Node) []Diagnostic {
+	var filed []error
+	for _, f := range findings {
+		if filedIn(s.mappingFindingFile(f), file) {
+			filed = append(filed, f)
+		}
+	}
+	if len(filed) == 0 {
+		return nil
+	}
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
+	out := make([]Diagnostic, 0, len(filed))
+	for _, f := range filed {
+		out = append(out, mappingFindingDiagnostic(f, doc, idx))
+	}
+	return out
+}
+
+// mappingFindingDiagnostic shapes one Manifest mapping-table finding into the
+// entry published on the Manifest, at the key of the mapping entry it names.
+//
+// The entry is walked to by its keys rather than by a dotted path, because a
+// mapping key is a type reference and a type reference carries a version, whose
+// dots a dotted path would read as separators. The keys are the ones a rule over
+// the entry is positioned by (constraint.MappingEntrySegments).
+func mappingFindingDiagnostic(finding error, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
+	message := finding.Error()
+	var ce *cerrors.CompilerError
+	if errors.As(finding, &ce) && ce != nil {
+		message = ce.Message()
+	}
+	d := Diagnostic{
+		Line:           1,
+		Column:         1,
+		Severity:       editorSeverityError,
+		Message:        message,
+		ConditionCodes: conditionCodesOf(finding),
+	}
+	if entry, named := resolver.ManifestMappingEntryOf(finding); named {
+		if span, ok := yamlpos.KeyRange(doc, idx, constraint.MappingEntrySegments(entry)...); ok {
+			d.Line, d.Column, d.EndLine, d.EndColumn = span.Line, span.Column, span.EndLine, span.EndColumn
+		}
+	}
+	return d
 }
 
 // isAggregateBuffer reports whether the validated buffer is an Aggregate

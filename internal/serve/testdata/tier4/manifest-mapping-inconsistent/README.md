@@ -21,7 +21,8 @@ resolution failure, and therefore lands the fixture in exactly the truncated
 single-diagnostic state the test exists to detect. `catalog/components/` carries
 it for that reason.
 
-The daemon must publish **both**. That is what the fixture exists to hold: the
+The daemon must publish **both**, each on its own document: the mapping fault on
+the Manifest, the parameter fault on the Aggregate. That is what the fixture exists to hold: the
 mapping verdict reaches the daemon as a finding on the resolved closure rather
 than as a resolution failure, and a resolution failure at that position replaces
 a file's entire diagnostic set with one entry at line 1 and returns. Were the

@@ -366,18 +366,22 @@ func ManifestImplementsConsistencyFaults(
 	view := constraint.CatalogView(presented)
 	entries := presented.ManifestRecipeMappingEntries(manifestPath)
 
+	// Presenting one entry at a time is also what lets every finding name its
+	// entry: whatever a rule raises over the one-entry slice is about that entry,
+	// so the entry is known here by construction rather than read back off the
+	// objection's locator, which cannot name a key carrying the locator separator.
 	var findings []error
 	for i := range entries {
 		entry := entries[i : i+1]
 		for _, o := range constraint.RunOnDocumentMappingEntries(
 			manifestPath, entry, view, manifestMappingRecipeImplementsTheMappedType,
 		) {
-			findings = append(findings, manifestImplementsFaultFrom(o))
+			findings = append(findings, manifestImplementsFaultFrom(entries[i], o))
 		}
 		for _, o := range constraint.RunOnDocumentMappingEntries(
 			manifestPath, entry, view, manifestMappingPinsAreWellFormed,
 		) {
-			findings = append(findings, mappingPinFaultFrom(o))
+			findings = append(findings, mappingPinFaultFrom(entries[i], o))
 		}
 	}
 
@@ -404,19 +408,27 @@ func ManifestImplementsConsistencyFaults(
 // the type-axis entry under the components tier, whose value the presentation
 // already states. An entry the presentation does not declare contributes no
 // reference, which leaves the sentence naming the type alone rather than naming a
-// value nobody wrote.
+// value nobody wrote — and names no entry either, for the same reason.
 func ancestryWalkFaultFrom(
 	presented *manifestCatalogView,
 	manifestPath string,
 	failure componentAncestryWalkFailure,
 ) error {
-	reference, _ := presented.ManifestRecipeMappingReference(
+	reference, declared := presented.ManifestRecipeMappingReference(
 		manifestPath,
 		constraint.MappingTierComponents,
 		constraint.MappingAxisType,
 		failure.ComponentType,
 	)
-	return cerrors.Wrap(failure.Err, manifestCategory(),
+	cause := failure.Err
+	if declared {
+		cause = atMappingEntry(constraint.ManifestRecipeMapping{
+			Tier: constraint.MappingTierComponents,
+			Axis: constraint.MappingAxisType,
+			Key:  failure.ComponentType,
+		}, cause)
+	}
+	return cerrors.Wrap(cause, manifestCategory(),
 		cerrors.SourceLocation{File: manifestPath},
 		fmt.Sprintf(
 			"manifest mapping %q -> %q: the mapped component type's extends chain cannot be walked, "+
@@ -448,7 +460,10 @@ func ancestryWalkFaultFrom(
 // contract between the two and is asserted rather than assumed: a rule and the
 // conversion that renders it are two halves of one sentence, and a silent
 // mismatch would produce a message with the values in the wrong slots.
-func manifestImplementsFaultFrom(o constraint.Objection) error {
+//
+// entry is the mapping entry the rule was presented when it raised o, which the
+// finding names beneath its envelope (see [ManifestMappingEntryOf]).
+func manifestImplementsFaultFrom(entry constraint.ManifestRecipeMapping, o constraint.Objection) error {
 	detail := o.Detail()
 	if len(detail) != manifestImplementsDetailCount {
 		panic(fmt.Sprintf(
@@ -478,7 +493,7 @@ func manifestImplementsFaultFrom(o constraint.Objection) error {
 			fmt.Sprintf("expected %q", key),
 		}
 	}
-	return cerrors.Wrap(ErrManifestImplementsMismatch(), manifestCategory(),
+	return cerrors.Wrap(atMappingEntry(entry, ErrManifestImplementsMismatch()), manifestCategory(),
 		cerrors.SourceLocation{File: o.SourceFile()},
 		cerrors.ComposeMessage(ErrManifestImplementsMismatch(), values, ""))
 }
@@ -533,7 +548,10 @@ const (
 // assumed, as the detail order is: the rule and this conversion are two halves of
 // one sentence, and a silent disagreement would report a pin as malformed with no
 // malformation to name.
-func mappingPinFaultFrom(o constraint.Objection) error {
+//
+// entry is the mapping entry the rule was presented when it raised o, named
+// beneath the envelope as the mismatch finding names its own.
+func mappingPinFaultFrom(entry constraint.ManifestRecipeMapping, o constraint.Objection) error {
 	detail := o.Detail()
 	if len(detail) != mappingPinDetailCount {
 		panic(fmt.Sprintf(
@@ -573,7 +591,7 @@ func mappingPinFaultFrom(o constraint.Objection) error {
 	}
 
 	values := append([]string{mapping, where}, pe.Values()...)
-	return cerrors.Wrap(types.ErrMalformedVersionPin(), manifestCategory(),
+	return cerrors.Wrap(atMappingEntry(entry, types.ErrMalformedVersionPin()), manifestCategory(),
 		cerrors.SourceLocation{File: o.SourceFile()},
 		cerrors.ComposeMessage(types.ErrMalformedVersionPin(), values, types.VersionPinForms))
 }
