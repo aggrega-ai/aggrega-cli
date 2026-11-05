@@ -208,7 +208,8 @@ const FeatureKindSecret = "secret"
 //
 // The `json:"-" yaml:"-"` tag on Additional keeps standard tag-driven dispatch
 // from observing the field; the UnmarshalYAML / UnmarshalJSON / MarshalYAML /
-// MarshalJSON methods take responsibility for routing keys into and out of it.
+// MarshalJSON methods take responsibility for routing keys into and out of it,
+// and TemplateUntaggedKeys carries them to a template.
 type InjectBlock struct {
 	Env        any             `json:"env,omitempty" yaml:"env,omitempty"`
 	File       any             `json:"file,omitempty" yaml:"file,omitempty"`
@@ -408,6 +409,26 @@ func (b InjectBlock) MarshalJSON() ([]byte, error) {
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
+}
+
+// TemplateUntaggedKeys returns each custom mechanism the author wrote, keyed by
+// the mechanism name and carrying the delivery entries exactly as authored, so a
+// template reading the authored block at .inject_raw finds a custom mechanism
+// beside env, file and arg, addressed and shaped the same way:
+// .inject_raw.<mechanism> is the list of {in, from, value} entries in the order
+// the author wrote them.
+//
+// The core three reach a template through their struct tags. Additional cannot,
+// because its `json:"-" yaml:"-"` tag leaves the routing of custom keys to the
+// (un)marshal methods above while the template boundary is a reflective walk that
+// reads the tag and skips the field; this method is how the same data crosses
+// that boundary, through the projection [InjectPipe.TemplateUntaggedKeys] uses
+// for the resolved pipe.
+//
+// A block carrying no custom mechanism returns nil, so the template view of a
+// block authoring only core mechanisms is exactly what it was.
+func (b InjectBlock) TemplateUntaggedKeys() map[string]any {
+	return customMechanismTemplateKeys(b.Additional)
 }
 
 // DecodeVerboseInjectEntry extracts (in, value, from) from a single schema-

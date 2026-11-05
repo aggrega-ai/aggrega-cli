@@ -139,3 +139,75 @@ func TestInjectPipe_TemplateUntaggedKeys_ProjectsEachMechanismByName(t *testing.
 		t.Errorf("aa_ssm.DB_ARN = %q, want %q", v, "ssm-needle")
 	}
 }
+
+// TestInjectBlock_TemplateUntaggedKeys pins the authored block's template
+// projection: each custom mechanism under the name the author wrote, carrying its
+// delivery entries exactly as authored, the core three never duplicated into it,
+// and nothing at all from a block authoring only core mechanisms.
+func TestInjectBlock_TemplateUntaggedKeys(t *testing.T) {
+	t.Parallel()
+
+	entries := []any{
+		map[string]any{"in": "Z_KEY", "value": "z"},
+		map[string]any{"in": "A_KEY", "value": "a"},
+	}
+	rows := []struct {
+		name  string
+		block func() InjectBlock
+		want  map[string]any
+	}{
+		{
+			name: "core mechanisms only contribute nothing",
+			block: func() InjectBlock {
+				return InjectBlock{Env: []any{map[string]any{"in": "E", "value": "e"}}}
+			},
+			want: nil,
+		},
+		{
+			name: "a custom mechanism beside env is projected by name",
+			block: func() InjectBlock {
+				b := InjectBlock{Env: []any{map[string]any{"in": "E", "value": "e"}}}
+				b.Additional.Set("ssm_param", entries)
+				return b
+			},
+			want: map[string]any{"ssm_param": entries},
+		},
+		{
+			name: "a custom mechanism alone is projected by name",
+			block: func() InjectBlock {
+				var b InjectBlock
+				b.Additional.Set("ssm_param", entries)
+				return b
+			},
+			want: map[string]any{"ssm_param": entries},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			got := row.block().TemplateUntaggedKeys()
+			if row.want == nil {
+				if got != nil {
+					t.Fatalf("TemplateUntaggedKeys() = %v, want nil", got)
+				}
+				return
+			}
+			gotJSON, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("marshal projection: %v", err)
+			}
+			wantJSON, err := json.Marshal(row.want)
+			if err != nil {
+				t.Fatalf("marshal want: %v", err)
+			}
+			if string(gotJSON) != string(wantJSON) {
+				t.Errorf("TemplateUntaggedKeys() = %s, want %s", gotJSON, wantJSON)
+			}
+			for _, core := range []string{"env", "file", "arg"} {
+				if _, present := got[core]; present {
+					t.Errorf("projection carries core mechanism %q; the core three reach a template by tag", core)
+				}
+			}
+		})
+	}
+}

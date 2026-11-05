@@ -223,7 +223,8 @@ type AnnotationBuckets struct {
 //
 // The `json:"-" yaml:"-"` tag on Additional keeps standard tag-driven dispatch
 // from observing the field; the UnmarshalYAML / UnmarshalJSON / MarshalYAML /
-// MarshalJSON methods take responsibility for routing keys into and out of it.
+// MarshalJSON methods take responsibility for routing keys into and out of it,
+// and TemplateUntaggedKeys carries them to a template.
 //
 // Schema: template-context-v1alpha1.schema.json context.inject
 type InjectPipe struct {
@@ -450,7 +451,9 @@ func (p InjectPipe) MarshalJSON() ([]byte, error) {
 // neither JSON nor YAML — it is a reflective walk that reads the tag directly and
 // therefore skips the field. This method is how the same data reaches that third
 // boundary, without giving the field a tag that would change what either marshal
-// path emits.
+// path emits. The authored block a template reads at .inject_raw carries its
+// custom mechanisms the same way, through [InjectBlock.TemplateUntaggedKeys], and
+// both go through one projection.
 //
 // Iteration is over the ordered map, so the projection is assembled in author
 // order. The returned container is a plain map because every pillar reaches a
@@ -459,14 +462,25 @@ func (p InjectPipe) MarshalJSON() ([]byte, error) {
 // A pipe carrying no custom mechanism returns nil, which keeps the template view
 // of a core-three-only pipe exactly what it was.
 func (p InjectPipe) TemplateUntaggedKeys() map[string]any {
-	if p.Additional.Len() == 0 {
+	return customMechanismTemplateKeys(p.Additional)
+}
+
+// customMechanismTemplateKeys is the one projection of an inject block's custom
+// mechanisms onto the template boundary, shared by the authored block
+// ([InjectBlock.TemplateUntaggedKeys]) and the resolved pipe
+// ([InjectPipe.TemplateUntaggedKeys]), so the two surfaces a template reads
+// custom mechanisms through cannot come to project them differently. Each
+// mechanism is keyed by the name the author wrote and carries its value
+// unchanged. The conversion itself is [OrderedMap.TemplateAlphabeticalMap], the
+// one bridge from an ordered map to the template boundary; what this adds is
+// the empty case: a set with no custom mechanism returns nil rather than an
+// empty map, so a block or pipe carrying only core mechanisms contributes no
+// keys at all.
+func customMechanismTemplateKeys[V any](additional OrderedMap[V]) map[string]any {
+	if additional.Len() == 0 {
 		return nil
 	}
-	out := make(map[string]any, p.Additional.Len())
-	for mechanism, deliveries := range p.Additional.All() {
-		out[mechanism] = deliveries
-	}
-	return out
+	return additional.TemplateAlphabeticalMap()
 }
 
 // EnrichedEdge is an enriched topological edge assembled by the compiler for template consumption.

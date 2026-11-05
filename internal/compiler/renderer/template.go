@@ -895,9 +895,9 @@ type templateUntaggedKeys interface {
 //   - A struct declaring TemplateUntaggedKeys additionally contributes those
 //     keys alongside its tag-derived ones, at the same level and addressed the
 //     same way. It is how a type whose own (un)marshal methods route keys into
-//     an untagged field — the delivery pipe's custom mechanisms are the case —
-//     reaches a template, since this walk reads tags and never a marshaller. A
-//     tag-derived key wins on collision.
+//     an untagged field — the custom mechanisms of the delivery pipe and of the
+//     authored inject block are the cases — reaches a template, since this walk
+//     reads tags and never a marshaller. A tag-derived key wins on collision.
 //   - types.OrderedMap[V] (detected via orderedMapForTemplate interface):
 //     unwrapped to map[string]any via TemplateAlphabeticalMap, then values
 //     recursively walked — so a nested OrderedMap is unwrapped at every level

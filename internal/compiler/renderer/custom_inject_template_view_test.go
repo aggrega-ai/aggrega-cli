@@ -34,28 +34,41 @@ const customInjectWorkloadReads = `      BY_NAME_SSM: '{{ .context.inject.aa_ssm
       CORE_ENV: '{{ toJson .context.inject.env }}'
 `
 
-func customInjectInput() renderer.RendererInput {
-	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", BoundaryPath: "local"})
+// apiServerFixture is one node, `api`, of type core/compute/api-server, rendered
+// through a Recipe whose workload carries reads as its container's variables.
+// selfInject, when set, is the inject block the component's author wrote;
+// injectMapping, when set, attaches a core/secret-injector Feature named
+// `secrets` whose FeatureRecipe delivers that interception output.
+type apiServerFixture struct {
+	aggregateName string
+	selfInject    *types.InjectBlock
+	reads         string
+	injectMapping string
+}
 
-	featureValues := func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+func (f apiServerFixture) input() renderer.RendererInput {
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", BoundaryPath: "local", SelfInject: f.selfInject})
+
+	featureValues := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	var featureOrder ir.FeatureOrder
+	if f.injectMapping != "" {
 		inner := types.OrderedMap[types.IRFeatureEntry]{}
 		inner.Set("secrets", types.IRFeatureEntry{Type: "core/secret-injector"})
-		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
-		outer.Set("api", inner)
-		return outer
-	}()
+		featureValues.Set("api", inner)
+		featureOrder = ir.FeatureOrder{"api": {"secrets"}}
+	}
 
 	return renderer.RendererInput{
 		Graph: &types.IRGraph{
-			Metadata: types.IRMetadata{AggregateName: "custom-inject-app"},
+			Metadata: types.IRMetadata{AggregateName: f.aggregateName},
 			Spec: types.IRSpec{
 				Nodes:                nodes,
 				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 				FeatureValuesMapping: featureValues,
 			},
 		},
-		FeatureOrder: ir.FeatureOrder{"api": {"secrets"}},
+		FeatureOrder: featureOrder,
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate:     &types.Aggregate{},
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
@@ -63,8 +76,8 @@ func customInjectInput() renderer.RendererInput {
 	}
 }
 
-func customInjectLookup() renderer.RecipeLookup {
-	return renderer.RecipeLookup{
+func (f apiServerFixture) lookup() renderer.RecipeLookup {
+	lookup := renderer.RecipeLookup{
 		Recipe: func(_, ct string) (*types.Recipe, bool) {
 			if ct != "core/compute/api-server" {
 				return nil, false
@@ -78,37 +91,51 @@ containers:
   main:
     image: api:latest
     variables:
-` + customInjectWorkloadReads},
+` + f.reads},
 				},
 			}, true
 		},
-		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
+	}
+	if f.injectMapping != "" {
+		lookup.FeatureRecipe = func(_, ft string) (*types.FeatureRecipe, bool) {
 			if ft != "core/secret-injector" {
 				return nil, false
 			}
 			return &types.FeatureRecipe{
 				Metadata: types.FeatureRecipeMetadata{Name: "secret-injector-patcher"},
-				Spec:     types.FeatureRecipeSpec{InjectMapping: customInjectMappingOutput},
+				Spec:     types.FeatureRecipeSpec{InjectMapping: f.injectMapping},
 			}, true
-		},
+		}
 	}
+	return lookup
+}
+
+// render renders the fixture and returns the emitted artifact containing
+// marker, the name of one of the reads.
+func (f apiServerFixture) render(t *testing.T, marker string) string {
+	t.Helper()
+	result, err := renderer.RenderAll(context.Background(), f.input(), f.lookup(), testHelmFactory(t))
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	for _, content := range result.Files {
+		if strings.Contains(string(content.Content), marker) {
+			return string(content.Content)
+		}
+	}
+	t.Fatal("no emitted artifact carried the probe reads")
+	return ""
 }
 
 // renderCustomInjectNode renders the authored example and returns the emitted
 // artifact carrying the probe reads.
 func renderCustomInjectNode(t *testing.T) string {
 	t.Helper()
-	result, err := renderer.RenderAll(context.Background(), customInjectInput(), customInjectLookup(), testHelmFactory(t))
-	if err != nil {
-		t.Fatalf("render failed: %v", err)
-	}
-	for _, content := range result.Files {
-		if strings.Contains(string(content.Content), "BY_NAME_SSM") {
-			return string(content.Content)
-		}
-	}
-	t.Fatal("no emitted artifact carried the probe reads")
-	return ""
+	return apiServerFixture{
+		aggregateName: "custom-inject-app",
+		reads:         customInjectWorkloadReads,
+		injectMapping: customInjectMappingOutput,
+	}.render(t, "BY_NAME_SSM")
 }
 
 // flattenWhitespace collapses every run of whitespace to one space, so an
