@@ -69,21 +69,29 @@ const (
 )
 
 // progressSpine describes the ordered phases a command's progress surface walks.
-// labels is the fixed phase list in execution order. renderIdx is the index of
-// the render phase (the one that reports per-node progress and may be preceded by
-// a plugin-compilation step); it is -1 for a command with no render phase (pull).
-// coldProfile is the up-front cold/warm guess for this build, used only to pick
-// the global bar's weight profile. It does not gate the "compiling plugins"
-// step: that step is revealed from whether a guest is observed to actually
-// compile during the build, not from this guess.
+// labels is the phase list in execution order: fixed for build and pull, and
+// declared once the run knows it for a command whose steps depend on what it
+// finds (setSteps). renderIdx is the index of the render phase (the one that
+// reports per-node progress and may be preceded by a plugin-compilation step); it
+// is -1 for a command with no render phase. coldProfile is the up-front cold/warm
+// guess for this build, used only to pick the global bar's weight profile. It
+// does not gate the "compiling plugins" step: that step is revealed from whether
+// a guest is observed to actually compile during the build, not from this guess.
 //
-// Every label is a lowercase phrase naming what its step does, short enough that
-// its row, marker included, ends before rowBodyColumn, so every elapsed time
-// stays in one column.
+// stepBar draws the global progress line for a spine with no render phase, from
+// the counts its steps report (stepCount), each step one equal share of the bar.
+// Build's bar is weighted by buildBarWeights instead, and pull draws none.
+//
+// Every fixed label is a lowercase phrase naming what its step does, short enough
+// that its row, marker included, ends before rowBodyColumn, so every elapsed time
+// stays in one column. A label naming something the user configured — a
+// registry's host — is as long as that name, and its time follows it after one
+// space.
 type progressSpine struct {
 	labels      []string
 	renderIdx   int
 	coldProfile bool
+	stepBar     bool
 }
 
 // Phase indices into the build spine's labels. buildPhaseStep maps the shared
@@ -227,6 +235,13 @@ const (
 // global progress line below the rows shows a profile-weighted whole-build
 // completion bar. The plain surface walks the same steps and writes each one's
 // line once, as it completes.
+//
+// A command with no render phase walks plain steps the same way, and a step may
+// count its own items (stepCount): its row then carries the same X/Y counter the
+// render phase does, and a spine that asks for it (stepBar) draws the global
+// progress line from those counts. Commentary written while the checklist is
+// live goes through beside, so it lands above the block rather than under a
+// redraw.
 type progressReporter struct {
 	// mu guards every state mutation and every write to out, so the background
 	// spinner ticker (checklist mode only) and the main build thread never race
@@ -305,6 +320,12 @@ type progressReporter struct {
 	renderDone  int
 	renderNext  int
 
+	// counts holds, keyed by spine index, how far a step that counts its own work
+	// has got: how many of how many items it has finished. A step is present once it
+	// knows its total, so a step still finding out what it has to do shows no count
+	// and only its spinner.
+	counts map[int]stepProgress
+
 	spin int
 	// linesDrawn is the number of lines in the last checklist block, so the next
 	// redraw can move the cursor up over them.
@@ -339,7 +360,134 @@ func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpi
 		plainWritten: map[int]bool{},
 		phaseClock:   map[int]time.Time{},
 		phaseFrozen:  map[int]time.Duration{},
+		counts:       map[int]stepProgress{},
 	}
+}
+
+// stepProgress is how many of a step's items are finished, out of how many the
+// step has to do.
+type stepProgress struct {
+	done, total int
+}
+
+// countedLabel is a counted step's name as every surface writes it: the step's
+// label followed by its done/total counter. The render step's per-node counter and
+// a step that counts its own items share it, so the two read alike.
+func countedLabel(label string, done, total int) string {
+	return fmt.Sprintf("%s %d/%d", label, done, total)
+}
+
+// setSteps declares the steps of a run whose steps are known only once it has
+// started — one per registry an index walk visits, say — before the first of
+// them begins. It is inert once a step has begun, so the rows already drawn never
+// change their names.
+func (p *progressReporter) setSteps(labels []string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.active >= 0 {
+		return
+	}
+	p.spine.labels = append([]string(nil), labels...)
+}
+
+// stepCount records how far the step in flight has got: done of its total items
+// finished. The step's row carries the count once a total is known — before that,
+// only its spinner — and on the plain surface the step's one line carries the
+// count it ended on. A step whose total is zero has nothing to count and shows
+// none. The caller reports counts in the order its items are finished in the
+// output, so a count never goes back. A silent reporter, the verbose debug layer,
+// and a reporter with no step in flight ignore it.
+func (p *progressReporter) stepCount(done, total int) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent || p.mode == progressDebug || p.active < 0 || total < 0 {
+		return
+	}
+	p.counts[p.active] = stepProgress{done: done, total: total}
+	if p.mode == progressChecklist {
+		p.draw()
+	}
+}
+
+// phaseLabel is the name of the spine step at index i as its row and its plain
+// line write it: its label, followed by its counter once the step knows a total.
+func (p *progressReporter) phaseLabel(i int) string {
+	label := p.spine.labels[i]
+	if c, ok := p.counts[i]; ok && c.total > 0 {
+		return countedLabel(label, c.done, c.total)
+	}
+	return label
+}
+
+// stepFraction is the run's completion for a spine whose bar gives every step one
+// equal share: each step before the one in flight is over, and the step in flight
+// is as far along as its count says — over once it knows it has nothing to count.
+// Unlike the build's bar it is not filled at finish: a run that stops part way
+// leaves its bar where its count stopped, so the bar never claims work the run did
+// not do.
+func (p *progressReporter) stepFraction() float64 {
+	n := len(p.spine.labels)
+	if n == 0 || p.active < 0 {
+		return 0
+	}
+	frac := float64(p.active)
+	if c, ok := p.counts[p.active]; ok {
+		if c.total > 0 {
+			frac += float64(c.done) / float64(c.total)
+		} else {
+			frac++
+		}
+	}
+	frac /= float64(n)
+	if frac > 1 {
+		frac = 1
+	}
+	return frac
+}
+
+// beside returns a writer for running commentary that goes to w while the
+// reporter's surface is live. Each write — expected to be whole lines — lands
+// above the checklist rather than through it: the drawn block is erased, the
+// lines are written, and the block is drawn again beneath them. Without that, the
+// next redraw's cursor rewind would climb over the commentary and overwrite it.
+// Where nothing is drawn in place — a silent or plain surface, or a checklist not
+// yet drawn or already finished — the write goes straight to w.
+//
+// w may be a different stream from the reporter's own: commentary on standard
+// output beside a checklist on standard error reads in order on a terminal both
+// reach, and a redirected standard output simply receives the lines.
+func (p *progressReporter) beside(w io.Writer) io.Writer {
+	return besideWriter{p: p, w: w}
+}
+
+// besideWriter is the writer beside returns.
+type besideWriter struct {
+	p *progressReporter
+	w io.Writer
+}
+
+func (b besideWriter) Write(data []byte) (int, error) {
+	p := b.p
+	if p == nil || len(data) == 0 {
+		return b.w.Write(data)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode != progressChecklist || p.finished || p.linesDrawn == 0 {
+		return b.w.Write(data)
+	}
+	p.rewind()
+	fmt.Fprint(p.out, ansiClearBelow)
+	p.linesDrawn = 0
+	n, err := b.w.Write(data)
+	p.draw()
+	return n, err
 }
 
 // resolveProgressMode applies the precedence ladder (debug > quiet > plain on a
@@ -383,6 +531,9 @@ const (
 	// ansiClearLine erases from the cursor to the end of the line so a shorter
 	// redraw never leaves stale characters from a longer prior label.
 	ansiClearLine = "\x1b[K"
+	// ansiClearBelow erases from the cursor to the end of the screen, so a block
+	// lifted out of the way of commentary leaves none of its rows behind.
+	ansiClearBelow = "\x1b[J"
 	// ansiDim opens the SGR dim (faint) attribute; it is closed with ansiReset.
 	// The per-phase elapsed field is drawn dim so it reads as secondary to the
 	// phase label and bar.
@@ -397,9 +548,9 @@ const (
 	// rowBodyColumn is the column the dim elapsed field is padded out to, so the
 	// elapsed times line up in a single right-hand column across every row that
 	// carries one — the phase rows and the total-build-time line. It is wide
-	// enough to clear the longest body (the longest phase row of any spine,
-	// marker included); the render row carries no inline bar, so no row needs
-	// room for one.
+	// enough to clear the longest fixed body (the longest fixed-label phase row of
+	// any spine, marker included); the render row carries no inline bar, so no row
+	// needs room for one. A row longer than that keeps one space before its time.
 	rowBodyColumn = 30
 	// elapsedFieldWidth right-aligns the elapsed value within its own column so
 	// single- and multi-digit second counts still align on their trailing 's'.
@@ -913,15 +1064,23 @@ func (p *progressReporter) draw() {
 	// Clamping keeps physical lines == logical rows == linesDrawn, so the rewind
 	// is always exact. Width 0 (unknown, or a non-terminal sink) disables it.
 	width := terminalWidth(p.out)
-	if p.linesDrawn > 0 {
-		fmt.Fprintf(p.out, "\x1b[%dA", p.linesDrawn)
-	}
-	fmt.Fprint(p.out, "\r")
+	p.rewind()
 	for _, row := range rows {
 		fmt.Fprintf(p.out, "%s%s\n", clampVisibleWidth(row, width), ansiClearLine)
 	}
 	p.linesDrawn = len(rows)
 	p.spin++
+}
+
+// rewind moves the cursor back to the start of the drawn block's first row, so
+// what is written next lands where the block began. It is the one place the
+// block's height is climbed — by draw before a redraw, and by beside before it
+// erases the block — so the climb stays as exact as linesDrawn is.
+func (p *progressReporter) rewind() {
+	if p.linesDrawn > 0 {
+		fmt.Fprintf(p.out, "\x1b[%dA", p.linesDrawn)
+	}
+	fmt.Fprint(p.out, "\r")
 }
 
 // ensureTicker starts the background spinner ticker the first time a checklist
@@ -959,7 +1118,8 @@ func (p *progressReporter) ensureTicker() {
 
 // rows builds the checklist lines for the current state: the pre-render phases,
 // then the optional plugin-compilation step, then the render phase (with its X/Y
-// counter), and — for a spine with a render phase — the global progress line. Each
+// counter), and — for a spine with a render phase, or one whose steps count their
+// own work — the global progress line. Each
 // phase row carries a done / active / pending marker; the progress line carries
 // none. The completion summary (total build time, files written) lands on stdout
 // once the build finishes, not in this diagnostic block, so a completed checklist
@@ -977,13 +1137,14 @@ func (p *progressReporter) rows() []string {
 	rows := make([]string, 0, len(p.spine.labels)+4)
 
 	for i := 0; i < preCount; i++ {
-		rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
+		rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.phaseLabel(i), p.elapsedStr(i)))
 	}
 	if p.spine.renderIdx < 0 {
-		// No render phase (pull): the remaining labels are ordinary spine phases,
-		// and there is no node fraction to show, so no global progress line.
-		for i := preCount; i < len(p.spine.labels); i++ {
-			rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.spine.labels[i], p.elapsedStr(i)))
+		// No render phase: every label is an ordinary spine phase, and there is no
+		// node fraction to show. The global progress line is drawn only for a spine
+		// whose steps count their own work (stepBar); pull's carries none.
+		if p.spine.stepBar {
+			rows = append(rows, progressCaption+progressBar(p.stepFraction()))
 		}
 		return rows
 	}
@@ -1005,22 +1166,38 @@ func (p *progressReporter) rows() []string {
 }
 
 // phaseRow returns the marker for a pre-render (or pull) phase at index i.
+//
+// A step that counts its own items is ticked only once its count reaches its
+// total. One the run left short of it — a walk stopped part way — keeps the
+// pending marker, as the render row does for a render that never finished, so
+// its row never claims a completion its count denies.
 func (p *progressReporter) phaseRow(i int, frame rune) string {
 	switch {
 	case p.finished:
-		if i <= p.active || p.inRenderStage {
+		if (i <= p.active || p.inRenderStage) && !p.countShort(i) {
 			return markDone
 		}
 		return markPending
 	case p.inRenderStage:
 		return markDone
 	case i < p.active:
+		if p.countShort(i) {
+			return markPending
+		}
 		return markDone
 	case i == p.active:
 		return markActive(frame)
 	default:
 		return markPending
 	}
+}
+
+// countShort reports whether the step at index i counts its own items and has
+// finished fewer of them than its total. A step that counts nothing is never
+// short, so build's and pull's steps tick exactly as they always have.
+func (p *progressReporter) countShort(i int) bool {
+	c, ok := p.counts[i]
+	return ok && c.total > 0 && c.done < c.total
 }
 
 // renderRowBody returns the render-phase checklist row body (marker, label, and
@@ -1047,13 +1224,13 @@ func (p *progressReporter) renderRowBody(frame rune) string {
 func (p *progressReporter) renderLabel() string {
 	label := p.spine.labels[p.spine.renderIdx]
 	if p.renderTotal > 0 {
-		label = fmt.Sprintf("%s %d/%d", label, p.renderDone, p.renderTotal)
+		label = countedLabel(label, p.renderDone, p.renderTotal)
 	}
 	return label
 }
 
 // stepLabel names the step a timer key stands for, as its row names it: a spine
-// phase by its label, the plugin-compilation step by compilePhaseLabel, and the
+// phase by phaseLabel, the plugin-compilation step by compilePhaseLabel, and the
 // render phase by renderLabel. It is "" for a key that stands for no step, such
 // as the -1 of a reporter no phase has reached yet.
 func (p *progressReporter) stepLabel(key int) string {
@@ -1063,7 +1240,7 @@ func (p *progressReporter) stepLabel(key int) string {
 	case key >= 0 && key == p.spine.renderIdx:
 		return p.renderLabel()
 	case key >= 0 && key < len(p.spine.labels):
-		return p.spine.labels[key]
+		return p.phaseLabel(key)
 	}
 	return ""
 }
@@ -1157,9 +1334,11 @@ func (p *progressReporter) finish() {
 	if p.mode == progressChecklist && p.linesDrawn > 0 {
 		// Freeze any still-running timers so the completed checklist shows stable
 		// times: the active pre-render phase (an early error before render), the
-		// render phase, and the plugin-compilation step. The final redraw lands the
-		// bar at 100% (globalFraction returns 1 once finished) and leaves the block
-		// in place above the stdout completion summary.
+		// render phase, and the plugin-compilation step. The final redraw leaves the
+		// block in place above the stdout completion summary. A build's bar lands at
+		// 100% there (globalFraction returns 1 once finished); a bar drawn from its
+		// steps' counts (stepFraction) stays where those counts stopped, so a walk
+		// stopped part way shows a bar short of full.
 		p.freezeTimer(p.active)
 		p.freezeTimer(p.spine.renderIdx)
 		p.freezeTimer(compileTimerKey)
@@ -1172,7 +1351,9 @@ func (p *progressReporter) finish() {
 		// last step of a spine with no render phase), then the plugin-compilation
 		// step, then the render phase. Which of them count as complete is the
 		// checklist's own rule for its finished block, so the two surfaces report
-		// the same steps.
+		// the same steps. A counted step the run left short of its total still
+		// writes its line, carrying the count it stopped at, which is what says it
+		// did not finish where the checklist leaves its marker unticked.
 		p.completeStep(p.active)
 		if p.compileShown {
 			p.completeStep(compileTimerKey)

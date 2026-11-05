@@ -143,6 +143,16 @@ Several repositories are read at a time. Everything the command records and prin
 comes out in repository order, so the index and the output are the same as reading
 one repository at a time would produce.
 
+While it walks, a terminal shows the walk's progress on standard error, the way
+build and pull show theirs: a row naming each registry, a spinner while that
+registry's repository listing is read, then how many of its repositories the walk
+has finished out of how many it lists, counted in repository order, and a bar for
+the whole walk below the rows. On a terminal that cannot redraw in place, or with
+--plain, each registry gets one plain line instead, written when its walk ends,
+with the count it ended on and the time it took. When standard error is not a
+terminal, no progress is shown. The progress changes nothing the command prints on
+standard output.
+
 Use --upgrade to read every repository in full, comparing nothing with the index
 already written — to rebuild an index from the registry alone. It finds no change a
 refresh without it would miss.
@@ -166,6 +176,7 @@ with one this run had no basis to judge.`,
 				Args:    args,
 				Upgrade: upgrade,
 				Out:     cmd.OutOrStdout(),
+				diag:    buildDiagOptions{noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 			})
 		},
 	}
@@ -187,9 +198,34 @@ type registryUpdateConfig struct {
 
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out io.Writer
+	// DiagOut is where the walk's progress is shown. Nil selects standard error.
+	DiagOut io.Writer
+	// diag carries the display choices the progress reads: the process-wide
+	// color-off decision and --plain. This command offers no flag of its own to
+	// silence or force the progress, so the zero value is the auto shape — shown
+	// on a terminal, nothing elsewhere.
+	diag buildDiagOptions
 	// now supplies the freshness timestamp written to each host's sibling file.
 	// Nil selects the live clock; tests inject a frozen time for determinism.
 	now func() time.Time
+}
+
+// registryUpdateProgressSpine is the progress spine of an index build. Its steps
+// are the registries the walk visits, one row each, declared once the walk knows
+// them (registryUpdateStepLabels); each counts the repositories its walk
+// finishes, and the bar below the rows gives every registry an equal share.
+func registryUpdateProgressSpine() progressSpine {
+	return progressSpine{renderIdx: -1, stepBar: true}
+}
+
+// registryUpdateStepLabels names each registry's step after the registry it
+// indexes, in the order the walk visits them.
+func registryUpdateStepLabels(hosts []string) []string {
+	labels := make([]string, len(hosts))
+	for i, host := range hosts {
+		labels[i] = "indexing " + host
+	}
+	return labels
 }
 
 // registryUpdateRun builds a local index for each selected registry.
@@ -214,15 +250,35 @@ func registryUpdateRun(ctx context.Context, cfg registryUpdateConfig) error {
 	if out == nil {
 		out = os.Stdout
 	}
+	diagOut := cfg.DiagOut
+	if diagOut == nil {
+		diagOut = os.Stderr
+	}
 	var token string
 	if len(cfg.Args) == 1 {
 		token = cfg.Args[0]
 	}
+	// The walk reports its progress as events and the reporter build and pull use
+	// shows them, so this command draws through the same checklist, plain lines and
+	// terminal decision they do. The commentary goes through the reporter too, so a
+	// line written while the checklist is drawn lands above it.
+	progress := newProgressReporter(diagOut, cfg.diag, registryUpdateProgressSpine())
+	defer progress.finish()
 	res, walkErr := registryops.Update(ctx, rw, registryops.UpdateOptions{
 		Registry: token,
 		Upgrade:  cfg.Upgrade,
 		Now:      cfg.now,
-	}, out)
+		Progress: registryops.UpdateProgress{
+			Registries: func(hosts []string) { progress.setSteps(registryUpdateStepLabels(hosts)) },
+			Registry:   progress.phase,
+			Listed:     func(total int) { progress.stepCount(0, total) },
+			Walked:     progress.stepCount,
+		},
+	}, progress.beside(out))
+	// The surface is finished before the closing summary, so a stopped or failed
+	// walk leaves its rows standing where they stopped rather than a spinner
+	// beside the summary. The deferred finish is idempotent.
+	progress.finish()
 	reportRegistryUpdate(out, res)
 	return walkErr
 }

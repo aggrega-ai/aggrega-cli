@@ -345,10 +345,64 @@ type UpdateOptions struct {
 	// Now supplies the freshness timestamp written to each host's sibling file.
 	// Nil selects the live clock; a test injects a frozen time for determinism.
 	Now func() time.Time
+	// Progress receives the walk's progress as it goes, for a surface with a
+	// person watching it. The zero value reports nothing.
+	Progress UpdateProgress
 	// workers bounds how many repositories one registry's walk reads at once.
 	// Zero selects indexWalkWorkers; a test sets one to compare the parallel walk
 	// with a sequential one.
 	workers int
+}
+
+// UpdateProgress is how an index build reports how far it has got, as events and
+// never as drawing: the surface that receives them decides whether and how to
+// show them. Every field is optional, and a nil field is not called.
+//
+// The events of one registry's walk follow its Registry event and precede the
+// next one's. Walked counts the repositories the walk has reported, in
+// repository order — a repository counts only once every repository before it
+// has — so the count never goes back and the order is the same however many
+// repositories are read at once.
+type UpdateProgress struct {
+	// Registries is called once, before the first registry is walked, with every
+	// registry the build walks, in the order it walks them. It is not called when
+	// there is no registry to walk, nor when the walk is refused before any is
+	// reached.
+	Registries func(hosts []string)
+	// Registry is called as the walk of the registry at index i of that list
+	// begins.
+	Registry func(i int)
+	// Listed is called once the registry's repository listing is read, with how
+	// many repositories its walk reads. A registry whose listing could not be read
+	// reports none.
+	Listed func(total int)
+	// Walked is called each time one more of the registry's repositories has been
+	// reported, with how many have been, of total.
+	Walked func(done, total int)
+}
+
+func (p UpdateProgress) registries(hosts []string) {
+	if p.Registries != nil {
+		p.Registries(hosts)
+	}
+}
+
+func (p UpdateProgress) registry(i int) {
+	if p.Registry != nil {
+		p.Registry(i)
+	}
+}
+
+func (p UpdateProgress) listed(total int) {
+	if p.Listed != nil {
+		p.Listed(total)
+	}
+}
+
+func (p UpdateProgress) walked(done, total int) {
+	if p.Walked != nil {
+		p.Walked(done, total)
+	}
 }
 
 // indexWalkWorkers is how many repositories one registry's walk reads at once.
@@ -401,6 +455,11 @@ const indexWalkWorkers = 16
 // writer rather than returned data because the prose is written for a reader,
 // and the same facts travel structurally on the returned result for a surface
 // that has no reader. A caller with nobody watching discards it.
+//
+// opts.Progress hears how far the walk has got — which registry, how many
+// repositories it reads and how many it has reported — as events, for a surface
+// that shows progress. The walk itself draws nothing, and a caller with nobody
+// watching leaves it empty.
 //
 // The result is returned alongside any error rather than instead of it, so a
 // partial walk is never reported as no walk at all. That holds on the
@@ -461,7 +520,8 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 	root := rw.Root()
 	cacheDir := cfg.ResolvedArtifactCacheDir()
 	res.IndexRoot = oci.IndexRoot(root, cacheDir)
-	for _, host := range hosts {
+	opts.Progress.registries(hosts)
+	for i, host := range hosts {
 		// One interruption point per host, which is this walk's real seam: each
 		// iteration is a network round trip that enumerates a registry's
 		// repositories and writes an index. A host not yet reached is one never
@@ -469,6 +529,7 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 		if serr := stopped(ctx); serr != nil {
 			return res, serr
 		}
+		opts.Progress.registry(i)
 		hu, herr := updateHostIndex(ctx, cfg, root, cacheDir, host, now, opts, notices)
 		if herr != nil {
 			hu.Err = herr.Error()
@@ -550,7 +611,7 @@ func updateHostIndex(
 		prior:  prior,
 		reuse:  !opts.Upgrade,
 	}
-	idx, err := buildHostIndex(ctx, hw, workers, &hu, notices)
+	idx, err := buildHostIndex(ctx, hw, workers, &hu, notices, opts.Progress)
 	if err != nil {
 		return hu, err
 	}
@@ -729,11 +790,16 @@ func (w *repoWalk) skip(repo, reason string) {
 // A stop ends the walk at the next repository a worker would take: no worker
 // starts another, the reads in flight end with the stop their requests carry, and
 // the caller sees the stop before anything is written.
-func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpdate, notices io.Writer) (HostIndex, error) {
+//
+// progress hears how many repositories the walk reads once the listing is read,
+// and then, as each repository is reported, how many have been: it is told from
+// the same place, in the same order, as the commentary is written.
+func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpdate, notices io.Writer, progress UpdateProgress) (HostIndex, error) {
 	repos, err := EnumerateRepositories(ctx, hw.src, "", CatalogScope)
 	if err != nil {
 		return HostIndex{}, err
 	}
+	progress.listed(len(repos))
 	idx := HostIndex{Host: hw.host, Revalidations: map[string]registryindex.Revalidation{}}
 	walks := make([]repoWalk, len(repos))
 	done := make([]bool, len(repos))
@@ -778,6 +844,7 @@ func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpda
 				for reported < len(repos) && done[reported] {
 					report(&walks[reported])
 					reported++
+					progress.walked(reported, len(repos))
 				}
 				mu.Unlock()
 			}
