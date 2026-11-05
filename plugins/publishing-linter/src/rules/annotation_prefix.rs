@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//! Reserved-prefix discipline for catalog-entity annotation keys.
+//! Reserved-prefix discipline for annotation keys, on any entity kind.
 //!
 //! The `aggrega.ai/` and `feature.aggrega.ai/` prefixes carry reserved
 //! semantics:
@@ -16,13 +16,18 @@
 //! - **`feature.aggrega.ai/`** is reserved for Feature-scoped
 //!   conventions. The Feature kind is the canonical context (e.g.,
 //!   `feature.aggrega.ai/kind: secret` on Feature labels — compiler
-//!   enforcement, separate from this rule). For catalog entities of
-//!   any other kind, `feature.aggrega.ai/<key>` in
+//!   enforcement, separate from this rule). For a document of any
+//!   other kind, `feature.aggrega.ai/<key>` in
 //!   `metadata.annotations` is outside the canonical context; the
 //!   author likely meant to put the key on a Feature entity, or meant
 //!   a custom domain.
 //!
-//! Scope: catalog-entity `metadata.annotations` only. Out of scope:
+//! Scope: `metadata.annotations` of the document the rule is handed,
+//! whatever its kind. The rule carries no kind guard, deliberately: the
+//! reserved prefixes belong to the platform on every document, so an
+//! Aggregate linted by name is held to them as a catalog entity is. A
+//! kind whose schema declares no `metadata.annotations` draws a finding
+//! only from a document that carries the key anyway. Out of scope:
 //! Feature `metadata.labels` (compiler-owned), Manifest
 //! `features.annotations[]` (deployment-side; advisory namespace),
 //! Release `annotations` (deployment-side; advisory). Those surfaces

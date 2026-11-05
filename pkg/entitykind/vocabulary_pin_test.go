@@ -185,29 +185,29 @@ func TestPublishableKindsAreEntityKinds(t *testing.T) {
 
 // TestPublishableKindsAreConventionsLinted holds the two sets that answer
 // overlapping questions about the same kind — may it be published, and do the
-// publishing-conventions rules examine it — against each other, in both directions.
+// conventions passes that walk a catalog examine it — against each other, in both
+// directions.
 //
 // They are separate facts and neither implies the other, which is exactly why they
 // need pinning rather than merging: a kind can be catalog-resident without being
 // publishable, and an authoring-side document can be publishable without the
-// catalog-publishing rules having anything to say about it. What must not happen is
-// for the two to disagree by accident. A kind that is published while no convention
-// rule examines it ships unlinted, and nothing reports the gap — the walk drops the
-// file before it reaches any rule, so the result is a clean report rather than a
-// skipped one.
+// catalog walks examining it. What must not happen is for the two to disagree by
+// accident. A kind that is published while the catalog walks pass it over is
+// checked only when someone lints a document of it by name, and a catalog sweep
+// says nothing about it beyond naming the kind as not checked.
 //
 // Every difference between the sets is therefore declared below with its reason. A
 // kind entering one set without entering the other, or without being claimed as a
 // deliberate difference, fails here.
 func TestPublishableKindsAreConventionsLinted(t *testing.T) {
-	// Publishable kinds the conventions rules deliberately do not examine, with the
-	// reason each is exempt.
+	// Publishable kinds the catalog walks deliberately pass over, with the reason
+	// each is exempt.
 	publishableButNotLinted := map[entitykind.Kind]string{
-		entitykind.Aggregate: "an Aggregate is a developer's application-intent document; it is publishable as a reusable module, but the conventions rules describe catalog-publishing discipline, which is not what an Aggregate is authored against",
+		entitykind.Aggregate: "an Aggregate is a developer's application-intent document, publishable as a reusable module; the catalog-wide conventions passes walk catalog entities and pass it over, and linting one Aggregate by name applies the rules that scope themselves to it",
 	}
 
 	// Conventions-linted kinds that are not publishable, with the reason each is
-	// linted anyway. Empty today: every kind the rules examine is one that ships.
+	// linted anyway. Empty today: every kind the catalog walks examine is one that ships.
 	lintedButNotPublishable := map[entitykind.Kind]string{}
 
 	publishable := map[entitykind.Kind]bool{}
@@ -233,9 +233,9 @@ func TestPublishableKindsAreConventionsLinted(t *testing.T) {
 		if _, named := publishableButNotLinted[kind]; named {
 			continue
 		}
-		t.Errorf("kind %s is publishable but no convention rule examines it, and it is not named as a deliberate exemption: "+
-			"a document of that kind ships without ever being checked, and because the walk drops it before any rule runs, "+
-			"the pass reports success rather than reporting that it skipped anything. "+
+		t.Errorf("kind %s is publishable but the catalog walks pass it over, and it is not named as a deliberate exemption: "+
+			"a document of that kind is checked only when someone lints it by name, and a catalog sweep reports it as not checked "+
+			"rather than examining it. "+
 			"Either mark the kind conventions-linted in the vocabulary, or name it here with the reason it is exempt.", kind)
 	}
 
@@ -247,7 +247,7 @@ func TestPublishableKindsAreConventionsLinted(t *testing.T) {
 			continue
 		}
 		t.Errorf("kind %s is conventions-linted but is not publishable, and is not named as a deliberate difference: "+
-			"the publishing-conventions rules are being run over a document that is never published. "+
+			"the catalog walks are running the publishing-conventions rules over a document that is never published. "+
 			"Either give the kind a mediatype, or name it here with the reason it is linted anyway.", kind)
 	}
 

@@ -66,29 +66,41 @@ func TestNameShapeExtractionFindsTheDeclarations(t *testing.T) {
 	}
 }
 
-// TestEveryConventionsLintedKindHasANameShape holds the declared name shapes against
-// the kinds the publishing-conventions rules apply to.
+// TestEveryKindTheEntityLintAdmitsHasANameShape holds the declared name shapes
+// against every kind a document handed to the name rule can declare.
 //
-// The two sets sit on opposite sides of a language boundary — the vocabulary decides
-// which documents are submitted to the linter, and the patterns are what the linter's
+// The two sets sit on opposite sides of a language boundary — the documents a lint
+// submits decide which kinds reach the linter, and the patterns are what the linter's
 // name rule applies — so nothing structural connects them. Their disagreement is
 // invisible by construction: a kind submitted to a rule that has no pattern for it
 // produces no finding, which is indistinguishable from a document whose name is
 // correct. This assertion is what makes that difference visible.
-func TestEveryConventionsLintedKindHasANameShape(t *testing.T) {
-	// Conventions-linted kinds with no documented name shape, and why. A kind here
-	// is checked by the other convention rules but its name is checked by nothing.
+//
+// The kinds held here are every entity kind, not only those the catalog walks
+// examine. Linting one entity by name hands its document to every rule whatever its
+// kind, and each rule decides for itself which kinds it describes, so a kind the
+// catalog walks pass over still reaches the name rule on that path. Keying this on
+// the catalog walks' kinds alone would leave exactly those kinds unwatched.
+func TestEveryKindTheEntityLintAdmitsHasANameShape(t *testing.T) {
+	// Entity kinds with no documented name shape, and why. A kind here may be
+	// checked by other convention rules, but its name is checked by nothing.
 	kindsWithoutNameShape := map[entitykind.Kind]string{
-		entitykind.Plugin: "a Plugin's name is its socket and identity segment, which the reference URI already constrains; no separate shape is documented for the metadata field",
+		entitykind.Aggregate: "an Aggregate is a developer's application-intent document; the documented name shapes are those of the catalog entity kinds, and none is documented for an Aggregate",
+		entitykind.Plugin:    "a Plugin's name is its socket and identity segment, which the reference URI already constrains; no separate shape is documented for the metadata field",
+		entitykind.Workload:  "a Workload is written inside a Recipe or a FeatureRecipe rather than addressed on its own, and carries no metadata name of its own to shape",
+		entitykind.Manifest:  "a Manifest is an operator's deployment-target document rather than a catalog entity; no name shape is documented for it",
+		entitykind.Release:   "a Release is an operator's environment-binding document rather than a catalog entity; no name shape is documented for it",
 	}
 
 	shapes := declaredNameShapes(t)
-	linted := entitykind.ConventionsLinted()
-	if len(linted) == 0 {
-		t.Fatal("no conventions-linted kinds were enumerated; every assertion below would be vacuous")
+	admitted := entitykind.Kinds()
+	if len(admitted) == 0 {
+		t.Fatal("no entity kinds were enumerated; every assertion below would be vacuous")
 	}
 
-	for _, kind := range linted {
+	held := map[entitykind.Kind]bool{}
+	for _, kind := range admitted {
+		held[kind] = true
 		if _, ok := shapes[kind]; ok {
 			if reason, named := kindsWithoutNameShape[kind]; named {
 				t.Errorf("kind %s is recorded as having no documented name shape (%s), but one is now declared; remove the entry so the record stays truthful", kind, reason)
@@ -98,15 +110,24 @@ func TestEveryConventionsLintedKindHasANameShape(t *testing.T) {
 		if _, named := kindsWithoutNameShape[kind]; named {
 			continue
 		}
-		t.Errorf("kind %s is examined by the publishing-conventions rules but declares no name shape, and is not recorded as deliberately having none: "+
+		t.Errorf("kind %s reaches the name rule when a document of it is linted by name, but declares no name shape and is not recorded as deliberately having none: "+
 			"the name rule resolves no pattern for it and returns no finding, so every name of that kind reports clean whatever it is. "+
 			"Either declare the shape here, or record the kind above with the reason it has none.", kind)
 	}
 
+	// An entry the loop above never reached is not a record of anything: it names a
+	// kind no lint hands to the name rule, so it is stale — or the set the loop walks
+	// has been narrowed below the kinds a lint actually admits.
+	var unreached []string
 	for kind, reason := range kindsWithoutNameShape {
-		if !entitykind.IsConventionsLinted(kind) {
-			t.Errorf("%s is recorded as a conventions-linted kind with no name shape (%s) but the rules no longer examine it; the entry is stale and should be removed", kind, reason)
+		if !held[kind] {
+			unreached = append(unreached, string(kind)+" ("+reason+")")
 		}
+	}
+	if len(unreached) > 0 {
+		sort.Strings(unreached)
+		t.Errorf("these kinds are recorded as having no name shape but this assertion never held them: %v; "+
+			"either the entry is stale and should be removed, or the kinds walked above no longer cover every kind a lint by name admits", unreached)
 	}
 }
 

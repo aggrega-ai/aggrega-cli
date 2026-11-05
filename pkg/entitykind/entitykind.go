@@ -70,11 +70,15 @@ const (
 type Entry struct {
 	// Kind is the canonical kind name.
 	Kind Kind
-	// ConventionsLinted reports whether the publishing-conventions rules apply to
-	// documents of this kind. It is a separate fact from whether the kind can be
-	// published: an Aggregate is publishable but is an authoring-side document
-	// that the conventions rules do not examine, so neither answer implies the
-	// other.
+	// ConventionsLinted reports whether the conventions passes that walk a
+	// catalog — the whole-catalog pass, the pass over a Release's closure, and the
+	// editor's per-edit conventions layer — examine documents of this kind. The
+	// mark does not decide which rules apply to a document of the kind that is
+	// linted by name.
+	//
+	// It is a separate fact from whether the kind can be published: an Aggregate
+	// is publishable but is an authoring-side document the catalog walks pass
+	// over, so neither answer implies the other.
 	ConventionsLinted bool
 	// ReferencePage reports whether a language-reference page documents this kind.
 	// A kind without one has its guidance pointers fall back to the
@@ -192,8 +196,9 @@ func Segments() []string {
 	return out
 }
 
-// ConventionsLinted returns every kind the publishing-conventions rules apply
-// to, in fixed author-defined order. The returned slice is freshly allocated.
+// ConventionsLinted returns every kind the conventions passes that walk a
+// catalog examine, in fixed author-defined order. The returned slice is freshly
+// allocated.
 func ConventionsLinted() []Kind {
 	out := make([]Kind, 0, len(entries))
 	for _, e := range entries {
@@ -204,9 +209,9 @@ func ConventionsLinted() []Kind {
 	return out
 }
 
-// IsConventionsLinted reports whether the publishing-conventions rules apply to
-// documents of the named kind. An unrecognised token reports false: a kind the
-// vocabulary does not contain is not a kind the rules describe.
+// IsConventionsLinted reports whether the conventions passes that walk a
+// catalog examine documents of the named kind. An unrecognised token reports
+// false: a kind the vocabulary does not contain is not a catalog entity kind.
 func IsConventionsLinted(k Kind) bool {
 	e, ok := Lookup(k)
 	return ok && e.ConventionsLinted
