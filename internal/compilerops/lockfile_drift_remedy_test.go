@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile/lockfiletest"
 )
 
 // TestLockfileDriftRemedyNamesAPlainPullOfTheRelease pins what the one home of the
@@ -67,12 +68,12 @@ func TestADriftRefusalCarriesItsRemedyAsAnErrorOfItsOwn(t *testing.T) {
 	view, releasePath, workspaceRoot, wsCfg = fixtureWorkspace(t)
 	seed, err := PreviewForArtifact(context.Background(),
 		NewPreviewInputs(NoExternalInputs(), view, releasePath, workspaceRoot, wsCfg, "test",
-			WithLockfile(composedFromClosure(walked.Resolved.Closure), false)),
+			WithLockfile(lockfiletest.Mirroring(composedHeader(), walked.Resolved.Closure), false)),
 		pipeline.Options{SkipRender: true})
 	if err != nil {
 		t.Fatalf("reconstruct the fixture's closure: %v", err)
 	}
-	drifted := composedFromClosure(seed.Resolved.Closure)
+	drifted := lockfiletest.Mirroring(composedHeader(), seed.Resolved.Closure)
 	drifted.Entities = append(drifted.Entities, lockfile.Entity{
 		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})

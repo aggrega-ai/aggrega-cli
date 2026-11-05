@@ -323,6 +323,136 @@ func LockfileDriftRemedy(release string) string {
 	return fmt.Sprintf("run `aggrega pull --release %s` to re-resolve the Release and rewrite its lockfile", release)
 }
 
+// lockfileDriftHalt is the halt raised for a lockfile on disk that no longer
+// matches what its Release resolves to: the drift verify's findings, then the
+// remedy for release. It is the one composition of that halt, so a build and a
+// surface that reads a Release without building it print the same text for the
+// same drift.
+//
+// The remedy is wrapped as an error of its own rather than formatted into the
+// frame, and that is what puts it in front of a reader at a terminal: the command
+// line renders a chain carrying several errors element by element and shows no
+// frame's own text, so advice written into the frame reaches nobody there. The
+// text of the whole is the same either way.
+func lockfileDriftHalt(findings error, release string) error {
+	return fmt.Errorf("%w; %w", findings, stderrors.New(LockfileDriftRemedy(release)))
+}
+
+// HoldReleaseToLockfile asks of the Release at releasePath the question a build
+// asks before it renders — does lf, the lockfile beside it, still describe what
+// the Release resolves to? — for a surface that reads the Release without
+// producing anything from it, and answers with the halt a build raises where it
+// does not: the drift condition, every drifted entry, and the remedy naming
+// releasePath as the caller spelled it.
+//
+// It runs the build's drift comparison and nothing else of the build. The closure
+// is resolved by resolveBuildClosure, the function a build resolves its own
+// closure with, and is then held to lf by reconstructAndVerifyLockfile — the
+// function the build's own drift gate runs, so the closure, the axes rebuilt, the
+// order and the comparator are the build's. A surface's own resolution is not that closure: a validation resolves
+// without the library axes and reconstructs nothing, so comparing a lockfile
+// against it would report every library, module and plugin the lockfile pins as
+// no longer used.
+//
+// The build's other gates are not run here, and one of them bears on a lockfile:
+// the pinned-integrity gate (catalog.LazyLookup.VerifyPinnedIntegrity), which
+// halts a build on a pinned cache slot whose bytes no longer match its pin when no
+// catalog directory holds the pinned bytes. A reading surface meets such a slot
+// through its view's read of the cache, which holds every pinned slot to its pin
+// and passes over one that does not match. Where a catalog directory holds the
+// entity, the resolution reads that copy instead: bytes other than the pinned ones
+// are reported here as drift, the pinned bytes as no drift at all. Where nothing
+// else holds it, the entity does not resolve, and the surface's own resolution
+// refuses the Release as naming something it cannot resolve rather than with the
+// integrity condition the build names — this check stands down there, as for any
+// resolution it cannot complete.
+//
+// It resolves through a view of its own, forked from view with lf's pins and
+// writing no notices, so the surface's view — its pins, its caches and the
+// advisories it has collected — is left exactly as it was. A surface over a
+// lockfile that matches therefore writes what it wrote before this check ran.
+//
+// It reports drift and nothing else, and returns nil in the three cases that are
+// not drift. A Release with no lockfile has nothing to hold it to. A resolution
+// this check cannot complete is not a finding about the lockfile: the surface's
+// own resolution reports a failure to resolve in that surface's words, and a
+// failure only the build's fuller resolution meets is the build's to report.
+// A lockfile that matches is the third.
+func HoldReleaseToLockfile(ctx context.Context, view *catalog.LazyLookup, releasePath, workspaceRoot string, workspaceConfig workspaceconfig.Config, lf *lockfile.Lockfile) error {
+	if lf == nil {
+		return nil
+	}
+	held := view.ForRequest(catalog.PinsFromLockfile(lf))
+	held.WriteNoticesTo(io.Discard)
+	resolved, cerr := resolveBuildClosure(ctx, held, releasePath, workspaceRoot, workspaceConfig, lf)
+	if cerr != nil {
+		return nil
+	}
+	if step, err := reconstructAndVerifyLockfile(ctx, held, lf, workspaceRoot, workspaceConfig, resolved, true); step == lockfileStepVerify {
+		return lockfileDriftHalt(err, releasePath)
+	}
+	return nil
+}
+
+// resolveBuildClosure resolves the Release at releasePath to the closure a build
+// renders from and holds its lockfile to: the entity walk with the cross-document
+// library axes folded in, pinned by lf where lf is not nil. It is the one place
+// those inputs are assembled, for the build and for a reading surface's drift
+// check alike, so the closure a lockfile is compared against cannot differ
+// between the two. It returns ResolveClosure's own result unchanged.
+func resolveBuildClosure(ctx context.Context, view *catalog.LazyLookup, releasePath, workspaceRoot string, workspaceConfig workspaceconfig.Config, lf *lockfile.Lockfile) (*ResolvedClosure, *ClosureError) {
+	return ResolveClosure(ctx, ClosureInputs{
+		View:            view,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   workspaceRoot,
+		WorkspaceConfig: workspaceConfig,
+		Lockfile:        lf,
+		Augment:         true,
+	})
+}
+
+// lockfileStep names the step of reconstructAndVerifyLockfile that refused, so a
+// caller routes each refusal by the step rather than by reading the error.
+type lockfileStep int
+
+const (
+	// lockfileStepNone: neither step refused.
+	lockfileStepNone lockfileStep = iota
+	// lockfileStepReconstruction: the axes the walk leaves empty could not be
+	// rebuilt from the lockfile.
+	lockfileStepReconstruction
+	// lockfileStepVerify: the lockfile does not match the reconstructed closure.
+	lockfileStepVerify
+)
+
+// reconstructAndVerifyLockfile is the one home of the order a lockfile is held to
+// a resolved closure in: the axes the walk leaves empty are rebuilt from lf
+// (reconstructPreviewClosureAxes), and then, where verify is set, lf is compared
+// with the rebuilt closure by lockfile.Verify. The comparison is only meaningful
+// over the rebuilt closure — without it every module, plugin and workspace-socket
+// row lf pins reads as no longer used — which is why the two steps are one call
+// and the order is not something a caller can choose.
+//
+// It returns the step that refused and that step's error, or lockfileStepNone and
+// nil. What a refusal means is the caller's: the build routes each step to its own
+// gate and halt, and a reading surface's check (HoldReleaseToLockfile) reports
+// only the second.
+//
+// view, lf, workspaceRoot and workspaceConfig are the ones resolved was resolved
+// with; resolved's closure is rebuilt in place.
+func reconstructAndVerifyLockfile(ctx context.Context, view *catalog.LazyLookup, lf *lockfile.Lockfile, workspaceRoot string, workspaceConfig workspaceconfig.Config, resolved *ResolvedClosure, verify bool) (lockfileStep, error) {
+	if err := reconstructPreviewClosureAxes(ctx, view, lf, workspaceRoot, workspaceConfig, resolved); err != nil {
+		return lockfileStepReconstruction, err
+	}
+	if !verify {
+		return lockfileStepNone, nil
+	}
+	if err := lockfile.Verify(lf, resolved.Closure); err != nil {
+		return lockfileStepVerify, err
+	}
+	return lockfileStepNone, nil
+}
+
 // errComposedLockfileRefused is the refusal for a composed lockfile (see
 // WithComposedLockfile) that the build's drift verify disagrees with. It names an
 // internal inconsistency rather than a condition of the workspace: the lockfile
@@ -461,6 +591,11 @@ type previewPolicy struct {
 	// posture. It survives for the tools that answer a question ABOUT a closure
 	// rather than emitting an artifact from one, where refusing on a stale
 	// lockfile would withhold the answer instead of qualifying it.
+	//
+	// Setting it also rebuilds the axes, whatever reconstructClosureAxes says: the
+	// gate that reads the two runs the rebuild whenever either is set, through the
+	// one function that orders them (reconstructAndVerifyLockfile), because the
+	// comparison is only meaningful over the rebuilt closure.
 	verifyLockfileDrift bool
 
 	// resolveExtends resolves extends inheritance for the closure's Components
@@ -782,14 +917,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// library axes so the closure matches the one drift is verified against; it
 	// is on whenever this layer owns the reconstruction, and a caller that folded
 	// the axes itself no longer exists — the fold has one home now.
-	resolved, cerr := ResolveClosure(ctx, ClosureInputs{
-		View:            in.view,
-		ReleasePath:     in.releasePath,
-		WorkspaceRoot:   in.workspaceRoot,
-		WorkspaceConfig: in.workspaceConfig,
-		Lockfile:        in.lockfile,
-		Augment:         true,
-	})
+	resolved, cerr := resolveBuildClosure(ctx, in.view, in.releasePath, in.workspaceRoot, in.workspaceConfig, in.lockfile)
 	if cerr != nil {
 		out.FailedGate = GateClosureResolution
 		return out, &resolutionFailure{err: cerr}
@@ -836,33 +964,31 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Release unresolved, and be reported there as a disagreement inside the compiler
 	// rather than as the author's reference to nothing; ResolveModuleReferences says
 	// why.
-	if pol.reconstructClosureAxes && in.lockfile != nil {
-		if err := reconstructPreviewClosureAxes(ctx, in, resolved); err != nil {
+	//
+	// Drift verification follows it, against the freshly-computed closure, for a
+	// lockfile that was on disk before this run and for one the caller composed and
+	// is about to write. A lockfile a fill wrote during this run is not verified
+	// again: the fill held it to this same verify, as a composed lockfile, before it
+	// wrote it. The two steps run in the one function that orders them
+	// (reconstructAndVerifyLockfile), which is also what a reading surface's check
+	// runs, so the order has one home.
+	if (pol.reconstructClosureAxes || pol.verifyLockfileDrift) && in.lockfile != nil {
+		verify := pol.verifyLockfileDrift && (in.lockfilePreexisted || in.lockfileComposed)
+		step, err := reconstructAndVerifyLockfile(ctx, in.view, in.lockfile, in.workspaceRoot, in.workspaceConfig, resolved, verify)
+		switch step {
+		case lockfileStepReconstruction:
 			out.FailedGate = GateAxisReconstruction
 			return out, &resolutionFailure{err: err}
-		}
-	} else if cerr := ResolveModuleReferences(ctx, resolved); cerr != nil {
-		out.FailedGate = GateClosureResolution
-		return out, &resolutionFailure{err: cerr}
-	}
-
-	// Drift verification against the freshly-computed closure, for a lockfile that
-	// was on disk before this run and for one the caller composed and is about to
-	// write. A lockfile a fill wrote during this run is not verified again: the fill
-	// held it to this same verify, as a composed lockfile, before it wrote it.
-	if pol.verifyLockfileDrift && in.lockfile != nil && (in.lockfilePreexisted || in.lockfileComposed) {
-		if err := lockfile.Verify(in.lockfile, resolved.Closure); err != nil {
+		case lockfileStepVerify:
 			out.FailedGate = GateLockfileDrift
 			if in.lockfileComposed {
 				return out, &composedLockfileRefusal{findings: err}
 			}
-			// The remedy is wrapped as an error of its own rather than formatted into
-			// the frame, and that is what puts it in front of a reader at a terminal:
-			// the command line renders a chain carrying several errors element by
-			// element and shows no frame's own text, so advice written into the frame
-			// reaches nobody there. The text of the whole is the same either way.
-			return out, fmt.Errorf("%w; %w", err, stderrors.New(LockfileDriftRemedy(in.releasePath)))
+			return out, lockfileDriftHalt(err, in.releasePath)
 		}
+	} else if cerr := ResolveModuleReferences(ctx, resolved); cerr != nil {
+		out.FailedGate = GateClosureResolution
+		return out, &resolutionFailure{err: cerr}
 	}
 
 	phase(PhaseInheritance)
@@ -1005,8 +1131,13 @@ func enforceDeprecation(in PreviewInputs, warn func(WarningClass, string)) (halt
 // closure to make the just-pinned plugin entities visible, and the pins are
 // restored to the lockfile view afterward so the render resolves exactly as it
 // would have without the reconstruction.
-func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolved *ResolvedClosure) error {
-	view := in.view
+//
+// view is the view the closure was resolved through and lf the lockfile it was
+// pinned with; workspaceRoot and workspaceConfig are the ones that resolution read.
+// They are named one by one rather than read off a preview's inputs, because the
+// check a reading surface runs (HoldReleaseToLockfile) reconstructs through this
+// same function without rendering anything.
+func reconstructPreviewClosureAxes(ctx context.Context, view *catalog.LazyLookup, lf *lockfile.Lockfile, workspaceRoot string, workspaceConfig workspaceconfig.Config, resolved *ResolvedClosure) error {
 	lookup := resolved.Lookup
 
 	aggLoader, err := closure.RequireAggregateLoader(lookup)
@@ -1017,7 +1148,7 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	if err != nil {
 		return err
 	}
-	bindings := lockfile.ProviderBindings(in.lockfile)
+	bindings := lockfile.ProviderBindings(lf)
 	resolvePlugin := func(ref string) (types.Plugin, bool, error) {
 		return view.ProviderPluginForTarget(ref, bindings)
 	}
@@ -1032,8 +1163,8 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	// sub-aggregate pass keeps the resolved lookup, which carries the Release's
 	// external documents that pass reads. One pinned lookup serves every plugin
 	// pass, the workspace-socket one below included.
-	pinned := view.ClosureLookup(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, nil,
-		&catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(in.lockfile)})
+	pinned := view.ClosureLookup(nil, workspaceRoot, workspaceConfig.ResolvedArtifactCacheDir(), nil, nil,
+		&catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(lf)})
 	// The artifact of a Plugin entity authored in a catalog directory is resolved from
 	// this machine by the same question the pull asked when it wrote the lockfile, so
 	// a transform-role attachment authored there reconstructs to the pin the pull
@@ -1041,19 +1172,19 @@ func reconstructPreviewClosureAxes(ctx context.Context, in PreviewInputs, resolv
 	// workspace-socket pass below ask it. The entity pass asks nothing: a build loads
 	// each plugin through the cascade that raises the same condition where it loads
 	// it, so it refuses nothing at that step that its render would not.
-	catalogArtifacts := pipeline.CatalogPluginArtifacts(in.workspaceRoot, in.workspaceConfig, view.PluginColocatedDirs())
+	catalogArtifacts := pipeline.CatalogPluginArtifacts(workspaceRoot, workspaceConfig, view.PluginColocatedDirs())
 	if err := closure.DescendPinnedAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold, nil, catalogArtifacts); err != nil {
-		view.SetPins(catalog.PinsFromLockfile(in.lockfile))
+		view.SetPins(catalog.PinsFromLockfile(lf))
 		return err
 	}
-	view.SetPins(catalog.PinsFromLockfile(in.lockfile))
+	view.SetPins(catalog.PinsFromLockfile(lf))
 
 	// The output-shaping workspace-socket plugin entities and their .wasm are
 	// pull-time choices recorded only in the lockfile, so ComputeClosure cannot
 	// re-derive them hermetically. They resolve through the same pinned lookup, so
 	// a pinned socket .wasm resolves from the content-addressed cache offline; the
 	// entity and artifact are re-read so a drifted pin still surfaces as drift.
-	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(in.lockfile)
+	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(lf)
 	if len(socketEntityURIs) == 0 {
 		return nil
 	}

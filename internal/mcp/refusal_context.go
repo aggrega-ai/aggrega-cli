@@ -85,3 +85,31 @@ func refusalKindOr(err error, fallback string) string {
 	}
 	return refusal.Kind
 }
+
+// lockfileDriftCondition names the condition a tool refuses on when a Release's
+// lockfile no longer matches what the Release resolves to. Every tool refusing on
+// it states the condition in these words and goes on to what the refusal means
+// for that tool, so the build, the validation and the closure description name
+// one condition one way.
+const lockfileDriftCondition = "the lockfile no longer matches the dependencies this Release resolves to"
+
+// lockfileDriftClearing is what a caller of this protocol is told about clearing
+// a lockfile that no longer matches what its Release resolves to. Every tool that
+// refuses on that condition ends its sentence with it, so the build, the
+// validation and the closure description name one way to clear one condition.
+const lockfileDriftClearing = "Resolving the dependencies " +
+	"again clears it. Through this protocol that is the pull tool, called with this same 'release' " +
+	"path and no 'upgrade_targets': it reconciles the lockfile against what the Release resolves to " +
+	"today, which is what this condition needs. The command line the diagnostic names is that same " +
+	"operation at a terminal. Where the pull tool completes and this refusal comes back, the two " +
+	"calls resolved over different inputs — most often 'catalog_dirs' given to one and not the " +
+	"other, or a workspace configuration edited between them — so call both with the same ones."
+
+// lockfileDriftRefusalSummary is the caller-facing sentence for a tool that reads
+// a Release without building it and refuses because the Release's lockfile no
+// longer matches what it resolves to — the refusal the matching command prints at a
+// terminal. outcome says what the tool did not do, as a clause of its own.
+func lockfileDriftRefusalSummary(outcome string) string {
+	return outcome + ": " + lockfileDriftCondition +
+		", and a build of this Release refuses it on the same ground. " + lockfileDriftClearing
+}

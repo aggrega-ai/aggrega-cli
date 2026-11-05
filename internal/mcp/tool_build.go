@@ -912,14 +912,8 @@ func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotice
 		return "The build refused: a pinned entry in the cache no longer matches the digest the lockfile records for it, " +
 			"and no catalog directory holds the pinned bytes. Re-pull the Release to refill the cache from the registry."
 	case compilerops.GateLockfileDrift:
-		return "The build refused: the lockfile no longer matches the dependencies this Release resolves to, " +
-			"so it would have rendered from pins a build would not have used. Resolving the dependencies " +
-			"again clears it. Through this protocol that is the pull tool, called with this same 'release' " +
-			"path and no 'upgrade_targets': it reconciles the lockfile against what the Release resolves to " +
-			"today, which is what this condition needs. The command line the diagnostic names is that same " +
-			"operation at a terminal. Where the pull tool completes and this refusal comes back, the two " +
-			"calls resolved over different inputs — most often 'catalog_dirs' given to one and not the " +
-			"other, or a workspace configuration edited between them — so call both with the same ones."
+		return "The build refused: " + lockfileDriftCondition +
+			", so it would have rendered from pins a build would not have used. " + lockfileDriftClearing
 	case compilerops.GateClosurePillars:
 		return "The build refused: an entity this Release reaches does not satisfy its schema."
 	case compilerops.GateExtends:

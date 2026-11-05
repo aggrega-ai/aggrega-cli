@@ -169,7 +169,10 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs, named []string, diagOut,
 // The lockfile pins the closure when present (the build's pinned view); absent,
 // the closure resolves through Tier-1 (local catalog). It never triggers a
 // network pull — a registry-pinned closure that needs a lockfile surfaces as an
-// honest unresolvable-URI error rather than a silent fetch.
+// honest unresolvable-URI error rather than a silent fetch. A lockfile that is
+// present and no longer matches what the Release resolves to refuses the
+// validation with the drift halt a build prints, before any check here runs, so a
+// passing validation never stands over a lockfile the build's drift gate refuses.
 //
 // Advisory (`notice:`) and error diagnostics are written to diagOut (os.Stderr in
 // production); the final success summary is written to out (os.Stdout in
@@ -279,16 +282,24 @@ type releaseDependencies struct {
 //
 // Two commands ask it, and both ask it here rather than each building the view
 // for itself: the release-scoped validation, which reads everything this returns,
-// and the inspection of a Release, which reads only whether it refused. So a
-// reference no catalog holds — named by the Release's own Aggregate or by a module
-// it imports, as a catalog identity or as a ./ or ../ path — is reported by both
-// in the same words, rather than reaching the graph build, whose checks are
-// entitled to assume every reference resolved.
+// and the inspection of a Release, which reads whether it refused and the lockfile
+// and pinned view it leaves behind. So a reference no catalog holds — named by the
+// Release's own Aggregate or by a module it imports, as a catalog identity or as a
+// ./ or ../ path — is reported by both in the same words, rather than reaching the
+// graph build, whose checks are entitled to assume every reference resolved.
 //
 // The view is built with no registry client, so the resolution is a local read: a
 // reference the catalog directories and the cache do not hold is refused as
 // unresolvable, never fetched. The record of pinned versions seeds the view where
 // the workspace has one, so what resolves is what this Release is pinned to.
+//
+// Where that record exists it is then held to what the Release resolves to, by
+// the build's drift comparison (compilerops.HoldReleaseToLockfile), and a record
+// that no longer matches refuses the Release with the drift halt the build prints
+// — so neither command passes over a lockfile the build's drift gate refuses. The
+// build's other gates are not run, its pinned-integrity gate among them; that
+// function says what a reading surface meets instead. A workspace with no record
+// is resolved as before and held to nothing.
 //
 // catalogFlagDirs is the repeatable --catalog flag, prepended to the directories
 // the workspace configuration gives this Release.
@@ -335,6 +346,14 @@ func resolveReleaseDependencies(ctx context.Context, rw *workspaceconfig.Resolve
 		// may name an entity sitting in a directory this workspace does not read,
 		// so the workspace's own account of where it reads travels too.
 		return releaseDependencies{}, compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
+	}
+	// The lockfile loaded above is held to what the Release resolves to, by the
+	// build's drift comparison, and a lockfile that no longer matches refuses the
+	// Release with the drift halt the build prints. A validation that passed
+	// here would predict a build that then refuses, and an inspection would draw a
+	// picture no build of the same Release renders.
+	if err := compilerops.HoldReleaseToLockfile(ctx, view, releasePath, wsRoot, wsCfg, lf); err != nil {
+		return releaseDependencies{}, err
 	}
 	return releaseDependencies{view: view, lockfile: lf, resolved: resolved}, nil
 }

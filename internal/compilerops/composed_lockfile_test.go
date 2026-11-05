@@ -10,37 +10,14 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile/lockfiletest"
 )
 
-// composedFromClosure is the lockfile a resolution composes from a closure it
-// computed, across every axis the drift verify compares, so a verify over the
-// same closure is clean and one over a different closure names the difference.
-func composedFromClosure(cl closure.Closure) *lockfile.Lockfile {
-	lf := &lockfile.Lockfile{Version: 1, Release: "release.yaml", GeneratedAt: "2026-01-01T00:00:00Z"}
-	for _, d := range cl.ReleaseDocuments {
-		lf.ReleaseDocuments = append(lf.ReleaseDocuments, lockfile.ReleaseDocument{Path: d.Path, Digest: d.Digest})
-	}
-	for _, e := range cl.Entities {
-		lf.Entities = append(lf.Entities, lockfile.Entity{URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest})
-	}
-	for _, p := range cl.Plugins {
-		lf.Plugins = append(lf.Plugins, lockfile.Plugin{URI: p.URI, ResolvedVersion: p.ResolvedVersion, Digest: p.Digest})
-	}
-	for _, l := range cl.SchemaLibraries {
-		lf.SchemaLibraries = append(lf.SchemaLibraries, lockfile.SchemaLibrary{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest})
-	}
-	for _, l := range cl.MappingLibraries {
-		lf.MappingLibraries = append(lf.MappingLibraries, lockfile.MappingLibrary{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest})
-	}
-	for _, l := range cl.WorkloadLibraries {
-		lf.WorkloadLibraries = append(lf.WorkloadLibraries, lockfile.WorkloadLibrary{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest})
-	}
-	for _, l := range cl.ArtifactLibraries {
-		lf.ArtifactLibraries = append(lf.ArtifactLibraries, lockfile.ArtifactLibrary{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest})
-	}
-	return lf
+// composedHeader is the header of every lockfile these tests compose from a
+// closure with lockfiletest.Mirroring. The drift comparison reads none of it.
+func composedHeader() *lockfile.Lockfile {
+	return &lockfile.Lockfile{Version: 1, Release: "release.yaml", GeneratedAt: "2026-01-01T00:00:00Z"}
 }
 
 // TestComposedLockfileIsHeldToTheBuildsDriftVerify pins the guard a resolution
@@ -70,16 +47,16 @@ func TestComposedLockfileIsHeldToTheBuildsDriftVerify(t *testing.T) {
 	view, releasePath, workspaceRoot, wsCfg = fixtureWorkspace(t)
 	seed, err := PreviewForArtifact(context.Background(),
 		NewPreviewInputs(NoExternalInputs(), view, releasePath, workspaceRoot, wsCfg, "test",
-			WithLockfile(composedFromClosure(walked.Resolved.Closure), false)),
+			WithLockfile(lockfiletest.Mirroring(composedHeader(), walked.Resolved.Closure), false)),
 		pipeline.Options{SkipRender: true})
 	if err != nil {
 		t.Fatalf("reconstruct the fixture's closure: %v", err)
 	}
-	honest := composedFromClosure(seed.Resolved.Closure)
+	honest := lockfiletest.Mirroring(composedHeader(), seed.Resolved.Closure)
 	if len(honest.Entities) == 0 {
 		t.Fatal("the fixture's closure pins no entity, so every row below would compare empty sets")
 	}
-	withdrawn := composedFromClosure(seed.Resolved.Closure)
+	withdrawn := lockfiletest.Mirroring(composedHeader(), seed.Resolved.Closure)
 	withdrawn.Entities = append(withdrawn.Entities, lockfile.Entity{
 		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})

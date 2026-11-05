@@ -296,7 +296,9 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 
 // validateReleaseScope runs the release-scoped semantic-validation pipeline
 // through the shared compiler-operations layer — the same core the CLI validates
-// a Release with — and reports each diagnostic in gate order.
+// a Release with — and reports each diagnostic in gate order. A lockfile beside the
+// Release that no longer matches what it resolves to refuses the call with the
+// drift halt a build raises, before any check runs, as the command refuses it.
 //
 // It takes the resolved response format rather than reading the argument again:
 // the value was read once, where a value outside the declared set is refused, and
@@ -353,6 +355,13 @@ func validateReleaseScope(
 		return tw.answer(errorResult(explainToolError(
 			"Validation could not resolve the Release closure; fix the resolution failure before semantic validation runs.",
 			annotated, refusalKindOr(annotated, closureStageKind(cerr.Stage)))))
+	}
+	// The record loaded at the front door is held to what the Release resolves to,
+	// by the build's drift comparison, as `aggrega validate --release` holds it: a
+	// record that no longer matches refuses the call with the build's drift halt
+	// rather than answering valid over a lockfile the build's drift gate refuses.
+	if err := compilerops.HoldReleaseToLockfile(ctx, view, releasePath, tw.root, tw.cfg, lf); err != nil {
+		return tw.answer(errorResult(explainToolError(lockfileDriftRefusalSummary("Validation did not run"), err, "release")))
 	}
 
 	// The record loaded at this tool's front door is threaded into the validation

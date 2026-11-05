@@ -487,7 +487,9 @@ func renderDescribePublishedText(p describePublishedPayload) string {
 }
 
 // describeRelease resolves a Release's catalog closure and returns a summary of
-// the entities it reaches.
+// the entities it reaches. A lockfile beside the Release that no longer matches
+// what it resolves to refuses the call with the drift halt a build raises, and
+// nothing is described, as `aggrega inspect --closure` refuses it.
 //
 // It takes the resolved response format rather than reading the argument again:
 // the value was read once, where a value outside the declared set is refused, and
@@ -544,6 +546,13 @@ func (s *server) describeRelease(
 	if cerr != nil {
 		return tw.answer(errorResult(explainToolError(
 			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage))))
+	}
+	// The record loaded at the front door is held to what the Release resolves to,
+	// by the build's drift comparison, as `aggrega inspect --closure` holds it: a
+	// closure described over a record the build's drift gate refuses would name
+	// versions no build of this Release uses.
+	if err := compilerops.HoldReleaseToLockfile(ctx, view, releasePath, tw.root, tw.cfg, lf); err != nil {
+		return tw.answer(errorResult(explainToolError(lockfileDriftRefusalSummary("The closure was not described"), err, "release")))
 	}
 
 	detail := format == responseFormatDetailed

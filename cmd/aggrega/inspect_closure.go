@@ -48,7 +48,9 @@ const (
 // A record of pinned versions is read where the workspace has one and the view is
 // seeded with it, so the versions reported are the ones this Release resolves
 // to rather than whatever the catalog happens to hold today. A workspace with no
-// such record resolves over the catalog as it stands.
+// such record resolves over the catalog as it stands. A record that no longer
+// matches what the Release resolves to refuses the listing with the drift halt a
+// build prints, and nothing is listed.
 func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogDirs []string, opts inspectOptions) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
@@ -121,6 +123,13 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		// name an entity that is sitting in a directory this workspace does not
 		// read, so the workspace's own account of where it reads travels too.
 		return compilerops.AnnotateSkipContext(cerr, view.SkippedEntities(), rw.LocalCatalogAdviceNote(releasePath))
+	}
+	// The record of pinned versions is held to what the Release resolves to, by the
+	// build's drift comparison, before anything is listed: a listing over a record
+	// the build's drift gate refuses would name versions no build of this Release
+	// uses. The listing itself is still the closure the walk above computed.
+	if err := compilerops.HoldReleaseToLockfile(ctx, view, releasePath, wsRoot, wsCfg, lf); err != nil {
+		return err
 	}
 
 	renderClosureListing(opts, deprecations, resolved)

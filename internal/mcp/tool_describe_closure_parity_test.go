@@ -34,8 +34,9 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops/compileropstest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
@@ -230,25 +231,28 @@ spec:
         app: {}
 `)
 
-	// The row records the component's own content digest, as a pull would: the
-	// lockfile refuses a row without a well-formed one.
-	lf := &lockfile.Lockfile{
-		Version:     1,
-		Release:     "./app-release.yaml",
-		GeneratedAt: "2026-06-03T10:00:00Z",
-		Entities: []lockfile.Entity{{
-			URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte(svcComponent)),
-		}},
+	// The record of pinned versions describes what this Release resolves to, because
+	// the tool refuses one that does not — the description would name versions no
+	// build of the Release uses. The withdrawal marker sits on the row of the
+	// reference the Aggregate writes, and the comparison reads no marker.
+	//
+	// The view is this package's own resolution of the workspace, pinned to the
+	// lockfile the shared fixture hands it.
+	tw, err := newTestServer(t).resolveToolWorkspace(root, []string{catalogDir})
+	if err != nil {
+		t.Fatalf("resolve the fixture workspace: %v", err)
 	}
-	if withMarker {
-		lf.Entities[0].Deprecation = &lockfile.DeprecationRecord{
+	viewFor := func(lf *lockfile.Lockfile) *catalog.LazyLookup { return tw.newView(releasePath, lf) }
+	compileropstest.WriteMatchingLockfile(t, viewFor, releasePath, tw.root, tw.cfg, func(lf *lockfile.Lockfile) {
+		if !withMarker {
+			return
+		}
+		row := compileropstest.EntityRow(t, lf, "demo/svc:1.0.0")
+		row.Deprecation = &lockfile.DeprecationRecord{
 			Severity: "warning",
 			Message:  "superseded by demo/svc-v2",
 		}
-	}
-	if err := lockfile.WriteLockfile(lockfile.PathFor(releasePath), lf); err != nil {
-		t.Fatalf("WriteLockfile: %v", err)
-	}
+	})
 	return root, catalogDir, releasePath
 }
 

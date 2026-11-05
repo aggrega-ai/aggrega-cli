@@ -868,6 +868,13 @@ func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspa
 // directories declare one identity twice, the first-win notices the resolution
 // raises reach standard error, as they do on a validation.
 //
+// Where that lockfile exists it is held to what the Release resolves to, by the
+// build's drift comparison, and every form that resolves — the
+// dependency closure included — refuses a lockfile that no longer matches with
+// the drift halt a build prints, before anything is written to standard output.
+// The as-authored forms read neither the lockfile nor the catalog, and are not
+// held to it.
+//
 // Release is a resolved instance kind, and two independent choices shape what
 // this writes:
 //
@@ -890,9 +897,10 @@ func renderCatalogMatch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspa
 // command writes afterwards; behind the command's own view it would have to be
 // found first.
 //
-// This function threads opts.out as the output sink and reaches the graph
-// through the compiler's one graph-construction entry, so the picture it draws
-// cannot drift from what a build of the same Release would render.
+// This function threads opts.out as the output sink, reaches the graph through
+// the compiler's one graph-construction entry, and draws nothing over a lockfile
+// the build's drift gate would refuse, so the picture it draws cannot drift from
+// what a build of the same Release would render.
 func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, releasePath string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	// The as-authored selection. --raw is the explicit one; --output yaml is the
 	// same document reached through the format flag, which is what that flag
@@ -1009,8 +1017,11 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// compiles the Release, and its checks are entitled to assume every reference
 	// already resolved: a type no catalog holds would otherwise reach them and be
 	// reported as a disagreement inside the compiler — or, written as a ./ path,
-	// be drawn as though it named something. Beyond its verdict, what is read from
-	// it is the lockfile it loaded beside the Release, which the governance
+	// be drawn as though it named something. The same resolution holds the lockfile
+	// beside the Release to what the Release resolves to, as a build does, so a
+	// lockfile the build would refuse halts here with the build's drift halt rather
+	// than under a picture of the catalog as it stands. Beyond its verdict, what is
+	// read from it is the lockfile it loaded beside the Release, which the governance
 	// composition below reconstructs the transform attachments from, and the view
 	// it pinned with that lockfile, which resolves those attachments' plugins.
 	deps, err := resolveReleaseDependencies(ctx, rw, releasePath, catalogDirs)
