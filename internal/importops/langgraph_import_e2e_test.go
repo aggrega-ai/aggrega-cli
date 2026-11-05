@@ -134,7 +134,7 @@ var langgraphApplications = []struct {
 		app:           "python",
 		paths:         []string{"aggregate.yaml", "release.yaml"},
 		aggregateKeys: []string{"triage", "support", "postgres"},
-		releaseKeys:   []string{"triage", "support"},
+		releaseKeys:   []string{"triage", "support", "postgres"},
 		entrypoints: map[string]string{"triage": "./src/support_desk/triage.py:make_graph",
 			"support": "./src/support_desk/agent.py:graph"},
 		datastore: "postgres", component: "core/datastore/postgres",
@@ -144,7 +144,7 @@ var langgraphApplications = []struct {
 		app:           "envfile",
 		paths:         []string{"aggregate.yaml", "components/imported-datastore-mongodb.yaml", "release.yaml"},
 		aggregateKeys: []string{"researcher", "mongodb"},
-		releaseKeys:   []string{"researcher"},
+		releaseKeys:   []string{"researcher", "mongodb"},
 		entrypoints:   map[string]string{"researcher": "./src/researcher.ts:graph"},
 		datastore:     "mongodb", component: "imported/datastore/mongodb",
 		host: scratchMongoHost, port: "27017",
@@ -159,7 +159,8 @@ var langgraphApplications = []struct {
 // checkpointer's backend, that Component: an instance of core/ai-agent/langgraph
 // per graph, in the order the configuration writes them, carrying its import path
 // as graph_entrypoint and wired on checkpointer_db to the datastore, with no
-// model connection; the Release an entry per graph, leaving its image.
+// model connection; the Release an entry per graph, leaving its image, and one
+// for the datastore, so every instance is placed.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/langgraph-importer/main.go), write
 // `{Path: "graphs", Is: "array"}` in the langgraph.json signature: both rows are

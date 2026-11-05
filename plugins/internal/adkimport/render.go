@@ -191,10 +191,12 @@ func aggregateText(text string) string {
 // naming what the Release supplies — the image running the application, and the
 // credential the instance presents to its model — and the values the tree's
 // configurations hand their tools and their model requests, written as stated or,
-// where the credential decision wrote one empty, with no value. The Release's
-// environment and its Manifest are left unset, each named in a comment where it
-// belongs.
-func renderRelease(name string, apps []*application) string {
+// where the credential decision wrote one empty, with no value; then an entry for
+// each model part, since a build places only the instances a Release names. The
+// Release's environment and its Manifest are left unset, each named in a comment
+// where it belongs. Each importer renders its own Release; the plugin kit
+// renders none.
+func renderRelease(name string, apps []*application, parts []*modelPart) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
 	b.WriteString("kind: Release\n")
@@ -233,6 +235,10 @@ func renderRelease(name string, apps []*application) string {
 			}
 		}
 		b.WriteString("    " + app.key + ":\n")
+		b.WriteString("      infra: {}\n")
+	}
+	for _, p := range parts {
+		b.WriteString("    " + p.key + ":\n")
 		b.WriteString("      infra: {}\n")
 	}
 	return b.String()

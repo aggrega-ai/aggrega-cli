@@ -151,7 +151,7 @@ var crewaiProjects = []struct {
 	{
 		project:       "classic",
 		aggregateKeys: []string{"researcher", "brief-writer", "gpt-4o"},
-		releaseKeys:   []string{"researcher", "brief-writer"},
+		releaseKeys:   []string{"researcher", "brief-writer", "gpt-4o"},
 		agents: []crewAgent{
 			{"researcher", "{topic} Market Researcher\n",
 				"Gather the facts about {topic} a buyer needs before a first meeting\n", false, "DEBUG", "gpt-4o"},
@@ -167,7 +167,7 @@ var crewaiProjects = []struct {
 	{
 		project:       "jsonc",
 		aggregateKeys: []string{"researcher", "analyst", "gpt-4o", "gpt-4o-mini"},
-		releaseKeys:   []string{"researcher", "analyst", "gpt-4o-mini"},
+		releaseKeys:   []string{"researcher", "analyst", "gpt-4o", "gpt-4o-mini"},
 		agents: []crewAgent{
 			{"researcher", "{product} Change Researcher",
 				"Find every change merged into {product} since the last release.", false, "DEBUG", "gpt-4o"},
@@ -183,7 +183,7 @@ var crewaiProjects = []struct {
 	{
 		project:       "json",
 		aggregateKeys: []string{"researcher", "analyst", "gpt-4o", "gpt-4o-mini"},
-		releaseKeys:   []string{"researcher", "analyst", "gpt-4o-mini"},
+		releaseKeys:   []string{"researcher", "analyst", "gpt-4o", "gpt-4o-mini"},
 		agents: []crewAgent{
 			{"researcher", "{product} Change Researcher",
 				"Find every change merged into {product} since the last release.", false, "DEBUG", "gpt-4o"},
@@ -206,8 +206,8 @@ var crewaiProjects = []struct {
 // the declarations write them, carrying its role, goal, allow_delegation and the
 // log_level its verbose maps to, wired on its model socket to an instance of
 // core/ai-model/openai serving the model its llm names; the Release an entry per
-// agent, leaving its image for the Release, and one for a model declared as an llm
-// object. The Aggregate names the files read and a member it does not carry; every
+// agent, leaving its image for the Release, and one per model, so every instance
+// is placed. The Aggregate names the files read and a member it does not carry; every
 // tool and task is reported in a decision choosing nothing, the classic project's
 // search tool carrying the hint naming core/ai-tool/search.
 //

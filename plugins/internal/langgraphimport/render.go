@@ -192,10 +192,12 @@ func aggregateText(text string) string {
 // renderRelease writes the drafted Release, named name and deploying the
 // Aggregate of that name: for each graph, under its key, a comment naming what
 // the Release supplies — the image langgraph build builds — and, above each
-// application's first graph, the environment its configuration states. The
-// Release's environment and its Manifest are left unset, each named in a
-// comment where it belongs.
-func renderRelease(name string, read []*application) string {
+// application's first graph, the environment its configuration states; then an
+// entry for each datastore part, since a build places only the instances a
+// Release names. The Release's environment and its Manifest are left unset, each
+// named in a comment where it belongs. Each importer renders its own Release;
+// the plugin kit renders none.
+func renderRelease(name string, read []*application, parts []*datastorePart) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
 	b.WriteString("kind: Release\n")
@@ -225,6 +227,10 @@ func renderRelease(name string, read []*application) string {
 			b.WriteString("    " + g.key + ":\n")
 			b.WriteString("      infra: {}\n")
 		}
+	}
+	for _, p := range parts {
+		b.WriteString("    " + p.key + ":\n")
+		b.WriteString("      infra: {}\n")
 	}
 	return b.String()
 }

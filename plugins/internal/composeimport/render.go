@@ -195,9 +195,10 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 // the draft writes — the image and the port of an instance of Server — with a
 // comment above it naming what the draft leaves for the Release, what else the
 // source states for the service's operation, and the members it does not
-// carry; then, for each model whose instance is of ModelRuntime, an empty entry
-// under its key. The Release's environment and its Manifest are left unset, each
-// named in a comment where it belongs.
+// carry; then, for each model, of ModelRuntime or drafted, an empty entry under
+// its key. The Release's environment and its Manifest are left unset, each named
+// in a comment where it belongs. Each importer renders its own Release; the
+// plugin kit renders none.
 func renderRelease(name string, read []*project, types map[*service]string) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -217,15 +218,14 @@ func renderRelease(name string, read []*project, types map[*service]string) stri
 			writeService(&b, s, types[s])
 		}
 	}
-	// A build places only the instances a Release names, so each instance of
-	// ModelRuntime, which takes no input on compose without a default, has an
-	// empty entry; a drafted model's instance has none, as its Component carries
-	// no Recipe a build could place it with.
+	// A build places only the instances a Release names, so each model's
+	// instance has an empty entry, an instance of ModelRuntime and a drafted
+	// model's alike: no source states infrastructure for either, and a drafted
+	// model's instance is placed already, so it builds once its author supplies
+	// the Recipe, with no entry to add by hand.
 	for _, p := range read {
 		for _, m := range p.models {
-			if m.referenced {
-				b.WriteString("    " + m.key + ": {}\n")
-			}
+			b.WriteString("    " + m.key + ": {}\n")
 		}
 	}
 	return b.String()

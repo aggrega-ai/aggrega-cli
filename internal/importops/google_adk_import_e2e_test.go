@@ -163,7 +163,7 @@ var googleADKApplications = []googleADKApp{
 		app:           "tutor",
 		subAgents:     []string{"code_tutor_agent.yaml", "math_tutor_agent.yaml"},
 		aggregateKeys: []string{"tutor-root", "gemini-flash-latest"},
-		releaseKeys:   []string{"tutor-root"},
+		releaseKeys:   []string{"tutor-root", "gemini-flash-latest"},
 		key:           "tutor-root",
 		description:   "Learning assistant that tutors {{ students }} in code and math.",
 		part:          "gemini-flash-latest",
@@ -176,7 +176,7 @@ var googleADKApplications = []googleADKApp{
 		app:           "pipeline",
 		subAgents:     []string{"agents/drafter.yaml", "agents/reviewer.yaml"},
 		aggregateKeys: []string{"review-pipeline", "gemini-2-5-flash"},
-		releaseKeys:   []string{"review-pipeline"},
+		releaseKeys:   []string{"review-pipeline", "gemini-2-5-flash"},
 		key:           "review-pipeline",
 		description:   "Drafts a release note, then reviews it against the house style.",
 		part:          "gemini-2-5-flash",
@@ -230,7 +230,8 @@ func handedGoogleADKImport(t *testing.T, app string, settings map[string]any) (R
 // core/ai-agent/google-adk for the tree, carrying its root agent's description,
 // wired on its model socket to an instance of core/ai-model/gemini serving the
 // model the tree names; the Release an entry for the instance, leaving its image
-// for the Release. The Aggregate names the configurations read; every other
+// for the Release, and one for the model, so both are placed. The Aggregate names
+// the configurations read; every other
 // agent and every tool is reported in a decision choosing nothing.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/google-adk-importer/main.go), write

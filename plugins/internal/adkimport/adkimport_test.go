@@ -273,6 +273,56 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 	}
 }
 
+// TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares imports each
+// committed application, and the tutor over a catalog holding no Gemini
+// Component, so its model's Component is drafted, and requires the drafted
+// Release to hold an entry for every instance the drafted Aggregate declares, the
+// model included: a build places only the instances a Release names, so an
+// instance without an entry halts it. The model's entry holds no infrastructure,
+// since no configuration states any. Each importer package holds a test of this
+// name over its own renderer, since each importer renders its own Release and
+// the plugin kit renders none.
+//
+// 🔴 PLANTED DEFECT: in renderRelease (render.go), drop the loop over the model
+// parts: every row fails naming its model.
+func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
+	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
+		{Name: Component, Version: "1.0.0", Labels: map[string]string{categoryLabel: "ai-agent"}},
+	}}
+	for _, row := range []struct {
+		name, model string
+		sources     []aggrega.ImportSource
+		view        *aggrega.CatalogProjection
+	}{
+		{"tutor", "gemini-flash-latest", tutor(t), catalog},
+		{"pipeline", "gemini-2-5-flash", pipeline(t), catalog},
+		{"tutor, its model's Component drafted", "gemini-flash-latest", tutor(t), agentOnly},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			out := importSources(row.view, "", row.sources...)
+			aggregate, _ := drafted(t, out)
+			text := files(out)["release.yaml"]
+			var release draft
+			if err := yaml.Unmarshal([]byte(text), &release); err != nil {
+				t.Fatalf("the drafted Release does not read as YAML: %v\n%s", err, text)
+			}
+			var unplaced []string
+			for key := range aggregate.Spec.Components {
+				if _, named := release.Spec.Components[key]; !named {
+					unplaced = append(unplaced, key)
+				}
+			}
+			if len(unplaced) > 0 {
+				slices.Sort(unplaced)
+				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, text)
+			}
+			if !strings.Contains(text, "    "+row.model+":\n      infra: {}\n") {
+				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.model, text)
+			}
+		})
+	}
+}
+
 // rootName is the name of the root agent of the committed application app.
 func rootName(app string) string {
 	if app == "tutor" {

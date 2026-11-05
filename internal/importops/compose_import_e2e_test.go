@@ -110,11 +110,8 @@ func TestEveryComposeApplicationIsRecognisedAndDraftedAsAnAggregateAndARelease(t
 			if !slices.Equal(aggregateKeys, f.keys) {
 				t.Errorf("the Aggregate holds %v, want %v", aggregateKeys, f.keys)
 			}
-			services := slices.DeleteFunc(slices.Clone(f.keys), func(k string) bool {
-				return slices.Contains([]string{"qwen3", "gemma3", "llm", "embedder", "embed"}, k)
-			})
-			if !slices.Equal(releaseKeys, services) {
-				t.Errorf("the Release holds %v, want the services %v", releaseKeys, services)
+			if !slices.Equal(releaseKeys, f.keys) {
+				t.Errorf("the Release holds %v, want every instance the Aggregate holds, %v", releaseKeys, f.keys)
 			}
 			if f.fixture != "authored/compose.yaml" {
 				return

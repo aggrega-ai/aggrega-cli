@@ -307,6 +307,56 @@ func TestEachCommittedAgentIsDraftedAsOneInstanceWiredToItsModelAndServers(t *te
 	}
 }
 
+// TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares imports each
+// committed declarative agent, and the docs agent over a catalog holding no
+// OpenAI Component, so its model's Component is drafted, and requires the drafted
+// Release to hold an entry for every instance the drafted Aggregate declares, the
+// model included whether or not its connection states an endpoint: a build places
+// only the instances a Release names, so an instance without an entry halts it.
+// The docs agent's model, whose connection states no endpoint, has an entry
+// holding no infrastructure, the Component's own default being its address. Each
+// importer package holds a test of this name over its own renderer, since each
+// importer renders its own Release and the plugin kit renders none.
+//
+// 🔴 PLANTED DEFECT: in writePartEntry (render.go), return with no entry where the
+// connection states no endpoint: the docs agent's rows fail naming openai-model.
+func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
+	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
+		{Name: Component, Version: "1.0.0", Labels: map[string]string{categoryLabel: "ai-agent"}},
+		{Name: mcpimport.Component, Version: "1.0.0", Labels: map[string]string{categoryLabel: "ai-tool",
+			"tool.aggrega.ai/transport": "http"}},
+	}}
+	for _, row := range []struct {
+		name, fixture string
+		view          *aggrega.CatalogProjection
+		// empty is the model part whose entry holds no infrastructure, "" where
+		// the agent has none such.
+		empty string
+	}{
+		{"a model whose connection states an endpoint", "learn-agent.yaml", catalog, ""},
+		{"a model whose connection states none", "docs-agent.yaml", catalog, "openai-model"},
+		{"a model whose Component is drafted", "docs-agent.yaml", agentOnly, "openai-model"},
+		{"no model wired", "research-agent.yaml", catalog, ""},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			d, _, r, release := drafted(t, importFile(row.view, "", fixture(t, row.fixture)))
+			var unplaced []string
+			for key := range d.Spec.Components {
+				if _, named := r.Spec.Components[key]; !named {
+					unplaced = append(unplaced, key)
+				}
+			}
+			if len(unplaced) > 0 {
+				slices.Sort(unplaced)
+				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, release)
+			}
+			if row.empty != "" && !strings.Contains(release, "    "+row.empty+":\n      infra: {}\n") {
+				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.empty, release)
+			}
+		})
+	}
+}
+
 // TestTheProviderDecidesWhetherTheModelIsWired imports one declarative agent per
 // way its model can name its provider and its id, and requires its model wired
 // to an instance of the OpenAI Component where the provider is OpenAI, as Agent

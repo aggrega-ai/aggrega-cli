@@ -259,6 +259,63 @@ func TestAJSONCProjectIsDraftedAsOneAgentPerDeclaration(t *testing.T) {
 	}
 }
 
+// TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares imports the
+// classic project, whose agents name their model as a <provider>/<model> string,
+// the JSON-first project, whose analyst declares an llm object, and the classic
+// project over a catalog holding no OpenAI Component, so its model's Component is
+// drafted, and requires the drafted Release to hold an entry for every instance
+// the drafted Aggregate declares, the models included: a build places only the
+// instances a Release names, so an instance without an entry halts it. A model's
+// entry holds no infrastructure, since no declaration states any. Each importer
+// package holds a test of this name over its own renderer, since each importer
+// renders its own Release and the plugin kit renders none.
+//
+// 🔴 PLANTED DEFECT: in renderRelease (render.go), skip a model part whose llm
+// states no member besides its model: the classic rows fail naming gpt-4o.
+func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
+	t.Parallel()
+	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
+		{Name: Component, Version: "1.0.0", Labels: map[string]string{categoryLabel: "ai-agent"}},
+	}}
+	for _, row := range []struct {
+		name    string
+		sources []aggrega.ImportSource
+		view    *aggrega.CatalogProjection
+		models  []string
+	}{
+		{"a model named as a string", classic(t), catalog, []string{"gpt-4o"}},
+		{"a model declared as an llm object beside one named as a string", jsonc(t), catalog,
+			[]string{"gpt-4o", "gpt-4o-mini"}},
+		{"a model whose Component is drafted", classic(t), agentOnly, []string{"gpt-4o"}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Sources: row.sources, Catalog: row.view}, hostParse)
+			aggregate, _ := drafted(t, out)
+			text := files(out)["release.yaml"]
+			var release draft
+			if err := yaml.Unmarshal([]byte(text), &release); err != nil {
+				t.Fatalf("the drafted Release does not read as YAML: %v\n%s", err, text)
+			}
+			var unplaced []string
+			for key := range aggregate.Spec.Components {
+				if _, named := release.Spec.Components[key]; !named {
+					unplaced = append(unplaced, key)
+				}
+			}
+			if len(unplaced) > 0 {
+				slices.Sort(unplaced)
+				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, text)
+			}
+			for _, model := range row.models {
+				if !strings.Contains(text, "    "+model+":\n      infra: {}\n") {
+					t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", model, text)
+				}
+			}
+		})
+	}
+}
+
 // TestTheStrictJSONSpellingIsReadAsTheJSONCOne imports the project spelled
 // crew.json and agents/<name>.json: it is read as the JSON-first layout is — the
 // agents in the order crew.json lists them, the researcher's settings read, both

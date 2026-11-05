@@ -223,10 +223,11 @@ func aggregateText(text string) string {
 // credential it presents to its model, and the one it presents to each MCP
 // server whose connection presents a key — and the values its declarative agent
 // states for its connections, written as stated or, where the credential
-// decision wrote one empty, with no value; for each model part, the endpoint its
-// connection states; and for each MCP server, its address. The Release's
-// environment and its Manifest are left unset, each named in a comment where it
-// belongs.
+// decision wrote one empty, with no value; for each model part, an entry, with
+// the endpoint its connection states where it states one; and for each MCP
+// server, its address. The Release's environment and its Manifest are left
+// unset, each named in a comment where it belongs. Each importer renders its
+// own Release; the plugin kit renders none.
 func renderRelease(name string, agents []*agent, parts []*modelPart) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -303,11 +304,12 @@ func statedLine(v statedValue) string {
 	return field + ": " + yamlString(v.text.value)
 }
 
-// writePartEntry writes one model part's entry of the Release: the endpoint its
-// connection states as infra.endpoint, or a comment naming the variable it is
-// read from, saying it is computed, or leaving it for the Release where it was
-// written empty. A part whose connection states no endpoint has no entry: the
-// Component's own default is its address.
+// writePartEntry writes one model part's entry of the Release, since a build
+// places only the instances a Release names: the endpoint its connection states
+// as infra.endpoint, or a comment naming the variable it is read from, saying it
+// is computed, or leaving it for the Release where it was written empty. A part
+// whose connection states no endpoint has an entry holding no infrastructure:
+// the Component's own default is its address.
 func writePartEntry(b *strings.Builder, p *modelPart) {
 	e := p.endpointText
 	switch {
@@ -322,8 +324,6 @@ func writePartEntry(b *strings.Builder, p *modelPart) {
 		b.WriteString("    # Left for the Release, since the draft does not write it:\n")
 		b.WriteString("    #   - infra.endpoint, " + emptiedNote + "; until it is set, the Component's default " +
 			"address is used\n")
-	default:
-		return
 	}
 	b.WriteString("    " + p.key + ":\n")
 	if p.endpoint == nil {

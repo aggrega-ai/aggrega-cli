@@ -103,7 +103,7 @@ var agentFrameworkAgents = []struct {
 		unchosen: []string{"LearnAgent#GetRelease", "LearnAgent#search"}},
 	{fixture: "docs-agent.yaml", name: "docs.agent.yaml",
 		aggregateKeys: []string{"docsagent", "openai-model", "team-docs"},
-		releaseKeys:   []string{"docsagent", "team-docs"},
+		releaseKeys:   []string{"docsagent", "openai-model", "team-docs"},
 		key:           "docsagent", part: "openai-model", servers: []string{"team-docs"}},
 	{fixture: "research-agent.yaml", name: "research.yml",
 		aggregateKeys: []string{"researchagent", "github"}, releaseKeys: []string{"researchagent", "github"},
@@ -119,8 +119,8 @@ var agentFrameworkAgents = []struct {
 // model socket to an instance of core/ai-model/openai where its provider is
 // OpenAI and on its tools socket to an instance of core/ai-tool/mcp per MCP
 // server; the Release an entry for the agent, leaving its image for the Release,
-// and one for each part and server it writes an address for. Every other tool is
-// reported in a decision choosing nothing.
+// and one for each model part and each server, so every instance is placed. Every
+// other tool is reported in a decision choosing nothing.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/agent-framework-importer/main.go), write
 // `{Path: "model", Is: "string"}`: every row is refused asking for the format, and

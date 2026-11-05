@@ -15,3 +15,5 @@ spec:
     worker:
       infra:
         image: "ghcr.io/example/worker:1.0.0"
+    llm: {}
+    embed: {}

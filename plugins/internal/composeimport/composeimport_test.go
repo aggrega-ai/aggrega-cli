@@ -912,7 +912,7 @@ func TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt(t *testing.T)
 				"\n    llm:\n      type: " + ModelRuntime + "\n      values:\n        model: \"ai/smollm2\"\n" +
 				"        context_window: 4096\n        runtime_flags:\n          - \"--threads\"\n          - \"4\"\n" +
 				"    embed:\n      type: " + ModelRuntime + "\n      values:\n        model: \"ai/mxbai-embed-large\"\n",
-			release:     golden(t, "release.yaml") + "    llm: {}\n    embed: {}\n",
+			release:     golden(t, "release.yaml"),
 			releaseTail: "    worker:\n      infra:\n        image: \"ghcr.io/example/worker:1.0.0\"\n    llm: {}\n    embed: {}\n",
 			decisions: []wantDecision{
 				{"llm", "model ai/smollm2, context_size 4096, 2 runtime flags", ModelRuntime, "reference",
@@ -954,8 +954,7 @@ func TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt(t *testing.T)
 					t.Errorf("the Aggregate is\n%s\nwant\n%s", aggregate, row.aggregate)
 				}
 				if release := fileContent(t, out, "release.yaml"); release != row.release {
-					t.Errorf("the Release is\n%s\nwant, as over a catalog lacking the runtime with an empty entry per "+
-						"model,\n%s", release, row.release)
+					t.Errorf("the Release is\n%s\nwant, as over a catalog lacking the runtime,\n%s", release, row.release)
 				}
 			} else if !strings.Contains(aggregate, row.aggregate) {
 				t.Errorf("the Aggregate does not hold\n%s\nin\n%s", row.aggregate, aggregate)
@@ -1002,12 +1001,17 @@ func TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt(t *testing.T)
 // model-runtime fixture over a catalog lacking core/ai-model/docker-model-runner,
 // and over no catalog at all: every draft is byte for byte its golden in
 // testdata/model-runtime-lacking, which holds what an import referencing no model
-// drafts — each model a Component of its own — and each model's decision says it
-// is drafted and why: the workspace's catalog holds no
+// drafts — each model a Component of its own, its instance placed by an empty
+// entry of the Release as an instance of the runtime is — and each model's
+// decision says it is drafted and why: the workspace's catalog holds no
 // core/ai-model/docker-model-runner.
 //
 // 🔴 PLANTED DEFECT: in holdsModelRuntime (composeimport.go), return true for a
 // nil catalog: the row naming no catalog references the runtime and fails.
+//
+// 🔴 PLANTED DEFECT: in renderRelease (render.go), write an entry only for a
+// model whose instance is of the runtime: both rows fail on release.yaml, which
+// then places neither drafted model.
 func TestAModelDraftsAsBeforeWhereTheCatalogLacksTheRuntime(t *testing.T) {
 	t.Parallel()
 	const reason = "the workspace's catalog holds no " + ModelRuntime + ", so the model is drafted as "

@@ -59,6 +59,7 @@
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declaration states: each agent's image, which
 // runs the crew's program, and the credential each agent presents to its model.
+// Each model has an entry of its own, so the Release places it with the agents.
 // The Release's environment and its Manifest are left unset, each named in a
 // comment, since no source names either and the import drafts no Manifest.
 //

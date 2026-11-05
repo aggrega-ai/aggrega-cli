@@ -79,8 +79,9 @@
 // leaves for the Release what no declarative agent states: each instance's image,
 // which runs the application and holds its declarative agents, and the
 // credential each presents to its model and to each MCP server whose connection
-// presents a key. The Release's environment and its Manifest are left unset, each
-// named in a comment, since no source names either and the import drafts no
+// presents a key. Each model has an entry of its own, so the Release places it
+// with the instances. The Release's environment and its Manifest are left unset,
+// each named in a comment, since no source names either and the import drafts no
 // Manifest.
 //
 // # Credential values

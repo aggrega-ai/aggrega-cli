@@ -210,7 +210,8 @@ var plantedEnvFileValues = []string{
 // graph_entrypoint, triage its description, wired on checkpointer_db to one
 // instance of core/datastore/postgres, since the checkpointer names no backend;
 // no recursion_limit written and no model connection, each left as the comment
-// above the graph says; and a Release with an entry per graph leaving its image.
+// above the graph says; and a Release with an entry per graph leaving its image,
+// then one for the datastore.
 //
 // 🔴 PLANTED DEFECT: in readGraphs (config.go), range over sortedKeys of the
 // graphs object instead of members: support is drafted before triage, and the
@@ -263,7 +264,7 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 	}
 
 	release := files(out)["release.yaml"]
-	if got, want := componentKeys(t, release), []string{"triage", "support"}; !slices.Equal(got, want) {
+	if got, want := componentKeys(t, release), []string{"triage", "support", "postgres"}; !slices.Equal(got, want) {
 		t.Errorf("the Release holds %v, want %v:\n%s", got, want, release)
 	}
 	if !strings.Contains(release, "#   - infra.image, the container image running the application, which langgraph "+
@@ -280,6 +281,59 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 	}
 	if want := []string{"graph triage", "graph support", "checkpointer checkpointer", "store store"}; !slices.Equal(types, want) {
 		t.Errorf("the decisions are %v, want %v", types, want)
+	}
+}
+
+// TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares imports the
+// python application, whose checkpointer names no backend, over a catalog holding
+// PostgreSQL and over one holding none, so its datastore's Component is drafted,
+// and the envfile application, whose checkpointer names MongoDB, which the
+// catalog does not hold; and requires the drafted Release to hold an entry for
+// every instance the drafted Aggregate declares, the datastore included: a build
+// places only the instances a Release names, so an instance without an entry
+// halts it. The datastore's entry holds no infrastructure, since the
+// configuration states none. Each importer package holds a test of this name
+// over its own renderer, since each importer renders its own Release and the
+// plugin kit renders none.
+//
+// 🔴 PLANTED DEFECT: in renderRelease (render.go), drop the loop over the
+// datastore parts: every row fails naming its datastore.
+func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
+	t.Parallel()
+	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
+		{Name: Component, Version: "1.0.0", Labels: map[string]string{catalogLabel: "ai-agent"}},
+	}}
+	for _, row := range []struct {
+		name, datastore string
+		sources         []aggrega.ImportSource
+		view            *aggrega.CatalogProjection
+	}{
+		{"a datastore the catalog holds", "postgres", python(t), catalog},
+		{"a datastore whose Component is drafted", "postgres", python(t), agentOnly},
+		{"a datastore the configuration names by its backend", "mongodb", envfile(t), catalog},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Sources: row.sources, Catalog: row.view}, hostParse(t))
+			if out.Error != "" {
+				t.Fatalf("the import failed: %s", out.Error)
+			}
+			_, text := drafted(t, out)
+			release := files(out)["release.yaml"]
+			named := componentKeys(t, release)
+			var unplaced []string
+			for _, key := range componentKeys(t, text) {
+				if !slices.Contains(named, key) {
+					unplaced = append(unplaced, key)
+				}
+			}
+			if len(unplaced) > 0 {
+				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, release)
+			}
+			if !strings.Contains(release, "    "+row.datastore+":\n      infra: {}\n") {
+				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.datastore, release)
+			}
+		})
 	}
 }
 

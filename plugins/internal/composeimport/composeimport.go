@@ -69,11 +69,11 @@
 // infra.image and infra.port; and for every service, in a comment above its
 // entry, the image, ports, volumes and environment the source writes and no key
 // of the draft carries, for the author to place where the Component takes them;
-// and an empty entry for each model's instance of ModelRuntime, since a build
-// places only the instances a Release names and the runtime takes no input on
-// compose without a default. A drafted model's instance has no entry. The
-// Release's environment and its Manifest are left unset, each named in a
-// comment, since no source names either and the import drafts no Manifest.
+// and an empty entry for each model's instance, of ModelRuntime or drafted,
+// since a build places only the instances a Release names and no source states
+// infrastructure for a model. The Release's environment and its Manifest are
+// left unset, each named in a comment, since no source names either and the
+// import drafts no Manifest.
 //
 // # Credential values
 //

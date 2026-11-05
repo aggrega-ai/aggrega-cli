@@ -193,10 +193,12 @@ func aggregateText(text string) string {
 // renderRelease writes the drafted Release, named name and deploying the
 // Aggregate of that name: for each agent, under its key, a comment naming what
 // the Release supplies — the image running the crew's program, and the
-// credential the agent presents to its model — and for each model part declared
-// with an llm object, the members of that object, in a comment above its entry.
-// The Release's environment and its Manifest are left unset, each named in a
-// comment where it belongs.
+// credential the agent presents to its model — and for each model part an entry
+// under its key, since a build places only the instances a Release names, with
+// the members of an llm object it is declared with in a comment above it. The
+// Release's environment and its Manifest are left unset, each named in a comment
+// where it belongs. Each importer renders its own Release; the plugin kit
+// renders none.
 func renderRelease(name string, read []*crew, parts []*modelPart) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -227,10 +229,9 @@ func renderRelease(name string, read []*crew, parts []*modelPart) string {
 		}
 	}
 	for _, p := range parts {
-		if len(p.stated) == 0 {
-			continue
+		if len(p.stated) > 0 {
+			b.WriteString("    # The declaration also states, for the Release to carry where " + p.component + " takes it:\n")
 		}
-		b.WriteString("    # The declaration also states, for the Release to carry where " + p.component + " takes it:\n")
 		for _, m := range p.stated {
 			switch {
 			case m.emptied:

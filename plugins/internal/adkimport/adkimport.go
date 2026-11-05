@@ -74,7 +74,8 @@
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
 // for the Release what no configuration states: each instance's image, which runs
 // the application and holds its configurations, and the credential it presents to
-// its model. The Release's environment and its Manifest are left unset, each
+// its model. Each model has an entry of its own, so the Release places it with
+// the instances. The Release's environment and its Manifest are left unset, each
 // named in a comment, since no source names either and the import drafts no
 // Manifest.
 //
@@ -252,7 +253,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 
 	name := namespace + "/flow"
 	aggregate := renderAggregate(name, apps, parts, unread(r, apps))
-	release := renderRelease(name, apps)
+	release := renderRelease(name, apps, parts)
 	out.Entities = append(entities,
 		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
 		aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: release})

@@ -60,8 +60,9 @@
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
 // for the Release each graph's image, which langgraph build builds from the
-// configuration. The Release's environment and its Manifest are left unset, each
-// named in a comment, since no source names either and the import drafts no
+// configuration. Each datastore has an entry of its own, so the Release places
+// it with the graphs. The Release's environment and its Manifest are left unset,
+// each named in a comment, since no source names either and the import drafts no
 // Manifest.
 //
 // # The environment
@@ -260,7 +261,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 
 	name := importer.TargetNamespace(in.Settings) + "/flow"
 	aggregate := renderAggregate(name, read, parts, unread)
-	release := renderRelease(name, read)
+	release := renderRelease(name, read, parts)
 	out.Entities = append(entities,
 		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
 		aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: release})
