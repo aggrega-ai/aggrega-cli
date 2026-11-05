@@ -194,6 +194,54 @@ func anchorSourceToDocument(authored, produced any, documentPath string) (any, e
 	return sourceref.AnchorSource(documentPath, produced)
 }
 
+// publishFeatureRecipeSource evaluates a FeatureRecipe's own source and publishes
+// it at .source on the context the FeatureRecipe's templates render against, and is
+// the one statement of that sequence for both scopes a FeatureRecipe renders in.
+//
+// It does four things, in this order:
+//
+//  1. replaces the source part of withheld with what the FeatureRecipe's own
+//     authored source makes sensitive ([withOwnSource]);
+//  2. evaluates the source through evaluate, handed that replaced set, which is
+//     the one place the two scopes differ — the reference set and the context a
+//     source template reads are each scope's own;
+//  3. anchors what the template produced to document ([anchorSourceToDocument]);
+//  4. sets the anchored value on frCtx.Source.
+//
+// The set is replaced before the evaluation rather than after it so that every
+// template of this render, the source template included, is handed the one set that
+// describes the source this context carries. No source template reads the source
+// it is producing, so the replacement changes nothing that evaluation can report.
+//
+// The value is published unconditionally: a FeatureRecipe declaring no source
+// publishes nil, so its templates read nothing at .source rather than whatever the
+// context carried before — on a per-component attachment's copy, its host's.
+//
+// The caller runs it ahead of the values mapping, as a Recipe's source is
+// published ahead of its own, so every template evaluated on frCtx afterwards reads
+// this value. It returns the anchored value, which is what the render resolves, and
+// the replaced set, which governs every template evaluated afterwards. An error is
+// returned unwrapped from whichever step raised it; the caller positions it.
+func publishFeatureRecipeSource(
+	frCtx *types.TemplateContext,
+	withheld redact.Keys,
+	authored any,
+	document string,
+	evaluate func(withheld redact.Keys) (any, error),
+) (any, redact.Keys, error) {
+	withheld = withOwnSource(withheld, authored)
+	evaluated, err := evaluate(withheld)
+	if err != nil {
+		return nil, withheld, err
+	}
+	evaluated, err = anchorSourceToDocument(authored, evaluated, document)
+	if err != nil {
+		return nil, withheld, err
+	}
+	frCtx.Source = evaluated
+	return evaluated, withheld, nil
+}
+
 // sourceTemplateSurface names the entity surface one source template is evaluated
 // on: the reference set it is checked against already carrying the data it renders
 // against, the resolved locals a .locals reference is checked over, and the entity

@@ -670,11 +670,16 @@ func dispatchBoundaryScopeFR(
 	// is the value the template produced, anchored to the document that declared it.
 	// The locals were resolved onto frCtx by evaluateBoundaryFRTemplates above, so
 	// the template reads the same values this FeatureRecipe's other templates read.
-	evaluatedSource, err := EvaluateBoundaryScopeFeatureRecipeSource(fr.Spec.Source, frCtx, withheld)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("boundary-scope FR %q source", frInstance))
-	}
-	evaluatedSource, err = anchorSourceToDocument(fr.Spec.Source, evaluatedSource, frDocument)
+	//
+	// It is evaluated and published on frCtx by the one sequence both FeatureRecipe
+	// scopes share — see publishFeatureRecipeSource for what it replaces, evaluates,
+	// anchors and sets, and in which order. It runs here rather than immediately
+	// before the values mapping because the resolution below reads what it returns;
+	// nothing between the two evaluates a template on frCtx.
+	evaluatedSource, withheld, err := publishFeatureRecipeSource(frCtx, withheld, fr.Spec.Source, frDocument,
+		func(withheld redact.Keys) (any, error) {
+			return EvaluateBoundaryScopeFeatureRecipeSource(fr.Spec.Source, frCtx, withheld)
+		})
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("boundary-scope FR %q source", frInstance))
 	}

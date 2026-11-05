@@ -949,6 +949,37 @@ func (p *attachmentPass) render(
 		frCtx.Provides = *item.Provides
 	}
 
+	// The document this attachment's FeatureRecipe was declared in: what a
+	// relative source its template produces is resolved against, and what a
+	// diagnostic raised inside its render names as its location. An entity
+	// carrying no document on disk reports none, and both readers treat that as
+	// the absence it is.
+	frDocument := recipeLookup.featureRecipeDocument(fr)
+	// The attachment's source template is evaluated before it is resolved, and
+	// the order is the component path's own: what the render resolves is the
+	// value the template produced, anchored to the document that declared it.
+	// The locals were merged onto frCtx immediately above, so the template reads
+	// the same resolved values every other template of this attachment reads.
+	//
+	// The identity and the instance name are the ones this attachment's locals
+	// were evaluated with, passed through so the two surfaces publish one
+	// denotation of .context.instance_id and .attachment_name.
+	//
+	// The copy was taken from the host's context, whose source pillar the host's
+	// own render has already filled, so this attachment's source is evaluated and
+	// published on the copy here, ahead of the values mapping below, by the one
+	// sequence both FeatureRecipe scopes share — see publishFeatureRecipeSource for
+	// what it replaces, evaluates, anchors and sets, and in which order.
+	evaluatedSource, frKeys, err := publishFeatureRecipeSource(&frCtx, frKeys, fr.Spec.Source, frDocument,
+		func(withheld redact.Keys) (any, error) {
+			return EvaluateFeatureRecipeSource(
+				fr.Spec.Source, item.Instance, nodeID, frCtx.Context.RenderedName, frCtx.Values, frCtx.Infra, frCtx.Locals, withheld,
+			)
+		})
+	if err != nil {
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
+	}
+
 	frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries, frKeys)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
@@ -1042,31 +1073,8 @@ func (p *attachmentPass) render(
 	frNodeCtx.RenderFactSink = func(reported []RenderFact) {
 		state.recordAttachmentRenderFacts(item.Instance, reported)
 	}
-	// The document this attachment's FeatureRecipe was declared in: what a
-	// relative source its template produces is resolved against, and what a
-	// diagnostic raised inside its render names as its location. An entity
-	// carrying no document on disk reports none, and both readers treat that as
-	// the absence it is.
-	frDocument := recipeLookup.featureRecipeDocument(fr)
-	// The attachment's source template is evaluated before it is resolved, and
-	// the order is the component path's own: what the render resolves is the
-	// value the template produced, anchored to the document that declared it.
-	// The locals were merged onto frCtx immediately above, so the template reads
-	// the same resolved values every other template of this attachment reads.
-	//
-	// The identity and the instance name are the ones this attachment's locals
-	// were evaluated with, passed through so the two surfaces publish one
-	// denotation of .context.instance_id and .attachment_name.
-	evaluatedSource, err := EvaluateFeatureRecipeSource(
-		fr.Spec.Source, item.Instance, nodeID, frCtx.Context.RenderedName, frCtx.Values, frCtx.Infra, frCtx.Locals, frKeys,
-	)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
-	}
-	evaluatedSource, err = anchorSourceToDocument(fr.Spec.Source, evaluatedSource, frDocument)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frDocument}, fmt.Sprintf("node %q attachment %q source", nodeID, item.Instance))
-	}
+	// What the render resolves is the value the source template produced above,
+	// the same value this copy publishes at .source.
 	frNodeCtx.OriginalSource = evaluatedSource
 	resolvedSrc, err := resolveEntitySource(input, evaluatedSource, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, frDocument,
 		sourceOrigin{authored: fr.Spec.Source, withheld: frKeys})
@@ -1479,6 +1487,12 @@ func attachmentRenderSequence(
 // it: Phase B.6 does for the templates producing the attachment's own resources,
 // and Phase A's injectMapping, whose output lands on the host's delivery pipe,
 // never does.
+//
+// It leaves .source as the host's context holds it, which is the host's own
+// evaluated source once the host has evaluated one. The attachment's own source is
+// evaluated only where the attachment renders resources of its own, so that render
+// replaces the pillar with it before evaluating any template on the copy; Phase A's
+// injectMapping, evaluated before any attachment's source is, reads the host's.
 //
 // It leaves .boundary as the host's context holds it, which is unset: the boundary
 // view is built only where a boundary-scope FeatureRecipe renders once for its

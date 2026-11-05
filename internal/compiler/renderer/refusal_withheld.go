@@ -212,7 +212,11 @@ func withOwnDeclarations(keys redact.Keys, own map[string]redact.AttachmentKeys,
 // workload and its artifacts.
 //
 // Every pillar the copy carries over from the host is governed as the host's
-// set governs it. The values and infra pillars are the attachment's own, so they
+// set governs it. The source part of the set is the host's, which is what an
+// injectMapping reads, since it runs on the copy before any attachment's source is
+// evaluated; a render that publishes the attachment's own source on its copy
+// replaces that part with the attachment's through [publishFeatureRecipeSource]
+// before any of its templates runs. The values and infra pillars are the attachment's own, so they
 // are governed by the attachment's Feature instead. The locals are the host's
 // resolved block with the FeatureRecipe's own merged over it, so an entry is
 // withheld when either side computed it from a declared datum. The provides the
@@ -226,6 +230,30 @@ func attachmentContextKeys(host redact.Keys, leaves resolver.SensitiveLeaves, fr
 	out.Locals = unionSet(host.Locals, frLocals)
 	out.Provides = unionSet(host.Provides, leaves.Provides)
 	return out
+}
+
+// withOwnSource returns keys governing a context whose source pillar carries the
+// source of the FeatureRecipe that authored source, in place of whatever source the
+// context carried before: the parts of that source whose templates read a datum the
+// rest of keys names.
+//
+// A FeatureRecipe's render context publishes its own evaluated source at .source,
+// on a copy that carried another source there before — the host's, on a
+// per-component attachment — or none. What of the pillar is withheld has to describe
+// the value standing at it, so the set's source coordinates are replaced wherever the
+// value is published — [publishFeatureRecipeSource] does both: kept from the host,
+// they would withhold parts of a source the context no longer carries and leave the
+// parts of the one it does carry unread.
+//
+// The source's templates are read against keys without its source coordinates,
+// since a source template is evaluated before the source it produces is published,
+// so no source stands on its context to be read. A set naming nothing else
+// names no source part either, so this never makes a set withhold anything where it
+// withheld nothing before.
+func withOwnSource(keys redact.Keys, authored any) redact.Keys {
+	keys.Source = nil
+	keys.Source = sourcePartsReadingWithheld(authored, keys)
+	return keys
 }
 
 // hostWithheld is what an author declared sensitive in a host node's render

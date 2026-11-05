@@ -43,9 +43,16 @@ type TemplateContext struct {
 	Inject         *InjectPipe                    `json:"inject,omitempty" yaml:"inject,omitempty"`         // the attachment's own authored delivery pipe
 	InjectRaw      any                            `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
 	Steps          OrderedMap[StepOutput]         `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
-	Source         any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (from source resolution onward); nil for sourceless Recipes
-	Workload       *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (from workload synthesis onward); nil for non-synthesized Recipes
-	Boundary       *BoundaryContext               `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
+	// Source is the evaluated source of the entity whose templates read it. On a
+	// Recipe's templates it is Recipe.Spec.Source, from source resolution onward,
+	// and nil for a Recipe declaring none. On a FeatureRecipe's templates it is
+	// FeatureRecipe.Spec.Source, evaluated before the values mapping and read
+	// there and on every template evaluated after it, never the host component's,
+	// and nil for a FeatureRecipe declaring none. A FeatureRecipe's injectMapping
+	// is evaluated before its source is, and reads the host component's.
+	Source   any              `json:"source,omitempty" yaml:"source,omitempty"`
+	Workload *Workload        `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (from workload synthesis onward); nil for non-synthesized Recipes
+	Boundary *BoundaryContext `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
 
 	// ConnectionAttachments holds the attachments the node's connections carry,
 	// keyed by the name each takes on the node, in the same shape Features holds
