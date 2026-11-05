@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-app-empty-inject-root
+  version: "1.0.0"
+spec:
+  subsystems:
+    svc:
+      components:
+        consumer:
+          type: cov/consumer
+          features:
+            # An empty inject block on the slot whose empty allowlist reserves
+            # delivery to the Recipe. It dictates no delivery, so it is in shape
+            # for the slot. The module fixture beside this one authors the same
+            # component and the same fill inside an imported module, and the
+            # contributed fixture authors the same fill one scope up; all three
+            # are read for one verdict.
+            root_password:
+              type: cov/secret-value
+              inject: {}
+          uses:
+            databases:
+              main:
+                target: store
+        store:
+          type: cov/store

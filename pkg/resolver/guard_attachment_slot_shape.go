@@ -50,11 +50,17 @@ type AttachmentSlotShape struct {
 // a test beside the generator, which is where a regression can be caught before
 // it reaches a build.
 //
-// Exported so the shape of an authored attachment block is validated through one
-// implementation wherever the block is found: on a component instance the
-// Aggregate declares, and on a component that exists only after sub-aggregate
-// flattening. The question is identical; only where the block is read from
-// differs.
+// Exported so the shape of an attachment fill is validated through one
+// implementation wherever this projection is asked: over the block a component
+// that exists only after sub-aggregate flattening authored, and over one fill
+// contributed from a broader scope against the slot it lands on. A component the
+// root Aggregate declares is not asked it: its authored block answers to the
+// attachment envelope, which fixes the keys a fill may carry, and to the
+// delivery-mechanism allowlist rule, which fixes the mechanisms its inject block
+// may name. The projection refuses no fill those two admit and admits no
+// delivery the allowlist rule refuses, and the envelope binds a module's
+// document as it binds the root's, so a fill draws one verdict whichever
+// instrument measures it.
 func CompileAttachmentSlotShape(comp types.Component) (AttachmentSlotShape, bool) {
 	projected := validator.GenerateBaseAttachmentsJSONSchema(comp.Spec.FeaturesSchema)
 	if projected == nil {
@@ -207,16 +213,22 @@ func attachmentShapeErrors(
 		if f.Keyword != "" {
 			msg = fmt.Sprintf("%s (%s)", f.Message, f.Keyword)
 		}
-		// Each slot, and each slot's inject block, is a closed position in this
-		// projection: its additionalProperties is a not-of-empty sub-schema. The
-		// engine recognises that closed form and reports every key the position
-		// does not declare under the keyword additionalProperties, one finding
-		// at that key's own path, and the projection carries no other
-		// additionalProperties — so within THIS schema the keyword means exactly
-		// one thing: the key the field path names is not part of the slot's
-		// declaration. The engine's own wording names the key but no edit, so
-		// say what the author may change.
-		if f.Keyword == "additionalProperties" {
+		// Each slot, and the inject block of a slot declaring an allowlist, is a
+		// closed position in this projection: its additionalProperties is a
+		// not-of-empty sub-schema. The engine recognises that closed form and
+		// reports every key the position does not declare under the keyword
+		// additionalProperties, one finding at that key's own path, and the
+		// projection carries no other additionalProperties. The inject block of
+		// a slot whose allowlist is empty admits only the empty block instead,
+		// through maxProperties, which the projection carries nowhere else and
+		// which the engine reports at the inject key's own path. So within THIS
+		// schema both keywords mean one thing: what the key the field path names
+		// carries is not part of the slot's declaration — for maxProperties, a
+		// delivery block on a slot that permits no delivery — and removing that
+		// key is an edit the schema accepts. The engine's own wording names the
+		// key, or for maxProperties only a count, and no edit, so say what the
+		// author may change.
+		if f.Keyword == "additionalProperties" || f.Keyword == "maxProperties" {
 			msg = slotDeclarationRemedy(f.FieldPath, authored)
 		}
 		errs = append(errs, &ResolverError{

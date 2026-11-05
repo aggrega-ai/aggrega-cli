@@ -1027,7 +1027,7 @@ func attachmentSiteRuleFor(
 // pre-merge fragment.
 //
 // The decision comes from the resolver's compiled slot shape — the same
-// validator the resolution-time guard over an authored block uses — so the two
+// validator the flattened-module guard over an authored block uses — so the two
 // routes cannot diverge on what a slot permits. What differs is only the
 // diagnostic: this one names the component and the slot and points at the scope
 // the attachment was authored at.

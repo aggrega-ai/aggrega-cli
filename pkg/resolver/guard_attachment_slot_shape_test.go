@@ -96,6 +96,62 @@ func TestAttachmentSlotShape_UndeclaredKeyRemedyIsOneTheSchemaAccepts(t *testing
 	}
 }
 
+// TestAttachmentSlotShape_EmptyInjectBlockOnABlackBoxSlotConforms pins the
+// empty block's verdict on a slot whose allowlist is empty, through both entry
+// points the compiled shape offers: an authored block, and one fill contributed
+// from a broader scope. An empty block dictates no delivery, so it says nothing
+// the slot forbids, and the delivery-mechanism allowlist rule a root component's
+// own block answers to admits it too. The mechanism-carrying rows are the
+// counter-case that keeps the empty row from passing on a shape that admits
+// everything.
+func TestAttachmentSlotShape_EmptyInjectBlockOnABlackBoxSlotConforms(t *testing.T) {
+	t.Parallel()
+
+	comp := types.Component{Spec: types.ComponentSpec{FeaturesSchema: orderedSlots(
+		"sealed", types.AttachmentSlot{Inject: []string{}},
+	)}}
+	shape, ok := CompileAttachmentSlotShape(comp)
+	if !ok {
+		t.Fatal("the slot shape must compile for a Component declaring slots")
+	}
+
+	for _, tc := range []struct {
+		name    string
+		inject  *types.InjectBlock
+		conform bool
+	}{
+		{name: "an empty block conforms", inject: &types.InjectBlock{}, conform: true},
+		{name: "no block conforms", inject: nil, conform: true},
+		{name: "a core mechanism does not", inject: &types.InjectBlock{Env: []any{map[string]any{"in": "PW", "from": "value"}}}},
+		{name: "a custom mechanism does not", inject: injectWith("sidecar")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fill := types.FeatureInstance{Type: "acme/secret", Inject: tc.inject}
+			authored := types.OrderedMap[types.FeatureInstance]{}
+			authored.Set("sealed", fill)
+
+			errs := shape.Validate(authored, "app", "web")
+			contributed := shape.ValidateContributedFill("sealed", fill, true, "app", "web", ".spec.subsystems.svc.features.sealed")
+			if tc.conform {
+				if len(errs) != 0 {
+					t.Errorf("authored block: want no finding; got %v", errs)
+				}
+				if contributed != nil {
+					t.Errorf("contributed fill: want no finding; got %v", contributed)
+				}
+				return
+			}
+			if len(errs) != 1 || errs[0].Field != "web.features.sealed.inject" {
+				t.Errorf("authored block: want one finding at web.features.sealed.inject; got %v", errs)
+			}
+			if contributed == nil {
+				t.Error("contributed fill: want a finding; got none")
+			}
+		})
+	}
+}
+
 // TestJoinAlternatives pins the English list form the remedy names the
 // declarable mechanisms in.
 func TestJoinAlternatives(t *testing.T) {

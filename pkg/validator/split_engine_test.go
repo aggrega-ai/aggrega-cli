@@ -109,7 +109,12 @@ func TestGenerateBaseAttachmentsJSONSchema_InjectModelsTheAuthoredShape(t *testi
 	}
 }
 
-func TestGenerateBaseAttachmentsJSONSchema_BlackboxNoInject(t *testing.T) {
+func TestGenerateBaseAttachmentsJSONSchema_BlackboxAdmitsOnlyAnEmptyInjectBlock(t *testing.T) {
+	// A Black-Box slot's empty allowlist permits no delivery mechanism. An
+	// empty inject block dictates none, so it says nothing the slot forbids
+	// and is admitted; a block naming any mechanism is rejected — as one
+	// finding at the inject key itself, where removing the block is the edit.
+	// The marker naming an allowlist stays absent, because there is none.
 	schema := types.OrderedMap[types.AttachmentSlot]{}
 	schema.Set("internal_only", types.AttachmentSlot{Required: true})
 
@@ -118,8 +123,67 @@ func TestGenerateBaseAttachmentsJSONSchema_BlackboxNoInject(t *testing.T) {
 	if _, ok := slot.Extra["x-aggrega-inject"]; ok {
 		t.Errorf("expected no x-aggrega-inject for Black-Box (Inject empty); got %v", slot.Extra)
 	}
-	if _, ok := slot.Properties["inject"]; ok {
-		t.Errorf("expected no inject sub-schema on Black-Box slot")
+	inject := slot.Properties["inject"]
+	if inject == nil {
+		t.Fatal("expected an inject sub-schema on a Black-Box slot admitting the empty block")
+	}
+	if inject.MaxProperties == nil || *inject.MaxProperties != 0 {
+		t.Errorf("expected the Black-Box inject sub-schema to hold no key (maxProperties 0); got %v", inject.MaxProperties)
+	}
+	if len(inject.Properties) != 0 {
+		t.Errorf("expected no mechanism permitted on a Black-Box slot; got %v", inject.Properties)
+	}
+
+	v, err := jsonvalidator.New(out)
+	if err != nil {
+		t.Fatalf("new validator: %v", err)
+	}
+	for _, tc := range []struct {
+		name   string
+		inject map[string]any
+		// wantAtInject is whether the block is rejected. A rejection must sit
+		// at the inject key and reach no deeper, so the mechanism it names is
+		// not reported on its own.
+		wantAtInject bool
+	}{
+		{name: "an empty block is admitted", inject: map[string]any{}},
+		{
+			name:         "a block naming a mechanism is rejected at the inject key",
+			inject:       map[string]any{"env": []any{map[string]any{"in": "PW", "from": "value"}}},
+			wantAtInject: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := map[string]any{"internal_only": map[string]any{"type": "core/secret-value", "inject": tc.inject}}
+			rpt, err := v.Validate(doc, &jsonvalidator.Context{Surround: doc, SkipPredicates: true})
+			if err != nil {
+				t.Fatalf("validate: %v", err)
+			}
+			var paths []string
+			if rpt != nil {
+				for _, f := range rpt.Findings {
+					paths = append(paths, f.FieldPath)
+				}
+			}
+			if !tc.wantAtInject {
+				if len(paths) != 0 {
+					t.Errorf("want the block admitted; got findings at %v", paths)
+				}
+				return
+			}
+			atInject := false
+			for _, p := range paths {
+				if p == "internal_only.inject" {
+					atInject = true
+				}
+				if strings.HasPrefix(p, "internal_only.inject.") {
+					t.Errorf("want the rejection at the inject key and no deeper; got a finding at %q", p)
+				}
+			}
+			if !atInject {
+				t.Errorf("want a finding at internal_only.inject; got %v", paths)
+			}
+		})
 	}
 }
 
@@ -234,7 +298,7 @@ func TestGenerateBaseAttachmentsJSONSchema_OptionalSlotStillConstrainsShape(t *t
 	// The permitted key set mirrors the attachment shape the entity schemas
 	// admit: a key legal on a free attachment stays legal on a slot fill, or
 	// wiring the projection would reject authoring the envelope allows.
-	for _, want := range []string{"type", "description", "values", "uses"} {
+	for _, want := range []string{"type", "description", "values", "uses", "inject"} {
 		if _, ok := slot.Properties[want]; !ok {
 			t.Errorf("expected optional slot to permit %q", want)
 		}
@@ -259,8 +323,8 @@ func TestGenerateBaseAttachmentsJSONSchema_SensitiveSlotCarriesTheMarker(t *test
 			t.Errorf("%s: expected x-aggrega-sensitive=true; got %v (%T) in %v", name, got, got, slot.Extra)
 		}
 	}
-	// A sensitive Black-Box slot still gets the marker and still gets no
-	// inject property — the two declarations are independent.
+	// A sensitive Black-Box slot still gets the marker and still carries no
+	// inject allowlist — the two declarations are independent.
 	if _, ok := out.Properties["blackbox_key"].Extra["x-aggrega-inject"]; ok {
 		t.Errorf("Black-Box slot must carry no inject allowlist; got %v", out.Properties["blackbox_key"].Extra)
 	}

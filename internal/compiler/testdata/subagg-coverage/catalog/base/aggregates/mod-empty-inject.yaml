@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-mod-empty-inject
+  version: "1.0.0"
+spec:
+  components:
+    consumer:
+      type: cov/consumer
+      uses:
+        databases:
+          main:
+            target: store
+      features:
+        # The same fill the root fixture authors, inside a module the root
+        # Aggregate imports: an empty inject block on the slot whose empty
+        # allowlist reserves delivery to the Recipe.
+        root_password:
+          type: cov/secret-value
+          inject: {}
+    store:
+      type: cov/store

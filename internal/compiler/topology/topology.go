@@ -1049,7 +1049,9 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 // resolver's exported validators rather than restated, because the only thing
 // that differs for a sub-aggregate component is where its declaration is read
 // from. A rule asked of root components and not of these would make the coverage
-// of a check depend on how deep the author nested the component.
+// of a check depend on how deep the author nested the component. The attachment
+// slot shape is the one asked through a different instrument, and the call site
+// below states why its verdict is nonetheless the resolve's.
 //
 // Both component pillars are asked, and each names the document whose author
 // wrote it: the Aggregate for the configuration a component declares, the
@@ -1085,7 +1087,7 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	var errs []*resolver.ResolverError
 	for nodeID, node := range flat.Nodes.All() {
 		if node.SourceAggregate == "" {
-			continue // root / subsystem components are guarded during resolution
+			continue // the root Aggregate's components are guarded during resolution
 		}
 		// What the module's component declares — its attachments, its values, the
 		// values on its own connections — is written in the module's own document,
@@ -1134,6 +1136,15 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// The attachments live on the per-node slice flattening collected, not on
 		// the node, so they are re-projected into the authored map shape the
 		// validator reads.
+		//
+		// This is the one rule here asked through a different instrument from the
+		// resolve's. A root component's authored block answers to the attachment
+		// envelope and to the delivery-mechanism allowlist rule; this block
+		// answers to the envelope and to the slot projection. The projection is
+		// built to reach the verdict those reach — an empty inject block on a slot
+		// permitting no delivery is admitted by both, a block naming a mechanism
+		// the slot does not permit refused by both — which is what keeps this
+		// surface from being stricter than the one it was flattened from.
 		if shape, ok := resolver.CompileAttachmentSlotShape(catComp); ok {
 			errs = append(errs, shape.ValidateAt(
 				authoredAttachments(flat.FeatureAttachments[nodeID]),

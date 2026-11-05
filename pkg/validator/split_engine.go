@@ -24,6 +24,28 @@ func jsonSchemaFalse() *jsonschema.Schema {
 	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
 
+// injectBlockSchema returns the `inject` sub-schema of a slot declaring the
+// given allowlist: a closed object permitting exactly the allowlisted
+// mechanisms, or, for an empty allowlist, an object holding no key at all.
+// Why the two take different forms is stated on
+// [GenerateBaseAttachmentsJSONSchema]. Each call builds fresh nodes, for the
+// reason jsonSchemaFalse is a function.
+func injectBlockSchema(allowlist []string) *jsonschema.Schema {
+	if len(allowlist) == 0 {
+		none := 0
+		return &jsonschema.Schema{Type: "object", MaxProperties: &none}
+	}
+	mechanisms := make(map[string]*jsonschema.Schema, len(allowlist))
+	for _, mech := range allowlist {
+		mechanisms[mech] = &jsonschema.Schema{Type: "array"}
+	}
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Properties:           mechanisms,
+		AdditionalProperties: jsonSchemaFalse(),
+	}
+}
+
 // GenerateBaseAttachmentsJSONSchema builds a JSON Schema 2020-12
 // sub-schema from a component/feature featuresSchema map, describing
 // the SHAPE of an attachment block: each slot becomes a property whose
@@ -50,20 +72,31 @@ func jsonSchemaFalse() *jsonschema.Schema {
 // decisions at two depths; opening the parent does not relax the slots.
 //
 // The slot sub-schema's permitted keys mirror the attachment shape the
-// entity schemas admit — `type`, `description`, `values`, `uses`, plus
-// `inject` when the slot declares an allowlist — so a key that is legal
-// on a free attachment stays legal on a slot fill.
+// entity schemas admit — `type`, `description`, `values`, `uses` and
+// `inject` — so a key that is legal on a free attachment stays legal on a
+// slot fill.
+//
+// The `inject` sub-schema constrains the mechanism NAMES a fill may
+// dictate and nothing more. On a slot declaring an allowlist it is a
+// closed object whose properties are exactly the allowlisted mechanisms,
+// each permitted mechanism's value left as a bare array, because the
+// delivery-entry shape is the entity schema's contract and restating it
+// here would be a second home for one rule. On a slot whose allowlist is
+// empty (Black-Box) it admits only the empty block: an `inject: {}`
+// dictates no delivery, so it says nothing the slot forbids, while a
+// block naming any mechanism dictates delivery for material the Recipe
+// consumes internally and is rejected. The empty block is written as
+// `maxProperties: 0` rather than as a closed object so that rejection
+// lands on the `inject` key itself, where removing the block is the edit,
+// rather than on each mechanism inside it. On both kinds of slot the
+// accept-or-reject verdict is the one the delivery-mechanism allowlist rule
+// gives a component's own authored block at resolution, which counts a
+// mechanism as dictated when its key is present — so a fill is not judged
+// more strictly for sitting inside a composed module.
 //
 // Extension keywords, both metadata-only. `x-aggrega-inject` (when the
-// slot supplies an Inject allowlist) carries the list of permitted
-// mechanism strings on the slot's sub-schema. The inject sub-schema
-// constrains the mechanism NAMES to that allowlist and nothing more —
-// each permitted mechanism's value is left as a bare array, because the
-// delivery-entry shape is the entity schema's contract and restating it
-// here would be a second home for one rule. A slot whose allowlist is
-// empty (Black-Box) emits no `inject` property, so the closed sub-schema
-// rejects a fill that dictates delivery for material the Recipe
-// consumes internally.
+// slot supplies a non-empty Inject allowlist) carries the list of
+// permitted mechanism strings on the slot's sub-schema.
 //
 // `x-aggrega-sensitive` (when the slot declares Sensitive) carries the
 // slot author's claim that whatever binds this slot handles secret
@@ -96,10 +129,11 @@ func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.Att
 				"description": {Type: "string"},
 				"values":      {Type: "object"},
 				"uses":        {Type: "object"},
+				"inject":      injectBlockSchema(slot.Inject),
 			},
 			AdditionalProperties: jsonSchemaFalse(),
 		}
-		slotSchema.PropertyOrder = []string{"type", "description", "values", "uses"}
+		slotSchema.PropertyOrder = []string{"type", "description", "values", "uses", "inject"}
 
 		// slotSchema.Required is the slot-INTERNAL requirement — the fill's
 		// own map must name the Feature it attaches. It is the only meaning
@@ -116,16 +150,6 @@ func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.Att
 		}
 
 		if len(slot.Inject) > 0 {
-			injectProps := map[string]*jsonschema.Schema{}
-			for _, mech := range slot.Inject {
-				injectProps[mech] = &jsonschema.Schema{Type: "array"}
-			}
-			slotSchema.Properties["inject"] = &jsonschema.Schema{
-				Type:                 "object",
-				Properties:           injectProps,
-				AdditionalProperties: jsonSchemaFalse(),
-			}
-			slotSchema.PropertyOrder = append(slotSchema.PropertyOrder, "inject")
 			extra["x-aggrega-inject"] = append([]string(nil), slot.Inject...)
 		}
 
