@@ -1,7 +1,7 @@
 entities:
     - uri: core/prometheus-exporter
       resolved_version: 1.0.0
-      digest: sha256:55d0cecadaec91928415330b576cab188d1c7c87e0764cd9014480c2e85de8ef
+      digest: sha256:5168a479964a8ff299b3be07c360fe84604de76418329f85019d0d19147c2be9
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: example/compute/service
