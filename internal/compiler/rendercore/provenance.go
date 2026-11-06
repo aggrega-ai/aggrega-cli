@@ -131,61 +131,125 @@ func ContributorNameBasis(nodeID, derivedNameBasis string) string {
 	return nodeID
 }
 
+// fittedProvenanceEntry is one compiler-owned provenance entry whose source value
+// is not a label value by construction: its key and the value as the build holds
+// it.
+type fittedProvenanceEntry struct {
+	key   string
+	value string
+}
+
+// fittedProvenanceEntries returns the compiler-owned provenance entries whose
+// value is written into a label only in the form a label admits. Each is a
+// string the build carries from an authored or reported source that does not
+// hold it to the label rules: a Release's environment is any string, an
+// Aggregate's name may hold `/`, a version may hold a `+` or, for a development
+// build, parentheses.
+//
+// The returned slice IS the list of those entries, and no comment anywhere
+// enumerates them: a prose copy beside the structure would go stale silently the
+// day an entry is added. Both builders read this one list, so the entries whose
+// label value is fitted and the entries whose verbatim value moves to an
+// annotation cannot come to differ.
+func fittedProvenanceEntries(nodeCtx NodeRenderContext) []fittedProvenanceEntry {
+	return []fittedProvenanceEntry{
+		{key: "aggrega.ai/provider", value: nodeCtx.ProviderName},
+		{key: "aggrega.ai/provider-version", value: nodeCtx.ProviderVersion},
+		{key: "aggrega.ai/compiler-version", value: nodeCtx.Provenance.CompilerVersion},
+		{key: "aggrega.ai/aggregate-name", value: nodeCtx.Provenance.AggregateName},
+		{key: "aggrega.ai/environment", value: nodeCtx.Provenance.Environment},
+	}
+}
+
+// fitProvenanceLabelValue returns v unchanged when it already satisfies the
+// Kubernetes label-value rules, and [labels.SanitizeForK8sLabelValue] of v
+// otherwise.
+//
+// The rules come from two homes, each the one that already holds them. The
+// length, [labelValueMaxLength], is a Kubernetes target's limit and stays here
+// beside the writer of every label value. The character and edge rules are read
+// through [labels.SatisfiesLabelValueCharacterRules], from the package that holds
+// the repair, so the test and the repair cannot disagree about what is valid.
+// The repair branch cuts at the sanitiser's own limit, the same number held
+// privately in that package; this function's unit test fails if the two part.
+//
+// The unchanged branch is the point of the function rather than a shortcut: the
+// sanitiser collapses runs of hyphens, which a valid label value may carry, so
+// sanitising unconditionally would rename a value that needed no repair. A caller
+// tells whether v was rewritten by comparing the result with v. The result is ""
+// when v is empty, and when v holds no character the sanitiser keeps.
+func fitProvenanceLabelValue(v string) string {
+	if len(v) <= labelValueMaxLength && labels.SatisfiesLabelValueCharacterRules(v) {
+		return v
+	}
+	return labels.SanitizeForK8sLabelValue(v)
+}
+
 // BuildAggregaProvenanceLabels produces the label-safe `aggrega.ai/*` + standard
 // recommended-label set for every emitted manifest whose document carries a
-// metadata block. Only values that satisfy the Kubernetes label-value charset
-// live here: the sanitised component-id (both `app.kubernetes.io/name` and
-// `aggrega.ai/component-id`), the resolved provider name / provider-version, and
-// the conditional aggregate-name / environment /
-// compiler-version entries. The charset-unsafe provenance (recipe-uri,
+// metadata block. Every value here satisfies the Kubernetes label-value rules:
+// the component-id (both `app.kubernetes.io/name` and `aggrega.ai/component-id`),
+// which is a label value by construction, and each compiler-owned entry whose
+// source value is not a label value by construction, read from
+// [fittedProvenanceEntries].
+//
+// Each of those entries carries its value as written when the value already
+// satisfies the label rules, and otherwise the value [fitProvenanceLabelValue]
+// rewrites it into — so an Aggregate named `imported/flow` is labelled
+// `imported-flow`. A rewritten entry's verbatim value is carried under the same
+// key by [BuildAggregaProvenanceAnnotations], so the build records the exact name
+// whenever the label cannot. An entry whose value holds no character a label
+// keeps is not written as a label at all, and its verbatim value is carried in
+// the annotation the same way. The provenance a label never carries (recipe-uri,
 // boundary-path, sync-wave) lives in annotations via
 // [BuildAggregaProvenanceAnnotations].
 //
 // This is the single implementation shared by the helm and helm-chart engines
-// and the artifacts emitter — one charset-split + sanitised-component-id source,
-// so the partition and the component-id value are identical across all three.
-// (The compose engine keeps the whole set as service labels: its label values
-// are unconstrained and it has no annotation concept.)
+// and the artifacts emitter — one charset-split + component-id source, so the
+// partition and every label value are identical across all three. A target
+// with no label-value rules and no annotation concept folds the two halves
+// through [FoldProvenanceSet], where the annotation's verbatim value replaces a
+// rewritten label value under the shared key.
 //
 // The returned set is the compiler-owned provenance keys plus the recipe's
 // author-owned output labels (nodeCtx.OutputLabels) — both the keys written
 // literally on the recipe and the ones it promotes from the node's component
-// labels. All of them are disjoint from the provenance keys by construction:
-// load-time validation applies one reserved-namespace test to both blocks and
-// rejects any key under the aggrega.ai/ or app.kubernetes.io/ prefixes, so the
-// merge overwrites nothing. Every emitting surface sorts keys, so merge order is
-// not observable.
+// labels. Output labels are carried as authored, values included. All of them
+// are disjoint from the provenance keys by construction: load-time validation
+// applies one reserved-namespace test to both blocks and rejects any key under
+// the aggrega.ai/ or app.kubernetes.io/ prefixes, so the merge overwrites
+// nothing. Every emitting surface sorts keys, so merge order is not observable.
 func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 	componentID := ProvenanceComponentID(nodeCtx)
-	labels := map[string]string{
+	out := map[string]string{
 		"app.kubernetes.io/name":  componentID,
 		"aggrega.ai/component-id": componentID,
 	}
-	if nodeCtx.ProviderName != "" {
-		labels["aggrega.ai/provider"] = nodeCtx.ProviderName
-	}
-	if nodeCtx.ProviderVersion != "" {
-		labels["aggrega.ai/provider-version"] = nodeCtx.ProviderVersion
-	}
-	if nodeCtx.Provenance.CompilerVersion != "" {
-		labels["aggrega.ai/compiler-version"] = nodeCtx.Provenance.CompilerVersion
-	}
-	if nodeCtx.Provenance.AggregateName != "" {
-		labels["aggrega.ai/aggregate-name"] = nodeCtx.Provenance.AggregateName
-	}
-	if nodeCtx.Provenance.Environment != "" {
-		labels["aggrega.ai/environment"] = nodeCtx.Provenance.Environment
+	for _, e := range fittedProvenanceEntries(nodeCtx) {
+		if e.value == "" {
+			continue
+		}
+		if fitted := fitProvenanceLabelValue(e.value); fitted != "" {
+			out[e.key] = fitted
+		}
 	}
 	for k, v := range nodeCtx.OutputLabels {
-		labels[k] = v
+		out[k] = v
 	}
-	return labels
+	return out
 }
 
-// BuildAggregaProvenanceAnnotations produces the charset-unsafe `aggrega.ai/*`
-// annotation set — values a Kubernetes label cannot represent (recipe-uri's
-// ":", boundary-path's "/", a negative sync-wave's leading "-") — so an emitted
-// manifest carries valid labels and full-fidelity provenance in annotations.
+// BuildAggregaProvenanceAnnotations produces the `aggrega.ai/*` annotation set —
+// provenance a Kubernetes label cannot represent — so an emitted manifest
+// carries valid labels and full-fidelity provenance in annotations. It holds the
+// values no label carries (recipe-uri's ":", boundary-path's "/", a negative
+// sync-wave's leading "-"), and, under the same key as its label, the verbatim
+// value of each compiler-owned entry whose source value is not a label value by
+// construction ([fittedProvenanceEntries]) and whose label value
+// [BuildAggregaProvenanceLabels] had to rewrite or omit. An entry whose value is
+// already a label value is carried by the label alone, so a build whose values
+// all satisfy the label rules gains no annotation from them.
+//
 // recipeURI is passed in so the helper stays engine-agnostic: the helm and
 // helm-chart engines assemble it from nodeCtx via [ProvenanceRecipeURIFromNodeCtx];
 // the artifacts emitter assembles it from PhaseBState via [recipeURI]. An empty
@@ -194,6 +258,11 @@ func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 // wave is non-zero. Each entry elides on its default.
 func BuildAggregaProvenanceAnnotations(nodeCtx NodeRenderContext, recipeURI string) map[string]string {
 	annotations := map[string]string{}
+	for _, e := range fittedProvenanceEntries(nodeCtx) {
+		if e.value != "" && fitProvenanceLabelValue(e.value) != e.value {
+			annotations[e.key] = e.value
+		}
+	}
 	if nodeCtx.BoundaryPath != "" {
 		annotations["aggrega.ai/boundary-path"] = nodeCtx.BoundaryPath
 	}
@@ -233,6 +302,11 @@ var KubernetesOnlyProvenanceKeys = []string{
 // one copy per provider. Adding a key to either shared builder therefore reaches
 // all of them at once.
 //
+// The annotations are applied second, and the order is the contract rather than
+// an accident: where a label's value had to be rewritten to satisfy the label
+// rules, the annotation half carries the verbatim value under the same key, so
+// the folded set records the value as the build holds it.
+//
 // The result is a fresh map because a caller does not necessarily own its inputs:
 // an artifacts placer is handed the key sets the host computed for one projection
 // entry, and folding in place would leave one entry's stamp on the next entry of
@@ -261,13 +335,15 @@ func FoldProvenanceSet(labels, annotations map[string]string) map[string]string 
 // Every key and value is drawn from the shared [BuildAggregaProvenanceLabels]
 // and [BuildAggregaProvenanceAnnotations] builders — the same source the
 // Kubernetes label and annotation surfaces use — so the formatter re-lists no
-// key literals of its own. Only `aggrega.ai/*` keys are kept; the
-// Kubernetes-runtime-specific keys those builders also produce
-// (app.kubernetes.io/name, argocd.argoproj.io/sync-wave) carry no meaning in a
-// Terraform config and are filtered out by the prefix. The retained set is the
+// key literals of its own. Only `aggrega.ai/*` keys are kept: the
+// Kubernetes-runtime-specific keys those builders also produce carry no meaning
+// in a Terraform config and the fold drops them, and the prefix leaves out the
+// recipe's author-owned output labels. The retained set is the
 // cross-provider identity: provider, provider-version, component-id,
 // compiler-version, aggregate-name, environment, boundary-path, recipe-uri, and
-// sync-wave, each present only when its source value is set.
+// sync-wave, each present only when its source value is set. The two halves are
+// combined by [FoldProvenanceSet], so the value recorded under each key is the
+// one that fold's contract names.
 //
 // recipeURI is passed through to the annotation builder exactly as the
 // annotation surface receives it — the host artifacts path sources it from its per-node
@@ -280,13 +356,10 @@ func FoldProvenanceSet(labels, annotations map[string]string) map[string]string 
 // stand-in for lost ordering: given identical input the block is byte-identical
 // across runs, with no wall-clock or external state read (Deterministic Output).
 func FormatTerraformProvenanceComment(nodeCtx NodeRenderContext, recipeURI string) []byte {
-	fields := map[string]string{}
-	for k, v := range BuildAggregaProvenanceLabels(nodeCtx) {
-		fields[k] = v
-	}
-	for k, v := range BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI) {
-		fields[k] = v
-	}
+	fields := FoldProvenanceSet(
+		BuildAggregaProvenanceLabels(nodeCtx),
+		BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI),
+	)
 
 	keys := make([]string, 0, len(fields))
 	for k := range fields {

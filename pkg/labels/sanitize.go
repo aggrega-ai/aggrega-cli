@@ -62,10 +62,12 @@ import "strings"
 //
 // The case the fold cannot damage is a label value carrying a single authored
 // name that is already unique within the document naming it, where there are no
-// parts to compose and nothing a separator could straddle. No component identity
-// is of that shape: an identity an author wrote is carried through unmodified
-// and held to the label rules by refusal, and every identity the compiler
-// derives is composed from its parts.
+// parts to compose and nothing a separator could straddle — or one whose
+// verbatim form travels beside it, so the folded value is a readable label and
+// never the only record of the name. No component identity is of that shape: an
+// identity an author wrote is carried through unmodified and held to the label
+// rules by refusal, and every identity the compiler derives is composed from its
+// parts.
 //
 // Returns "" when s is empty or when sanitization removes every
 // character (e.g., a string of only invalid characters).

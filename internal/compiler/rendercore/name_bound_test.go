@@ -43,29 +43,29 @@ func TestComponentIDLabelVerdict_JudgesTheValueThatWillBeStamped(t *testing.T) {
 	}{
 		{
 			name:     "an authored qualified identity whose written form is exactly the limit is usable",
-			proposed: qualifiedOf(componentIDLabelMaxLength - 2),
+			proposed: qualifiedOf(labelValueMaxLength - 2),
 			authored: true,
 			usable:   true,
 		},
 		{
 			name:     "an authored qualified identity one byte longer is refused, at the measured bound",
-			proposed: qualifiedOf(componentIDLabelMaxLength - 1),
+			proposed: qualifiedOf(labelValueMaxLength - 1),
 			authored: true,
 			usable:   false,
-			bound:    componentIDLabelMaxLength - 2,
+			bound:    labelValueMaxLength - 2,
 		},
 		{
 			name:     "an authored identity carrying no join is measured as proposed",
-			proposed: strings.Repeat("a", componentIDLabelMaxLength),
+			proposed: strings.Repeat("a", labelValueMaxLength),
 			authored: true,
 			usable:   true,
 		},
 		{
 			name:     "an authored identity carrying no join is refused at the limit itself",
-			proposed: strings.Repeat("a", componentIDLabelMaxLength+1),
+			proposed: strings.Repeat("a", labelValueMaxLength+1),
 			authored: true,
 			usable:   false,
-			bound:    componentIDLabelMaxLength,
+			bound:    labelValueMaxLength,
 		},
 		{
 			// The composed form opens with its scope behind a two-hyphen join, and
@@ -73,16 +73,16 @@ func TestComponentIDLabelVerdict_JudgesTheValueThatWillBeStamped(t *testing.T) {
 			// becoming seven. Judging it verbatim is what keeps one identity spelled
 			// one way, and this row goes red the day both branches are written.
 			name:     "a composed identity is judged verbatim, however it would write",
-			proposed: "bfr--" + strings.Repeat("a", componentIDLabelMaxLength-5),
+			proposed: "bfr--" + strings.Repeat("a", labelValueMaxLength-5),
 			authored: false,
 			usable:   true,
 		},
 		{
 			name:     "a composed identity over the limit is refused at the limit itself",
-			proposed: "bfr--" + strings.Repeat("a", componentIDLabelMaxLength-4),
+			proposed: "bfr--" + strings.Repeat("a", labelValueMaxLength-4),
 			authored: false,
 			usable:   false,
-			bound:    componentIDLabelMaxLength,
+			bound:    labelValueMaxLength,
 		},
 		{
 			name:     "an empty identity is nothing to refuse",
@@ -133,12 +133,12 @@ func TestComponentIDLabelVerdict_JudgesTheValueThatWillBeStamped(t *testing.T) {
 func TestComponentIDLabelVerdict_TheLimitAloneWouldNotHaveCaughtTheAuthoredCase(t *testing.T) {
 	t.Parallel()
 
-	proposed := "documents." + strings.Repeat("a", componentIDLabelMaxLength-1-len("documents."))
-	if len(proposed) > componentIDLabelMaxLength {
+	proposed := "documents." + strings.Repeat("a", labelValueMaxLength-1-len("documents."))
+	if len(proposed) > labelValueMaxLength {
 		t.Fatalf("the case needs an identity inside the limit as proposed; this one is %d", len(proposed))
 	}
 	stamped := labels.EncodeNodeIdentity(proposed)
-	if len(stamped) <= componentIDLabelMaxLength {
+	if len(stamped) <= labelValueMaxLength {
 		t.Fatalf("the case needs a stamped value outside the limit; %q is %d", stamped, len(stamped))
 	}
 
@@ -152,9 +152,9 @@ func TestComponentIDLabelVerdict_TheLimitAloneWouldNotHaveCaughtTheAuthoredCase(
 	}
 	// The measured bound and the limit are DIFFERENT numbers here, and reporting the
 	// limit would send an author to a length that is refused again.
-	if *got.Bound == componentIDLabelMaxLength {
+	if *got.Bound == labelValueMaxLength {
 		t.Errorf("the stated bound is the limit itself; an identity of %d is stamped as %d and refused again",
-			componentIDLabelMaxLength, len(labels.EncodeNodeIdentity(proposed[:componentIDLabelMaxLength])))
+			labelValueMaxLength, len(labels.EncodeNodeIdentity(proposed[:labelValueMaxLength])))
 	}
 	for _, want := range []string{"at most 63", "of 62", "stamped as 64"} {
 		if !strings.Contains(got.Reason, want) {

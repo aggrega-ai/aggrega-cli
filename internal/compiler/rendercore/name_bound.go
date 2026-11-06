@@ -16,18 +16,21 @@ import (
 // writes it.
 const ComponentIDLabelKind = "component-id label value"
 
-// componentIDLabelMaxLength is the longest string Kubernetes accepts as a label
-// value.
+// labelValueMaxLength is the longest string Kubernetes accepts as a label value.
+// It bounds every label value the provenance label builder writes: the
+// component identity, judged by [ComponentIDLabelVerdict], and every other
+// provenance value, fitted by [fitProvenanceLabelValue].
 //
-// It sits here, beside [BuildAggregaProvenanceLabels], because this is the one
-// place that writes a component identity into a Kubernetes label — so the rule
-// and the write are one thing that cannot drift apart. It is deliberately NOT in
-// the compiler's identity package: a number there would be one target's limit
+// It sits here, beside [BuildAggregaProvenanceLabels], because that builder is
+// the one place that writes those values into a Kubernetes label — so the rule
+// and the write are one thing that cannot drift apart. It is deliberately NOT a
+// rule of the compiler's identity package — whose sanitiser cuts at the same
+// number privately, as part of its repair — because a rule there would be one target's limit
 // applied to every target, including the targets that impose none, and a
 // compiler that holds a target's limits is a compiler that has learned something
 // about a target it renders for. What the compiler holds instead is whatever a
 // guest answers, and this is a guest's answer.
-const componentIDLabelMaxLength = 63
+const labelValueMaxLength = 63
 
 // ComponentIDLabelVerdict judges a proposed component identity as the value of
 // the component-id label every manifest a Kubernetes-emitting guest renders
@@ -86,19 +89,19 @@ func ComponentIDLabelVerdict(proposed string, authored bool) DerivedNameVerdict 
 	if authored {
 		stamped = labels.EncodeNodeIdentity(proposed)
 	}
-	if n := len(stamped); n > componentIDLabelMaxLength {
-		bound := componentIDLabelMaxLength
+	if n := len(stamped); n > labelValueMaxLength {
+		bound := labelValueMaxLength
 		reason := fmt.Sprintf("a label value is at most %d characters and this identity is %d",
-			componentIDLabelMaxLength, n)
+			labelValueMaxLength, n)
 		// Only where writing the identity actually changed it are two lengths worth
 		// reporting, and only there is the limit the wrong bound to state. Read from
 		// the two values rather than from the flag, so an authored identity that is
 		// written as authored — every ordinary name — gets the plainer answer.
 		if stamped != proposed {
-			bound = labels.NodeIdentityBound(proposed, componentIDLabelMaxLength)
+			bound = labels.NodeIdentityBound(proposed, labelValueMaxLength)
 			reason = fmt.Sprintf("a label value is at most %d characters, and this identity of %d is stamped as %d "+
 				"because a character it carries is written out rather than dropped, most often the dot joining a "+
-				"module's name to a component's own", componentIDLabelMaxLength, len(proposed), n)
+				"module's name to a component's own", labelValueMaxLength, len(proposed), n)
 		}
 		return DerivedNameVerdict{
 			Kind:   ComponentIDLabelKind,

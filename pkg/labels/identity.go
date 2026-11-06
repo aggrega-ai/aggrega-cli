@@ -134,6 +134,23 @@ func labelValueDefect(identity string) ComponentIdentityDefect {
 	return ComponentIdentityUsable
 }
 
+// SatisfiesLabelValueCharacterRules reports whether v satisfies the character
+// and edge rules of a Kubernetes label value: only letters, digits, '-', '_' and
+// '.', with a letter or a digit at both ends. The empty string satisfies them.
+//
+// It reads the same character and edge rules [SanitizeForK8sLabelValue] repairs
+// a value into, from where that function keeps them, so a
+// caller that tests a value here and repairs it there cannot find the two
+// disagreeing about what is valid.
+//
+// It states no LENGTH, for the reason [InspectComponentIdentity] states none: how
+// long a label value may be belongs to the target it is written for, and this
+// package has no target. A caller writing for a target applies that target's
+// length beside this test.
+func SatisfiesLabelValueCharacterRules(v string) bool {
+	return labelValueDefect(v) == ComponentIdentityUsable
+}
+
 // reservedOpeningOf reports whether identity opens exactly as a composed
 // identity does, and which opening it matched.
 //

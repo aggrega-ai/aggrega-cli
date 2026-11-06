@@ -19,10 +19,10 @@ func buildAggregaLabels(nodeCtx rendercore.NodeRenderContext) map[string]string 
 	return rendercore.BuildAggregaProvenanceLabels(nodeCtx)
 }
 
-// buildAggregaAnnotations produces the charset-unsafe aggrega.ai/* annotation
-// set (recipe-uri, boundary-path, sync-wave + argocd.argoproj.io/sync-wave),
-// delegating to the shared provenance builder. The recipe-uri is assembled from
-// this node's Recipe identity.
+// buildAggregaAnnotations produces the aggrega.ai/* provenance a label cannot
+// carry, including the verbatim value of any label the shared builder rewrote,
+// delegating to that builder, which owns the set. The recipe-uri is assembled
+// from this node's Recipe identity.
 func buildAggregaAnnotations(nodeCtx rendercore.NodeRenderContext) map[string]string {
 	return rendercore.BuildAggregaProvenanceAnnotations(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx))
 }
