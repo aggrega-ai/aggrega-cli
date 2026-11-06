@@ -1,4 +1,4 @@
-# aggrega
+# Aggrega
 
 Aggrega is an open-source compiler for AI-era architecture. Describe the
 components of an application and how they connect; Aggrega turns them,
@@ -114,3 +114,8 @@ go test -tags=integration ./cmd/aggrega/
 Tests that need a sibling skip automatically when it is absent, so the
 integration suite degrades gracefully on a partial checkout — but full coverage
 requires both `aggrega-hub` and `aggrega-docs` present.
+
+## License
+
+The Aggrega compiler and CLI are released under the Apache License, Version 2.0; the full text is in the
+[`LICENSE`](LICENSE) file.
