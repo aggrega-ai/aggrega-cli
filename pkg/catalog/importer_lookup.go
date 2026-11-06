@@ -169,14 +169,22 @@ var importerCapabilityDiag = capabilityDiag{
 // are candidates beside the catalog's own under every rule above: a carried
 // importer of another name advertising the format makes an unattached import
 // ambiguous, and one of the same identity at another version is chosen between
-// by version.
+// by version. A catalog entity of a carried importer's identity whose module does
+// not sit beside it is no candidate, unless an attachment pins exactly its
+// version or no importer of its identity that can run advertises the format; at
+// the carried importer's own version the carried one is chosen in its place
+// (UseCarriedImporterResolution, importerResolutionPlugins). Whether an
+// attachment names an advertiser is asked of the same set the select then reads,
+// with the attachment's own version, so an attachment naming exactly such an
+// entity selects it.
 func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error) {
 	capability := importCapabilityPrefix + format
 
 	at := -1
 	var named []string
 	for i, uri := range attached {
-		name, advertises := c.importerAdvertising(ociref.VersionlessBase(uri), capability)
+		coordinate, pinned, _ := ociref.SplitVersionTag(uri)
+		name, advertises := c.importerAdvertising(coordinate, capability, pinned)
 		if !advertises {
 			continue
 		}
@@ -206,19 +214,22 @@ func (c *Catalog) ImporterPluginForFormat(format string, attached []string) (typ
 	return p, at, nil
 }
 
-// ImporterPlugins returns every importer Plugin entity this catalog view resolves
-// importers from — the set ImporterPluginForFormat selects among, every version
-// it holds included, and the importers the binary carries where this view serves
-// them (UseCarriedImporterResolution) — ordered by the key the catalog indexes
-// each under, <pluginType>/<name>:<version>.
+// ImporterPlugins returns every importer Plugin entity this catalog view holds —
+// every version included, whether its module sits beside it or not — and the
+// importers the binary carries where this view serves them
+// (UseCarriedImporterResolution), save one whose identity and version the
+// catalog holds, ordered by the key the catalog indexes each under,
+// <pluginType>/<name>:<version>.
 //
 // It is what an import recognising a source's format reads the recognition
-// signatures of. Reading the same set the resolution selects from is what keeps
-// the format a source is recognised as one an importer this view holds
-// advertises, and the order is fixed by the keys rather than by the map the set
-// is held in, so the same catalog yields the same order on every run.
+// signatures of (importerRecognitionPlugins). Every entity it returns is one this
+// view holds, which is what keeps the format a source is recognised as one an
+// importer this view holds advertises; which importer then runs that format is
+// ImporterPluginForFormat's choice, which passes over an entity no import could
+// run. The order is fixed by the keys rather than by the map the set is held in,
+// so the same catalog yields the same order on every run.
 func (c *Catalog) ImporterPlugins() []types.Plugin {
-	set := c.importerResolutionPlugins()
+	set := c.importerRecognitionPlugins()
 	keys := make([]string, 0, len(set))
 	for key, p := range set {
 		if p.Metadata.PluginType == importerPluginType {
@@ -251,17 +262,19 @@ func ImporterFormats(p types.Plugin) []string {
 }
 
 // importerAdvertising reports whether the importer at coordinate advertises
-// capability, and that importer's name.
+// capability, and that importer's name, for an attachment pinning pinned — its
+// version as written, empty where it names none.
 //
 // It reads the set and the accessors the shared capability select filters on —
-// importerResolutionPlugins, the plugin type, the coordinate a binding is
-// compared with, and each plugin's DeclaredCapabilities — so an attachment it
+// importerResolutionPlugins handed the same capability and pin the select is
+// handed once the attachment binds it, the plugin type, the coordinate a binding
+// is compared with, and each plugin's DeclaredCapabilities — so an attachment it
 // reports as naming an advertiser is one a select bound to it finds a candidate
 // for, across every version the set holds. Every version of one coordinate
 // carries the one name the coordinate is built from, so the name does not
 // depend on which version the walk meets first.
-func (c *Catalog) importerAdvertising(coordinate, capability string) (string, bool) {
-	for _, p := range c.importerResolutionPlugins() {
+func (c *Catalog) importerAdvertising(coordinate, capability, pinned string) (string, bool) {
+	for _, p := range c.importerResolutionPlugins(capability, pinned) {
 		if p.Metadata.PluginType != importerPluginType || p.Coordinate() != coordinate {
 			continue
 		}

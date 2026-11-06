@@ -181,15 +181,25 @@ func acquireCarriedImporter(ctx context.Context, rw *workspaceconfig.ResolvedWor
 	return nil
 }
 
+// importRemedySteps names, in the remedy a registry refusal carries, the steps an
+// import's reader takes: running the import again, which asks the registry once
+// more and, for a module that did not hold together, fetches it afresh. An import
+// writes no lockfile, so no pull is the step to run.
+var importRemedySteps = oci.RemedySteps{
+	Rerun:   "the import",
+	Refresh: "the import again, which fetches the module afresh",
+}
+
 // carriedImporterFetchRefusal is the refusal of a fetch of p's module from
 // subject that failed with err.
 //
 // A registry that answered says why, and that is the refusal: one holding no
 // such module is a module not on this machine that no run can fetch, and one that
 // refused the request or served something that does not hold together is
-// returned as its own condition, with the remedy that condition names. Anything
-// else is a registry that did not answer, which a run with the network available
-// gets past.
+// returned as its own condition, with the remedy that condition names, naming the
+// import as the step to run again (importRemedySteps). Anything else is a
+// registry that did not answer, which a run with the network available gets
+// past.
 func carriedImporterFetchRefusal(ctx context.Context, p types.Plugin, subject catalog.SignatureSubject, err error) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("fetch core importer %q: %w", p.Coordinate(), ctxErr)
@@ -201,7 +211,7 @@ func carriedImporterFetchRefusal(ctx context.Context, p types.Plugin, subject ca
 	if _, coded := cerrors.CodeOf(err); coded && !errors.Is(err, oci.ErrFetchNetworkUnreachable()) {
 		refusal := fmt.Errorf("fetch core importer %q from %s:%s: %w", p.Coordinate(), subject.Location,
 			p.Metadata.Version, err)
-		if remedy := oci.RemediationFor(err, subject.Host); remedy != "" {
+		if remedy := oci.RemediationNaming(err, subject.Host, importRemedySteps); remedy != "" {
 			return fmt.Errorf("%w\n  %s", refusal, remedy)
 		}
 		return refusal

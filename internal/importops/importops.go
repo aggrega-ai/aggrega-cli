@@ -98,8 +98,9 @@ import (
 // colocated is the one thing an import adds to that cascade: where each Plugin
 // entity of the catalog view that selected the plugin was authored, keyed by the
 // entity's artifact reference, exactly as that catalog indexed it — the
-// catalog's PluginColocatedDirs, read once per import by the seam that loaded
-// the catalog. A resolver hands it to the cascade's tier that reads a module
+// catalog's PluginColocatedDirsFor the plugin being loaded, read by the seam that
+// loaded the catalog, so that plugin's entry is its own entity's directory at its
+// own version. A resolver hands it to the cascade's tier that reads a module
 // laid down beside its entity, so an importer — and the parser it draws on —
 // authored in a catalog directory runs from its catalog folder the way a build
 // loads a plugin from one. It comes from the seam rather than from the resolver

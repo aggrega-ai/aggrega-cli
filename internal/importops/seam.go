@@ -137,18 +137,26 @@ var BuildSeam = buildSeam
 // module laid down beside its entity, is read from there as a build reads a
 // plugin from beside its entity; the cascade's other tiers — a module embedded
 // in the binary, an explicit local path, the content cache — answer as they do
-// for every other plugin. Those directories are computed once per seam, from
-// this one catalog view, so the place a module sits has a single answer.
+// for every other plugin. Those directories are this one catalog view's answer
+// (PluginColocatedDirsFor), with the plugin being loaded read from beside its own
+// entity, at its own version: where the catalog holds one identity at several
+// versions, a module laid beside another version's entity belongs to that entity
+// and is never read as this one's.
 //
 // The view also serves the compiler's own core importers, which the binary
 // carries the entities of without carrying their modules. They compete with the
 // catalog's importers under the same rules: the highest version within one name,
 // an ambiguity halt where importers of two names advertise one format and no
 // attachment names one, and an attachment's choice where it names one. An
-// importer the catalog holds at the same identity and version keeps its place.
-// A core importer's recorded signatures recognise a source as the catalog's
-// importers' do, so a source one of them matches is recognised with no format
-// named.
+// importer the catalog holds at the same identity and version, with its module
+// beside it, keeps its place. A catalog entity of a core importer's identity with
+// no module beside it is one no import could run, so it is no candidate: at the
+// core importer's own version the core importer is served in its place, and at
+// another version it is passed over unless an attachment names exactly that
+// version or no importer of its identity that can run advertises the format
+// asked for. A core importer's recorded signatures recognise a source as the
+// catalog's importers' do, so a source one of them matches is recognised with no
+// format named.
 //
 // A core importer's module is never read from beside a catalog entity, since a
 // module laid there belongs to that entity even where it shares the core
@@ -183,9 +191,9 @@ var BuildSeam = buildSeam
 // nothing fetched.
 //
 // The importers whose signatures recognise a source are read from this same
-// view too — every importer it resolves among, the binary's own core importers
-// included — so a source is recognised only as a format an importer this view
-// holds advertises.
+// view too — every importer entity its catalog holds, every version, whether its
+// module sits beside it or not, and the binary's own core importers — so a source
+// is recognised only as a format an importer this view holds advertises.
 //
 // So are the Recipes an import given a target drafts its Manifest from: the
 // Recipes of the catalog directories this view loaded, and nothing a registry
@@ -207,7 +215,6 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	}
 	cat.UseEmbeddedProviderResolution()
 	cat.UseCarriedImporterResolution()
-	colocated := cat.PluginColocatedDirs()
 
 	// One loader serves both sockets, and each import binds it to its own context
 	// at the call that loads a plugin. A parser is never a core importer, so
@@ -218,7 +225,7 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 			if accepted, carried := cat.CarriedImporterDigest(p); carried {
 				return loadCarriedImporter(ctx, rw, p, accepted)
 			}
-			resolved, rerr := resolvePlugin(rw, p.ArtifactReference(), colocated)
+			resolved, rerr := resolvePlugin(rw, p.ArtifactReference(), cat.PluginColocatedDirsFor(p))
 			if rerr != nil {
 				return wasm.PluginSpec{}, rerr
 			}

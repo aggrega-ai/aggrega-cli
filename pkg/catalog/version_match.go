@@ -91,7 +91,7 @@ var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-versi
 func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(V) (name, version string)) (string, bool, error) {
 	pin := types.ParseVersionPin(callerURI)
 	base := pin.Base()
-	verSeg, hasVer := pin.Pin()
+	_, hasVer := pin.Pin()
 	caret := pin.IsCaret()
 	constraint := pin.Range()
 
@@ -122,7 +122,7 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 		case caret: // caret -> non-prerelease semver within range
 			return c.parsed != nil && c.parsed.Prerelease() == "" && constraint != nil && constraint.Check(c.parsed)
 		default: // exact -> literal version match
-			return c.raw == verSeg
+			return pinNamesExactly(pin, c.raw)
 		}
 	}
 
@@ -271,6 +271,15 @@ func selectCapabilityScopedVersion[V any](index map[string]V, uri string, meta f
 	default:
 		return "", false, unsatisfiable
 	}
+}
+
+// pinNamesExactly reports whether pin names exactly version: an exact pin — a
+// version, not a range — whose version is version as written. It is the exact
+// form of the version select's rule, and its one statement, so a caller asking
+// whether a pin selects one particular entity asks it here.
+func pinNamesExactly(pin types.VersionPin, version string) bool {
+	pinned, hasVersion := pin.Pin()
+	return hasVersion && !pin.IsCaret() && pinned == version
 }
 
 // versionCandidate is one catalog entry sharing the looked-up base name, paired

@@ -399,7 +399,37 @@ var errReferrerDiscoveryUnavailable = cerrors.Register("referrer-discovery-unava
 // pipeline (the orchestrator's fetch-error branch) call the same
 // mapping — keeping the operator-facing remediation strings DRY
 // across both axes.
+//
+// It names the pull as the step to run again (pullRemedySteps); a surface
+// whose reader ran another step names that one through RemediationNaming.
 func RemediationFor(sentinel error, registryHost string) string {
+	return RemediationNaming(sentinel, registryHost, pullRemedySteps)
+}
+
+// RemedySteps names the steps a remediation sends its reader to, so one
+// table of remediation texts serves every surface that fetches from a
+// registry, each naming the step its own reader ran.
+//
+// Rerun is the step whose running again retries the request, written to
+// follow "rerun" and "before re-running". Refresh is the step that fetches
+// afresh what was refused, with what it renews, written to follow "run".
+type RemedySteps struct {
+	Rerun   string
+	Refresh string
+}
+
+// pullRemedySteps names the pull for the release as the step to run again,
+// and the pull that moves the lockfile as the one that fetches afresh.
+var pullRemedySteps = RemedySteps{
+	Rerun:   "aggrega pull --release <release>",
+	Refresh: "aggrega pull --upgrade --release <release> to refresh the lockfile and cache",
+}
+
+// RemediationNaming is RemediationFor with the steps the remediation names
+// supplied by the caller: the same mapping from a fetch sentinel to what to
+// do, each text naming steps as the reader of the surface reporting it ran
+// them.
+func RemediationNaming(sentinel error, registryHost string, steps RemedySteps) string {
 	if sentinel == nil {
 		return ""
 	}
@@ -409,13 +439,13 @@ func RemediationFor(sentinel error, registryHost string) string {
 	}
 	switch {
 	case errors.Is(sentinel, ErrFetchNotFound()):
-		return "remediation: verify the URL and version are correct; for cache misses with offline mode set, disable offline or rerun aggrega pull --release <release>"
+		return "remediation: verify the URL and version are correct; for cache misses with offline mode set, disable offline or rerun " + steps.Rerun
 	case errors.Is(sentinel, ErrFetchUnauthorized()):
-		return "remediation: aggrega login " + host + " (or docker login " + host + ") before re-running aggrega pull --release <release>"
+		return "remediation: aggrega login " + host + " (or docker login " + host + ") before re-running " + steps.Rerun
 	case errors.Is(sentinel, ErrFetchNetworkUnreachable()):
 		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
 	case errors.Is(sentinel, ErrFetchIntegrity()), errors.Is(sentinel, ErrCachedManifestIntegrity()):
-		return "remediation: run aggrega pull --upgrade --release <release> to refresh the lockfile and cache"
+		return "remediation: run " + steps.Refresh
 	default:
 		return ""
 	}

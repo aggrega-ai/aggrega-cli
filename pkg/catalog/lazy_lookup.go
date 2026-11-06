@@ -406,8 +406,8 @@ func (l *LazyLookup) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 // directory from the record of which directory claimed the identity; an entity
 // read from a pinned cache slot has no authored directory and is skipped.
 // The caller (AsCatalogLookup, PluginColocatedDirs) holds l.mu. Returns nil when no local Plugin
-// entity was enumerated. On two versions of one identity, the lexicographically
-// last source path wins, so the map is deterministic regardless of map order.
+// entity was enumerated. On two versions of one identity, the entity whose index
+// key sorts last wins, so the map is deterministic regardless of map order.
 func (l *LazyLookup) pluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 	l.buildRecipeIndex()
 	if len(l.plugins) == 0 {

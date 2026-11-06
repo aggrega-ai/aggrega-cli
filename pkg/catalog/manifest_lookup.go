@@ -841,7 +841,10 @@ var providerCapabilityDiag = capabilityDiag{
 // default while a local core entity of the same coordinate is shadowed by it.
 // For an importer the set also holds, on a view that serves them, the importers
 // the binary carries without embedding (resolutionPluginsFor), so they compete
-// with the catalog's own importers under exactly these rules.
+// with the catalog's own importers under exactly these rules; the capability and
+// the version pinned are handed to that set too, since an importer entity no
+// import could run is a candidate only where the pin names exactly its version or
+// no importer of its identity that can run serves the capability.
 //
 // The capability is the already-separated capability string (the provider passes
 // the pre-split bare name; a format-routed socket passes its full "prefix:value"
@@ -858,9 +861,19 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 		bindBase, bindVer, bindHasVer = ociref.SplitVersionTag(bv)
 	}
 
+	// The version pin priority: the caller's pin, else the binding's optional
+	// version. Threaded into the candidate set, the diagnostic and the version
+	// select alike.
+	pin := ""
+	if refHasPin {
+		pin = refPin
+	} else if bound && bindHasVer {
+		pin = bindVer
+	}
+
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
-	for key, p := range c.resolutionPluginsFor(pluginType) {
+	for key, p := range c.resolutionPluginsFor(pluginType, capability, pin) {
 		if p.Metadata.PluginType != pluginType {
 			continue
 		}
@@ -875,15 +888,6 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 		}
 		matches[key] = p
 		distinctNames[p.Metadata.Name] = struct{}{}
-	}
-
-	// The version pin priority: the caller's pin, else the binding's optional
-	// version. Threaded into the diagnostic and the version select alike.
-	pin := ""
-	if refHasPin {
-		pin = refPin
-	} else if bound && bindHasVer {
-		pin = bindVer
 	}
 
 	switch len(distinctNames) {
@@ -961,7 +965,7 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 // another type still names something the catalog holds.
 func (c *Catalog) capabilitiesServed(pluginType, coordinate string) (served []string, visible bool) {
 	seen := map[string]struct{}{}
-	for _, p := range c.resolutionPluginsFor(pluginType) {
+	for _, p := range c.resolutionPluginsFor(pluginType, "", "") {
 		if coordinate != "" && p.Coordinate() != coordinate {
 			continue
 		}

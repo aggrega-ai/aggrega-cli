@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -34,6 +35,17 @@ func carriedImporterEntity(name, version, description string) types.Plugin {
 	}
 }
 
+// alsoAdvertising returns p advertising, beside import:langflow, each format
+// given.
+func alsoAdvertising(p types.Plugin, formats ...string) types.Plugin {
+	capabilities := []string{"import:langflow"}
+	for _, format := range formats {
+		capabilities = append(capabilities, "import:"+format)
+	}
+	p.Spec.Importer = &types.PluginImporter{Capabilities: capabilities}
+	return p
+}
+
 // encodeEntity encodes p as the YAML document a catalog directory holds.
 func encodeEntity(t *testing.T, p types.Plugin) []byte {
 	t.Helper()
@@ -48,14 +60,51 @@ func encodeEntity(t *testing.T, p types.Plugin) []byte {
 // as the import's view is loaded, serving the binary's embedded entities.
 func catalogHolding(t *testing.T, entities ...types.Plugin) *Catalog {
 	t.Helper()
+	return catalogHoldingBeside(t, false, entities...)
+}
+
+// catalogHoldingBeside is catalogHolding with, where withModules is set, a
+// module laid beside each entity under the name the co-located tier reads it by.
+// The module's bytes are no guest: nothing here loads it, and only whether it is
+// there is read.
+func catalogHoldingBeside(t *testing.T, withModules bool, entities ...types.Plugin) *Catalog {
+	t.Helper()
+	if withModules {
+		return catalogHoldingMixed(t, entities, nil)
+	}
+	return catalogHoldingMixed(t, nil, entities)
+}
+
+// catalogHoldingMixed is catalogHolding over beside, each with a module laid
+// beside it as catalogHoldingBeside lays one, and bare, each with none.
+func catalogHoldingMixed(t *testing.T, beside, bare []types.Plugin) *Catalog {
+	t.Helper()
 	dir := t.TempDir()
-	for _, p := range entities {
+	type laid struct {
+		p          types.Plugin
+		withModule bool
+	}
+	var all []laid
+	for _, p := range beside {
+		all = append(all, laid{p: p, withModule: true})
+	}
+	for _, p := range bare {
+		all = append(all, laid{p: p})
+	}
+	for _, l := range all {
+		p := l.p
 		path := filepath.Join(dir, p.Metadata.PluginType, p.Metadata.Name, p.Metadata.Version, "plugin.yaml")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("create the directory for %s: %v", p.Coordinate(), err)
 		}
 		if err := os.WriteFile(path, encodeEntity(t, p), 0o644); err != nil {
 			t.Fatalf("write %s: %v", p.Coordinate(), err)
+		}
+		if l.withModule {
+			module := filepath.Join(filepath.Dir(path), pluginpath.PluginLeaf(p.ArtifactReference()))
+			if err := os.WriteFile(module, []byte("\x00asm"), 0o644); err != nil {
+				t.Fatalf("lay the module of %s: %v", p.Coordinate(), err)
+			}
 		}
 	}
 	c, err := LoadAll(dir, dir)
@@ -71,85 +120,251 @@ func catalogHolding(t *testing.T, entities ...types.Plugin) *Catalog {
 const carriedDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
 // TestTheImportersTheBinaryCarriesCompeteUnderTheExistingRules makes the binary
-// carry importer/langflow at 2.0.0 and resolves the Langflow format on an import's
-// view over catalogs holding, in turn, nothing; that identity below, at and above
-// the carried version; and an importer of another name.
+// carry importer/langflow — at 2.0.0, or at a pre-release where a row says so —
+// and resolves the Langflow format on an import's view over catalogs holding, in
+// turn, nothing; that identity below, at and above the carried version, each with
+// its module beside it and without; and an importer of another name.
 //
 //   - Nothing: the carried importer is chosen, and it is the one whose digest the
 //     view reports.
 //   - The same identity below: the highest version, the carried one, is chosen;
 //     the catalog's entity is not taken for it, and an attachment naming the lower
-//     version chooses the catalog's.
-//   - The same identity and version: the catalog's entity keeps its place — it is
-//     the one chosen and the one recognition reads — and no digest is reported for
-//     it.
-//   - The same identity above: the catalog's higher version is chosen.
+//     version chooses the catalog's, with its module beside it or not; a range
+//     names no single version, so it does not reach a module-less entity, and
+//     with nothing else in it the attachment is refused as unsatisfiable.
+//   - The same identity and version, its module beside it: the catalog's entity
+//     keeps its place — it is the one chosen and the one recognition reads — and
+//     no digest is reported for it.
+//   - The same identity and version, no module beside it: the carried importer is
+//     served in its place, attached or not, and its digest is reported.
+//   - The same identity above: the catalog's higher version is chosen where its
+//     module is beside it; where none is, it is no candidate, and the carried one
+//     is chosen.
+//   - A pre-release carried beside a release: a release with its module beside it
+//     is preferred, as any unversioned choice prefers one; a release with no module
+//     beside it is no candidate, and the pre-release is chosen.
+//   - A higher version with no module beside it that advertises a format the
+//     carried importer does not, that format requested: nothing of the identity
+//     that can run serves it, so the entity stays the candidate, unattached or
+//     attached at exactly its version — the attachment attaching it — and a load
+//     refuses it naming its folder rather than the format having no importer.
+//     So too where the carried importer advertises that format but a catalog
+//     entity with its module, which does not, runs at its key in its place.
 //   - Another name: with no attachment the format is ambiguous between the two,
 //     and an attachment naming the catalog's importer chooses it.
 //
-// 🔴 PLANTED DEFECT: in importerResolutionPlugins
-// (pkg/catalog/carried_importers.go), let a carried importer replace the set's
-// entity of the same key rather than be left out, and the same-version row fails:
-// the carried copy is chosen, recognition reads it, and a digest is reported for
-// what should be the catalog's own entity.
+// The attachment chosen is the first one where a row attaches one, and none
+// otherwise. Recognition is a separate question from the choice: it reads every
+// entity the catalog holds, its module beside it or not, and each carried
+// importer whose identity and version the catalog does not hold, in key order,
+// whatever is chosen.
+//
+// 🔴 PLANTED DEFECTS, in pkg/catalog/carried_importers.go and importer_lookup.go:
+//   - in importerResolutionPlugins, let a carried importer replace the set's
+//     entity of the same key whatever is beside it, and the same-version row with
+//     the module beside it fails: the carried copy is chosen, and a digest is
+//     reported for what should be the catalog's own entity;
+//   - in importerResolutionPlugins, keep every entity importersWithoutModule names,
+//     and the rows choosing the carried importer over a module-less entity fail;
+//   - in importerResolutionPlugins, pass over a module-less entity whatever the
+//     requested format, and the unattached row requesting the format only that
+//     entity advertises fails: the format has no importer;
+//   - in runnableAdvertisers, count every carried importer's formats, the one a
+//     catalog entity with its module runs in place of included, and the row whose
+//     held entity lacks the format the carried one adds fails: the module-less
+//     entity advertising it is passed over and the format has no importer;
+//   - in importerAdvertising, read importerResolutionPlugins("", "") rather than
+//     the set for the attachment's capability and version, and the attached row
+//     requesting that format fails: the attachment is not taken as attaching it;
+//   - in ImporterPlugins, read importerResolutionPlugins("", "") rather than
+//     importerRecognitionPlugins(), and every row whose catalog entity has no
+//     module beside it fails: recognition loses that entity, or reads the carried
+//     one in its place.
 func TestTheImportersTheBinaryCarriesCompeteUnderTheExistingRules(t *testing.T) {
 	// Not parallel: it seeds the process-wide carried set.
-	t.Cleanup(embedded.SeedPublishedForTest([]embedded.PublishedPlugin{{
-		URI:    "importer/langflow",
-		Entity: encodeEntity(t, carriedImporterEntity("langflow", "2.0.0", "carried")),
-		Digest: carriedDigest,
-	}}))
+	const prerelease = "2.1.0-dev.3"
+	langflowAt := func(version string) []types.Plugin {
+		return []types.Plugin{carriedImporterEntity("langflow", version, "catalog")}
+	}
 
 	for _, row := range []struct {
 		name     string
 		holds    []types.Plugin
+		modules  bool
 		attached []string
+		// bare are entities held beside holds with no module, whatever modules
+		// says.
+		bare []types.Plugin
+		// carriedAt is the version the binary carries, 2.0.0 where empty;
+		// carriedAlso the formats it advertises beside langflow; and format the
+		// format resolved, langflow where empty.
+		carriedAt   string
+		carriedAlso []string
+		format      string
 		// want is the description and version of the importer chosen, carried
-		// whether it is the binary's, and ambiguous the halt expected instead.
-		want      string
-		version   string
-		carried   bool
-		ambiguous string
+		// whether it is the binary's, and ambiguous or unsatisfiable the halt
+		// expected instead; reads is what recognition reads, in order, each
+		// written <name>@<version>=<description>.
+		want          string
+		version       string
+		carried       bool
+		ambiguous     string
+		unsatisfiable bool
+		reads         []string
 	}{
-		{name: "a catalog holding none", want: "carried", version: "2.0.0", carried: true},
 		{
-			name:  "the same identity at a lower version",
-			holds: []types.Plugin{carriedImporterEntity("langflow", "1.0.0", "catalog")},
-			want:  "carried", version: "2.0.0", carried: true,
+			name: "a catalog holding none", want: "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@2.0.0=carried"},
 		},
 		{
-			name:     "the same identity at a lower version, attached",
-			holds:    []types.Plugin{carriedImporterEntity("langflow", "1.0.0", "catalog")},
+			name:  "the same identity at a lower version, its module beside it",
+			holds: langflowAt("1.0.0"), modules: true,
+			want: "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
+		},
+		{
+			name:  "the same identity at a lower version, no module beside it",
+			holds: langflowAt("1.0.0"),
+			want:  "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
+		},
+		{
+			name:  "the same identity at a lower version, its module beside it, attached",
+			holds: langflowAt("1.0.0"), modules: true,
 			attached: []string{"importer/langflow:1.0.0"},
 			want:     "catalog", version: "1.0.0",
+			reads: []string{"langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
 		},
 		{
-			name:  "the same identity and version",
-			holds: []types.Plugin{carriedImporterEntity("langflow", "2.0.0", "catalog")},
-			want:  "catalog", version: "2.0.0",
+			name:     "the same identity at a lower version, no module beside it, attached",
+			holds:    langflowAt("1.0.0"),
+			attached: []string{"importer/langflow:1.0.0"},
+			want:     "catalog", version: "1.0.0",
+			reads: []string{"langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
 		},
 		{
-			name:  "the same identity at a higher version",
-			holds: []types.Plugin{carriedImporterEntity("langflow", "3.0.0", "catalog")},
-			want:  "catalog", version: "3.0.0",
+			name:     "the same identity at a lower version, no module beside it, attached by a range",
+			holds:    langflowAt("1.0.0"),
+			attached: []string{"importer/langflow:^1.0.0"},
+			// A range pins no entity, so the module-less 1.0.0 is no candidate and
+			// the carried 2.0.0 falls outside the range.
+			unsatisfiable: true,
+			reads:         []string{"langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
+		},
+		{
+			name:  "the same identity and version, its module beside it",
+			holds: langflowAt("2.0.0"), modules: true,
+			want: "catalog", version: "2.0.0",
+			reads: []string{"langflow@2.0.0=catalog"},
+		},
+		{
+			name:  "the same identity and version, no module beside it",
+			holds: langflowAt("2.0.0"),
+			want:  "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@2.0.0=catalog"},
+		},
+		{
+			name:     "the same identity and version, no module beside it, attached",
+			holds:    langflowAt("2.0.0"),
+			attached: []string{"importer/langflow:2.0.0"},
+			want:     "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@2.0.0=catalog"},
+		},
+		{
+			name:  "the same identity at a higher version, its module beside it",
+			holds: langflowAt("3.0.0"), modules: true,
+			want: "catalog", version: "3.0.0",
+			reads: []string{"langflow@2.0.0=carried", "langflow@3.0.0=catalog"},
+		},
+		{
+			name:  "the same identity at a higher version, no module beside it",
+			holds: langflowAt("3.0.0"),
+			want:  "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@2.0.0=carried", "langflow@3.0.0=catalog"},
+		},
+		{
+			name:  "a pre-release carried, a release with its module beside it",
+			holds: langflowAt("1.0.0"), modules: true, carriedAt: prerelease,
+			want: "catalog", version: "1.0.0",
+			reads: []string{"langflow@1.0.0=catalog", "langflow@" + prerelease + "=carried"},
+		},
+		{
+			name:  "a pre-release carried, a release with no module beside it",
+			holds: langflowAt("1.0.0"), carriedAt: prerelease,
+			want: "carried", version: prerelease, carried: true,
+			reads: []string{"langflow@1.0.0=catalog", "langflow@" + prerelease + "=carried"},
+		},
+		{
+			name:   "a higher version, no module beside it, adding a format the carried one lacks, that format requested",
+			holds:  []types.Plugin{alsoAdvertising(carriedImporterEntity("langflow", "3.0.0", "catalog"), "flowx")},
+			format: "flowx",
+			want:   "catalog", version: "3.0.0",
+			reads: []string{"langflow@2.0.0=carried", "langflow@3.0.0=catalog"},
+		},
+		{
+			name:     "a higher version, no module beside it, adding a format the carried one lacks, attached",
+			holds:    []types.Plugin{alsoAdvertising(carriedImporterEntity("langflow", "3.0.0", "catalog"), "flowx")},
+			attached: []string{"importer/langflow:3.0.0"},
+			format:   "flowx",
+			want:     "catalog", version: "3.0.0",
+			reads: []string{"langflow@2.0.0=carried", "langflow@3.0.0=catalog"},
+		},
+		{
+			name:  "a higher version, no module beside it, adding a format the carried one lacks, the shared format requested",
+			holds: []types.Plugin{alsoAdvertising(carriedImporterEntity("langflow", "3.0.0", "catalog"), "flowx")},
+			want:  "carried", version: "2.0.0", carried: true,
+			reads: []string{"langflow@2.0.0=carried", "langflow@3.0.0=catalog"},
+		},
+		{
+			// The carried importer advertises flowx, but the catalog's entity at its
+			// key, with its module beside it, runs in its place and does not; so
+			// nothing of the identity that can run serves flowx, and the module-less
+			// higher version that advertises it stays the candidate.
+			name:        "the carried importer's key held with its module, a module-less higher version adding a format the held one lacks",
+			holds:       langflowAt("2.0.0"),
+			modules:     true,
+			bare:        []types.Plugin{alsoAdvertising(carriedImporterEntity("langflow", "3.0.0", "catalog"), "flowx")},
+			carriedAlso: []string{"flowx"},
+			format:      "flowx",
+			want:        "catalog", version: "3.0.0",
+			reads: []string{"langflow@2.0.0=catalog", "langflow@3.0.0=catalog"},
 		},
 		{
 			name:      "another name",
 			holds:     []types.Plugin{carriedImporterEntity("import-langflow", "1.0.0", "catalog")},
 			ambiguous: `format "langflow" is advertised by importer plugins [import-langflow langflow]`,
+			reads:     []string{"import-langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
 		},
 		{
 			name:     "another name, attached",
 			holds:    []types.Plugin{carriedImporterEntity("import-langflow", "1.0.0", "catalog")},
 			attached: []string{"importer/import-langflow:1.0.0"},
 			want:     "catalog", version: "1.0.0",
+			reads: []string{"import-langflow@1.0.0=catalog", "langflow@2.0.0=carried"},
 		},
 	} {
 		t.Run(row.name, func(t *testing.T) {
-			view := catalogHolding(t, row.holds...)
+			carriedAt := row.carriedAt
+			if carriedAt == "" {
+				carriedAt = "2.0.0"
+			}
+			t.Cleanup(embedded.SeedPublishedForTest([]embedded.PublishedPlugin{{
+				URI:    "importer/langflow",
+				Entity: encodeEntity(t, alsoAdvertising(carriedImporterEntity("langflow", carriedAt, "carried"), row.carriedAlso...)),
+				Digest: carriedDigest,
+			}}))
+			beside, bare := row.holds, row.bare
+			if !row.modules {
+				beside, bare = nil, append(slices.Clone(row.holds), row.bare...)
+			}
+			view := catalogHoldingMixed(t, beside, bare)
 			view.UseCarriedImporterResolution()
 
-			got, _, err := view.ImporterPluginForFormat("langflow", row.attached)
+			format := row.format
+			if format == "" {
+				format = "langflow"
+			}
+			got, at, err := view.ImporterPluginForFormat(format, row.attached)
 			if row.ambiguous != "" {
 				if !errors.Is(err, ErrAmbiguousImporterPlugin()) {
 					t.Fatalf("the format was not refused as ambiguous: %v", err)
@@ -157,14 +372,30 @@ func TestTheImportersTheBinaryCarriesCompeteUnderTheExistingRules(t *testing.T) 
 				if !strings.Contains(err.Error(), row.ambiguous) {
 					t.Errorf("the halt reads %q; want it to carry %q", err.Error(), row.ambiguous)
 				}
+				assertRecognitionReads(t, view, row.reads)
+				return
+			}
+			if row.unsatisfiable {
+				if !errors.Is(err, ErrImporterVersionUnsatisfiable()) {
+					t.Fatalf("the attachment's range was not refused as one no version satisfies: %v (chose %s at %s)",
+						err, got.Metadata.Description, got.Metadata.Version)
+				}
+				assertRecognitionReads(t, view, row.reads)
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolve the Langflow importer: %v", err)
+				t.Fatalf("resolve the %s importer: %v", format, err)
 			}
 			if got.Metadata.Description != row.want || got.Metadata.Version != row.version {
 				t.Fatalf("chose the %s importer at %s; want the %s one at %s", got.Metadata.Description,
 					got.Metadata.Version, row.want, row.version)
+			}
+			wantAt := -1
+			if len(row.attached) > 0 {
+				wantAt = 0
+			}
+			if at != wantAt {
+				t.Errorf("the importer is attached by position %d; want %d", at, wantAt)
 			}
 			digest, carried := view.CarriedImporterDigest(got)
 			if carried != row.carried || (carried && digest != carriedDigest) {
@@ -172,17 +403,21 @@ func TestTheImportersTheBinaryCarriesCompeteUnderTheExistingRules(t *testing.T) 
 					digest, carried, row.carried)
 			}
 
-			var read []types.Plugin
-			for _, p := range view.ImporterPlugins() {
-				if p.Coordinate() == got.Coordinate() && p.Metadata.Version == row.version {
-					read = append(read, p)
-				}
-			}
-			if len(read) != 1 || read[0].Metadata.Description != row.want {
-				t.Errorf("recognition reads %d %s at %s (%+v); want exactly the %s one",
-					len(read), got.Coordinate(), row.version, read, row.want)
-			}
+			assertRecognitionReads(t, view, row.reads)
 		})
+	}
+}
+
+// assertRecognitionReads fails the test unless the importers view's recognition
+// reads are exactly want, in order, each written <name>@<version>=<description>.
+func assertRecognitionReads(t *testing.T, view *Catalog, want []string) {
+	t.Helper()
+	var read []string
+	for _, p := range view.ImporterPlugins() {
+		read = append(read, p.Metadata.Name+"@"+p.Metadata.Version+"="+p.Metadata.Description)
+	}
+	if !slices.Equal(read, want) {
+		t.Errorf("recognition reads %v; want %v", read, want)
 	}
 }
 

@@ -956,12 +956,15 @@ func (r Resolver) heldManifest(uri string, tier Tier, b []byte) (oci.MadeFor, er
 // clean miss, as a missing file is.
 func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
 	at, ok := r.colocatedDirs[uri]
-	if !ok || at.Dir == "" {
+	if !ok {
 		return nil, false, nil
 	}
-	path := filepath.Join(at.Dir, pluginLeaf(uri))
-	if err := readscope.CheckBesideEntityRead(at.Root, path); err != nil {
+	path, missed, err := at.besideEntity(uri)
+	if err != nil {
 		return nil, false, err
+	}
+	if missed {
+		return nil, false, nil
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -971,4 +974,34 @@ func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("read colocated plugin %q at %s: %w", uri, path, err)
 	}
 	return b, true, nil
+}
+
+// HoldsModule reports whether the co-located tier finds a module of uri at at:
+// whether a read of it there would return the module or refuse it, rather than
+// miss and fall through to the next tier. It is the tier's own judgement
+// (besideEntity), so a caller deciding by it decides exactly as the read would.
+func (at ColocatedDir) HoldsModule(uri string) bool {
+	_, missed, err := at.besideEntity(uri)
+	return err != nil || !missed
+}
+
+// besideEntity is the one judgement of the module of uri beside the entity at
+// at: the file it is read from — the one PluginLeaf names for uri, in Dir — and
+// whether the tier misses it there. It misses where at names no directory, and
+// where nothing is at the path, a link leading nowhere included. A path the read
+// may not reach — a link leading out of the root the entity's catalog directory
+// picks (readscope.CheckBesideEntityRead) — is refused with the error. Anything
+// else at the path is there: the read returns it, or reports why it cannot.
+func (at ColocatedDir) besideEntity(uri string) (path string, missed bool, err error) {
+	if at.Dir == "" {
+		return "", true, nil
+	}
+	path = filepath.Join(at.Dir, pluginLeaf(uri))
+	if err := readscope.CheckBesideEntityRead(at.Root, path); err != nil {
+		return path, false, err
+	}
+	if _, err := os.Stat(path); err != nil && os.IsNotExist(err) {
+		return path, true, nil
+	}
+	return path, false, nil
 }

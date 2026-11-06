@@ -213,6 +213,12 @@ type Catalog struct {
 	// accepts. It is nil unless UseCarriedImporterResolution filled it, which only
 	// the import's own view does: no build, pull or by-reference lookup reads it.
 	carriedImporters map[string]carriedImporter
+
+	// importersWithoutModule holds the index keys of the catalog's own importer
+	// entities whose identity the binary carries an importer of, and whose module
+	// does not sit beside them in their catalog folder. It is filled with
+	// carriedImporters, read once, so one import answers the question once.
+	importersWithoutModule map[string]struct{}
 }
 
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml
@@ -2520,8 +2526,12 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 // Returns nil when no Plugin entity was indexed. Keys are built through the single
 // Plugin.ArtifactReference derivation, so the tier keys by the same reference the
 // cascade resolves by. When two versions of one identity are indexed (same
-// artifact reference, distinct directories), the lexicographically last source
-// path wins, so the map is deterministic regardless of index-map iteration order.
+// artifact reference, distinct directories), the entity whose index key —
+// <pluginType>/<name>:<version> — sorts last wins, so the map is deterministic
+// regardless of index-map iteration order. That one directory is the same
+// whichever of those versions a caller loads. An import reads its importers and
+// parsers through PluginColocatedDirsFor instead, which keys the entity it loads
+// to that entity's own directory.
 func (c *Catalog) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 	if len(c.pluginSources) == 0 {
 		return nil
@@ -2537,16 +2547,63 @@ func (c *Catalog) PluginColocatedDirs() map[string]pluginpath.ColocatedDir {
 		if !ok {
 			continue
 		}
-		dirs[p.ArtifactReference()] = pluginpath.ColocatedDir{
-			Dir:     filepath.Dir(c.pluginSources[wkey]),
-			Root:    c.pluginRoots[wkey],
-			Version: p.Metadata.Version,
+		if at, sourced := c.pluginColocatedDir(wkey, p); sourced {
+			dirs[p.ArtifactReference()] = at
 		}
 	}
 	if len(dirs) == 0 {
 		return nil
 	}
 	return dirs
+}
+
+// PluginColocatedDirsFor returns the directories PluginColocatedDirs returns,
+// with the entry for p's artifact reference read from p's own entity: the
+// directory the catalog indexed p's identity at p's version from. Where the
+// catalog holds no entity at that identity and version, p's reference has no
+// entry at all.
+//
+// It is what a caller loading p's module hands the cascade's tier that reads a
+// module beside its entity. Keyed by the bare identity, PluginColocatedDirs keeps
+// one directory per identity, which is another version's wherever the catalog
+// holds several; a module laid beside that entity belongs to it, so it must never
+// be read as p's. The other entries are PluginColocatedDirs' own, unchanged.
+//
+// The returned map is fresh, so a caller may hand it on without the catalog's
+// answer to any other load changing under it.
+func (c *Catalog) PluginColocatedDirsFor(p types.Plugin) map[string]pluginpath.ColocatedDir {
+	dirs := c.PluginColocatedDirs()
+	if dirs == nil {
+		dirs = map[string]pluginpath.ColocatedDir{}
+	}
+	ref := p.ArtifactReference()
+	delete(dirs, ref)
+	wkey := entityIndexKey(p.Coordinate(), p.Metadata.Version)
+	if held, ok := c.Plugins[wkey]; ok {
+		if at, sourced := c.pluginColocatedDir(wkey, held); sourced {
+			dirs[ref] = at
+		}
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	return dirs
+}
+
+// pluginColocatedDir is where the co-located tier reads the module of the Plugin
+// entity p, indexed under wkey: the directory its document was loaded from, the
+// root a read there is held to, and p's version — or false where the catalog
+// recorded no document for wkey, so nothing sits beside p.
+func (c *Catalog) pluginColocatedDir(wkey string, p types.Plugin) (pluginpath.ColocatedDir, bool) {
+	source, sourced := c.pluginSources[wkey]
+	if !sourced {
+		return pluginpath.ColocatedDir{}, false
+	}
+	return pluginpath.ColocatedDir{
+		Dir:     filepath.Dir(source),
+		Root:    c.pluginRoots[wkey],
+		Version: p.Metadata.Version,
+	}, true
 }
 
 // AggregateSourceFile returns the path the Aggregate entity named
