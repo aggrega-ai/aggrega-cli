@@ -160,8 +160,8 @@ func TestFormatCompilerError_MultiErrorLink_ResolutionShape(t *testing.T) {
 		"%w: component %q (type %q); recipes implementing it: [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0]; pin one in the Manifest",
 		catalog.ErrNoRecipeResolved(), "db", "core/datastore/mariadb:1.0.0")
 	noRecipe := fmt.Errorf(
-		"%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it",
-		catalog.ErrNoRecipeResolved(), "metrics", "core/metrics:1.0.0")
+		"%w: feature %q (type %q); no feature recipe in the catalog implements %s; write one, then map the type to it",
+		catalog.ErrNoRecipeResolved(), "metrics", "core/metrics", "core/metrics:1.0.0")
 	join := stderrors.Join(unmapped, noRecipe)
 	head := cerrors.Wrap(join, cerrors.CatalogError,
 		cerrors.SourceLocation{}, "recipe resolution")
@@ -172,7 +172,7 @@ func TestFormatCompilerError_MultiErrorLink_ResolutionShape(t *testing.T) {
 		"caused by (2):",
 		"cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0",
 		"pin one in the Manifest",
-		"no Manifest mapping and no feature recipe implements it",
+		"no feature recipe in the catalog implements core/metrics:1.0.0",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("recipe-resolution shape missing %q\n--- got ---\n%s", want, got)

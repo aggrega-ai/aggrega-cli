@@ -533,7 +533,8 @@ func TestNameTierOverride_FiresAtBothJoins(t *testing.T) {
 	if ids := recipesImplementing(c.Recipes, compType, nil); len(ids) != 2 {
 		t.Fatalf("expected 2 recipes implementing %q to coexist after load; got %v", compType, ids)
 	}
-	if ids := featureRecipesImplementing(c.FeatureRecipes, featType); len(ids) != 2 {
+	if _, implementers := implementingFeatureRecipes(c.FeatureRecipes, featType, c.featureOfType); len(implementers) != 2 {
+		ids := featureRecipeIdentities(implementers)
 		t.Fatalf("expected 2 feature recipes implementing %q to coexist after load; got %v", featType, ids)
 	}
 

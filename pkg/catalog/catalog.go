@@ -2442,6 +2442,17 @@ func (c *Catalog) componentOfType(typeURI string) (types.Component, bool) {
 	return c.Components[key], true
 }
 
+// featureOfType is componentOfType for the Feature index: the Feature this
+// catalog's own index resolves typeURI to — the version resolveFeatureKey
+// selects — and whether it holds one.
+func (c *Catalog) featureOfType(typeURI string) (types.Feature, bool) {
+	key, ok, _ := c.resolveFeatureKey(typeURI)
+	if !ok {
+		return types.Feature{}, false
+	}
+	return c.Features[key], true
+}
+
 func (c *Catalog) resolveFeatureKey(typeURI string) (string, bool, error) {
 	return selectEntityVersion(c.Features, typeURI, func(v types.Feature) (string, string) {
 		return v.Metadata.Name, v.Metadata.Version
@@ -2462,14 +2473,8 @@ func (c *Catalog) resolvePluginKey(uri string) (string, bool, error) {
 
 func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
-		Component: c.componentOfType,
-		Feature: func(typeURI string) (types.Feature, bool) {
-			key, ok, _ := c.resolveFeatureKey(typeURI)
-			if !ok {
-				return types.Feature{}, false
-			}
-			return c.Features[key], true
-		},
+		Component:       c.componentOfType,
+		Feature:         c.featureOfType,
 		SchemaLibraries: c.SchemaLibraries,
 		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
 			// Resolve as a Component then a Feature — both kinds compose extends

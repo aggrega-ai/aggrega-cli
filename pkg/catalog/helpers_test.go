@@ -453,7 +453,7 @@ spec:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(featureRecipesImplementing(c.FeatureRecipes, "feature/example")) == 0 {
+	if _, implementers := implementingFeatureRecipes(c.FeatureRecipes, "feature/example", c.featureOfType); len(implementers) == 0 {
 		t.Fatalf("FR not loaded")
 	}
 	var fr types.FeatureRecipe

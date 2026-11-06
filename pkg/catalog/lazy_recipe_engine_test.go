@@ -79,8 +79,9 @@ func TestLazyRecipe_EagerLazyParity(t *testing.T) {
 			t.Errorf("type %q candidate id-list differs: eager %v vs lazy %v", typ, eids, lids)
 		}
 	}
-	efr := featureRecipesImplementing(eager.FeatureRecipes, "sec/x")
-	lfr := featureRecipesImplementing(ll.featureRecipes, "sec/x")
+	_, eagerImplementers := implementingFeatureRecipes(eager.FeatureRecipes, "sec/x", eager.featureOfType)
+	_, lazyImplementers := implementingFeatureRecipes(ll.featureRecipes, "sec/x", ll.feature)
+	efr, lfr := featureRecipeIdentities(eagerImplementers), featureRecipeIdentities(lazyImplementers)
 	if len(efr) == 0 || len(lfr) == 0 || !slices.Equal(efr, lfr) {
 		t.Errorf("feature recipe sec/x candidate parity failed: eager %v vs lazy %v", efr, lfr)
 	}

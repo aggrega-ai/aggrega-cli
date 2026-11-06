@@ -1219,14 +1219,52 @@ type componentResolver func(typeURI string) (types.Component, bool)
 // such as a Component an import drafted new — or a nil component is asked as
 // written, as is a Component carrying no version.
 func implementsRequest(componentType string, component componentResolver) string {
-	if _, pinned := types.ParseVersionPin(componentType).Pin(); pinned || component == nil {
+	if component == nil {
 		return componentType
 	}
-	comp, ok := component(componentType)
+	return implementsRequestAt(componentType, func(typeURI string) (string, string, bool) {
+		comp, ok := component(typeURI)
+		return comp.Metadata.Name, comp.Metadata.Version, ok
+	})
+}
+
+// featureResolver resolves a feature type reference to the Feature a catalog
+// view resolves it to, and reports whether it holds one — the Feature
+// counterpart of componentResolver, passed for the same reason: a recipe shell
+// over another backing holds no Feature index of its own.
+type featureResolver func(typeURI string) (types.Feature, bool)
+
+// featureImplementsRequest is implementsRequest for a feature type: the type as
+// written where it pins a version, and otherwise the type at the version the
+// view's Feature resolution selects for it, which is the version a build
+// compiles the attachment at. A type feature resolves to nothing, or a nil
+// feature, is asked as written.
+func featureImplementsRequest(featureType string, feature featureResolver) string {
+	if feature == nil {
+		return featureType
+	}
+	return implementsRequestAt(featureType, func(typeURI string) (string, string, bool) {
+		feat, ok := feature(typeURI)
+		return feat.Metadata.Name, feat.Metadata.Version, ok
+	})
+}
+
+// implementsRequestAt is the one rule both implements requests follow, for any
+// entity kind: a reference pinning a version is asked as written, and one
+// pinning none is asked at the name and version resolve selects for it, or as
+// written where resolve holds nothing. Component and Feature requests each adapt
+// their own resolution to it rather than carrying the rule twice, so a bare
+// Component type and a bare Feature type are matched against implements
+// declarations the same way.
+func implementsRequestAt(typeRef string, resolve func(typeURI string) (name, version string, ok bool)) string {
+	if _, pinned := types.ParseVersionPin(typeRef).Pin(); pinned {
+		return typeRef
+	}
+	name, version, ok := resolve(typeRef)
 	if !ok {
-		return componentType
+		return typeRef
 	}
-	return versionedSlotURI(comp.Metadata.Name, comp.Metadata.Version)
+	return versionedSlotURI(name, version)
 }
 
 // implementingRecipes is the one enumeration of the recipes whose spec.implements
@@ -1303,20 +1341,79 @@ func (c *Catalog) RecipeCapabilities() []string {
 	return out
 }
 
-// featureRecipesImplementing is the FeatureRecipe analogue of
-// recipesImplementing, ancestry-agnostic for the same reason: it provides
-// suggestions, and extends ancestry reaches only the mapping-consistency rule
-// that resolves it. Feature extends carries its own composition semantics, which
-// this surface takes no position on.
-func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType string) []string {
-	var ids []string
+// implementingFeatureRecipes is the one enumeration of the FeatureRecipes whose
+// spec.implements satisfies featureType, ordered by their identity keys — the
+// FeatureRecipe analogue of implementingRecipes. It also returns the request it
+// asked with, so a reader naming what was searched for names the version the
+// enumeration used rather than resolving the type a second time.
+//
+// The type is resolved through featureImplementsRequest and through nothing
+// else, for the reason implementingRecipes resolves through implementsRequest: a
+// reader resolving it on its own would be a second resolution free to disagree.
+// A feature type naming no version is therefore asked at the version feature
+// resolves it to: the matcher answers a request naming no version only with an
+// implements naming none either, while catalog FeatureRecipes declare the
+// version they implement, so a bare type asked as written would find none of
+// them.
+//
+// Ancestry-agnostic, as implementingRecipes is: it provides suggestions, and
+// extends ancestry reaches only the mapping-consistency rule that resolves it.
+// Feature extends carries its own composition semantics, which this surface
+// takes no position on.
+func implementingFeatureRecipes(frs map[string]types.FeatureRecipe, featureType string, feature featureResolver) (string, []types.FeatureRecipe) {
+	requested := featureImplementsRequest(featureType, feature)
+	var out []types.FeatureRecipe
 	for _, fr := range frs {
-		if resolver.ImplementsSatisfies(fr.Spec.Implements, featureType) {
-			ids = append(ids, recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version))
+		if resolver.ImplementsSatisfies(fr.Spec.Implements, requested) {
+			out = append(out, fr)
 		}
 	}
-	sort.Strings(ids)
+	sort.Slice(out, func(i, j int) bool {
+		return featureRecipeIdentity(out[i]) < featureRecipeIdentity(out[j])
+	})
+	return requested, out
+}
+
+// featureRecipeIdentity is a FeatureRecipe's catalog identity key.
+func featureRecipeIdentity(fr types.FeatureRecipe) string {
+	return recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
+}
+
+// featureRecipeIdentities projects FeatureRecipes onto their identity keys, in
+// order.
+func featureRecipeIdentities(frs []types.FeatureRecipe) []string {
+	ids := make([]string, 0, len(frs))
+	for _, fr := range frs {
+		ids = append(ids, featureRecipeIdentity(fr))
+	}
 	return ids
+}
+
+// hostTargetCapability is the capability the component instance nodeID renders
+// for: the capability, its version pin removed, that the Recipe the instance
+// renders through binds to. An attachment on the instance whose FeatureRecipe
+// binds to another capability still renders, as its own output beside the
+// instance's rather than into it, so this capability tells the attachment's
+// candidates apart without ruling any out. The Recipe is the one the render's own
+// lookup answers for the instance (componentTypeToRecipeWithManifest, which
+// RecipeLookupWithManifest hands the renderer), so the capability named is the
+// one the build renders the instance for. It reads that Recipe's declared
+// spec.capability and infers nothing from the Recipe's content.
+//
+// "" where the target cannot be told here: the instance is not in the graph, or
+// the render's lookup answers no Recipe for it, or one declaring no capability.
+// Each of those is reported by the reading that owns it, and an attachment on
+// such an instance is offered every implementer.
+func (c *Catalog) hostTargetCapability(manifest *types.Manifest, graph *types.IRGraph, nodeID string) string {
+	node, ok := graph.Spec.Nodes.Get(nodeID)
+	if !ok {
+		return ""
+	}
+	r, found := c.componentTypeToRecipeWithManifest(manifest)(nodeID, node.Component)
+	if !found {
+		return ""
+	}
+	return types.BareCapability(r.Spec.Capability)
 }
 
 // componentRecipeReferenceShapeForVerify reports a component instance whose
@@ -1401,7 +1498,14 @@ func mappedRecipePinFault(uri, instanceName, featureType string) error {
 // reference-shape half: the two attachment axes it is walked over are not the
 // node axis, so the rule asked over the flattened composition — which is keyed by
 // node — is not asked about them and nothing here would be reported twice.
-func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instanceName, featureType string) error {
+//
+// An unmapped instance's candidates are the FeatureRecipes implementing the type
+// at the version feature resolves it to, so a type the Aggregate writes with no
+// version is offered the FeatureRecipes declaring the version the build compiles
+// it at; unmappedFeatureFault words the refusal for the case the instance is in,
+// target being the capability the instance's component renders for, or "" where
+// that is not known here.
+func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instanceName, featureType string, feature featureResolver, target string) error {
 	uri, ok, err := FeatureRecipeURI(manifest, instanceName, featureType)
 	if err != nil {
 		return err
@@ -1427,10 +1531,49 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 		}
 		return nil
 	}
-	if candidates := featureRecipesImplementing(c.FeatureRecipes, featureType); len(candidates) > 0 {
-		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, featureType, candidates)
+	requested, implementers := implementingFeatureRecipes(c.FeatureRecipes, featureType, feature)
+	return unmappedFeatureFault(instanceName, featureType, requested, implementers, target)
+}
+
+// unmappedFeatureFault is the refusal for a feature instance the Manifest maps to
+// no FeatureRecipe, worded for the case it is in. requested is the type at the
+// version the catalog was searched for, implementers the FeatureRecipes
+// implementing it, and target the capability the instance's component renders
+// for, "" where that is not known:
+//
+//   - no FeatureRecipe implements requested: it names requested, which is what
+//     the catalog was searched for;
+//   - target is known and some implementers bind to it: it names those, to pin
+//     one;
+//   - target is known and every implementer binds to another capability: it says
+//     none implements requested for target, names the ones that do, and offers
+//     both remedies — pin one of those, which renders as its own output beside
+//     the component's rather than into it, or write one for target;
+//   - target is "": it names every implementer.
+//
+// Every case is the one condition, no-recipe-resolved: what is missing in each is
+// a Manifest mapping naming a FeatureRecipe that implements the type. One binding
+// to a capability other than the component's still renders, as its own output
+// beside the component's, which is why case three offers those as well.
+func unmappedFeatureFault(instanceName, featureType, requested string, implementers []types.FeatureRecipe, target string) error {
+	if len(implementers) == 0 {
+		return fmt.Errorf("%w: feature %q (type %q); no feature recipe in the catalog implements %s; write one, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, requested)
 	}
-	return fmt.Errorf("%w: feature %q (type %q); no feature recipe implements this type", ErrNoRecipeResolved(), instanceName, featureType)
+	if target == "" {
+		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, featureType, featureRecipeIdentities(implementers))
+	}
+	var forTarget, elsewhere []string
+	for _, fr := range implementers {
+		if types.BareCapability(fr.Spec.Capability) == target {
+			forTarget = append(forTarget, featureRecipeIdentity(fr))
+		} else {
+			elsewhere = append(elsewhere, featureRecipeIdentity(fr))
+		}
+	}
+	if len(forTarget) > 0 {
+		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it for capability %q, the capability its component's Recipe binds to: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, featureType, target, forTarget)
+	}
+	return fmt.Errorf("%w: feature %q (type %q); no feature recipe in the catalog implements %s for capability %q, the capability its component's Recipe binds to; feature recipes implementing it for other capabilities: %v; pin one of those in the Manifest, and it renders as its own output beside the component's, or write one for %q, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, requested, target, elsewhere, target)
 }
 
 // ResolutionFindings is the shared resolution-completeness producer over the
@@ -1460,7 +1603,32 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 // ComponentNameMappingNamesAComponent and FeatureNameMappingNamesAnAttachment and
 // asked once the graph is final, so every surface reading this reads those
 // findings beside it rather than through it.
+//
+// It resolves feature types through this catalog's own Feature index. A recipe
+// shell assembled over another backing holds no Features of its own, so such a
+// shell's owner calls resolutionFindings with the backing's Feature resolution
+// instead of calling this.
 func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
+	return c.resolutionFindings(manifest, graph, c.featureOfType)
+}
+
+// resolutionFindings is ResolutionFindings with the Feature resolution an
+// unmapped feature instance's candidates are enumerated through handed in: this
+// catalog's own index for an eagerly-loaded catalog, the backing's own
+// resolution for a recipe shell over another backing, whose Feature index is
+// empty by construction.
+//
+// It resolves each attachment's type afresh rather than reading the version the
+// graph records on a per-component attachment (IRFeatureEntry.ResolvedVersion):
+// a boundary attachment (IRBoundaryFeature) records no resolved version, and the
+// component side's pin candidates re-resolve a bare type the same way, so both
+// axes and both kinds are asked through one resolution.
+//
+// A per-component attachment's candidates are told apart by the capability its
+// component renders for (hostTargetCapability). A boundary attachment's are not:
+// the graph records no single capability for a boundary, whose components may
+// render through several, so it is offered every implementer.
+func (c *Catalog) resolutionFindings(manifest *types.Manifest, graph *types.IRGraph, feature featureResolver) []error {
 	if graph == nil {
 		return nil
 	}
@@ -1472,9 +1640,9 @@ func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGr
 		}
 	}
 	for nodeID, feats := range graph.Spec.FeatureValuesMapping.All() {
-		_ = nodeID
+		target := c.hostTargetCapability(manifest, graph, nodeID)
 		for instName, entry := range feats.All() {
-			if err := c.resolveFeatureRecipeForVerify(manifest, instName, entry.Type); err != nil {
+			if err := c.resolveFeatureRecipeForVerify(manifest, instName, entry.Type, feature, target); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -1482,7 +1650,7 @@ func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGr
 	for bp, feats := range graph.Spec.BoundaryFeatures.All() {
 		_ = bp
 		for instName, bf := range feats.All() {
-			if err := c.resolveFeatureRecipeForVerify(manifest, instName, bf.Type); err != nil {
+			if err := c.resolveFeatureRecipeForVerify(manifest, instName, bf.Type, feature, ""); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -1494,7 +1662,9 @@ func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGr
 // halt: it joins ResolutionFindings into a single error so an unmapped instance
 // halts the build loudly rather than silently rendering nothing. Returns nil
 // when every instance resolves cleanly. Signature matches
-// pipeline.Options.RecipeResolutionVerifier.
+// pipeline.Options.RecipeResolutionVerifier. It reads ResolutionFindings, so a
+// recipe shell over another backing joins resolutionFindings with the backing's
+// Feature resolution instead, for the reason ResolutionFindings gives.
 func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
 	return errors.Join(c.ResolutionFindings(manifest, graph)...)
 }

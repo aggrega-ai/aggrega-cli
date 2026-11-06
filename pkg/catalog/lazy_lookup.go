@@ -1344,6 +1344,12 @@ func (l *LazyLookup) ClosureFeature(ctx context.Context, ref closure.ResolvedRef
 	return l.closureFeature(ctx, ref)
 }
 
+// feature is the lock-free core of Feature, read under a background context for
+// a caller whose own signature carries none, as component is for Component.
+func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
+	return l.featureContext(context.Background(), uri, true)
+}
+
 // closureFeature is the lock-free core of ClosureFeature.
 func (l *LazyLookup) closureFeature(ctx context.Context, ref closure.ResolvedRef) (types.Feature, bool) {
 	return l.featureContext(ctx, ref.URI, collectedAs(ref, "Feature"))
@@ -2668,10 +2674,14 @@ func (l *LazyLookup) RecipeLookupWithManifest(manifest *types.Manifest) renderer
 // maps these to resilient diagnostics; the slice is identical to the CLI build's
 // halt input (VerifyRecipeResolution joins it), so both surfaces enumerate pin
 // candidates by the same logic over the same complete recipe set.
+//
+// A feature type naming no version has its candidates enumerated at the version
+// this lookup's own Feature resolution selects for it: the recipe shell holds no
+// Feature index, so the resolution is handed to it rather than read off it.
 func (l *LazyLookup) ResolutionFindings(manifest *types.Manifest, graph *types.IRGraph) []error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.recipeCatalog().ResolutionFindings(manifest, graph)
+	return l.recipeCatalog().resolutionFindings(manifest, graph, l.feature)
 }
 
 // SubAggregateLoader exposes the catalog's sub-aggregate loader over the lazily-
@@ -2786,9 +2796,7 @@ func (l *LazyLookup) localFeatureVersion(uri string) (string, bool, error) {
 // joined form of ResolutionFindings) over the lazily-enumerated recipe set, so the
 // build's pre-render gate reads the closure's complete recipe enumeration.
 func (l *LazyLookup) VerifyRecipeResolution(manifest *types.Manifest, graph *types.IRGraph) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.recipeCatalog().VerifyRecipeResolution(manifest, graph)
+	return errors.Join(l.ResolutionFindings(manifest, graph)...)
 }
 
 // RecipeByURI / FeatureRecipeByURI resolve a recipe / feature-recipe by its
