@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: langgraph-agent
+  version: "1.0.0"
+spec:
+  components:
+    # The model connection carries no credential here: the Release attaches it.
+    agent:
+      type: core/ai-agent/langgraph
+      values:
+        graph_entrypoint: app.graph:graph
+      uses:
+        model:
+          gpt:
+            target: gpt
+        checkpointer_db:
+          memory:
+            target: memory
+    gpt:
+      type: core/ai-model/openai
+      values:
+        model: gpt-4o-mini
+    memory:
+      type: core/datastore/valkey

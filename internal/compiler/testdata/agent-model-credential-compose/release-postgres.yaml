@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: postgres-release-attached
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: postgres-database
+  manifest: postgres-compose
+  components:
+    # The password the Release alone attaches: an attachment the Release makes
+    # names no values.key, so its value is delivered under the key value.
+    db:
+      features:
+        password:
+          type: core/secret-value
+          infra:
+            origin: release-attached-password

@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: langgraph-agent-other-key
+  version: "1.0.0"
+spec:
+  components:
+    # The Aggregate attaches the credential under a key other than the variable
+    # the agent receives it as; the Release supplies its origin.
+    agent:
+      type: core/ai-agent/langgraph
+      values:
+        graph_entrypoint: app.graph:graph
+      uses:
+        model:
+          gpt:
+            target: gpt
+            features:
+              credential:
+                type: core/secret-value
+                values:
+                  key: MODEL_KEY
+        checkpointer_db:
+          memory:
+            target: memory
+    gpt:
+      type: core/ai-model/openai
+      values:
+        model: gpt-4o-mini
+    memory:
+      type: core/datastore/valkey

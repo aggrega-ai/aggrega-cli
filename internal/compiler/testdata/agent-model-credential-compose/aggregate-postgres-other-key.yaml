@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: postgres-database-other-key
+  version: "1.0.0"
+spec:
+  components:
+    # The Aggregate attaches the password under a key other than the variable
+    # the database receives it as; the Release supplies its origin.
+    db:
+      type: core/datastore/postgres
+      features:
+        password:
+          type: core/secret-value
+          values:
+            key: DB_PW

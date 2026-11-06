@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: crewai-agent
+  version: "1.0.0"
+spec:
+  components:
+    # The model connection carries no credential here: the Release attaches it.
+    agent:
+      type: core/ai-agent/crewai
+      values:
+        role: researcher
+        goal: answer from the support plans
+        backstory: knows every support plan
+        allow_delegation: false
+        log_level: INFO
+      uses:
+        model:
+          gpt:
+            target: gpt
+    gpt:
+      type: core/ai-model/openai
+      values:
+        model: gpt-4o-mini

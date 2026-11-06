@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: crewai-release-keyed
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: crewai-agent-keyed
+  manifest: crewai-compose
+  components:
+    agent:
+      infra:
+        image: ghcr.io/example/agent:1.0.0
+      # The origin of the credential the Aggregate attaches, delivered under the
+      # key the Aggregate names.
+      uses:
+        model:
+          gpt:
+            features:
+              credential:
+                type: core/secret-value
+                infra:
+                  origin: aggregate-keyed-key
+    gpt: {}

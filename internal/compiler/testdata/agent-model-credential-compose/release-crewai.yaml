@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: crewai-release-attached
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: crewai-agent
+  manifest: crewai-compose
+  components:
+    agent:
+      infra:
+        image: ghcr.io/example/agent:1.0.0
+      # The credential the Release alone attaches on the model connection: an
+      # attachment the Release makes names no values.key, so its value is
+      # delivered under the key value.
+      uses:
+        model:
+          gpt:
+            features:
+              credential:
+                type: core/secret-value
+                infra:
+                  origin: release-attached-key
+    gpt: {}

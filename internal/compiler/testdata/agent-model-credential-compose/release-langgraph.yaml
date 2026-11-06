@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: langgraph-release-attached
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: langgraph-agent
+  manifest: langgraph-compose
+  components:
+    # The credential the Release alone attaches on the model connection: an
+    # attachment the Release makes names no values.key, so its value is
+    # delivered under the key value.
+    agent:
+      uses:
+        model:
+          gpt:
+            features:
+              credential:
+                type: core/secret-value
+                infra:
+                  origin: release-attached-key
+    gpt: {}
+    memory: {}

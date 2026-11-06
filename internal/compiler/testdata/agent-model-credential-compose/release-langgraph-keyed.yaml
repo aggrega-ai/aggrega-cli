@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: langgraph-release-keyed
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: langgraph-agent-keyed
+  manifest: langgraph-compose
+  components:
+    # The origin of the credential the Aggregate attaches, delivered under the
+    # key the Aggregate names.
+    agent:
+      uses:
+        model:
+          gpt:
+            features:
+              credential:
+                type: core/secret-value
+                infra:
+                  origin: aggregate-keyed-key
+    gpt: {}
+    memory: {}

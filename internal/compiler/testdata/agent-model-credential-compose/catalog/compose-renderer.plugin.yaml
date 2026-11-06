@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: compose
+  version: 1.0.0
+  pluginType: provider
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - compose
+  # Both exports: render_node renders each node, and assemble_boundary merges a
+  # boundary's nodes into one docker-compose.yaml.
+  exports:
+    - name: render_node
+    - name: assemble_boundary
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap so guest runtime initialization completes even where
+    # the host runs the Wasm engine without native code generation.
+    timeoutMs: 300000

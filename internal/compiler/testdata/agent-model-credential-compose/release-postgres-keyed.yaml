@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: postgres-release-keyed
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: postgres-database-keyed
+  manifest: postgres-compose
+  components:
+    # The origin of the password the Aggregate attaches, delivered under the key
+    # the Aggregate names.
+    db:
+      features:
+        password:
+          type: core/secret-value
+          infra:
+            origin: aggregate-keyed-password

@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: postgres-compose
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/datastore/postgres:1.0.0: compose/postgres:1.0.0
+    features:
+      type:
+        core/secret-value:1.0.0: compose/dotenv-secret:1.0.0
