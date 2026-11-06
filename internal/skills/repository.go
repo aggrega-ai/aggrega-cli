@@ -317,6 +317,8 @@ func repositoryReadme() ([]byte, error) {
 	b.WriteString("whose source is [aggrega-ai/aggrega-cli](https://github.com/aggrega-ai/aggrega-cli), and a\n")
 	b.WriteString("tag here names the Aggrega release the files were generated from. A change to a skill is made\n")
 	b.WriteString("there; an edit made here is replaced the next time the files are generated.\n\n")
-	b.WriteString("The skills are released under the same licence as Aggrega's source, in [LICENSE](" + licenseFile + ").\n")
+	b.WriteString("## License\n\n")
+	b.WriteString("The Aggrega skills are released under the Apache License, Version 2.0; the full text is in the\n")
+	b.WriteString("[`LICENSE`](" + licenseFile + ") file.\n")
 	return []byte(b.String()), nil
 }
