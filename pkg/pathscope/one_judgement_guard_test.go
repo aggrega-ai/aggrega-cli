@@ -62,6 +62,14 @@ var decidersOfInside = map[string]string{
 	"pkg/readscope:CheckOverlayRead":           "an overlay read beneath the overlay directory a catalog generation merges from",
 	"internal/entitypin:RefuseSharedDirectory": "the documents beside an entity, read to tell whether another entity shares its directory",
 	"pkg/pluginpath:Resolver.readColocated":    "the .wasm beside a catalog Plugin entity, read by the plugin cascade",
+	"pkg/pluginpath:ColocatedDir.besideEntity": "the module file beside a catalog Plugin entity, which the plugin " +
+		"cascade's read and its presence test both ask",
+	"pkg/pluginpath:ColocatedDir.HoldsModule": "whether the co-located tier finds a module of a catalog Plugin " +
+		"entity to read or to refuse, rather than missing it, by the read's own judgement, which the catalog's " +
+		"importer selection decides by",
+	"pkg/catalog:Catalog.moduleBesideEntity": "whether a catalog importer entity of an identity the binary carries " +
+		"has its module beside it, which decides whether the built-in importer runs in its place, judged as the " +
+		"co-located tier judges it",
 	"internal/gencatalog:loadOverlaysByPlugin": "every link a catalog generation's overlay walk would read through, an overlay or a directory",
 	"pkg/readscope:CheckFetchedRead":           "a file or directory a pull archives from the checkout of a repository a source fetched",
 	"pkg/sourceresolver/internal/archive:WalkDirectory": "the directory a fetched repository is archived from, " +
@@ -143,11 +151,15 @@ var judgementsOfInside = map[string][]string{
 }
 
 // judgementsWithinAPackage are the judgements built on the one definition that a
-// decider in the same package asks by name — as a function, or as a method of a
-// value it holds — keyed by the package directory. Each is itself a decider above,
-// so the chain from every request resolver to the definition is held link by link.
+// decider asks by name, keyed by the package directory of the decider asking: a
+// function of that package, or a method of a value the decider holds, whose type
+// may be declared in another package. The name alone is matched. Each is itself a
+// decider above, so the chain from every decider asking one to the definition is
+// held link by link.
 var judgementsWithinAPackage = map[string][]string{
 	"internal/serve": {"leadsOutOfWorkspace", "leadsOut", "workspacePath", "workspaceDocumentIn"},
+	"pkg/catalog":    {"HoldsModule"},
+	"pkg/pluginpath": {"besideEntity"},
 	"pkg/readscope":  {"checkRead"},
 	"pkg/resolver":   {"resolveManifest", "resolveReleaseExtendsRef", "LoadParametersImport"},
 }
