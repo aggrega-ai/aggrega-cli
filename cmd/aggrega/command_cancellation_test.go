@@ -144,8 +144,10 @@ func runThroughTheCommandTree(ctx context.Context, args []string) error {
 
 // probeReleaseWorkspace writes a Release with a resolvable Aggregate, Manifest and
 // Component, and a declared workspace so resolution never climbs above the temporary
-// tree. It carries no Recipe, which is what makes a live validation fail for its own
-// reason while a live inspection still renders.
+// tree. It carries no Recipe and its Manifest maps nothing, which is what makes a
+// live validation fail for its own reason — no Recipe resolves for the component —
+// while a live inspection still renders. A Manifest mapping the type to a Recipe no
+// catalog holds would halt both commands before either reached its own work.
 func probeReleaseWorkspace(t *testing.T) (wsRoot, releasePath, catalogDir string) {
 	t.Helper()
 	root := t.TempDir()
@@ -158,7 +160,7 @@ func probeReleaseWorkspace(t *testing.T) (wsRoot, releasePath, catalogDir string
 		"spec:\n  components:\n    api:\n      type: server\n")
 	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
 		"kind: Manifest\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"+
-		"spec:\n  mappings:\n    components:\n      type:\n        server: server\n")
+		"spec:\n  mappings: {}\n")
 	releasePath = filepath.Join(root, "release.yaml")
 	writeFixture(t, releasePath, "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n"+
 		"metadata:\n  name: probe\n  environment: testing\n  version: \"1.0.0\"\n"+

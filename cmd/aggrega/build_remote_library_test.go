@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // fakeRegistryTrust is the trust stance a fixture must declare when its registry
@@ -345,7 +346,7 @@ func relocateLibraryToCache(t *testing.T, root, cacheDir string) {
 	if err := os.Remove(localPath); err != nil {
 		t.Fatalf("remove local library: %v", err)
 	}
-	slot := mustCachePath(root, cacheDir, "DbSizing:1.0.0", "1.0.0")
+	slot := ocitest.MustCachePath(root, cacheDir, "SchemaLibrary", "DbSizing:1.0.0", "1.0.0")
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
@@ -358,7 +359,7 @@ func relocateLibraryToCache(t *testing.T, root, cacheDir string) {
 	if err != nil {
 		t.Fatalf("build library manifest: %v", err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, "DbSizing:1.0.0", "1.0.0", mb); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "SchemaLibrary", "DbSizing:1.0.0", "1.0.0", mb); err != nil {
 		t.Fatalf("write cache manifest: %v", err)
 	}
 }

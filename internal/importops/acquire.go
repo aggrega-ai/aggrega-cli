@@ -170,11 +170,11 @@ func acquireCarriedImporter(ctx context.Context, rw *workspaceconfig.ResolvedWor
 	}
 
 	root, cacheDir := rw.Root(), wsCfg.ResolvedArtifactCacheDir()
-	if err := oci.WriteCached(root, cacheDir, uri, accepted, fetched.Bytes); err != nil {
+	if err := oci.WriteCached(root, cacheDir, oci.PluginArtifactKind(), uri, accepted, fetched.Bytes); err != nil {
 		return fmt.Errorf("cache core importer %q fetched from %s: %w", p.Coordinate(), from, err)
 	}
 	if len(fetched.ManifestBytes) > 0 {
-		if err := oci.WriteCachedManifest(root, cacheDir, uri, accepted, fetched.ManifestBytes); err != nil {
+		if err := oci.WriteCachedManifest(root, cacheDir, oci.PluginArtifactKind(), uri, accepted, fetched.ManifestBytes); err != nil {
 			return fmt.Errorf("cache core importer %q fetched from %s: %w", p.Coordinate(), from, err)
 		}
 	}

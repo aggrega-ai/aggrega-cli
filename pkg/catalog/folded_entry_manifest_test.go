@@ -41,24 +41,24 @@ func TestAFoldedEntryReportsTheManifestItsReadHeld(t *testing.T) {
 		workloadURI  = "BaseWorkloads:1.0.0"
 		artifactsURI = "PinnedArtifacts:1.0.0"
 	)
-	pins := map[string]Pin{
-		pluginURI:    writePinnedSlot(t, ws, cacheDir, pluginURI, oci.MediaTypePlugin, []byte(provenancePulledPluginYAML)),
-		recipeURI:    writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBundle(t, bridgeRecipeYAML)),
-		frURI:        writePinnedSlot(t, ws, cacheDir, frURI, oci.MediaTypeFeatureRecipe, recipeBundle(t, bridgeFeatureRecipeYAML)),
-		aggregateURI: writePinnedSlot(t, ws, cacheDir, aggregateURI, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML)),
-		schemaURI:    writePinnedSlot(t, ws, cacheDir, schemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
-		mappingURI:   writePinnedSlot(t, ws, cacheDir, mappingURI, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML)),
-		workloadURI:  writePinnedSlot(t, ws, cacheDir, workloadURI, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML)),
-		artifactsURI: writePinnedSlot(t, ws, cacheDir, artifactsURI, oci.MediaTypeArtifactLibrary, []byte(provenancePinnedArtifactLibYAML)),
+	pins := Pins{
+		{Kind: "Plugin", URI: pluginURI}:             writePinnedSlot(t, ws, cacheDir, pluginURI, oci.MediaTypePlugin, []byte(provenancePulledPluginYAML)),
+		{Kind: "Recipe", URI: recipeURI}:             writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBundle(t, bridgeRecipeYAML)),
+		{Kind: "FeatureRecipe", URI: frURI}:          writePinnedSlot(t, ws, cacheDir, frURI, oci.MediaTypeFeatureRecipe, recipeBundle(t, bridgeFeatureRecipeYAML)),
+		{Kind: "Aggregate", URI: aggregateURI}:       writePinnedSlot(t, ws, cacheDir, aggregateURI, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML)),
+		{Kind: "SchemaLibrary", URI: schemaURI}:      writePinnedSlot(t, ws, cacheDir, schemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
+		{Kind: "MappingLibrary", URI: mappingURI}:    writePinnedSlot(t, ws, cacheDir, mappingURI, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML)),
+		{Kind: "WorkloadLibrary", URI: workloadURI}:  writePinnedSlot(t, ws, cacheDir, workloadURI, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML)),
+		{Kind: "ArtifactLibrary", URI: artifactsURI}: writePinnedSlot(t, ws, cacheDir, artifactsURI, oci.MediaTypeArtifactLibrary, []byte(provenancePinnedArtifactLibYAML)),
 	}
 	// The slot's own manifest digest, kept before one pin is made to record none.
 	held := map[string]string{}
 	for uri, pin := range pins {
-		held[uri] = pin.ManifestDigest
+		held[uri.URI] = pin.ManifestDigest
 	}
-	unrecorded := pins[recipeURI]
+	unrecorded := pins[PinKey{Kind: "Recipe", URI: recipeURI}]
 	unrecorded.ManifestDigest = ""
-	pins[recipeURI] = unrecorded
+	pins[PinKey{Kind: "Recipe", URI: recipeURI}] = unrecorded
 
 	entity := func(uri, kindHint string) func(context.Context, closure.Lookup) (closure.Resolution, error) {
 		return func(ctx context.Context, lookup closure.Lookup) (closure.Resolution, error) {
@@ -81,7 +81,7 @@ func TestAFoldedEntryReportsTheManifestItsReadHeld(t *testing.T) {
 		want    string
 		resolve func(context.Context, closure.Lookup) (closure.Resolution, error)
 	}{
-		{"a folded Plugin entity", held[pluginURI], entity(pluginURI, pluginEntityKindHint)},
+		{"a folded Plugin entity", held[pluginURI], entity(pluginURI, closure.KindPlugin)},
 		{"a folded Recipe whose pin records no manifest digest", held[recipeURI], entity(recipeURI, "recipe")},
 		{"a folded FeatureRecipe", held[frURI], entity(frURI, "feature_recipe")},
 		{"a folded Aggregate", held[aggregateURI], aggregate(aggregateURI)},

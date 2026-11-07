@@ -38,12 +38,14 @@ release: ./release-prod.yaml
 generated_at: 2026-05-22T10:23:14Z
 
 entities:
-  - uri: hub.aggrega.ai/component/core/compute/api-server
+  - kind: component
+    uri: hub.aggrega.ai/component/core/compute/api-server
     resolved_version: 1.2.3
     digest: ` + fixtureDigest("a1b2c3") + `
     referenced_from:
       - aggregate.spec.components.api.type
-  - uri: hub.aggrega.ai/component/core/datastore/mariadb
+  - kind: component
+    uri: hub.aggrega.ai/component/core/datastore/mariadb
     resolved_version: 1.0.0
     digest: ` + fixtureDigest("d4e5f6") + `
     referenced_from:
@@ -254,8 +256,8 @@ func TestWriteCanonicalIsDeterministic(t *testing.T) {
 		Release:     "./release-prod.yaml",
 		GeneratedAt: "2026-05-22T10:23:14Z",
 		Entities: []lockfile.Entity{
-			{URI: "hub.aggrega.ai/component/core/z-late", ResolvedVersion: "1.0.0", Digest: "sha256:z"},
-			{URI: "hub.aggrega.ai/component/core/a-early", ResolvedVersion: "1.0.0", Digest: "sha256:a"},
+			{Kind: "component", URI: "hub.aggrega.ai/component/core/z-late", ResolvedVersion: "1.0.0", Digest: "sha256:z"},
+			{Kind: "component", URI: "hub.aggrega.ai/component/core/a-early", ResolvedVersion: "1.0.0", Digest: "sha256:a"},
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{
@@ -309,9 +311,9 @@ func TestWriteSortsSlicesByCanonicalKey(t *testing.T) {
 		Release:     "./release-prod.yaml",
 		GeneratedAt: "2026-05-22T10:23:14Z",
 		Entities: []lockfile.Entity{
-			{URI: "hub.aggrega.ai/component/core/z-late", ResolvedVersion: "1.0.0", Digest: fixtureDigest("z"),
+			{Kind: "component", URI: "hub.aggrega.ai/component/core/z-late", ResolvedVersion: "1.0.0", Digest: fixtureDigest("z"),
 				ReferencedFrom: []string{"z-second-site", "a-first-site"}},
-			{URI: "hub.aggrega.ai/component/core/a-early", ResolvedVersion: "1.0.0", Digest: fixtureDigest("a")},
+			{Kind: "component", URI: "hub.aggrega.ai/component/core/a-early", ResolvedVersion: "1.0.0", Digest: fixtureDigest("a")},
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{

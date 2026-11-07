@@ -44,7 +44,7 @@ func TestEntitySlotWritesAreHeldToTheWorkspace(t *testing.T) {
 			ws, outside := t.TempDir(), t.TempDir()
 			row.layout(t, ws, outside)
 
-			err := WriteCached(ws, cacheDir, "oci://hub.example.invalid/component/demo/api", "1.0.0", []byte("blob"))
+			err := WriteCached(ws, cacheDir, "Component", "oci://hub.example.invalid/component/demo/api", "1.0.0", []byte("blob"))
 			if !row.refused {
 				if err != nil {
 					t.Fatalf("refused a slot the workspace holds: %v", err)
@@ -98,7 +98,7 @@ func TestEntitySlotWritesBeneathACacheDirectoryOutsideTheWorkspaceAreHeldToIt(t 
 			}
 			row.layout(t, filepath.Join(ws, cacheDir), elsewhere)
 
-			err := WriteCached(ws, cacheDir, uri, "1.0.0", []byte("blob"))
+			err := WriteCached(ws, cacheDir, "Component", uri, "1.0.0", []byte("blob"))
 			if row.refused {
 				if !errors.Is(err, writescope.ErrWriteLeadsOutOfWorkspace()) {
 					t.Fatalf("want the write-leads-out-of-workspace halt, got %v", err)
@@ -111,7 +111,7 @@ func TestEntitySlotWritesBeneathACacheDirectoryOutsideTheWorkspaceAreHeldToIt(t 
 			if err != nil {
 				t.Fatalf("refused a slot its root holds: %v", err)
 			}
-			if got, rerr := ReadCached(ws, cacheDir, uri, "1.0.0"); rerr != nil || string(got) != "blob" {
+			if got, rerr := ReadCached(ws, cacheDir, "Component", uri, "1.0.0"); rerr != nil || string(got) != "blob" {
 				t.Errorf("the slot does not hold what was written: %q (%v)", got, rerr)
 			}
 		})
@@ -189,7 +189,7 @@ func TestEntitySlotWritesAreHeldToTheCacheDirectory(t *testing.T) {
 			dir, link, root := row.layout(t, p)
 			before := listTree(t, dir)
 
-			err := WriteCached(ws, cacheDir, uri, "1.0.0", []byte("blob"))
+			err := WriteCached(ws, cacheDir, "Component", uri, "1.0.0", []byte("blob"))
 			if link == "" {
 				if err != nil {
 					t.Fatalf("refused a slot the cache directory holds: %v", err)

@@ -242,7 +242,13 @@ spec:
 	if err != nil {
 		t.Fatalf("resolve the fixture workspace: %v", err)
 	}
-	viewFor := func(lf *lockfile.Lockfile) *catalog.LazyLookup { return tw.newView(releasePath, lf) }
+	viewFor := func(lf *lockfile.Lockfile) *catalog.LazyLookup {
+		pins, err := catalog.PinsFromLockfile(lf)
+		if err != nil {
+			t.Fatalf("pin the fixture view to its lockfile: %v", err)
+		}
+		return tw.newView(releasePath, pins)
+	}
 	compileropstest.WriteMatchingLockfile(t, viewFor, releasePath, tw.root, tw.cfg, func(lf *lockfile.Lockfile) {
 		if !withMarker {
 			return
@@ -294,12 +300,12 @@ func TestDescribeReleaseCarriesEverythingTheResolutionReachedAndDecided(t *testi
 	if twErr != nil {
 		t.Fatalf("resolve the oracle workspace: %v", twErr)
 	}
-	lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+	lf, lockPins, lockRefused := tw.loadReleaseLockfile(releasePath)
 	if lockRefused != "" {
 		t.Fatalf("read the oracle's lockfile: %s", lockRefused)
 	}
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
-		View:            tw.newView(releasePath, lf),
+		View:            tw.newView(releasePath, lockPins),
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,

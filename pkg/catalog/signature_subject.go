@@ -76,7 +76,7 @@ func SignatureSubjectOf(registry string, axis closure.VerifiableAxis, ref closur
 // this binding, and the build holds the fact that pull recorded through it, so the
 // two read one host and one kind for it exactly as they do for a closure reference.
 func PluginSignatureSubjectOf(registry, uri string) (SignatureSubject, bool) {
-	return SignatureSubjectOf(registry, closure.VerifiableAxis{}, closure.VerifiableRef{URI: uri, KindHint: pluginEntityKindHint})
+	return SignatureSubjectOf(registry, closure.VerifiableAxis{}, closure.VerifiableRef{URI: uri, KindHint: closure.KindPlugin})
 }
 
 // signatureBinding resolves one closure reference's catalog kind and the registry

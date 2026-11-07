@@ -1,10 +1,12 @@
 entities:
-    - uri: core/prometheus-exporter
+    - kind: feature
+      uri: core/prometheus-exporter
       resolved_version: 1.0.0
       digest: sha256:5168a479964a8ff299b3be07c360fe84604de76418329f85019d0d19147c2be9
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
-    - uri: example/compute/service
+    - kind: component
+      uri: example/compute/service
       resolved_version: 1.0.0
       digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073
       referenced_from:
@@ -14,27 +16,32 @@ entities:
         - aggregate.spec.components.ledger.type
         - aggregate.spec.components.reconcile.type
         - aggregate.spec.components.worker.type
-    - uri: example/compute/service:1.0.0
+    - kind: component
+      uri: example/compute/service:1.0.0
       resolved_version: 1.0.0
       digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
-    - uri: helm/prometheus-exporter:1.0.0
+    - kind: feature_recipe
+      uri: helm/prometheus-exporter:1.0.0
       resolved_version: 1.0.0
       digest: sha256:e4df11f46e851395422fc6b3adcac298c1b9b9cf6b722d42632b29c21b5f360e
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
-    - uri: helm/service:1.0.0
+    - kind: recipe
+      uri: helm/service:1.0.0
       resolved_version: 1.0.0
       digest: sha256:2a265f179ce59caf200b44269cd17b3d9bd62e48018d0ee56bcd8209e38abe48
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
-    - uri: monitoring-demo
+    - kind: aggregate
+      uri: monitoring-demo
       resolved_version: ""
       digest: sha256:3f6c12fc3d0514b53ccc15fa837270f19cd6c4c3b326bbe8935e9e17072c490c
       referenced_from:
         - release.spec.aggregate
-    - uri: monitoring-manifest
+    - kind: manifest
+      uri: monitoring-manifest
       resolved_version: ""
       digest: sha256:1e87f8bddba542ebe6283d584eee8c45f776c8e4815088a8cfbf9d5dd85c6bec
       referenced_from:

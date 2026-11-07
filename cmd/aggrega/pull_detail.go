@@ -42,7 +42,7 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 	for _, e := range cl.Entities {
 		rows = append(rows, row{
 			tier:   pullEventTier(e.ResolutionPath),
-			kind:   entityKindForDetail(e.KindHint, e.ReferencedFrom),
+			kind:   entityKindForDetail(e),
 			uri:    e.URI,
 			ref:    joinReferencedFrom(e.ReferencedFrom),
 			hasRef: true,
@@ -69,11 +69,17 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 	for _, l := range cl.ArtifactLibraries {
 		rows = append(rows, row{tier: pullEventTier(l.ResolutionPath), kind: "ArtifactLibrary", uri: l.URI})
 	}
+	// Two entities of different kinds may share a reference and a reference site —
+	// a Component and the Recipe of the same name a Manifest mapping binds to it —
+	// so the kind breaks the last tie and the order stays fixed.
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].uri != rows[j].uri {
 			return rows[i].uri < rows[j].uri
 		}
-		return rows[i].ref < rows[j].ref
+		if rows[i].ref != rows[j].ref {
+			return rows[i].ref < rows[j].ref
+		}
+		return rows[i].kind < rows[j].kind
 	})
 
 	fmt.Fprintf(out, "resolved %d entities (this pull):\n", len(rows))
@@ -144,61 +150,15 @@ func pullEventTier(resolutionPath string) string {
 	return closure.ReportedResolutionSource(resolutionPath)
 }
 
-// entityKindForDetail derives the display kind for a resolved entity. The
-// closure's KindHint is authoritative where this table names it, but the hints
-// it does not name — the Release's own aggregate's, and those of Components and
-// Features — leave the kind to the entity's reference-site role, which is
-// always present. Falls back to "Entity" when no rule matches.
-func entityKindForDetail(kindHint string, referencedFrom []string) string {
-	switch kindHint {
-	case "recipe":
-		return "Recipe"
-	case "feature_recipe":
-		return "FeatureRecipe"
-	case "aggregate":
-		return "Aggregate"
-	}
-	for _, ref := range referencedFrom {
-		if k := kindFromReferenceSite(ref); k != "" {
-			return k
-		}
+// entityKindForDetail is the kind a resolved entity's row prints: the kind the
+// walk collected it as, named as an author writes it (closure.DocumentKind), which
+// is the kind every other report of a resolution names it by. "Entity" stands in
+// only for an entity recorded with no kind.
+func entityKindForDetail(e closure.ResolvedRef) string {
+	if kind := closure.DocumentKind(e.Kind()); kind != "" {
+		return kind
 	}
 	return "Entity"
-}
-
-// kindFromReferenceSite maps an authoring-site dotted path to the catalog kind
-// it references. The Manifest mapping-value sites are matched first, because a
-// mapping path (`manifest.spec.mappings.components.type.<type>`) denotes the
-// Recipe/FeatureRecipe behind the type, not the Component/Feature itself.
-//
-// Instance-type sites end `.<collection>.<instance>.type`; the kind is the
-// collection segment IMMEDIATELY before the instance name — not any earlier
-// segment — so an attachment nested under a component
-// (`…components.api.features.cache.type`) maps to Feature, not the enclosing
-// Component. Every attachment family reaches this table through `features`,
-// because that is the one attachment collection an authoring surface carries.
-func kindFromReferenceSite(ref string) string {
-	switch {
-	case ref == "release.spec.aggregate":
-		return "Aggregate"
-	case ref == "release.spec.manifest" || ref == "manifest.spec.extends":
-		return "Manifest"
-	case strings.Contains(ref, "mappings.components.type."):
-		return "Recipe"
-	case strings.Contains(ref, "mappings.features.type."):
-		return "FeatureRecipe"
-	}
-	if tokens := strings.Split(ref, "."); len(tokens) >= 3 && tokens[len(tokens)-1] == "type" {
-		switch tokens[len(tokens)-3] {
-		case "components":
-			return "Component"
-		case "features":
-			return "Feature"
-		case "aggregates":
-			return "Aggregate"
-		}
-	}
-	return ""
 }
 
 // joinReferencedFrom renders the referenced-from set deterministically. The

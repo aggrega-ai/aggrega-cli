@@ -65,7 +65,8 @@ func pullHolding(t *testing.T, root, releasePath, catalogDir string, res closure
 }
 
 // entityRow returns the digest the lockfile written for releasePath records for
-// uri, failing the test where it records none.
+// the Recipe uri, failing the test where it records none. It reads the Recipe's
+// own row: a Component sharing the Recipe's name has a row of its own.
 func entityRow(t *testing.T, releasePath, uri string) string {
 	t.Helper()
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -73,11 +74,11 @@ func entityRow(t *testing.T, releasePath, uri string) string {
 		t.Fatalf("load lockfile: %v", err)
 	}
 	for _, e := range lf.Entities {
-		if e.URI == uri {
+		if e.URI == uri && e.Kind == "recipe" {
 			return e.Digest
 		}
 	}
-	t.Fatalf("the lockfile records no row for %q: %+v", uri, lf.Entities)
+	t.Fatalf("the lockfile records no Recipe row for %q: %+v", uri, lf.Entities)
 	return ""
 }
 
@@ -89,7 +90,8 @@ func entityRow(t *testing.T, releasePath, uri string) string {
 // surface reached the file before the record that covers it.
 func assertRowRefusal(t *testing.T, verifyErr, buildErr error, uri, recorded, current string, before error) {
 	t.Helper()
-	want := `entity "` + uri + `" changed: lockfile=(1.0.0,` + recorded + `) current=(1.0.0,` + current + `)`
+	// Every caller hands a Recipe's reference: the lock beside a Recipe is what moves.
+	want := `entity "` + uri + `" (recipe) changed: lockfile=(1.0.0,` + recorded + `) current=(1.0.0,` + current + `)`
 	for _, s := range []struct {
 		name string
 		err  error

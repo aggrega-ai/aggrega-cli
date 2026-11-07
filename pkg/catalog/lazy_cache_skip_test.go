@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -91,7 +92,7 @@ spec:
 func writeCachedLibrary(t *testing.T, ws, cacheDir, slotURI, body string) string {
 	t.Helper()
 	_, version, _ := resolver.SplitVersionedURI(slotURI)
-	slot := mustCachePath(ws, cacheDir, slotURI, version)
+	slot := ocitest.MustCachePath(ws, cacheDir, peekEntityKind([]byte(body)), slotURI, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot %s: %v", slotURI, err)
 	}
@@ -191,7 +192,7 @@ func TestLazyWalks_CachedVersionCollisionDoesNotBypassPin(t *testing.T) {
 	pin := writePinnedSlot(t, ws, cacheUnderCatalogDir, "DbSizing:1.10.0", oci.MediaTypeSchemaLibrary, []byte(pinnedLibYAML))
 
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
-	subject.SetPins(map[string]Pin{"DbSizing": pin})
+	subject.SetPins(Pins{{Kind: "SchemaLibrary", URI: "DbSizing"}: pin})
 	if err := subject.buildSchemaLibraries(); err != nil {
 		t.Fatalf("buildSchemaLibraries: %v", err)
 	}
@@ -254,7 +255,7 @@ func TestUnverifiedCachedSchemaLibraries_NamesOnlyWhatWentUnused(t *testing.T) {
 	pin := writePinnedSlot(t, ws, cacheUnderCatalogDir, "Verified:1.0.0", oci.MediaTypeSchemaLibrary, []byte(verifiedLibYAML))
 
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
-	subject.SetPins(map[string]Pin{"Verified": pin})
+	subject.SetPins(Pins{{Kind: "SchemaLibrary", URI: "Verified"}: pin})
 	if err := subject.buildSchemaLibraries(); err != nil {
 		t.Fatalf("buildSchemaLibraries: %v", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 const reuseURI = "hub.aggrega.ai/schemalibrary/core/DbSizing:1.0.0"
@@ -41,7 +42,7 @@ spec:
 // the miss rather than the reuse decision these rows are about.
 func seedCacheSlot(t *testing.T, ws, cacheDir string, body []byte) {
 	t.Helper()
-	slot := mustCachePath(ws, cacheDir, reuseURI, "1.0.0")
+	slot := ocitest.MustCachePath(ws, cacheDir, "SchemaLibrary", reuseURI, "1.0.0")
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir slot: %v", err)
 	}
@@ -49,14 +50,14 @@ func seedCacheSlot(t *testing.T, ws, cacheDir string, body []byte) {
 		t.Fatalf("seed library.yaml: %v", err)
 	}
 	manifest, _ := faithfulManifest(context.Background(), oci.MediaTypeSchemaLibrary, body)
-	if err := oci.WriteCachedManifest(ws, cacheDir, reuseURI, "1.0.0", manifest); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, "SchemaLibrary", reuseURI, "1.0.0", manifest); err != nil {
 		t.Fatalf("seed manifest: %v", err)
 	}
 }
 
 func readCacheSlot(t *testing.T, ws, cacheDir string) []byte {
 	t.Helper()
-	slot := mustCachePath(ws, cacheDir, reuseURI, "1.0.0")
+	slot := ocitest.MustCachePath(ws, cacheDir, "SchemaLibrary", reuseURI, "1.0.0")
 	got, err := os.ReadFile(filepath.Join(slot, "library.yaml"))
 	if err != nil {
 		t.Fatalf("read slot library.yaml: %v", err)
@@ -94,7 +95,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		var notices []string
 		reuse := &catalog.ReuseVerification{
-			PriorPins: map[string]catalog.Pin{reuseURI: {Digest: goodPin}},
+			PriorPins: catalog.Pins{{Kind: "SchemaLibrary", URI: reuseURI}: {Digest: goodPin}},
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
 		// A puller that must not be reached on a verified hit.
@@ -129,7 +130,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		var notices []string
 		reuse := &catalog.ReuseVerification{
-			PriorPins: map[string]catalog.Pin{reuseURI: {Digest: goodPin}},
+			PriorPins: catalog.Pins{{Kind: "SchemaLibrary", URI: reuseURI}: {Digest: goodPin}},
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
@@ -173,7 +174,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			t.Fatalf("oci.Push: %v", err)
 		}
 		reuse := &catalog.ReuseVerification{
-			PriorPins: map[string]catalog.Pin{reuseURI: {ResolvedVersion: "1.0.0", Digest: goodPin}},
+			PriorPins: catalog.Pins{{Kind: "SchemaLibrary", URI: reuseURI}: {ResolvedVersion: "1.0.0", Digest: goodPin}},
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
 		_, err = lookup.ResolveLibrary(context.Background(), closure.LibraryAxisNamed("SchemaLibraries"), reuseURI)

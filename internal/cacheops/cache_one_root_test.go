@@ -32,7 +32,7 @@ import (
 // class root that is a link leading elsewhere inside the cache directory is listed,
 // pruned and cleared where it leads, as a plain one is.
 func TestTheCacheDirectoryIsTheOneRootOfEveryInventoryOperation(t *testing.T) {
-	const slotRel = "zz-unreferenced/1.0.0"
+	slotRel := entitySlotRel()
 	type place struct{ ws, cache, elsewhere string }
 	// A layout lays the row out and returns the directory a refused cell must leave
 	// as it was and the link it must name; a row every operation reads returns the

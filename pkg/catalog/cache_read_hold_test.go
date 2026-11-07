@@ -49,7 +49,7 @@ func cacheReadSlotLayouts() []struct {
 	seed := func(t *testing.T, p cacheReadPlace) string {
 		t.Helper()
 		seedVerifiedEntitySlot(t, p.ws, p.cacheDir, cacheReadLibraryURI, cacheReadLibraryVersion, oci.MediaTypeSchemaLibrary, cacheReadLibraryBody)
-		slot, err := oci.CachePath(p.ws, p.cacheDir, cacheReadLibraryURI, cacheReadLibraryVersion)
+		slot, err := oci.CachePath(p.ws, p.cacheDir, "SchemaLibrary", cacheReadLibraryURI, cacheReadLibraryVersion)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -193,7 +193,7 @@ func TestTheBuildsPinGateHaltsOnASlotTheReadHoldRefuses(t *testing.T) {
 			// The content pin the slot was seeded under; no manifest pin, so the gate
 			// holds the content to the manifest beside it and to this pin alone.
 			view := NewLazyLookup(p.ws, p.cacheDir, nil, nil)
-			view.SetPins(map[string]Pin{cacheReadLibraryURI: {
+			view.SetPins(Pins{{Kind: "SchemaLibrary", URI: cacheReadLibraryURI}: {
 				ResolvedVersion: cacheReadLibraryVersion,
 				Digest:          rowDigestOf(cacheReadLibraryBody),
 			}})

@@ -639,7 +639,7 @@ func validateRecipeEntity(ctx context.Context, res *EntityResult, wsRoot, cacheD
 		// The reference rides on the failure so a caller holding the load's record
 		// of refused files can tell whether one of them declares this Component. It
 		// adds no condition: the message and what the failure matches are unchanged.
-		return closure.NewUnresolvedEntityError(rec.Spec.Implements, closure.ComponentKindHint,
+		return closure.NewUnresolvedEntityError(rec.Spec.Implements, closure.KindComponent,
 			fmt.Errorf("render: implements target %q not found in catalog", rec.Spec.Implements))
 	}
 

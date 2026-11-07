@@ -57,8 +57,8 @@ func TestForRequest_ViewsResolveOwnPins(t *testing.T) {
 		v1Slot = "demo/svc:1.0.0"
 		v2Slot = "demo/svc:2.0.0"
 	)
-	pinV1 := map[string]Pin{v1Slot: writePinnedSlot(t, ws, cacheDir, v1Slot, oci.MediaTypeComponent, []byte(forRequestComponentV1))}
-	pinV2 := map[string]Pin{v2Slot: writePinnedSlot(t, ws, cacheDir, v2Slot, oci.MediaTypeComponent, []byte(forRequestComponentV2))}
+	pinV1 := Pins{{Kind: "Component", URI: v1Slot}: writePinnedSlot(t, ws, cacheDir, v1Slot, oci.MediaTypeComponent, []byte(forRequestComponentV1))}
+	pinV2 := Pins{{Kind: "Component", URI: v2Slot}: writePinnedSlot(t, ws, cacheDir, v2Slot, oci.MediaTypeComponent, []byte(forRequestComponentV2))}
 
 	// Session catalog: no catalog dirs, nil puller — the components live only in
 	// the pinned Tier-2 cache, so resolution is decided entirely by each view's
@@ -150,7 +150,7 @@ func TestForRequest_ResetRacingForRequest(t *testing.T) {
 	ws := t.TempDir()
 	const cacheDir = ".aggrega/cache"
 	const v1Slot = "demo/svc:1.0.0"
-	pinV1 := map[string]Pin{v1Slot: writePinnedSlot(t, ws, cacheDir, v1Slot, oci.MediaTypeComponent, []byte(forRequestComponentV1))}
+	pinV1 := Pins{{Kind: "Component", URI: v1Slot}: writePinnedSlot(t, ws, cacheDir, v1Slot, oci.MediaTypeComponent, []byte(forRequestComponentV1))}
 
 	session := NewLazyLookup(ws, cacheDir, nil, nil)
 

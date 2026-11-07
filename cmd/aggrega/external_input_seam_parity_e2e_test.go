@@ -119,6 +119,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -611,7 +612,7 @@ func renderWithoutSeam(t *testing.T, root, releasePath string, ws *workspaceconf
 	}
 	cacheDir := ws.Config().ResolvedArtifactCacheDir()
 	view := catalog.NewLazyLookup(root, cacheDir, []string{filepath.Join(root, "catalog")}, nil)
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 
 	preview, err := compilerops.PreviewForArtifact(
 		context.Background(),

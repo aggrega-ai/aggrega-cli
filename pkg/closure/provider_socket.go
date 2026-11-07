@@ -46,16 +46,13 @@ func ResolveProviderSocketEntities(ctx context.Context, cl *Closure, providerRef
 	}
 	const refPath = ".aggrega-config.yaml.plugins.providers"
 
-	byURI := map[string]int{}
-	for i := range cl.Entities {
-		byURI[cl.Entities[i].URI] = i
-	}
+	index := entityIndexOf(cl)
 
 	for _, ref := range providerRefs {
 		if ref.URI == "" {
 			continue
 		}
-		res, err := lookup.ResolveCatalogEntity(ctx, ref.URI, pluginKindHint)
+		res, err := lookup.ResolveCatalogEntity(ctx, ref.URI, KindPlugin)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve entity %q: %w", ref.URI, err)
 		}
@@ -69,34 +66,17 @@ func ResolveProviderSocketEntities(ctx context.Context, cl *Closure, providerRef
 		if entityNeedsNoPin(res.ResolutionPath) {
 			continue
 		}
-		if idx, ok := byURI[ref.URI]; ok {
-			cl.Entities[idx].ReferencedFrom = unionReferencedFrom(cl.Entities[idx].ReferencedFrom, refPath)
-			continue
-		}
-		cl.Entities = append(cl.Entities, ResolvedRef{
+		mergeEntity(cl, index, ResolvedRef{
 			URI:             ref.URI,
 			ResolvedVersion: res.ResolvedVersion,
 			Digest:          res.Digest,
 			ManifestDigest:  res.ManifestDigest,
 			ResolutionPath:  res.ResolutionPath,
 			ReferencedFrom:  []string{refPath},
-			KindHint:        pluginKindHint,
+			KindHint:        KindPlugin,
 		})
-		byURI[ref.URI] = len(cl.Entities) - 1
 	}
 
 	canonicaliseClosure(cl)
 	return nil
-}
-
-// unionReferencedFrom appends refPath to refs when absent, leaving the slice
-// unchanged when it is already present. canonicaliseClosure performs the final
-// sort; this helper only guarantees no duplicate entries.
-func unionReferencedFrom(refs []string, refPath string) []string {
-	for _, r := range refs {
-		if r == refPath {
-			return refs
-		}
-	}
-	return append(refs, refPath)
 }

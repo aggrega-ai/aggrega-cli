@@ -382,17 +382,19 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	}, nil
 }
 
-// lockfileHasRegistryPin reports whether the lockfile pins uri as a registry
-// entity — one carrying a real resolved version. A version-less pin marks an
-// external (local) top-level; a real version marks one registry-resolved at pull
+// lockfileHasRegistryPin reports whether the lockfile pins the Aggregate uri as a
+// registry entity — one carrying a real resolved version. A version-less pin marks
+// an external (local) top-level; a real version marks one registry-resolved at pull
 // that must resolve through the view's pinned tier, not the external tier (which
-// would re-pin version "" and drift against the lockfile).
+// would re-pin version "" and drift against the lockfile). Only the Aggregate's
+// own row answers: a Manifest sharing its name has a row of its own.
 func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 	if lf == nil {
 		return false
 	}
+	want := closure.EntityKey{Kind: closure.KindAggregate, URI: uri}
 	for _, e := range lf.Entities {
-		if e.URI == uri {
+		if e.Key() == want {
 			return e.ResolvedVersion != ""
 		}
 	}

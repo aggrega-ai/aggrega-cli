@@ -13,7 +13,19 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
+
+// mustLibrarySlot is the cache slot of the Sizing library at 1.0.0 in the
+// workspace at ws, as the one builder of a slot's place (oci.CachePath) spells it.
+func mustLibrarySlot(t *testing.T, ws, cacheDir string) string {
+	t.Helper()
+	slot, err := oci.CachePath(ws, cacheDir, closure.LibraryAxisNamed("SchemaLibraries").Kind, "Sizing:1.0.0", "1.0.0")
+	if err != nil {
+		t.Fatalf("the fixture library slot: %v", err)
+	}
+	return slot
+}
 
 // TestWithPullLibraryRemedy_NamesTheActionForThePosture drives the decoration a
 // pull puts on a library discovery that found nothing, over a view whose
@@ -43,7 +55,7 @@ spec:
 			t.Fatalf("mkdir: %v", err)
 		}
 		if cached {
-			slot := filepath.Join(ws, cacheDir, "entities", "Sizing", "1.0.0")
+			slot := mustLibrarySlot(t, ws, cacheDir)
 			if err := os.MkdirAll(slot, 0o755); err != nil {
 				t.Fatalf("mkdir: %v", err)
 			}

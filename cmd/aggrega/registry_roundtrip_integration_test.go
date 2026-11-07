@@ -38,6 +38,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -988,7 +989,7 @@ spec:
 	// row that had lost its manifest digest would skip that check and be refused one
 	// check later, as the fetch-integrity condition of content checked against a
 	// manifest that no longer parses.
-	entitySlot := mustCachePath(ws, ".aggrega/cache", recipePluginURI, "1.0.0")
+	entitySlot := ocitest.MustCachePath(ws, ".aggrega/cache", "Plugin", recipePluginURI, "1.0.0")
 	tamperedManifest := filepath.Join(entitySlot, "manifest")
 	if _, err := os.Stat(tamperedManifest); err != nil {
 		t.Fatalf("expected a persisted plugin-entity manifest at %s (the config-blob read must persist one): %v", tamperedManifest, err)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // slotShape is one state a cache slot a registry fetch fills can be found in: the
@@ -65,7 +66,7 @@ func TestAnEntitySlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 			t.Parallel()
 			ws := t.TempDir()
 			pin, _ := seedVerifiedEntitySlot(t, ws, cacheDir, slotURI, version, oci.MediaTypeComponent, body)
-			shape.lay(t, mustCachePath(ws, cacheDir, slotURI, version))
+			shape.lay(t, ocitest.MustCachePath(ws, cacheDir, "Component", slotURI, version))
 			cat, err := LoadAll("", t.TempDir())
 			if err != nil {
 				t.Fatalf("LoadAll: %v", err)
@@ -77,7 +78,7 @@ func TestAnEntitySlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 				reuse *ReuseVerification
 			}{
 				{name: "a bare reference held at its prior pin", uri: bare,
-					reuse: &ReuseVerification{PriorPins: map[string]Pin{bare: {ResolvedVersion: version, Digest: pin}}}},
+					reuse: &ReuseVerification{PriorPins: Pins{{Kind: "Component", URI: bare}: {ResolvedVersion: version, Digest: pin}}}},
 				{name: "a versioned reference with no prior pins", uri: slotURI},
 			}
 			for _, c := range cascade {
@@ -93,7 +94,7 @@ func TestAnEntitySlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 				}
 			}
 
-			_, _, err = tier2ReadVerifiedWithManifest(ws, cacheDir, slotURI, pin, "")
+			_, _, err = tier2ReadVerifiedWithManifest(ws, cacheDir, "Component", slotURI, pin, "")
 			switch {
 			case shape.complete && err != nil:
 				t.Errorf("the verifying read refused the complete slot: %v", err)
@@ -131,10 +132,10 @@ func TestAPluginSlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 			t.Parallel()
 			ws := t.TempDir()
 
-			if err := writeEntityToCacheSlot(ws, cacheDir, entityURI, version, published); err != nil {
+			if err := writeEntityToCacheSlot(ws, cacheDir, oci.PluginArtifactKind(), entityURI, version, published); err != nil {
 				t.Fatalf("writeEntityToCacheSlot: %v", err)
 			}
-			shape.lay(t, mustCachePath(ws, cacheDir, entityURI, version))
+			shape.lay(t, ocitest.MustCachePath(ws, cacheDir, oci.PluginArtifactKind(), entityURI, version))
 			_, _, ok, err := NewLazyLookup(ws, cacheDir, nil, nil).PluginFromCacheByURI(entityURI)
 			switch {
 			case err != nil:
@@ -144,7 +145,7 @@ func TestAPluginSlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 			}
 
 			pin := writeCachedPluginArtifact(t, ws, cacheDir, artifactURI, wasm)
-			shape.lay(t, mustCachePath(ws, cacheDir, artifactURI, pin.Digest))
+			shape.lay(t, ocitest.MustCachePath(ws, cacheDir, oci.PluginArtifactKind(), artifactURI, pin.Digest))
 			l := &catalogLookup{catalog: &Catalog{}, workspaceRoot: ws, cacheDir: cacheDir}
 			_, hit, err := l.readCachedPluginArtifact(artifactURI, pin.Digest)
 			switch {

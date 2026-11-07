@@ -12,7 +12,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // verifyEntityLocks is the verify path's check over the entity.lock files beside
@@ -96,24 +95,27 @@ func verifyEntityLocks(lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, enti
 		findings = append(findings, err)
 	}
 
-	seen := map[string]bool{}
+	// Each entity is examined as the kind it was collected as: a Recipe and a
+	// FeatureRecipe of one name are two entities, each held to its own lock.
+	seen := map[closure.EntityKey]bool{}
 	for _, ent := range entities {
-		if seen[ent.URI] {
+		key := ent.Key()
+		if seen[key] {
 			continue
 		}
-		seen[ent.URI] = true
+		seen[key] = true
 
-		locked, ok := lockedEntityFor(loader, lazyView, ent.URI)
+		locked, ok := entitypin.LocalEntityFor(lazyView, loader, key)
 		if !ok {
 			continue
 		}
-		pins := recorded.For(locked.path)
+		pins := recorded.For(locked.Path)
 		if pins.Empty() {
 			continue
 		}
 
 		if len(pins.ArtifactDigests) > 0 {
-			current, err := recipepin.ArtifactPinsForRecipe(locked.artifacts, locked.kind, locked.name)
+			current, err := recipepin.ArtifactPinsForRecipe(locked.Artifacts, locked.Kind, locked.Name)
 			if err != nil {
 				return err
 			}
@@ -122,84 +124,50 @@ func verifyEntityLocks(lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, enti
 				if !pinned || pin.Digest == now.Digest {
 					continue
 				}
-				entry, _ := locked.artifacts.Get(now.Name)
-				report(locked.path+"\x00artifact\x00"+now.Name,
-					renderer.ArtifactContentPinMismatch(locked.path, now.Name, entry.Import, now.Digest, pin.Digest))
+				entry, _ := locked.Artifacts.Get(now.Name)
+				report(locked.Path+"\x00artifact\x00"+now.Name,
+					renderer.ArtifactContentPinMismatch(locked.Path, now.Name, entry.Import, now.Digest, pin.Digest))
 			}
 		}
 
 		if len(pins.LocalSourceDigests) > 0 {
-			local, err := catalog.LocalSourceAt(locked.path)
+			local, err := catalog.LocalSourceAt(locked.Path)
 			if err != nil {
 				return err
 			}
-			if err := recipepin.CheckLocalSourcePins(locked.path, local.RecordedPinsInForce(pins.LocalSourceDigests), local.Pins); err != nil {
-				report(locked.path+"\x00local-source", err)
+			if err := recipepin.CheckLocalSourcePins(locked.Path, local.RecordedPinsInForce(pins.LocalSourceDigests), local.Pins); err != nil {
+				report(locked.Path+"\x00local-source", err)
 			}
 		}
 
 		for _, row := range lf.SourceArtifacts {
-			if !reachedAtItsAuthoredVersion(row, ent.URI) {
+			if !reachedAtItsAuthoredVersion(row, key) {
 				continue
 			}
-			if err := recipepin.CheckSourcePin(pins.SourceDigests, lf, recipepin.LockPath(locked.path),
+			if err := recipepin.CheckSourcePin(pins.SourceDigests, lf, recipepin.LockPath(locked.Path),
 				row.Kind, row.URL, row.Chart, row.ModuleSubdir, row.PinnedVersion, ""); err != nil {
-				report(locked.path+"\x00source\x00"+row.Kind+"\x00"+row.URL+"\x00"+row.Chart+"\x00"+row.ModuleSubdir+"\x00"+row.PinnedVersion, err)
+				report(locked.Path+"\x00source\x00"+row.Kind+"\x00"+row.URL+"\x00"+row.Chart+"\x00"+row.ModuleSubdir+"\x00"+row.PinnedVersion, err)
 			}
 		}
 	}
 	return errors.Join(findings...)
 }
 
-// lockedEntity is one entity a lock can sit beside: the document it was read
-// from, and what the pin comparison needs to know about it. For a Recipe the
-// artifacts are the entries its lock pins, its boundary block's included under
-// their pin names (recipepin.PinnedArtifactEntries).
-type lockedEntity struct {
-	path      string
-	kind      string
-	name      string
-	artifacts types.OrderedMap[types.ArtifactEntry]
-}
-
-// lockedEntityFor resolves a closure URI to the Recipe or FeatureRecipe document
-// the pull writes a lock beside, and reports false for anything else — another
-// kind, or an entity with no document in a workspace catalog directory.
-//
-// It resolves through the loader and the writable-home predicate the pin step uses,
-// so the set of entities checked here is the set whose locks that step writes.
-func lockedEntityFor(loader closure.RecipeLoader, lazyView *catalog.LazyLookup, uri string) (lockedEntity, bool) {
-	if r, err := loader.LoadRecipe(uri); err == nil {
-		path, ok := entitypin.WritableHome(lazyView, "Recipe", r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
-		if !ok {
-			return lockedEntity{}, false
-		}
-		return lockedEntity{path: path, kind: "Recipe", name: r.Metadata.Name, artifacts: recipepin.PinnedArtifactEntries(r)}, true
-	}
-	if fr, err := loader.LoadFeatureRecipe(uri); err == nil {
-		path, ok := entitypin.WritableHome(lazyView, "FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
-		if !ok {
-			return lockedEntity{}, false
-		}
-		return lockedEntity{path: path, kind: "FeatureRecipe", name: fr.Metadata.Name, artifacts: fr.Spec.Artifacts}, true
-	}
-	return lockedEntity{}, false
-}
-
 // reachedAtItsAuthoredVersion reports whether a lockfile source row was resolved
-// for the entity at uri through a back-pointer that records no authored reference
-// — the one case in which the row's pinned version is the version the entity
-// itself names, and so the case in which a build of the entity reaches the pin
-// recorded under it.
+// for the entity key names through a back-pointer that records no authored
+// reference — the one case in which the row's pinned version is the version the
+// entity itself names, and so the case in which a build of the entity reaches the
+// pin recorded under it.
 //
-// The join is on the back-pointer's URI because that is the join the pull uses
-// when it decides which rows become which entity's source pins. A row this entity
+// The join is on the back-pointer's entity kind and URI, the identity the pin step
+// routes a source to the entity it belongs beside by, so a source a Recipe reached
+// is never held to the lock of a FeatureRecipe of the same name. A row this entity
 // reached only through an authored reference answers false: its pinned version is
 // the commit that reference resolved to, and the version the entity names is not
 // that commit.
-func reachedAtItsAuthoredVersion(row lockfile.SourceArtifact, uri string) bool {
+func reachedAtItsAuthoredVersion(row lockfile.SourceArtifact, key closure.EntityKey) bool {
 	for _, ref := range row.ReferencedBy {
-		if ref.URI == uri && ref.RequestedRef == "" {
+		if ref.Entity == key.Kind && ref.URI == key.URI && ref.RequestedRef == "" {
 			return true
 		}
 	}

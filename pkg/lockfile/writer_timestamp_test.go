@@ -21,7 +21,7 @@ func sampleLockfile(stamp, entityDigest string) *lockfile.Lockfile {
 		Release:     "release.yaml",
 		GeneratedAt: stamp,
 		Entities: []lockfile.Entity{
-			{URI: "server", ResolvedVersion: "1.0.0", Digest: entityDigest},
+			{Kind: "component", URI: "server", ResolvedVersion: "1.0.0", Digest: entityDigest},
 		},
 	}
 }

@@ -177,7 +177,7 @@ spec:
 			Release:     "./" + filepath.Base(rel),
 			GeneratedAt: "2026-06-03T10:00:00Z",
 			Entities: []lockfile.Entity{{
-				URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest(edge),
+				Kind: "component", URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest(edge),
 			}},
 		}
 		if err := lockfile.WriteLockfile(lockfile.PathFor(rel), lf); err != nil {

@@ -49,10 +49,10 @@ func moveComponentIntoTheCache(t *testing.T, root string) {
 	}
 	const cacheDir = ".aggrega/cache"
 	slot := recordedSignatureComponent + ":1.0.0"
-	if err := oci.WriteCached(root, cacheDir, slot, "1.0.0", body); err != nil {
+	if err := oci.WriteCached(root, cacheDir, "Component", slot, "1.0.0", body); err != nil {
 		t.Fatalf("lay the Component's cache slot: %v", err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, slot, "1.0.0", pulled.ManifestBytes); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "Component", slot, "1.0.0", pulled.ManifestBytes); err != nil {
 		t.Fatalf("lay the Component's cached manifest: %v", err)
 	}
 	if err := os.Remove(authored); err != nil {

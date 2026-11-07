@@ -14,8 +14,13 @@ import (
 // SchemaLibrary $ref: references. The caller (pull's pin flow or build's
 // drift-verify flow) supplies these from the catalog after ComputeClosure has
 // resolved the entity closure.
+//
+// Kind is the closure kind the consuming entity was collected as (KindComponent,
+// KindFeature): two consumers of one URI and different kinds are two consumers,
+// each contributing its own version floor to the library's selection.
 type SchemaConsumer struct {
 	URI    string
+	Kind   string
 	Schema *yaml.Node
 }
 
@@ -36,6 +41,11 @@ type LibraryBodyFunc func(lib ResolvedLibrary) (entryBodies []*yaml.Node, found 
 // consumer shape is the same one on all of them.
 type TemplateConsumer struct {
 	URI string
+
+	// Kind is the closure kind the consuming entity was collected as (KindRecipe,
+	// KindFeatureRecipe): two consumers of one URI and different kinds are two
+	// consumers, each contributing its own version floor to the library's selection.
+	Kind string
 
 	// Template is a template BODY to scan for a field-root `$import:` directive —
 	// a library entry's own content during transitive descent, which is a document
@@ -88,8 +98,8 @@ type (
 // or an already-read reference on the others — which is the one thing the shared
 // fixpoint is parameterised on.
 type discoverConsumer[B any] struct {
-	URI  string
-	Body B
+	Consumer consumerIdentity
+	Body     B
 }
 
 // discoverLibraries is the discovery fixpoint, shared by every library axis.
@@ -117,7 +127,7 @@ func discoverLibraries[B any](
 	axis LibraryAxis,
 	lookup Lookup,
 	consumers []discoverConsumer[B],
-	walkOne func(s *walkState, axis LibraryAxis, body B, consumerURI string) error,
+	walkOne func(s *walkState, axis LibraryAxis, body B, consumer consumerIdentity) error,
 	body func(lib ResolvedLibrary) ([]B, bool, error),
 ) error {
 	descended := map[string]struct{}{}
@@ -127,7 +137,7 @@ func discoverLibraries[B any](
 		state := newWalkState()
 		state.seedLibs(axis, axis.Libraries(c))
 		for _, dc := range frontier {
-			if err := walkOne(state, axis, dc.Body, dc.URI); err != nil {
+			if err := walkOne(state, axis, dc.Body, dc.Consumer); err != nil {
 				return err
 			}
 		}
@@ -151,7 +161,8 @@ func discoverLibraries[B any](
 				continue
 			}
 			for _, b := range bodies {
-				frontier = append(frontier, discoverConsumer[B]{URI: lib.URI, Body: b})
+				// A library consuming another on its own axis is read as the axis's kind.
+				frontier = append(frontier, discoverConsumer[B]{Consumer: consumerIdentity{Kind: axis.Kind, URI: lib.URI}, Body: b})
 			}
 		}
 	}
@@ -169,8 +180,8 @@ func (c *Closure) DiscoverTemplateLibraries(ctx context.Context, axis LibraryAxi
 	dcs := make([]discoverConsumer[templateBody], 0, len(consumers))
 	for _, tc := range consumers {
 		dcs = append(dcs, discoverConsumer[templateBody]{
-			URI:  tc.URI,
-			Body: templateBody{body: tc.Template, reference: tc.Reference},
+			Consumer: consumerIdentity{Kind: tc.Kind, URI: tc.URI},
+			Body:     templateBody{body: tc.Template, reference: tc.Reference},
 		})
 	}
 	// A discovered library's own entries are bodies whichever way its consumer's
@@ -187,11 +198,11 @@ func (c *Closure) DiscoverTemplateLibraries(ctx context.Context, axis LibraryAxi
 		return out, true, nil
 	}
 	return discoverLibraries(ctx, c, axis, lookup, dcs,
-		func(s *walkState, a LibraryAxis, tb templateBody, consumerURI string) error {
+		func(s *walkState, a LibraryAxis, tb templateBody, consumer consumerIdentity) error {
 			if tb.reference != "" {
-				return s.walkImportRef(a, tb.reference, consumerURI)
+				return s.walkImportRef(a, tb.reference, consumer)
 			}
-			return s.walkImportInto(a, tb.body, consumerURI)
+			return s.walkImportInto(a, tb.body, consumer)
 		}, bodies)
 }
 
@@ -228,11 +239,11 @@ func (c *Closure) DiscoverSchemaLibraries(ctx context.Context, lookup Lookup, co
 	dcs := make([]discoverConsumer[*yaml.Node], 0, len(consumers))
 	for _, sc := range consumers {
 		if sc.Schema != nil {
-			dcs = append(dcs, discoverConsumer[*yaml.Node]{URI: sc.URI, Body: sc.Schema})
+			dcs = append(dcs, discoverConsumer[*yaml.Node]{Consumer: consumerIdentity{Kind: sc.Kind, URI: sc.URI}, Body: sc.Schema})
 		}
 	}
 	return discoverLibraries(ctx, c, LibraryAxisNamed("SchemaLibraries"), lookup, dcs,
-		func(s *walkState, _ LibraryAxis, node *yaml.Node, consumerURI string) error {
-			return s.walkSchemaRefsInto(node, consumerURI)
+		func(s *walkState, _ LibraryAxis, node *yaml.Node, consumer consumerIdentity) error {
+			return s.walkSchemaRefsInto(node, consumer)
 		}, body)
 }

@@ -349,13 +349,14 @@ func TestALockfileWithoutAConnectionAttachmentPinIsRefusedAsDrift(t *testing.T) 
 	cases := []struct {
 		name string
 		drop string
+		kind string
 		site string
 	}{
-		{"the Feature an Aggregate connection attachment names", "sec/token",
+		{"the Feature an Aggregate connection attachment names", "sec/token", closure.KindFeature,
 			"aggregate.spec.components.router.uses.models.gpt.features.credential.type"},
-		{"the Feature an attachment only the Release makes names", "sec/badge",
+		{"the Feature an attachment only the Release makes names", "sec/badge", closure.KindFeature,
 			"release.spec.boundaries.prod.components.router.uses.models.nim.features.credential.type"},
-		{"the realization the name tier binds to the connection attachment", "helm/token-external:1.0.0",
+		{"the realization the name tier binds to the connection attachment", "helm/token-external:1.0.0", closure.KindFeatureRecipe,
 			"manifest.spec.mappings.features.name.gpt.credential"},
 	}
 	for _, tc := range cases {
@@ -377,7 +378,7 @@ func TestALockfileWithoutAConnectionAttachmentPinIsRefusedAsDrift(t *testing.T) 
 			if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 				t.Fatalf("a lockfile without the row for %q must be refused as drift; got %v", tc.drop, err)
 			}
-			want := `entity "` + tc.drop + `" not in lockfile (referenced from ` + tc.site + `)`
+			want := `entity "` + tc.drop + `" (` + tc.kind + `) not in lockfile (referenced from ` + tc.site + `)`
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the refusal does not carry %q:\n%v", want, err)
 			}

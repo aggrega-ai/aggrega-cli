@@ -108,7 +108,7 @@ func TestANoticeAboutAFileIsPrintedOnceHoweverOftenItsWalkRuns(t *testing.T) {
 			}
 			out := captureNotices(t, view, func() {
 				for i := 0; i < 3; i++ {
-					view.SetPins(map[string]Pin{})
+					view.SetPins(Pins{})
 					walk()
 				}
 			})

@@ -38,37 +38,59 @@ func writeCompileLeaf(t *testing.T, dir, name string, size int, mtime time.Time)
 }
 
 // TestCacheEntitySlotEncoding guards that an entity slot's display label reads
-// the spelled on-disk directory names back into the reference and version the
-// slot was written under — a version that is a content digest included — rather
-// than showing the escapes a name carries.
+// the spelled on-disk directory names back into the reference, version and kind
+// the slot was written under — a version that is a content digest included —
+// rather than showing the escapes a name carries, so a Component and a Recipe
+// kept under one reference and version read as two slots. A directory where a kind
+// belongs that names no published kind — a slot laid out without one — is listed
+// as one stale element.
 func TestCacheEntitySlotEncoding(t *testing.T) {
 	wsRoot := t.TempDir()
 	pin := digest.ContentDigest([]byte("plugin-bytes"))
-	for _, slot := range []struct{ uri, version string }{
-		{"oci://hub.aggrega.ai/component/core/api", "1.0.0"},
-		{"hub.aggrega.ai/plugin/cli/moo:0.2.4", pin},
+	for _, slot := range []struct{ kind, uri, version string }{
+		{"Component", "oci://hub.aggrega.ai/component/core/api", "1.0.0"},
+		{"Recipe", "oci://hub.aggrega.ai/component/core/api", "1.0.0"},
+		{"Component", "hub.aggrega.ai/plugin/cli/moo:0.2.4", pin},
 	} {
-		if err := oci.WriteCached(wsRoot, testCacheDir, slot.uri, slot.version, []byte("entity-bytes")); err != nil {
+		if err := oci.WriteCached(wsRoot, testCacheDir, slot.kind, slot.uri, slot.version, []byte("entity-bytes")); err != nil {
 			t.Fatalf("WriteCached: %v", err)
 		}
 	}
 	loc := Locations{WorkspaceRoot: wsRoot, CacheDir: testCacheDir}
+	// A slot laid out reference, then version, beneath the entity root: its
+	// outermost directory names no published kind.
+	stale := filepath.Join(loc.entitiesRoot(), "core+zsold", "1.0.0")
+	if err := os.MkdirAll(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stale, "blob"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	els, err := enumEntities(t.Context(), loc.entitiesRoot(), func(p string) error { return holdRead(loc, p) })
 	if err != nil {
 		t.Fatalf("enumEntities: %v", err)
 	}
 	labels := map[string]bool{}
+	staleAt := map[string]bool{}
 	for _, el := range els {
 		labels[el.Label] = true
+		if el.Stale {
+			staleAt[el.Path] = true
+		}
 	}
 	for _, want := range []string{
-		"hub.aggrega.ai/component/core/api@1.0.0",
-		"hub.aggrega.ai/plugin/cli/moo:0.2.4@" + pin,
+		"hub.aggrega.ai/component/core/api@1.0.0 (Component)",
+		"hub.aggrega.ai/component/core/api@1.0.0 (Recipe)",
+		"hub.aggrega.ai/plugin/cli/moo:0.2.4@" + pin + " (Component)",
 	} {
 		if !labels[want] {
 			t.Errorf("no entity element is labelled %q; labels: %v", want, labels)
 		}
+	}
+	wantStale := filepath.Join(loc.entitiesRoot(), "core+zsold")
+	if len(staleAt) != 1 || !staleAt[wantStale] {
+		t.Errorf("stale elements at %v; want exactly the directory that names no published kind, %s", staleAt, wantStale)
 	}
 }
 
@@ -106,7 +128,7 @@ func TestCacheSourceSlotLabelReadsItsNamesBack(t *testing.T) {
 // nothing else failed.
 func TestCacheClassReachIsDeclared(t *testing.T) {
 	wsRoot := t.TempDir()
-	if err := oci.WriteCached(wsRoot, testCacheDir, "oci://hub.aggrega.ai/component/core/api", "1.0.0", []byte("entity-bytes")); err != nil {
+	if err := oci.WriteCached(wsRoot, testCacheDir, "Component", "oci://hub.aggrega.ai/component/core/api", "1.0.0", []byte("entity-bytes")); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
 	loc := Locations{

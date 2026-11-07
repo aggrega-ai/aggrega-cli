@@ -28,10 +28,15 @@ import (
 // For each verifiable artifact this lists the artifact's deprecation referrers,
 // and for a present marker verifies the marker's OWN signature. The marker's
 // signature is honored when it was produced by the ORIGINAL artifact's signer
-// (same-signer, recorded by the signature pass in sigFactByURI) OR by a member
+// (same-signer, recorded by the signature pass in sigFactByRow) OR by a member
 // of the registry's trusted_deprecation_identities — so a registry owner or a
 // security team can retract an artifact the original publisher can no longer
 // reach, without being trusted to sign the artifacts themselves.
+//
+// verifiable are the questions the signature pass put to a registry, and
+// sigFactByRow its answers, keyed by the row each question was asked for; a marker
+// discovered for a question is recorded under the same row, so it reaches the rows
+// the signature reached and no row of another kind sharing the reference.
 //
 // The original signer is the earliest of the artifact's signatures that verify,
 // because that is the one the signature pass records (pullverify.EarlierSignature).
@@ -50,8 +55,8 @@ import (
 func discoverClosureDeprecations(
 	ctx context.Context,
 	lf *lockfile.Lockfile,
-	verifiable []pullverify.Entity,
-	sigFactByURI map[string]pullverify.Result,
+	verifiable []signatureQuestion,
+	sigFactByRow map[lockfile.RowKey]pullverify.Result,
 	wsCfg workspaceconfig.Config,
 	targetFor pullverify.TargetFor,
 	diagOut io.Writer,
@@ -60,8 +65,9 @@ func discoverClosureDeprecations(
 		return nil
 	}
 
-	recordByURI := make(map[string]*lockfile.DeprecationRecord, len(verifiable))
-	for _, e := range verifiable {
+	recordByRow := make(map[lockfile.RowKey]*lockfile.DeprecationRecord, len(verifiable))
+	for _, q := range verifiable {
+		e := q.entity
 		host := e.Host
 		if host == "" {
 			host = registryhost.Of(e.URI)
@@ -72,7 +78,7 @@ func discoverClosureDeprecations(
 		}
 
 		var origSigner *pullverify.Result
-		if r, ok := sigFactByURI[e.URI]; ok {
+		if r, ok := sigFactByRow[q.row]; ok {
 			rr := r
 			origSigner = &rr
 		}
@@ -85,7 +91,7 @@ func discoverClosureDeprecations(
 			continue
 		}
 		if rec != nil {
-			recordByURI[e.URI] = rec
+			recordByRow[q.row] = rec
 			fmt.Fprintf(diagOut, "  deprecation: %s %s by %s\n", e.URI, deprecation.Severity(rec.Severity).StatedAs(), deprecationSignerLabel(rec.Signer))
 		}
 	}
@@ -94,7 +100,7 @@ func discoverClosureDeprecations(
 	// discovered marker reaches every section that can record one without this pass
 	// naming the sections, and it reaches every row pinning an artifact this pass
 	// asked about, by the same join the signature fold uses: see verifiedJoin.
-	markers := joinVerified(verifiable, recordByURI)
+	markers := joinVerified(verifiable, recordByRow)
 	for _, row := range lf.VerifiedFactRows() {
 		if rec, ok := markers.answer(row); ok {
 			row.RecordDeprecation(rec)
@@ -141,12 +147,12 @@ func carryForwardVerifiedFacts(lf *lockfile.Lockfile, prior *lockfile.Lockfile) 
 		return
 	}
 	priorRows := prior.VerifiedFactRows()
-	priorByURI := make(map[string]lockfile.VerifiedFactRow, len(priorRows))
+	priorByKey := make(map[lockfile.RowKey]lockfile.VerifiedFactRow, len(priorRows))
 	for _, row := range priorRows {
-		priorByURI[row.URI] = row
+		priorByKey[row.Key()] = row
 	}
 	for _, row := range lf.VerifiedFactRows() {
-		p, ok := priorByURI[row.URI]
+		p, ok := priorByKey[row.Key()]
 		if !ok || !samePin(p, row) {
 			continue
 		}

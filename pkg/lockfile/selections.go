@@ -6,6 +6,7 @@ package lockfile
 import (
 	"sort"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -93,10 +94,12 @@ func MutatorAttachmentRefs(atts []MutatorAttachment) []workspaceconfig.PluginRef
 // keeping the drift-verify closure honest without re-reading workspace config.
 //
 // Each provider binding and mutator attachment names a plugin by its bare
-// coordinate (<pluginType>/<name>); this collects every pinned entity whose
+// coordinate (<pluginType>/<name>); this collects every pinned Plugin entity whose
 // coordinate matches — one per resolved version, so a coordinate pinned at more
-// than one version contributes each. The result is sorted so two runs over the
-// same lockfile produce an identical set.
+// than one version contributes each. Only a row recording the plugin kind is a
+// socket's entity: a Recipe or a Component whose reference reads like a plugin
+// coordinate is an entity of its own kind and is never rebuilt as a plugin. The
+// result is sorted so two runs over the same lockfile produce an identical set.
 func WorkspaceSocketEntityURIs(lf *Lockfile) []string {
 	if lf == nil {
 		return nil
@@ -118,6 +121,9 @@ func WorkspaceSocketEntityURIs(lf *Lockfile) []string {
 	seen := map[string]struct{}{}
 	var uris []string
 	for _, e := range lf.Entities {
+		if e.Kind != closure.KindPlugin {
+			continue
+		}
 		base, _, _ := ociref.SplitVersionTag(e.URI)
 		if _, ok := coords[base]; !ok {
 			continue

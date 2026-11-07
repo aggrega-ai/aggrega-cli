@@ -1344,13 +1344,16 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	//    to an empty result for every cache-only entity while having verified
 	//    nothing. Guarded end-to-end by
 	//    TestServeIrGraphVerifiesCacheAgainstPinBeforePreview.
-	var pins map[string]catalog.Pin
+	var pins catalog.Pins
 	lf, lfErr := lockfile.LoadIfReadable(s.workspaceRoot, lockfilePath)
 	if lfErr != nil {
 		return nil, lockfileRefusal(lockfilePath, release, lfErr)
 	}
 	if lf != nil {
-		pins = catalog.PinsFromLockfile(lf)
+		var perr error
+		if pins, perr = catalog.PinsFromLockfile(lf); perr != nil {
+			return nil, lockfileRefusal(lockfilePath, release, perr)
+		}
 	}
 	// The view is forked from the lookup over this Release's own catalog stack,
 	// which is the one a build of it at a terminal reads.

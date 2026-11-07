@@ -45,7 +45,7 @@ func TestThePinStepRecordsItsRulesAndTheHoldAppliesThem(t *testing.T) {
 		t.Helper()
 		p, err := Compute(PlanInputs{
 			View:            catalog.NewLazyLookup(ws, "", []string{cat}, nil),
-			URIs:            []string{"helm/local:1.0.0"},
+			Entities:        recipes("helm/local:1.0.0"),
 			Resolver:        &recordingResolver{},
 			WorkspaceRoot:   ws,
 			ForWriting:      forWriting,

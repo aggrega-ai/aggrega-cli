@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // The fixtures and the test in this file drive what a user meets who writes a
@@ -181,6 +182,15 @@ func (f registryReferenceForms) writtenBare() []string {
 		bare = append(bare, "example/token", "example/badge")
 	}
 	return bare
+}
+
+// writtenBareKind is the published kind a reference writtenBare returns names,
+// which its cache slot is kept under: the two Components, or else the two Features.
+func writtenBareKind(uri string) string {
+	if uri == "example/compute/caller" || uri == "example/compute/peer" {
+		return "Component"
+	}
+	return "Feature"
 }
 
 // registryReferenceRelease writes the Aggregate, the Manifest and the Release
@@ -488,11 +498,11 @@ func TestARegistryFetchOfAReferenceWithoutItsVersionIsCachedWhereItsPinIsRead(t 
 	}
 	cacheDir := ws.Config().ResolvedArtifactCacheDir()
 	for _, uri := range (registryReferenceForms{}).writtenBare() {
-		pinned := mustCachePath(root, cacheDir, uri+":"+registryReferenceVersion, registryReferenceVersion)
+		pinned := ocitest.MustCachePath(root, cacheDir, writtenBareKind(uri), uri+":"+registryReferenceVersion, registryReferenceVersion)
 		if _, err := os.Stat(filepath.Join(pinned, "blob")); err != nil {
 			t.Errorf("%s is not cached where a read of its pin opens (%s): %v", uri, pinned, err)
 		}
-		if _, err := os.Stat(mustCachePath(root, cacheDir, uri, registryReferenceVersion)); err == nil {
+		if _, err := os.Stat(ocitest.MustCachePath(root, cacheDir, writtenBareKind(uri), uri, registryReferenceVersion)); err == nil {
 			t.Errorf("%s is also cached under the reference alone, an entry no read of its pin opens", uri)
 		}
 	}

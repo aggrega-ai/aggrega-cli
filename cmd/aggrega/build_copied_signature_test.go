@@ -91,7 +91,7 @@ func recordSubAggregateFactMadeFor(t *testing.T, root, releasePath, madeFor stri
 // beside the sub-aggregate, which is the artifact the build reads it as.
 func subAggregateManifestDigest(t *testing.T, root string) string {
 	t.Helper()
-	manifest, err := oci.ReadCachedManifest(root, ".aggrega/cache", recordedSignatureSub+":1.0.0", "1.0.0")
+	manifest, err := oci.ReadCachedManifest(root, ".aggrega/cache", "Aggregate", recordedSignatureSub+":1.0.0", "1.0.0")
 	if err != nil {
 		t.Fatalf("read the sub-aggregate's cached manifest: %v", err)
 	}

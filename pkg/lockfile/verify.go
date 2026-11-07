@@ -93,7 +93,7 @@ var errLockfileDrift = cerrors.Register("lockfile-drift", cerrors.Meta{
 func Verify(lf *Lockfile, expected closure.Closure) error {
 	var driftErrs []error
 	driftErrs = append(driftErrs, collectDrift("entity",
-		driftKeysOf(lf.Entities, entityKey), refKeys(expected.Entities))...)
+		driftKeysOf(lf.Entities, entityKey), entityRefKeys(expected.Entities))...)
 	// The library axes report in declared order, each under its own operator-facing
 	// label, so the labels here cannot disagree with the ones the rest of the
 	// toolchain uses for the same axis.
@@ -152,7 +152,7 @@ func releaseDocumentDrift(have []ReleaseDocument, want []closure.ReleaseDocument
 				"longer describe what it asks for; %s", w.Path, was, w.Digest, remedy))
 		}
 	}
-	for _, path := range sortedExtras(recorded, seen) {
+	for _, path := range sortedExtras(recorded, seen, func(a, b string) bool { return a < b }) {
 		out = append(out, fmt.Errorf("release document %q is recorded in the lockfile but the Release no longer "+
 			"reads it; %s", path, remedy))
 	}
@@ -288,9 +288,13 @@ func sourceArtifactLabel(sa closure.SourceArtifact) string {
 	return label
 }
 
-// driftKey is the identity triple every axis is compared on: the reference that
-// joins a lockfile row to a closure member, and the pinned pair that must match.
+// driftKey is what every axis is compared on: the identity that joins a lockfile
+// row to a closure member, and the pinned pair that must match.
 type driftKey struct {
+	// Kind and URI are the join. Kind is set on the entity axis, where a row is
+	// identified by its kind and reference together, and empty on every other
+	// axis, where a section holds one kind and the reference alone identifies a row.
+	Kind            string
 	URI             string
 	ResolvedVersion string
 	Digest          string
@@ -301,8 +305,31 @@ type driftKey struct {
 	referencedFrom string
 }
 
+// identity is the join of k: the kind and reference it names.
+func (k driftKey) identity() closure.EntityKey {
+	return closure.EntityKey{Kind: k.Kind, URI: k.URI}
+}
+
+// subject names k in a report: the axis label and the reference, followed by the
+// kind where the axis carries one (closure.EntityKey.Quoted), so two rows of one
+// reference are told apart.
+func (k driftKey) subject(label string) string {
+	return label + " " + k.identity().Quoted()
+}
+
 func entityKey(e Entity) driftKey {
-	return driftKey{URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
+	return driftKey{Kind: e.Kind, URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
+}
+
+// entityRefKeys carries each closure entity's kind onto its key, on top of what
+// refKeys carries, because an entity is joined to its row on its kind and its
+// reference together.
+func entityRefKeys(refs []closure.ResolvedRef) []driftKey {
+	return driftKeysOf(refs, func(r closure.ResolvedRef) driftKey {
+		k := closureRefDriftKey(r)
+		k.Kind = r.Kind()
+		return k
+	})
 }
 
 func pluginKey(p Plugin) driftKey {
@@ -315,14 +342,17 @@ func pluginKey(p Plugin) driftKey {
 // for one bound by instance name, the instance name — which is what tells the
 // reader which binding the missing row is for.
 func refKeys(refs []closure.ResolvedRef) []driftKey {
-	return driftKeysOf(refs, func(r closure.ResolvedRef) driftKey {
-		return driftKey{
-			URI:             r.URI,
-			ResolvedVersion: r.ResolvedVersion,
-			Digest:          r.Digest,
-			referencedFrom:  closure.ReferencedFromPreview(r.ReferencedFrom),
-		}
-	})
+	return driftKeysOf(refs, closureRefDriftKey)
+}
+
+// closureRefDriftKey is refKeys for one closure member.
+func closureRefDriftKey(r closure.ResolvedRef) driftKey {
+	return driftKey{
+		URI:             r.URI,
+		ResolvedVersion: r.ResolvedVersion,
+		Digest:          r.Digest,
+		referencedFrom:  closure.ReferencedFromPreview(r.ReferencedFrom),
+	}
 }
 
 func libraryKeys(libs []closure.ResolvedLibrary) []driftKey {
@@ -339,42 +369,52 @@ func libraryKeys(libs []closure.ResolvedLibrary) []driftKey {
 // three conditions in the same words. A per-axis copy is how one axis comes to
 // report a condition its siblings do not — and drift the operator is never told
 // about is drift they cannot act on.
+//
+// Rows are joined on their identity (driftKey.identity): the kind and the
+// reference on the entity axis, the reference alone on every other. So an entity
+// whose row records another kind under the same reference — a Manifest's row where
+// the Aggregate of the same name is wanted — is not taken for it: the Aggregate is
+// reported as not in the lockfile, and an edit to either of the two is reported as
+// that one having changed.
 func collectDrift(label string, have, want []driftKey) []error {
-	haveByURI := make(map[string]driftKey, len(have))
+	haveByID := make(map[closure.EntityKey]driftKey, len(have))
 	for _, h := range have {
-		haveByURI[h.URI] = h
+		haveByID[h.identity()] = h
 	}
-	seen := make(map[string]struct{}, len(want))
+	seen := make(map[closure.EntityKey]struct{}, len(want))
 	var out []error
 	for _, w := range want {
-		seen[w.URI] = struct{}{}
-		h, ok := haveByURI[w.URI]
+		seen[w.identity()] = struct{}{}
+		h, ok := haveByID[w.identity()]
 		if !ok {
 			if w.referencedFrom != "" {
-				out = append(out, fmt.Errorf("%s %q not in lockfile (referenced from %s)", label, w.URI, w.referencedFrom))
+				out = append(out, fmt.Errorf("%s not in lockfile (referenced from %s)", w.subject(label), w.referencedFrom))
 				continue
 			}
-			out = append(out, fmt.Errorf("%s %q not in lockfile", label, w.URI))
+			out = append(out, fmt.Errorf("%s not in lockfile", w.subject(label)))
 			continue
 		}
 		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("%s %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				label, w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
+			out = append(out, fmt.Errorf("%s changed: lockfile=(%s,%s) current=(%s,%s)",
+				w.subject(label), h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
 		}
 	}
-	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("%s %q no longer used by the release", label, uri))
+	for _, id := range sortedExtras(haveByID, seen, closure.EntityKey.Less) {
+		out = append(out, fmt.Errorf("%s no longer used by the release", haveByID[id].subject(label)))
 	}
 	return out
 }
 
-func sortedExtras[T any](have map[string]T, seen map[string]struct{}) []string {
-	var extras []string
-	for uri := range have {
-		if _, ok := seen[uri]; !ok {
-			extras = append(extras, uri)
+// sortedExtras returns the keys of have that seen does not hold — what a lockfile
+// records that the resolution no longer reaches — ordered by less, so the entries
+// reporting them come out in a fixed order for a given pair of inputs.
+func sortedExtras[K comparable, T any](have map[K]T, seen map[K]struct{}, less func(a, b K) bool) []K {
+	var extras []K
+	for k := range have {
+		if _, ok := seen[k]; !ok {
+			extras = append(extras, k)
 		}
 	}
-	sort.Strings(extras)
+	sort.Slice(extras, func(i, j int) bool { return less(extras[i], extras[j]) })
 	return extras
 }

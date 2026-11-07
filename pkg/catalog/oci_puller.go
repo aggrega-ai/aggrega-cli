@@ -381,26 +381,64 @@ func BindEntityLocation(registry, kindHint, uri string) (location string, ok boo
 
 // EntityKindForHint maps a closure KindHint to the catalog kind the OCI location
 // rule expects for a registry-resolved entity, covering both the core-catalog
-// tier (ociKindForHint) and the Aggregate tier, whose bare-name pull binds
-// through the same location rule under the "Aggregate" kind. It is the
-// location-binding counterpart of the pull-tier dispatch, so an entity that
-// resolves from a registry maps to a location for verify exactly as it did for
-// the pull.
+// tier (whose fetch binds by it, registryFetchKind) and the Aggregate tier, whose
+// bare-name pull binds through the same location rule under the "Aggregate" kind.
+// It is the location-binding counterpart of the pull-tier dispatch, so an entity
+// that resolves from a registry maps to a location for verify exactly as it did
+// for the pull. It is also the published kind a reference's cache slot is kept
+// under.
 //
-// Both Aggregate hints map to "Aggregate": a sub-aggregate's, and the Release's
-// own (closure.ReleaseAggregateKindHint). One fetch serves both
-// (PullAndCacheAggregate), so the Aggregate a Release names by identity is bound
-// to the location it was fetched from, as a sub-aggregate is.
+// The hint is read as the kind it records (closure.EntityKindOf), so both
+// Aggregate hints — a sub-aggregate's and the Release's own — name "Aggregate". One
+// fetch serves both (PullAndCacheAggregate), so the Aggregate a Release names by
+// identity is bound to the location it was fetched from, as a sub-aggregate is.
 //
 // It is the single home for the KindHint-to-catalog-kind normalization: the
 // pull-time verify pass derives an entity's canonical kind through it (to
 // consult the org signing policy), so the kind vocabulary is not re-spelled at
-// the call site.
+// the call site. It reads the one translation of an entity kind into the kind its
+// document is written as (closure.DocumentKind), held to the kinds a cache slot
+// can hold (closure.KindReadFromCacheSlot): a Manifest, read from beside its
+// Release and never published, names none, and neither does a hint naming no
+// declared kind.
 func EntityKindForHint(hint string) string {
-	if hint == "aggregate" || hint == closure.ReleaseAggregateKindHint {
-		return "Aggregate"
+	kind := closure.EntityKindOf(hint)
+	if kind == "" || !closure.KindReadFromCacheSlot(kind) {
+		return ""
 	}
-	return ociKindForHint(hint)
+	return closure.DocumentKind(kind)
+}
+
+// registryFetchKind returns the catalog kind the entity tier's registry fetch
+// binds a reference's location by, for a reference whose cache slot is kept under
+// slotKind (EntityKindForHint): the slot kind itself, so the fetch, the admission
+// of the fetched body and the slot it is written to name one kind. An Aggregate is
+// the exception, and the fetch names no kind for it: a bare-name Aggregate is
+// fetched by the Aggregate tier (PullAndCacheAggregate), so one reaching the entity
+// tier is fetched as the already-located reference it is. A slot kind that is
+// empty names no kind to fetch by either.
+func registryFetchKind(slotKind string) string {
+	if slotKind == aggregateKind {
+		return ""
+	}
+	return slotKind
+}
+
+// EntityKindForCatalogKind is the inverse of EntityKindForHint: the entity kind
+// (closure.DeclaredEntityKinds) a document of the catalog kind catalogKind —
+// "Recipe", "FeatureRecipe" — is recorded as, and "" for a catalog kind no entity
+// kind names. It reads the pairing EntityKindForHint states rather than stating it
+// again, so the two directions cannot come to disagree.
+func EntityKindForCatalogKind(catalogKind string) string {
+	if catalogKind == "" {
+		return ""
+	}
+	for _, kind := range closure.DeclaredEntityKinds() {
+		if EntityKindForHint(kind) == catalogKind {
+			return kind
+		}
+	}
+	return ""
 }
 
 // entityReference binds a bare catalog identity to its physical OCI reference,

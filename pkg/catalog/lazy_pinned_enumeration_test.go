@@ -145,7 +145,7 @@ func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob
 	t.Helper()
 	_, version, _ := resolver.SplitVersionedURI(slotURI)
 	mb, md := manifestBytesFor(t, mediaType, blob)
-	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob, ManifestBytes: mb, Digest: md}); err != nil {
+	if err := writeEntityToCacheSlot(ws, cacheDir, kindOfMediaType(t, mediaType), slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob, ManifestBytes: mb, Digest: md}); err != nil {
 		t.Fatalf("write cache slot %s: %v", slotURI, err)
 	}
 	return Pin{ResolvedVersion: version, Digest: rowDigestOf(blob), ManifestDigest: md}
@@ -198,19 +198,19 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		workloadSlot = "BaseWorkloads:1.0.0"
 	)
 
-	pins := map[string]Pin{}
-	pins[compSlot] = writePinnedSlot(t, ws, cacheDir, compSlot, oci.MediaTypeComponent, []byte(bridgeComponentYAML))
-	pins[featSlot] = writePinnedSlot(t, ws, cacheDir, featSlot, oci.MediaTypeFeature, []byte(bridgeFeatureYAML))
-	pins[recipeSlot] = writePinnedSlot(t, ws, cacheDir, recipeSlot, oci.MediaTypeRecipe, recipeBlob)
-	pins[frSlot] = writePinnedSlot(t, ws, cacheDir, frSlot, oci.MediaTypeFeatureRecipe, frBlob)
+	pins := Pins{}
+	pins[PinKey{Kind: "Component", URI: compSlot}] = writePinnedSlot(t, ws, cacheDir, compSlot, oci.MediaTypeComponent, []byte(bridgeComponentYAML))
+	pins[PinKey{Kind: "Feature", URI: featSlot}] = writePinnedSlot(t, ws, cacheDir, featSlot, oci.MediaTypeFeature, []byte(bridgeFeatureYAML))
+	pins[PinKey{Kind: "Recipe", URI: recipeSlot}] = writePinnedSlot(t, ws, cacheDir, recipeSlot, oci.MediaTypeRecipe, recipeBlob)
+	pins[PinKey{Kind: "FeatureRecipe", URI: frSlot}] = writePinnedSlot(t, ws, cacheDir, frSlot, oci.MediaTypeFeatureRecipe, frBlob)
 	// BARE-URI pins (slot stays versioned) — the real lockfile form for a
 	// bare-`type` aggregate reference and a bare-name library $ref.
-	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
-	pins["DbSizing"] = writePinnedSlot(t, ws, cacheDir, schemaSlot, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML))
-	pins[mappingSlot] = writePinnedSlot(t, ws, cacheDir, mappingSlot, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
+	pins[PinKey{Kind: "Aggregate", URI: "example/app"}] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
+	pins[PinKey{Kind: "SchemaLibrary", URI: "DbSizing"}] = writePinnedSlot(t, ws, cacheDir, schemaSlot, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML))
+	pins[PinKey{Kind: "MappingLibrary", URI: mappingSlot}] = writePinnedSlot(t, ws, cacheDir, mappingSlot, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
 	// BARE-URI workload-library pin (slot versioned) — the B→A bridge: a
 	// lockfile-pinned remote WorkloadLibrary folds into the enumerated set.
-	pins["BaseWorkloads"] = writePinnedSlot(t, ws, cacheDir, workloadSlot, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML))
+	pins[PinKey{Kind: "WorkloadLibrary", URI: "BaseWorkloads"}] = writePinnedSlot(t, ws, cacheDir, workloadSlot, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML))
 
 	// --- Subject: determinism-wired lazy lookup (nil puller + pins, no catalog dirs) ---
 	subject := NewLazyLookup(ws, cacheDir, nil, nil)
@@ -280,10 +280,10 @@ func TestLazyLookup_PinnedCacheEnumeration_PullerNeverCalled(t *testing.T) {
 		recipeURI = "compose/mariadb:1.0.0"
 		schemaURI = "DbSizing:1.0.0"
 	)
-	pins := map[string]Pin{
-		compURI:   writePinnedSlot(t, ws, cacheDir, compURI, oci.MediaTypeComponent, []byte(bridgeComponentYAML)),
-		recipeURI: writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob),
-		schemaURI: writePinnedSlot(t, ws, cacheDir, schemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
+	pins := Pins{
+		{Kind: "Component", URI: compURI}:       writePinnedSlot(t, ws, cacheDir, compURI, oci.MediaTypeComponent, []byte(bridgeComponentYAML)),
+		{Kind: "Recipe", URI: recipeURI}:        writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob),
+		{Kind: "SchemaLibrary", URI: schemaURI}: writePinnedSlot(t, ws, cacheDir, schemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
 	}
 
 	puller := &pinCacheCountingPuller{}
@@ -310,7 +310,7 @@ func TestLazyLookup_NilPuller_CacheMissCleanMiss(t *testing.T) {
 	const absentURI = "core/never-cached:1.0.0"
 
 	subject := NewLazyLookup(ws, cacheDir, nil, nil)
-	subject.SetPins(map[string]Pin{absentURI: {ResolvedVersion: "1.0.0", Digest: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000"}})
+	subject.SetPins(Pins{{Kind: "Component", URI: absentURI}: {ResolvedVersion: "1.0.0", Digest: "sha256:" + "00000000000000000000000000000000000000000000000000000000000000"}})
 
 	if _, ok := subject.Component(absentURI); ok {
 		t.Fatalf("a pinned-but-uncached Component must be a clean miss; got a hit")

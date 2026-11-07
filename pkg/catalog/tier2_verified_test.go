@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"oras.land/oras-go/v2/content/memory"
 )
 
@@ -24,10 +25,10 @@ import (
 func seedVerifiedEntitySlot(t *testing.T, ws, cacheDir, uri, version, mediaType string, body []byte) (contentPin, manifestPin string) {
 	t.Helper()
 	mb, md := manifestBytesFor(t, mediaType, body)
-	if err := oci.WriteCached(ws, cacheDir, uri, version, body); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, kindOfMediaType(t, mediaType), uri, version, body); err != nil {
 		t.Fatalf("seed write content: %v", err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, mb); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, kindOfMediaType(t, mediaType), uri, version, mb); err != nil {
 		t.Fatalf("seed write manifest: %v", err)
 	}
 	return rowDigestOf(body), md
@@ -71,7 +72,7 @@ func TestTier2ReadVerified(t *testing.T) {
 	contentPin, manifestPin := seedVerifiedEntitySlot(t, ws, cacheDir, uri, version, oci.MediaTypeSchemaLibrary, body)
 
 	t.Run("faithful slot returns the bytes", func(t *testing.T) {
-		got, err := tier2ReadVerified(ws, cacheDir, uri, contentPin, manifestPin)
+		got, err := tier2ReadVerified(ws, cacheDir, "SchemaLibrary", uri, contentPin, manifestPin)
 		if err != nil {
 			t.Fatalf("verified read (match): %v", err)
 		}
@@ -81,7 +82,7 @@ func TestTier2ReadVerified(t *testing.T) {
 	})
 
 	t.Run("content pin mismatch is ErrFetchIntegrity", func(t *testing.T) {
-		_, err := tier2ReadVerified(ws, cacheDir, uri, "sha256:0000000000000000000000000000000000000000000000000000000000000000", manifestPin)
+		_, err := tier2ReadVerified(ws, cacheDir, "SchemaLibrary", uri, "sha256:0000000000000000000000000000000000000000000000000000000000000000", manifestPin)
 		if !errors.Is(err, oci.ErrFetchIntegrity()) {
 			t.Errorf("error = %v; want ErrFetchIntegrity", err)
 		}
@@ -90,11 +91,11 @@ func TestTier2ReadVerified(t *testing.T) {
 	t.Run("tampered manifest is ErrCachedManifestIntegrity", func(t *testing.T) {
 		tws := t.TempDir()
 		cp, mp := seedVerifiedEntitySlot(t, tws, cacheDir, uri, version, oci.MediaTypeSchemaLibrary, body)
-		slot := mustCachePath(tws, cacheDir, uri, version)
+		slot := ocitest.MustCachePath(tws, cacheDir, "SchemaLibrary", uri, version)
 		if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 			t.Fatalf("tamper manifest: %v", err)
 		}
-		_, err := tier2ReadVerified(tws, cacheDir, uri, cp, mp)
+		_, err := tier2ReadVerified(tws, cacheDir, "SchemaLibrary", uri, cp, mp)
 		if !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
 			t.Errorf("error = %v; want ErrCachedManifestIntegrity", err)
 		}
@@ -102,27 +103,27 @@ func TestTier2ReadVerified(t *testing.T) {
 
 	t.Run("manifest-less slot fails closed as a cache miss", func(t *testing.T) {
 		iws := t.TempDir()
-		if err := oci.WriteCached(iws, cacheDir, uri, version, body); err != nil {
+		if err := oci.WriteCached(iws, cacheDir, "SchemaLibrary", uri, version, body); err != nil {
 			t.Fatalf("write content only: %v", err)
 		}
 		// A catalog entity is always OCI-distributed, so a slot that carries content
 		// but no persisted manifest is an incomplete cache entry. The read fails
 		// closed as a miss so the caller re-pulls — it does NOT fall back to the
 		// content pin, even for faithful content matching the pin.
-		if _, err := tier2ReadVerified(iws, cacheDir, uri, contentPin, manifestPin); !errors.Is(err, oci.ErrFetchNotFound()) {
+		if _, err := tier2ReadVerified(iws, cacheDir, "SchemaLibrary", uri, contentPin, manifestPin); !errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Errorf("manifest-less slot: err = %v; want ErrFetchNotFound (fail-closed miss)", err)
 		}
 	})
 
 	t.Run("missing cache slot is ErrFetchNotFound", func(t *testing.T) {
-		_, err := tier2ReadVerified(ws, cacheDir, "hub.aggrega.ai/schemalibrary/core/Absent:1.0.0", contentPin, manifestPin)
+		_, err := tier2ReadVerified(ws, cacheDir, "SchemaLibrary", "hub.aggrega.ai/schemalibrary/core/Absent:1.0.0", contentPin, manifestPin)
 		if !errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Errorf("error = %v; want ErrFetchNotFound", err)
 		}
 	})
 
 	t.Run("empty pin is a programming error, not a skip", func(t *testing.T) {
-		if _, err := tier2ReadVerified(ws, cacheDir, uri, "", manifestPin); err == nil {
+		if _, err := tier2ReadVerified(ws, cacheDir, "SchemaLibrary", uri, "", manifestPin); err == nil {
 			t.Error("empty expected digest must error (no skip mode); got nil")
 		}
 	})
@@ -147,7 +148,7 @@ func TestTier2ReadVerifiedManifestAuthorityBeatsForgedPins(t *testing.T) {
 	// body), then overwrite ONLY the content blob with a forged body.
 	_, manifestPin := seedVerifiedEntitySlot(t, ws, cacheDir, uri, version, oci.MediaTypeSchemaLibrary, body)
 	forged := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\nspec: {evil: true}\n")
-	slot := mustCachePath(ws, cacheDir, uri, version)
+	slot := ocitest.MustCachePath(ws, cacheDir, "SchemaLibrary", uri, version)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), forged, 0o644); err != nil {
 		t.Fatalf("forge content: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestTier2ReadVerifiedManifestAuthorityBeatsForgedPins(t *testing.T) {
 	// lockfile / metadata were rewritten). The manifest self-verify pin is left as
 	// the real one, mirroring the git-tracked independent record.
 	forgedContentPin := contentDigest(forged)
-	_, err := tier2ReadVerified(ws, cacheDir, uri, forgedContentPin, manifestPin)
+	_, err := tier2ReadVerified(ws, cacheDir, "SchemaLibrary", uri, forgedContentPin, manifestPin)
 	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("forged content + forged content pin: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}

@@ -120,6 +120,23 @@ func LoadLockfile(path string) (*Lockfile, []Diagnostic, error) {
 	return lf, diagnostics, nil
 }
 
+// WithRewriteRemedy returns err with what clears it appended, where err reports a
+// lockfile that failed schema validation as it loaded ([ErrLockfileInvalid]) —
+// a lockfile written for another shape of the file, such as one whose entities
+// record no kind — and err unchanged otherwise. releasePath is the Release the
+// lockfile belongs to, as the reader named it.
+//
+// A pull treats a lockfile it cannot load as absent and writes it again from the
+// Release, so naming that pull is the remedy for every such refusal. It is stated
+// here, beside the condition, so every surface reporting a lockfile it could not
+// load names the same command.
+func WithRewriteRemedy(err error, releasePath string) error {
+	if err == nil || !errors.Is(err, ErrLockfileInvalid()) {
+		return err
+	}
+	return fmt.Errorf("%w; run `aggrega pull --release %s` to write it again from the Release", err, releasePath)
+}
+
 // Load is [LoadLockfile] for the lockfile beside a Release, read for its pins by
 // an operation in the workspace at workspaceRoot: the read is held first, by
 // [CheckRead], to the root a write of the same file is held to, so a lockfile

@@ -287,11 +287,11 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	}
 	pin := digest.ContentDigest(result.Bytes)
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	if err := oci.WriteCached(root, cacheDir, ref, pin, result.Bytes); err != nil {
+	if err := oci.WriteCached(root, cacheDir, oci.PluginArtifactKind(), ref, pin, result.Bytes); err != nil {
 		return resolvedInstallable{}, err
 	}
 	if len(result.ManifestBytes) > 0 {
-		if err := oci.WriteCachedManifest(root, cacheDir, ref, pin, result.ManifestBytes); err != nil {
+		if err := oci.WriteCachedManifest(root, cacheDir, oci.PluginArtifactKind(), ref, pin, result.ManifestBytes); err != nil {
 			return resolvedInstallable{}, err
 		}
 	}

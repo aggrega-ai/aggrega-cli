@@ -4,7 +4,6 @@
 package mcp
 
 import (
-	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
@@ -41,7 +40,7 @@ type closureRef struct {
 func closureRefOf(uri, version, axisKind, kindHint string) closureRef {
 	kind := axisKind
 	if kind == "" {
-		kind = compilerops.EntityKindForHint(kindHint)
+		kind = closure.DocumentKind(closure.EntityKindOf(kindHint))
 	}
 	return closureRef{URI: uri, Version: version, Kind: kind}
 }

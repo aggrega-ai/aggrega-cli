@@ -267,11 +267,11 @@ func (s *server) attachCandidatesForGraphNode(ctx context.Context, tw *toolWorks
 	if err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace to report attach candidates.", err, "feature"))
 	}
-	lf, refusal := tw.loadReleaseLockfile(releasePath)
+	lf, lockPins, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	view := tw.newView(releasePath, lf)
+	view := tw.newView(releasePath, lockPins)
 
 	preview, err := compilerops.PreviewForArtifactFromAvailablePins(
 		ctx,

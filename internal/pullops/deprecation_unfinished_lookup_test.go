@@ -119,7 +119,7 @@ var deprecationDiscoveries = []struct {
 	{
 		name: "the closure pass",
 		run: func(ctx context.Context, wsCfg workspaceconfig.Config, e pullverify.Entity, targetFor pullverify.TargetFor, diag io.Writer) error {
-			return discoverClosureDeprecations(ctx, &lockfile.Lockfile{}, []pullverify.Entity{e}, nil, wsCfg, targetFor, diag)
+			return discoverClosureDeprecations(ctx, &lockfile.Lockfile{}, []signatureQuestion{{entity: e}}, nil, wsCfg, targetFor, diag)
 		},
 	},
 	{

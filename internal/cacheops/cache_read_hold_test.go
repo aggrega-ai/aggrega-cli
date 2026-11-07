@@ -42,7 +42,7 @@ func cacheReadLayouts() []struct {
 		return at
 	}
 	entityBlob := func(cache string) string {
-		return filepath.Join(cache, "entities", "zz-unreferenced", "1.0.0", "blob")
+		return filepath.Join(cache, "entities", entitySlotRel(), "blob")
 	}
 	return []struct {
 		name     string
@@ -54,7 +54,7 @@ func cacheReadLayouts() []struct {
 			return ""
 		}},
 		{"a cache directory that is a link leading out", ".aggrega/cache", func(t *testing.T, _, cache, elsewhere string) string {
-			seedSlot(t, filepath.Join(elsewhere, "entities", "zz-unreferenced", "1.0.0"))
+			seedSlot(t, filepath.Join(elsewhere, "entities", entitySlotRel()))
 			linkInto(t, elsewhere, cache)
 			return cache
 		}},

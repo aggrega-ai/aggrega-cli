@@ -46,7 +46,7 @@ func connectionSiteWorkspace(t *testing.T) (root, release string) {
 		if err != nil {
 			t.Fatalf("read the component fixture %s: %v", name, err)
 		}
-		entities = append(entities, lockfile.Entity{URI: "conn/" + name, ResolvedVersion: "1.0.0", Digest: digest.ContentDigest(b)})
+		entities = append(entities, lockfile.Entity{Kind: "component", URI: "conn/" + name, ResolvedVersion: "1.0.0", Digest: digest.ContentDigest(b)})
 	}
 	lf := &lockfile.Lockfile{Version: 1, Release: "./release.yaml", GeneratedAt: "2026-06-03T10:00:00Z", Entities: entities}
 	if err := lockfile.WriteLockfile(lockfile.PathFor(release), lf); err != nil {

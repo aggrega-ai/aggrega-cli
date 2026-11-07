@@ -70,7 +70,7 @@ func configurationInPlace(t *testing.T) cacheWorkspaceLayout {
 		[]byte("workspace: {}\nartifact_cache_dir: cache-elsewhere\n"), 0o644); err != nil {
 		t.Fatalf("write the workspace configuration: %v", err)
 	}
-	if err := oci.WriteCached(ws, "cache-elsewhere", "oci://hub.aggrega.ai/component/core/probe", "1.0.0",
+	if err := oci.WriteCached(ws, "cache-elsewhere", "Component", "oci://hub.aggrega.ai/component/core/probe", "1.0.0",
 		[]byte("cached-entity-bytes")); err != nil {
 		t.Fatalf("cache an entity under the configured cache directory: %v", err)
 	}

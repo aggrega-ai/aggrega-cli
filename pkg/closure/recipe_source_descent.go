@@ -27,10 +27,14 @@ import (
 // pulled artifacts into a deduped slice ready to feed into the
 // lockfile writer.
 //
-// perEntityInfra maps a source-descent entity URI (a Recipe or
-// FeatureRecipe) to the per-instance infra of each instance that uses
-// it — component instances for a Recipe, feature/secret-attachment
-// instances for a FeatureRecipe. The source is resolved once per
+// perEntityInfra maps a source-descent entity's identity (a Recipe or
+// FeatureRecipe: its kind and URI) to the per-instance infra of each instance
+// that uses it — component instances for a Recipe, feature/secret-attachment
+// instances for a FeatureRecipe. It is keyed by the kind as well as the URI
+// because a Recipe and a FeatureRecipe may share a name, and each is used by
+// instances of its own: the one's source is never resolved against the other's
+// instances. The key's kind is the kind the descent reads the entity as — the
+// one its collection-site hint names. The source is resolved once per
 // instance, so the same entity used by two instances with different
 // infra resolves twice (deduped by identity, distinct when the infra
 // genuinely differs). An entity with no using instance — mapped in the
@@ -52,14 +56,14 @@ import (
 // ErrLocalsForwardReference / ErrLocalsUnknownReference on a locals entry
 // whose reference into the pillar the block's own author order refuses.
 func DescendRecipeSources(
-	perEntityInfra map[string][]ComponentSourceInfra,
+	perEntityInfra map[EntityKey][]ComponentSourceInfra,
 	closure Closure,
 	recipeLoader RecipeLoader,
 	sourceResolver SourceResolver,
 	workspaceRoot, cacheDir string,
 ) ([]SourceArtifact, error) {
 	return descendSources(closure, recipeLoader, sourceResolver, workspaceRoot, cacheDir,
-		func(uri string, _ sourceRoute) []ComponentSourceInfra { return perEntityInfra[uri] })
+		func(key EntityKey, _ sourceRoute) []ComponentSourceInfra { return perEntityInfra[key] })
 }
 
 // DescendAuthoredSources resolves, for every Recipe and FeatureRecipe in the
@@ -89,7 +93,7 @@ func DescendAuthoredSources(
 	workspaceRoot, cacheDir string,
 ) ([]SourceArtifact, error) {
 	return descendSources(closure, recipeLoader, sourceResolver, workspaceRoot, cacheDir,
-		func(_ string, route sourceRoute) []ComponentSourceInfra {
+		func(_ EntityKey, route sourceRoute) []ComponentSourceInfra {
 			if route != routeAuthoredIdentity {
 				return nil
 			}
@@ -98,14 +102,15 @@ func DescendAuthoredSources(
 }
 
 // descendSources is the one body both descents run. instancesFor names, per
-// entity and per the route its source takes, the instances the source is
-// resolved for; an entity it names none for is skipped.
+// entity — its identity under the kind the descent reads it as — and per the
+// route its source takes, the instances the source is resolved for; an entity it
+// names none for is skipped.
 func descendSources(
 	closure Closure,
 	recipeLoader RecipeLoader,
 	sourceResolver SourceResolver,
 	workspaceRoot, cacheDir string,
-	instancesFor func(uri string, route sourceRoute) []ComponentSourceInfra,
+	instancesFor func(key EntityKey, route sourceRoute) []ComponentSourceInfra,
 ) ([]SourceArtifact, error) {
 	dedupe := map[string]*SourceArtifact{}
 	var order []string
@@ -131,7 +136,7 @@ func descendSources(
 			entityFieldTag = "spec.source"
 		)
 		switch entityKind {
-		case "recipe":
+		case KindRecipe:
 			r, err := recipeLoader.LoadRecipe(ent.URI)
 			if err != nil {
 				loadErr = err
@@ -139,7 +144,7 @@ func descendSources(
 			}
 			source = r.Spec.Source
 			locals = r.Spec.Locals
-		case "feature_recipe":
+		case KindFeatureRecipe:
 			fr, err := recipeLoader.LoadFeatureRecipe(ent.URI)
 			if err != nil {
 				loadErr = err
@@ -180,7 +185,7 @@ func descendSources(
 		// but instantiated/attached by nothing in this Release; its source is
 		// never built, so skip it rather than pin an unconsumed artifact (or
 		// halt on an infra-templated source no instance supplies infra for).
-		comps := instancesFor(ent.URI, route)
+		comps := instancesFor(EntityKey{Kind: entityKind, URI: ent.URI}, route)
 		if len(comps) == 0 {
 			continue
 		}
@@ -1077,9 +1082,9 @@ func withReader(values []string, readBy string) []string {
 func classifyEntityKind(uri string) (string, bool) {
 	switch {
 	case strings.Contains(uri, "/recipe/"):
-		return "recipe", true
+		return KindRecipe, true
 	case strings.Contains(uri, "/feature-recipe/"), strings.Contains(uri, "/featurerecipe/"):
-		return "feature_recipe", true
+		return KindFeatureRecipe, true
 	default:
 		return "", false
 	}

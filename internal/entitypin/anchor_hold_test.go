@@ -137,7 +137,7 @@ func TestALockBesideAnEntityInANamedDirectoryIsHeldToTheRootThatDirectoryPicks(t
 				before, _ := os.ReadFile(target)
 				in := PlanInputs{
 					View:          catalog.NewLazyLookup(l.ws, "", []string{cat}, nil),
-					URIs:          []string{"helm/local:1.0.0"},
+					Entities:      recipes("helm/local:1.0.0"),
 					Resolver:      &recordingResolver{},
 					WorkspaceRoot: l.ws,
 					ForWriting:    true,

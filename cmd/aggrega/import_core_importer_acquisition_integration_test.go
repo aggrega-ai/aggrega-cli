@@ -369,14 +369,14 @@ func requireOnlyTheCacheWritten(t *testing.T, rw *workspaceconfig.ResolvedWorksp
 func requireTheAcceptedModuleCached(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, imp publishedCoreImporter) {
 	t.Helper()
 	root, cacheDir := rw.Root(), rw.Config().ResolvedArtifactCacheDir()
-	cached, err := oci.ReadCached(root, cacheDir, imp.uri, imp.digest)
+	cached, err := oci.ReadCached(root, cacheDir, oci.PluginArtifactKind(), imp.uri, imp.digest)
 	if err != nil {
 		t.Fatalf("the content cache holds no module for %s at %s: %v", imp.uri, imp.digest, err)
 	}
 	if !bytes.Equal(cached, imp.module) {
 		t.Errorf("the content cache holds a module for %s that is not the one the binary accepts", imp.uri)
 	}
-	manifest, err := oci.ReadCachedManifest(root, cacheDir, imp.uri, imp.digest)
+	manifest, err := oci.ReadCachedManifest(root, cacheDir, oci.PluginArtifactKind(), imp.uri, imp.digest)
 	if err != nil {
 		t.Fatalf("the content cache holds no manifest beside the module for %s: %v", imp.uri, err)
 	}

@@ -211,9 +211,17 @@ func (s *Server) artifactPostureRender(ctx context.Context, release string, fill
 		// seeded with THIS request's pins before any cached read fires, so every
 		// resolution verifies-on-read against this Release's lockfile and a
 		// concurrent request's pins can never perturb it.
-		var pins map[string]catalog.Pin
+		var pins catalog.Pins
 		if lf != nil {
-			pins = catalog.PinsFromLockfile(lf)
+			var perr error
+			if pins, perr = catalog.PinsFromLockfile(lf); perr != nil {
+				return nil, &jsonRPCError{
+					Code:    errEntityNotResolvable,
+					Message: perr.Error(),
+					Data:    newLockfileErrorData(lockfilePath, release),
+					cause:   perr,
+				}
+			}
 		}
 		view = s.catalogFor(releasePath).ForRequest(pins)
 

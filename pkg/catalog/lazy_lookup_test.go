@@ -36,10 +36,10 @@ func faithfulManifest(ctx context.Context, mt string, body []byte) (manifestByte
 func seedVerifiedComponentSlot(t *testing.T, ws, cacheDir, uri, version string, body []byte) (contentPin, manifestPin string) {
 	t.Helper()
 	mb, md := faithfulManifest(context.Background(), oci.MediaTypeComponent, body)
-	if err := oci.WriteCached(ws, cacheDir, uri, version, body); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, "Component", uri, version, body); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, mb); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, "Component", uri, version, mb); err != nil {
 		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 	return pinFor(t, body), md
@@ -185,7 +185,7 @@ func TestLazyLookupComponentTier2HitFromCacheDir(t *testing.T) {
 	contentPin, manifestPin := seedVerifiedComponentSlot(t, tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML))
 	puller := newMockPuller()
 	ll := catalog.NewLazyLookup(tmp, cacheDir, nil, puller)
-	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: contentPin, ManifestDigest: manifestPin}})
+	ll.SetPins(catalog.Pins{{Kind: "Component", URI: cachedComponentURI}: {ResolvedVersion: "2.0.0", Digest: contentPin, ManifestDigest: manifestPin}})
 	comp, ok := ll.AsCatalogLookup().Component(cachedComponentURI)
 	if !ok {
 		t.Fatalf("Component(%q) not found at Tier-2 under a matching pin", cachedComponentURI)
@@ -213,7 +213,7 @@ func TestLazyLookupComponentTier2DriftSkips(t *testing.T) {
 	// Content pin does NOT match the cached content -> drift. The manifest is
 	// faithful, so the drift surfaces at the content-pin check, not as an
 	// incomplete-slot miss.
-	ll.SetPins(map[string]catalog.Pin{cachedComponentURI: {ResolvedVersion: "2.0.0", Digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000", ManifestDigest: manifestPin}})
+	ll.SetPins(catalog.Pins{{Kind: "Component", URI: cachedComponentURI}: {ResolvedVersion: "2.0.0", Digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000", ManifestDigest: manifestPin}})
 	if _, ok := ll.AsCatalogLookup().Component(cachedComponentURI); ok {
 		t.Errorf("drifted Tier-2 slot must NOT resolve (false-green); got a hit")
 	}
@@ -229,7 +229,7 @@ func TestLazyLookupComponentTier2NoPinFallsToTier3(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	cacheDir := ".aggrega/cache"
-	if err := oci.WriteCached(tmp, cacheDir, cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
+	if err := oci.WriteCached(tmp, cacheDir, "Component", cachedComponentURI, "2.0.0", []byte(cachedComponentYAML)); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
 	puller := newMockPuller()

@@ -64,6 +64,16 @@ func recipeYAML(name, source string, withImport bool) string {
 	return body
 }
 
+// recipes names each uri as a Recipe, the kind every Recipe this package's tests
+// author is collected as.
+func recipes(uris ...string) []closure.EntityKey {
+	keys := make([]closure.EntityKey, 0, len(uris))
+	for _, uri := range uris {
+		keys = append(keys, closure.EntityKey{Kind: closure.KindRecipe, URI: uri})
+	}
+	return keys
+}
+
 // TestComputeRoutesOnlyAnAuthoredIdentityBesideItsEntity drives the step over three
 // Recipes, one per route a source takes, each in a directory of its own.
 //
@@ -88,7 +98,7 @@ func TestComputeRoutesOnlyAnAuthoredIdentityBesideItsEntity(t *testing.T) {
 	res := &recordingResolver{}
 	plan, err := Compute(PlanInputs{
 		View:          view,
-		URIs:          []string{"helm/authored:1.0.0", "helm/templated:1.0.0", "helm/local:1.0.0"},
+		Entities:      recipes("helm/authored:1.0.0", "helm/templated:1.0.0", "helm/local:1.0.0"),
 		Resolver:      res,
 		WorkspaceRoot: ws,
 	})
@@ -134,7 +144,7 @@ func TestUnpinnedHaltsUntilTheStepHasWrittenAndThenIsSilent(t *testing.T) {
 		t.Helper()
 		plan, err := Compute(PlanInputs{
 			View:          catalog.NewLazyLookup(ws, "", []string{cat}, nil),
-			URIs:          []string{"helm/server:1.0.0"},
+			Entities:      recipes("helm/server:1.0.0"),
 			Resolver:      &recordingResolver{},
 			WorkspaceRoot: ws,
 			ForWriting:    forWriting,
@@ -240,7 +250,7 @@ func TestReportIsTheWriteWithoutTheWrite(t *testing.T) {
 	writeFile(t, recipe, recipeYAML("server", "", true))
 	writeFile(t, filepath.Join(cat, "server", "extra.yaml"), "kind: ConfigMap\n")
 	plan, err := Compute(PlanInputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
-		URIs: []string{"helm/server:1.0.0"}, Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: true})
+		Entities: recipes("helm/server:1.0.0"), Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: true})
 	if err != nil {
 		t.Fatalf("Compute: %v", err)
 	}

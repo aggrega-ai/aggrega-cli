@@ -54,7 +54,7 @@ const (
 func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{
-			{URI: parityEntityURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-entity"},
+			{Kind: closure.KindComponent, URI: parityEntityURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-entity"},
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{URI: paritySchemaLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:lock-schema"},
@@ -82,7 +82,7 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 	// side. A key-set comparison is indifferent to that; a value comparison is not.
 	cl := closure.Closure{
 		Entities: []closure.ResolvedRef{
-			{URI: parityEntityURI, ResolvedVersion: "1.0.0", Digest: "sha256:walk-entity"},
+			{URI: parityEntityURI, KindHint: closure.KindComponent, ResolvedVersion: "1.0.0", Digest: "sha256:walk-entity"},
 		},
 		SchemaLibraries: []closure.ResolvedLibrary{
 			{URI: paritySchemaLibraryURI, ResolvedVersion: "1.0.0", Digest: "sha256:walk-schema"},
@@ -104,8 +104,14 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 		},
 	}
 
-	fromLockfile := PinsFromLockfile(lf)
-	fromClosure := PinsFromClosure(cl)
+	fromLockfile, err := PinsFromLockfile(lf)
+	if err != nil {
+		t.Fatalf("PinsFromLockfile: %v", err)
+	}
+	fromClosure, err := PinsFromClosure(cl)
+	if err != nil {
+		t.Fatalf("PinsFromClosure: %v", err)
+	}
 
 	if len(fromLockfile) == 0 || len(fromClosure) == 0 {
 		t.Fatalf("fixture is inert: a pin set is empty, so the comparison below proves nothing (lockfile=%d closure=%d)",
@@ -131,10 +137,10 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 		{"workload libraries", parityWorkloadLibraryURI},
 		{"artifact libraries", parityArtifactLibraryURI},
 	} {
-		if _, ok := fromLockfile[want.uri]; !ok {
+		if _, ok := pinsHoldURI(fromLockfile, want.uri); !ok {
 			t.Errorf("PinsFromLockfile does not project the %s axis: %q absent", want.axis, want.uri)
 		}
-		if _, ok := fromClosure[want.uri]; !ok {
+		if _, ok := pinsHoldURI(fromClosure, want.uri); !ok {
 			t.Errorf("PinsFromClosure does not project the %s axis: %q absent", want.axis, want.uri)
 		}
 	}
@@ -143,20 +149,30 @@ func TestPinBuildersProjectTheSameAxes(t *testing.T) {
 	// asymmetry between them.
 	for _, pins := range []struct {
 		name string
-		set  map[string]Pin
+		set  Pins
 	}{{"PinsFromLockfile", fromLockfile}, {"PinsFromClosure", fromClosure}} {
-		if _, ok := pins.set["oci://example/chart"]; ok {
+		if _, ok := pinsHoldURI(pins.set, "oci://example/chart"); ok {
 			t.Errorf("%s pins a source artifact; source artifacts descend on their own read-time digest gate and are excluded from both projections", pins.name)
 		}
 	}
 }
 
+// pinsHoldURI reports whether pins holds a pin of any kind for uri, and its key.
+func pinsHoldURI(pins Pins, uri string) (PinKey, bool) {
+	for k := range pins {
+		if k.URI == uri {
+			return k, true
+		}
+	}
+	return PinKey{}, false
+}
+
 // pinKeysMissingFrom returns the sorted keys of want that other does not carry.
-func pinKeysMissingFrom(want, other map[string]Pin) []string {
+func pinKeysMissingFrom(want, other Pins) []string {
 	var missing []string
 	for k := range want {
 		if _, ok := other[k]; !ok {
-			missing = append(missing, k)
+			missing = append(missing, k.Kind+" "+k.URI)
 		}
 	}
 	sort.Strings(missing)

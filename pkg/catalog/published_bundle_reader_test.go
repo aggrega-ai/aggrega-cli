@@ -282,7 +282,7 @@ func TestSubAggregateDescentReadsAnArchivedCacheSlot(t *testing.T) {
 
 	root := t.TempDir()
 	const uri = "acme/db-module"
-	if err := writeEntityToCacheSlot(root, ".aggrega/cache", uri+":3.0.0", "3.0.0", pulled); err != nil {
+	if err := writeEntityToCacheSlot(root, ".aggrega/cache", kindOfMediaType(t, pulled.MediaType), uri+":3.0.0", "3.0.0", pulled); err != nil {
 		t.Fatalf("writeEntityToCacheSlot: %v", err)
 	}
 

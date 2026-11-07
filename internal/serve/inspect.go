@@ -783,7 +783,7 @@ func closureEntities(cl closure.Closure, rows closureRows) []ClosureEntity {
 		out = append(out, ClosureEntity{
 			URI:     e.URI,
 			Version: e.ResolvedVersion,
-			Kind:    compilerops.EntityKindForHint(e.KindHint),
+			Kind:    closure.DocumentKind(e.Kind()),
 			Source:  rows.sourceOf(e.ResolutionPath),
 		})
 	}

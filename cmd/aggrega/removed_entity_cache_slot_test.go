@@ -24,7 +24,7 @@ import (
 func layFetchedSlot(t *testing.T, root, uri, version string, body []byte, withManifest bool) {
 	t.Helper()
 	cacheDir := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}).Config().ResolvedArtifactCacheDir()
-	if err := oci.WriteCached(root, cacheDir, uri+":"+version, version, body); err != nil {
+	if err := oci.WriteCached(root, cacheDir, "Component", uri+":"+version, version, body); err != nil {
 		t.Fatalf("write the slot's content: %v", err)
 	}
 	if !withManifest {
@@ -34,7 +34,7 @@ func layFetchedSlot(t *testing.T, root, uri, version string, body []byte, withMa
 	if err != nil {
 		t.Fatalf("the manifest a registry serves for the content: %v", err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, uri+":"+version, version, manifest); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "Component", uri+":"+version, version, manifest); err != nil {
 		t.Fatalf("write the slot's manifest: %v", err)
 	}
 }

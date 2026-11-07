@@ -18,10 +18,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
-// CachePath returns the cache slot for the given URI + version under
-// the workspace's configured cache directory's `entities/` subtree:
+// CachePath returns the cache slot for an artifact of the given kind, URI and
+// version under the workspace's configured cache directory's `entities/` subtree:
 //
-//	<workspaceRoot>/<cacheDir>/entities/<encoded-reference>/<encoded-version>/
+//	<workspaceRoot>/<cacheDir>/entities/<encoded-kind>/<encoded-reference>/<encoded-version>/
+//
+// The kind is the published kind the artifact's media type names — one of
+// [MediaTypeKinds], such as "Component", "Recipe" or "SchemaLibrary"; a Plugin's
+// executable is cached under "Plugin", since a Plugin publication carries it. It
+// takes its own directory because a reference and a version do not identify an
+// artifact on their own: a Component and a Recipe may share both, and each is held
+// in a slot of its own. A kind that names no published kind is refused with
+// [ErrUnknownEntityKind] rather than given a directory.
 //
 // The `entities/` segment partitions the cache root from the
 // sibling `<cacheDir>/source-artifacts/<kind>/<host>/<path>/<version>/<digest-prefix>/`
@@ -49,11 +57,58 @@ import (
 // wrote, or from a body a registry served, so nothing upstream of this
 // builder is relied on to have held it to that shape; see
 // [JoinCacheLocation].
-func CachePath(workspaceRoot, cacheDir, uri, version string) (string, error) {
+func CachePath(workspaceRoot, cacheDir, kind, uri, version string) (string, error) {
+	if !IsPublishableKind(kind) {
+		return "", fmt.Errorf("oci: cache slot for %q: kind %q: %w", uri, kind, ErrUnknownEntityKind())
+	}
 	return JoinCacheLocation(EntitiesRoot(workspaceRoot, cacheDir), fmt.Sprintf("entity %q", uri),
-		CacheSegment{Key: "reference", Value: uri, Segment: bareReference(uri), Whole: true},
-		CacheSegment{Key: "version", Value: version, Segment: version},
-	)
+		entitySlotSegments(kind, uri, version)...)
+}
+
+// The names of the directories an entity slot is laid out in beneath EntitiesRoot,
+// each the Key of its segment.
+const (
+	// EntitySlotKind names the directory spelled from the slot's published kind.
+	EntitySlotKind = "kind"
+	// EntitySlotReference names the directory spelled from the slot's reference.
+	EntitySlotReference = "reference"
+	// EntitySlotVersion names the directory spelled from the slot's version.
+	EntitySlotVersion = "version"
+)
+
+// entitySlotSegments is the one statement of an entity slot's layout: the
+// directories beneath EntitiesRoot, outermost first, that CachePath joins and
+// EntitySlotLayout reports.
+func entitySlotSegments(kind, uri, version string) []CacheSegment {
+	return []CacheSegment{
+		{Key: EntitySlotKind, Value: kind, Segment: kind},
+		{Key: EntitySlotReference, Value: uri, Segment: bareReference(uri), Whole: true},
+		{Key: EntitySlotVersion, Value: version, Segment: version},
+	}
+}
+
+// EntitySlotLayout returns the directories an entity slot sits in beneath
+// EntitiesRoot, outermost first, each named by its segment's Key (EntitySlotKind,
+// EntitySlotReference, EntitySlotVersion). It is read from the segments CachePath
+// builds a slot from, so a reader walking the subtree — a listing, a prune — walks
+// exactly as deep as a slot is laid and names each level as CachePath spelled it.
+func EntitySlotLayout() []string {
+	segments := entitySlotSegments("", "", "")
+	out := make([]string, len(segments))
+	for i, s := range segments {
+		out[i] = s.Key
+	}
+	return out
+}
+
+// PluginArtifactKind returns the kind a Plugin's executable is cached under. A
+// Plugin publication carries the executable as the layer of the manifest whose
+// config is the Plugin entity, so the executable is held under the kind that
+// publication's media type names ([MediaTypePlugin]), read through the one table
+// of published kinds rather than spelled again.
+func PluginArtifactKind() string {
+	kind, _, _ := KindOfMediaType(MediaTypePlugin)
+	return kind
 }
 
 // EntitiesRoot returns the root of the catalog-entity subtree of the
@@ -383,8 +438,8 @@ func (e *pullRemedyError) Unwrap() error { return e.refusal }
 // artifacts (e.g., un-tarred Recipe directories) replace this
 // function with a directory-walking variant; callers should consult
 // the layout convention in effect at their entry point.
-func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
-	data, err := ReadCachedFile(workspaceRoot, cacheDir, uri, version, "blob")
+func ReadCached(workspaceRoot, cacheDir, kind, uri, version string) ([]byte, error) {
+	data, err := ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, "blob")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("oci: cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
@@ -414,8 +469,8 @@ func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 // A file that is not there is reported as [os.ReadFile] reports it, so
 // [os.IsNotExist] tells a miss apart; a version or a reference that cannot address
 // a slot is the refusal [CachePath] returns.
-func ReadCachedFile(workspaceRoot, cacheDir, uri, version, name string) ([]byte, error) {
-	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
+func ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, name string) ([]byte, error) {
+	dir, err := CachePath(workspaceRoot, cacheDir, kind, uri, version)
 	if err != nil {
 		return nil, err
 	}
@@ -441,8 +496,8 @@ func heldOrMisplaced(err error) bool {
 // directory-aware variants that future implementations introduce.
 //
 // The slot is held to the cache directory first: see [WriteCachedFile].
-func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) error {
-	return WriteCachedFile(workspaceRoot, cacheDir, uri, version, "blob", data)
+func WriteCached(workspaceRoot, cacheDir, kind, uri, version string, data []byte) error {
+	return WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, "blob", data)
 }
 
 // WriteCachedFile stores data under name in the cache slot for uri@version,
@@ -458,8 +513,8 @@ func WriteCached(workspaceRoot, cacheDir, uri, version string, data []byte) erro
 // A failure to create the slot or write the file is said as what was being done
 // and with which path, followed by the operating system's reason. Which entity the
 // slot holds is the caller's to say, so it is not said here as well.
-func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []byte) error {
-	dir, err := CachePath(workspaceRoot, cacheDir, uri, version)
+func WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, name string, data []byte) error {
+	dir, err := CachePath(workspaceRoot, cacheDir, kind, uri, version)
 	if err != nil {
 		return err
 	}
@@ -484,8 +539,8 @@ func WriteCachedFile(workspaceRoot, cacheDir, uri, version, name string, data []
 // content blob written without its manifest); the read hold's refusal of a link
 // leading out is returned as itself; other errors surface as wrapped read
 // failures. Mirrors ReadCached; the filename is "manifest".
-func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
-	data, err := ReadCachedFile(workspaceRoot, cacheDir, uri, version, "manifest")
+func ReadCachedManifest(workspaceRoot, cacheDir, kind, uri, version string) ([]byte, error) {
+	data, err := ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, "manifest")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("oci: manifest cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
@@ -504,8 +559,8 @@ func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, e
 // content file WriteCached writes. Persisting the manifest lets a later offline
 // read re-derive the manifest digest from a stored artifact rather than trusting
 // a recorded value with nothing to check it against.
-func WriteCachedManifest(workspaceRoot, cacheDir, uri, version string, manifestBytes []byte) error {
-	return WriteCachedFile(workspaceRoot, cacheDir, uri, version, "manifest", manifestBytes)
+func WriteCachedManifest(workspaceRoot, cacheDir, kind, uri, version string, manifestBytes []byte) error {
+	return WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, "manifest", manifestBytes)
 }
 
 // bareReference returns an OCI reference (such as

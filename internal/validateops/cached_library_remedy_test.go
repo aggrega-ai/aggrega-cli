@@ -12,8 +12,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // remedyCacheDir is the artifact cache directory the fixtures below lay a cached
@@ -53,6 +55,17 @@ spec:
           default: 10Gi
 `
 
+// cachedLibrarySlot is the cache slot of the Sizing library at 1.0.0 in the
+// workspace at ws, as the one builder of a slot's place (oci.CachePath) spells it.
+func cachedLibrarySlot(t *testing.T, ws string) string {
+	t.Helper()
+	slot, err := oci.CachePath(ws, remedyCacheDir, closure.LibraryAxisNamed("SchemaLibraries").Kind, "Sizing:1.0.0", "1.0.0")
+	if err != nil {
+		t.Fatalf("the fixture library slot: %v", err)
+	}
+	return slot
+}
+
 // remedyWorkspace lays out a workspace whose one catalog directory holds
 // remedyConsumer, and, as asked, the Sizing library authored in that directory
 // and a copy of it sitting in the artifact cache with no lockfile entry pinning
@@ -77,7 +90,7 @@ func remedyWorkspace(t *testing.T, authored, cached bool) (ws, catalogDir, consu
 		write(filepath.Join(catalogDir, "sizing.yaml"), remedyLibrary)
 	}
 	if cached {
-		write(filepath.Join(ws, remedyCacheDir, "entities", "Sizing", "1.0.0", "library.yaml"), remedyLibrary)
+		write(filepath.Join(cachedLibrarySlot(t, ws), "library.yaml"), remedyLibrary)
 	}
 	return ws, catalogDir, consumer
 }

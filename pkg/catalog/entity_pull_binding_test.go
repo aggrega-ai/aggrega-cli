@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -111,7 +112,7 @@ func TestTier3PullCatalogEntity_RoutesThroughEntityPuller(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy when kind empty", func(t *testing.T) {
+	t.Run("legacy when slot kind empty", func(t *testing.T) {
 		p := &recordingEntityPuller{}
 		_, _, err := tier3PullCatalogEntity(context.Background(), dir, ".aggrega/cache", p, "hub.aggrega.ai/component/core/x:1.0.0", "")
 		if err != nil {
@@ -121,4 +122,73 @@ func TestTier3PullCatalogEntity_RoutesThroughEntityPuller(t *testing.T) {
 			t.Fatalf("used EntityPuller binding; want legacy Pull for an empty kind / located URI")
 		}
 	})
+}
+
+// locatedDocumentPuller serves one document from the already-located reference
+// path, whatever the reference.
+type locatedDocumentPuller struct {
+	body, mediaType string
+}
+
+func (p locatedDocumentPuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
+	return &oci.PullResult{Bytes: []byte(p.body), MediaType: p.mediaType}, nil
+}
+
+const locatedAggregate = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: core/x
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/web
+`
+
+// TestAFetchIsCachedOnlyUnderTheSlotKindItsReaderNamed pulls an already-located
+// reference through the registry tier and reads which cache slots it wrote. The
+// slot is the one the reader named — the published kind it keeps the reference
+// under — and never one chosen by the kind the served document declares: an
+// Aggregate read as one lands in the Aggregate slot; a reference whose kind its
+// reader did not know writes no slot, though the Component served for it declares a
+// kind; and a Component served for a reference read as an Aggregate is refused by
+// the Aggregate schema, so nothing is cached for it under either kind.
+func TestAFetchIsCachedOnlyUnderTheSlotKindItsReaderNamed(t *testing.T) {
+	t.Parallel()
+	const (
+		cacheDir = ".aggrega/cache"
+		uri      = "hub.aggrega.ai/entity/core/x:1.0.0"
+	)
+	for _, tc := range []struct {
+		name, slotKind, body, mediaType string
+		wantRefusal                     bool
+		wantSlot                        string // the one kind a slot exists under, "" for none
+	}{
+		{"an Aggregate read as one", "Aggregate", locatedAggregate, oci.MediaTypeAggregate, false, "Aggregate"},
+		{"a Component read as no kind", "", recordingLegacyComponent, oci.MediaTypeComponent, false, ""},
+		{"a Component read as an Aggregate", "Aggregate", recordingLegacyComponent, oci.MediaTypeComponent, true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ws := t.TempDir()
+			p := locatedDocumentPuller{body: tc.body, mediaType: tc.mediaType}
+			_, res, err := tier3PullCatalogEntity(t.Context(), ws, cacheDir, p, uri, tc.slotKind)
+			if (err != nil) != tc.wantRefusal {
+				t.Fatalf("tier3PullCatalogEntity err = %v; want refusal %v", err, tc.wantRefusal)
+			}
+			if err == nil && res.NotFound {
+				t.Fatalf("the served document was not resolved")
+			}
+			for _, kind := range []string{"Aggregate", "Component"} {
+				slot, perr := oci.CachePath(ws, cacheDir, kind, uri, "1.0.0")
+				if perr != nil {
+					t.Fatalf("CachePath(%s): %v", kind, perr)
+				}
+				_, serr := os.Stat(slot)
+				if exists, want := serr == nil, kind == tc.wantSlot; exists != want {
+					t.Errorf("a slot under %s exists = %v, want %v", kind, exists, want)
+				}
+			}
+		})
+	}
 }

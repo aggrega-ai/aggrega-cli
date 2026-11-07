@@ -196,10 +196,11 @@ func TestARealizationChosenByInstanceNameIsPinnedAndVerified(t *testing.T) {
 
 	overrides := []struct {
 		uri  string
+		kind string
 		site string
 	}{
-		{"compose/greeter-green:1.0.0", "manifest.spec.mappings.components.name.greeter-special"},
-		{"compose/banner-loud:1.0.0", "manifest.spec.mappings.features.name.loud-banner"},
+		{"compose/greeter-green:1.0.0", "recipe", "manifest.spec.mappings.components.name.greeter-special"},
+		{"compose/banner-loud:1.0.0", "feature_recipe", "manifest.spec.mappings.features.name.loud-banner"},
 	}
 	lf, _, err := lockfile.LoadLockfile(lockPath)
 	if err != nil {
@@ -260,7 +261,7 @@ func TestARealizationChosenByInstanceNameIsPinnedAndVerified(t *testing.T) {
 			if err := lockfile.WriteLockfile(lockPath, without); err != nil {
 				t.Fatalf("write the lockfile without the row: %v", err)
 			}
-			want := `entity "` + o.uri + `" not in lockfile (referenced from ` + o.site + `)`
+			want := `entity "` + o.uri + `" (` + o.kind + `) not in lockfile (referenced from ` + o.site + `)`
 			steps := []struct {
 				name string
 				run  func() error

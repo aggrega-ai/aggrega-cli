@@ -41,15 +41,6 @@ func providerPluginEntityURI(p types.Plugin) string {
 	return p.Coordinate() + ":" + p.Metadata.Version
 }
 
-// pluginKindHint marks a closure entry emitted for a pipeline plugin artifact
-// (the .wasm reference derived from a Plugin entity's bare identity). The plugin
-// descent sets it so the pinned plugin artifact carries the same provenance hint
-// the workspace-config plugin axis records, distinguishing a pipeline-plugin pin
-// from a catalog-entity pin during closure assembly. Like the other
-// ResolvedRef.KindHint values it is an in-memory provenance hint, not a lockfile
-// field; the lockfile writer copies only the wire-shape fields.
-const pluginKindHint = "plugin"
-
 // LocalPluginArtifact resolves the .wasm artifact of a Plugin entity authored in a
 // local catalog directory from the sources already on the machine, and returns the
 // refusal when none of them holds it. entityURI is the reference the descent
@@ -229,18 +220,15 @@ func shapesRenderedOutput(declaredType plugintype.Type) bool {
 // is read; what the artifact resolves to is the artifact descent's to pin. A nil
 // localArtifact asks nothing.
 //
-// Newly-discovered entities are appended to c.Entities (deduped by URI against
-// what is already present, accumulating referenced-from sites). A nil loader is
+// Newly-discovered entities are appended to c.Entities (deduped by kind and URI
+// against what is already present, accumulating referenced-from sites). A nil loader is
 // a no-op (the caller wired no recipe-body access).
 func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeLoader, lookup Lookup, providerResolver ProviderPluginResolver, localArtifact LocalPluginArtifact) error {
 	if c == nil || loader == nil {
 		return nil
 	}
 
-	entityIndex := make(map[string]int, len(c.Entities))
-	for i, e := range c.Entities {
-		entityIndex[e.URI] = i
-	}
+	entityIndex := entityIndexOf(c)
 
 	recipeRefs, entityURIs, err := discoverPluginEntities(c, loader, providerResolver)
 	if err != nil {
@@ -253,7 +241,7 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 		// is pinned here with the referencing recipe URIs; a workspace-socket entity
 		// was already pinned by ComputeClosure and keeps its socket referenced-from.
 		recipeFromSet := recipeRefs[entityURI]
-		entRes, err := lookup.ResolveCatalogEntity(ctx, entityURI, pluginKindHint)
+		entRes, err := lookup.ResolveCatalogEntity(ctx, entityURI, KindPlugin)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve wasm plugin entity %q: %w", entityURI, err)
 		}
@@ -287,25 +275,16 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 			continue
 		}
 		if len(recipeFromSet) > 0 {
-			refs := make([]string, 0, len(recipeFromSet))
-			for r := range recipeFromSet {
-				refs = append(refs, r)
-			}
-			entRef := ResolvedRef{
+			refs := referrerURIs(recipeFromSet)
+			mergeEntity(c, entityIndex, ResolvedRef{
 				URI:             entityURI,
 				ResolvedVersion: entRes.ResolvedVersion,
 				Digest:          entRes.Digest,
 				ManifestDigest:  entRes.ManifestDigest,
 				ResolutionPath:  entRes.ResolutionPath,
 				ReferencedFrom:  refs,
-				KindHint:        pluginKindHint,
-			}
-			if idx, dup := entityIndex[entityURI]; dup {
-				c.Entities[idx].ReferencedFrom = mergeReferencedFrom(c.Entities[idx].ReferencedFrom, entRef.ReferencedFrom)
-			} else {
-				c.Entities = append(c.Entities, entRef)
-				entityIndex[entityURI] = len(c.Entities) - 1
-			}
+				KindHint:        KindPlugin,
+			})
 		}
 	}
 
@@ -317,23 +296,36 @@ func DescendRecipePluginEntities(ctx context.Context, c *Closure, loader RecipeL
 // naming the Recipes and FeatureRecipes that name it, in sorted order, so a reader
 // is told where the reference was written. The refusal itself is carried beneath
 // unchanged, and with it the condition it names.
-func unheldPluginEntity(entityURI string, namedBy map[string]struct{}, refusal error) error {
+func unheldPluginEntity(entityURI string, namedBy map[EntityKey]struct{}, refusal error) error {
 	if len(namedBy) == 0 {
 		return fmt.Errorf("resolve: plugin %q: %w", entityURI, refusal)
 	}
-	refs := make([]string, 0, len(namedBy))
-	for r := range namedBy {
-		refs = append(refs, r)
+	return fmt.Errorf("resolve: plugin named by %s: %w", strings.Join(referrerURIs(namedBy), ", "), refusal)
+}
+
+// referrerURIs returns the references of the entities in referrers, each once and in
+// sorted order: what a plugin's referenced-from list records, which names a referrer
+// by its reference alone, so a Recipe and a FeatureRecipe of one name naming one
+// plugin are one entry there while staying two referrers in the descent.
+func referrerURIs(referrers map[EntityKey]struct{}) []string {
+	seen := make(map[string]struct{}, len(referrers))
+	refs := make([]string, 0, len(referrers))
+	for r := range referrers {
+		if _, dup := seen[r.URI]; dup {
+			continue
+		}
+		seen[r.URI] = struct{}{}
+		refs = append(refs, r.URI)
 	}
 	sort.Strings(refs)
-	return fmt.Errorf("resolve: plugin named by %s: %w", strings.Join(refs, ", "), refusal)
+	return refs
 }
 
 // DescendRecipePluginArtifacts is the artifact descent of the two-pass
 // pipeline-plugin descent:
 // it rediscovers the Plugin entities the entity descent pinned (by walking
 // c.Entities for
-// KindHint==pluginKindHint), loads each entity body to derive its .wasm artifact
+// KindHint==KindPlugin), loads each entity body to derive its .wasm artifact
 // reference from its identity, resolves that reference through ResolvePlugin, and pins
 // the artifact onto the plugin axis (c.Plugins). It runs AFTER the caller has
 // re-folded the lazy index from the entity-descent-augmented closure, so LoadPlugin
@@ -342,7 +334,7 @@ func unheldPluginEntity(entityURI string, namedBy map[string]struct{}, refusal e
 // Rediscovery is from c.Entities rather than from a re-walk of the recipes: the
 // entity descent
 // already pinned every registry-resolved plugin entity (recipe-referenced and
-// workspace-socket) with KindHint==pluginKindHint, so the entity axis is the
+// workspace-socket) with KindHint==KindPlugin, so the entity axis is the
 // authoritative set of artifacts to descend, and an entity the entity descent
 // declined to pin
 // because it was already present on the machine is correctly absent (its artifact is
@@ -380,7 +372,7 @@ func DescendRecipePluginArtifacts(ctx context.Context, c *Closure, loader Recipe
 	var entityURIs []string
 	entityPaths := map[string]string{}
 	for _, ent := range c.Entities {
-		if ent.KindHint == pluginKindHint {
+		if ent.KindHint == KindPlugin {
 			entityURIs = append(entityURIs, ent.URI)
 			entityPaths[ent.URI] = ent.ResolutionPath
 		}
@@ -442,7 +434,7 @@ func pinPluginArtifact(ctx context.Context, c *Closure, loader RecipeLoader, loo
 		ManifestDigest:  artRes.ManifestDigest,
 		ResolutionPath:  artRes.ResolutionPath,
 		ReferencedFrom:  []string{entityURI},
-		KindHint:        pluginKindHint,
+		KindHint:        KindPlugin,
 	}
 	if idx, dup := pluginIndex[artifactURI]; dup {
 		c.Plugins[idx].ReferencedFrom = mergeReferencedFrom(c.Plugins[idx].ReferencedFrom, artRef.ReferencedFrom)
@@ -490,8 +482,8 @@ func ResolvePluginArtifact(ctx context.Context, lookup Lookup, localArtifact Loc
 // the resolved Plugin's version-exact URI. A provider Plugin that is also a
 // pipeline plugin dedupes to a single descent target. A nil providerResolver
 // skips provider discovery.
-func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver ProviderPluginResolver) (map[string]map[string]struct{}, []string, error) {
-	recipeRefs := map[string]map[string]struct{}{}
+func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver ProviderPluginResolver) (map[string]map[EntityKey]struct{}, []string, error) {
+	recipeRefs := map[string]map[EntityKey]struct{}{}
 	var entityURIs []string
 	seen := map[string]struct{}{}
 	addEntityURI := func(entityURI string) {
@@ -503,30 +495,30 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 			entityURIs = append(entityURIs, entityURI)
 		}
 	}
-	recordRecipeRef := func(entityURI, recipeURI string) {
+	recordRecipeRef := func(entityURI string, referrer EntityKey) {
 		addEntityURI(entityURI)
 		if recipeRefs[entityURI] == nil {
-			recipeRefs[entityURI] = map[string]struct{}{}
+			recipeRefs[entityURI] = map[EntityKey]struct{}{}
 		}
-		recipeRefs[entityURI][recipeURI] = struct{}{}
+		recipeRefs[entityURI][referrer] = struct{}{}
 	}
 	// recordProvider resolves a Recipe / FeatureRecipe spec.capability binding to
 	// its serving provider-rendering Plugin entity and records it as a descent
 	// target referenced from the recipe. A binding no plugin serves is left to
 	// build-time engine resolution; a version pin no serving plugin version
 	// satisfies propagates the resolver's error.
-	recordProvider := func(providerRef, recipeURI string) error {
+	recordProvider := func(providerRef string, referrer EntityKey) error {
 		if providerResolver == nil || providerRef == "" {
 			return nil
 		}
 		plugin, ok, err := providerResolver(providerRef)
 		if err != nil {
-			return fmt.Errorf("resolve: provider %q for %q: %w", providerRef, recipeURI, err)
+			return fmt.Errorf("resolve: provider %q for %q: %w", providerRef, referrer.URI, err)
 		}
 		if !ok {
 			return nil
 		}
-		recordRecipeRef(providerPluginEntityURI(plugin), recipeURI)
+		recordRecipeRef(providerPluginEntityURI(plugin), referrer)
 		return nil
 	}
 
@@ -539,29 +531,29 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 			continue
 		}
 		switch entityKind {
-		case "recipe":
+		case KindRecipe:
 			r, err := loader.LoadRecipe(ent.URI)
 			if err != nil {
 				return nil, nil, fmt.Errorf("resolve: load recipe %q to read the plugins it names: %w", ent.URI, err)
 			}
 			for _, step := range r.Spec.Pipeline {
-				recordRecipeRef(step.Plugin, ent.URI)
+				recordRecipeRef(step.Plugin, EntityKey{Kind: KindRecipe, URI: ent.URI})
 			}
-			if err := recordProvider(r.Spec.Capability, ent.URI); err != nil {
+			if err := recordProvider(r.Spec.Capability, EntityKey{Kind: KindRecipe, URI: ent.URI}); err != nil {
 				return nil, nil, err
 			}
-		case "feature_recipe":
+		case KindFeatureRecipe:
 			fr, err := loader.LoadFeatureRecipe(ent.URI)
 			if err != nil {
 				return nil, nil, fmt.Errorf("resolve: load feature recipe %q to read the plugins it names: %w", ent.URI, err)
 			}
 			for _, step := range fr.Spec.Pipeline {
-				recordRecipeRef(step.Plugin, ent.URI)
+				recordRecipeRef(step.Plugin, EntityKey{Kind: KindFeatureRecipe, URI: ent.URI})
 			}
-			if err := recordProvider(fr.Spec.Capability, ent.URI); err != nil {
+			if err := recordProvider(fr.Spec.Capability, EntityKey{Kind: KindFeatureRecipe, URI: ent.URI}); err != nil {
 				return nil, nil, err
 			}
-		case pluginKindHint:
+		case KindPlugin:
 			// A Plugin entity pinned on the entity axis directly — a workspace
 			// plugin socket. It is its own descent target; ComputeClosure already
 			// recorded its socket referenced-from, so no recipe-ref is added.

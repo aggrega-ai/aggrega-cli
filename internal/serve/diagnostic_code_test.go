@@ -379,7 +379,8 @@ func TestDiagnosticCodeOnLockfileDrift(t *testing.T) {
 		"release: r\n" +
 		"generated_at: \"2026-01-01T00:00:00Z\"\n" +
 		"entities:\n" +
-		"  - uri: example/web\n" +
+		"  - kind: component\n" +
+		"    uri: example/web\n" +
 		"    resolved_version: 1.0.0\n" +
 		"    digest: " + contentDigestHex([]byte("example/web")) + "\n"
 	if err := os.WriteFile(lockfilePath, []byte(pinned), 0o644); err != nil {

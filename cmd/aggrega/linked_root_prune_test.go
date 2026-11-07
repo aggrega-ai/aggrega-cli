@@ -59,7 +59,7 @@ func TestACachePruneOfAWorkspaceReachedThroughALinkKeepsWhatItsLockfilePins(t *t
 			orphan, _ := writeEntitySlot(t, realDir, "oci://hub.aggrega.ai/component/core/orphan", "9.9.9", []byte("orphan-entity-bytes"))
 			if err := lockfile.WriteLockfile(lockfile.PathFor(filepath.Join(realDir, "release.yaml")), &lockfile.Lockfile{
 				Version: 1, Release: "release.yaml", GeneratedAt: "2026-01-01T00:00:00Z",
-				Entities: []lockfile.Entity{{URI: "oci://hub.aggrega.ai/component/core/api", ResolvedVersion: "1.0.0",
+				Entities: []lockfile.Entity{{Kind: "component", URI: "oci://hub.aggrega.ai/component/core/api", ResolvedVersion: "1.0.0",
 					Digest: pinnedDigest, ReferencedFrom: []string{"release.yaml"}}},
 			}); err != nil {
 				t.Fatal(err)

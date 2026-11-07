@@ -67,7 +67,7 @@ func withholdingGraphWorkspace(t *testing.T) (ws, releaseRel string) {
 		if err != nil {
 			t.Fatalf("read the copied Component %s: %v", c.file, err)
 		}
-		entities = append(entities, lockfile.Entity{URI: c.uri, ResolvedVersion: "1.0.0", Digest: contentDigestHex(body)})
+		entities = append(entities, lockfile.Entity{Kind: "component", URI: c.uri, ResolvedVersion: "1.0.0", Digest: contentDigestHex(body)})
 	}
 	releasePath := filepath.Join(ws, "release.yaml")
 	if err := lockfile.WriteLockfile(lockfile.PathFor(releasePath), &lockfile.Lockfile{

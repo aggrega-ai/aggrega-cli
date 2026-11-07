@@ -10,6 +10,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // TestCacheSlotUsesLibraryFilenameOnEveryAxis pins the cache-slot write to every
@@ -38,13 +39,13 @@ func TestCacheSlotUsesLibraryFilenameOnEveryAxis(t *testing.T) {
 			body := []byte("kind: " + axis.Kind + "\n")
 			res := &oci.PullResult{Bytes: body, MediaType: mediaType}
 
-			if werr := writeEntityToCacheSlot(ws, cacheDir, uri, version, res); werr != nil {
+			if werr := writeEntityToCacheSlot(ws, cacheDir, axis.Kind, uri, version, res); werr != nil {
 				t.Fatalf("writeEntityToCacheSlot: %v", werr)
 			}
 
 			// The bare name is cached at the version it was written at, under the key
 			// a read of its pin addresses.
-			slot := mustCachePath(ws, cacheDir, uri+":"+version, version)
+			slot := ocitest.MustCachePath(ws, cacheDir, axis.Kind, uri+":"+version, version)
 			got, rerr := os.ReadFile(filepath.Join(slot, "library.yaml"))
 			if rerr != nil {
 				t.Fatalf("a %s pulled into the cache was not written under the canonical library filename, "+

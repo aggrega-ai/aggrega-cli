@@ -83,27 +83,33 @@ func TestTheReleasesOwnAggregateCarriesItsOwnKindHint(t *testing.T) {
 	}
 }
 
-// TestAnyOtherKindForTheSameReferenceReplacesTheReleasesHint pins the precedence: the
-// Release's own hint is the weakest, so a URI another site names under a kind of its
-// own is recorded with that kind exactly as it would be without the Release's hint —
-// an authoritative sub-aggregate hint and a weak Component hint alike.
-func TestAnyOtherKindForTheSameReferenceReplacesTheReleasesHint(t *testing.T) {
+// TestTheReleasesHintYieldsToASubAggregateAndStandsBesideAnotherKind pins how the
+// Release's own hint meets another reference to the same identity. Both Aggregate
+// hints name one kind, so a sub-aggregate reference to the Release's own Aggregate
+// is one entity, recorded under the sub-aggregate hint the descent selects on. A
+// reference of another kind is another entity: a component instance of the same
+// identity is recorded as a Component beside the Release's Aggregate, each under
+// its own hint, rather than either replacing the other.
+func TestTheReleasesHintYieldsToASubAggregateAndStandsBesideAnotherKind(t *testing.T) {
 	t.Parallel()
 	const ref = "hub.aggrega.ai/aggregate/example/shared:1.0.0"
 	rows := []struct {
 		name string
 		top  string
-		want string
+		want map[string]string // kind → the hint its entity is recorded with
 	}{
 		{
 			name: "a sub-aggregate reference to the same identity",
 			top:  "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: top\n  version: 1.0.0\nspec:\n  aggregates:\n    again:\n      type: " + ref + "\n",
-			want: "aggregate",
+			want: map[string]string{closure.KindAggregate: "aggregate"},
 		},
 		{
 			name: "a component instance of the same identity",
 			top:  "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: top\n  version: 1.0.0\nspec:\n  components:\n    app:\n      type: " + ref + "\n",
-			want: "component",
+			want: map[string]string{
+				closure.KindAggregate: closure.ReleaseAggregateKindHint,
+				closure.KindComponent: closure.KindComponent,
+			},
 		},
 	}
 	for _, row := range rows {
@@ -115,8 +121,23 @@ func TestAnyOtherKindForTheSameReferenceReplacesTheReleasesHint(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ComputeClosure: %v", err)
 			}
-			if got := entityRow(t, cl, ref).KindHint; got != row.want {
-				t.Errorf("recorded with hint %q; want %q", got, row.want)
+			got := map[string]string{}
+			for _, e := range cl.Entities {
+				if e.URI != ref {
+					continue
+				}
+				if _, dup := got[e.Kind()]; dup {
+					t.Fatalf("two entities of %q recorded as kind %q: %+v", ref, e.Kind(), cl.Entities)
+				}
+				got[e.Kind()] = e.KindHint
+			}
+			if len(got) != len(row.want) {
+				t.Errorf("entities of %q by kind = %v; want %v", ref, got, row.want)
+			}
+			for kind, hint := range row.want {
+				if got[kind] != hint {
+					t.Errorf("the %s entity of %q is recorded with hint %q; want %q", kind, ref, got[kind], hint)
+				}
 			}
 		})
 	}

@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
@@ -101,9 +101,10 @@ spec:
 // resolves its own dependencies, under the unpinned-entity condition, naming each
 // file of the source and not the note beside it, and neither writes a lock; the
 // pin records one row per file its source contributes and none for the note; the
-// build is intact; a file edited inside the source halts the build and a
-// verifying pull under the one condition, naming the file and both digests; and a
-// file edited beside the source, outside what the entity declares, halts nothing.
+// build is intact; a file edited inside the source moves the Recipe's lockfile row,
+// so the build and a verifying pull halt on that row, naming the Recipe and both
+// row digests; and a file edited beside the source, outside what the entity
+// declares, halts nothing.
 func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -174,45 +175,26 @@ func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 	if strings.Join(pinned, ",") != "chart/Chart.yaml,chart/templates/cm.yaml" {
 		t.Fatalf("the pin must record the source's two files and nothing else; it recorded %v", pinned)
 	}
-	recordedTemplate, _ := recipepin.MatchLocalSourcePin(lock.LocalSourceDigests, "chart/templates/cm.yaml")
-
 	if err := pull(false); err != nil {
 		t.Fatalf("a pull over the pinned Recipe must pass: %v", err)
 	}
 	if err := build(); err != nil {
 		t.Fatalf("the build over the pinned Recipe must be intact: %v", err)
 	}
+	recorded := entityRow(t, releasePath, "server")
 
-	// A file inside the declared source, edited with no re-pin.
+	// A file inside the declared source, edited with no re-pin. The Recipe's own
+	// lockfile row covers every file its source contributes, so the edit moves that
+	// row, and the build and a verifying pull halt on it — naming the Recipe and both
+	// row digests — before any single file is compared, as for a Recipe of any name.
 	template := filepath.Join(filepath.Dir(recipePath), "chart", "templates", "cm.yaml")
 	original := mustReadFile(t, template)
 	edited := append(append([]byte(nil), original...), []byte("  edited: after-the-pin\n")...)
 	if err := os.WriteFile(template, edited, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	wantNamed := []string{"chart/templates/cm.yaml", digest.ContentDigest(edited), recordedTemplate.Digest}
-	for _, step := range []struct {
-		name string
-		run  func() error
-	}{
-		{"the build", build},
-		{"a verifying pull", func() error { return pull(true) }},
-	} {
-		err := step.run()
-		if !errors.Is(err, recipepin.ErrLocalSourceContentMismatch()) {
-			t.Fatalf("%s over an edited source must halt under the local-source mismatch condition; got %v", step.name, err)
-		}
-		// The build reports the condition as the cause of a per-node source
-		// resolution frame, and an error's own text renders one frame only; the
-		// file and the digests are in the frame that carries the condition, so
-		// they are read from the whole chain.
-		chain := cerrors.CauseChain(err)
-		for _, want := range wantNamed {
-			if !strings.Contains(chain, want) {
-				t.Errorf("%s's halt does not name %q:\n%s", step.name, want, chain)
-			}
-		}
-	}
+	assertRowRefusal(t, pull(true), build(), "server", recorded, rowDigestAt(t, recipePath),
+		recipepin.ErrLocalSourceContentMismatch())
 	if err := os.WriteFile(template, original, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +238,9 @@ spec:
 // Recipe can stop matching what its lock records for a local source.
 //
 // A declared source whose files were all removed is a change to the source, so
-// all three refuse it, each naming every file that is gone. A Recipe that no
+// all three refuse it: a pull that does not pin naming every file that is gone,
+// and a verifying pull and a build naming the Recipe's lockfile row those files
+// moved. A Recipe that no
 // longer declares a local source reads nothing those pins pin, so all three admit
 // it, exactly as a pin recorded for an imported file the Recipe no longer declares
 // is admitted; the pin step then drops them. The discriminator is what the Recipe
@@ -313,10 +297,14 @@ func TestALockOutlivingItsLocalSourceIsHeldOnlyWhileTheSourceIsDeclared(t *testi
 	}{
 		{"a pull that does not pin", func() error { return pull(false) }, recipepin.ErrEntityNotPinned(),
 			func(f string) string { return "local source file " + f + ": the recorded pin no longer matches it" }},
-		{"a verifying pull", func() error { return pull(true) }, recipepin.ErrLocalSourceContentMismatch(),
-			func(f string) string { return "file " + f + " is no longer in the source" }},
-		{"a build", build, recipepin.ErrLocalSourceContentMismatch(),
-			func(f string) string { return "file " + f + " is no longer in the source" }},
+		// The verifying pull and the build hold the Release to its lockfile first, and
+		// the Recipe's own row covers every file its source contributes, so the
+		// removal moves that row: both halt on the row, before any single file is
+		// compared — as they do for a Recipe of any name.
+		{"a verifying pull", func() error { return pull(true) }, lockfile.ErrLockfileDrift(),
+			func(string) string { return `entity "server" (recipe) changed` }},
+		{"a build", build, lockfile.ErrLockfileDrift(),
+			func(string) string { return `entity "server" (recipe) changed` }},
 	} {
 		err := reader.run()
 		if !errors.Is(err, reader.condition) {

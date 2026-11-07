@@ -1,70 +1,84 @@
 entities:
-    - uri: aggregate
+    - kind: aggregate
+      uri: aggregate
       resolved_version: ""
       digest: sha256:aca436551b8d1c36dbcb25941e48806279baaffb526a408f6f9fce6609b558cb
       referenced_from:
         - release.spec.aggregate
-    - uri: core/datastore/mariadb
+    - kind: component
+      uri: core/datastore/mariadb
       resolved_version: 1.0.0
       digest: sha256:4226f6f3d1f1d61a6eac318a084694d92feaff4e6977c06a28232c2f085406c8
       referenced_from:
         - aggregate.spec.components.db.type
-    - uri: core/datastore/mariadb:1.0.0
+    - kind: component
+      uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
       digest: sha256:4226f6f3d1f1d61a6eac318a084694d92feaff4e6977c06a28232c2f085406c8
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
-    - uri: core/devtool/adminer
+    - kind: component
+      uri: core/devtool/adminer
       resolved_version: 1.0.0
       digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - aggregate.spec.components.web.type
-    - uri: core/devtool/adminer:1.0.0
+    - kind: component
+      uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
       digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
-    - uri: core/secret-provided
+    - kind: feature
+      uri: core/secret-provided
       resolved_version: 1.0.0
       digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
         - aggregate.spec.components.db.features.user_password.type
-    - uri: core/secret-provided:1.0.0
+    - kind: feature
+      uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
       digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
-    - uri: core/secret-value
+    - kind: feature
+      uri: core/secret-value
       resolved_version: 1.0.0
       digest: sha256:0063cd37e9499a1f12c1e7356fd4f6948d850082e1d9e5aad77c33a66ef4eeca
       referenced_from:
         - aggregate.spec.components.db.features.root_password.type
-    - uri: core/secret-value:1.0.0
+    - kind: feature
+      uri: core/secret-value:1.0.0
       resolved_version: 1.0.0
       digest: sha256:0063cd37e9499a1f12c1e7356fd4f6948d850082e1d9e5aad77c33a66ef4eeca
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
-    - uri: helm/adminer-helm:1.0.0
+    - kind: recipe
+      uri: helm/adminer-helm:1.0.0
       resolved_version: 1.0.0
       digest: sha256:3948ddad34bebf7c19c75a2b94d9fd6833656e276dc813621d68f22f0594f3fd
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
-    - uri: helm/env-secret:1.0.0
+    - kind: feature_recipe
+      uri: helm/env-secret:1.0.0
       resolved_version: 1.0.0
       digest: sha256:124f3799b0d4bc27c47e79725d918c67aa0d079cdac7a922327ff4428024406e
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
-    - uri: helm/mariadb-synth:1.0.0
+    - kind: recipe
+      uri: helm/mariadb-synth:1.0.0
       resolved_version: 1.0.0
       digest: sha256:a11e7d0037afb8451730b626243fdeb985a9681d5756eaad0e0ef1039a9ea7f0
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
-    - uri: helm/provided-secret:1.0.0
+    - kind: feature_recipe
+      uri: helm/provided-secret:1.0.0
       resolved_version: 1.0.0
       digest: sha256:d956dfedbf85a54f06c7ff422a058c12d3d3007b0831ffa939e526ecb79d7259
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
-    - uri: manifest-helm-synth
+    - kind: manifest
+      uri: manifest-helm-synth
       resolved_version: ""
       digest: sha256:409f6a809e0e4fc924e3c214e589c6cea06ccf2304c9a3e576b99685ca16618d
       referenced_from:

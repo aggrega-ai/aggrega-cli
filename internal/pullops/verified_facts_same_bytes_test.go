@@ -156,9 +156,9 @@ func TestTheFactsAPassVerifiesReachEveryRowPinningTheSameBytes(t *testing.T) {
 				BundleDigest: cacheBundleMadeFor(t, root, otherManifestDg)}
 			otherSig := otherCarried
 			lf := &lockfile.Lockfile{Entities: []lockfile.Entity{
-				{URI: sameBytesBare, Digest: contentDg, ManifestDigest: manifestDg},
-				{URI: sameBytesVersioned, Digest: contentDg, ManifestDigest: manifestDg},
-				{URI: sameBytesOther, Digest: otherContentDg, ManifestDigest: otherManifestDg, Signature: &otherSig},
+				{Kind: "component", URI: sameBytesBare, Digest: contentDg, ManifestDigest: manifestDg},
+				{Kind: "component", URI: sameBytesVersioned, Digest: contentDg, ManifestDigest: manifestDg},
+				{Kind: "component", URI: sameBytesOther, Digest: otherContentDg, ManifestDigest: otherManifestDg, Signature: &otherSig},
 			}}
 			row := func(uri string) *lockfile.Entity {
 				for i := range lf.Entities {

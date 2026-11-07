@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -34,10 +35,10 @@ func seedVerifiedSlot(t *testing.T, ws, cacheDir, uri, version string, body []by
 	if err != nil {
 		t.Fatalf("seed pull: %v", err)
 	}
-	if err := oci.WriteCached(ws, cacheDir, uri, version, body); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, "Recipe", uri, version, body); err != nil {
 		t.Fatalf("seed write content: %v", err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, uri, version, res.ManifestBytes); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, "Recipe", uri, version, res.ManifestBytes); err != nil {
 		t.Fatalf("seed write manifest: %v", err)
 	}
 	return rowDigest(t, body), res.Digest
@@ -103,6 +104,7 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	lf := &lockfile.Lockfile{
 		Version: 1,
 		Entities: []lockfile.Entity{{
+			Kind:            closure.KindRecipe,
 			URI:             uri,
 			ResolvedVersion: version,
 			Digest:          recordedDigest,
@@ -113,7 +115,7 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	view := catalog.NewLazyLookup(ws, cacheDir, nil, nil)
 	// The state the resolution can leave the view in: pinned from the closure it
 	// walked rather than from the lockfile the run went on to settle.
-	view.SetPins(map[string]catalog.Pin{uri: {
+	view.SetPins(catalog.Pins{{Kind: "Recipe", URI: uri}: {
 		ResolvedVersion: version,
 		Digest:          staleDigest,
 		ManifestDigest:  manifestDigest,

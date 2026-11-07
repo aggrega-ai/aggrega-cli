@@ -10,6 +10,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
@@ -61,7 +62,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 
 	resolve := func(withLockfile *lockfile.Lockfile) (compilerops.ResolvedClosure, error) {
 		view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)
-		view.SetPins(catalog.PinsFromLockfile(lf))
+		view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 		resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 			View:            view,
 			ReleasePath:     releasePath,

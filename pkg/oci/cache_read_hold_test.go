@@ -35,12 +35,12 @@ func TestASlotIsReadOnlyFromWhereItsWriteIsHeld(t *testing.T) {
 		file string
 		read func(ws, cacheDir string) ([]byte, error)
 	}{
-		{"ReadCached", "blob", func(ws, cacheDir string) ([]byte, error) { return ReadCached(ws, cacheDir, uri, version) }},
+		{"ReadCached", "blob", func(ws, cacheDir string) ([]byte, error) { return ReadCached(ws, cacheDir, "Component", uri, version) }},
 		{"ReadCachedManifest", "manifest", func(ws, cacheDir string) ([]byte, error) {
-			return ReadCachedManifest(ws, cacheDir, uri, version)
+			return ReadCachedManifest(ws, cacheDir, "Component", uri, version)
 		}},
 		{"ReadCachedFile", "library.yaml", func(ws, cacheDir string) ([]byte, error) {
-			return ReadCachedFile(ws, cacheDir, uri, version, "library.yaml")
+			return ReadCachedFile(ws, cacheDir, "Component", uri, version, "library.yaml")
 		}},
 	}
 	type place struct{ ws, cacheDir, cache, elsewhere string }
@@ -148,7 +148,7 @@ func TestASlotIsReadOnlyFromWhereItsWriteIsHeld(t *testing.T) {
 // slotDir is the slot for uri@version beneath the workspace's cache directory.
 func slotDir(t *testing.T, ws, cacheDir, uri, version string) string {
 	t.Helper()
-	dir, err := CachePath(ws, cacheDir, uri, version)
+	dir, err := CachePath(ws, cacheDir, "Component", uri, version)
 	if err != nil {
 		t.Fatal(err)
 	}

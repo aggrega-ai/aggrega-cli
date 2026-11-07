@@ -733,12 +733,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// metadata.version + digest), seeded through the registry tier rather than the
 	// version-less external tier; a local top-level (same-dir / ./file / catalog)
 	// stays external exactly as before.
-	var externals map[string][]byte
-	var registrySeeds map[string]closure.Resolution
+	var externals map[closure.EntityKey][]byte
+	var registrySeeds map[closure.EntityKey]closure.Resolution
 	if aggRes.FromRegistry {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, nil, manRes.Bytes)
-		registrySeeds = map[string]closure.Resolution{
-			rel.Spec.Aggregate: {ResolvedVersion: aggRes.ResolvedVersion, Digest: aggRes.Digest, ManifestDigest: aggRes.ManifestDigest, ResolutionPath: closure.ResolutionPathRegistry},
+		registrySeeds = map[closure.EntityKey]closure.Resolution{
+			{Kind: closure.KindAggregate, URI: rel.Spec.Aggregate}: {ResolvedVersion: aggRes.ResolvedVersion, Digest: aggRes.Digest, ManifestDigest: aggRes.ManifestDigest, ResolutionPath: closure.ResolutionPathRegistry},
 		}
 	} else {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
@@ -867,7 +867,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// come from that closure rather than from a lockfile, because this operation
 	// WRITES the lockfile, so a Tier-2 hit is verified against the version the walk
 	// just resolved.
-	lazyView.SetPins(catalog.PinsFromClosure(cl))
+	closurePins, err := catalog.PinsFromClosure(cl)
+	if err != nil {
+		return Result{}, err
+	}
+	lazyView.SetPins(closurePins)
 
 	// Discover + resolve the cross-document SchemaLibrary axis (ComputeClosure's
 	// entity walk does not descend Component/Feature schema bodies), reading the
@@ -934,7 +938,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// the artifact pass: re-applying the closure's pins drops the view's recipe set,
 	// and the loader the artifact pass reads is re-derived from the view afterwards.
 	refold := func() (closure.RecipeLoader, error) {
-		lazyView.SetPins(catalog.PinsFromClosure(cl))
+		pins, err := catalog.PinsFromClosure(cl)
+		if err != nil {
+			return nil, err
+		}
+		lazyView.SetPins(pins)
 		return lazyView.ClosureRecipeLoader(), nil
 	}
 	// The recipe loader handed in is taken before the sub-aggregate pass. It reads the
@@ -1003,7 +1011,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// Refresh the pin set so it covers the descended sub-aggregates the source-
 	// descent flatten resolves through lazyView.SubAggregateLoader below, and the
 	// providers + pipeline plugins the descents just pinned.
-	lazyView.SetPins(catalog.PinsFromClosure(cl))
+	if closurePins, err = catalog.PinsFromClosure(cl); err != nil {
+		return Result{}, err
+	}
+	lazyView.SetPins(closurePins)
 
 	// The resolution report reads the closure's in-memory resolution tier (not
 	// persisted in the lockfile) and is unrecoverable after this run. It is handed
@@ -1033,7 +1044,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		// values it compares moved together and it is satisfied by construction.
 		lf, _, lerr := lockfile.Load(workspaceRoot, lockfilePath)
 		if lerr != nil {
-			return Result{}, fmt.Errorf("verify: load lockfile %s: %w", lockfilePath, lerr)
+			return Result{}, fmt.Errorf("verify: load lockfile %s: %w", lockfilePath, lockfile.WithRewriteRemedy(lerr, cfg.ReleasePath))
 		}
 		if verr := lockfile.Verify(lf, cl); verr != nil {
 			return Result{}, fmt.Errorf("verify: %w", verr)
@@ -1212,13 +1223,16 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			// first pass to read it.
 			graph := gs.IRGraph
 
-			// Key per-instance infra by the Manifest-mapped entity URI — the same
-			// verbatim string the closure walker records as the source-descent entity
-			// (catalog.ComponentRecipeURI / FeatureRecipeURI return the mapping value
-			// verbatim), so this map joins against closure entities regardless of
-			// short-form vs full-path mapping authoring. An instance with no Manifest
-			// mapping carries no source-descent entity and is skipped.
-			perEntityInfra := map[string][]closure.ComponentSourceInfra{}
+			// Key per-instance infra by the Manifest-mapped entity's identity: the kind
+			// the mapping binds (a component mapping binds a Recipe, a feature mapping a
+			// FeatureRecipe) and the mapping value — the same verbatim string the closure
+			// walker records as the source-descent entity (catalog.ComponentRecipeURI /
+			// FeatureRecipeURI return the mapping value verbatim), so this map joins
+			// against closure entities regardless of short-form vs full-path mapping
+			// authoring, and a Recipe and a FeatureRecipe sharing a name are each handed
+			// only their own instances. An instance with no Manifest mapping carries no
+			// source-descent entity and is skipped.
+			perEntityInfra := map[closure.EntityKey][]closure.ComponentSourceInfra{}
 
 			executionScopeOf := func(instanceName, featType string) (string, bool) {
 				// Scope classification (name tier wins over type): a miss OR a
@@ -1241,7 +1255,8 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				return fmt.Errorf("resolving the FeatureRecipe the Manifest maps each Feature to: %w", err)
 			}
 			for frURI, comps := range featInfra {
-				perEntityInfra[frURI] = append(perEntityInfra[frURI], comps...)
+				key := closure.EntityKey{Kind: closure.KindFeatureRecipe, URI: frURI}
+				perEntityInfra[key] = append(perEntityInfra[key], comps...)
 			}
 
 			// Component instances: the component->Recipe join comes from the flattened
@@ -1258,7 +1273,8 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 				if !found {
 					continue
 				}
-				perEntityInfra[recURI] = append(perEntityInfra[recURI],
+				key := closure.EntityKey{Kind: closure.KindRecipe, URI: recURI}
+				perEntityInfra[key] = append(perEntityInfra[key],
 					closure.ComponentSourceInfra{
 						Component: node.InstanceID,
 						Infra:     parse.NodePayloadMap(graph.Spec.InfraMapping, node.InstanceID),
@@ -1333,7 +1349,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			if err := stopped(ctx); err != nil {
 				return err
 			}
-			pinnedEntityDigests, pinnedFiles, err := entityPins(ctx, lazyView, cl.Entities, perEntityInfra,
+			pinnedEntityDigests, pinnedFiles, err := entityPins(lazyView, cl.Entities, perEntityInfra,
 				srcResolver, workspaceRoot, cacheDir, wsCfg.PullPinsSources(cfg.PinSources), cfg.DryRun,
 				wsCfg.Plugins.ProviderTargetURIs(), namedDirs)
 			if err != nil {
@@ -1352,6 +1368,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 			}
 
 			lf := buildLockfile(cfg.ReleasePath, cl, cfg.Toolchain, resolvedBindings, mutatorAttachments, verdictInputs, pinnedEntityDigests)
+			// Every entity row records its kind; a row that did not would be refused as
+			// the lockfile is read again, and the pull that clears that refusal would
+			// compose the same row, so it is refused here, before anything is written.
+			if err := lockfile.CheckEntityKinds(lf); err != nil {
+				return err
+			}
 			// Carry forward each unchanged pin's recorded facts — its verified
 			// signature and its deprecation marker — from the prior lockfile before
 			// verification runs. An entry the content cache served that carries its
@@ -1556,7 +1578,7 @@ func reportedWrite(path string, want []byte) *dryrunreport.File {
 // produced the file. Versions only, so it stays identical across machines that
 // resolved the same closure with the same compiler; advisory, so nothing compares
 // it.
-func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.ToolchainStamp, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, verdictInputs []lockfile.VerdictInput, pinnedEntityDigests map[string]string) *lockfile.Lockfile {
+func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.ToolchainStamp, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, verdictInputs []lockfile.VerdictInput, pinnedEntityDigests map[closure.EntityKey]string) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     filepath.Base(releasePath),
@@ -1584,16 +1606,19 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 
 	for _, e := range cl.Entities {
 		// A writable recipe's row is overlaid from the pin step's own reading of the
-		// entity (keyed strictly by URI), taken after anything the step wrote,
-		// so the lockfile records the entity as the build will digest it. The
-		// row covers the lock beside the document, which the step writes after
-		// the dependency resolution digested the entity, so the overlay is what
-		// makes the recorded row describe the lock the step left.
+		// entity, taken after anything the step wrote, so the lockfile records the
+		// entity as the build will digest it. The row covers the lock beside the
+		// document, which the step writes after the dependency resolution digested
+		// the entity, so the overlay is what makes the recorded row describe the
+		// lock the step left. The step's reading is keyed by the identity of the
+		// entity it read, so it lands on that entity's row and on no row of another
+		// kind sharing the name.
 		entDigest := e.Digest
-		if pf, ok := pinnedEntityDigests[e.URI]; ok {
+		if pf, ok := pinnedEntityDigests[e.Key()]; ok {
 			entDigest = pf
 		}
 		lf.Entities = append(lf.Entities, lockfile.Entity{
+			Kind:            e.Kind(),
 			URI:             e.URI,
 			ResolvedVersion: e.ResolvedVersion,
 			Digest:          entDigest,
@@ -1601,7 +1626,7 @@ func buildLockfile(releasePath string, cl closure.Closure, toolchain *lockfile.T
 			ReferencedFrom:  append([]string(nil), e.ReferencedFrom...),
 		})
 	}
-	sort.Slice(lf.Entities, func(i, j int) bool { return lf.Entities[i].URI < lf.Entities[j].URI })
+	sort.Slice(lf.Entities, func(i, j int) bool { return lf.Entities[i].Key().Less(lf.Entities[j].Key()) })
 
 	for _, l := range cl.SchemaLibraries {
 		lf.SchemaLibraries = append(lf.SchemaLibraries, lockfile.SchemaLibrary{
@@ -1896,7 +1921,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 	var resolutions []verdictPluginResolution
 	for _, att := range cfg.VerdictAttachments() {
 		ref := att.Ref
-		entRes, err := lookup.ResolveCatalogEntity(ctx, ref.URI, "plugin")
+		entRes, err := lookup.ResolveCatalogEntity(ctx, ref.URI, closure.KindPlugin)
 		if err != nil {
 			return nil, fmt.Errorf("cache %s socket plugin %q: %w", att.Socket, ref.URI, err)
 		}
@@ -1983,7 +2008,7 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 	fp := pluginfetchverify.Fetched{
 		URI:            uri,
 		ManifestDigest: artifact.ManifestDigest,
-		Kind:           catalog.EntityKindForHint("plugin"),
+		Kind:           catalog.EntityKindForHint(closure.KindPlugin),
 		Host:           registryhost.Of(uri),
 	}
 	// A gate plugin's URI is a host-less bare identity; bind its registry host and
@@ -2023,7 +2048,7 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 				return verdictPluginResolution{}, rerr
 			}
 		} else {
-			wasmBytes, rerr = oci.ReadCached(workspaceRoot, cacheDir, artifactRef, read.WasmDigest)
+			wasmBytes, rerr = oci.ReadCached(workspaceRoot, cacheDir, oci.PluginArtifactKind(), artifactRef, read.WasmDigest)
 			if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound()) {
 				return verdictPluginResolution{}, fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
 			}

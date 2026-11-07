@@ -621,7 +621,7 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 	}
 	lf, _, err := lockfile.Load(wsRoot, lockfile.PathFor(releasePath))
 	if err != nil {
-		return Result{}, fmt.Errorf("load lockfile: %w", err)
+		return Result{}, fmt.Errorf("load lockfile: %w", lockfile.WithRewriteRemedy(err, releasePath))
 	}
 
 	// The render, or the render that already happened.
@@ -665,7 +665,11 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 		// verified-on-read and a miss is a loud halt rather than a silent skip —
 		// byte-identical from the lockfile.
 		lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil, namedDirs...)
-		lazyView.SetPins(catalog.PinsFromLockfile(lf))
+		pins, perr := catalog.PinsFromLockfile(lf)
+		if perr != nil {
+			return Result{}, perr
+		}
+		lazyView.SetPins(pins)
 		lazyView.WriteNoticesTo(diagOut)
 
 		// The preview computation itself — the gate sequence and the render — runs in

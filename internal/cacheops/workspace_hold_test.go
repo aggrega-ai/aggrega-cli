@@ -26,7 +26,7 @@ import (
 // hold afterwards exactly what it held before.
 func TestClearAndPruneHoldTheWorkspaceCacheToTheWorkspace(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
-	slot := filepath.Join("entities", "zz-unreferenced", "1.0.0")
+	slot := filepath.Join("entities", entitySlotRel())
 	rows := []struct {
 		name    string
 		prune   bool
@@ -48,7 +48,7 @@ func TestClearAndPruneHoldTheWorkspaceCacheToTheWorkspace(t *testing.T) {
 			linkInto(t, outside, filepath.Join(ws, cacheDir))
 		}},
 		{name: "clear through a class root that is a link leading out", refused: true, layout: func(t *testing.T, ws, outside string) {
-			seedSlot(t, filepath.Join(outside, "zz-unreferenced", "1.0.0"))
+			seedSlot(t, filepath.Join(outside, entitySlotRel()))
 			linkInto(t, outside, filepath.Join(ws, cacheDir, "entities"))
 		}},
 	}
@@ -105,7 +105,7 @@ func TestClearAndPruneHoldTheWorkspaceCacheToTheWorkspace(t *testing.T) {
 // the place it leads to.
 func TestClearAndPruneHoldACacheDirectoryOutsideTheWorkspaceToItself(t *testing.T) {
 	const outsideCache = "../shared-cache"
-	slot := filepath.Join("entities", "zz-unreferenced", "1.0.0")
+	slot := filepath.Join("entities", entitySlotRel())
 	rows := []struct {
 		name     string
 		cacheDir string
@@ -126,13 +126,13 @@ func TestClearAndPruneHoldACacheDirectoryOutsideTheWorkspaceToItself(t *testing.
 		}},
 		{name: "clear through a class root beneath a cache outside that is a link leading out of it", cacheDir: outsideCache, refused: true,
 			layout: func(t *testing.T, cache, _, elsewhere string) string {
-				seedSlot(t, filepath.Join(elsewhere, "zz-unreferenced", "1.0.0"))
+				seedSlot(t, filepath.Join(elsewhere, entitySlotRel()))
 				linkInto(t, elsewhere, filepath.Join(cache, "entities"))
 				return elsewhere
 			}},
 		{name: "prune through a class root beneath a cache outside that is a link leading out of it", cacheDir: outsideCache, prune: true, refused: true,
 			layout: func(t *testing.T, cache, _, elsewhere string) string {
-				seedSlot(t, filepath.Join(elsewhere, "zz-unreferenced", "1.0.0"))
+				seedSlot(t, filepath.Join(elsewhere, entitySlotRel()))
 				linkInto(t, elsewhere, filepath.Join(cache, "entities"))
 				return elsewhere
 			}},
@@ -145,26 +145,26 @@ func TestClearAndPruneHoldACacheDirectoryOutsideTheWorkspaceToItself(t *testing.
 		{name: "clear through a class root of the cache inside linked out of it, elsewhere inside the workspace", cacheDir: ".aggrega/cache", refused: true,
 			layout: func(t *testing.T, cache, ws, _ string) string {
 				kept := filepath.Join(ws, "kept-entities")
-				seedSlot(t, filepath.Join(kept, "zz-unreferenced", "1.0.0"))
+				seedSlot(t, filepath.Join(kept, entitySlotRel()))
 				linkInto(t, kept, filepath.Join(cache, "entities"))
 				return kept
 			}},
 		{name: "prune through a class root of the cache inside linked out of it, elsewhere inside the workspace", cacheDir: ".aggrega/cache", prune: true, refused: true,
 			layout: func(t *testing.T, cache, ws, _ string) string {
 				kept := filepath.Join(ws, "kept-entities")
-				seedSlot(t, filepath.Join(kept, "zz-unreferenced", "1.0.0"))
+				seedSlot(t, filepath.Join(kept, entitySlotRel()))
 				linkInto(t, kept, filepath.Join(cache, "entities"))
 				return kept
 			}},
 		{name: "clear a cache inside whose class root links elsewhere inside the cache directory", cacheDir: ".aggrega/cache",
 			layout: func(t *testing.T, cache, _, elsewhere string) string {
-				seedSlot(t, filepath.Join(cache, "kept-entities", "zz-unreferenced", "1.0.0"))
+				seedSlot(t, filepath.Join(cache, "kept-entities", entitySlotRel()))
 				linkInto(t, "kept-entities", filepath.Join(cache, "entities"))
 				return elsewhere
 			}},
 		{name: "prune a cache inside whose class root links elsewhere inside the cache directory", cacheDir: ".aggrega/cache", prune: true,
 			layout: func(t *testing.T, cache, _, elsewhere string) string {
-				seedSlot(t, filepath.Join(cache, "kept-entities", "zz-unreferenced", "1.0.0"))
+				seedSlot(t, filepath.Join(cache, "kept-entities", entitySlotRel()))
 				linkInto(t, "kept-entities", filepath.Join(cache, "entities"))
 				return elsewhere
 			}},

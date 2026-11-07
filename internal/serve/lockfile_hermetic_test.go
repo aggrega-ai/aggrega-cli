@@ -13,7 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -32,7 +32,7 @@ func lockfileFromClosure(rel string, cl closure.Closure) *lockfile.Lockfile {
 		lf.ReleaseDocuments = append(lf.ReleaseDocuments, lockfile.ReleaseDocument{Path: d.Path, Digest: d.Digest})
 	}
 	for _, e := range cl.Entities {
-		lf.Entities = append(lf.Entities, lockfile.Entity{URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest})
+		lf.Entities = append(lf.Entities, lockfile.Entity{Kind: e.Kind(), URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest})
 	}
 	for _, p := range cl.Plugins {
 		lf.Plugins = append(lf.Plugins, lockfile.Plugin{URI: p.URI, ResolvedVersion: p.ResolvedVersion, Digest: p.Digest})
@@ -223,7 +223,7 @@ func TestServeReconstructsClosureAxesFromLockfile(t *testing.T) {
 	// the closure does not reach must still be reported.
 	drifted := lockfileFromClosure("./"+rel, reconClosure)
 	drifted.Entities = append(drifted.Entities, lockfile.Entity{
-		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
+		Kind: "component", URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})
 	srv.verifyDriftAndUpdateCache(lockfilePath, rel, computed.Closure) // reset the entry off the clean state
 	writeFixtureLockfile(t, lockfilePath, drifted)
@@ -266,7 +266,7 @@ func TestServeByteIdenticalSingleProviderRender(t *testing.T) {
 	}
 
 	render := func(withLockfile *lockfile.Lockfile) map[string][]byte {
-		view := srv.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
+		view := srv.lazyCatalog.ForRequest(catalogtest.MustPinsFromLockfile(t, lf))
 		resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 			View:            view,
 			ReleasePath:     releasePath,
@@ -335,7 +335,7 @@ func TestServeMutatorConfigInvariance(t *testing.T) {
 	}
 
 	build := func(withLockfile *lockfile.Lockfile) error {
-		view := srv.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
+		view := srv.lazyCatalog.ForRequest(catalogtest.MustPinsFromLockfile(t, lf))
 		resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 			View:            view,
 			ReleasePath:     releasePath,
@@ -504,7 +504,7 @@ spec:
 		Release:     "./app-release.yaml",
 		GeneratedAt: "2026-06-03T10:00:00Z",
 		Entities: []lockfile.Entity{{
-			URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: contentDigestHex([]byte(svcComponent)),
+			Kind: "component", URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: contentDigestHex([]byte(svcComponent)),
 		}},
 		Providers: []lockfile.ProviderBinding{{Capability: "helm", Plugin: "provider/helm"}},
 	}

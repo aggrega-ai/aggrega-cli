@@ -184,7 +184,7 @@ func TestAPlanForWritingRefusesASharedDirectoryBeforeResolvingAnything(t *testin
 	compute := func(forWriting bool, res *recordingResolver) (Plan, error) {
 		return Compute(PlanInputs{
 			View:          catalog.NewLazyLookup(ws, "", []string{cat}, nil),
-			URIs:          []string{"helm/one:1.0.0", "helm/two:1.0.0"},
+			Entities:      recipes("helm/one:1.0.0", "helm/two:1.0.0"),
 			Resolver:      res,
 			WorkspaceRoot: ws,
 			ForWriting:    forWriting,
@@ -232,7 +232,7 @@ func TestAPlanComputedToBeCheckedCannotBeWritten(t *testing.T) {
 	compute := func(forWriting bool) Plan {
 		t.Helper()
 		plan, err := Compute(PlanInputs{View: catalog.NewLazyLookup(ws, "", []string{cat}, nil),
-			URIs: []string{"helm/server:1.0.0"}, Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: forWriting})
+			Entities: recipes("helm/server:1.0.0"), Resolver: &recordingResolver{}, WorkspaceRoot: ws, ForWriting: forWriting})
 		if err != nil {
 			t.Fatalf("Compute: %v", err)
 		}

@@ -250,11 +250,12 @@ func TestAFeatureAConnectionAttachmentNamesIsPinnedAndVerified(t *testing.T) {
 
 	pins := []struct {
 		uri  string
+		kind string
 		site string
 	}{
-		{"example/token", "aggregate.spec.components.caller.uses.peers.first.features.credential.type"},
-		{"example/badge", "release.spec.boundaries.app.components.caller.uses.peers.second.features.credential.type"},
-		{"compose/token-plain:1.0.0", "manifest.spec.mappings.features.name.first.credential"},
+		{"example/token", "feature", "aggregate.spec.components.caller.uses.peers.first.features.credential.type"},
+		{"example/badge", "feature", "release.spec.boundaries.app.components.caller.uses.peers.second.features.credential.type"},
+		{"compose/token-plain:1.0.0", "feature_recipe", "manifest.spec.mappings.features.name.first.credential"},
 	}
 	lf, _, err := lockfile.LoadLockfile(lockPath)
 	if err != nil {
@@ -328,7 +329,7 @@ func TestAFeatureAConnectionAttachmentNamesIsPinnedAndVerified(t *testing.T) {
 			if err := lockfile.WriteLockfile(lockPath, without); err != nil {
 				t.Fatalf("write the lockfile without the row: %v", err)
 			}
-			refusal(t, `entity "`+p.uri+`" not in lockfile (referenced from `+p.site+`)`)
+			refusal(t, `entity "`+p.uri+`" (`+p.kind+`) not in lockfile (referenced from `+p.site+`)`)
 			if err := pull(false); err != nil {
 				t.Fatalf("pull to restore the row: %v", err)
 			}
@@ -344,7 +345,7 @@ func TestAFeatureAConnectionAttachmentNamesIsPinnedAndVerified(t *testing.T) {
 		if err := os.WriteFile(featurePath, append(append([]byte(nil), original...), "# changed after the pull\n"...), 0o644); err != nil {
 			t.Fatalf("change the Feature: %v", err)
 		}
-		refusal(t, `entity "example/token" changed: lockfile=(1.0.0,`)
+		refusal(t, `entity "example/token" (feature) changed: lockfile=(1.0.0,`)
 		if err := os.WriteFile(featurePath, original, 0o644); err != nil {
 			t.Fatalf("restore the Feature: %v", err)
 		}

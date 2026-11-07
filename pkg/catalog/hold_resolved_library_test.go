@@ -91,7 +91,7 @@ func TestHoldResolvedLibraryReadsTheLibraryAtItsResolution(t *testing.T) {
 
 			subject := NewLazyLookup(ws, cacheUnderCatalogDir, nil, nil)
 			if row.pinned {
-				subject.SetPins(map[string]Pin{row.uri: {ResolvedVersion: pin.ResolvedVersion, Digest: otherBytes}})
+				subject.SetPins(Pins{{Kind: kindOfMediaType(t, row.mediaType), URI: row.uri}: {ResolvedVersion: pin.ResolvedVersion, Digest: otherBytes}})
 			}
 			if _, held := subject.LibraryName(axis, row.uri); held {
 				t.Fatalf("the view holds %s before the hold, so the row proves nothing about the hold", row.uri)
@@ -116,7 +116,7 @@ func TestHoldResolvedLibraryLeavesTheCallersPinsAsTheyWere(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
 	pin := writePinnedSlot(t, ws, cacheUnderCatalogDir, "Held:1.0.0", oci.MediaTypeSchemaLibrary, []byte(heldSchemaLibraryYAML))
-	callers := map[string]Pin{"Other": {ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("1", 64)}}
+	callers := Pins{{Kind: "SchemaLibrary", URI: "Other"}: {ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("1", 64)}}
 
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, nil, nil)
 	subject.SetPins(callers)
@@ -126,7 +126,7 @@ func TestHoldResolvedLibraryLeavesTheCallersPinsAsTheyWere(t *testing.T) {
 	if _, held := subject.LibraryName(axis, "Held"); !held {
 		t.Fatal("the hold did not make the library readable, so the row proves nothing about the caller's map")
 	}
-	if _, written := callers["Held"]; written || len(callers) != 1 {
+	if _, written := callers[PinKey{Kind: axis.Kind, URI: "Held"}]; written || len(callers) != 1 {
 		t.Errorf("the hold wrote into the map SetPins was handed: %v", callers)
 	}
 }

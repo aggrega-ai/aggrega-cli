@@ -52,7 +52,7 @@ func writeDriftedLockfile(t *testing.T, srv *Server, rel, lockfilePath string) {
 	writeFixtureLockfile(t, lockfilePath, &lockfile.Lockfile{Version: 1, Release: "./" + rel, GeneratedAt: "2026-06-03T10:00:00Z"})
 	drifted := lockfileFromClosure("./"+rel, serveInspectionClosure(t, srv, rel))
 	drifted.Entities = append(drifted.Entities, lockfile.Entity{
-		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
+		Kind: "component", URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})
 	writeFixtureLockfile(t, lockfilePath, drifted)
 }

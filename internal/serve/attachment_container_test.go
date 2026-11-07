@@ -250,8 +250,8 @@ spec:
 			Release:     "./" + filepath.Base(rel),
 			GeneratedAt: "2026-06-03T10:00:00Z",
 			Entities: []lockfile.Entity{
-				{URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0", Digest: componentDigest("edge.yaml")},
-				{URI: "demo/store:1.0.0", ResolvedVersion: "1.0.0", Digest: componentDigest("store.yaml")},
+				{Kind: "component", URI: "demo/edge:1.0.0", ResolvedVersion: "1.0.0", Digest: componentDigest("edge.yaml")},
+				{Kind: "component", URI: "demo/store:1.0.0", ResolvedVersion: "1.0.0", Digest: componentDigest("store.yaml")},
 			},
 		}
 		if err := lockfile.WriteLockfile(lockfile.PathFor(rel), lf); err != nil {

@@ -3,6 +3,8 @@
 
 package lockfile
 
+import "github.com/aggrega-ai/aggrega-cli/pkg/closure"
+
 // VerifiedFactRow is a mutable view of one pinned lockfile row's verified facts:
 // its identity and content pin, plus read and write access to the two slots a pull
 // records into — the verified signature and the verified retroactive deprecation
@@ -13,14 +15,18 @@ package lockfile
 // lockfile row itself, and a copied-out field would silently record nothing.
 type VerifiedFactRow struct {
 	// Section is the lockfile section the row sits in, named exactly as the
-	// Lockfile field is declared — "Entities", "SchemaLibraries", "Plugins" — which
+	// Lockfile field is declared — closure.EntitiesAxis, "SchemaLibraries", "Plugins" — which
 	// is also the name the closure's own enumeration of its verifiable axes gives
 	// the section the row's reference was resolved on (closure.VerifiableAxis.Axis).
 	// A pass holding a closure reference finds its row by the pair, so an entity row
 	// and a plugin row recording the same reference are never read as one.
 	Section string
-	// URI is the row's canonical identity — the first key a pull's discovered facts
-	// are joined onto the row by; a row's ManifestDigest is the second.
+	// Kind is the kind an entity row records, and empty on every other section,
+	// whose rows are one kind each. Two entity rows of one reference differ in it.
+	Kind string
+	// URI is the row's canonical reference. With Section and Kind it is the row's
+	// identity (Key) — the first key a pull's discovered facts are joined onto the
+	// row by; a row's ManifestDigest is the second.
 	URI string
 	// Digest is the row's pinned content digest. A caller carrying a fact forward
 	// across pulls compares it, because a changed pin is a different artifact whose
@@ -58,14 +64,33 @@ func (r VerifiedFactRow) RecordSignature(sig *VerifiedSignature) {
 	*r.signature = sig
 }
 
-// RowKey names one fact-bearing row by the section it sits in and the reference it
-// records — the pair a closure reference finds its own row by, so an entity row and
-// a plugin row recording the same reference are two keys.
+// RowKey names one fact-bearing row by the section it sits in and the identity the
+// row records — what a closure reference finds its own row by, so an entity row and
+// a plugin row recording the same reference are two keys, and so are two entity
+// rows of one reference recording different kinds. The identity's kind is set on
+// the entity section (closure.EntitiesAxis) and empty on every other, whose rows
+// are one kind each.
 type RowKey struct {
 	// Section is the row's VerifiedFactRow.Section.
 	Section string
-	// URI is the row's reference.
-	URI string
+	closure.EntityKey
+}
+
+// Key returns the key r is found by.
+func (r VerifiedFactRow) Key() RowKey {
+	return RowKey{Section: r.Section, EntityKey: closure.EntityKey{Kind: r.Kind, URI: r.URI}}
+}
+
+// RowKeyFor returns the key of the row a closure reference on axis is pinned by.
+// It is the one statement of how a reference finds its row: the section is the
+// axis, and on the entity axis the kind the reference was collected as is part of
+// the key, as it is part of the row's identity.
+func RowKeyFor(axis closure.VerifiableAxis, ref closure.VerifiableRef) RowKey {
+	key := RowKey{Section: axis.Axis, EntityKey: closure.EntityKey{URI: ref.URI}}
+	if axis.Axis == closure.EntitiesAxis {
+		key.Kind = closure.EntityKindOf(ref.KindHint)
+	}
+	return key
 }
 
 // RecordedSignatures returns the signature fact every fact-bearing row records,
@@ -85,7 +110,7 @@ func (lf *Lockfile) RecordedSignatures() map[RowKey]*VerifiedSignature {
 	rows := lf.VerifiedFactRows()
 	recorded := make(map[RowKey]*VerifiedSignature, len(rows))
 	for _, row := range rows {
-		recorded[RowKey{Section: row.Section, URI: row.URI}] = row.Signature()
+		recorded[row.Key()] = row.Signature()
 	}
 	return recorded
 }
@@ -113,7 +138,8 @@ func (lf *Lockfile) VerifiedFactRows() []VerifiedFactRow {
 
 	for i := range lf.Entities {
 		rows = append(rows, VerifiedFactRow{
-			Section:        "Entities",
+			Section:        closure.EntitiesAxis,
+			Kind:           lf.Entities[i].Kind,
 			URI:            lf.Entities[i].URI,
 			Digest:         lf.Entities[i].Digest,
 			ManifestDigest: lf.Entities[i].ManifestDigest,

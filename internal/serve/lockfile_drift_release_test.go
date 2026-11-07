@@ -25,7 +25,7 @@ import (
 func TestADriftFindingNamesTheReleaseItWasVerifiedFor(t *testing.T) {
 	t.Parallel()
 	const drifted = "version: 1\nrelease: r\ngenerated_at: \"2026-01-01T00:00:00Z\"\n" +
-		"entities:\n  - uri: example/web\n    resolved_version: 1.0.0\n    digest: "
+		"entities:\n  - kind: component\n    uri: example/web\n    resolved_version: 1.0.0\n    digest: "
 	const clean = "version: 1\nrelease: r\ngenerated_at: \"2026-01-01T00:00:00Z\"\n"
 	releases := []string{"release.yaml", "release-helm-synth.yaml", "envs/prod.yaml"}
 

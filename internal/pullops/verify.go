@@ -124,7 +124,7 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	if len(verifiable) == 0 {
 		return nil
 	}
-	factByURI, err := recordSignatureAnswers(ctx, lf, verifiable, wsCfg, workspaceRoot, cacheDir, diagOut, targetFor)
+	factByRow, err := recordSignatureAnswers(ctx, lf, verifiable, wsCfg, workspaceRoot, cacheDir, diagOut, targetFor)
 	if err != nil {
 		return err
 	}
@@ -135,13 +135,13 @@ func VerifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	// registry's trusted deprecation identities, and record the verified marker
 	// into the lockfile. Build reads the recorded fact and never re-discovers
 	// (the ahead-of-time boundary).
-	return discoverClosureDeprecations(ctx, lf, verifiable, factByURI, wsCfg, targetFor, diagOut)
+	return discoverClosureDeprecations(ctx, lf, verifiable, factByRow, wsCfg, targetFor, diagOut)
 }
 
 // signatureQuestion is one lockfile row the signature pass asks a registry about,
 // and why it asks.
 type signatureQuestion struct {
-	// row names the lockfile row: its section and the reference it records.
+	// row names the lockfile row: its section, kind and reference (lockfile.RowKey).
 	row lockfile.RowKey
 	// entity is the question as the registry is asked it: the manifest digest the
 	// reference's own resolution reports, and the location, host and kind its
@@ -205,7 +205,7 @@ func signatureQuestions(lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspa
 			// cannot come to disagree about which rows a pull must repair.
 			fetched := isRegistryResolved(e.ResolutionPath)
 			var refused error
-			if fact := recorded[lockfile.RowKey{Section: axis.Axis, URI: e.URI}]; !fetched && fact != nil {
+			if fact := recorded[lockfile.RowKeyFor(axis, e)]; !fetched && fact != nil {
 				refused = recordedFactRefusal(workspaceRoot, cacheDir, fact, e)
 				if refused == nil {
 					continue
@@ -251,7 +251,7 @@ func signatureQuestions(lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspa
 				return nil, fmt.Errorf("verify: registry artifact %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
 			}
 			q := signatureQuestion{
-				row: lockfile.RowKey{Section: axis.Axis, URI: e.URI},
+				row: lockfile.RowKeyFor(axis, e),
 				entity: pullverify.Entity{
 					URI:            e.URI,
 					ManifestDigest: e.ManifestDigest,
@@ -272,8 +272,8 @@ func signatureQuestions(lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspa
 	return append(questions, reasked...), nil
 }
 
-// askedOnce returns what the signature pass puts to a registry for questions, in
-// the order signatureQuestions returns them: every fetched row's question, and a
+// askedOnce returns the questions the signature pass puts to a registry, in the
+// order signatureQuestions returns them: every fetched row's question, and a
 // cache-served row's only where no question ahead of it is the same one.
 //
 // A cache-served row is asked about only where the pass does not already ask the
@@ -283,42 +283,67 @@ func signatureQuestions(lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspa
 // same host's policy for the same kind. Only the reference differs, and the fold
 // records an answer on every row pinning that manifest (verifiedJoin), so asking
 // again would only repeat the registry request.
-func askedOnce(questions []signatureQuestion) []pullverify.Entity {
+func askedOnce(questions []signatureQuestion) []signatureQuestion {
 	type question struct{ manifest, host, location, kind string }
 	asked := make(map[question]struct{}, len(questions))
-	out := make([]pullverify.Entity, 0, len(questions))
+	out := make([]signatureQuestion, 0, len(questions))
 	for _, q := range questions {
 		key := question{q.entity.ManifestDigest, q.entity.Host, q.entity.Location, q.entity.Kind}
 		if _, held := asked[key]; held && !q.fetched {
 			continue
 		}
 		asked[key] = struct{}{}
-		out = append(out, q.entity)
+		out = append(out, q)
 	}
 	return out
 }
 
-// recordSignatureAnswers asks a registry about each of asked, in one
-// verification run against each registry's trust policy, and records the answers
-// on lf's rows, caching each verified signature bundle — and returns the answers
-// keyed by reference, for the marker discovery that runs at the same moment.
+// recordSignatureAnswers asks a registry about each of asked against each
+// registry's trust policy, and records the answers on lf's rows, caching each
+// verified signature bundle — and returns the answers keyed by the row each
+// question was asked for, for the marker discovery that runs at the same moment.
 //
 // lf is the lockfile the answers are recorded in, which is the one the pass
 // composes, or a verifying pull's copy of it: never the file on disk, which only
 // the write at the end of a pull replaces.
-func recordSignatureAnswers(ctx context.Context, lf *lockfile.Lockfile, asked []pullverify.Entity, wsCfg workspaceconfig.Config, workspaceRoot, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) (map[string]pullverify.Result, error) {
-	results, err := pullverify.Verify(ctx, asked, pullverify.Options{
+//
+// An answer names the reference it was asked under and nothing else, while two
+// rows of one reference — a Component and a Recipe of one name, each served by a
+// registry — are two questions whose answers must not be read as one. So the questions are put in
+// rounds that each hold one question per reference (byReference), and an answer is
+// matched to its row within its round. Where no two questions share a reference,
+// which is the common case, that is one verification run over every question in
+// the order asked.
+func recordSignatureAnswers(ctx context.Context, lf *lockfile.Lockfile, asked []signatureQuestion, wsCfg workspaceconfig.Config, workspaceRoot, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) (map[lockfile.RowKey]pullverify.Result, error) {
+	opts := pullverify.Options{
 		Config: wsCfg,
 		Target: targetFor,
 		Warn:   func(notice string) { fmt.Fprintf(diagOut, "  verify: %s\n", notice) },
-	})
-	if err != nil {
-		return nil, err
 	}
-
-	factByURI := make(map[string]pullverify.Result, len(results))
-	for _, r := range results {
-		factByURI[r.URI] = r
+	factByRow := make(map[lockfile.RowKey]pullverify.Result, len(asked))
+	for _, round := range byReference(asked) {
+		entities := make([]pullverify.Entity, 0, len(round))
+		rowOf := make(map[string]lockfile.RowKey, len(round))
+		for _, q := range round {
+			entities = append(entities, q.entity)
+			rowOf[q.entity.URI] = q.row
+		}
+		results, err := pullverify.Verify(ctx, entities, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range results {
+			row, ok := rowOf[r.URI]
+			if !ok {
+				return nil, fmt.Errorf("internal: the signature verification answered for %q, which this round did not ask about", r.URI)
+			}
+			factByRow[row] = r
+		}
+		// A switched-off verification answers every round alike, with nothing, and
+		// announces itself on each; one announcement says it.
+		if wsCfg.SignatureVerificationDisabled() {
+			break
+		}
 	}
 	// The fold walks the lockfile's own enumeration of marker-bearing rows, so a
 	// verified fact reaches every section that can record one without this pass
@@ -331,7 +356,7 @@ func recordSignatureAnswers(ctx context.Context, lf *lockfile.Lockfile, asked []
 	// signature to record. A row whose artifact this pass did not ask about — one the
 	// content cache or a local catalog served, pinned by no reference this run fetched
 	// or asked about — keeps whatever was carried onto it.
-	facts := joinVerified(asked, factByURI)
+	facts := joinVerified(asked, factByRow)
 	for _, row := range lf.VerifiedFactRows() {
 		if !facts.askedAbout(row) {
 			continue
@@ -346,7 +371,31 @@ func recordSignatureAnswers(ctx context.Context, lf *lockfile.Lockfile, asked []
 		}
 		row.RecordSignature(pluginfetchverify.SignatureFact(r))
 	}
-	return factByURI, nil
+	return factByRow, nil
+}
+
+// byReference splits questions into rounds that each hold at most one question per
+// reference, keeping the order they were asked in: a question goes into the first
+// round holding none of its reference yet. A round's answers are then each matched
+// to the one question asked under their reference.
+func byReference(questions []signatureQuestion) [][]signatureQuestion {
+	var rounds [][]signatureQuestion
+	var held []map[string]struct{}
+	for _, q := range questions {
+		i := 0
+		for ; i < len(rounds); i++ {
+			if _, taken := held[i][q.entity.URI]; !taken {
+				break
+			}
+		}
+		if i == len(rounds) {
+			rounds = append(rounds, nil)
+			held = append(held, map[string]struct{}{})
+		}
+		rounds[i] = append(rounds[i], q)
+		held[i][q.entity.URI] = struct{}{}
+	}
+	return rounds
 }
 
 // recordedFactRefusal is the build's answer for a cache-served row that records
@@ -381,48 +430,57 @@ func recordedFactRefusal(workspaceRoot, cacheDir string, fact *lockfile.Verified
 // digest whatever reference the row records; a join on the reference alone would
 // leave a row pinned to bytes this pull verified with no record that it did.
 //
-// Where the pass holds an answer for the row's own reference, that one is taken, so a
-// row keeps the answer for the reference that fetched it; otherwise the row takes the
-// answer held for its manifest digest, the first in the order the pass asked.
+// A row is first found by its own identity — its section, its kind and its
+// reference (lockfile.RowKey), the identity the question was asked for — never by
+// the reference alone: two rows of one reference and different kinds pin different
+// documents, and the answer about one is no answer about the other. Where the pass
+// holds an answer for the row's own identity, that one is taken, so a row keeps the
+// answer for the reference that fetched it; otherwise the row takes the answer held
+// for its manifest digest, the first in the order the pass asked. Only a row whose
+// kind is read from a content-cache slot (closure.KindReadFromCacheSlot) can be
+// served the bytes another reference's fetch cached, so only such a row is joined by
+// manifest digest; a Manifest, read from beside the Release, takes no answer it was
+// not asked for.
 type verifiedJoin[T any] struct {
-	byURI         map[string]T
+	byRow         map[lockfile.RowKey]T
 	byManifest    map[string]T
-	askedURI      map[string]struct{}
+	askedRow      map[lockfile.RowKey]struct{}
 	askedManifest map[string]struct{}
 }
 
-// joinVerified builds the join for one pass from the references it asked the
-// registry about, in the order it asked, and its answers keyed by reference. A
-// reference the pass asked about and holds no answer for is still asked: getting
-// nothing is an answer.
-func joinVerified[T any](asked []pullverify.Entity, answers map[string]T) verifiedJoin[T] {
+// joinVerified builds the join for one pass from the questions it asked the
+// registry, in the order it asked, and its answers keyed by the row each question
+// was asked for. A question the pass asked and holds no answer for is still asked:
+// getting nothing is an answer.
+func joinVerified[T any](asked []signatureQuestion, answers map[lockfile.RowKey]T) verifiedJoin[T] {
 	j := verifiedJoin[T]{
-		byURI:         answers,
+		byRow:         answers,
 		byManifest:    make(map[string]T, len(asked)),
-		askedURI:      make(map[string]struct{}, len(asked)),
+		askedRow:      make(map[lockfile.RowKey]struct{}, len(asked)),
 		askedManifest: make(map[string]struct{}, len(asked)),
 	}
-	for _, e := range asked {
-		j.askedURI[e.URI] = struct{}{}
-		j.askedManifest[e.ManifestDigest] = struct{}{}
-		a, ok := answers[e.URI]
+	for _, q := range asked {
+		j.askedRow[q.row] = struct{}{}
+		j.askedManifest[q.entity.ManifestDigest] = struct{}{}
+		a, ok := answers[q.row]
 		if !ok {
 			continue
 		}
-		if _, held := j.byManifest[e.ManifestDigest]; !held {
-			j.byManifest[e.ManifestDigest] = a
+		if _, held := j.byManifest[q.entity.ManifestDigest]; !held {
+			j.byManifest[q.entity.ManifestDigest] = a
 		}
 	}
 	return j
 }
 
 // askedAbout reports whether the pass asked the registry about the artifact the row
-// pins, under the row's own reference or under any other.
+// pins, under the row's own identity or, for a row a cache slot can serve, under
+// any other reference to its manifest.
 func (j verifiedJoin[T]) askedAbout(row lockfile.VerifiedFactRow) bool {
-	if _, ok := j.askedURI[row.URI]; ok {
+	if _, ok := j.askedRow[row.Key()]; ok {
 		return true
 	}
-	if row.ManifestDigest == "" {
+	if !joinedByManifest(row) {
 		return false
 	}
 	_, ok := j.askedManifest[row.ManifestDigest]
@@ -432,16 +490,23 @@ func (j verifiedJoin[T]) askedAbout(row lockfile.VerifiedFactRow) bool {
 // answer returns the pass's answer for the artifact the row pins, and false where it
 // holds none.
 func (j verifiedJoin[T]) answer(row lockfile.VerifiedFactRow) (T, bool) {
-	if a, ok := j.byURI[row.URI]; ok {
+	if a, ok := j.byRow[row.Key()]; ok {
 		return a, true
 	}
-	if row.ManifestDigest != "" {
+	if joinedByManifest(row) {
 		if a, ok := j.byManifest[row.ManifestDigest]; ok {
 			return a, true
 		}
 	}
 	var none T
 	return none, false
+}
+
+// joinedByManifest reports whether row may take an answer asked under another
+// reference to the manifest it records: it records one, and its kind is one a
+// content-cache slot can serve.
+func joinedByManifest(row lockfile.VerifiedFactRow) bool {
+	return row.ManifestDigest != "" && closure.KindReadFromCacheSlot(row.Kind)
 }
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions
@@ -513,7 +578,7 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 			return fmt.Errorf("load plugin entity %q for host-function verify: %w", entityURI, err)
 		}
 
-		wasmBytes, err := oci.ReadCached(workspaceRoot, cacheDir, artifactURI, pinDigest)
+		wasmBytes, err := oci.ReadCached(workspaceRoot, cacheDir, oci.PluginArtifactKind(), artifactURI, pinDigest)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) {
 				// No cached artifact (offline / hermetic): nothing to re-derive

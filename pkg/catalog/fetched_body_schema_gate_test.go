@@ -90,7 +90,7 @@ spec: {}
 	if res.ResolvedVersion != "1.0.0" || len(bytes) == 0 {
 		t.Fatalf("resolution did not carry the fetched body: version=%q bytes=%d", res.ResolvedVersion, len(bytes))
 	}
-	slot, err := oci.CachePath(root, cacheDir, "remote/db:1.0.0", "1.0.0")
+	slot, err := oci.CachePath(root, cacheDir, "Component", "remote/db:1.0.0", "1.0.0")
 	if err != nil {
 		t.Fatalf("CachePath: %v", err)
 	}

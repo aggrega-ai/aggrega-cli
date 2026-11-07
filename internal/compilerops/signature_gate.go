@@ -300,7 +300,7 @@ func (h signatureHold) lockfileRows(lf *lockfile.Lockfile, cl closure.Closure) [
 	var refusals []error
 	for _, axis := range cl.VerifiableAxes() {
 		for _, ref := range axis.Refs {
-			if fact := recorded[lockfile.RowKey{Section: axis.Axis, URI: ref.URI}]; fact != nil {
+			if fact := recorded[lockfile.RowKeyFor(axis, ref)]; fact != nil {
 				// The manifest the build's own read held the reference's bytes to, which
 				// the closure reference reports from the read rather than from the row.
 				if err := h.holdFact(ref.URI, lockfilePath, fact, oci.MadeForManifest(ref.ManifestDigest),

@@ -55,7 +55,7 @@ func connectionSiteWorkspace(t *testing.T) (ws, release string) {
 			t.Fatalf("read the component fixture %s: %v", name, err)
 		}
 		entities = append(entities, lockfile.Entity{
-			URI: "conn/" + name, ResolvedVersion: "1.0.0", Digest: contentDigestHex(b),
+			Kind: "component", URI: "conn/" + name, ResolvedVersion: "1.0.0", Digest: contentDigestHex(b),
 		})
 	}
 	lf := &lockfile.Lockfile{

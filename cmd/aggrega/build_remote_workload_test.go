@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // The shared Workload body, authored once and consumed two ways: as the
@@ -146,7 +147,7 @@ func relocateWorkloadLibraryToCache(t *testing.T, root, cacheDir, version string
 	if err := os.Remove(filepath.Join(root, "catalog", "base", "workloadlibraries", "baseworkloads.yaml")); err != nil {
 		t.Fatalf("remove local workload library: %v", err)
 	}
-	slot := mustCachePath(root, cacheDir, "BaseWorkloads:"+version, version)
+	slot := ocitest.MustCachePath(root, cacheDir, "WorkloadLibrary", "BaseWorkloads:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
@@ -158,7 +159,7 @@ func relocateWorkloadLibraryToCache(t *testing.T, root, cacheDir, version string
 	if err != nil {
 		t.Fatalf("build workload-library manifest: %v", err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, "BaseWorkloads:"+version, version, mb); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "WorkloadLibrary", "BaseWorkloads:"+version, version, mb); err != nil {
 		t.Fatalf("write cache manifest: %v", err)
 	}
 }

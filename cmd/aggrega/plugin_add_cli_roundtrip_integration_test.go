@@ -32,6 +32,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -112,7 +113,7 @@ func TestIntegration_PluginAddCLI_FetchCachesForOfflineRun(t *testing.T) {
 	// — the same slot key the runtime cache tier reads. The cached URI segment is
 	// ref verbatim, so add-time and run-time address one slot.
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	slot := mustCachePath(root, cacheDir, ref, wantPin)
+	slot := ocitest.MustCachePath(root, cacheDir, oci.PluginArtifactKind(), ref, wantPin)
 	for _, name := range []string{"blob", "manifest"} {
 		if _, err := os.Stat(filepath.Join(slot, name)); err != nil {
 			t.Fatalf("expected cached %q at slot %s: %v", name, slot, err)

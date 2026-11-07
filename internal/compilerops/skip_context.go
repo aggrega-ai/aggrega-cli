@@ -527,29 +527,13 @@ func refusalDeclares(skipped []catalog.SkippedEntity, uri, kindHint string) bool
 // hint for.
 //
 // A surface that knows the kind a document declares, rather than the site a
-// reference was collected at, holds no hint to pass. The hint is derived from
-// the kind — the kind's words, lowercased and joined by an underscore — and kept
-// only where catalog.EntityKindForHint maps it back to that same kind. That
-// mapping stays the single home of the vocabulary: a derived hint it does not
-// map back is refused rather than trusted, so this cannot come to disagree with
-// it silently, and a kind it holds no hint for matches no refusal, which is the
-// answer the matcher gives for such a reference anyway.
+// reference was collected at, holds no hint to pass. The hint is the entity kind
+// catalog.EntityKindForCatalogKind pairs with the document's kind — every entity
+// kind is also the hint its collection sites carry — so the pairing keeps its one
+// home, and a kind it pairs with nothing matches no refusal, which is the answer
+// the matcher gives for such a reference anyway.
 func KindHintFor(kind string) string {
-	var b strings.Builder
-	for i, r := range kind {
-		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
-				b.WriteByte('_')
-			}
-			r += 'a' - 'A'
-		}
-		b.WriteRune(r)
-	}
-	hint := b.String()
-	if hint == "" || catalog.EntityKindForHint(hint) != kind {
-		return ""
-	}
-	return hint
+	return catalog.EntityKindForCatalogKind(kind)
 }
 
 // refusalsBesides returns the refusals other than the promoted one, keeping the

@@ -151,7 +151,7 @@ func resolveCacheAnchorInputs(t *testing.T) cacheAnchorFixture {
 	// reads from is the slot production writes — a hand-built path here could agree
 	// with the reader while both disagreed with the writer.
 	if err := oci.WriteCached(root, wsCfg.ResolvedArtifactCacheDir(),
-		cacheAnchorCoordinate, cacheAnchorVersion, cacheAnchorCachedBytes); err != nil {
+		oci.PluginArtifactKind(), cacheAnchorCoordinate, cacheAnchorVersion, cacheAnchorCachedBytes); err != nil {
 		t.Fatalf("seed the workspace content cache: %v", err)
 	}
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
@@ -34,9 +35,9 @@ func priorPinFixture(t *testing.T) string {
 		Release:     "release.yaml",
 		GeneratedAt: "2026-08-20T09:00:00Z",
 		Entities: []lockfile.Entity{
-			{URI: "core/database", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte("aaa"))},
-			{URI: "core/database-recipe", ResolvedVersion: "1.2.0", Digest: digest.ContentDigest([]byte("bbb"))},
-			{URI: "core/cache", ResolvedVersion: "2.0.0", Digest: digest.ContentDigest([]byte("ccc"))},
+			{Kind: "component", URI: "core/database", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte("aaa"))},
+			{Kind: "recipe", URI: "core/database-recipe", ResolvedVersion: "1.2.0", Digest: digest.ContentDigest([]byte("bbb"))},
+			{Kind: "component", URI: "core/cache", ResolvedVersion: "2.0.0", Digest: digest.ContentDigest([]byte("ccc"))},
 		},
 		SchemaLibraries: []lockfile.SchemaLibrary{
 			{URI: "core/DbSizing", ResolvedVersion: "1.0.0", Digest: digest.ContentDigest([]byte("ddd"))},
@@ -93,28 +94,40 @@ func inlineReuseDecision(lockfilePath, releasePath string, mode catalog.PinReuse
 		if prior == nil {
 			return nil, nil, fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull --release %s` first to create one", lockfilePath, releasePath)
 		}
-		pins := catalog.PinsFromLockfile(prior)
+		pins, err := catalog.PinsFromLockfile(prior)
+		if err != nil {
+			return nil, nil, err
+		}
 		for _, target := range mode.UpgradeTargets {
-			_, pinned := pins[target]
+			// A target names a reference: every kind's pin under it is dropped.
+			pinned := false
+			for key := range pins {
+				if key.URI == target {
+					delete(pins, key)
+					pinned = true
+				}
+			}
 			if !pinned && !vouchedFor(target) {
 				return nil, nil, fmt.Errorf("%q is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade", target)
-			}
-			if pinned {
-				delete(pins, target)
 			}
 		}
 		reuse = &catalog.ReuseVerification{PriorPins: pins}
 	} else if prior != nil {
-		reuse = &catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(prior)}
+		pins, err := catalog.PinsFromLockfile(prior)
+		if err != nil {
+			return nil, nil, err
+		}
+		reuse = &catalog.ReuseVerification{PriorPins: pins}
 	}
 	return prior, reuse, nil
 }
 
-func pinKeys(pins map[string]catalog.Pin) []string {
+func pinKeys(pins catalog.Pins) []string {
 	out := make([]string, 0, len(pins))
 	for k := range pins {
-		out = append(out, k)
+		out = append(out, k.URI)
 	}
+
 	slices.Sort(out)
 	return out
 }
@@ -147,7 +160,7 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fixture: %v", err)
 	}
-	fixturePins := catalog.PinsFromLockfile(probeLf)
+	fixturePins := catalogtest.MustPinsFromLockfile(t, probeLf)
 	if len(fixturePins) == 0 {
 		t.Fatalf("fixture projects to an EMPTY pin set: every comparison below would be a vacuous empty-vs-empty pass")
 	}
@@ -345,7 +358,7 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 			// URIs at the wrong versions or digests would pass a key comparison.
 			for uri, pin := range got.Verification.PriorPins {
 				if pin != wantReuse.PriorPins[uri] {
-					t.Errorf("pin %q = %+v; independent derivation has %+v", uri, pin, wantReuse.PriorPins[uri])
+					t.Errorf("pin %+v = %+v; independent derivation has %+v", uri, pin, wantReuse.PriorPins[uri])
 				}
 			}
 		})
@@ -413,7 +426,7 @@ func TestPinReuseFromLockfile_VerifyOnlyHonoursWhatTheReconcileHonours(t *testin
 			}
 			for uri, pin := range reconcile.Verification.PriorPins {
 				if got := verify.Verification.PriorPins[uri]; got != pin {
-					t.Errorf("pin %q: reconcile %+v, verify-only %+v", uri, pin, got)
+					t.Errorf("pin %+v: reconcile %+v, verify-only %+v", uri, pin, got)
 				}
 			}
 			if verify.Verification.Warn == nil {

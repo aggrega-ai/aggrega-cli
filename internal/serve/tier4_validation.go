@@ -133,8 +133,13 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// not absent but refused, and the validation reports the refusal as it reports
 	// a closure that does not resolve — the pins the Release records are not read
 	// from elsewhere, and are not silently done without.
-	var pins map[string]catalog.Pin
+	var pins catalog.Pins
 	lf, lfErr := lockfile.LoadIfReadable(s.workspaceRoot, lockfile.PathFor(releasePath))
+	if lfErr == nil && lf != nil {
+		// A lockfile row no pin can be kept for is a fault in what recorded it, and is
+		// reported as the refusal of the dependencies it pins.
+		pins, lfErr = catalog.PinsFromLockfile(lf)
+	}
 	if lfErr != nil {
 		if _, ours := classifyBuffer(file, releasePath, doc); !ours && !onReleaseDocument {
 			return nil
@@ -146,9 +151,6 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 			Message:        s.dependencyFailureMessage(releasePath, onReleaseDocument, lfErr.Error()),
 			ConditionCodes: conditionCodesOf(lfErr),
 		}}
-	}
-	if lf != nil {
-		pins = catalog.PinsFromLockfile(lf)
 	}
 	// A stack the resolver refuses — the workspace configuration lists a directory
 	// this Release reads that is not a directory — is reported as a closure that

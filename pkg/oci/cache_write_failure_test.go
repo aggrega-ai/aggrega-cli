@@ -63,13 +63,13 @@ func TestAFailedCacheWriteSaysWhatItWasDoingAndWhere(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
-			slot, err := oci.CachePath(root, cacheDir, uri, version)
+			slot, err := oci.CachePath(root, cacheDir, "Component", uri, version)
 			if err != nil {
 				t.Fatalf("CachePath refused a well-formed reference and version: %v", err)
 			}
 			row.block(t, slot)
 
-			werr := oci.WriteCached(root, cacheDir, uri, version, []byte("body\n"))
+			werr := oci.WriteCached(root, cacheDir, "Component", uri, version, []byte("body\n"))
 			if werr == nil {
 				t.Fatalf("the write succeeded with something standing in its way; the row proves nothing")
 			}

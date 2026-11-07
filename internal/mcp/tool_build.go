@@ -638,13 +638,13 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		// after a fill that wrote its lockfile and conserved no render; the second is
 		// a build that refused after writing a lockfile, so what the fill resolved
 		// travels in the answer as it does on every other refusal.
-		lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+		lf, lockPins, lockRefused := tw.loadReleaseLockfile(releasePath)
 		if lockRefused != "" {
 			refused := buildResultPayload{Files: []buildFile{}, DependencyResolution: fillReport}
 			refused.Release, refused.ReleaseWithheld = tw.reportedLocationField(releasePath)
 			return tw.answer(structuredErrorResult(lockRefused, refused))
 		}
-		view := tw.newView(releasePath, lf)
+		view := tw.newView(releasePath, lockPins)
 		rendered = view
 
 		// The render-time external-input seam — the same posture and the same builder

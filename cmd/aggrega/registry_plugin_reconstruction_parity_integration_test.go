@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -51,7 +52,7 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 	// The build side, through the build's own computation: the lazy view pinned to
 	// the lockfile, a nil puller, the lockfile held as one that was on disk.
 	view := catalog.NewLazyLookup(f.root, cacheDir, dirs, nil)
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 	preview, err := compilerops.PreviewForArtifact(context.Background(),
 		compilerops.NewPreviewInputs(compilerops.NoExternalInputs(), view, releasePath, f.root, wsCfg, "test",
 			compilerops.WithLockfile(lf, true)),
@@ -74,7 +75,7 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 
 	// Negative control: the same reconstruction with no pins on its plugin passes.
 	controlView := catalog.NewLazyLookup(f.root, cacheDir, dirs, nil)
-	controlView.SetPins(catalog.PinsFromLockfile(lf))
+	controlView.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View: controlView, ReleasePath: releasePath, WorkspaceRoot: f.root, WorkspaceConfig: wsCfg, Lockfile: lf, Augment: true,
 	})
@@ -93,7 +94,7 @@ func TestIntegration_RegistryPipelinePlugin_PullAndReconstructionAgree(t *testin
 			return controlView.ProviderPluginForTarget(ref, bindings)
 		},
 		func() (closure.RecipeLoader, error) {
-			controlView.SetPins(catalog.PinsFromClosure(control))
+			controlView.SetPins(catalogtest.MustPinsFromClosure(t, control))
 			return controlView.ClosureRecipeLoader(), nil
 		},
 		nil, // a build asks the entity pass nothing

@@ -75,7 +75,7 @@ func TestADriftRefusalCarriesItsRemedyAsAnErrorOfItsOwn(t *testing.T) {
 	}
 	drifted := lockfiletest.Mirroring(composedHeader(), seed.Resolved.Closure)
 	drifted.Entities = append(drifted.Entities, lockfile.Entity{
-		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
+		Kind: "component", URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})
 
 	view, releasePath, workspaceRoot, wsCfg = fixtureWorkspace(t)

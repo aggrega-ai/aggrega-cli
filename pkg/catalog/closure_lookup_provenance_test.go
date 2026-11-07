@@ -250,17 +250,17 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 		pulledArtifactURI     = "pipeline-step/pulled-step"
 		pulledArtifactVersion = "1.0.0"
 	)
-	entityPins := map[string]Pin{
-		pulledPluginURI:    writePinnedSlot(t, ws, cacheDir, pulledPluginURI, oci.MediaTypePlugin, []byte(provenancePulledPluginYAML)),
-		pulledRecipeURI:    writePinnedSlot(t, ws, cacheDir, pulledRecipeURI, oci.MediaTypeRecipe, recipeBundle(t, bridgeRecipeYAML)),
-		pulledFRURI:        writePinnedSlot(t, ws, cacheDir, pulledFRURI, oci.MediaTypeFeatureRecipe, recipeBundle(t, bridgeFeatureRecipeYAML)),
-		pulledAggregateURI: writePinnedSlot(t, ws, cacheDir, pulledAggregateURI, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML)),
+	entityPins := Pins{
+		{Kind: "Plugin", URI: pulledPluginURI}:       writePinnedSlot(t, ws, cacheDir, pulledPluginURI, oci.MediaTypePlugin, []byte(provenancePulledPluginYAML)),
+		{Kind: "Recipe", URI: pulledRecipeURI}:       writePinnedSlot(t, ws, cacheDir, pulledRecipeURI, oci.MediaTypeRecipe, recipeBundle(t, bridgeRecipeYAML)),
+		{Kind: "FeatureRecipe", URI: pulledFRURI}:    writePinnedSlot(t, ws, cacheDir, pulledFRURI, oci.MediaTypeFeatureRecipe, recipeBundle(t, bridgeFeatureRecipeYAML)),
+		{Kind: "Aggregate", URI: pulledAggregateURI}: writePinnedSlot(t, ws, cacheDir, pulledAggregateURI, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML)),
 	}
-	libraryPins := map[string]Pin{
-		pulledSchemaURI:    writePinnedSlot(t, ws, cacheDir, pulledSchemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
-		pulledMappingURI:   writePinnedSlot(t, ws, cacheDir, pulledMappingURI, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML)),
-		pulledWorkloadURI:  writePinnedSlot(t, ws, cacheDir, pulledWorkloadURI, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML)),
-		pulledArtifactsURI: writePinnedSlot(t, ws, cacheDir, pulledArtifactsURI, oci.MediaTypeArtifactLibrary, []byte(provenancePinnedArtifactLibYAML)),
+	libraryPins := Pins{
+		{Kind: "SchemaLibrary", URI: pulledSchemaURI}:      writePinnedSlot(t, ws, cacheDir, pulledSchemaURI, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML)),
+		{Kind: "MappingLibrary", URI: pulledMappingURI}:    writePinnedSlot(t, ws, cacheDir, pulledMappingURI, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML)),
+		{Kind: "WorkloadLibrary", URI: pulledWorkloadURI}:  writePinnedSlot(t, ws, cacheDir, pulledWorkloadURI, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML)),
+		{Kind: "ArtifactLibrary", URI: pulledArtifactsURI}: writePinnedSlot(t, ws, cacheDir, pulledArtifactsURI, oci.MediaTypeArtifactLibrary, []byte(provenancePinnedArtifactLibYAML)),
 	}
 	// A cache slot no pin names: what an earlier pull left behind for an entity this
 	// lockfile does not record.
@@ -268,7 +268,7 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 	writePinnedSlot(t, ws, cacheDir, unpinnedRecipeURI, oci.MediaTypeRecipe, unpinnedBlob)
 	artifactPin := writeCachedPluginArtifact(t, ws, cacheDir, pulledArtifactURI, []byte("\x00asm\x01\x00\x00\x00 pulled-step artifact"))
 
-	pins := map[string]Pin{pulledArtifactURI: artifactPin}
+	pins := Pins{PluginExecutablePin(pulledArtifactURI): artifactPin}
 	for uri, pin := range entityPins {
 		pins[uri] = pin
 	}
@@ -281,12 +281,12 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 		Plugins: []lockfile.Plugin{{URI: pulledArtifactURI, ResolvedVersion: artifactPin.ResolvedVersion, Digest: artifactPin.Digest, ManifestDigest: artifactPin.ManifestDigest}},
 	}
 	for uri, pin := range entityPins {
-		lf.Entities = append(lf.Entities, lockfile.Entity{URI: uri, ResolvedVersion: pin.ResolvedVersion, Digest: pin.Digest, ManifestDigest: pin.ManifestDigest})
+		lf.Entities = append(lf.Entities, lockfile.Entity{Kind: EntityKindForCatalogKind(uri.Kind), URI: uri.URI, ResolvedVersion: pin.ResolvedVersion, Digest: pin.Digest, ManifestDigest: pin.ManifestDigest})
 	}
-	lf.SchemaLibraries = []lockfile.SchemaLibrary{{URI: pulledSchemaURI, ResolvedVersion: libraryPins[pulledSchemaURI].ResolvedVersion, Digest: libraryPins[pulledSchemaURI].Digest}}
-	lf.MappingLibraries = []lockfile.MappingLibrary{{URI: pulledMappingURI, ResolvedVersion: libraryPins[pulledMappingURI].ResolvedVersion, Digest: libraryPins[pulledMappingURI].Digest}}
-	lf.WorkloadLibraries = []lockfile.WorkloadLibrary{{URI: pulledWorkloadURI, ResolvedVersion: libraryPins[pulledWorkloadURI].ResolvedVersion, Digest: libraryPins[pulledWorkloadURI].Digest}}
-	lf.ArtifactLibraries = []lockfile.ArtifactLibrary{{URI: pulledArtifactsURI, ResolvedVersion: libraryPins[pulledArtifactsURI].ResolvedVersion, Digest: libraryPins[pulledArtifactsURI].Digest}}
+	lf.SchemaLibraries = []lockfile.SchemaLibrary{{URI: pulledSchemaURI, ResolvedVersion: libraryPins[PinKey{Kind: "SchemaLibrary", URI: pulledSchemaURI}].ResolvedVersion, Digest: libraryPins[PinKey{Kind: "SchemaLibrary", URI: pulledSchemaURI}].Digest}}
+	lf.MappingLibraries = []lockfile.MappingLibrary{{URI: pulledMappingURI, ResolvedVersion: libraryPins[PinKey{Kind: "MappingLibrary", URI: pulledMappingURI}].ResolvedVersion, Digest: libraryPins[PinKey{Kind: "MappingLibrary", URI: pulledMappingURI}].Digest}}
+	lf.WorkloadLibraries = []lockfile.WorkloadLibrary{{URI: pulledWorkloadURI, ResolvedVersion: libraryPins[PinKey{Kind: "WorkloadLibrary", URI: pulledWorkloadURI}].ResolvedVersion, Digest: libraryPins[PinKey{Kind: "WorkloadLibrary", URI: pulledWorkloadURI}].Digest}}
+	lf.ArtifactLibraries = []lockfile.ArtifactLibrary{{URI: pulledArtifactsURI, ResolvedVersion: libraryPins[PinKey{Kind: "ArtifactLibrary", URI: pulledArtifactsURI}].ResolvedVersion, Digest: libraryPins[PinKey{Kind: "ArtifactLibrary", URI: pulledArtifactsURI}].Digest}}
 
 	embeddedID, embeddedVersion := provenanceEmbeddedProvider(t)
 
@@ -308,24 +308,24 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 	}
 
 	subjects := []provenanceSubject{
-		{name: "catalog-authored plugin", want: closure.ResolutionPathCatalog, resolve: entity("pipeline-step/authored-step:1.0.0", pluginEntityKindHint)},
-		{name: "co-located plugin", want: closure.ResolutionPathCatalog, resolve: entity("pipeline-step/colocated-step:1.0.0", pluginEntityKindHint)},
-		{name: "cache-folded plugin", want: closure.ResolutionPathCache, wantDigest: pins[pulledPluginURI].Digest, resolve: entity(pulledPluginURI, pluginEntityKindHint)},
-		{name: "embedded provider", want: closure.ResolutionPathEmbedded, resolve: entity(embeddedID+":"+embeddedVersion, pluginEntityKindHint)},
+		{name: "catalog-authored plugin", want: closure.ResolutionPathCatalog, resolve: entity("pipeline-step/authored-step:1.0.0", closure.KindPlugin)},
+		{name: "co-located plugin", want: closure.ResolutionPathCatalog, resolve: entity("pipeline-step/colocated-step:1.0.0", closure.KindPlugin)},
+		{name: "cache-folded plugin", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "Plugin", URI: pulledPluginURI}].Digest, resolve: entity(pulledPluginURI, closure.KindPlugin)},
+		{name: "embedded provider", want: closure.ResolutionPathEmbedded, resolve: entity(embeddedID+":"+embeddedVersion, closure.KindPlugin)},
 		{name: "catalog-authored recipe", want: closure.ResolutionPathCatalog, resolve: entity("compose/authored-db:1.0.0", "recipe")},
-		{name: "cache-folded recipe", want: closure.ResolutionPathCache, wantDigest: pins[pulledRecipeURI].Digest, resolve: entity(pulledRecipeURI, "recipe")},
+		{name: "cache-folded recipe", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "Recipe", URI: pulledRecipeURI}].Digest, resolve: entity(pulledRecipeURI, "recipe")},
 		{name: "catalog-authored feature recipe", want: closure.ResolutionPathCatalog, resolve: entity("compose/authored-secret:1.0.0", "feature_recipe")},
-		{name: "cache-folded feature recipe", want: closure.ResolutionPathCache, wantDigest: pins[pulledFRURI].Digest, resolve: entity(pulledFRURI, "feature_recipe")},
+		{name: "cache-folded feature recipe", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "FeatureRecipe", URI: pulledFRURI}].Digest, resolve: entity(pulledFRURI, "feature_recipe")},
 		{name: "catalog-authored aggregate", want: closure.ResolutionPathCatalog, resolve: aggregate("example/authored-app:1.0.0")},
-		{name: "cache-folded aggregate", want: closure.ResolutionPathCache, wantDigest: pins[pulledAggregateURI].Digest, resolve: aggregate(pulledAggregateURI)},
+		{name: "cache-folded aggregate", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "Aggregate", URI: pulledAggregateURI}].Digest, resolve: aggregate(pulledAggregateURI)},
 		{name: "catalog-authored schema library", want: closure.ResolutionPathCatalog, resolve: library("SchemaLibraries", "AuthoredSizing:1.0.0")},
-		{name: "cache-folded schema library", want: closure.ResolutionPathCache, wantDigest: pins[pulledSchemaURI].Digest, resolve: library("SchemaLibraries", pulledSchemaURI)},
+		{name: "cache-folded schema library", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "SchemaLibrary", URI: pulledSchemaURI}].Digest, resolve: library("SchemaLibraries", pulledSchemaURI)},
 		{name: "catalog-authored mapping library", want: closure.ResolutionPathCatalog, resolve: library("MappingLibraries", "AuthoredMappings:1.0.0")},
-		{name: "cache-folded mapping library", want: closure.ResolutionPathCache, wantDigest: pins[pulledMappingURI].Digest, resolve: library("MappingLibraries", pulledMappingURI)},
+		{name: "cache-folded mapping library", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "MappingLibrary", URI: pulledMappingURI}].Digest, resolve: library("MappingLibraries", pulledMappingURI)},
 		{name: "catalog-authored workload library", want: closure.ResolutionPathCatalog, resolve: library("WorkloadLibraries", "AuthoredWorkloads:1.0.0")},
-		{name: "cache-folded workload library", want: closure.ResolutionPathCache, wantDigest: pins[pulledWorkloadURI].Digest, resolve: library("WorkloadLibraries", pulledWorkloadURI)},
+		{name: "cache-folded workload library", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "WorkloadLibrary", URI: pulledWorkloadURI}].Digest, resolve: library("WorkloadLibraries", pulledWorkloadURI)},
 		{name: "catalog-authored artifacts library", want: closure.ResolutionPathCatalog, resolve: library("ArtifactLibraries", "AuthoredArtifacts:1.0.0")},
-		{name: "cache-folded artifacts library", want: closure.ResolutionPathCache, wantDigest: pins[pulledArtifactsURI].Digest, resolve: library("ArtifactLibraries", pulledArtifactsURI)},
+		{name: "cache-folded artifacts library", want: closure.ResolutionPathCache, wantDigest: pins[PinKey{Kind: "ArtifactLibrary", URI: pulledArtifactsURI}].Digest, resolve: library("ArtifactLibraries", pulledArtifactsURI)},
 		{name: "cached entity no pin names", want: closure.ResolutionPathCache, wantDigest: rowDigestOf(unpinnedBlob), resolve: entity(unpinnedRecipeURI, "recipe")},
 		{name: "cached plugin artifact", want: closure.ResolutionPathCache, wantDigest: artifactPin.Digest, artifact: true,
 			resolve: func(ctx context.Context, lookup closure.Lookup) (closure.Resolution, error) {
@@ -364,7 +364,11 @@ func TestClosureLookupProvenanceAgreesAcrossConstructions(t *testing.T) {
 		}},
 		{name: "lazy view pinned to its lockfile", build: func(t *testing.T) closure.Lookup {
 			view := NewLazyLookup(ws, cacheDir, []string{dir}, nil)
-			view.SetPins(PinsFromLockfile(lf))
+			lockPins, err := PinsFromLockfile(lf)
+			if err != nil {
+				t.Fatalf("PinsFromLockfile: %v", err)
+			}
+			view.SetPins(lockPins)
 			return view.ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 		}},
 		{name: "lazy ClosureLookup with a reuse verification", addressesArtifactPins: true, build: func(t *testing.T) closure.Lookup {
@@ -412,10 +416,10 @@ func writeCachedPluginArtifact(t *testing.T, ws, cacheDir, artifactURI string, w
 	t.Helper()
 	contentPin := contentDigest(wasm)
 	manifest, manifestDigest := manifestBytesFor(t, oci.MediaTypeWasm, wasm)
-	if err := oci.WriteCached(ws, cacheDir, artifactURI, contentPin, wasm); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), artifactURI, contentPin, wasm); err != nil {
 		t.Fatalf("write cached artifact %s: %v", artifactURI, err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, artifactURI, contentPin, manifest); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, oci.PluginArtifactKind(), artifactURI, contentPin, manifest); err != nil {
 		t.Fatalf("write cached artifact manifest %s: %v", artifactURI, err)
 	}
 	return Pin{ResolvedVersion: contentPin, Digest: contentPin, ManifestDigest: manifestDigest}

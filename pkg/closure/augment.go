@@ -87,7 +87,13 @@ func libraryDiscoverers() []libraryDiscoverer {
 // collectTemplateConsumers walks the closure's entities once and emits the
 // consumers a template axis contributes, recipes first and then feature-recipes,
 // each sorted by URI for deterministic output. Each entity is visited once per
-// axis; a duplicate URI contributes nothing further.
+// axis; a duplicate URI of the same kind contributes nothing further.
+//
+// Each entity is read as the kind it was collected as: a Recipe as a Recipe and a
+// FeatureRecipe as a FeatureRecipe, so the two of one name each contribute their
+// own consumers, and an entity of any other kind — a Component sharing a Recipe's
+// name — reads no Recipe at all. An entity collected with no kind is read as either,
+// the Recipe first.
 //
 // The traversal, the deduplication and the ordering are identical on every
 // template axis, so they are written here once; the caller supplies only the
@@ -101,12 +107,17 @@ func collectTemplateConsumers(
 	var recipeConsumers, frConsumers []TemplateConsumer
 	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
 	for _, e := range cl.Entities {
-		if r, ok := src.RecipeByURI(e.URI); ok {
-			if _, dup := rSeen[e.URI]; dup {
+		if e.ReadableAs(KindRecipe) {
+			if r, ok := src.RecipeByURI(e.URI); ok {
+				if _, dup := rSeen[e.URI]; dup {
+					continue
+				}
+				rSeen[e.URI] = struct{}{}
+				recipeConsumers = append(recipeConsumers, consumersOfKind(KindRecipe, fromRecipe(e.URI, r))...)
 				continue
 			}
-			rSeen[e.URI] = struct{}{}
-			recipeConsumers = append(recipeConsumers, fromRecipe(e.URI, r)...)
+		}
+		if !e.ReadableAs(KindFeatureRecipe) {
 			continue
 		}
 		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
@@ -114,12 +125,21 @@ func collectTemplateConsumers(
 				continue
 			}
 			frSeen[e.URI] = struct{}{}
-			frConsumers = append(frConsumers, fromFeatureRecipe(e.URI, fr)...)
+			frConsumers = append(frConsumers, consumersOfKind(KindFeatureRecipe, fromFeatureRecipe(e.URI, fr))...)
 		}
 	}
 	sort.SliceStable(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
 	sort.SliceStable(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
 	return append(recipeConsumers, frConsumers...)
+}
+
+// consumersOfKind marks each consumer as read from an entity of kind, the identity
+// its library's version floor is kept under.
+func consumersOfKind(kind string, consumers []TemplateConsumer) []TemplateConsumer {
+	for i := range consumers {
+		consumers[i].Kind = kind
+	}
+	return consumers
 }
 
 // importConsumer carries a field's `$import:` target to discovery exactly as the
@@ -170,7 +190,7 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			}
 			compSeen[comp.Metadata.Name] = struct{}{}
 			c := comp
-			compConsumers = append(compConsumers, entitySchemaConsumers(c.Metadata.Name, &c.Spec.Schema, c.Spec.UsesSchema)...)
+			compConsumers = append(compConsumers, entitySchemaConsumers(KindComponent, c.Metadata.Name, &c.Spec.Schema, c.Spec.UsesSchema)...)
 			continue
 		}
 		if feat, ok := src.ClosureFeature(ctx, e); ok {
@@ -179,7 +199,7 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			}
 			featSeen[feat.Metadata.Name] = struct{}{}
 			f := feat
-			featConsumers = append(featConsumers, entitySchemaConsumers(f.Metadata.Name, &f.Spec.Schema, f.Spec.UsesSchema)...)
+			featConsumers = append(featConsumers, entitySchemaConsumers(KindFeature, f.Metadata.Name, &f.Spec.Schema, f.Spec.UsesSchema)...)
 		}
 	}
 	// Stable, so an entity's own contracts keep their authored order behind its pillars.
@@ -217,12 +237,15 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 // the same library set, so a library only a socket names must be discovered,
 // pinned and reported missing here like any other — left out, it would be pinned
 // by no lockfile and reported by nothing until the contract failed to compile.
-func entitySchemaConsumers(uri string, schema *yaml.Node, sockets types.OrderedMap[types.UsesSchemaEntry]) []SchemaConsumer {
-	out := []SchemaConsumer{{URI: uri, Schema: schema}}
+//
+// kind is the closure kind the entity was collected as, which every consumer it
+// yields carries.
+func entitySchemaConsumers(kind, uri string, schema *yaml.Node, sockets types.OrderedMap[types.UsesSchemaEntry]) []SchemaConsumer {
+	out := []SchemaConsumer{{URI: uri, Kind: kind, Schema: schema}}
 	for _, entry := range sockets.All() {
 		for _, contract := range entry.ContractNodes() {
 			if contract.Kind != 0 {
-				out = append(out, SchemaConsumer{URI: uri, Schema: contract})
+				out = append(out, SchemaConsumer{URI: uri, Kind: kind, Schema: contract})
 			}
 		}
 	}

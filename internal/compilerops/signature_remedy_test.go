@@ -89,7 +89,7 @@ func TestTheBuildNamesThePullThatRepairsARecordedFactItRefuses(t *testing.T) {
 			if row.path == closure.ResolutionPathCache {
 				ref.ManifestDigest = manifest
 			}
-			lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{{URI: "test/svc", ResolvedVersion: "1.0.0", Signature: fact}}}
+			lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{{Kind: "component", URI: "test/svc", ResolvedVersion: "1.0.0", Signature: fact}}}
 			err := enforceRecordedSignatures(gateInputs(root, cfg, lf), closure.Closure{Entities: []closure.ResolvedRef{ref}})
 			if !errors.Is(err, row.cond) {
 				t.Fatalf("want %v, got %v", row.cond, err)

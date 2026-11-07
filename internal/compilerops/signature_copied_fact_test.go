@@ -86,8 +86,8 @@ func TestTheBuildRefusesASignatureCopiedFromAnotherLockfileRow(t *testing.T) {
 		{URI: "test/b", ResolvedVersion: "1.0.0", ManifestDigest: manifestB, ResolutionPath: closure.ResolutionPathCache, KindHint: "component"},
 	}}
 	lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{
-		{URI: "test/a", ResolvedVersion: "1.0.0", ManifestDigest: manifestA, Signature: factA},
-		{URI: "test/b", ResolvedVersion: "1.0.0", ManifestDigest: manifestB, Signature: &copied},
+		{Kind: "component", URI: "test/a", ResolvedVersion: "1.0.0", ManifestDigest: manifestA, Signature: factA},
+		{Kind: "component", URI: "test/b", ResolvedVersion: "1.0.0", ManifestDigest: manifestB, Signature: &copied},
 	}}
 
 	err := enforceRecordedSignatures(gateInputs(root, cfg, lf), cl)

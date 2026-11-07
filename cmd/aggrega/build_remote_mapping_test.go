@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // fakeRemoteMappingLibraryPuller is an in-memory LibraryPuller serving the
@@ -191,7 +192,7 @@ func relocateMappingLibraryToCache(t *testing.T, root, cacheDir, version string)
 	if err := os.Remove(filepath.Join(root, "catalog", "mappinglibraries", "helmhelpers.yaml")); err != nil {
 		t.Fatalf("remove local mapping library: %v", err)
 	}
-	slot := mustCachePath(root, cacheDir, "HelmHelpers:"+version, version)
+	slot := ocitest.MustCachePath(root, cacheDir, "MappingLibrary", "HelmHelpers:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
@@ -205,7 +206,7 @@ func relocateMappingLibraryToCache(t *testing.T, root, cacheDir, version string)
 	if err != nil {
 		t.Fatalf("build mapping-library manifest: %v", err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, "HelmHelpers:"+version, version, mb); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "MappingLibrary", "HelmHelpers:"+version, version, mb); err != nil {
 		t.Fatalf("write cache manifest: %v", err)
 	}
 }

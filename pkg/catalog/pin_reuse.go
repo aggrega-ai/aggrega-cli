@@ -122,10 +122,22 @@ func PinReuseFromLockfile(workspaceRoot, lockfilePath, releasePath string, mode 
 		if reuse.Prior == nil {
 			return PinReuse{}, fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull --release %s` first to create one", lockfilePath, releasePath)
 		}
-		pins := PinsFromLockfile(reuse.Prior)
+		pins, err := PinsFromLockfile(reuse.Prior)
+		if err != nil {
+			return PinReuse{}, err
+		}
 		for _, target := range mode.UpgradeTargets {
-			if _, ok := pins[target]; ok {
-				delete(pins, target)
+			// A target names a reference, so it drops the pin of every kind recorded
+			// under that reference: an upgrade of `compose/app` re-resolves the
+			// Component and the Recipe of that name alike.
+			dropped := false
+			for key := range pins {
+				if key.URI == target {
+					delete(pins, key)
+					dropped = true
+				}
+			}
+			if dropped {
 				continue
 			}
 			// An unpinned target reduces nothing — there is no pin to drop — so it is
@@ -140,7 +152,11 @@ func PinReuseFromLockfile(workspaceRoot, lockfilePath, releasePath string, mode 
 		return reuse, nil
 	}
 	if reuse.Prior != nil {
-		reuse.Verification = &ReuseVerification{PriorPins: PinsFromLockfile(reuse.Prior), Warn: warn}
+		pins, err := PinsFromLockfile(reuse.Prior)
+		if err != nil {
+			return PinReuse{}, err
+		}
+		reuse.Verification = &ReuseVerification{PriorPins: pins, Warn: warn}
 	}
 	return reuse, nil
 }

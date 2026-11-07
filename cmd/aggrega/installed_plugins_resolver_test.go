@@ -35,7 +35,7 @@ func resolveCachedPluginWorkspace(t *testing.T, uri string, bytes []byte) *works
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if err := oci.WriteCached(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), uri, dig, bytes); err != nil {
+	if err := oci.WriteCached(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), oci.PluginArtifactKind(), uri, dig, bytes); err != nil {
 		t.Fatalf("seed cache: %v", err)
 	}
 	return rw

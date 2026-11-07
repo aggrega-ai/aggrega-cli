@@ -38,6 +38,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops/compileropstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -256,7 +257,7 @@ spec:
 	viewFor := func(lf *lockfile.Lockfile) *catalog.LazyLookup {
 		view := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), stackFor(t, rw, releasePath, nil), nil,
 			namedStackFor(t, rw, releasePath, nil)...)
-		view.SetPins(catalog.PinsFromLockfile(lf))
+		view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 		return view
 	}
 	compileropstest.WriteMatchingLockfile(t, viewFor, releasePath, rw.Root(), wsCfg, func(lf *lockfile.Lockfile) {
@@ -322,7 +323,7 @@ func sharedClosureFacts(t *testing.T, root, releasePath string) (libraries, mapp
 		t.Fatalf("the fixture's record of pinned versions did not load, so the withdrawal half of this "+
 			"test would assert nothing: %v", lfErr)
 	}
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,

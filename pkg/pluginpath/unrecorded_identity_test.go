@@ -199,7 +199,7 @@ func TestUnrecordedIdentityAdvisorySaysWhatHoldsForItsSource(t *testing.T) {
 			name: "bytes from the content cache",
 			sources: func(t *testing.T) ResolutionContext {
 				ws := t.TempDir()
-				if err := oci.WriteCached(ws, ".aggrega/cache", uri, "", []byte("cached-guest")); err != nil {
+				if err := oci.WriteCached(ws, ".aggrega/cache", oci.PluginArtifactKind(), uri, "", []byte("cached-guest")); err != nil {
 					t.Fatalf("seed cache: %v", err)
 				}
 				return ResolutionContext{WorkspaceRoot: ws, CacheDir: ".aggrega/cache"}

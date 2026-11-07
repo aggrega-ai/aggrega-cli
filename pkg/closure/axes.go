@@ -34,6 +34,12 @@ type VerifiableRef struct {
 	KindHint string
 }
 
+// EntitiesAxis names the catalog-entity section, as VerifiableAxes names it and as
+// the lockfile's Entities field is named. It is the one axis whose members are
+// identified by their kind as well as their reference (see EntityKey), so a reader
+// joining a reference to its lockfile row adds the kind on this axis alone.
+const EntitiesAxis = "Entities"
+
 // VerifiableAxis is one axis of a computed closure: the pinned references of a
 // single section, paired with the catalog kind those references publish under.
 //
@@ -207,7 +213,7 @@ var axesWithoutVerifiableRefs = map[string]string{
 // verifiable by construction instead of needing to be remembered here as well.
 func (c Closure) VerifiableAxes() []VerifiableAxis {
 	axes := make([]VerifiableAxis, 0, len(libraryAxes)+2)
-	axes = append(axes, VerifiableAxis{Axis: "Entities", Refs: refsOf(c.Entities)})
+	axes = append(axes, VerifiableAxis{Axis: EntitiesAxis, Refs: refsOf(c.Entities)})
 	for _, a := range libraryAxes {
 		axes = append(axes, VerifiableAxis{
 			Axis: a.Axis,

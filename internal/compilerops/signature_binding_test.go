@@ -148,8 +148,8 @@ func TestTheLockfileStoreHoldsAFactToTheArtifactItWasMadeFor(t *testing.T) {
 				{URI: "test/b", ResolvedVersion: "1.0.0", ManifestDigest: manifestB, ResolutionPath: closure.ResolutionPathCache, KindHint: "component"},
 			}}
 			lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{
-				{URI: "test/a", ResolvedVersion: "1.0.0", Signature: factA},
-				{URI: "test/b", ResolvedVersion: "1.0.0", Signature: factB},
+				{Kind: "component", URI: "test/a", ResolvedVersion: "1.0.0", Signature: factA},
+				{Kind: "component", URI: "test/b", ResolvedVersion: "1.0.0", Signature: factB},
 			}}
 			err := enforceRecordedSignatures(gateInputs(root, cfg, lf), cl)
 			assertBindingOutcome(t, c, err, "test/b", "test/a", lockfile.PathFor(gateRelease), manifestB)
@@ -209,7 +209,7 @@ func TestTheBoundsTheBindingStates(t *testing.T) {
 		cl := closure.Closure{Entities: []closure.ResolvedRef{
 			{URI: "test/local", ResolvedVersion: "1.0.0", ResolutionPath: closure.ResolutionPathCatalog, KindHint: "component"},
 		}}
-		lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{{URI: "test/local", ResolvedVersion: "1.0.0", Signature: fact}}}
+		lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{{Kind: "component", URI: "test/local", ResolvedVersion: "1.0.0", Signature: fact}}}
 		if err := enforceRecordedSignatures(gateInputs(root, cfg, lf), cl); err != nil {
 			t.Fatalf("a catalog-directory row comes with no manifest, so its fact is held to the re-hash alone: %v", err)
 		}
@@ -230,7 +230,7 @@ func TestTheBoundsTheBindingStates(t *testing.T) {
 		cl := closure.Closure{Entities: []closure.ResolvedRef{
 			{URI: "test/env", ResolvedVersion: "1.0.0", ManifestDigest: manifest, ResolutionPath: closure.ResolutionPathCache, KindHint: "component"},
 		}}
-		lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{{URI: "test/env", ResolvedVersion: "1.0.0", Signature: fact}}}
+		lf := &lockfile.Lockfile{Version: 1, Entities: []lockfile.Entity{{Kind: "component", URI: "test/env", ResolvedVersion: "1.0.0", Signature: fact}}}
 		if err := enforceRecordedSignatures(gateInputs(root, cfg, lf), cl); err != nil {
 			t.Fatalf("a bundle the reading does not recognise is held to the re-hash alone: %v", err)
 		}

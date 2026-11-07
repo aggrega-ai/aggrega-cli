@@ -114,7 +114,7 @@ var reaskSections = []reaskSection{
 		fixture: func(m, c string, fact *lockfile.VerifiedSignature) (closure.Closure, *lockfile.Lockfile) {
 			return closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/svc:1.0.0", ResolvedVersion: "1.0.0", KindHint: "component",
 					Digest: c, ManifestDigest: m, ResolutionPath: closure.ResolutionPathCache}}},
-				&lockfile.Lockfile{Entities: []lockfile.Entity{{URI: "test/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: c, ManifestDigest: m, Signature: fact}}}
+				&lockfile.Lockfile{Entities: []lockfile.Entity{{Kind: "component", URI: "test/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: c, ManifestDigest: m, Signature: fact}}}
 		},
 		fact: func(lf *lockfile.Lockfile) *lockfile.VerifiedSignature { return lf.Entities[0].Signature },
 	},
@@ -334,8 +334,8 @@ func TestTwoCacheServedReferencesToOneArtifactAreAskedOnce(t *testing.T) {
 		{URI: "test/svc:1.0.0", KindHint: "component", Digest: contentDg, ManifestDigest: manifestDg, ResolutionPath: closure.ResolutionPathCache},
 	}}
 	lf := &lockfile.Lockfile{Entities: []lockfile.Entity{
-		{URI: "test/svc", Digest: contentDg, ManifestDigest: manifestDg},
-		{URI: "test/svc:1.0.0", Digest: contentDg, ManifestDigest: manifestDg},
+		{Kind: "component", URI: "test/svc", Digest: contentDg, ManifestDigest: manifestDg},
+		{Kind: "component", URI: "test/svc:1.0.0", Digest: contentDg, ManifestDigest: manifestDg},
 	}}
 	log := &askLog{}
 	if err := VerifyClosureSignatures(context.Background(), lf, cl, requiringConfig(pubPEM), t.TempDir(), ".aggrega/cache",

@@ -186,7 +186,7 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 			if serr := stopped(ctx); serr != nil {
 				return res, serr
 			}
-			if el.DigestHex == "" || refset[el.DigestHex] {
+			if !el.Stale && (el.DigestHex == "" || refset[el.DigestHex]) {
 				res.RetainedCount++
 				continue
 			}

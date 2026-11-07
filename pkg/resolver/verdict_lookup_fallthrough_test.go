@@ -33,7 +33,7 @@ func TestVerdictLookupFallsThroughWhenTheCascadeHoldsNoArtifact(t *testing.T) {
 
 	drifted := func() pluginpath.Resolver {
 		ws := t.TempDir()
-		if err := oci.WriteCached(ws, ".aggrega/cache", artifactRef, "", []byte("drifted-bytes")); err != nil {
+		if err := oci.WriteCached(ws, ".aggrega/cache", oci.PluginArtifactKind(), artifactRef, "", []byte("drifted-bytes")); err != nil {
 			t.Fatalf("seed cache: %v", err)
 		}
 		return pluginpath.NewResolver(pluginpath.ResolutionContext{WorkspaceRoot: ws, CacheDir: ".aggrega/cache"},

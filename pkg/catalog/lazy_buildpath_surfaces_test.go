@@ -28,12 +28,12 @@ func TestLazyLookup_BuildPathSurfaces_FromPinnedEnumeration(t *testing.T) {
 		aggSlot   = "example/app:1.0.0"
 		recipeURI = "compose/mariadb:1.0.0"
 	)
-	pins := map[string]Pin{
-		recipeURI: writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob),
+	pins := Pins{
+		{Kind: "Recipe", URI: recipeURI}: writePinnedSlot(t, ws, cacheDir, recipeURI, oci.MediaTypeRecipe, recipeBlob),
 	}
 	// The aggregate is pinned BARE (referenced by bare name via AggregateLookup),
 	// with a separate ResolvedVersion and a versioned slot — the real lockfile form.
-	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
+	pins[PinKey{Kind: "Aggregate", URI: "example/app"}] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
 
 	// An empty local catalog dir (Tier-1) — the build-path surfaces below resolve
 	// from the pinned Tier-2 cache.

@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // The fixtures below reproduce the shape an entity edited in place before its
@@ -292,7 +293,7 @@ func (f staleSlotFixture) layStaleSlot(t *testing.T) {
 func (f staleSlotFixture) slotContent(t *testing.T) string {
 	t.Helper()
 	cacheDir := resolveTempWorkspace(t, tempWorkspaceOptions{Root: f.root}).Config().ResolvedArtifactCacheDir()
-	data, err := os.ReadFile(filepath.Join(mustCachePath(f.root, cacheDir, staleSlotEntry, "1.0.0"), "blob"))
+	data, err := os.ReadFile(filepath.Join(ocitest.MustCachePath(f.root, cacheDir, "Component", staleSlotEntry, "1.0.0"), "blob"))
 	if err != nil {
 		t.Fatalf("read the cache slot: %v", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // These tests hold a cache hit to one description: what the registry read that
@@ -52,7 +53,7 @@ func TestACacheHitReportsTheManifestPersistedBesideIt(t *testing.T) {
 		t.Fatalf("cold pull = %+v; want a registry fetch that records a manifest digest", cold.Resolution)
 	}
 
-	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{reuseURI: {
+	reuse := &catalog.ReuseVerification{PriorPins: catalog.Pins{{Kind: axis.Kind, URI: reuseURI}: {
 		ResolvedVersion: cold.Resolution.ResolvedVersion,
 		Digest:          cold.Resolution.Digest,
 		ManifestDigest:  cold.Resolution.ManifestDigest,
@@ -105,7 +106,7 @@ func TestACachedPluginArtifactIsReportedAsServedFromTheCache(t *testing.T) {
 		t.Fatalf("cold pull = %+v; want a registry fetch that records a manifest digest", cold)
 	}
 
-	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{artifactURI: {
+	reuse := &catalog.ReuseVerification{PriorPins: catalog.Pins{catalog.PluginExecutablePin(artifactURI): {
 		ResolvedVersion: cold.ResolvedVersion, Digest: cold.Digest, ManifestDigest: cold.ManifestDigest,
 	}}}
 	warm, err := cat.ClosureLookupWithReuse(nil, dir, cacheDir, nil, nil, reuse).ResolvePlugin(ctx, artifactURI, version)
@@ -155,14 +156,14 @@ func TestAReusedSlotWhoseManifestMovedIsFetchedAgain(t *testing.T) {
 
 	// Replace the persisted manifest and leave the content alone, so only the
 	// manifest half of the pin is violated.
-	manifestPath := filepath.Join(mustCachePath(ws, cacheDir, reuseURI, "1.0.0"), "manifest")
+	manifestPath := filepath.Join(ocitest.MustCachePath(ws, cacheDir, axis.Kind, reuseURI, "1.0.0"), "manifest")
 	if err := os.WriteFile(manifestPath, []byte(`{"schemaVersion":2,"replaced":true}`), 0o644); err != nil {
 		t.Fatalf("replace the persisted manifest: %v", err)
 	}
 
 	var notices []string
 	reuse := &catalog.ReuseVerification{
-		PriorPins: map[string]catalog.Pin{reuseURI: {
+		PriorPins: catalog.Pins{{Kind: axis.Kind, URI: reuseURI}: {
 			ResolvedVersion: cold.Resolution.ResolvedVersion,
 			Digest:          cold.Resolution.Digest,
 			ManifestDigest:  cold.Resolution.ManifestDigest,

@@ -120,13 +120,13 @@ func SeedCachedArtifact(t *testing.T, root, catalogDir, socket, name, version, e
 
 	cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
 	wasmDigest := digest.ContentDigest(wasm)
-	if err := oci.WriteCached(root, cacheDir, uri, version, []byte(entityYAML)); err != nil {
+	if err := oci.WriteCached(root, cacheDir, oci.PluginArtifactKind(), uri, version, []byte(entityYAML)); err != nil {
 		t.Fatalf("seed cached entity blob for %s: %v", uri, err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, uri, version, pulled.ManifestBytes); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, oci.PluginArtifactKind(), uri, version, pulled.ManifestBytes); err != nil {
 		t.Fatalf("seed cached manifest for %s: %v", uri, err)
 	}
-	if err := oci.WriteCached(root, cacheDir, coordinate, wasmDigest, wasm); err != nil {
+	if err := oci.WriteCached(root, cacheDir, oci.PluginArtifactKind(), coordinate, wasmDigest, wasm); err != nil {
 		t.Fatalf("seed cached .wasm for %s: %v", coordinate, err)
 	}
 

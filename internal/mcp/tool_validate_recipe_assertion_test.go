@@ -132,11 +132,11 @@ func TestValidateToolReleaseScopeReportsAFailingRecipeAssertion(t *testing.T) {
 			// The oracle: the same core over the same resolved inputs
 			// validateReleaseScope builds, so the condition is matched by identity.
 			tw := resolvedToolWorkspace(t, s, root, dirs)
-			lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+			_, lockPins, lockRefused := tw.loadReleaseLockfile(releasePath)
 			if lockRefused != "" {
 				t.Fatalf("read the oracle's lockfile: %s", lockRefused)
 			}
-			view := tw.newView(releasePath, lf)
+			view := tw.newView(releasePath, lockPins)
 			resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 				View:            view,
 				ReleasePath:     releasePath,

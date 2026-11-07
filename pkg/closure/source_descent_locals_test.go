@@ -72,7 +72,7 @@ func descendOne(t *testing.T, r *types.Recipe, infra map[string]any) ([]closure.
 	uri := r.Metadata.Name
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
-	used := map[string][]closure.ComponentSourceInfra{uri: {{Component: "web", Infra: infra}}}
+	used := map[closure.EntityKey][]closure.ComponentSourceInfra{{Kind: closure.KindRecipe, URI: uri}: {{Component: "web", Infra: infra}}}
 	return closure.DescendRecipeSources(used, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 }
 

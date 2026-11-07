@@ -4,7 +4,6 @@
 package pullops
 
 import (
-	"context"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
@@ -30,7 +29,9 @@ import (
 // # Which entities
 //
 // The ones this Release builds: an entity the closure reaches with at least one
-// instance using it. An entity mapped in the Manifest that nothing in this
+// instance using it, as used records it — by the entity's kind and URI, so a
+// Recipe used by a component is not taken for a FeatureRecipe of the same name
+// that nothing attaches. An entity mapped in the Manifest that nothing in this
 // Release instantiates is never rendered here, so its pins are no fact about this
 // Release and its lock is left exactly as it was. Of those, only an entity with a
 // writable home is considered — a document in one of the workspace's catalog
@@ -54,15 +55,15 @@ import (
 //
 // # The digests
 //
-// The returned map is, keyed by entity URI, the digest the lockfile's entity row
-// records for each such entity: over what a publication of it would carry, and so
-// over the lock beside it too. It is taken after the step has done its work — over
-// the lock as written, over the lock a writing run would write where this run only
-// reports, and over the lock on disk where the step only holds it — because the
-// dependency resolution that produced the closure digested each entity before the
-// step ran. The pull overlays it onto the matching lockfile entity; the overlay is
-// keyed strictly by URI so a lockfile entity of another kind that happens to share
-// the recipe's bare name is never touched.
+// The returned map is, keyed by entity identity (kind and URI), the digest the
+// lockfile's entity row records for each such entity: over what a publication of
+// it would carry, and so over the lock beside it too. It is taken after the step
+// has done its work — over the lock as written, over the lock a writing run would
+// write where this run only reports, and over the lock on disk where the step only
+// holds it — because the dependency resolution that produced the closure digested
+// each entity before the step ran. The pull overlays it onto the row of the same
+// identity, so it lands on the Recipe or the FeatureRecipe the step read and on no
+// row of another kind sharing the name.
 //
 // On a reporting run the locks the step would write are installed on lazyView
 // before the rows are read (catalog.LazyLookup.SetUnwrittenLocks), and they stay
@@ -86,21 +87,19 @@ import (
 // workspaceconfig.ResolvedWorkspace.NamedCatalogDirs). A lock beside an entity
 // found beneath one of them is held to the root that directory picks — itself,
 // where it lies outside the workspace — and every other lock to the workspace root.
-func entityPins(ctx context.Context, lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[string][]closure.ComponentSourceInfra,
+func entityPins(lazyView *catalog.LazyLookup, entities []closure.ResolvedRef, used map[closure.EntityKey][]closure.ComponentSourceInfra,
 	resolver closure.SourceResolver, workspaceRoot, cacheDir string, pin, reportOnly bool,
-	providerBindings map[string]string, namedDirs []string) (map[string]string, []dryrunreport.File, error) {
-	var uris []string
-	refs := map[string]closure.ResolvedRef{}
+	providerBindings map[string]string, namedDirs []string) (map[closure.EntityKey]string, []dryrunreport.File, error) {
+	var keys []closure.EntityKey
 	for _, ent := range entities {
-		if len(used[ent.URI]) == 0 {
+		if len(used[ent.Key()]) == 0 {
 			continue
 		}
-		uris = append(uris, ent.URI)
-		refs[ent.URI] = ent
+		keys = append(keys, ent.Key())
 	}
 	plan, err := entitypin.Compute(entitypin.PlanInputs{
 		View:          lazyView,
-		URIs:          uris,
+		Entities:      keys,
 		Resolver:      resolver,
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      cacheDir,
@@ -115,7 +114,7 @@ func entityPins(ctx context.Context, lazyView *catalog.LazyLookup, entities []cl
 	}
 
 	var reported []dryrunreport.File
-	var entityDigests map[string]string
+	var entityDigests map[closure.EntityKey]string
 	switch {
 	case !pin:
 		if err := plan.Unpinned(pullRemedy); err != nil {
@@ -144,17 +143,7 @@ func entityPins(ctx context.Context, lazyView *catalog.LazyLookup, entities []cl
 		return nil, nil, err
 	}
 
-	digests := map[string]string{}
-	for uri, d := range entityDigests {
-		ref, ok := refs[uri]
-		if !ok {
-			ref = closure.ResolvedRef{URI: uri}
-		}
-		if !uriShadowedByComponentOrFeature(ctx, lazyView, ref) {
-			digests[uri] = d
-		}
-	}
-	return digests, reported, nil
+	return entityDigests, reported, nil
 }
 
 // pullRemedy is what the unpinned-entity halt tells a pull's reader the pull can
@@ -163,35 +152,6 @@ func entityPins(ctx context.Context, lazyView *catalog.LazyLookup, entities []cl
 // own lockfile, and a request spelled for one of them would name something the
 // other cannot send, while the author's step and the setting are true for both.
 var pullRemedy = recipepin.Remedy{Operation: "pull", Setting: workspaceconfig.PinSourcesAtPullKey}
-
-// uriShadowedByComponentOrFeature reports whether a recipe URI also resolves to a
-// Component or Feature. The closure resolves an entity URI component-first, then
-// feature, then recipe — so when a bare recipe name is shared with a Component or
-// Feature of the same identity, the lockfile entity for that URI tracks the
-// shadowing Component/Feature, not the recipe. Such an entity's recorded digest
-// must NOT be overlaid with the recipe's — doing so would fabricate drift the
-// build would then flag. Only a URI that resolves solely to the recipe carries the
-// recipe's digest in the lockfile, and only that entity takes the overlay. So no
-// row covers such a recipe; the lock beside it still covers its sources.
-//
-// It is the caller's rule rather than the pin step's, because it is a fact about
-// what the LOCKFILE records rather than about what the step does to a file.
-//
-// The question is asked as the closure's own entity reference, so it is answered
-// as the walk answered it: from the view's local copies, and from a registry only
-// for a kind the walk collected the reference as. A recipe reference was never
-// looked for on a registry as a Component or a Feature, so a registry is not asked
-// here either — asking would cost a round trip, and a Component it served would
-// shadow nothing the lockfile records.
-func uriShadowedByComponentOrFeature(ctx context.Context, lazyView *catalog.LazyLookup, ref closure.ResolvedRef) bool {
-	if _, ok := lazyView.ClosureComponent(ctx, ref); ok {
-		return true
-	}
-	if _, ok := lazyView.ClosureFeature(ctx, ref); ok {
-		return true
-	}
-	return false
-}
 
 // onceEachSourceResolver resolves each distinct source spec once per run and
 // answers every later request for the same spec with the first answer.

@@ -95,7 +95,7 @@ func TestAnAcceptedDigestReadsTheSlotItAddressesAndHoldsTheBytesToIt(t *testing.
 	cascade := AcceptedDigest(uri, acceptedDigest, heldTo).Resolver(ResolutionContext{WorkspaceRoot: ws, CacheDir: cacheDir, Unrecorded: report})
 	write := func(t *testing.T, version string, b []byte) {
 		t.Helper()
-		if err := oci.WriteCached(ws, cacheDir, uri, version, b); err != nil {
+		if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), uri, version, b); err != nil {
 			t.Fatalf("write the cache slot at %q: %v", version, err)
 		}
 	}

@@ -156,11 +156,11 @@ func attachmentContainerInvoke(s *server, ctx context.Context, args json.RawMess
 		return errorResult(explainToolError(
 			"Could not resolve the workspace to report where an attachment belongs.", err, ""))
 	}
-	lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+	lf, lockPins, lockRefused := tw.loadReleaseLockfile(releasePath)
 	if lockRefused != "" {
 		return errorResult(lockRefused)
 	}
-	view := tw.newView(releasePath, lf)
+	view := tw.newView(releasePath, lockPins)
 
 	// The render is skipped. This reads how the node was reached and discards
 	// everything else, and the graph is byte-identical whether or not the render

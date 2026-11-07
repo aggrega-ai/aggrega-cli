@@ -26,7 +26,7 @@ func Mirroring(base *lockfile.Lockfile, cl closure.Closure) *lockfile.Lockfile {
 		lf.ReleaseDocuments = append(lf.ReleaseDocuments, lockfile.ReleaseDocument{Path: d.Path, Digest: d.Digest})
 	}
 	for _, e := range cl.Entities {
-		lf.Entities = append(lf.Entities, lockfile.Entity{URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest})
+		lf.Entities = append(lf.Entities, lockfile.Entity{Kind: e.Kind(), URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest})
 	}
 	for _, p := range cl.Plugins {
 		lf.Plugins = append(lf.Plugins, lockfile.Plugin{URI: p.URI, ResolvedVersion: p.ResolvedVersion, Digest: p.Digest})

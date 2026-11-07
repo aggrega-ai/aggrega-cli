@@ -1,70 +1,84 @@
 entities:
-    - uri: aggregate
+    - kind: aggregate
+      uri: aggregate
       resolved_version: ""
       digest: sha256:aca436551b8d1c36dbcb25941e48806279baaffb526a408f6f9fce6609b558cb
       referenced_from:
         - release.spec.aggregate
-    - uri: core/datastore/mariadb
+    - kind: component
+      uri: core/datastore/mariadb
       resolved_version: 1.0.0
       digest: sha256:70323dc1db6ced5d791a57be4f5a2f599be1612a6e5233a0601c107dd9e786bd
       referenced_from:
         - aggregate.spec.components.db.type
-    - uri: core/datastore/mariadb:1.0.0
+    - kind: component
+      uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
       digest: sha256:70323dc1db6ced5d791a57be4f5a2f599be1612a6e5233a0601c107dd9e786bd
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
-    - uri: core/devtool/adminer
+    - kind: component
+      uri: core/devtool/adminer
       resolved_version: 1.0.0
       digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - aggregate.spec.components.web.type
-    - uri: core/devtool/adminer:1.0.0
+    - kind: component
+      uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
       digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
-    - uri: core/secret-provided
+    - kind: feature
+      uri: core/secret-provided
       resolved_version: 1.0.0
       digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
         - aggregate.spec.components.db.features.user_password.type
-    - uri: core/secret-provided:1.0.0
+    - kind: feature
+      uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
       digest: sha256:21a4c6d86d34ed440d62caa2629ce4f12bb6164f572ae0a35c4bf432c2a710f9
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
-    - uri: core/secret-value
+    - kind: feature
+      uri: core/secret-value
       resolved_version: 1.0.0
       digest: sha256:0063cd37e9499a1f12c1e7356fd4f6948d850082e1d9e5aad77c33a66ef4eeca
       referenced_from:
         - aggregate.spec.components.db.features.root_password.type
-    - uri: core/secret-value:1.0.0
+    - kind: feature
+      uri: core/secret-value:1.0.0
       resolved_version: 1.0.0
       digest: sha256:0063cd37e9499a1f12c1e7356fd4f6948d850082e1d9e5aad77c33a66ef4eeca
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
-    - uri: helm-chart/adminer-chart:1.0.0
+    - kind: recipe
+      uri: helm-chart/adminer-chart:1.0.0
       resolved_version: 1.0.0
       digest: sha256:6c374fbdd25202cb6d58b5046241651f8c1ba50b6b85704ea127b1435e69a1a8
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
-    - uri: helm-chart/mariadb-chart:1.0.0
+    - kind: recipe
+      uri: helm-chart/mariadb-chart:1.0.0
       resolved_version: 1.0.0
       digest: sha256:c72ec5a0da3c272acc137057fb3289b27ee08de79897b80ae64767a564c00351
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
-    - uri: helm/env-secret:1.0.0
+    - kind: feature_recipe
+      uri: helm/env-secret:1.0.0
       resolved_version: 1.0.0
       digest: sha256:124f3799b0d4bc27c47e79725d918c67aa0d079cdac7a922327ff4428024406e
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
-    - uri: helm/provided-secret:1.0.0
+    - kind: feature_recipe
+      uri: helm/provided-secret:1.0.0
       resolved_version: 1.0.0
       digest: sha256:d956dfedbf85a54f06c7ff422a058c12d3d3007b0831ffa939e526ecb79d7259
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
-    - uri: manifest-helm-chart
+    - kind: manifest
+      uri: manifest-helm-chart
       resolved_version: ""
       digest: sha256:112a90b0dcbc14f2a2f633846105e7d4508c16731824e57c3605062a5a9f0882
       referenced_from:

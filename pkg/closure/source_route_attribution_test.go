@@ -109,14 +109,14 @@ func TestAcquisitionFailureNamesTheInstanceOnlyWhereTheInstanceDecidesTheArtifac
 				recipes: map[string]*types.Recipe{uri: makeRecipe(uri, tc.source)},
 			}
 			cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-			used := map[string][]closure.ComponentSourceInfra{
-				uri: {{
+			used := map[closure.EntityKey][]closure.ComponentSourceInfra{
+				{Kind: closure.KindRecipe, URI: uri}: {{
 					Component: instance,
 					Infra:     map[string]any{"chart_version": "25.0.8"},
 				}},
 			}
 			if tc.instanceOff {
-				used[uri][0].Component = ""
+				used[closure.EntityKey{Kind: closure.KindRecipe, URI: uri}][0].Component = ""
 			}
 
 			_, err := closure.DescendRecipeSources(used, cl, loader, refusingSourceResolver{}, "/ws", ".aggrega/cache")
@@ -157,8 +157,8 @@ func TestLocalityIsTheOnlySkip(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	used := map[string][]closure.ComponentSourceInfra{
-		uri: {{Component: "orders-db", Infra: map[string]any{"chart_version": "25.0.8"}}},
+	used := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: uri}: {{Component: "orders-db", Infra: map[string]any{"chart_version": "25.0.8"}}},
 	}
 
 	got, err := closure.DescendRecipeSources(used, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")

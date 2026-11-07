@@ -34,15 +34,15 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 	}
 
 	// The full prior-lockfile pin set: both entities pinned at 1.0.0.
-	fullPins := map[string]catalog.Pin{
-		uriA: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)},
-		uriB: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)},
+	fullPins := catalog.Pins{
+		{Kind: "Component", URI: uriA}: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)},
+		{Kind: "Component", URI: uriB}: {ResolvedVersion: "1.0.0", Digest: documentRowDigest(v100)},
 	}
 
 	// Targeted upgrade of entity A == drop A from the pin set fed to the reuse
 	// lookup (the reduction PinReuseFromLockfile performs for a named target);
 	// B stays.
-	reduced := map[string]catalog.Pin{uriB: fullPins[uriB]}
+	reduced := catalog.Pins{{Kind: "Component", URI: uriB}: fullPins[catalog.PinKey{Kind: "Component", URI: uriB}]}
 	reuse := &catalog.ReuseVerification{PriorPins: reduced}
 	lookup := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, reuse)
 

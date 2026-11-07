@@ -19,7 +19,7 @@ func signedLockfile(stamp string) *lockfile.Lockfile {
 		GeneratedAt: stamp,
 		Entities: []lockfile.Entity{
 			{
-				URI:             "z-server",
+				Kind: "component", URI: "z-server",
 				ResolvedVersion: "1.0.0",
 				Digest:          fixtureDigest("zzzz"),
 				ManifestDigest:  fixtureDigest("zzzzmanifest"),
@@ -31,6 +31,7 @@ func signedLockfile(stamp string) *lockfile.Lockfile {
 				},
 			},
 			{
+				Kind:            "component",
 				URI:             "a-db",
 				ResolvedVersion: "2.0.0",
 				Digest:          fixtureDigest("aaaa"),
@@ -41,7 +42,7 @@ func signedLockfile(stamp string) *lockfile.Lockfile {
 				},
 			},
 			// An unsigned entity carries no signature record.
-			{URI: "m-cache", ResolvedVersion: "3.0.0", Digest: fixtureDigest("dddd")},
+			{Kind: "component", URI: "m-cache", ResolvedVersion: "3.0.0", Digest: fixtureDigest("dddd")},
 		},
 	}
 }

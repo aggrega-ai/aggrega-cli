@@ -266,28 +266,3 @@ func EntityKinds() []string {
 	}
 	return out
 }
-
-// EntityKindForHint renders the kind a closure entry was collected under as the
-// kind an author writes, or the empty string when the collection site recorded
-// none.
-//
-// The translation is deliberate rather than incidental. The recorded hint is a
-// note the walk keeps for itself about where a reference came from; the kind a
-// reader recognises is the one they type at the head of a document. A surface
-// showing the hint verbatim would be showing a word that appears nowhere in
-// anything the author wrote.
-//
-// It lives here because every surface that reports a closure faces the same
-// question, and a per-surface translation would have some of them answering in
-// the author's vocabulary and the rest in the walk's.
-func EntityKindForHint(hint string) string {
-	switch hint {
-	case "recipe":
-		return "Recipe"
-	case "feature_recipe":
-		return "FeatureRecipe"
-	case "aggregate":
-		return "Aggregate"
-	}
-	return ""
-}

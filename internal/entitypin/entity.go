@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/dryrunreport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -208,6 +209,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	// The entity is named by the identity the catalog indexes it under, so a
 	// capability written with a version pin names it by the capability alone.
 	uri := catalog.RecipeIdentityURI(header.Spec.Capability, header.Metadata.Name, header.Metadata.Version)
+	kind := catalog.EntityKindForCatalogKind(header.Kind)
 	// The step is reached from several surfaces, each of which names itself in
 	// its own frame, so this one names none.
 	if err := ctx.Err(); err != nil {
@@ -221,7 +223,7 @@ func planNamed(ctx context.Context, opts Options, forWriting bool) (Result, Plan
 	// only checked — a publication's hold fetches what the step would fetch.
 	plan, err := Compute(PlanInputs{
 		View:            view,
-		URIs:            []string{uri},
+		Entities:        []closure.EntityKey{{Kind: kind, URI: uri}},
 		Resolver:        refusingCacheWrites(SourceResolver(ctx, wsCfg), rw.CacheWriteRefusal()),
 		WorkspaceRoot:   root,
 		CacheDir:        cacheDir,

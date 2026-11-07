@@ -12,12 +12,11 @@ import (
 )
 
 // TestPullDetailRendersTierKindRef checks the --detail line shape, the tier
-// vocabulary, deterministic sorting, and — the load-bearing case — that an
-// entity whose hint the kind table does not name (the top-level aggregate, as the
-// walk records it) still prints the correct Kind via the reference-site map.
+// vocabulary, deterministic sorting, and that the Release's own Aggregate, whose
+// hint is its own word, prints as an Aggregate.
 func TestPullDetailRendersTierKindRef(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{
-		{ // top-level aggregate: its hint is not the table's, kind derived from the site
+		{ // the Release's own Aggregate
 			URI:            "hub.aggrega.ai/aggregate/example/app:1.0.0",
 			ResolutionPath: "external",
 			ReferencedFrom: []string{"release.spec.aggregate"},
@@ -27,6 +26,7 @@ func TestPullDetailRendersTierKindRef(t *testing.T) {
 			URI:            "adminer-helm:1.0.0",
 			ResolutionPath: "tier-3-pull",
 			ReferencedFrom: []string{"manifest.spec.mappings.components.type.app/adminer"},
+			KindHint:       closure.KindRecipe,
 		},
 	}}
 
@@ -37,10 +37,10 @@ func TestPullDetailRendersTierKindRef(t *testing.T) {
 	if !strings.Contains(out, "resolved 2 entities (this pull):") {
 		t.Errorf("missing header:\n%s", out)
 	}
-	// The top-level aggregate must still render Kind=Aggregate.
+	// The Release's own Aggregate must render Kind=Aggregate.
 	if !strings.Contains(out, "external") || !strings.Contains(out, "Aggregate") ||
 		!strings.Contains(out, "← release.spec.aggregate") {
-		t.Errorf("top-level aggregate line wrong (reference-site derivation failed):\n%s", out)
+		t.Errorf("top-level aggregate line wrong:\n%s", out)
 	}
 	if !strings.Contains(out, "fetched-fresh") || !strings.Contains(out, "Recipe") {
 		t.Errorf("recipe line wrong:\n%s", out)
@@ -110,43 +110,54 @@ func TestPullDetailRendersLibraryAxis(t *testing.T) {
 	}
 }
 
-// TestKindFromReferenceSite pins the reference-site → kind table, including the
-// nuance that distinguishes a Manifest mapping value (Recipe/FeatureRecipe)
-// from an instance attachment (Component/Feature), and an attachment nested
-// under a component (Feature, not the enclosing Component). A credential
-// attachment reaches the table through the same `features` collection, so it
-// resolves to Feature — there is no second collection for it to arrive under.
-func TestKindFromReferenceSite(t *testing.T) {
-	cases := map[string]string{
-		"release.spec.aggregate":                                               "Aggregate",
-		"release.spec.manifest":                                                "Manifest",
-		"manifest.spec.extends":                                                "Manifest",
-		"manifest.spec.mappings.components.type.app/adminer":                   "Recipe",
-		"manifest.spec.mappings.features.type.core/ingress":                    "FeatureRecipe",
-		"aggregate.spec.components.api.type":                                   "Component",
-		"aggregate.spec.aggregates.sub0.type":                                  "Aggregate",
-		"aggregate.spec.components.api.features.cache.type":                    "Feature",
-		"aggregate.spec.components.api.features.db.type":                       "Feature",
-		"release.spec.boundaries.primary.components.api.features.ingress.type": "Feature",
-		"something.unmapped":                                                   "",
-	}
-	for ref, want := range cases {
-		if got := kindFromReferenceSite(ref); got != want {
-			t.Errorf("kindFromReferenceSite(%q) = %q; want %q", ref, got, want)
+// TestADetailRowNamesTheKindTheWalkCollectedTheEntityAs pins the kind each entity
+// row prints to the kind the walk recorded for it, named as an author writes it —
+// whatever site it was recorded at. A Component a Manifest's components mapping
+// names as a key is a Component, though its site is the mapping's; a Plugin is a
+// Plugin; and only an entity recorded with no kind prints "Entity". The expected
+// words are spelled per row rather than derived, so a row naming a kind another
+// way fails here.
+func TestADetailRowNamesTheKindTheWalkCollectedTheEntityAs(t *testing.T) {
+	for _, tc := range []struct {
+		hint, site, want string
+	}{
+		{closure.KindComponent, "manifest.spec.mappings.components.type.core/cache", "Component"},
+		{closure.KindRecipe, "manifest.spec.mappings.components.type.core/cache", "Recipe"},
+		{closure.KindFeature, "manifest.spec.mappings.features.type.core/ingress", "Feature"},
+		{closure.KindFeatureRecipe, "manifest.spec.mappings.features.type.core/ingress", "FeatureRecipe"},
+		{closure.KindPlugin, ".aggrega-config.yaml.plugins.governance", "Plugin"},
+		{closure.KindComponent, "aggregate.spec.components.api.type", "Component"},
+		{closure.KindFeature, "aggregate.spec.components.api.features.cache.type", "Feature"},
+		{closure.KindAggregate, "aggregate.spec.aggregates.sub0.type", "Aggregate"},
+		{closure.ReleaseAggregateKindHint, "release.spec.aggregate", "Aggregate"},
+		{closure.KindManifest, "release.spec.manifest", "Manifest"},
+		{"", "aggregate.spec.components.api.type", "Entity"},
+	} {
+		e := closure.ResolvedRef{URI: "core/cache:1.0.0", KindHint: tc.hint, ReferencedFrom: []string{tc.site}}
+		if got := entityKindForDetail(e); got != tc.want {
+			t.Errorf("an entity collected under hint %q at %s prints kind %q; want %q", tc.hint, tc.site, got, tc.want)
 		}
 	}
 }
 
-// TestEntityKindForDetailPrefersHint confirms KindHint wins when present, and
-// the reference-site map fills in the KindHint-empty kinds.
-func TestEntityKindForDetailPrefersHint(t *testing.T) {
-	if got := entityKindForDetail("aggregate", []string{"x"}); got != "Aggregate" {
-		t.Errorf("KindHint aggregate => %q", got)
+// TestAComponentAndARecipeOfOneNameAtOneMappingSiteAreTwoRowsInAFixedOrder renders
+// a Component and the Recipe of the same reference that a Manifest's components
+// mapping binds to it — one reference, one reference site, two kinds — and asserts
+// both rows print, each under its own kind, in the same order whichever the
+// closure lists first.
+func TestAComponentAndARecipeOfOneNameAtOneMappingSiteAreTwoRowsInAFixedOrder(t *testing.T) {
+	const site = "manifest.spec.mappings.components.type.core/cache"
+	component := closure.ResolvedRef{URI: "core/cache", KindHint: closure.KindComponent, ReferencedFrom: []string{site}}
+	recipe := closure.ResolvedRef{URI: "core/cache", KindHint: closure.KindRecipe, ReferencedFrom: []string{site}}
+	var first, second bytes.Buffer
+	printPullDetail(&first, closure.Closure{Entities: []closure.ResolvedRef{component, recipe}})
+	printPullDetail(&second, closure.Closure{Entities: []closure.ResolvedRef{recipe, component}})
+	if first.String() != second.String() {
+		t.Errorf("the two rows print in the order the closure lists them:\n%s\n---\n%s", first.String(), second.String())
 	}
-	if got := entityKindForDetail("", []string{"aggregate.spec.components.api.type"}); got != "Component" {
-		t.Errorf("empty hint, component site => %q", got)
-	}
-	if got := entityKindForDetail("", []string{"unmapped.site"}); got != "Entity" {
-		t.Errorf("unmapped fallback => %q", got)
+	out := first.String()
+	component1, recipe1 := strings.Index(out, "Component"), strings.Index(out, "Recipe")
+	if component1 < 0 || recipe1 < 0 {
+		t.Fatalf("want one Component row and one Recipe row:\n%s", out)
 	}
 }

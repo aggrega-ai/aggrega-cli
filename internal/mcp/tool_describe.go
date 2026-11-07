@@ -508,7 +508,7 @@ func (s *server) describeRelease(
 	if tw, err = s.subjectWorkspace(tw, release); err != nil {
 		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
 	}
-	lf, refusal := tw.loadReleaseLockfile(releasePath)
+	lf, lockPins, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {
 		return errorResult(refusal)
 	}
@@ -526,7 +526,7 @@ func (s *server) describeRelease(
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	view := tw.newView(releasePath, lf)
+	view := tw.newView(releasePath, lockPins)
 
 	resolved, cerr := compilerops.ResolveClosure(ctx, compilerops.ClosureInputs{
 		View:            view,

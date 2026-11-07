@@ -115,6 +115,10 @@ const (
 // it; it is there so that a reader judging what an identity's reference names
 // reads the reference itself rather than parsing it back out of a display string.
 //
+// Stale marks an element no reader of its class looks for — a directory of the
+// entity subtree laid out under no published kind — which a prune removes whatever
+// its digest. It is carried and never encoded; Note says it to a reader.
+//
 // SourceURL is the source URL a source-artifact slot records it was resolved
 // from, as the slot's metadata records it: the URL whose host and path its
 // location, and so its Label, were composed from. It is nil for an element of
@@ -131,6 +135,7 @@ type Element struct {
 
 	Recorded  []provindex.Identity `json:"-"`
 	SourceURL *string              `json:"-"`
+	Stale     bool                 `json:"-"`
 }
 
 // Class is one named cache subtree with its enumerated elements.
@@ -362,65 +367,95 @@ func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 	return classes, nil
 }
 
-// enumEntities enumerates the entity-cache slots. Each slot is an
-// <encoded-reference>/<encoded-version> directory holding a content blob, labelled
-// with the reference and version its names are read back into; the slot's digest is
-// the one the lockfile row pinning that blob records for it (catalog.PinDigest):
-// for an entity, the digest of what its publication carries, which is what the
-// entity row records, and for a plugin artifact the digest of its bytes. A slot
-// whose blob cannot be read, or yields no digest, carries an empty digest and is
-// retained by a prune rather than removed on a guess; a blob the hold refuses is
-// not read at all, and the refusal ends the enumeration.
+// enumEntities enumerates the entity-cache slots. Each slot is a directory holding
+// a content blob, laid out beneath root as oci.EntitySlotLayout states — its kind,
+// its reference, its version — and labelled `<reference>@<version> (<kind>)` from
+// the names those directories are read back into, so two slots of one reference and
+// version, kept under two kinds, read apart. The slot's digest is the one the
+// lockfile row pinning that blob records for it (catalog.PinDigest): for an entity,
+// the digest of what its publication carries, which is what the entity row records,
+// and for a plugin artifact the digest of its bytes. A slot whose blob cannot be
+// read, or yields no digest, carries an empty digest and is retained by a prune
+// rather than removed on a guess; a blob the hold refuses is not read at all, and
+// the refusal ends the enumeration.
 //
-// Only a slot's blob can be opened through a link: a URI or version directory that
+// A directory where a kind belongs whose name is no published kind holds nothing a
+// reader of the cache looks for — every reader addresses a slot under a published
+// kind (oci.CachePath) — so it is listed whole as one stale element, which a prune
+// removes.
+//
+// Only a slot's blob can be opened through a link: a directory of the layout that
 // is a link is not a directory to the listing and is passed over unlisted, and
 // sizing a slot follows no link beneath it.
 func enumEntities(ctx context.Context, root string, hold func(path string) error) ([]Element, error) {
 	var out []Element
-	uriDirs, err := os.ReadDir(root)
-	if err != nil {
-		return out, nil
-	}
-	for _, ud := range uriDirs {
-		// One interruption point per URI directory, which is the outer seam of this
-		// enumeration: each iteration reads a directory and sizes every slot beneath
-		// it, so a directory not yet reached is one never read.
-		if serr := stopped(ctx); serr != nil {
-			return out, serr
-		}
-		if !ud.IsDir() {
-			continue
-		}
-		encoded := ud.Name()
-		display := readName(encoded)
-		versDirs, verr := os.ReadDir(filepath.Join(root, encoded))
-		if verr != nil {
-			continue
-		}
-		for _, vd := range versDirs {
-			if !vd.IsDir() {
-				continue
-			}
-			slot := filepath.Join(root, encoded, vd.Name())
-			el := Element{
-				Label: display + "@" + readName(vd.Name()),
-				Path:  slot,
-				Size:  dirSize(slot),
-			}
-			blobPath := filepath.Join(slot, "blob")
-			if herr := hold(blobPath); herr != nil {
-				return out, herr
-			}
-			if blob, berr := os.ReadFile(blobPath); berr == nil {
-				if d, derr := catalog.PinDigest(blob); derr == nil {
-					el.DigestHex = NormalizeDigestHex(d)
-				}
-			}
-			out = append(out, el)
-		}
-	}
+	err := enumEntityLevel(ctx, root, oci.EntitySlotLayout(), map[string]string{}, hold, &out)
 	sortElements(out)
-	return out, nil
+	return out, err
+}
+
+// enumEntityLevel lists, beneath dir, the slots of the levels layout still names,
+// the outermost first; names holds the value read back for every level above. One
+// interruption point per directory read, so a directory not yet reached is one
+// never read.
+func enumEntityLevel(ctx context.Context, dir string, layout []string, names map[string]string,
+	hold func(path string) error, out *[]Element) error {
+	if len(layout) == 0 {
+		return enumEntitySlot(dir, names, hold, out)
+	}
+	if serr := stopped(ctx); serr != nil {
+		return serr
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		value := readName(e.Name())
+		if layout[0] == oci.EntitySlotKind && !oci.IsPublishableKind(value) {
+			*out = append(*out, Element{
+				Label: value + " (no published kind)",
+				Path:  path,
+				Size:  dirSize(path),
+				Note:  "stale: no reader looks here",
+				Stale: true,
+			})
+			continue
+		}
+		below := make(map[string]string, len(names)+1)
+		for k, v := range names {
+			below[k] = v
+		}
+		below[layout[0]] = value
+		if err := enumEntityLevel(ctx, path, layout[1:], below, hold, out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// enumEntitySlot lists the one slot at slot, named by names.
+func enumEntitySlot(slot string, names map[string]string, hold func(path string) error, out *[]Element) error {
+	el := Element{
+		Label: names[oci.EntitySlotReference] + "@" + names[oci.EntitySlotVersion] + " (" + names[oci.EntitySlotKind] + ")",
+		Path:  slot,
+		Size:  dirSize(slot),
+	}
+	blobPath := filepath.Join(slot, "blob")
+	if herr := hold(blobPath); herr != nil {
+		return herr
+	}
+	if blob, berr := os.ReadFile(blobPath); berr == nil {
+		if d, derr := catalog.PinDigest(blob); derr == nil {
+			el.DigestHex = NormalizeDigestHex(d)
+		}
+	}
+	*out = append(*out, el)
+	return nil
 }
 
 // enumSourceArtifacts enumerates the source-artifact-cache slots. A slot is any
@@ -832,10 +867,16 @@ func MachineWideClasses(classes []Class) []string {
 	return out
 }
 
-// sortElements orders elements by their display label, the single sort key that
-// makes every enumeration deterministic.
+// sortElements orders elements by their display label, then by their path: the
+// order that makes every enumeration deterministic, two elements whose labels read
+// alike included.
 func sortElements(els []Element) {
-	sort.Slice(els, func(i, j int) bool { return els[i].Label < els[j].Label })
+	sort.Slice(els, func(i, j int) bool {
+		if els[i].Label != els[j].Label {
+			return els[i].Label < els[j].Label
+		}
+		return els[i].Path < els[j].Path
+	})
 }
 
 // dirSize returns the total byte size of every regular file beneath path, or the

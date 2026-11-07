@@ -59,6 +59,15 @@ type registryPluginFixture struct {
 // helpers walk up from the working directory.
 func writeRegistryPluginFixture(t *testing.T, host, pluginPath, std string, attach bool) registryPluginFixture {
 	t.Helper()
+	return writeRegistryPluginFixtureNaming(t, host, pluginPath, std, attach, false)
+}
+
+// writeRegistryPluginFixtureNaming is writeRegistryPluginFixture with the form the
+// FeatureRecipe's step names the plugin in: at its version, or — bare — by its
+// coordinate alone, which is also the reference the lockfile's plugin section pins
+// the plugin's executable under.
+func writeRegistryPluginFixtureNaming(t *testing.T, host, pluginPath, std string, attach, bare bool) registryPluginFixture {
+	t.Helper()
 	const pluginName = "gateway-step"
 	root := t.TempDir()
 	cat := filepath.Join(root, "catalog")
@@ -104,6 +113,9 @@ spec:
     values: {}
 `)
 	entityURI := types.PluginCoordinate(pipelineStepPluginType, pluginName) + ":1.0.0"
+	if bare {
+		entityURI = types.PluginCoordinate(pipelineStepPluginType, pluginName)
+	}
 	writeFixtureEntity(t, cat, "featurerecipe/helm/control/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:

@@ -42,6 +42,8 @@
 // the stamp in particular must not become a gate.
 package lockfile
 
+import "github.com/aggrega-ai/aggrega-cli/pkg/closure"
+
 // Lockfile is the typed Go representation of `<release-stem>.lock`.
 // Field declaration order drives yaml.v3's canonical key emission and
 // is alphabetical, with ArtifactLibraries the single exception —
@@ -69,10 +71,14 @@ type Lockfile struct {
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
 // FeatureRecipe, Plugin, or Aggregate, and the Release's own Aggregate and
-// Manifest. URI is the canonical identifier; ResolvedVersion and Digest are the
+// Manifest. Kind and URI together are the row's identity (Key), so two entities of
+// different kinds sharing a name are two rows; ResolvedVersion and Digest are the
 // content-addressing pair that anchor deterministic builds. ReferencedFrom
 // records the authoring-site origins that pulled the URI into closure.
 type Entity struct {
+	// Kind is the kind the entity was collected as: one of closure.DeclaredEntityKinds,
+	// read from the collection-site hint through closure.EntityKindOf.
+	Kind            string `yaml:"kind"`
 	URI             string `yaml:"uri"`
 	ResolvedVersion string `yaml:"resolved_version"`
 	// Digest is the digest of what a publication of the entity carries: the
@@ -96,6 +102,13 @@ type Entity struct {
 	// and never touches a registry (the ahead-of-time boundary).
 	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
 	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
+}
+
+// Key returns the row's identity: the kind it records and its reference. It is
+// the closure's own identity type, so a row and the closure member it pins are
+// joined on one key.
+func (e Entity) Key() closure.EntityKey {
+	return closure.EntityKey{Kind: e.Kind, URI: e.URI}
 }
 
 // DeprecationRecord records that a retroactive deprecation marker was

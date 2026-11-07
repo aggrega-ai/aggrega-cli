@@ -37,7 +37,7 @@ func TestTheCacheTierReadsAPluginOnlyFromWhereThePullWroteIt(t *testing.T) {
 	type place struct{ ws, cacheDir, cache, elsewhere string }
 	slot := func(t *testing.T, p place) string {
 		t.Helper()
-		dir, err := oci.CachePath(p.ws, p.cacheDir, ref, version)
+		dir, err := oci.CachePath(p.ws, p.cacheDir, oci.PluginArtifactKind(), ref, version)
 		if err != nil {
 			t.Fatal(err)
 		}

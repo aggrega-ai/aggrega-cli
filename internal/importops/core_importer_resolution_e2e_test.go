@@ -49,7 +49,7 @@ func writeEntityAt(t *testing.T, dir string, entity []byte) {
 // import reads that importer from — as a fetch by an earlier import would have.
 func cacheAcceptedModule(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, uri, accepted string, module []byte) {
 	t.Helper()
-	if err := oci.WriteCached(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), uri, accepted, module); err != nil {
+	if err := oci.WriteCached(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), oci.PluginArtifactKind(), uri, accepted, module); err != nil {
 		t.Fatalf("write %s to the content cache: %v", uri, err)
 	}
 }

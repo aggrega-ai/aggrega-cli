@@ -88,11 +88,11 @@ func TestTheLoadSiteHoldsARecordedSignatureToTheArtifactItWasMadeFor(t *testing.
 	inCache := func(t *testing.T, ws string, withManifest []byte) {
 		t.Helper()
 		version := digest.ContentDigest(own.wasm)
-		if err := oci.WriteCached(ws, cacheDir, ref, version, own.wasm); err != nil {
+		if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), ref, version, own.wasm); err != nil {
 			t.Fatalf("lay the plugin's cache slot: %v", err)
 		}
 		if withManifest != nil {
-			if err := oci.WriteCachedManifest(ws, cacheDir, ref, version, withManifest); err != nil {
+			if err := oci.WriteCachedManifest(ws, cacheDir, oci.PluginArtifactKind(), ref, version, withManifest); err != nil {
 				t.Fatalf("lay the manifest beside it: %v", err)
 			}
 		}

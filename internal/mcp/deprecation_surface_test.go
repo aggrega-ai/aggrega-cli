@@ -258,7 +258,7 @@ func TestReleaseAdvisoriesLeadWithTheDeprecationReport(t *testing.T) {
 	lf := &lockfile.Lockfile{
 		GeneratedAt: mcpDeprecationStamp,
 		Entities: []lockfile.Entity{{
-			URI:         mcpDeprecatedURI,
+			Kind: "plugin", URI: mcpDeprecatedURI,
 			Deprecation: &lockfile.DeprecationRecord{Severity: "warning", Message: "superseded"},
 		}},
 	}

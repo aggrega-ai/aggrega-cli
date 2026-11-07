@@ -70,6 +70,37 @@ func plantDriftedSourcePin(t *testing.T, recipePath string) []types.SourceDigest
 	return drifted
 }
 
+// alignRecipeRow rewrites the lockfile's row of the Recipe uri to the digest the
+// Recipe document at recipePath now carries, the lock beside it included.
+//
+// A planted source pin is a change to that lock, and the Recipe's lockfile row
+// covers the lock, so without this both commands would halt on the moved row before
+// either reached the source pin — a second fault in a fixture meant to carry one.
+// Aligning the row leaves the planted source pin, compared against the lockfile's
+// source-artifact row, as the only disagreement, which is the comparison these two
+// cells are about.
+func alignRecipeRow(t *testing.T, releasePath, recipePath, uri string) {
+	t.Helper()
+	path := lockfile.PathFor(releasePath)
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+	aligned := false
+	for i := range lf.Entities {
+		if lf.Entities[i].URI == uri && lf.Entities[i].Kind == "recipe" {
+			lf.Entities[i].Digest = rowDigestAt(t, recipePath)
+			aligned = true
+		}
+	}
+	if !aligned {
+		t.Fatalf("the lockfile records no Recipe row for %q: %+v", uri, lf.Entities)
+	}
+	if err := lockfile.WriteLockfile(path, lf); err != nil {
+		t.Fatalf("write the aligned lockfile: %v", err)
+	}
+}
+
 // TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence is the cell
 // where both commands compare.
 func TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence(t *testing.T) {
@@ -86,6 +117,7 @@ func TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence(t *test
 		t.Fatalf("the seed pull must record the pin, or there is nothing to compare: %v", err)
 	}
 	intact := mustReadFile(t, lockPath)
+	intactLockfile := mustReadFile(t, lockfile.PathFor(releasePath))
 	if err := buildOver(t, root, releasePath, catalogDir); err != nil {
 		t.Fatalf("build must accept the lock the pull just wrote, or its refusal below proves nothing: %v", err)
 	}
@@ -94,6 +126,7 @@ func TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence(t *test
 	}
 
 	drifted := plantDriftedSourcePin(t, recipePath)
+	alignRecipeRow(t, releasePath, recipePath, "server")
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if err != nil {
 		t.Fatalf("load lockfile: %v", err)
@@ -131,6 +164,9 @@ func TestBuildAndVerifyRefuseADriftedPinAtAnAuthoredVersionInOneSentence(t *test
 
 	if err := os.WriteFile(lockPath, intact, 0o644); err != nil {
 		t.Fatalf("restore the lock: %v", err)
+	}
+	if err := os.WriteFile(lockfile.PathFor(releasePath), intactLockfile, 0o644); err != nil {
+		t.Fatalf("restore the lockfile: %v", err)
 	}
 	if err := buildOver(t, root, releasePath, catalogDir); err != nil {
 		t.Errorf("build must accept the restored lock: %v", err)
@@ -223,6 +259,7 @@ spec:
 	}
 
 	plantDriftedSourcePin(t, recipePath)
+	alignRecipeRow(t, releasePath, recipePath, "server")
 	buildErr := buildOver(t, root, releasePath, catalogDir)
 	verifyErr := verifyPull(t, root, releasePath, catalogDir, nil)
 	if (buildErr == nil) != (verifyErr == nil) {

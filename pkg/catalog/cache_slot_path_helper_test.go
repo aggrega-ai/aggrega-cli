@@ -3,16 +3,20 @@
 
 package catalog
 
-import "github.com/aggrega-ai/aggrega-cli/pkg/oci"
+import (
+	"testing"
 
-// mustCachePath is oci.CachePath for a fixture whose reference and version are
-// well formed by construction. A refusal means the fixture itself is wrong, so it
-// stops the test at the line that built it rather than handing back an empty path
-// a later assertion would misread.
-func mustCachePath(workspaceRoot, cacheDir, uri, version string) string {
-	slot, err := oci.CachePath(workspaceRoot, cacheDir, uri, version)
-	if err != nil {
-		panic("fixture cache slot: " + err.Error())
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+)
+
+// kindOfMediaType returns the published kind the media type mt names — the kind a
+// fixture caching bytes it packed under mt keeps them under, as a registry fetch
+// of those bytes would.
+func kindOfMediaType(t *testing.T, mt string) string {
+	t.Helper()
+	kind, _, ok := oci.KindOfMediaType(mt)
+	if !ok {
+		t.Fatalf("media type %q names no published kind", mt)
 	}
-	return slot
+	return kind
 }

@@ -65,7 +65,7 @@ func gateFact(t *testing.T, root, cacheDir string, bundle []byte) *lockfile.Veri
 func gateLockfile(entity, library, plugin *lockfile.VerifiedSignature) *lockfile.Lockfile {
 	return &lockfile.Lockfile{
 		Version:         1,
-		Entities:        []lockfile.Entity{{URI: gateEntityURI, ResolvedVersion: "1.0.0", Signature: entity}},
+		Entities:        []lockfile.Entity{{Kind: "component", URI: gateEntityURI, ResolvedVersion: "1.0.0", Signature: entity}},
 		SchemaLibraries: []lockfile.SchemaLibrary{{URI: gateLibraryURI, ResolvedVersion: "1.0.0", Signature: library}},
 		Plugins:         []lockfile.Plugin{{URI: gatePluginURI, ResolvedVersion: "1.0.0", Signature: plugin}},
 	}
@@ -315,7 +315,7 @@ func TestAnEntityRowAndAPluginRowRecordingOneReferenceAreReadApart(t *testing.T)
 	}
 	lf := &lockfile.Lockfile{
 		Version:  1,
-		Entities: []lockfile.Entity{{URI: shared, ResolvedVersion: "1.0.0", Signature: gateFact(t, root, cfg.ResolvedArtifactCacheDir(), []byte("entity"))}},
+		Entities: []lockfile.Entity{{Kind: "plugin", URI: shared, ResolvedVersion: "1.0.0", Signature: gateFact(t, root, cfg.ResolvedArtifactCacheDir(), []byte("entity"))}},
 		Plugins:  []lockfile.Plugin{{URI: shared, ResolvedVersion: "1.0.0"}},
 	}
 	err := enforceRecordedSignatures(gateInputs(root, cfg, lf), cl)

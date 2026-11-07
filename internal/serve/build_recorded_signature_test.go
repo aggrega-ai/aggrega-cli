@@ -38,10 +38,10 @@ func cacheServedComponentWorkspace(t *testing.T) (ws, releaseRel string) {
 		t.Fatalf("read the authored Component: %v", err)
 	}
 	const cacheDir = ".aggrega/cache"
-	if err := oci.WriteCached(ws, cacheDir, "demo/svc:1.0.0", "1.0.0", body); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, "Component", "demo/svc:1.0.0", "1.0.0", body); err != nil {
 		t.Fatalf("lay the Component's cache slot: %v", err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, "demo/svc:1.0.0", "1.0.0", componentManifestFor(t, body)); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, "Component", "demo/svc:1.0.0", "1.0.0", componentManifestFor(t, body)); err != nil {
 		t.Fatalf("lay the Component's cached manifest: %v", err)
 	}
 	if err := os.Remove(authored); err != nil {

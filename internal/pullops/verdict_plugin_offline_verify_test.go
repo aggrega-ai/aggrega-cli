@@ -196,7 +196,7 @@ func TestOnlyAWalkAskingNoRegistryReadsAVerdictPluginFromTheContentCache(t *test
 	// digest would find its host functions in agreement and pass.
 	alteredWasm := append(append([]byte(nil), verdicttest.HeaderOnlyWasm...), 0x00, 0x01, 0x00)
 	removeWasm := func(t *testing.T, root, cacheDir string, seeded verdicttest.Cached) {
-		slot, err := oci.CachePath(root, cacheDir, seeded.Coordinate, seeded.WasmDigest)
+		slot, err := oci.CachePath(root, cacheDir, oci.PluginArtifactKind(), seeded.Coordinate, seeded.WasmDigest)
 		if err != nil {
 			t.Fatalf("the .wasm slot: %v", err)
 		}
@@ -205,7 +205,7 @@ func TestOnlyAWalkAskingNoRegistryReadsAVerdictPluginFromTheContentCache(t *test
 		}
 	}
 	alterWasm := func(t *testing.T, root, cacheDir string, seeded verdicttest.Cached) {
-		if err := oci.WriteCached(root, cacheDir, seeded.Coordinate, seeded.WasmDigest, alteredWasm); err != nil {
+		if err := oci.WriteCached(root, cacheDir, oci.PluginArtifactKind(), seeded.Coordinate, seeded.WasmDigest, alteredWasm); err != nil {
 			t.Fatalf("alter the cached .wasm: %v", err)
 		}
 	}

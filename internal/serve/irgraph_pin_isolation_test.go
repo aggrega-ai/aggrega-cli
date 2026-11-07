@@ -65,16 +65,16 @@ spec:
 	// slot), so resolution is decided entirely by the request's pins. Each slot
 	// is laid complete, content and manifest, as a registry pull lays it: a slot
 	// holding content but no manifest is an incomplete entry every reader misses.
-	if err := oci.WriteCached(ws, cacheDir, "demo/svc:1.0.0", "1.0.0", componentV1); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, "Component", "demo/svc:1.0.0", "1.0.0", componentV1); err != nil {
 		t.Fatalf("WriteCached v1: %v", err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, "demo/svc:1.0.0", "1.0.0", componentManifestFor(t, componentV1)); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, "Component", "demo/svc:1.0.0", "1.0.0", componentManifestFor(t, componentV1)); err != nil {
 		t.Fatalf("WriteCachedManifest v1: %v", err)
 	}
-	if err := oci.WriteCached(ws, cacheDir, "demo/svc:2.0.0", "2.0.0", componentV2); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, "Component", "demo/svc:2.0.0", "2.0.0", componentV2); err != nil {
 		t.Fatalf("WriteCached v2: %v", err)
 	}
-	if err := oci.WriteCachedManifest(ws, cacheDir, "demo/svc:2.0.0", "2.0.0", componentManifestFor(t, componentV2)); err != nil {
+	if err := oci.WriteCachedManifest(ws, cacheDir, "Component", "demo/svc:2.0.0", "2.0.0", componentManifestFor(t, componentV2)); err != nil {
 		t.Fatalf("WriteCachedManifest v2: %v", err)
 	}
 
@@ -155,7 +155,7 @@ spec:
 			Release:     "./" + name + ".yaml",
 			GeneratedAt: "2026-06-03T10:00:00Z",
 			Entities: []lockfile.Entity{{
-				URI:             "demo/svc:" + version,
+				Kind: "component", URI: "demo/svc:" + version,
 				ResolvedVersion: version,
 				Digest:          digest,
 			}},

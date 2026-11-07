@@ -246,11 +246,12 @@ func TestALockfileWithoutANameTierPinIsRefusedAsDrift(t *testing.T) {
 	cases := []struct {
 		name string
 		drop string
+		kind string
 		site string
 	}{
-		{"a component realization bound by instance name", "terraform/db-managed:1.0.0", "manifest.spec.mappings.components.name.db-primary"},
-		{"a feature realization bound by attachment name", "helm/cred-external:1.0.0", "manifest.spec.mappings.features.name.password"},
-		{"a realization bound by type (control)", "helm/db-bulk:1.0.0", "manifest.spec.mappings.components.type.app/db:1.0.0"},
+		{"a component realization bound by instance name", "terraform/db-managed:1.0.0", closure.KindRecipe, "manifest.spec.mappings.components.name.db-primary"},
+		{"a feature realization bound by attachment name", "helm/cred-external:1.0.0", closure.KindFeatureRecipe, "manifest.spec.mappings.features.name.password"},
+		{"a realization bound by type (control)", "helm/db-bulk:1.0.0", closure.KindRecipe, "manifest.spec.mappings.components.type.app/db:1.0.0"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -271,7 +272,7 @@ func TestALockfileWithoutANameTierPinIsRefusedAsDrift(t *testing.T) {
 			if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 				t.Fatalf("a lockfile without the row for %q must be refused as drift; got %v", tc.drop, err)
 			}
-			want := `entity "` + tc.drop + `" not in lockfile (referenced from ` + tc.site + `)`
+			want := `entity "` + tc.drop + `" (` + tc.kind + `) not in lockfile (referenced from ` + tc.site + `)`
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the refusal does not carry %q:\n%v", want, err)
 			}
@@ -285,6 +286,7 @@ func lockfileOfEntities(c closure.Closure) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{Version: 1, Release: "release.yaml", GeneratedAt: walkOrderGeneratedAt}
 	for _, e := range c.Entities {
 		lf.Entities = append(lf.Entities, lockfile.Entity{
+			Kind:            e.Kind(),
 			URI:             e.URI,
 			ResolvedVersion: e.ResolvedVersion,
 			Digest:          e.Digest,

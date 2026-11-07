@@ -19,6 +19,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -87,7 +88,7 @@ func TestIntegration_ARegistryPluginInstallIsRefusedInAFolderNoWorkspaceResolves
 				if !bytes.Equal(src.Bytes, published) {
 					t.Fatalf("the install fetched %q, want the published bytes", src.Bytes)
 				}
-				slot := mustCachePath(folder, rw.Config().ResolvedArtifactCacheDir(), ref, digest.ContentDigest(published))
+				slot := ocitest.MustCachePath(folder, rw.Config().ResolvedArtifactCacheDir(), oci.PluginArtifactKind(), ref, digest.ContentDigest(published))
 				if _, serr := os.Stat(filepath.Join(slot, "blob")); serr != nil {
 					t.Fatalf("the install's fetch in a workspace cached nothing at %s (%v), so the refused row's missing cache proves nothing", slot, serr)
 				}

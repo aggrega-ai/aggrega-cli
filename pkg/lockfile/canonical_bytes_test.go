@@ -29,7 +29,7 @@ func TestCanonicalBytesPreservingTimestampIsWhatTheWriteWrites(t *testing.T) {
 		Release:     "release.yaml",
 		GeneratedAt: "2026-01-01T00:00:00Z",
 		Entities: []lockfile.Entity{
-			{URI: "server", ResolvedVersion: "1.0.0", Digest: "sha256:aaa", ReferencedFrom: []string{"manifest"}},
+			{Kind: "component", URI: "server", ResolvedVersion: "1.0.0", Digest: "sha256:aaa", ReferencedFrom: []string{"manifest"}},
 		},
 	}
 

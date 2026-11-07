@@ -28,10 +28,12 @@ import (
 // ServingProvider, below.
 //
 // View is the catalog the entities are read through, and the one whose walk
-// decides which of them has a writable home. URIs names the entities to
-// consider; a URI that is not a Recipe or FeatureRecipe, or that has no writable
-// home in View, is passed over. Resolver acquires each source the step pins, and
-// WorkspaceRoot and CacheDir are where it stores what it fetched.
+// decides which of them has a writable home. Entities names the entities to
+// consider, each by its kind and reference: a Recipe is read as a Recipe and a
+// FeatureRecipe as a FeatureRecipe, so the two of one name are two entities, and an
+// entity of any other kind, or one with no writable home in View, is passed over.
+// Resolver acquires each source the step pins, and WorkspaceRoot and CacheDir are
+// where it stores what it fetched.
 //
 // ForWriting says the caller will write the plan, or report what writing it
 // would do, rather than only hold the locks on disk to it. A plan for writing
@@ -61,7 +63,7 @@ import (
 // other entity is held to WorkspaceRoot.
 type PlanInputs struct {
 	View            *catalog.LazyLookup
-	URIs            []string
+	Entities        []closure.EntityKey
 	Resolver        closure.SourceResolver
 	WorkspaceRoot   string
 	CacheDir        string
@@ -85,10 +87,11 @@ type Plan struct {
 	// through the same view holds for the same entities.
 	view *catalog.LazyLookup
 
-	// documents maps every URI the plan resolved to an entity with a writable
-	// home to that entity's document, so the row a lockfile records for the URI can
-	// be taken over the entity as the step leaves it (EntityDigests).
-	documents map[string]string
+	// documents maps the identity of every entity the plan resolved to a writable
+	// home — its kind and the URI it was asked for — to that entity's document, so
+	// the row a lockfile records for exactly that entity can be taken over it as the
+	// step leaves it (EntityDigests).
+	documents map[closure.EntityKey]string
 
 	// forWriting records that the plan was computed for writing, so each of its
 	// entities was held to a directory of its own before it was planned. Write
@@ -139,9 +142,10 @@ type Outcome struct {
 // Compute runs the pin step's resolution over the entities in, and returns the
 // plan it would record.
 //
-// Every entity is read through in.View, and the entities sharing one document —
-// a Recipe named by its bare name and by its capability-qualified one is two URIs
-// over one file — are planned once, under the first of their URIs. The sources
+// Every entity is read through in.View as the kind it is named with, and the
+// entities sharing one document — a Recipe named by its bare name and by its
+// capability-qualified one is two URIs over one file — are planned once, under the
+// first of their URIs. The sources
 // are resolved with no Release in reach, each authored-identity source once per
 // entity; see [closure.DescendAuthoredSources]. Which of the resolved sources
 // belong beside which entity is read off each back-pointer's own record of the
@@ -158,41 +162,31 @@ type Outcome struct {
 // never be pinned would spend a fetch on a verdict already decided — or, for a
 // source that does not resolve, report the fetch instead of the rule.
 func Compute(in PlanInputs) (Plan, error) {
-	plan := Plan{workspaceRoot: in.WorkspaceRoot, view: in.View, documents: map[string]string{}, forWriting: in.ForWriting}
+	plan := Plan{workspaceRoot: in.WorkspaceRoot, view: in.View, documents: map[closure.EntityKey]string{}, forWriting: in.ForWriting}
 	loader := in.View.ClosureRecipeLoader()
 
 	type homed struct {
-		uri, kindHint string
-		capability    string
-		plan          entityPlan
-		artifacts     types.OrderedMap[types.ArtifactEntry]
+		key        closure.EntityKey
+		capability string
+		plan       entityPlan
+		artifacts  types.OrderedMap[types.ArtifactEntry]
 	}
 	var planned []homed
 	var refused []error
 	byPath := map[string]int{}
-	seen := map[string]bool{}
-	for _, uri := range in.URIs {
-		if seen[uri] {
+	seen := map[closure.EntityKey]bool{}
+	for _, key := range in.Entities {
+		if seen[key] {
 			continue
 		}
-		seen[uri] = true
+		seen[key] = true
 
-		var (
-			kind, kindHint, name, path, capability string
-			artifacts                              types.OrderedMap[types.ArtifactEntry]
-			ok                                     bool
-		)
-		if r, err := loader.LoadRecipe(uri); err == nil {
-			kind, kindHint, name, artifacts, capability = "Recipe", "recipe", r.Metadata.Name, recipepin.PinnedArtifactEntries(r), r.Spec.Capability
-			path, ok = WritableHome(in.View, kind, r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
-		} else if fr, err := loader.LoadFeatureRecipe(uri); err == nil {
-			kind, kindHint, name, artifacts, capability = "FeatureRecipe", "feature_recipe", fr.Metadata.Name, fr.Spec.Artifacts, fr.Spec.Capability
-			path, ok = WritableHome(in.View, kind, fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
-		}
+		local, ok := LocalEntityFor(in.View, loader, key)
 		if !ok {
 			continue
 		}
-		plan.documents[uri] = path
+		path := local.Path
+		plan.documents[key] = path
 		if _, dup := byPath[path]; dup {
 			continue
 		}
@@ -205,11 +199,10 @@ func Compute(in PlanInputs) (Plan, error) {
 		}
 		byPath[path] = len(planned)
 		planned = append(planned, homed{
-			uri:        uri,
-			kindHint:   kindHint,
-			capability: capability,
-			artifacts:  artifacts,
-			plan: entityPlan{path: path, kind: kind, name: name, recorded: in.View.RecordedPins().For(path),
+			key:        key,
+			capability: local.Capability,
+			artifacts:  local.Artifacts,
+			plan: entityPlan{path: path, kind: local.Kind, name: local.Name, recorded: in.View.RecordedPins().For(path),
 				lockRoot: root},
 		})
 	}
@@ -226,13 +219,15 @@ func Compute(in PlanInputs) (Plan, error) {
 
 	var cl closure.Closure
 	for _, h := range planned {
-		cl.Entities = append(cl.Entities, closure.ResolvedRef{URI: h.uri, KindHint: h.kindHint})
+		// A Recipe's and a FeatureRecipe's collection-site hint is the kind's own
+		// word, so the key's kind is the hint the descent reads the entity by.
+		cl.Entities = append(cl.Entities, closure.ResolvedRef{URI: h.key.URI, KindHint: h.key.Kind})
 	}
 	srcArts, err := closure.DescendAuthoredSources(cl, loader, in.Resolver, in.WorkspaceRoot, in.CacheDir)
 	if err != nil {
 		return Plan{}, err
 	}
-	srcByURI := sourcePinsByEntity(srcArts)
+	srcByEntity := sourcePinsByEntity(srcArts)
 
 	for _, h := range planned {
 		artPins, err := recipepin.ArtifactPinsForRecipe(h.artifacts, h.plan.kind, h.plan.name)
@@ -274,7 +269,7 @@ func Compute(in PlanInputs) (Plan, error) {
 		if err != nil {
 			return Plan{}, err
 		}
-		h.plan.want = recipepin.Pins{SourceDigests: srcByURI[h.uri], ArtifactDigests: artPins, LocalSourceDigests: local.Pins,
+		h.plan.want = recipepin.Pins{SourceDigests: srcByEntity[h.key], ArtifactDigests: artPins, LocalSourceDigests: local.Pins,
 			Ignore: ignore}
 		h.plan.recorded.LocalSourceDigests = local.RecordedPinsInForce(h.plan.recorded.LocalSourceDigests)
 		plan.entities = append(plan.entities, h.plan)
@@ -331,7 +326,9 @@ func namedDocumentDirs(absEntityPath string) []string {
 
 // sourcePinsByEntity routes each resolved source to the entities whose own
 // record of it says its identity was written out in full, and returns the pins
-// keyed by the entity URI that reached them.
+// keyed by the identity of the entity that reached them — the kind the
+// back-pointer records and its URI, so a Recipe and a FeatureRecipe of one name are
+// each handed their own sources.
 //
 // That record is the routing reading, and it is carried here rather than taken
 // again because it was taken once, by the descent, before anything was acquired:
@@ -340,9 +337,9 @@ func namedDocumentDirs(absEntityPath string) []string {
 // decided. An artifact carries one back-pointer per instance that reached it, so
 // an entity is handed each artifact once however many of its back-pointers name
 // it.
-func sourcePinsByEntity(srcArts []closure.SourceArtifact) map[string][]types.SourceDigest {
-	out := map[string][]types.SourceDigest{}
-	handed := map[string]map[int]bool{}
+func sourcePinsByEntity(srcArts []closure.SourceArtifact) map[closure.EntityKey][]types.SourceDigest {
+	out := map[closure.EntityKey][]types.SourceDigest{}
+	handed := map[closure.EntityKey]map[int]bool{}
 	for i, sa := range srcArts {
 		pin := types.SourceDigest{
 			Kind:           sa.Kind,
@@ -354,17 +351,70 @@ func sourcePinsByEntity(srcArts []closure.SourceArtifact) map[string][]types.Sou
 			ManifestDigest: sa.ManifestDigest,
 		}
 		for _, ref := range sa.ReferencedBy {
-			if !ref.IdentityAuthored || handed[ref.URI][i] {
+			key := closure.EntityKey{Kind: ref.Entity, URI: ref.URI}
+			if !ref.IdentityAuthored || handed[key][i] {
 				continue
 			}
-			if handed[ref.URI] == nil {
-				handed[ref.URI] = map[int]bool{}
+			if handed[key] == nil {
+				handed[key] = map[int]bool{}
 			}
-			handed[ref.URI][i] = true
-			out[ref.URI] = append(out[ref.URI], pin)
+			handed[key][i] = true
+			out[key] = append(out[key], pin)
 		}
 	}
 	return out
+}
+
+// LocalEntity is one Recipe or FeatureRecipe with a writable home in a catalog
+// view: the document it was read from, and what a lock beside it pins or is
+// compared against. Kind is the catalog kind ("Recipe", "FeatureRecipe"). For a
+// Recipe the artifacts are the entries its lock pins, its boundary block's included
+// under their pin names (recipepin.PinnedArtifactEntries).
+type LocalEntity struct {
+	Path       string
+	Kind       string
+	Name       string
+	Capability string
+	Artifacts  types.OrderedMap[types.ArtifactEntry]
+}
+
+// LocalEntityFor reads the entity key names through loader as the kind the key
+// records — a Recipe as a Recipe, a FeatureRecipe as a FeatureRecipe, so the two of
+// one name are two entities — and returns it with its writable home in view
+// (WritableHome). It reports false for any other kind, for an entity loader cannot
+// read, and for one with no writable home.
+//
+// It is the one reading of which entities a lock sits beside, shared by the step
+// that writes the locks (Compute) and every check that holds a lock to its entity,
+// so the two cannot come to read different entities for one key.
+func LocalEntityFor(view *catalog.LazyLookup, loader closure.RecipeLoader, key closure.EntityKey) (LocalEntity, bool) {
+	var e LocalEntity
+	var version string
+	switch key.Kind {
+	case closure.KindRecipe:
+		r, err := loader.LoadRecipe(key.URI)
+		if err != nil {
+			return LocalEntity{}, false
+		}
+		e = LocalEntity{Name: r.Metadata.Name, Capability: r.Spec.Capability, Artifacts: recipepin.PinnedArtifactEntries(r)}
+		version = r.Metadata.Version
+	case closure.KindFeatureRecipe:
+		fr, err := loader.LoadFeatureRecipe(key.URI)
+		if err != nil {
+			return LocalEntity{}, false
+		}
+		e = LocalEntity{Name: fr.Metadata.Name, Capability: fr.Spec.Capability, Artifacts: fr.Spec.Artifacts}
+		version = fr.Metadata.Version
+	default:
+		return LocalEntity{}, false
+	}
+	e.Kind = catalog.EntityKindForHint(key.Kind)
+	path, ok := WritableHome(view, e.Kind, e.Capability, e.Name, version)
+	if !ok {
+		return LocalEntity{}, false
+	}
+	e.Path = path
+	return e, true
 }
 
 // WritableHome reports the document an entity of kind and identity was authored
@@ -391,8 +441,9 @@ func WritableHome(view *catalog.LazyLookup, kind, capability, name, version stri
 	return "", false
 }
 
-// EntityDigests returns, for every URI the plan resolved to an entity with a
-// writable home, the digest the lockfile's entity row records for that entity:
+// EntityDigests returns, keyed by the identity of every entity the plan resolved
+// to a writable home — its kind and the URI it was asked for, the identity its
+// lockfile row is found by — the digest that row records for that entity:
 // over what a publication of it would carry, the lock beside it included, read
 // through the view the plan was computed over (catalog.LazyLookup.EntityRowDigestAt).
 //
@@ -404,10 +455,10 @@ func WritableHome(view *catalog.LazyLookup, kind, capability, name, version stri
 // lock as the writing run would leave it. Either way the row is the one a closure
 // resolved through the same view holds for the entity — which is what a build of
 // the same Release compares it with — because both are one reading of one view.
-func (p Plan) EntityDigests() (map[string]string, error) {
+func (p Plan) EntityDigests() (map[closure.EntityKey]string, error) {
 	byPath := map[string]string{}
-	out := make(map[string]string, len(p.documents))
-	for uri, path := range p.documents {
+	out := make(map[closure.EntityKey]string, len(p.documents))
+	for key, path := range p.documents {
 		d, ok := byPath[path]
 		if !ok {
 			var err error
@@ -416,7 +467,7 @@ func (p Plan) EntityDigests() (map[string]string, error) {
 			}
 			byPath[path] = d
 		}
-		out[uri] = d
+		out[key] = d
 	}
 	return out, nil
 }

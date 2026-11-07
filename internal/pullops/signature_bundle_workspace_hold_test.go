@@ -227,7 +227,7 @@ func TestTheBuildReadsTheSignatureBundleThePullCachedFromAnyDirectory(t *testing
 			ws, elsewhere := t.TempDir(), t.TempDir()
 
 			t.Chdir(row.writeFrom(t, ws, elsewhere))
-			if err := oci.WriteCached(ws, bundleCacheDir, uri, version, wasm); err != nil {
+			if err := oci.WriteCached(ws, bundleCacheDir, oci.PluginArtifactKind(), uri, version, wasm); err != nil {
 				t.Fatalf("cache the plugin bytes: %v", err)
 			}
 			if err := cacheBundleBlob(ws, bundleCacheDir, bundleDigest, bundle); err != nil {

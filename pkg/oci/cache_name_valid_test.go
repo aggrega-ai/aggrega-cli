@@ -35,13 +35,13 @@ func TestEveryNameTheEntityCacheWritesIsOneEveryPlatformAccepts(t *testing.T) {
 		{"core/devtool/aux", "con"},
 		{"core/devtool/aux", "v1."},
 	} {
-		if err := oci.WriteCached(ws, cacheDir, slot.uri, slot.version, []byte("content")); err != nil {
+		if err := oci.WriteCached(ws, cacheDir, "Component", slot.uri, slot.version, []byte("content")); err != nil {
 			t.Fatalf("WriteCached(%q, %q): %v", slot.uri, slot.version, err)
 		}
-		if err := oci.WriteCachedManifest(ws, cacheDir, slot.uri, slot.version, []byte("{}")); err != nil {
+		if err := oci.WriteCachedManifest(ws, cacheDir, "Component", slot.uri, slot.version, []byte("{}")); err != nil {
 			t.Fatalf("WriteCachedManifest(%q, %q): %v", slot.uri, slot.version, err)
 		}
-		got, err := oci.ReadCached(ws, cacheDir, slot.uri, slot.version)
+		got, err := oci.ReadCached(ws, cacheDir, "Component", slot.uri, slot.version)
 		if err != nil || string(got) != "content" {
 			t.Fatalf("ReadCached(%q, %q) = %q, %v; the read must find the slot the write named", slot.uri, slot.version, got, err)
 		}
@@ -49,11 +49,11 @@ func TestEveryNameTheEntityCacheWritesIsOneEveryPlatformAccepts(t *testing.T) {
 	judged := pathsegmenttest.RequireTreeValid(t, oci.EntitiesRoot(ws, cacheDir))
 	t.Logf("judged %d names under the entity cache", judged)
 
-	upper, err := oci.CachePath(ws, cacheDir, "core/devtool/App", "1.0.0")
+	upper, err := oci.CachePath(ws, cacheDir, "Component", "core/devtool/App", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	lower, err := oci.CachePath(ws, cacheDir, "core/devtool/app", "1.0.0")
+	lower, err := oci.CachePath(ws, cacheDir, "Component", "core/devtool/app", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}

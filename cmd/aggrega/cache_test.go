@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathsegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 )
@@ -47,10 +48,10 @@ type cacheFixture struct {
 // returns the slot dir and the blob's content digest.
 func writeEntitySlot(t *testing.T, wsRoot, uri, version string, blob []byte) (string, string) {
 	t.Helper()
-	if err := oci.WriteCached(wsRoot, cacheTestCacheDir, uri, version, blob); err != nil {
+	if err := oci.WriteCached(wsRoot, cacheTestCacheDir, "Component", uri, version, blob); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	return mustCachePath(wsRoot, cacheTestCacheDir, uri, version), digest.ContentDigest(blob)
+	return ocitest.MustCachePath(wsRoot, cacheTestCacheDir, "Component", uri, version), digest.ContentDigest(blob)
 }
 
 // writeSourceSlot writes a source-artifact cache slot (blob.tgz + metadata.yaml)
@@ -152,7 +153,7 @@ func newCacheFixture(t *testing.T) cacheFixture {
 		Release:     "release.yaml",
 		GeneratedAt: "2026-01-01T00:00:00Z",
 		Entities: []lockfile.Entity{{
-			URI: "oci://hub.aggrega.ai/component/core/api", ResolvedVersion: "1.0.0",
+			Kind: "component", URI: "oci://hub.aggrega.ai/component/core/api", ResolvedVersion: "1.0.0",
 			Digest: refEntityDigest, ReferencedFrom: []string{"release.yaml"},
 		}},
 		SourceArtifacts: []lockfile.SourceArtifact{{

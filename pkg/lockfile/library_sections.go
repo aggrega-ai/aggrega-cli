@@ -77,6 +77,33 @@ func librarySections() []librarySection {
 	}
 }
 
+// LibraryPin is one row of a library section as a reader of its pins sees it: the
+// reference, the version it resolved to, and the content digest it is pinned at.
+type LibraryPin struct {
+	URI             string
+	ResolvedVersion string
+	Digest          string
+}
+
+// LibraryPins returns the rows lf pins on axis, read through the one binding of the
+// declared library axes to the lockfile's sections, and false for an axis no
+// section binds. A reader ranging over closure.LibraryAxes reads every section
+// through it, so it names no section itself and cannot leave one out.
+func LibraryPins(lf *Lockfile, axis closure.LibraryAxis) ([]LibraryPin, bool) {
+	for _, sec := range librarySections() {
+		if sec.axis.Axis != axis.Axis {
+			continue
+		}
+		keys := sec.keys(lf)
+		out := make([]LibraryPin, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, LibraryPin{URI: k.URI, ResolvedVersion: k.ResolvedVersion, Digest: k.Digest})
+		}
+		return out, true
+	}
+	return nil, false
+}
+
 func schemaLibraryKey(l SchemaLibrary) driftKey {
 	return driftKey{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest}
 }

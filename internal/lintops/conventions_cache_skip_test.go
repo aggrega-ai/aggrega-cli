@@ -41,7 +41,7 @@ spec:
   inject: ["env"]
 `)
 
-	cacheSlot, err := oci.CachePath(ws, cacheDir, "core/cached-comp:1.0.0", "1.0.0")
+	cacheSlot, err := oci.CachePath(ws, cacheDir, "Component", "core/cached-comp:1.0.0", "1.0.0")
 	if err != nil {
 		t.Fatalf("CachePath: %v", err)
 	}

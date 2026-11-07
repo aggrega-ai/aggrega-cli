@@ -19,7 +19,7 @@ func deprecatedLockfile(stamp string) *lockfile.Lockfile {
 		GeneratedAt: stamp,
 		Entities: []lockfile.Entity{
 			{
-				URI:             "z-server",
+				Kind: "component", URI: "z-server",
 				ResolvedVersion: "1.0.0",
 				Digest:          fixtureDigest("zzzz"),
 				ManifestDigest:  fixtureDigest("zzzzmanifest"),
@@ -35,7 +35,7 @@ func deprecatedLockfile(stamp string) *lockfile.Lockfile {
 				},
 			},
 			// A non-deprecated entity carries no deprecation record.
-			{URI: "a-db", ResolvedVersion: "2.0.0", Digest: fixtureDigest("aaaa")},
+			{Kind: "component", URI: "a-db", ResolvedVersion: "2.0.0", Digest: fixtureDigest("aaaa")},
 		},
 		Plugins: []lockfile.Plugin{
 			{

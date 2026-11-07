@@ -777,12 +777,15 @@ func (tw *toolWorkspace) releaseReach(tool, releasePath string) (workspaceconfig
 // cannot walk; a tool that refuses such a directory asks catalogDirsRefusal, and a
 // tool reading the stack's directories directly is handed the refusal by
 // catalogDirsFor.
-func (tw *toolWorkspace) newView(release string, lf *lockfile.Lockfile) *catalog.LazyLookup {
+//
+// pins are the pins of the Release's lockfile, as loadReleaseLockfile built them,
+// or nil where a call holds no lockfile.
+func (tw *toolWorkspace) newView(release string, pins catalog.Pins) *catalog.LazyLookup {
 	dirs, _ := tw.catalogDirsFor(release)
 	named, _ := tw.namedCatalogDirsFor(release)
 	v := catalog.NewLazyLookup(tw.root, tw.cacheDir, dirs, nil, named...)
-	if lf != nil {
-		v.SetPins(catalog.PinsFromLockfile(lf))
+	if pins != nil {
+		v.SetPins(pins)
 	}
 	v.WriteNoticesTo(tw.logw)
 	return v
@@ -955,12 +958,24 @@ func (e *pathRefusal) Error() string { return e.text }
 // the workspace's auto_pull setting — performs that resolution BEFORE calling
 // this, so what it loads is the lockfile that fill just wrote. Every other
 // caller here resolves against whatever pins already exist and fills nothing.
-func (tw *toolWorkspace) loadReleaseLockfile(releasePath string) (*lockfile.Lockfile, string) {
+//
+// It returns as well the pins the lockfile holds the view to (catalog.PinsFromLockfile),
+// nil where there is no lockfile. A lockfile recording a row no pin can be kept
+// for is refused here, with that fault's guidance, rather than given a view the
+// row's reads would be held to nothing in.
+func (tw *toolWorkspace) loadReleaseLockfile(releasePath string) (*lockfile.Lockfile, catalog.Pins, string) {
 	lf, err := lockfile.LoadIfReadable(tw.root, lockfile.PathFor(releasePath))
 	if err != nil {
-		return nil, explainToolError("Could not read the Release's lockfile.", err, "release")
+		return nil, nil, explainToolError("Could not read the Release's lockfile.", err, "release")
 	}
-	return lf, ""
+	if lf == nil {
+		return nil, nil, ""
+	}
+	pins, err := catalog.PinsFromLockfile(lf)
+	if err != nil {
+		return nil, nil, explainToolError("Could not read the Release's lockfile.", err, "release")
+	}
+	return lf, pins, ""
 }
 
 // releaseDeprecations reads the withdrawal report for the Release at releasePath

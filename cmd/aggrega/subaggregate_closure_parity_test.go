@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -211,7 +212,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 	dirs := stackFor(t, rw, releasePath, []string{catalogDir})
 
 	view := catalog.NewLazyLookup(root, cacheDir, dirs, nil)
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
@@ -241,15 +242,15 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 		return view.ProviderPluginForTarget(ref, bindings)
 	}
 	reconRefold := func() (closure.RecipeLoader, error) {
-		view.SetPins(catalog.PinsFromClosure(cl))
+		view.SetPins(catalogtest.MustPinsFromClosure(t, cl))
 		return view.ClosureRecipeLoader(), nil
 	}
-	pinned := view.ClosureLookup(nil, root, cacheDir, nil, nil, &catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(lf)})
+	pinned := view.ClosureLookup(nil, root, cacheDir, nil, nil, &catalog.ReuseVerification{PriorPins: catalogtest.MustPinsFromLockfile(t, lf)})
 	catalogArtifacts := pipeline.CatalogPluginArtifacts(root, wsCfg, view.PluginColocatedDirs())
 	if rerr := closure.DescendPinnedAxes(context.Background(), &cl, aggLoader, view.ClosureRecipeLoader(), resolved.Lookup, pinned, reconResolver, reconRefold, nil, catalogArtifacts); rerr != nil {
 		t.Fatalf("DescendPinnedAxes: %v", rerr)
 	}
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 
 	buildSide := make([]string, 0, len(cl.Entities))
 	for _, e := range cl.Entities {

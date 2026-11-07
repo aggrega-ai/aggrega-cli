@@ -15,8 +15,8 @@ import (
 
 func TestCachePathDeterministic(t *testing.T) {
 	t.Parallel()
-	a, aerr := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
-	b, berr := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	a, aerr := oci.CachePath("/ws", ".aggrega/cache", "Component", "hub.aggrega.ai/component/core/api-server", "1.0.0")
+	b, berr := oci.CachePath("/ws", ".aggrega/cache", "Component", "hub.aggrega.ai/component/core/api-server", "1.0.0")
 	if aerr != nil || berr != nil {
 		t.Fatalf("CachePath refused a well-formed reference and version: %v / %v", aerr, berr)
 	}
@@ -63,7 +63,7 @@ func TestCachePathRefusesAVersionThatLeavesTheCache(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := oci.CachePath("/ws", ".aggrega/cache", uri, tc.version)
+			got, err := oci.CachePath("/ws", ".aggrega/cache", "Component", uri, tc.version)
 			if !tc.refused {
 				if err != nil {
 					t.Fatalf("CachePath refused a well-formed version %q: %v", tc.version, err)
@@ -90,10 +90,10 @@ func TestCachePathRefusesAVersionThatLeavesTheCache(t *testing.T) {
 // accepted.
 func TestCachePathRefusesAReferenceThatEncodesToADotDirectory(t *testing.T) {
 	t.Parallel()
-	if _, err := oci.CachePath("/ws", ".aggrega/cache", "..", "1.0.0"); !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
+	if _, err := oci.CachePath("/ws", ".aggrega/cache", "Component", "..", "1.0.0"); !errors.Is(err, oci.ErrCacheLocationOutsideCache()) {
 		t.Errorf("a reference of .. was not refused: %v", err)
 	}
-	if _, err := oci.CachePath("/ws", ".aggrega/cache", "hub.aggrega.ai/component/core/api-server", "1.0.0"); err != nil {
+	if _, err := oci.CachePath("/ws", ".aggrega/cache", "Component", "hub.aggrega.ai/component/core/api-server", "1.0.0"); err != nil {
 		t.Errorf("a well-formed reference was refused: %v", err)
 	}
 }
@@ -115,7 +115,7 @@ func TestSignatureBundlePathStem(t *testing.T) {
 func TestReadCachedMissReturnsErrFetchNotFound(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	_, err := oci.ReadCached(dir, ".aggrega/cache", "hub.aggrega.ai/component/foo", "1.0.0")
+	_, err := oci.ReadCached(dir, ".aggrega/cache", "Component", "hub.aggrega.ai/component/foo", "1.0.0")
 	if err == nil {
 		t.Fatal("expected cache miss error; got nil")
 	}
@@ -128,10 +128,10 @@ func TestWriteReadCachedRoundTrip(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	want := []byte("bundled-bytes-payload")
-	if err := oci.WriteCached(dir, ".aggrega/cache", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0", want); err != nil {
+	if err := oci.WriteCached(dir, ".aggrega/cache", "Recipe", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0", want); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	got, err := oci.ReadCached(dir, ".aggrega/cache", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0")
+	got, err := oci.ReadCached(dir, ".aggrega/cache", "Recipe", "hub.aggrega.ai/recipe/core/helm/mariadb", "1.0.0")
 	if err != nil {
 		t.Fatalf("ReadCached: %v", err)
 	}
@@ -145,15 +145,47 @@ func TestReadCachedManifestMissReturnsErrFetchNotFound(t *testing.T) {
 	dir := t.TempDir()
 	// A content blob without a manifest blob is an incomplete slot; the manifest
 	// read must report the miss so the caller re-pulls rather than trusts it.
-	if err := oci.WriteCached(dir, ".aggrega/cache", "hub.aggrega.ai/component/foo", "1.0.0", []byte("content")); err != nil {
+	if err := oci.WriteCached(dir, ".aggrega/cache", "Component", "hub.aggrega.ai/component/foo", "1.0.0", []byte("content")); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	_, err := oci.ReadCachedManifest(dir, ".aggrega/cache", "hub.aggrega.ai/component/foo", "1.0.0")
+	_, err := oci.ReadCachedManifest(dir, ".aggrega/cache", "Component", "hub.aggrega.ai/component/foo", "1.0.0")
 	if err == nil {
 		t.Fatal("expected manifest cache miss error; got nil")
 	}
 	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
+	}
+}
+
+// TestTwoKindsOfOneReferenceAndVersionAreTwoSlots holds the entity slot to its
+// kind: a Component and a Recipe written under one reference and one version land
+// in two slots, each read back as written, and a kind no publication carries is
+// refused rather than given a directory.
+func TestTwoKindsOfOneReferenceAndVersionAreTwoSlots(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const uri, version = "compose/app:1.0.0", "1.0.0"
+	component, cerr := oci.CachePath(dir, ".aggrega/cache", "Component", uri, version)
+	recipe, rerr := oci.CachePath(dir, ".aggrega/cache", "Recipe", uri, version)
+	if cerr != nil || rerr != nil {
+		t.Fatalf("CachePath refused a published kind: %v / %v", cerr, rerr)
+	}
+	if component == recipe {
+		t.Fatalf("a Component and a Recipe of one reference and version share the slot %s", component)
+	}
+	for kind, body := range map[string]string{"Component": "the Component", "Recipe": "the Recipe"} {
+		if err := oci.WriteCached(dir, ".aggrega/cache", kind, uri, version, []byte(body)); err != nil {
+			t.Fatalf("WriteCached(%s): %v", kind, err)
+		}
+	}
+	for kind, want := range map[string]string{"Component": "the Component", "Recipe": "the Recipe"} {
+		got, err := oci.ReadCached(dir, ".aggrega/cache", kind, uri, version)
+		if err != nil || string(got) != want {
+			t.Errorf("ReadCached(%s) = %q, %v; want %q", kind, got, err, want)
+		}
+	}
+	if _, err := oci.CachePath(dir, ".aggrega/cache", "Manifest", uri, version); !errors.Is(err, oci.ErrUnknownEntityKind()) {
+		t.Errorf("a kind no publication carries must be refused with the unknown-kind condition; got %v", err)
 	}
 }
 
@@ -163,21 +195,21 @@ func TestWriteReadCachedManifestRoundTrip(t *testing.T) {
 	const uri = "hub.aggrega.ai/recipe/core/helm/mariadb"
 	content := []byte("content-blob")
 	manifest := []byte(`{"schemaVersion":2,"layers":[]}`)
-	if err := oci.WriteCached(dir, ".aggrega/cache", uri, "1.0.0", content); err != nil {
+	if err := oci.WriteCached(dir, ".aggrega/cache", "Recipe", uri, "1.0.0", content); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	if err := oci.WriteCachedManifest(dir, ".aggrega/cache", uri, "1.0.0", manifest); err != nil {
+	if err := oci.WriteCachedManifest(dir, ".aggrega/cache", "Recipe", uri, "1.0.0", manifest); err != nil {
 		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 	// Both blobs coexist in the same slot: the content blob is unaffected.
-	gotContent, err := oci.ReadCached(dir, ".aggrega/cache", uri, "1.0.0")
+	gotContent, err := oci.ReadCached(dir, ".aggrega/cache", "Recipe", uri, "1.0.0")
 	if err != nil {
 		t.Fatalf("ReadCached: %v", err)
 	}
 	if string(gotContent) != string(content) {
 		t.Errorf("content round-trip mismatch; got %q want %q", gotContent, content)
 	}
-	gotManifest, err := oci.ReadCachedManifest(dir, ".aggrega/cache", uri, "1.0.0")
+	gotManifest, err := oci.ReadCachedManifest(dir, ".aggrega/cache", "Recipe", uri, "1.0.0")
 	if err != nil {
 		t.Fatalf("ReadCachedManifest: %v", err)
 	}

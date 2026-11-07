@@ -47,6 +47,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -78,7 +79,7 @@ func serveRenderArtifacts(t *testing.T, ws, releaseRel string, catDirs []string,
 	}
 
 	view := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(catalogtest.MustPinsFromLockfile(t, lf))
 
 	resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 		View:            view,

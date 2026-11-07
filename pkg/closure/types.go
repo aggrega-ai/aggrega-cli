@@ -347,14 +347,16 @@ type ResolvedRef struct {
 	ReferencedFrom []string
 	// KindHint is the catalog kind known from where the URI was collected —
 	// "recipe" or "feature_recipe" (a Manifest mapping value's position),
-	// "aggregate" (a sub-aggregate type reference) or ReleaseAggregateKindHint
-	// (the Release's own spec.aggregate). Empty when the collection
-	// site carried no kind. Source-descent prefers this hint over re-deriving
-	// the kind lexically from the URI, so a short-form Recipe reference (one
-	// without a "/recipe/" path segment) is still recognised for fetching, and
-	// DescendSubAggregates uses the "aggregate" hint to select the entities to
-	// load and re-walk. Not a lockfile field; the lockfile writer copies only
-	// the wire-shape fields above.
+	// "manifest" (the Release's own spec.manifest), "aggregate" (a sub-aggregate
+	// type reference) or ReleaseAggregateKindHint (the Release's own
+	// spec.aggregate). Every entity the walk collects carries one; it is empty
+	// only on a reference built outside the walk with no kind known. Source-descent
+	// prefers this hint over re-deriving the kind lexically from the URI, so a
+	// short-form Recipe reference (one without a "/recipe/" path segment) is still
+	// recognised for fetching, and DescendSubAggregates uses the "aggregate" hint
+	// to select the entities to load and re-walk. The hint itself is not a
+	// lockfile field: the kind it names (Kind, through EntityKindOf) is, and
+	// together with URI it is the entity's identity (Key).
 	KindHint string
 }
 
@@ -469,7 +471,7 @@ func ResolvePinnedSocketEntity(ctx context.Context, lookup Lookup, uri string) (
 	if r, ok := lookup.(PinnedSocketEntityResolver); ok {
 		return r.ResolvePinnedSocketEntity(ctx, uri)
 	}
-	return lookup.ResolveCatalogEntity(ctx, uri, pluginKindHint)
+	return lookup.ResolveCatalogEntity(ctx, uri, KindPlugin)
 }
 
 // Resolution is the common output shape for catalog-entity and

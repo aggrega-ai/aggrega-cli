@@ -17,6 +17,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 )
 
@@ -81,7 +82,7 @@ func seedPinnedArtifact(t *testing.T, root string, blob []byte, mediaType, slotU
 	if err != nil {
 		t.Fatalf("oci.Pull: %v", err)
 	}
-	if err := writeEntityToCacheSlot(root, layoutCacheDir, slotURI, version, pulled); err != nil {
+	if err := writeEntityToCacheSlot(root, layoutCacheDir, kindOfMediaType(t, mediaType), slotURI, version, pulled); err != nil {
 		t.Fatalf("writeEntityToCacheSlot: %v", err)
 	}
 	return Pin{ResolvedVersion: version, Digest: rowDigestOf(pulled.Bytes), ManifestDigest: pulled.Digest}
@@ -182,13 +183,13 @@ func TestPinnedEntityReadsTheFilesItsArchiveCarries(t *testing.T) {
 			pin := seedPinnedSlot(t, root, row.kind, filepath.Join(pub, row.file), row.uri, "1.0.0")
 
 			ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-			ll.SetPins(map[string]Pin{row.uri: pin})
+			ll.SetPins(Pins{{Kind: row.kind, URI: row.uri}: pin})
 			got, ok := publishedRecipeSource(t, ll, row.kind, row.uri)
 			if !ok {
 				t.Fatalf("the pinned %s did not resolve; skips = %v", row.kind, ll.Skips())
 			}
 
-			slot := mustCachePath(root, layoutCacheDir, row.uri, "1.0.0")
+			slot := ocitest.MustCachePath(root, layoutCacheDir, row.kind, row.uri, "1.0.0")
 			want := filepath.Join(slotTree(t, slot), "chart")
 			if got != want {
 				t.Fatalf("source anchored at %q; want the chart inside the slot's layout %q", got, want)
@@ -225,10 +226,10 @@ func TestPinnedRecipeRenderDocumentIsItsLayoutDocument(t *testing.T) {
 			writeTree(t, pub, map[string]string{"recipe.yaml": row.doc})
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-			want := filepath.Join(slotTree(t, mustCachePath(root, layoutCacheDir, uri, "1.0.0")), "recipe.yaml")
+			want := filepath.Join(slotTree(t, ocitest.MustCachePath(root, layoutCacheDir, row.kind, uri, "1.0.0")), "recipe.yaml")
 
 			ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-			ll.SetPins(map[string]Pin{uri: pin})
+			ll.SetPins(Pins{{Kind: row.kind, URI: uri}: pin})
 			lookup := ll.RecipeLookupWithManifest(nil)
 			var got string
 			var ok bool
@@ -274,14 +275,14 @@ func TestPinnedSlotLayoutIsRebuiltFromTheBlobOnEveryRead(t *testing.T) {
 	writeTree(t, pub, map[string]string{"recipe.yaml": carriedRecipeDoc})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := ocitest.MustCachePath(root, layoutCacheDir, "Recipe", uri, "1.0.0")
 	template := filepath.Join(slotTree(t, slot), "chart", "templates", "banner.yaml")
 	stray := filepath.Join(slotTree(t, slot), "chart", "templates", "stray.yaml")
 
 	read := func() {
 		t.Helper()
 		ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-		ll.SetPins(map[string]Pin{uri: pin})
+		ll.SetPins(Pins{{Kind: "Recipe", URI: uri}: pin})
 		if _, ok := ll.RecipeByURI(uri); !ok {
 			t.Fatalf("the pinned Recipe did not resolve; skips = %v", ll.Skips())
 		}
@@ -330,7 +331,7 @@ func TestPinnedSlotWhoseBlobFailsVerificationIsNeverLaidOut(t *testing.T) {
 	writeTree(t, pub, map[string]string{"recipe.yaml": carriedRecipeDoc})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Recipe", filepath.Join(pub, "recipe.yaml"), uri, "1.0.0")
-	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := ocitest.MustCachePath(root, layoutCacheDir, "Recipe", uri, "1.0.0")
 
 	substitute := t.TempDir()
 	writeTree(t, substitute, map[string]string{
@@ -344,7 +345,7 @@ func TestPinnedSlotWhoseBlobFailsVerificationIsNeverLaidOut(t *testing.T) {
 	}
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-	ll.SetPins(map[string]Pin{uri: pin})
+	ll.SetPins(Pins{{Kind: "Recipe", URI: uri}: pin})
 	if _, ok := ll.RecipeByURI(uri); ok {
 		t.Fatal("a Recipe whose blob no longer matches its pin resolved")
 	}
@@ -381,15 +382,15 @@ spec:
 		t.Fatalf("Bundle: %v", err)
 	}
 	pin := seedPinnedArtifact(t, root, blob, mediaType, uri, "1.0.0")
-	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := ocitest.MustCachePath(root, layoutCacheDir, "Recipe", uri, "1.0.0")
 	writeTree(t, slot, map[string]string{"outside-chart/Chart.yaml": "apiVersion: v2\nname: outside\nversion: 0.1.0\n"})
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-	ll.SetPins(map[string]Pin{uri: pin})
+	ll.SetPins(Pins{{Kind: "Recipe", URI: uri}: pin})
 	if _, ok := ll.RecipeByURI(uri); ok {
 		t.Fatal("a Recipe whose source leaves its own directory resolved from its slot")
 	}
-	reason, recorded := ll.Skips()["lockfile-pinned:"+uri]
+	reason, recorded := ll.Skips()[pinnedSlotLabel(PinKey{Kind: "Recipe", URI: uri})]
 	if !recorded {
 		t.Fatalf("the refusal was not recorded under the pinned reference; skips = %v", ll.Skips())
 	}
@@ -425,7 +426,7 @@ spec:
 	})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Component", filepath.Join(pub, "component.yaml"), uri, "1.0.0")
-	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := ocitest.MustCachePath(root, layoutCacheDir, "Component", uri, "1.0.0")
 
 	cwd := t.TempDir()
 	t.Chdir(cwd)
@@ -434,7 +435,7 @@ spec:
 	})
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-	ll.SetPins(map[string]Pin{uri: pin})
+	ll.SetPins(Pins{{Kind: "Component", URI: uri}: pin})
 	c, ok := ll.Component(uri)
 	if !ok {
 		t.Fatalf("the pinned Component did not resolve from the archive carrying its schema; skips = %v", ll.Skips())
@@ -481,10 +482,10 @@ spec:
 `})
 	root := t.TempDir()
 	pin := seedPinnedSlot(t, root, "Component", filepath.Join(pub, "component.yaml"), uri, "1.0.0")
-	slot := mustCachePath(root, layoutCacheDir, uri, "1.0.0")
+	slot := ocitest.MustCachePath(root, layoutCacheDir, "Component", uri, "1.0.0")
 
 	ll := NewLazyLookup(root, layoutCacheDir, nil, nil)
-	ll.SetPins(map[string]Pin{uri: pin})
+	ll.SetPins(Pins{{Kind: "Component", URI: uri}: pin})
 	if _, ok := ll.Component(uri); !ok {
 		t.Fatalf("the pinned Component did not resolve from its slot; skips = %v", ll.Skips())
 	}

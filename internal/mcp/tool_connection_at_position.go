@@ -187,11 +187,11 @@ func connectionAtPositionInvoke(s *server, ctx context.Context, args json.RawMes
 		return errorResult(explainToolError(
 			"Could not resolve the workspace to report the connection at a position in.", err, ""))
 	}
-	lf, refusal := tw.loadReleaseLockfile(releasePath)
+	lf, lockPins, refusal := tw.loadReleaseLockfile(releasePath)
 	if refusal != "" {
 		return errorResult(refusal)
 	}
-	view := tw.newView(releasePath, lf)
+	view := tw.newView(releasePath, lockPins)
 
 	// The render is skipped. This reads where the graph records each connection's
 	// entry and discards everything else, and the graph is byte-identical whether

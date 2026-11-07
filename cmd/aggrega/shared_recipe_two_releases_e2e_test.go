@@ -91,8 +91,7 @@ func serveMultiVersionHelmRepo(t *testing.T, versions ...string) *httptest.Serve
 // infra, and TWO Releases that supply two different versions. The Recipe is
 // referenced from the Manifest by its full provider-qualified URI so it lands as
 // a pinned closure entity in each Release's lockfile, and its name does not
-// collide with the Component's, so no shadowing rule suppresses the recorded
-// digest. Returns the two release paths.
+// collide with the Component's. Returns the two release paths.
 func sharedRecipeTwoReleasesFixture(t *testing.T, root, repoRootURL string) (string, string) {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")

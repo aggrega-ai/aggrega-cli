@@ -238,7 +238,7 @@ func (l *LazyLookup) noteExtendsFailure(err error) {
 // invalidation. This is what removes shared mutable pin state: two requests
 // hold two views, so one request's pins can never interleave into another's
 // multi-step resolution.
-func (l *LazyLookup) ForRequest(pins map[string]Pin) *LazyLookup {
+func (l *LazyLookup) ForRequest(pins Pins) *LazyLookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Build the Tier-1 indexes once on the session catalog (idempotent), then
@@ -682,7 +682,7 @@ type LazyLookup struct {
 	// verified against the pin's digest before use. nil pins means no lockfile is
 	// threaded — the cache is not trusted, so Tier-2 falls through to a Tier-3
 	// re-establish rather than returning unverified bytes.
-	pins map[string]Pin
+	pins Pins
 
 	// Recipe / FeatureRecipe / Aggregate sets enumerated TOLERANTLY from the
 	// catalog directories on first need (buildRecipeIndex). Recipes are keyed by
@@ -835,7 +835,7 @@ type LazyLookup struct {
 // not built from drifted content; the per-request drift DIAGNOSTIC is the
 // closure-level lockfile-verify already run on the same request, so the skip
 // deliberately does NOT emit a second notice (no double-report).
-func (l *LazyLookup) SetPins(pins map[string]Pin) {
+func (l *LazyLookup) SetPins(pins Pins) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.pins = pins
@@ -916,15 +916,10 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	uris := make([]string, 0, len(l.pins))
-	for uri := range l.pins {
-		uris = append(uris, uri)
-	}
-	sort.Strings(uris)
-	for _, uri := range uris {
-		pin := l.pins[uri]
+	for _, key := range l.pins.sortedKeys() {
+		uri, pin := key.URI, l.pins[key]
 		slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
-		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, key.Kind, slotURI, pin.Digest, pin.ManifestDigest)
 		if errors.Is(err, readscope.ErrReadLeadsOutOfWorkspace()) {
 			return err
 		}
@@ -937,7 +932,7 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 			heldDigest = mismatch.held
 		}
 		held := heldInsteadOfPin(heldDigest, pin)
-		copies := l.catalogDirectoryCopies(slotURI)
+		copies := l.catalogDirectoryCopies(key.Kind, slotURI)
 		if holder, ok := copyHoldingPin(copies, pin.Digest); ok {
 			l.announce(fmt.Sprintf("  reuse: cache entry for %s holds %s; passed over for %s, which holds the pinned bytes\n",
 				slotURI, held, holder.path))
@@ -976,11 +971,13 @@ func copyHoldingPin(copies []catalogDirectoryCopy, pin string) (catalogDirectory
 }
 
 // catalogDirectoryCopies returns the catalog-directory documents the versioned
-// reference slotURI resolves to at the catalog tier, of every kind a pin can
-// record: a Component or Feature through the directory index the per-URI cascade
-// reads first (selectIndexedDocument, the first-win copy, so a copy another
-// directory shadows is never returned), and every other kind through the
-// recipe-shell enumeration's own catalog tier (Catalog.catalogDirectoryCopies).
+// reference slotURI resolves to at the catalog tier as the published kind the pin
+// records (kind), and no other kind: a Component or Feature through the directory
+// index the per-URI cascade reads first (selectIndexedDocument, the first-win copy,
+// so a copy another directory shadows is never returned), and every other kind
+// through the recipe-shell enumeration's own catalog tier
+// (Catalog.catalogDirectoryCopies). A copy of another kind sharing the reference is
+// another entity, so it never stands in for the pinned one.
 // Each digest is the one a catalog-directory read of the reference records — for
 // an entity, over what a publication of it carries (AuthoredEntityDigest) — so a
 // copy whose digest equals a pin is the copy a resolution of the reference reads
@@ -989,28 +986,93 @@ func copyHoldingPin(copies []catalogDirectoryCopy, pin string) (catalogDirectory
 //
 // It is asked only about a pin whose slot has failed verification, so a view
 // whose slots all hold their pins never walks for it. The caller holds l.mu.
-func (l *LazyLookup) catalogDirectoryCopies(slotURI string) []catalogDirectoryCopy {
-	l.buildComponentIndex()
-	l.buildFeatureIndex()
-	var copies []catalogDirectoryCopy
-	for _, index := range []map[string]indexedDocument{l.componentIndex, l.featureIndex} {
-		doc, ok := selectIndexedDocument(index, slotURI)
-		if !ok {
-			continue
-		}
-		d, err := authoredEntityDigestAt(doc.path, l.unwrittenLocks)
-		if err != nil {
-			continue
-		}
-		copies = append(copies, catalogDirectoryCopy{path: doc.path, digest: d})
+func (l *LazyLookup) catalogDirectoryCopies(kind, slotURI string) []catalogDirectoryCopy {
+	var index map[string]indexedDocument
+	switch kind {
+	case componentKind:
+		l.buildComponentIndex()
+		index = l.componentIndex
+	case featureKind:
+		l.buildFeatureIndex()
+		index = l.featureIndex
+	default:
+		return l.recipeCatalog().catalogDirectoryCopies(kind, slotURI)
 	}
-	return append(copies, l.recipeCatalog().catalogDirectoryCopies(slotURI)...)
+	doc, ok := selectIndexedDocument(index, slotURI)
+	if !ok {
+		return nil
+	}
+	d, err := authoredEntityDigestAt(doc.path, l.unwrittenLocks)
+	if err != nil {
+		return nil
+	}
+	return []catalogDirectoryCopy{{path: doc.path, digest: d}}
 }
 
+// PinKey names what a Pin holds a cache slot to: the published kind of the
+// artifact — the kind its slot is kept under (oci.CachePath) — and its reference
+// as the lockfile records it. Two pins of one reference and different kinds, a
+// Component and a Recipe of one name, are two keys and address two slots.
+//
+// Executable marks the pin of a Plugin's executable rather than of its entity. The
+// two are published together and kept under one kind, and a Plugin entity's
+// reference may be its bare coordinate — the reference its executable is pinned
+// under — so kind and reference alone would make the entity's pin and the
+// executable's one key. Their slots are already apart: the entity's is addressed by
+// its version and the executable's by its content digest. Executable keeps their
+// pins apart the same way, without a second spelling of the kind. Build an
+// executable's key with PluginExecutablePin.
+type PinKey struct {
+	Kind       string
+	URI        string
+	Executable bool
+}
+
+// PluginExecutablePin is the key of the pin a Plugin's executable is held to, for
+// the reference the lockfile's plugin section records it under.
+func PluginExecutablePin(uri string) PinKey {
+	return PinKey{Kind: oci.PluginArtifactKind(), URI: uri, Executable: true}
+}
+
+// Less orders keys by reference, then by kind — the order closure.EntityKey.Less
+// states for an entity's identity, read through it rather than stated again — and
+// an entity's pin before its executable's, so a pass visiting every pin visits them
+// in one fixed order.
+func (k PinKey) Less(o PinKey) bool {
+	a, b := closure.EntityKey{Kind: k.Kind, URI: k.URI}, closure.EntityKey{Kind: o.Kind, URI: o.URI}
+	if a != b {
+		return a.Less(b)
+	}
+	return !k.Executable && o.Executable
+}
+
+// Pins is a pin set: the pin each artifact a lockfile or a closure records is held
+// to, keyed by its kind and reference.
+type Pins map[PinKey]Pin
+
+// sortedKeys returns p's keys in PinKey.Less order.
+func (p Pins) sortedKeys() []PinKey {
+	keys := make([]PinKey, 0, len(p))
+	for k := range p {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Less(keys[j]) })
+	return keys
+}
+
+// The published kinds this package addresses slots under for kinds it names
+// itself, derived from the closure kinds rather than spelled.
+var (
+	componentKind = EntityKindForHint(closure.KindComponent)
+	featureKind   = EntityKindForHint(closure.KindFeature)
+	aggregateKind = EntityKindForHint(closure.KindAggregate)
+	pluginKind    = EntityKindForHint(closure.KindPlugin)
+)
+
 // Pin is a lockfile entry's resolved version + content digest, keyed in the lazy
-// lookup by the entity URI as the lockfile records it. The version is retained
-// (not just the digest) because the Tier-2 cache slot is keyed by the VERSIONED
-// URI: a bare-URI pin must combine its URI with ResolvedVersion (via
+// lookup by its kind and the URI the lockfile records (PinKey). The version is
+// retained (not just the digest) because the Tier-2 cache slot is keyed by the
+// VERSIONED URI: a bare-URI pin must combine its URI with ResolvedVersion (via
 // versionedSlotURI) to address the slot, exactly as the cache→catalog bridge does.
 type Pin struct {
 	ResolvedVersion string
@@ -1025,37 +1087,71 @@ type Pin struct {
 }
 
 // PinsFromLockfile builds the version-aware pin set SetPins consumes from a loaded
-// lockfile, across every kind the closure walker resolves through the Tier-2 cache
-// — the same axes Lockfile.PinsByURI covers, over the identical URI set, but
+// lockfile, across every kind the closure walker resolves through the Tier-2 cache,
 // retaining ResolvedVersion so a bare-URI pin can address its versioned cache
-// slot. The axes are not enumerated here: the loops below are the statement, and a
-// list beside them is a second copy that goes stale the moment an axis is added.
-// Source artifacts are excluded (they descend on their own read-time digest gate,
-// not the closure walker's Tier-2 reuse).
-func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
+// slot. The axes are not enumerated here: the loops below are the statement — the
+// library sections read through the declared axis set and the lockfile's own
+// binding of it (lockfile.LibraryPins) — and a list beside them is a second copy
+// that goes stale the moment an axis is added. Source artifacts are excluded (they
+// descend on their own read-time digest gate, not the closure walker's Tier-2
+// reuse).
+//
+// Each pin is keyed by the published kind its slot is kept under and its
+// reference (PinKey): an entity row's kind through entityPinKey, a library row's
+// through its axis (closure.LibraryAxis.Kind), and a plugin row's as the plugin's
+// executable (PluginExecutablePin). A row whose kind no slot holds — a Manifest —
+// carries no pin; a row whose kind names no published kind halts as an internal
+// fault, naming every such row, because a pin it cannot be keyed by would leave its
+// cache read held to nothing.
+func PinsFromLockfile(lf *lockfile.Lockfile) (Pins, error) {
 	if lf == nil {
-		return nil
+		return nil, nil
 	}
-	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WorkloadLibraries)+len(lf.ArtifactLibraries)+len(lf.Plugins))
+	pins := make(Pins, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WorkloadLibraries)+len(lf.ArtifactLibraries)+len(lf.Plugins))
+	var faults []error
 	for _, e := range lf.Entities {
-		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
+		key, cached, err := entityPinKey(e.Kind, e.URI)
+		if err != nil {
+			faults = append(faults, err)
+			continue
+		}
+		if cached {
+			pins[key] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
+		}
 	}
-	for _, sl := range lf.SchemaLibraries {
-		pins[sl.URI] = Pin{ResolvedVersion: sl.ResolvedVersion, Digest: sl.Digest}
+	if len(faults) > 0 {
+		return nil, errors.Join(faults...)
 	}
-	for _, ml := range lf.MappingLibraries {
-		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
-	}
-	for _, wl := range lf.WorkloadLibraries {
-		pins[wl.URI] = Pin{ResolvedVersion: wl.ResolvedVersion, Digest: wl.Digest}
-	}
-	for _, al := range lf.ArtifactLibraries {
-		pins[al.URI] = Pin{ResolvedVersion: al.ResolvedVersion, Digest: al.Digest}
+	for _, axis := range closure.LibraryAxes() {
+		rows, _ := lockfile.LibraryPins(lf, axis)
+		for _, row := range rows {
+			pins[PinKey{Kind: axis.Kind, URI: row.URI}] = Pin{ResolvedVersion: row.ResolvedVersion, Digest: row.Digest}
+		}
 	}
 	for _, wp := range lf.Plugins {
-		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
+		pins[PluginExecutablePin(wp.URI)] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
 	}
-	return pins
+	return pins, nil
+}
+
+// entityPinKey is the key the pin of an entity of entityKind (a closure kind, as a
+// lockfile row records it) at uri is kept under, and whether such an entity has a
+// pin at all: an entity of a kind no cache slot holds (closure.KindReadFromCacheSlot)
+// has none. Any other kind names the published kind its slot is kept under
+// (EntityKindForHint); one that names none — an empty or an undeclared kind — is
+// refused as an internal fault naming the entity, never passed over, because a
+// resolution records a declared kind on every entity it pins.
+func entityPinKey(entityKind, uri string) (PinKey, bool, error) {
+	if !closure.KindReadFromCacheSlot(entityKind) {
+		return PinKey{}, false, nil
+	}
+	kind := EntityKindForHint(entityKind)
+	if kind == "" {
+		return PinKey{}, false, fmt.Errorf("internal: catalog: the entity %s records no kind a cache slot is kept under, "+
+			"so no pin can hold it; this is a defect in the compiler rather than in the workspace — report it with the Release",
+			closure.EntityKey{Kind: entityKind, URI: uri}.Quoted())
+	}
+	return PinKey{Kind: kind, URI: uri}, true, nil
 }
 
 // PinsFromClosure builds the version-aware pin set SetPins consumes from a
@@ -1070,28 +1166,34 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 //
 // The two builders are kept as separate projections rather than routed through one
 // another: they read different source types, so a shared implementation would need
-// a third abstraction over both, and neither caller has a use for one.
-func PinsFromClosure(cl closure.Closure) map[string]Pin {
-	pins := make(map[string]Pin, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.WorkloadLibraries)+len(cl.ArtifactLibraries)+len(cl.Plugins))
+// a third abstraction over both, and neither caller has a use for one. They share
+// the keying of an entity's pin (entityPinKey), and so its refusal: a closure entity
+// whose kind names no published kind halts as an internal fault.
+func PinsFromClosure(cl closure.Closure) (Pins, error) {
+	pins := make(Pins, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.WorkloadLibraries)+len(cl.ArtifactLibraries)+len(cl.Plugins))
+	var faults []error
 	for _, e := range cl.Entities {
-		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
+		key, cached, err := entityPinKey(e.Kind(), e.URI)
+		if err != nil {
+			faults = append(faults, err)
+			continue
+		}
+		if cached {
+			pins[key] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
+		}
 	}
-	for _, sl := range cl.SchemaLibraries {
-		pins[sl.URI] = libraryPin(sl)
+	if len(faults) > 0 {
+		return nil, errors.Join(faults...)
 	}
-	for _, ml := range cl.MappingLibraries {
-		pins[ml.URI] = libraryPin(ml)
-	}
-	for _, wl := range cl.WorkloadLibraries {
-		pins[wl.URI] = libraryPin(wl)
-	}
-	for _, al := range cl.ArtifactLibraries {
-		pins[al.URI] = libraryPin(al)
+	for _, axis := range closure.LibraryAxes() {
+		for _, lib := range axis.Libraries(&cl) {
+			pins[PinKey{Kind: axis.Kind, URI: lib.URI}] = libraryPin(lib)
+		}
 	}
 	for _, wp := range cl.Plugins {
-		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
+		pins[PluginExecutablePin(wp.URI)] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
 	}
-	return pins
+	return pins, nil
 }
 
 // libraryPin is the pin a resolved library is held to: the version it resolved to,
@@ -1130,20 +1232,20 @@ const (
 // against, which a caller describing the hit reports the digest of
 // (cacheHitResolution), and the slot the bytes were read from, which is where a
 // caller that parses them lays them out (unpackEntitySlot).
-func (l *LazyLookup) tier2Verified(uri string) ([]byte, []byte, string, tier2Outcome) {
-	pin, havePin := l.pins[uri]
+func (l *LazyLookup) tier2Verified(kind, uri string) ([]byte, []byte, string, tier2Outcome) {
+	pin, havePin := l.pins[PinKey{Kind: kind, URI: uri}]
 	if !havePin {
 		return nil, nil, "", tier2Fetch
 	}
 	// The cache slot is keyed by the versioned URI; combine the lookup URI with
 	// the pin's resolved version so a bare-URI pin addresses the right slot.
 	slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
-	bytes, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+	bytes, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, kind, slotURI, pin.Digest, pin.ManifestDigest)
 	switch {
 	case err == nil:
 		// The verified read above addressed the slot through this same derivation,
 		// so it cannot refuse here; a refusal would still be no slot to lay out.
-		slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+		slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, kind, slotURI)
 		if serr != nil || !ok {
 			return nil, nil, "", tier2Skip
 		}
@@ -1211,30 +1313,32 @@ func (l *LazyLookup) ComponentContext(ctx context.Context, uri string) (types.Co
 // ClosureComponent returns the Component a closure entity reference resolves to,
 // merged along its extends chain, satisfying closure.LibrarySource.
 //
-// The local tiers are always read. The registry tier is asked only where the
-// walk collected ref at a position naming a Component. A reference collected as
-// anything else — a Recipe, the Release's own Manifest or Aggregate, a plugin —
-// was resolved by the walk as that kind, and whatever the walk took from a
-// registry for it is pinned and held in the cache the local tiers read. So a
-// Component a registry served for such a reference here would be one the
-// resolved closure does not hold, and asking for it is a round trip that can
-// only cost the wait. Where the registry is asked, it is asked under ctx.
+// A reference the walk collected as anything else — a Recipe, the Release's own
+// Manifest or Aggregate, a plugin — is that kind's entity, so it reads no Component
+// from any tier: a Component sharing its name is not one the resolved closure
+// holds. A reference collected as a Component reads the local tiers and then the
+// registry, under ctx; one collected with no kind reads the local tiers only.
 func (l *LazyLookup) ClosureComponent(ctx context.Context, ref closure.ResolvedRef) (types.Component, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.closureComponent(ctx, ref)
 }
 
-// closureComponent is the lock-free core of ClosureComponent.
+// closureComponent is the lock-free core of ClosureComponent. A reference the walk
+// collected as another kind reads no Component at all, from any tier: a Component
+// sharing its name is not the entity the closure reached.
 func (l *LazyLookup) closureComponent(ctx context.Context, ref closure.ResolvedRef) (types.Component, bool) {
+	if !ref.ReadableAs(closure.KindComponent) {
+		return types.Component{}, false
+	}
 	return l.componentContext(ctx, ref.URI, collectedAs(ref, "Component"))
 }
 
 // collectedAs reports whether the walk collected ref at a position naming the
 // catalog kind, read through the one mapping from a collection-site hint to a
-// catalog kind (ociKindForHint) that the registry tier's own fetch binds by.
+// catalog kind (EntityKindForHint).
 func collectedAs(ref closure.ResolvedRef, kind string) bool {
-	return ociKindForHint(ref.KindHint) == kind
+	return EntityKindForHint(ref.KindHint) == kind
 }
 
 // registryTier returns the puller a cascade's registry tier reads through: this
@@ -1350,8 +1454,13 @@ func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
 	return l.featureContext(context.Background(), uri, true)
 }
 
-// closureFeature is the lock-free core of ClosureFeature.
+// closureFeature is the lock-free core of ClosureFeature. A reference the walk
+// collected as another kind reads no Feature, as closureComponent reads no
+// Component for one.
 func (l *LazyLookup) closureFeature(ctx context.Context, ref closure.ResolvedRef) (types.Feature, bool) {
+	if !ref.ReadableAs(closure.KindFeature) {
+		return types.Feature{}, false
+	}
 	return l.featureContext(ctx, ref.URI, collectedAs(ref, "Feature"))
 }
 
@@ -1476,7 +1585,7 @@ func (l *LazyLookup) localComponentTiers(uri string) (types.Component, bool, boo
 	if comp, ok := l.tier1ReadComponent(uri); ok {
 		return comp, true, true
 	}
-	bytes, _, slot, outcome := l.tier2Verified(uri)
+	bytes, _, slot, outcome := l.tier2Verified(componentKind, uri)
 	switch outcome {
 	case tier2Use:
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
@@ -1516,9 +1625,9 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, pu
 	if comp, ok, settled := l.localComponentTiers(uri); settled {
 		return comp, ok
 	}
-	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Component")
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, componentKind)
 	if err == nil && bytes != nil {
-		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, uri, res, bytes); ok {
+		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, componentKind, uri, res, bytes); ok {
 			if comp, perr := parseComponentEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
 				return comp, true
@@ -1562,8 +1671,8 @@ func registryDocument(workspaceRoot, cacheDir, slot string, published []byte, la
 // wrote under the resolution res: the slot the write used (tier3Slot), laid out
 // and read. A slot the version cannot address is a miss, in the shape the
 // cascade speaks — the write before it refused the same version first.
-func registryDocumentAt(workspaceRoot, cacheDir, uri string, res closure.Resolution, published []byte) (string, []byte, bool) {
-	slot, err := tier3Slot(workspaceRoot, cacheDir, uri, res)
+func registryDocumentAt(workspaceRoot, cacheDir, kind, uri string, res closure.Resolution, published []byte) (string, []byte, bool) {
+	slot, err := tier3Slot(workspaceRoot, cacheDir, kind, uri, res)
 	if err != nil {
 		return "", nil, false
 	}
@@ -1577,7 +1686,7 @@ func (l *LazyLookup) localFeatureTiers(uri string) (types.Feature, bool, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
 		return feat, true, true
 	}
-	bytes, _, slot, outcome := l.tier2Verified(uri)
+	bytes, _, slot, outcome := l.tier2Verified(featureKind, uri)
 	switch outcome {
 	case tier2Use:
 		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
@@ -1601,9 +1710,9 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string, pull
 	if feat, ok, settled := l.localFeatureTiers(uri); settled {
 		return feat, ok
 	}
-	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, "Feature")
+	bytes, res, err := tier3PullCatalogEntity(ctx, l.workspaceRoot, l.cacheDir, puller, uri, featureKind)
 	if err == nil && bytes != nil {
-		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, uri, res, bytes); ok {
+		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, featureKind, uri, res, bytes); ok {
 			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
 				return feat, true
@@ -2389,14 +2498,14 @@ func refusalOr(refusal, fallback error) error {
 // foldPinnedCacheEntities folds every lockfile-pinned Tier-2 cache slot whose kind
 // is in allowed into the enumerated maps, under the SAME verify-on-read / pin
 // discipline the Component cascade uses (tier2ReadVerifiedWithManifest). The pin set (SetPins) is
-// the lockfile's URI→digest map; the cache is keyed by URI, not walkable like the
-// Tier-1 dirs, so enumeration is pin-driven. Bundled slots are tar.gz archives:
+// the lockfile's (kind, URI)→pin map; the cache is keyed by kind and URI, not walkable
+// like the Tier-1 dirs, so enumeration is pin-driven. Bundled slots are tar.gz archives:
 // the bundle is unwrapped to parse the entity YAML, but the WHOLE bundle blob is
 // retained as entityBytes so the pinned digest covers the bundle (parity with the
 // cache→catalog bridge). A Recipe's or FeatureRecipe's slot is also laid out from
 // that verified blob and parsed at its document's place in the layout, so the
 // files it carries are read from what was published (foldRecipeShellEntity).
-// Deterministic: pins are visited in sorted URI order, so first-wins shadowing
+// Deterministic: pins are visited in PinKey.Less order, so first-wins shadowing
 // among pinned duplicates is stable across runs.
 //
 // # Two skips, and only one of them is silent
@@ -2417,13 +2526,8 @@ func refusalOr(refusal, fallback error) error {
 // through the same channel every other unindexable document uses, keyed by the
 // pinned reference, and reaches a caller through SkippedEntities.
 func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
-	uris := make([]string, 0, len(l.pins))
-	for uri := range l.pins {
-		uris = append(uris, uri)
-	}
-	sort.Strings(uris)
-	for _, uri := range uris {
-		l.foldPinnedSlot(uri, l.pins[uri], allowed)
+	for _, key := range l.pins.sortedKeys() {
+		l.foldPinnedSlot(key, l.pins[key], allowed)
 	}
 }
 
@@ -2432,15 +2536,17 @@ func (l *LazyLookup) foldPinnedCacheEntities(allowed map[string]bool) {
 // set. It is the single reading of a pinned slot into this view's enumerated maps:
 // the pin-set fold runs it for every pin, and HoldResolvedLibrary runs it for the
 // one library a dependency resolution has just resolved.
-func (l *LazyLookup) foldPinnedSlot(uri string, pin Pin, allowed map[string]bool) {
+func (l *LazyLookup) foldPinnedSlot(key PinKey, pin Pin, allowed map[string]bool) {
+	uri := key.URI
+	label := pinnedSlotLabel(key)
 	// A bare-URI pin (a sub-aggregate / library referenced by bare name, pinned
 	// with a separate ResolvedVersion) addresses its versioned cache slot via
 	// versionedSlotURI — the same key the cache→catalog bridge reads.
 	slotURI := versionedSlotURI(uri, pin.ResolvedVersion)
-	blob, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, slotURI, pin.Digest, pin.ManifestDigest)
+	blob, manifest, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, key.Kind, slotURI, pin.Digest, pin.ManifestDigest)
 	if err != nil {
 		if unwrapRefusal(err) {
-			l.recordRecipeSkip("lockfile-pinned:"+uri, err)
+			l.recordRecipeSkip(label, err)
 		}
 		return
 	}
@@ -2452,13 +2558,13 @@ func (l *LazyLookup) foldPinnedSlot(uri string, pin Pin, allowed map[string]bool
 	// The verified read above succeeded through this same derivation, so the slot
 	// is there; an empty one would fold a pinned entity as a catalog-directory
 	// file, which is why the case is skipped rather than passed on.
-	slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, slotURI)
+	slot, _, ok, serr := tier2Slot(l.workspaceRoot, l.cacheDir, key.Kind, slotURI)
 	if serr != nil || !ok {
 		return
 	}
 	parseData, uerr := oci.EntityYAML(blob)
 	if uerr != nil {
-		l.recordRecipeSkip("lockfile-pinned:"+uri, uerr)
+		l.recordRecipeSkip(label, uerr)
 		return
 	}
 	kind := peekEntityKind(parseData)
@@ -2466,10 +2572,23 @@ func (l *LazyLookup) foldPinnedSlot(uri string, pin Pin, allowed map[string]bool
 		return
 	}
 	if kind == "SchemaLibrary" {
-		l.foldPinnedSchemaLibrary(parseData, blob, "lockfile-pinned:"+uri, slot, manifestDigest)
+		l.foldPinnedSchemaLibrary(parseData, blob, label, slot, manifestDigest)
 		return
 	}
-	l.foldRecipeShellEntity(kind, parseData, blob, "lockfile-pinned:"+uri, slot, manifestDigest, noCatalogDirectory)
+	l.foldRecipeShellEntity(kind, parseData, blob, label, slot, manifestDigest, noCatalogDirectory)
+}
+
+// pinnedSlotLabel is the label a pinned cache slot is read and refused under: the
+// pinned reference, which is the term a reader wrote in the lockfile rather than a
+// cache path nobody authored, and the kind it is pinned as — so two slots of one
+// reference kept under two kinds are recorded, warned about and reported apart.
+// It is the one spelling of that label; every reader of a pinned slot takes it here.
+func pinnedSlotLabel(key PinKey) string {
+	kind := key.Kind
+	if key.Executable {
+		kind += " executable"
+	}
+	return "lockfile-pinned:" + key.URI + " (" + kind + ")"
 }
 
 // unwrapRefusal reports whether err is one of the refusals reading an entity out
@@ -2870,14 +2989,14 @@ func (l *LazyLookup) CachedPluginByURI(uri string) (CachedPlugin, bool, error) {
 	if !hasV || version == "" {
 		return CachedPlugin{}, false, nil
 	}
-	entityBytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, version)
+	entityBytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, pluginKind, uri, version)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return CachedPlugin{}, false, nil
 		}
 		return CachedPlugin{}, false, fmt.Errorf("catalog: read cached plugin entity %s: %w", uri, err)
 	}
-	manifestBytes, merr := persistedManifest(l.workspaceRoot, l.cacheDir, uri, version)
+	manifestBytes, merr := persistedManifest(l.workspaceRoot, l.cacheDir, pluginKind, uri, version)
 	if merr != nil {
 		// A content blob with no persisted manifest is an incomplete slot (the rule
 		// persistedManifest decides for every cache reader); it is a miss, so the
@@ -3084,15 +3203,16 @@ func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.R
 	if _, held := l.libraryNameLocked(axis, lib.URI); held {
 		return
 	}
-	if _, pinned := l.pins[lib.URI]; pinned {
+	key := PinKey{Kind: axis.Kind, URI: lib.URI}
+	if _, pinned := l.pins[key]; pinned {
 		return
 	}
 	pin := libraryPin(lib)
-	pins := make(map[string]Pin, len(l.pins)+1)
+	pins := make(Pins, len(l.pins)+1)
 	maps.Copy(pins, l.pins)
-	pins[lib.URI] = pin
+	pins[key] = pin
 	l.pins = pins
-	l.foldPinnedSlot(lib.URI, pin, map[string]bool{axis.Kind: true})
+	l.foldPinnedSlot(key, pin, map[string]bool{axis.Kind: true})
 }
 
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every
@@ -3415,21 +3535,21 @@ func (l *LazyLookup) ClosureLintWarnings(ctx context.Context, cl closure.Closure
 	l.buildComponentIndex()
 	l.buildFeatureIndex()
 
-	uris := make([]string, 0, len(cl.Entities))
-	refs := map[string]closure.ResolvedRef{}
+	keys := make([]closure.EntityKey, 0, len(cl.Entities))
+	refs := map[closure.EntityKey]closure.ResolvedRef{}
 	for _, e := range cl.Entities {
-		if _, seen := refs[e.URI]; seen {
+		if _, seen := refs[e.Key()]; seen {
 			continue
 		}
-		refs[e.URI] = e
-		uris = append(uris, e.URI)
+		refs[e.Key()] = e
+		keys = append(keys, e.Key())
 	}
-	sort.Strings(uris)
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Less(keys[j]) })
 
 	var out []string
 	linted := map[string]bool{}
-	for _, uri := range uris {
-		if comp, ok := l.closureComponent(ctx, refs[uri]); ok {
+	for _, key := range keys {
+		if comp, ok := l.closureComponent(ctx, refs[key]); ok {
 			identity := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
 			if linted[entityBytesKey("Component", identity)] {
 				continue
@@ -3439,7 +3559,7 @@ func (l *LazyLookup) ClosureLintWarnings(ctx context.Context, cl closure.Closure
 				"Component", comp.Metadata.Name, identity, comp.Spec.Schema)...)
 			continue
 		}
-		if feat, ok := l.closureFeature(ctx, refs[uri]); ok {
+		if feat, ok := l.closureFeature(ctx, refs[key]); ok {
 			identity := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
 			if linted[entityBytesKey("Feature", identity)] {
 				continue
@@ -3534,53 +3654,68 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 		l.closureNarrowings = append(l.closureNarrowings, composition.Narrowings...)
 	}
 
-	// One reference per name — the first the closure lists — with the registry
-	// tier open for a kind wherever any reference to the name was collected as it,
-	// since a closure can reach one entity through more than one reference.
+	// One reference per name and kind — the first the closure lists that the kind
+	// may be read for (closure.ResolvedRef.ReadableAs) — with the registry tier open wherever any
+	// reference to the name was collected as that kind, since a closure can reach
+	// one entity through more than one reference. A Component and a Feature are
+	// grouped apart, and an entity of any other kind sharing a name joins neither,
+	// so each chain resolved is one the closure reached as that kind.
 	type nameRef struct {
-		uri                string
-		component, feature bool
+		uri      string
+		registry bool
 	}
-	byName := map[string]*nameRef{}
-	for _, e := range cl.Entities {
-		n := lookupNameFromURI(e.URI)
-		r, ok := byName[n]
-		if !ok {
-			r = &nameRef{uri: e.URI}
-			byName[n] = r
+	group := func(kind, catalogKind string) map[string]*nameRef {
+		byName := map[string]*nameRef{}
+		for _, e := range cl.Entities {
+			if !e.ReadableAs(kind) {
+				continue
+			}
+			n := lookupNameFromURI(e.URI)
+			r, ok := byName[n]
+			if !ok {
+				r = &nameRef{uri: e.URI}
+				byName[n] = r
+			}
+			r.registry = r.registry || collectedAs(e, catalogKind)
 		}
-		r.component = r.component || collectedAs(e, "Component")
-		r.feature = r.feature || collectedAs(e, "Feature")
+		return byName
 	}
-	names := make([]string, 0, len(byName))
-	for n := range byName {
+	compByName := group(closure.KindComponent, "Component")
+	featByName := group(closure.KindFeature, "Feature")
+	names := make([]string, 0, len(compByName)+len(featByName))
+	for n := range compByName {
 		names = append(names, n)
+	}
+	for n := range featByName {
+		if _, both := compByName[n]; !both {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 
 	var errs []error
 	for _, n := range names {
-		r := byName[n]
-		if comp, ok := l.resolveComponentContext(ctx, r.uri, l.registryTier(r.component)); ok {
-			if comp.Spec.Extends == "" {
-				continue
-			}
-			// Structural merge (metadata, secrets, uses, inject), plus the base's
-			// pillar block copied down verbatim onto Spec.Schema. An extending
-			// Component authors no pillar content, so there is nothing to compose
-			// afterwards and no second view to store — every Component-schema
-			// consumer reads the authored node.
-			lookup, refusal := recordExtendsRefusal(compLookup, l.localComponentVersion)
-			if _, vErrs := validator.ResolveComponentExtends(comp, lookup); len(vErrs) > 0 {
-				name := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
-				for _, ve := range refusal.refine(envelope.KindComponent, name, vErrs) {
-					errs = append(errs, ve)
+		if r, ok := compByName[n]; ok {
+			if comp, ok := l.resolveComponentContext(ctx, r.uri, l.registryTier(r.registry)); ok && comp.Spec.Extends != "" {
+				// Structural merge (metadata, secrets, uses, inject), plus the base's
+				// pillar block copied down verbatim onto Spec.Schema. An extending
+				// Component authors no pillar content, so there is nothing to compose
+				// afterwards and no second view to store — every Component-schema
+				// consumer reads the authored node.
+				lookup, refusal := recordExtendsRefusal(compLookup, l.localComponentVersion)
+				if _, vErrs := validator.ResolveComponentExtends(comp, lookup); len(vErrs) > 0 {
+					name := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
+					for _, ve := range refusal.refine(envelope.KindComponent, name, vErrs) {
+						errs = append(errs, ve)
+					}
 				}
-				continue
 			}
+		}
+		r, ok := featByName[n]
+		if !ok {
 			continue
 		}
-		if feat, ok := l.resolveFeatureContext(ctx, r.uri, l.registryTier(r.feature)); ok {
+		if feat, ok := l.resolveFeatureContext(ctx, r.uri, l.registryTier(r.registry)); ok {
 			if feat.Spec.Extends == "" {
 				continue
 			}
@@ -3650,7 +3785,7 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 //     pin, against the closure-level drift gate. Held to a pin or not, a slot
 //     holding content but no manifest is not an entry and is never reused
 //     (persistedManifest).
-func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, registrySeeds map[string]closure.Resolution, reuse *ReuseVerification) closure.Lookup {
+func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir string, externals map[closure.EntityKey][]byte, registrySeeds map[closure.EntityKey]closure.Resolution, reuse *ReuseVerification) closure.Lookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return &lazyClosureLookup{
@@ -3700,7 +3835,7 @@ func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindH
 // view: the same local probes ResolveCatalogEntity makes for a Plugin entity
 // reference, then the base's pinned-socket resolution.
 func (x *lazyClosureLookup) ResolvePinnedSocketEntity(ctx context.Context, uri string) (closure.Resolution, error) {
-	return x.resolveEntity(uri, pluginEntityKindHint, func() (closure.Resolution, error) {
+	return x.resolveEntity(uri, closure.KindPlugin, func() (closure.Resolution, error) {
 		return closure.ResolvePinnedSocketEntity(ctx, x.base, uri)
 	})
 }
@@ -3715,17 +3850,20 @@ func (x *lazyClosureLookup) resolveEntity(uri, kindHint string, base func() (clo
 	// alias the lookup's maps), so it takes the lookup lock here.
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
-	// Route by the collection-site kind when known, so a Feature is not read at a
-	// Component location nor a Component at a Feature one; fall back to both local
-	// probes when the hint is absent or names a kind this lazy path does not resolve
-	// directly (recipe/provider → base). Neither probe reads a registry, so an
-	// answer this path cannot give locally is the base's to give.
-	if kindHint != "feature" {
+	// Route by the collection-site kind, so a reference is read as the kind it was
+	// collected as and as no other: a Component probe answers only a Component
+	// reference, a Feature probe only a Feature one, and a reference of any other
+	// kind — a Recipe, a Plugin, the Release's own Aggregate or Manifest — goes
+	// straight to base, which resolves it as its own kind even where a Component or
+	// a Feature shares its name. A reference whose kind its caller does not know is
+	// tried at both probes. Neither probe reads a registry, so an answer this path
+	// cannot give locally is the base's to give.
+	if probesComponent(kindHint) {
 		if res, ok, err := x.l.resolveComponentForClosure(uri); err != nil || ok {
 			return res, err
 		}
 	}
-	if kindHint != closure.ComponentKindHint {
+	if probesFeature(kindHint) {
 		if res, ok, err := x.l.resolveFeatureForClosure(uri); err != nil || ok {
 			return res, err
 		}
@@ -3737,6 +3875,17 @@ func (x *lazyClosureLookup) resolveEntity(uri, kindHint string, base func() (clo
 	return res, err
 }
 
+// probesComponent reports whether a reference collected under kindHint is read
+// at this view's local Component copies (closure.KindReadableAs).
+func probesComponent(kindHint string) bool {
+	return closure.KindReadableAs(closure.EntityKindOf(kindHint), closure.KindComponent)
+}
+
+// probesFeature is probesComponent for the local Feature copies.
+func probesFeature(kindHint string) bool {
+	return closure.KindReadableAs(closure.EntityKindOf(kindHint), closure.KindFeature)
+}
+
 // localVersionRefusal is the Component and Feature half of the reason a reference
 // every tier missed did not resolve, which the recipe shell behind this view
 // cannot give because its Component and Feature indexes are empty by construction:
@@ -3745,12 +3894,12 @@ func (x *lazyClosureLookup) resolveEntity(uri, kindHint string, base func() (clo
 // it holds satisfies uri's pin, and nil otherwise. It reads the indexes the local
 // probes above read, under the same kind routing.
 func (l *LazyLookup) localVersionRefusal(uri, kindHint string) error {
-	if kindHint != "feature" {
+	if probesComponent(kindHint) {
 		if _, _, err := l.localComponentVersion(uri); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
 			return err
 		}
 	}
-	if kindHint != closure.ComponentKindHint {
+	if probesFeature(kindHint) {
 		if _, _, err := l.localFeatureVersion(uri); errors.Is(err, ErrUnsatisfiableEntityVersion()) {
 			return err
 		}
@@ -3832,7 +3981,7 @@ func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution,
 		res, err := l.closureResolution("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), doc.path, comp.Metadata.Version)
 		return res, err == nil, err
 	}
-	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, manifest, slot, outcome := l.tier2Verified(componentKind, uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
@@ -3851,7 +4000,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string) (closure.Resolution, b
 		res, err := l.closureResolution("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version), doc.path, feat.Metadata.Version)
 		return res, err == nil, err
 	}
-	if bytes, manifest, slot, outcome := l.tier2Verified(uri); outcome == tier2Use {
+	if bytes, manifest, slot, outcome := l.tier2Verified(featureKind, uri); outcome == tier2Use {
 		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
 				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes

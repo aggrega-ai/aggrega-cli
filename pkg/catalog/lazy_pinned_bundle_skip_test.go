@@ -128,12 +128,12 @@ func TestPinnedBundleThatCannotBeUnwrappedIsReportedNotSwallowed(t *testing.T) {
 	pin := writePinnedSlot(t, ws, cacheUnderCatalogDir, "helm/shared:1.0.0", oci.MediaTypeRecipe, blob)
 
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
-	subject.SetPins(map[string]Pin{"helm/shared": pin})
+	subject.SetPins(Pins{{Kind: "Recipe", URI: "helm/shared"}: pin})
 
 	var skips map[string]error
 	warning := captureNotices(t, subject, func() { skips = subject.Skips() })
 
-	const wantKey = "lockfile-pinned:helm/shared"
+	wantKey := pinnedSlotLabel(PinKey{Kind: "Recipe", URI: "helm/shared"})
 	reason, recorded := skips[wantKey]
 	if !recorded {
 		t.Fatalf("a pinned artifact that could not be unwrapped was skipped with no record; keys present: %v", skipKeysOf(skips))
@@ -162,8 +162,8 @@ func TestPinnedBundleSkipIsDistinctFromAPinWithNoSlot(t *testing.T) {
 	t.Run("pin with no cache slot stays silent", func(t *testing.T) {
 		ws := t.TempDir()
 		subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
-		subject.SetPins(map[string]Pin{
-			"helm/absent": {ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64)},
+		subject.SetPins(Pins{
+			{Kind: "Recipe", URI: "helm/absent"}: {ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64)},
 		})
 		var skips map[string]error
 		warning := captureNotices(t, subject, func() { skips = subject.Skips() })
@@ -181,7 +181,7 @@ func TestPinnedBundleSkipIsDistinctFromAPinWithNoSlot(t *testing.T) {
 		pin := writePinnedSlot(t, ws, cacheUnderCatalogDir, "helm/frontend:1.0.0", oci.MediaTypeRecipe, blob)
 
 		subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
-		subject.SetPins(map[string]Pin{"helm/frontend": pin})
+		subject.SetPins(Pins{{Kind: "Recipe", URI: "helm/frontend"}: pin})
 		var skips map[string]error
 		warning := captureNotices(t, subject, func() { skips = subject.Skips() })
 		if len(skips) != 0 {

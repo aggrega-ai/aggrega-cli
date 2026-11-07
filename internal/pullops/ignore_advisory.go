@@ -37,22 +37,29 @@ import (
 // and so is a capability no plugin here serves or one whose resolution fails:
 // the pull's own provider resolution reports those.
 func adviseIgnoreRuleDifferences(out io.Writer, lazyView *catalog.LazyLookup, entities []closure.ResolvedRef,
-	used map[string][]closure.ComponentSourceInfra, providerBindings map[string]string) {
+	used map[closure.EntityKey][]closure.ComponentSourceInfra, providerBindings map[string]string) {
 	loader := lazyView.ClosureRecipeLoader()
 	documents := lazyView.RecipeLookupWithManifest(nil)
 	seen := map[string]bool{}
 	for _, ent := range entities {
-		if len(used[ent.URI]) == 0 {
+		if len(used[ent.Key()]) == 0 {
 			continue
 		}
+		// Each entity is read as the kind it was collected as, so a Recipe and a
+		// FeatureRecipe of one name are each compared on their own document.
 		var kind, name, version, capability, document string
 		var found bool
-		if r, err := loader.LoadRecipe(ent.URI); err == nil {
-			kind, name, version, capability = "Recipe", r.Metadata.Name, r.Metadata.Version, r.Spec.Capability
-			document, found = documents.RecipeDocument(r)
-		} else if fr, err := loader.LoadFeatureRecipe(ent.URI); err == nil {
-			kind, name, version, capability = "FeatureRecipe", fr.Metadata.Name, fr.Metadata.Version, fr.Spec.Capability
-			document, found = documents.FeatureRecipeDocument(fr)
+		switch ent.Kind() {
+		case closure.KindRecipe:
+			if r, err := loader.LoadRecipe(ent.URI); err == nil {
+				kind, name, version, capability = "Recipe", r.Metadata.Name, r.Metadata.Version, r.Spec.Capability
+				document, found = documents.RecipeDocument(r)
+			}
+		case closure.KindFeatureRecipe:
+			if fr, err := loader.LoadFeatureRecipe(ent.URI); err == nil {
+				kind, name, version, capability = "FeatureRecipe", fr.Metadata.Name, fr.Metadata.Version, fr.Spec.Capability
+				document, found = documents.FeatureRecipeDocument(fr)
+			}
 		}
 		if !found || seen[document] {
 			continue

@@ -14,7 +14,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,7 +22,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
@@ -160,13 +158,13 @@ func TestPull_ABoundaryImportIsPinnedApartFromAnArtifactsImportOfTheSameKey(t *t
 }
 
 // TestBuild_ABoundaryImportChangedSinceItWasPinnedIsRefusedAsAnArtifactsImportIs
-// edits each file in turn where the lockfile has no row of the Recipe's own — the
-// Manifest names it by the reference the Component also bears — so a build and a
-// verifying pull compare the file with its pin and refuse it under the
-// content-mismatch condition, naming it as the lock records it and positioned at the
-// block it is written in; a pull that does not pin names it as a stale pin. The
-// boundary file meets exactly what the artifacts file meets, and a restored file
-// builds again.
+// edits each file in turn where the Manifest names the Recipe by the reference the
+// Component also bears. The Recipe has a lockfile row of its own all the same — an
+// entity is identified by its kind and its reference together — so the edit moves
+// that row, and a build and a verifying pull halt on it exactly as they do where the
+// Manifest names the Recipe by its full URI (the test below); a pull that does not
+// pin names the file as a stale pin. The boundary file meets exactly what the
+// artifacts file meets, and a restored file builds again.
 func TestBuild_ABoundaryImportChangedSinceItWasPinnedIsRefusedAsAnArtifactsImportIs(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -176,34 +174,14 @@ func TestBuild_ABoundaryImportChangedSinceItWasPinnedIsRefusedAsAnArtifactsImpor
 	if err := buildOver(t, root, releasePath, catalogDir); err != nil {
 		t.Fatalf("a build must pass over the lock the pull just wrote, or the refusals below prove nothing: %v", err)
 	}
+	recorded := entityRow(t, releasePath, "gateway")
 
 	for _, plant := range boundaryPinPlants(recipePath) {
 		t.Run(plant.name, func(t *testing.T) {
 			lockBefore, lockfileBefore := mustReadFile(t, lockPath), mustReadFile(t, lockfilePath)
 			editFile(t, plant.file, plant.edited)
-			// The two locators are not substrings of one another, so each plant's
-			// assertion fails on the other block's position.
-			locator := "at .spec.artifacts"
-			if plant.pinName != "providers.tf" {
-				locator = "at .spec.boundary.artifacts"
-			}
-			for _, s := range []struct {
-				surface string
-				err     error
-			}{
-				{"build", buildOver(t, root, releasePath, catalogDir)},
-				{"pull --verify", verifyPull(t, root, releasePath, catalogDir, nil)},
-			} {
-				if !errors.Is(s.err, renderer.ErrArtifactContentMismatch()) {
-					t.Fatalf("%s: want the content-mismatch condition; got %v", s.surface, s.err)
-				}
-				chain := cerrors.CauseChain(s.err)
-				for _, want := range []string{`("` + plant.pinName + `"`, `imported file "` + plant.file + `"`, locator} {
-					if !strings.Contains(chain, want) {
-						t.Errorf("%s: the refusal does not carry %q:\n%s", s.surface, want, chain)
-					}
-				}
-			}
+			assertRowRefusal(t, verifyPull(t, root, releasePath, catalogDir, nil), buildOver(t, root, releasePath, catalogDir),
+				"gateway", recorded, rowDigestAt(t, recipePath), renderer.ErrArtifactContentMismatch())
 			assertHoldingPullNames(t, pullHolding(t, root, releasePath, catalogDir, nil), lockPath, lockfilePath,
 				lockBefore, lockfileBefore, "imported file "+plant.pinName+":")
 

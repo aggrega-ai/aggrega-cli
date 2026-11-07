@@ -23,6 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
@@ -658,7 +659,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	}
 
 	// The .wasm bytes are in the cache slot the build re-reads (keyed by the pin).
-	cached, err := oci.ReadCached(root, ".aggrega/cache", uri, contentDigest)
+	cached, err := oci.ReadCached(root, ".aggrega/cache", oci.PluginArtifactKind(), uri, contentDigest)
 	if err != nil {
 		t.Fatalf("expected .wasm cached after pull: %v", err)
 	}
@@ -669,8 +670,8 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	// Re-resolve with no puller. The versioned .wasm slot is addressed by the
 	// content digest, which the build learns from the lockfile pin — so the cache
 	// read is reached through a prior pin, exactly as the offline build does.
-	pins := map[string]catalog.Pin{
-		uri: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
+	pins := catalog.Pins{
+		catalog.PluginExecutablePin(uri): {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
 	}
 	cachedLookup := cat.ClosureLookupWithReuse(nil, root, ".aggrega/cache", nil, nil,
 		&catalog.ReuseVerification{PriorPins: pins})
@@ -684,7 +685,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 
 	// Tamper the cached blob: the content check against the manifest halts with
 	// ErrFetchIntegrity rather than serving the corrupted .wasm.
-	slot := mustCachePath(root, ".aggrega/cache", uri, contentDigest)
+	slot := ocitest.MustCachePath(root, ".aggrega/cache", oci.PluginArtifactKind(), uri, contentDigest)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}

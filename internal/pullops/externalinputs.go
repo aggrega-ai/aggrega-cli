@@ -114,7 +114,11 @@ func discoverExternalInputs(
 	// This also reaches every axis the lockfile pins rather than the catalog
 	// entities alone, so a render is held to the same set on every axis the
 	// resolution recorded.
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	pins, err := catalog.PinsFromLockfile(lf)
+	if err != nil {
+		return nil, nil, err
+	}
+	view.SetPins(pins)
 
 	// The acquisition posture, named rather than assembled: whether an unpinned
 	// reference may be fetched, what transports it, and where the pinned view is

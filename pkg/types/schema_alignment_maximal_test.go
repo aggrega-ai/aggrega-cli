@@ -672,7 +672,7 @@ func maximalLockfile() lockfile.Lockfile {
 			{Path: "../shared/base-release.yaml", Digest: pinDigest},
 		},
 		Entities: []lockfile.Entity{{
-			URI:             "core/compute/api-server:1.0.0",
+			Kind: "component", URI: "core/compute/api-server:1.0.0",
 			ResolvedVersion: "1.0.0",
 			Digest:          pinDigest,
 			ManifestDigest:  pinDigest,

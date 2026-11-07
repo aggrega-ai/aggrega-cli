@@ -4,105 +4,119 @@
 package catalog
 
 import (
-	"sort"
+	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
-// TestPinsFromLockfileCoversSameURIsAsPinsByURI enforces that the two lockfile
-// pin projections stay over the identical URI set. PinsFromLockfile (version-aware
-// Pin structs for the reuse/bare-URI-fetch path) and Lockfile.PinsByURI
-// (URI->digest for the re-pull drift check) both claim to cover every kind the
-// closure walker resolves through the Tier-2 cache. They are separate builders,
-// so a new lockfile section wired into one and missed in the other diverges
-// silently — a bare-URI pin present for the drift check but absent for the
-// versioned cache-slot fetch (or the reverse). This guard fails that divergence.
-func TestPinsFromLockfileCoversSameURIsAsPinsByURI(t *testing.T) {
+// TestPinsFromLockfileKeepsEveryRowUnderTheKindItsSectionNames holds the lockfile's
+// pin projection to the sections it reads, by kind. Every section pins the same
+// reference, each row at a digest of its own, so a projection keyed by reference
+// alone would keep one pin where the lockfile records nine rows. Each row the
+// cache is read for is kept under the published kind its slot is kept under — an
+// entity row's own kind, a library row's axis, a plugin row as the Plugin's
+// executable — with its own version and digest. The Plugin entity's row and its
+// executable's row share both kind and reference, and are still two pins: the
+// executable's is marked as one. The Manifest row is the one left out: a
+// Manifest is never read from a cache slot. Source artifacts are excluded, because
+// they are held on their own read-time gate rather than by these pins.
+func TestPinsFromLockfileKeepsEveryRowUnderTheKindItsSectionNames(t *testing.T) {
+	t.Parallel()
+	const ref = "core/shared:1.0.0"
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{
-			{URI: "core/mariadb:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:aaa"},
+			{Kind: closure.KindComponent, URI: ref, ResolvedVersion: "1.0.0", Digest: "sha256:aaa"},
+			{Kind: closure.KindManifest, URI: ref, ResolvedVersion: "1.0.0", Digest: "sha256:abb"},
+			{Kind: closure.KindRecipe, URI: ref, ResolvedVersion: "1.0.1", Digest: "sha256:acc"},
+			{Kind: closure.KindPlugin, URI: ref, ResolvedVersion: "1.0.7", Digest: "sha256:add"},
 		},
-		SchemaLibraries: []lockfile.SchemaLibrary{
-			{URI: "core/DbSizing:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:bbb"},
-		},
-		MappingLibraries: []lockfile.MappingLibrary{
-			{URI: "core/BaseMappings:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:ccc"},
-		},
-		WorkloadLibraries: []lockfile.WorkloadLibrary{
-			{URI: "core/BaseWorkloads:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:ddd"},
-		},
-		ArtifactLibraries: []lockfile.ArtifactLibrary{
-			{URI: "core/BaseArtifacts:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:eee"},
-		},
-		Plugins: []lockfile.Plugin{
-			{URI: "core/policy:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:fff"},
-		},
+		SchemaLibraries:   []lockfile.SchemaLibrary{{URI: ref, ResolvedVersion: "1.0.2", Digest: "sha256:bbb"}},
+		MappingLibraries:  []lockfile.MappingLibrary{{URI: ref, ResolvedVersion: "1.0.3", Digest: "sha256:ccc"}},
+		WorkloadLibraries: []lockfile.WorkloadLibrary{{URI: ref, ResolvedVersion: "1.0.4", Digest: "sha256:ddd"}},
+		ArtifactLibraries: []lockfile.ArtifactLibrary{{URI: ref, ResolvedVersion: "1.0.5", Digest: "sha256:eee"}},
+		Plugins:           []lockfile.Plugin{{URI: ref, ResolvedVersion: "1.0.6", Digest: "sha256:fff"}},
 		SourceArtifacts: []lockfile.SourceArtifact{
 			{Kind: "helm-oci-chart", URL: "oci://example/chart", Digest: "sha256:ggg"},
 		},
 	}
 
-	fromLockfile := PinsFromLockfile(lf)
-	byURI := lf.PinsByURI()
-
-	keys := func(m map[string]struct{}) []string {
-		out := make([]string, 0, len(m))
-		for k := range m {
-			out = append(out, k)
+	// The published kinds are named here as a reader of the cache sees them, so a
+	// projection that derived a wrong one would not agree with itself by accident.
+	// The executable's key is spelled out rather than built by PluginExecutablePin,
+	// deliberately: built by the constructor under test, a constructor that stopped
+	// marking it would collapse the expected set exactly as it collapses the
+	// projection, and the two would agree.
+	want := Pins{
+		{Kind: "Component", URI: ref}:                {ResolvedVersion: "1.0.0", Digest: "sha256:aaa"},
+		{Kind: "Recipe", URI: ref}:                   {ResolvedVersion: "1.0.1", Digest: "sha256:acc"},
+		{Kind: "SchemaLibrary", URI: ref}:            {ResolvedVersion: "1.0.2", Digest: "sha256:bbb"},
+		{Kind: "MappingLibrary", URI: ref}:           {ResolvedVersion: "1.0.3", Digest: "sha256:ccc"},
+		{Kind: "WorkloadLibrary", URI: ref}:          {ResolvedVersion: "1.0.4", Digest: "sha256:ddd"},
+		{Kind: "ArtifactLibrary", URI: ref}:          {ResolvedVersion: "1.0.5", Digest: "sha256:eee"},
+		{Kind: "Plugin", URI: ref}:                   {ResolvedVersion: "1.0.7", Digest: "sha256:add"},
+		{Kind: "Plugin", URI: ref, Executable: true}: {ResolvedVersion: "1.0.6", Digest: "sha256:fff"},
+	}
+	if len(want) != 8 {
+		t.Fatalf("fixture: the expected pin set holds %d keys; want 8, one per row the cache is read for", len(want))
+	}
+	got, err := PinsFromLockfile(lf)
+	if err != nil {
+		t.Fatalf("PinsFromLockfile refused a lockfile every row of which records a declared kind: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		for _, k := range want.sortedKeys() {
+			if got[k] != want[k] {
+				t.Errorf("pin %v: got %+v; want %+v", k, got[k], want[k])
+			}
 		}
-		sort.Strings(out)
-		return out
-	}
-	fromSet := map[string]struct{}{}
-	for k := range fromLockfile {
-		fromSet[k] = struct{}{}
-	}
-	byURISet := map[string]struct{}{}
-	for k := range byURI {
-		byURISet[k] = struct{}{}
-	}
-
-	for k := range fromSet {
-		if _, ok := byURISet[k]; !ok {
-			t.Errorf("URI %q pinned by PinsFromLockfile but missing from PinsByURI (drift check)", k)
-		}
-	}
-	for k := range byURISet {
-		if _, ok := fromSet[k]; !ok {
-			t.Errorf("URI %q pinned by PinsByURI but missing from PinsFromLockfile (versioned fetch)", k)
-		}
-	}
-
-	// Every closure-walked section must be represented; source artifacts excluded.
-	// Named rather than counted: a count agrees when both sides are short the same
-	// row, and a bare number goes stale the moment an axis is added while still
-	// reading as deliberate. This list and the fixture above move together.
-	wantURIs := []string{
-		"core/BaseArtifacts:1.0.0",
-		"core/BaseMappings:1.0.0",
-		"core/BaseWorkloads:1.0.0",
-		"core/DbSizing:1.0.0",
-		"core/mariadb:1.0.0",
-		"core/policy:1.0.0",
-	}
-	for _, want := range wantURIs {
-		if _, ok := fromSet[want]; !ok {
-			t.Errorf("PinsFromLockfile does not cover %q — one closure-walked kind is unpinned", want)
-		}
-	}
-	for _, got := range keys(fromSet) {
-		if !containsPinURI(wantURIs, got) {
-			t.Errorf("PinsFromLockfile covers unexpected URI %q; source artifacts are excluded and every other kind is named above", got)
+		for _, k := range got.sortedKeys() {
+			if _, ok := want[k]; !ok {
+				t.Errorf("pin %v is projected and no row of the lockfile is pinned under it", k)
+			}
 		}
 	}
 }
 
-func containsPinURI(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
+// TestPinsFromLockfileRefusesARowWhoseKindNamesNoPublishedKind holds the projection
+// to its refusal: an entity row whose kind no cache slot is kept under is never
+// passed over, but halts as an internal fault naming the row, while a Manifest row —
+// a kind no slot holds — is left out without a fault.
+func TestPinsFromLockfileRefusesARowWhoseKindNamesNoPublishedKind(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		kind    string
+		refused bool
+	}{
+		{name: "a Manifest row, which no slot holds", kind: closure.KindManifest},
+		{name: "a row recording no kind", kind: "", refused: true},
+		{name: "a row recording an undeclared kind", kind: "release_aggregate_typo", refused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			lf := &lockfile.Lockfile{Entities: []lockfile.Entity{
+				{Kind: closure.KindComponent, URI: "core/web:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:aaa"},
+				{Kind: tc.kind, URI: "core/odd:1.0.0", ResolvedVersion: "1.0.0", Digest: "sha256:bbb"},
+			}}
+			pins, err := PinsFromLockfile(lf)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("PinsFromLockfile refused a lockfile whose rows it can key: %v", err)
+				}
+				if len(pins) != 1 {
+					t.Errorf("pins = %v; want only the Component's", pins)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("PinsFromLockfile passed over a row of kind %q; it must refuse it", tc.kind)
+			}
+			if !strings.Contains(err.Error(), `"core/odd:1.0.0"`) || !strings.Contains(err.Error(), "internal") {
+				t.Errorf("the refusal must name the row and say the fault is internal; got: %v", err)
+			}
+		})
 	}
-	return false
 }

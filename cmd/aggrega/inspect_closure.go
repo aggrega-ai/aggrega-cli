@@ -75,7 +75,11 @@ func renderReleaseClosure(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		return err
 	}
 	if lf != nil {
-		view.SetPins(catalog.PinsFromLockfile(lf))
+		pins, err := catalog.PinsFromLockfile(lf)
+		if err != nil {
+			return err
+		}
+		view.SetPins(pins)
 	}
 	// The withdrawal report over both stores — the lockfile loaded above and the
 	// plugin trust record beside the Release — read at the same point as the
@@ -175,12 +179,13 @@ func renderClosureListing(opts inspectOptions, deprecations []compilerops.Deprec
 	}
 	for _, e := range resolved.Closure.Entities {
 		line := closureLine(opts, e.URI, e.ResolvedVersion)
-		// The kind is carried at the fullest level only, and only where the
-		// reference site recorded one. Some positions in a document say what kind
-		// they point at and others do not, so it is reported where it is known and
-		// omitted where it is not, rather than guessed from the shape of the name.
+		// The kind is carried at the fullest level only, as an author writes it at
+		// the head of the entity's document, so two entities of different kinds
+		// sharing a reference — an Aggregate and a Manifest of one name — read as
+		// two. An entity collected with no kind carries none, rather than one
+		// guessed from the shape of its name.
 		if opts.level == levelDetail {
-			if kind := compilerops.EntityKindForHint(e.KindHint); kind != "" {
+			if kind := closure.DocumentKind(e.Kind()); kind != "" {
 				line += "  [" + kind + "]"
 			}
 		}

@@ -81,7 +81,7 @@ func TestRequireRecipeLoaderOverThePinnedLazyClosureLookup(t *testing.T) {
 	ws, cacheDir, catalogDir := emptyCatalogWorkspace(t)
 	view := catalog.NewLazyLookup(ws, cacheDir, []string{catalogDir}, nil)
 
-	pinned := view.ClosureLookup(nil, ws, cacheDir, nil, nil, &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{}})
+	pinned := view.ClosureLookup(nil, ws, cacheDir, nil, nil, &catalog.ReuseVerification{PriorPins: catalog.Pins{}})
 	recipeLoaderWithin(t, pinned, 30*time.Second)
 }
 
@@ -106,6 +106,6 @@ func TestRequireRecipeLoaderSurvivesAPinChange(t *testing.T) {
 	lookup := view.ClosureLookup(nil, ws, cacheDir, nil, nil, nil)
 
 	recipeLoaderWithin(t, lookup, 30*time.Second)
-	view.SetPins(map[string]catalog.Pin{})
+	view.SetPins(catalog.Pins{})
 	recipeLoaderWithin(t, lookup, 30*time.Second)
 }

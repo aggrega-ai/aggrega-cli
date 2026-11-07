@@ -100,7 +100,7 @@ func TestSchemaAdvisoriesAreHeldOncePerEntityAsItsDocumentAuthoredThem(t *testin
 
 	stray := captureStderr(t, func() {
 		for i := 0; i < 3; i++ {
-			view.SetPins(map[string]Pin{})
+			view.SetPins(Pins{})
 			if _, ok := view.Component("test/probed-child:1.0.0"); !ok {
 				t.Fatalf("round %d: the child did not resolve, so the drive reads nothing", i)
 			}

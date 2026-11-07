@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // concurrentComponentDoc is a Component published as its document alone, the shape
@@ -108,8 +109,8 @@ func TestConcurrentReadsOfOnePinnedSlotNeverMeetAMissingLayout(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			pin := seedPinnedSlot(t, root, row.kind, row.publish(t, t.TempDir()), row.uri, "1.0.0")
-			pins := map[string]Pin{row.uri: pin}
-			tree := slotTree(t, mustCachePath(root, layoutCacheDir, row.uri, "1.0.0"))
+			pins := Pins{{Kind: row.kind, URI: row.uri}: pin}
+			tree := slotTree(t, ocitest.MustCachePath(root, layoutCacheDir, row.kind, row.uri, "1.0.0"))
 			session := NewLazyLookup(root, layoutCacheDir, nil, nil)
 
 			dir, files, ok := row.resolve(session.ForRequest(pins), tree)
@@ -197,7 +198,7 @@ func TestPinnedSlotReplacedUnderAReaderKeepsTheReadersLayout(t *testing.T) {
 	root := t.TempDir()
 	session := NewLazyLookup(root, layoutCacheDir, nil, nil)
 	resolveSource := func(pin Pin) (string, bool) {
-		r, ok := session.ForRequest(map[string]Pin{uri: pin}).RecipeByURI(uri)
+		r, ok := session.ForRequest(Pins{{Kind: "Recipe", URI: uri}: pin}).RecipeByURI(uri)
 		source, isString := r.Spec.Source.(string)
 		return source, ok && isString
 	}

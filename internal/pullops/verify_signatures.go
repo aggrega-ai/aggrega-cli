@@ -182,17 +182,17 @@ func lockfileSignatureDifferences(ctx context.Context, loaded *lockfile.Lockfile
 	var differences []error
 	var skipped []string
 	for _, row := range would.VerifiedFactRows() {
-		key := lockfile.RowKey{Section: row.Section, URI: row.URI}
+		key := row.Key()
 		was := recorded[key]
 		if q, ok := rewritten[key]; ok {
 			// A question carrying the build's refusal is, among the rows rewritten
 			// whatever the registry answers, one refused as made for another artifact.
-			differences = append(differences, rewrittenWithoutAsking(q.row.URI, lockfilePath, "records "+describeSignature(was),
+			differences = append(differences, rewrittenWithoutAsking(q.row.Quoted(), lockfilePath, "records "+describeSignature(was),
 				q.refused != nil, releasePath))
 			continue
 		}
 		if notAsked[key] {
-			skipped = append(skipped, fmt.Sprintf("%q", row.URI))
+			skipped = append(skipped, key.Quoted())
 			continue
 		}
 		if askErr != nil {
@@ -201,7 +201,7 @@ func lockfileSignatureDifferences(ctx context.Context, loaded *lockfile.Lockfile
 		if sameSignature(was, row.Signature()) {
 			continue
 		}
-		differences = append(differences, recordedSignatureOutOfDate(row.URI, lockfilePath,
+		differences = append(differences, recordedSignatureOutOfDate(key.Quoted(), lockfilePath,
 			"records "+describeSignature(was), "a pull would record "+describeSignature(row.Signature()), releasePath))
 	}
 	if len(skipped) > 0 {
@@ -242,7 +242,8 @@ const askedForARequiredSignature = "a pull would ask its registry for the signat
 const askedForTheArtifactsOwnSignature = "a pull would ask its registry for this artifact's own signature and record it"
 
 // rewrittenWithoutAsking is the occurrence for an entry, in either file, a pull
-// rewrites whatever its registry answers: subject and file name it, recorded is what
+// rewrites whatever its registry answers: subject (rendered, as
+// recordedSignatureOutOfDate takes it) and file name it, recorded is what
 // the file records for it, and madeForAnother says the signature recorded was made
 // for another artifact — which the pull replaces with the artifact's own — rather
 // than missing where a requirement asks for one, which the pull records. The two
@@ -309,14 +310,14 @@ func trustRecordSignatureDifferences(releasePath, workspaceRoot string, wsCfg wo
 		switch c.Kind {
 		case verdictTrustSignatureRecorded, verdictTrustSignatureCleared:
 			before, _ := held.Find(c.Plugin)
-			differences = append(differences, recordedSignatureOutOfDate(c.Plugin, recordPath,
+			differences = append(differences, recordedSignatureOutOfDate(fmt.Sprintf("%q", c.Plugin), recordPath,
 				"records "+describeSignature(before.Signature), "a pull would record "+describeSignature(after.Signature),
 				releasePath))
 		case verdictTrustRecorded:
 			if !errors.Is(refused[c.Plugin], lockfile.ErrSignatureNotRecorded()) {
 				continue
 			}
-			differences = append(differences, recordedSignatureOutOfDate(c.Plugin, recordPath,
+			differences = append(differences, recordedSignatureOutOfDate(fmt.Sprintf("%q", c.Plugin), recordPath,
 				unrecordedEntry, "a pull would record "+describeSignature(after.Signature), releasePath))
 		}
 	}
@@ -329,9 +330,9 @@ func trustRecordSignatureDifferences(releasePath, workspaceRoot string, wsCfg wo
 			if isHeld {
 				recorded = "records " + describeSignature(nil)
 			}
-			differences = append(differences, rewrittenWithoutAsking(coordinate, recordPath, recorded, false, releasePath))
+			differences = append(differences, rewrittenWithoutAsking(fmt.Sprintf("%q", coordinate), recordPath, recorded, false, releasePath))
 		case errors.Is(refusal, oci.ErrSignatureForAnotherArtifact()):
-			differences = append(differences, rewrittenWithoutAsking(coordinate, recordPath,
+			differences = append(differences, rewrittenWithoutAsking(fmt.Sprintf("%q", coordinate), recordPath,
 				"records "+describeSignature(entry.Signature), true, releasePath))
 		case isHeld:
 			unchecked = append(unchecked, fmt.Sprintf("%q", coordinate))
@@ -383,8 +384,12 @@ func describeSignature(sig *lockfile.VerifiedSignature) string {
 // ErrRecordedSignatureOutOfDate: the reference or plugin it is about, the file and
 // what that file records, what a pull would record instead, and the pull that
 // brings the file up to date. release is the Release as the reader named it.
+//
+// subject is already rendered: a lockfile row as closure.EntityKey.Quoted names
+// it — its reference, and its kind where the row records one, as the drift
+// comparison names a row — and a plugin by its quoted coordinate.
 func recordedSignatureOutOfDate(subject, file, recorded, wouldRecord, release string) error {
-	values := []string{fmt.Sprintf("%q", subject), file + " " + recorded, wouldRecord}
+	values := []string{subject, file + " " + recorded, wouldRecord}
 	advice := fmt.Sprintf("remediation: run `aggrega pull --release %s` to bring %s up to date", release, file)
 	return &recordedSignatureOutOfDateError{message: cerrors.ComposeMessage(errRecordedSignatureOutOfDate, values, advice)}
 }

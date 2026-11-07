@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // The shared artifact bundle, authored once and consumed two ways: as the
@@ -160,7 +161,7 @@ func relocateArtifactLibraryToCache(t *testing.T, root, cacheDir, version string
 	if err := os.Remove(filepath.Join(root, "catalog", "base", "artifactlibraries", "sharedartifacts.yaml")); err != nil {
 		t.Fatalf("remove local artifact library: %v", err)
 	}
-	slot := mustCachePath(root, cacheDir, "SharedArtifacts:"+version, version)
+	slot := ocitest.MustCachePath(root, cacheDir, "ArtifactLibrary", "SharedArtifacts:"+version, version)
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
@@ -172,7 +173,7 @@ func relocateArtifactLibraryToCache(t *testing.T, root, cacheDir, version string
 	if err != nil {
 		t.Fatalf("build artifact-library manifest: %v", err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, "SharedArtifacts:"+version, version, mb); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "ArtifactLibrary", "SharedArtifacts:"+version, version, mb); err != nil {
 		t.Fatalf("write cache manifest: %v", err)
 	}
 }

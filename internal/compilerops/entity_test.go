@@ -397,22 +397,3 @@ func TestEveryByNameSurfaceRoutesThroughTheSharedResolution(t *testing.T) {
 		t.Fatalf("no surface carries %q at all; the census is broken, not the code", marker)
 	}
 }
-
-// TestEntityKindForHintTranslatesTheRecordedHints pins the translation every
-// surface reporting a closure applies, and pins that an unrecorded hint reports
-// nothing rather than being guessed at.
-func TestEntityKindForHintTranslatesTheRecordedHints(t *testing.T) {
-	t.Parallel()
-
-	for hint, want := range map[string]string{
-		"recipe":         "Recipe",
-		"feature_recipe": "FeatureRecipe",
-		"aggregate":      "Aggregate",
-		"":               "",
-		"component":      "",
-	} {
-		if got := compilerops.EntityKindForHint(hint); got != want {
-			t.Errorf("hint %q rendered as %q, want %q", hint, got, want)
-		}
-	}
-}

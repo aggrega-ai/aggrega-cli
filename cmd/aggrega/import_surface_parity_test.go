@@ -75,7 +75,7 @@ func layCachedImport(t *testing.T) cachedImportLayout {
 	writeFixture(t, filepath.Join(l.root, demoImportSourceName), demoSourceBody)
 	module := wasmtest.EnsureFixtureBytes(t, "import-go.wasm")
 	cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
-	if err := oci.WriteCached(l.root, cacheDir, types.PluginCoordinate("importer", "demo-importer"), "", module); err != nil {
+	if err := oci.WriteCached(l.root, cacheDir, oci.PluginArtifactKind(), types.PluginCoordinate("importer", "demo-importer"), "", module); err != nil {
 		t.Fatalf("cache the demo importer's module: %v", err)
 	}
 	return l

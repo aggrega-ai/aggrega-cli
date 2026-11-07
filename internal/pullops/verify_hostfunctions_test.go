@@ -50,7 +50,7 @@ func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI, co
 
 	workspaceRoot = t.TempDir()
 	cacheDir = "cache"
-	if err := oci.WriteCached(workspaceRoot, cacheDir, artifactURI, contentDigest, wasmBytes); err != nil {
+	if err := oci.WriteCached(workspaceRoot, cacheDir, oci.PluginArtifactKind(), artifactURI, contentDigest, wasmBytes); err != nil {
 		t.Fatalf("seed cache: %v", err)
 	}
 	d, err := wasm.DeriveHostFunctions("frp/patch", wasmBytes)

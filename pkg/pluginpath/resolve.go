@@ -559,7 +559,7 @@ func (r Resolver) ResolveContext(ctx context.Context, uri string) (ResolvedPlugi
 	// for bytes the cascade may not read.
 	if r.workspaceRoot != "" || r.cacheDir != "" {
 		version := r.pinVersions[uri]
-		b, err := oci.ReadCached(r.workspaceRoot, r.cacheDir, uri, version)
+		b, err := oci.ReadCached(r.workspaceRoot, r.cacheDir, oci.PluginArtifactKind(), uri, version)
 		switch {
 		case err == nil:
 			return r.verified(uri, b, TierCache)
@@ -925,7 +925,7 @@ func (r Resolver) heldManifest(uri string, tier Tier, b []byte) (oci.MadeFor, er
 	if tier != TierCache {
 		return oci.NoManifestRead(), nil
 	}
-	manifest, err := oci.ReadCachedManifest(r.workspaceRoot, r.cacheDir, uri, r.pinVersions[uri])
+	manifest, err := oci.ReadCachedManifest(r.workspaceRoot, r.cacheDir, oci.PluginArtifactKind(), uri, r.pinVersions[uri])
 	switch {
 	case err == nil && len(manifest) > 0:
 	case err == nil, errors.Is(err, oci.ErrFetchNotFound()):

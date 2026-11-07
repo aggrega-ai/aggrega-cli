@@ -103,7 +103,7 @@ func TestTheColocatedTierReadsTheArtifactOnlyFromInsideItsRoot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ws, outside := t.TempDir(), t.TempDir()
 			at := tc.layout(t, ws, outside)
-			if err := oci.WriteCached(ws, ".aggrega/cache", ref, "", []byte("cached")); err != nil {
+			if err := oci.WriteCached(ws, ".aggrega/cache", oci.PluginArtifactKind(), ref, "", []byte("cached")); err != nil {
 				t.Fatalf("seed cache: %v", err)
 			}
 			r := NewResolver(ResolutionContext{

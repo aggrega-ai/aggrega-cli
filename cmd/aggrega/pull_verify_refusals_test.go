@@ -224,7 +224,7 @@ func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
 			name: "a lockfile row edited by hand",
 			fault: func(t *testing.T, f refusalFixture) func(*testing.T, error) {
 				replaceOnce(t, filepath.Join(f.root, "release.lock"), f.recorded, zeroDigest)
-				want := `entity "` + refusalComponentURI + `" changed: lockfile=(1.0.0,` + zeroDigest + `) current=(1.0.0,` + f.recorded + `)`
+				want := `entity "` + refusalComponentURI + `" (component) changed: lockfile=(1.0.0,` + zeroDigest + `) current=(1.0.0,` + f.recorded + `)`
 				return func(t *testing.T, err error) {
 					if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 						t.Fatalf("want the lockfile-drift condition; got %v", err)
@@ -283,7 +283,7 @@ func TestPullVerifyStillRefusesEachFaultItExistsToRefuse(t *testing.T) {
 				}
 				layFetchedSlot(t, f.root, refusalComponentURI, "1.0.0", pulled, true)
 				replaceOnce(t, f.componentPath, "default: 8080 }", "default: 8081 }")
-				want := `entity "` + refusalComponentURI + `" changed: lockfile=(1.0.0,` + f.recorded + `) current=(1.0.0,` + rowDigestAt(t, f.componentPath) + `)`
+				want := `entity "` + refusalComponentURI + `" (component) changed: lockfile=(1.0.0,` + f.recorded + `) current=(1.0.0,` + rowDigestAt(t, f.componentPath) + `)`
 				return func(t *testing.T, err error) {
 					if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 						t.Fatalf("want the lockfile-drift condition; got %v", err)

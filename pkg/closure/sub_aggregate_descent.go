@@ -12,16 +12,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// aggregateKindHint marks a closure entity whose reference site is a
-// sub-aggregate type URI (Aggregate.Spec.Aggregates). DescendSubAggregates
-// uses it to select the aggregate entities to load and re-walk. The hint is
-// not serialised to the lockfile (see ResolvedRef.KindHint); source-descent's
-// kind switch routes it to its default no-op arm.
-const aggregateKindHint = "aggregate"
-
 // ReleaseAggregateKindHint marks the closure entity a Release's own spec.aggregate
-// names. It is distinct from the sub-aggregate hint on purpose: DescendSubAggregates
-// selects only that one, so the Aggregate the Release deploys is never loaded and
+// names. Every other collection site's hint is the kind's own word — a
+// sub-aggregate type URI (Aggregate.Spec.Aggregates) carries KindAggregate — and
+// this one is distinct from it on purpose: DescendSubAggregates selects the entities
+// hinted KindAggregate to load and re-walk, so the Aggregate the Release deploys is never loaded and
 // re-walked as though some Aggregate had imported it, and the walk resolves it
 // exactly as it resolves a reference carrying no hint.
 //
@@ -33,17 +28,11 @@ const aggregateKindHint = "aggregate"
 // fact, as for every other reference a registry served; one named by path is read
 // from beside the Release, which neither of them holds.
 //
-// It is the weakest hint of all: any other hint recorded for the same URI replaces
-// it, so a reference collected elsewhere under a kind of its own keeps that kind.
-// It is not serialised to the lockfile.
+// It records an Aggregate (EntityKindOf maps it to KindAggregate), so the lockfile
+// row it produces carries that kind. It is the weaker of the two Aggregate hints: a
+// sub-aggregate reference to the same URI replaces it, so an Aggregate another one
+// includes is descended as one. The hint itself is not serialised to the lockfile.
 const ReleaseAggregateKindHint = "release_aggregate"
-
-// ComponentKindHint marks a reference collected where a Component type is named:
-// an Aggregate's component instance, and a Manifest's component mapping key. A
-// check that resolves a Component reference outside the walk carries the same
-// hint, so a reporter matching the reference against the catalog's refused files
-// reads it as the walk's own.
-const ComponentKindHint = "component"
 
 // maxSubAggregateDepth bounds DescendSubAggregates' transitive recursion. It
 // shares the value of the topology flattener's inclusion-depth bound: the two
@@ -139,8 +128,8 @@ func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 //   - A depth bound (maxSubAggregateDepth) backstops an inclusion graph that
 //     evades the visited set; exceeding it returns ErrSubAggregateDepth.
 //
-// Newly-discovered entities are appended to c.Entities (deduped by URI against
-// what is already present); the closure is re-canonicalised before return, so
+// Newly-discovered entities are appended to c.Entities (deduped by kind and URI
+// against what is already present); the closure is re-canonicalised before return, so
 // the pinned set — and the lockfile written from it — is byte-identical across
 // runs regardless of descent order. A nil loader is a no-op (the caller wired
 // no registry tier).
@@ -156,11 +145,10 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 		return nil
 	}
 
-	index := make(map[string]int, len(c.Entities))
+	index := entityIndexOf(c)
 	var level []descentFrame
-	for i, e := range c.Entities {
-		index[e.URI] = i
-		if e.KindHint == aggregateKindHint {
+	for _, e := range c.Entities {
+		if e.KindHint == KindAggregate {
 			level = append(level, descentFrame{uri: e.URI, version: e.ResolvedVersion, digest: e.Digest, depth: 1})
 		}
 	}
@@ -196,23 +184,19 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 				return err
 			}
 
-			for uri, p := range sub.entities {
+			for key, p := range sub.entities {
 				if p.resolution == nil {
 					continue
 				}
+				uri := key.URI
 				ref := p.toResolvedRef(uri)
-				if idx, dup := index[uri]; dup {
-					// A transitively-shared entity (a diamond's shared leaf, an
-					// entity also used at the top level) accumulates every
-					// referencing site, like ComputeClosure's single-walkState
-					// accumulation. canonicaliseClosure sorts the merged set, so the
-					// result is independent of descent order.
-					c.Entities[idx].ReferencedFrom = mergeReferencedFrom(c.Entities[idx].ReferencedFrom, ref.ReferencedFrom)
-				} else {
-					c.Entities = append(c.Entities, ref)
-					index[uri] = len(c.Entities) - 1
-				}
-				if ref.KindHint == aggregateKindHint {
+				// A transitively-shared entity (a diamond's shared leaf, an entity
+				// also used at the top level) accumulates every referencing site,
+				// like ComputeClosure's single-walkState accumulation.
+				// canonicaliseClosure sorts the merged set, so the result is
+				// independent of descent order.
+				mergeEntity(c, index, ref)
+				if ref.KindHint == KindAggregate {
 					if _, done := visited[uri]; !done {
 						next = append(next, descentFrame{uri: uri, version: ref.ResolvedVersion, digest: ref.Digest, depth: f.depth + 1})
 					}

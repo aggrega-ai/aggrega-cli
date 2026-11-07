@@ -124,10 +124,21 @@ func makeFeatureRecipe(uri string, source any) *types.FeatureRecipe {
 // using instance; a test exercising descent of an entity supplies one this way
 // (the empty infra suffices for sources that read no infra). Tests that need
 // per-instance infra pass their own map instead.
-func usedFromClosure(cl closure.Closure) map[string][]closure.ComponentSourceInfra {
-	m := map[string][]closure.ComponentSourceInfra{}
+//
+// An entity whose hint names its kind is marked under that kind. One collected
+// with no hint is marked under both kinds the descent can read it as, because the
+// descent decides that kind from the reference's shape and the instance is used
+// whichever kind it decides.
+func usedFromClosure(cl closure.Closure) map[closure.EntityKey][]closure.ComponentSourceInfra {
+	m := map[closure.EntityKey][]closure.ComponentSourceInfra{}
 	for _, e := range cl.Entities {
-		m[e.URI] = []closure.ComponentSourceInfra{{Infra: map[string]any{}}}
+		kinds := []string{e.Kind()}
+		if e.Kind() == "" {
+			kinds = []string{closure.KindRecipe, closure.KindFeatureRecipe}
+		}
+		for _, kind := range kinds {
+			m[closure.EntityKey{Kind: kind, URI: e.URI}] = []closure.ComponentSourceInfra{{Infra: map[string]any{}}}
+		}
 	}
 	return m
 }
@@ -187,8 +198,8 @@ func TestDescendEvaluatesInfraTemplate(t *testing.T) {
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
-	perComp := map[string][]closure.ComponentSourceInfra{
-		uri: {{Component: "db", Infra: map[string]any{"db_chart_version": "25.0.8"}}},
+	perComp := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: uri}: {{Component: "db", Infra: map[string]any{"db_chart_version": "25.0.8"}}},
 	}
 
 	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
@@ -269,8 +280,8 @@ func TestDescendOptionalPreservesValueType(t *testing.T) {
 			}
 			loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 			cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-			perComp := map[string][]closure.ComponentSourceInfra{
-				uri: {{Component: "db", Infra: tc.infra}},
+			perComp := map[closure.EntityKey][]closure.ComponentSourceInfra{
+				{Kind: closure.KindRecipe, URI: uri}: {{Component: "db", Infra: tc.infra}},
 			}
 
 			got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
@@ -299,8 +310,8 @@ func TestDescendEvaluatesLocalsOverInfra(t *testing.T) {
 	r.Spec.Locals.Set("computed", `{{ .infra.db_chart_version }}`)
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	perComp := map[string][]closure.ComponentSourceInfra{
-		uri: {{Component: "db", Infra: map[string]any{"db_chart_version": "26.0.0"}}},
+	perComp := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: uri}: {{Component: "db", Infra: map[string]any{"db_chart_version": "26.0.0"}}},
 	}
 
 	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
@@ -327,8 +338,8 @@ func TestDescendResolvesEachComponentAgainstOwnInfra(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	perComp := map[string][]closure.ComponentSourceInfra{
-		uri: {
+	perComp := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: uri}: {
 			{Component: "db-a", Infra: map[string]any{"chart_version": "25.0.8"}},
 			{Component: "db-b", Infra: map[string]any{"chart_version": "26.0.0"}},
 		},
@@ -372,8 +383,8 @@ func TestDescendDoesNotShareInfraAcrossComponents(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	perComp := map[string][]closure.ComponentSourceInfra{
-		uri: {{Component: "db-a", Infra: map[string]any{"own_key": "x"}}},
+	perComp := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: uri}: {{Component: "db-a", Infra: map[string]any{"own_key": "x"}}},
 	}
 
 	_, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
@@ -398,8 +409,8 @@ func TestDescendResolvesFeatureRecipeAgainstPerInstanceInfra(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{features: map[string]*types.FeatureRecipe{uri: makeFeatureRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	perEntity := map[string][]closure.ComponentSourceInfra{
-		uri: {
+	perEntity := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindFeatureRecipe, URI: uri}: {
 			{Component: "web.features.tls", Infra: map[string]any{"chart_version": "1.2.3"}},
 			{Component: "api.features.tls", Infra: map[string]any{"chart_version": "4.5.6"}},
 		},
@@ -441,8 +452,8 @@ func TestDescendFeatureRecipeDoesNotShareInfraAcrossInstances(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{features: map[string]*types.FeatureRecipe{uri: makeFeatureRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	perEntity := map[string][]closure.ComponentSourceInfra{
-		uri: {{Component: "web.features.tls", Infra: map[string]any{"own_key": "x"}}},
+	perEntity := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindFeatureRecipe, URI: uri}: {{Component: "web.features.tls", Infra: map[string]any{"own_key": "x"}}},
 	}
 
 	_, err := closure.DescendRecipeSources(perEntity, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
@@ -469,7 +480,7 @@ func TestDescendSkipsEntityWithNoUsingInstance(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
 	// No perEntityInfra entry for uri — nothing instantiates it.
-	got, err := closure.DescendRecipeSources(map[string][]closure.ComponentSourceInfra{}, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	got, err := closure.DescendRecipeSources(map[closure.EntityKey][]closure.ComponentSourceInfra{}, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
 	if err != nil {
 		t.Fatalf("an unused mapped entity must be skipped, not halt; got %v", err)
 	}
@@ -804,8 +815,8 @@ func TestDescendAcceptsLiteralProvidesString(t *testing.T) {
 	}
 	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	perComp := map[string][]closure.ComponentSourceInfra{
-		uri: {{Component: "x", Infra: map[string]any{"label": "myns"}}},
+	perComp := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: uri}: {{Component: "x", Infra: map[string]any{"label": "myns"}}},
 	}
 
 	got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
@@ -907,8 +918,8 @@ func TestVersionTolerantMappingJoinsSourceDescent(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: recipeURI}}}
 	// pull keys perEntityInfra by the resolved recipe URI (recURI == the
 	// closure entity URI), so the descent finds a using instance.
-	perEntity := map[string][]closure.ComponentSourceInfra{
-		recURI: {{Component: "db", Infra: map[string]any{}}},
+	perEntity := map[closure.EntityKey][]closure.ComponentSourceInfra{
+		{Kind: closure.KindRecipe, URI: recURI}: {{Component: "db", Infra: map[string]any{}}},
 	}
 
 	got, err := closure.DescendRecipeSources(perEntity, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")

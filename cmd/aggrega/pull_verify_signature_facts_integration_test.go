@@ -63,6 +63,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -193,8 +194,8 @@ func newSignatureFactsFixture(t *testing.T) *signatureFactsFixture {
 	// check that it is the slot the pull wrote: a slot named any other way holds
 	// nothing, and the fixture stops here rather than letting a case that removes
 	// it leave the Component in the cache for the run it means to fetch it.
-	f.componentSlot = mustCachePath(f.ws, signatureFactsCacheDir,
-		recordedSignatureComponent+":"+component.ResolvedVersion, component.ResolvedVersion)
+	f.componentSlot = ocitest.MustCachePath(f.ws, signatureFactsCacheDir,
+		"Component", recordedSignatureComponent+":"+component.ResolvedVersion, component.ResolvedVersion)
 	f.componentFiles = snapshotDir(t, f.componentSlot)
 	if len(f.componentFiles) == 0 {
 		t.Fatalf("the pull cached nothing for the Component at %s, so no case below can remove what it fetched", f.componentSlot)

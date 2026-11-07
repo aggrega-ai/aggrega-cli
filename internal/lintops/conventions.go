@@ -260,7 +260,11 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	}
 	var lockForClosure *lockfile.Lockfile
 	if lf != nil {
-		lazyView.SetPins(catalog.PinsFromLockfile(lf))
+		pins, err := catalog.PinsFromLockfile(lf)
+		if err != nil {
+			return err
+		}
+		lazyView.SetPins(pins)
 		lockForClosure = lf
 	}
 
@@ -729,12 +733,19 @@ func closureEntityFiles(lazyView *catalog.LazyLookup, cl closure.Closure, index 
 		case "aggregate":
 			// Authoring-side; not conventions-linted.
 		default:
-			if c, ok := lazyView.Component(e.URI); ok {
-				add(byName("Component", c.Metadata.Name))
-				continue
+			// Only an entity collected as a Component or a Feature, or with no kind,
+			// is read as one: another kind's entity — the Release's own Aggregate or
+			// Manifest, a plugin — is not a Component or a Feature, whatever its name.
+			if e.ReadableAs(closure.KindComponent) {
+				if c, ok := lazyView.Component(e.URI); ok {
+					add(byName("Component", c.Metadata.Name))
+					continue
+				}
 			}
-			if f, ok := lazyView.Feature(e.URI); ok {
-				add(byName("Feature", f.Metadata.Name))
+			if e.ReadableAs(closure.KindFeature) {
+				if f, ok := lazyView.Feature(e.URI); ok {
+					add(byName("Feature", f.Metadata.Name))
+				}
 			}
 		}
 	}

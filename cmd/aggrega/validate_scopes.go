@@ -327,7 +327,11 @@ func resolveReleaseDependencies(ctx context.Context, rw *workspaceconfig.Resolve
 		return releaseDependencies{}, err
 	}
 	if lf != nil {
-		view.SetPins(catalog.PinsFromLockfile(lf))
+		pins, err := catalog.PinsFromLockfile(lf)
+		if err != nil {
+			return releaseDependencies{}, err
+		}
+		view.SetPins(pins)
 	}
 	resolved, cerr := compilerops.ResolveValidationClosure(ctx, compilerops.ValidationClosureInputs{
 		View:            view,

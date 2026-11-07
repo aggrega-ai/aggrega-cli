@@ -79,7 +79,11 @@ func ComputeClosure(
 // recursive walkers descend through the release / manifest /
 // aggregate trees.
 type walkState struct {
-	entities map[string]*pendingRef
+	// entities holds one accumulator per entity, keyed by the kind it was
+	// collected as and its reference, so two references of one name collected as
+	// different kinds — the Release's own Aggregate and Manifest, a Component and a
+	// Recipe — are two entities rather than one.
+	entities map[EntityKey]*pendingRef
 	// libs holds one accumulator per library axis, keyed by the axis's Closure
 	// section name. Keying it rather than declaring a field per axis is what keeps
 	// the walk axis-agnostic: an axis added to the declared set accumulates here
@@ -87,16 +91,17 @@ type walkState struct {
 	libs map[string]map[string]*pendingLibrary
 }
 
-// pendingRef collects the per-URI accumulating data the walker
+// pendingRef collects the per-entity accumulating data the walker
 // builds during the descent: a deduplicated set of authoring-site
 // paths plus, once the resolveAll pass has run, the looked-up
 // Resolution metadata.
 type pendingRef struct {
 	referencedFrom map[string]struct{}
 	resolution     *Resolution
-	// kindHint records a catalog kind ("recipe" / "feature_recipe") known from
-	// the URI's collection site (e.g. a Manifest mapping value's position).
-	// First non-empty hint wins; later references to the same URI keep it.
+	// kindHint records the hint the entity's collection site carries (e.g. a
+	// Manifest mapping value's position records "recipe"). Every hint for one
+	// entity names its kind, so the hints for one entity differ only between the
+	// two Aggregate hints; see addEntityKind.
 	kindHint string
 	// pinnedSocket marks the Plugin entity of a workspace-socket attachment the
 	// lockfile pins, which resolves through ResolvePinnedSocketEntity rather than
@@ -109,15 +114,53 @@ type pendingRef struct {
 // by each consumer feed the minimum version selection pass.
 // Once the resolveAll pass has run, resolution carries the
 // looked-up LibraryResolution metadata.
+//
+// Both maps are keyed by the consumer's identity, its kind as well as its URI, so a
+// Recipe and a FeatureRecipe of one name that consume one library each contribute
+// their own version floor: keyed by the URI alone, the later of the two would
+// overwrite the earlier's floor and the selection could settle below a floor one of
+// them requires. The lockfile records a consumer by its URI alone, so the
+// identities are merged back to one row per URI when the library is materialised.
 type pendingLibrary struct {
-	versionByConsumer map[string]string              // consumerURI → requested version (empty when unpinned)
-	fragmentsByCons   map[string]map[string]struct{} // consumerURI → set of fragments
+	versionByConsumer map[consumerIdentity]string              // consumer → requested version (empty when unpinned)
+	fragmentsByCons   map[consumerIdentity]map[string]struct{} // consumer → set of fragments
 	resolution        *LibraryResolution
+}
+
+// consumerIdentity identifies a library's consumer: the kind it was read as and its
+// URI. An entity consumer's kind is the closure kind it was collected as
+// (KindComponent, KindFeature, KindRecipe, KindFeatureRecipe); a library consuming
+// another on its own axis carries the axis's kind (LibraryAxis.Kind); a consumer
+// whose kind its caller did not say — one seeded back from a materialised library,
+// whose row records none — carries none.
+type consumerIdentity struct {
+	Kind string
+	URI  string
+}
+
+// consumerVersionLabels returns versionByConsumer keyed by a label per consumer for
+// the selection to order and name consumers by: the URI, and — only where two
+// consumers share a URI — the URI with the kind beside it, so the two stay two
+// requirements and a conflict between them names both.
+func consumerVersionLabels(versionByConsumer map[consumerIdentity]string) map[string]string {
+	perURI := map[string]int{}
+	for c := range versionByConsumer {
+		perURI[c.URI]++
+	}
+	out := make(map[string]string, len(versionByConsumer))
+	for c, version := range versionByConsumer {
+		label := c.URI
+		if perURI[c.URI] > 1 && c.Kind != "" {
+			label = c.URI + " (" + c.Kind + ")"
+		}
+		out[label] = version
+	}
+	return out
 }
 
 func newWalkState() *walkState {
 	s := &walkState{
-		entities: map[string]*pendingRef{},
+		entities: map[EntityKey]*pendingRef{},
 		libs:     make(map[string]map[string]*pendingLibrary, len(libraryAxes)),
 	}
 	for _, a := range libraryAxes {
@@ -138,7 +181,7 @@ func (s *walkState) walk(in inputs) error {
 		s.addEntityKind(in.release.Spec.Aggregate, "release.spec.aggregate", ReleaseAggregateKindHint)
 	}
 	if in.release.Spec.Manifest != "" {
-		s.addEntity(in.release.Spec.Manifest, "release.spec.manifest")
+		s.addEntityKind(in.release.Spec.Manifest, "release.spec.manifest", KindManifest)
 	}
 
 	s.walkAggregate(in.aggregate, "aggregate")
@@ -176,7 +219,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			// Mark the sub-aggregate so DescendSubAggregates can find the
 			// aggregate entities to load and re-walk for their transitive
 			// closure. The hint is not serialised to the lockfile.
-			s.addEntityKind(sub.Type, subPath, aggregateKindHint)
+			s.addEntityKind(sub.Type, subPath, KindAggregate)
 		}
 	}
 	// Every subsystem's components and its own scope-wide attachments are recorded;
@@ -199,7 +242,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			},
 			Visit: func(ci types.ComponentInstance, name, subPath string, _ bool, _ struct{}) error {
 				if ci.Type != "" {
-					s.addEntityKind(ci.Type, fmt.Sprintf("%s.components.%s.type", subPath, name), ComponentKindHint)
+					s.addEntityKind(ci.Type, fmt.Sprintf("%s.components.%s.type", subPath, name), KindComponent)
 				}
 				s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", subPath, name))
 				return nil
@@ -207,7 +250,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			Leave: func(sys types.Subsystem, _, subPath string, _ struct{}) {
 				for name, fi := range sys.Features.All() {
 					if fi.Type != "" {
-						s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", subPath, name), "feature")
+						s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", subPath, name), KindFeature)
 					}
 				}
 			},
@@ -229,7 +272,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, path string) {
 	for name, fi := range ci.Features.All() {
 		if fi.Type != "" {
-			s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name), "feature")
+			s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name), KindFeature)
 		}
 	}
 	for conn, att := range ci.ConnectionAttachments() {
@@ -249,7 +292,7 @@ func (s *walkState) addConnectionAttachment(conn types.AttachmentConnection, fea
 		return
 	}
 	s.addEntityKind(featureType,
-		fmt.Sprintf("%s.uses.%s.%s.features.%s.type", componentPath, conn.Socket, conn.Alias, conn.Attachment), "feature")
+		fmt.Sprintf("%s.uses.%s.%s.features.%s.type", componentPath, conn.Socket, conn.Alias, conn.Attachment), KindFeature)
 }
 
 // walkManifest descends Manifest.Spec.Mappings.{Components,
@@ -261,10 +304,10 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 		return
 	}
 	if m.Spec.Extends != "" {
-		s.addEntity(m.Spec.Extends, "manifest.spec.extends")
+		s.addEntityKind(m.Spec.Extends, "manifest.spec.extends", KindManifest)
 	}
-	s.walkMapping(m.Spec.Mappings.Components, "components", ComponentKindHint, "recipe")
-	s.walkMapping(m.Spec.Mappings.Features, "features", "feature", "feature_recipe")
+	s.walkMapping(m.Spec.Mappings.Components, "components", KindComponent, KindRecipe)
+	s.walkMapping(m.Spec.Mappings.Features, "features", KindFeature, KindFeatureRecipe)
 }
 
 // walkMapping records every realization one mapping binds, in every tier it
@@ -360,7 +403,7 @@ func (s *walkState) walkReleaseAttachments(r *types.Release) {
 func (s *walkState) addBoundaryFeatures(features types.OrderedMap[types.BoundaryFeature], path string) {
 	for name, bf := range features.All() {
 		if bf.Type != "" {
-			s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", path, name), "feature")
+			s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", path, name), KindFeature)
 		}
 	}
 }
@@ -388,8 +431,7 @@ func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 		if uri == "" {
 			return
 		}
-		s.addEntityKind(uri, refPath, pluginKindHint)
-		s.entities[uri].pinnedSocket = true
+		s.addEntityKind(uri, refPath, KindPlugin).pinnedSocket = true
 	}
 	for _, p := range cfg.Plugins.TransformGovernanceRefs() {
 		record(p.URI, ".aggrega-config.yaml.plugins.governance")
@@ -433,7 +475,7 @@ func (c *Closure) WalkSchemaRefs(node *yaml.Node, consumerURI string) error {
 	// Seed the state with any libraries already present in the
 	// closure so the post-call materialise step preserves them.
 	state.seedLibs(axis, axis.Libraries(c))
-	if err := state.walkSchemaRefsInto(node, consumerURI); err != nil {
+	if err := state.walkSchemaRefsInto(node, consumerIdentity{URI: consumerURI}); err != nil {
 		return err
 	}
 	axis.SetLibraries(c, state.materialiseLibs(axis))
@@ -445,14 +487,14 @@ func (c *Closure) WalkSchemaRefs(node *yaml.Node, consumerURI string) error {
 // during the closure build. It descends the tree, harvests every
 // $ref: child whose value matches the library-reference shape,
 // and records the (library, version, fragment, consumer) edge.
-func (s *walkState) walkSchemaRefsInto(node *yaml.Node, consumerURI string) error {
+func (s *walkState) walkSchemaRefsInto(node *yaml.Node, consumer consumerIdentity) error {
 	if node == nil {
 		return nil
 	}
 	switch node.Kind {
 	case yaml.DocumentNode:
 		for _, child := range node.Content {
-			if err := s.walkSchemaRefsInto(child, consumerURI); err != nil {
+			if err := s.walkSchemaRefsInto(child, consumer); err != nil {
 				return err
 			}
 		}
@@ -462,19 +504,19 @@ func (s *walkState) walkSchemaRefsInto(node *yaml.Node, consumerURI string) erro
 			valNode := node.Content[i+1]
 			if keyNode.Value == "$ref" && valNode.Kind == yaml.ScalarNode {
 				if LibraryAxisNamed("SchemaLibraries").IsRef(valNode.Value) {
-					if err := s.recordSchemaRef(valNode.Value, consumerURI); err != nil {
+					if err := s.recordSchemaRef(valNode.Value, consumer); err != nil {
 						return err
 					}
 				}
 				continue
 			}
-			if err := s.walkSchemaRefsInto(valNode, consumerURI); err != nil {
+			if err := s.walkSchemaRefsInto(valNode, consumer); err != nil {
 				return err
 			}
 		}
 	case yaml.SequenceNode:
 		for _, child := range node.Content {
-			if err := s.walkSchemaRefsInto(child, consumerURI); err != nil {
+			if err := s.walkSchemaRefsInto(child, consumer); err != nil {
 				return err
 			}
 		}
@@ -488,13 +530,13 @@ func (s *walkState) walkSchemaRefsInto(node *yaml.Node, consumerURI string) erro
 // optional `@<version>` flows in as a minimum-version floor. Callers
 // gate on isIdentityLibraryRef, so a non-identity value here is malformed and
 // surfaces as ErrInvalidLibraryRef.
-func (s *walkState) recordSchemaRef(refValue, consumerURI string) error {
+func (s *walkState) recordSchemaRef(refValue string, consumer consumerIdentity) error {
 	axis := LibraryAxisNamed("SchemaLibraries")
 	libName, version, fragment, err := axis.ParseRef(refValue)
 	if err != nil {
 		return err
 	}
-	s.addLibrary(axis, libName, version, consumerURI, formatFragmentRef(fragment))
+	s.addLibrary(axis, libName, version, consumer, formatFragmentRef(fragment))
 	return nil
 }
 
@@ -518,7 +560,7 @@ func (c *Closure) WalkMappingImport(template, consumerURI string) error {
 	axis := LibraryAxisNamed("MappingLibraries")
 	state := newWalkState()
 	state.seedLibs(axis, axis.Libraries(c))
-	if err := state.walkImportInto(axis, template, consumerURI); err != nil {
+	if err := state.walkImportInto(axis, template, consumerIdentity{URI: consumerURI}); err != nil {
 		return err
 	}
 	axis.SetLibraries(c, state.materialiseLibs(axis))
@@ -536,7 +578,7 @@ func (c *Closure) WalkMappingImport(template, consumerURI string) error {
 // was read off that field when the document was parsed, so it is recorded through
 // walkImportRef directly and never rendered back into directive text to be read a
 // second time under these rules.
-func (s *walkState) walkImportInto(axis LibraryAxis, template, consumerURI string) error {
+func (s *walkState) walkImportInto(axis LibraryAxis, template string, consumer consumerIdentity) error {
 	trimmed := strings.TrimSpace(template)
 	if !strings.HasPrefix(trimmed, "$import:") {
 		return nil
@@ -546,7 +588,7 @@ func (s *walkState) walkImportInto(axis LibraryAxis, template, consumerURI strin
 	if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
 		rest = rest[:newline]
 	}
-	return s.walkImportRef(axis, strings.TrimSpace(rest), consumerURI)
+	return s.walkImportRef(axis, strings.TrimSpace(rest), consumer)
 }
 
 // walkImportRef records the library edge an `$import:` reference carries on the
@@ -557,7 +599,7 @@ func (s *walkState) walkImportInto(axis LibraryAxis, template, consumerURI strin
 // A local-file import (no fragment) and the host-bearing `oci://…` form are not
 // cross-library references and are ignored here: the file import is inlined at its
 // consumption site and the host form is rejected there.
-func (s *walkState) walkImportRef(axis LibraryAxis, ref, consumerURI string) error {
+func (s *walkState) walkImportRef(axis LibraryAxis, ref string, consumer consumerIdentity) error {
 	if ref == "" || !axis.IsRef(ref) {
 		return nil
 	}
@@ -565,7 +607,7 @@ func (s *walkState) walkImportRef(axis LibraryAxis, ref, consumerURI string) err
 	if err != nil {
 		return err
 	}
-	s.addLibrary(axis, libName, version, consumerURI, formatFragmentRef(fragment))
+	s.addLibrary(axis, libName, version, consumer, formatFragmentRef(fragment))
 	return nil
 }
 
@@ -586,19 +628,21 @@ func (s *walkState) resolveAll(ctx context.Context, lookup Lookup) error {
 	return nil
 }
 
-// resolveEntities resolves the recorded references in URI order, never in map
-// order. What it resolves first is visible: the first reference that does not
-// resolve is the one the refusal names, and a catalog lookup reports what it
-// finds while it reads, so an order the runtime randomises would change both from
-// one run to the next over identical input.
+// resolveEntities resolves the recorded references in URI order, and two entities
+// sharing a reference in kind order, never in map order. What it resolves first is
+// visible: the first reference that does not resolve is the one the refusal names,
+// and a catalog lookup reports what it finds while it reads, so an order the
+// runtime randomises would change both from one run to the next over identical
+// input.
 func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
-	uris := make([]string, 0, len(s.entities))
-	for uri := range s.entities {
-		uris = append(uris, uri)
+	keys := make([]EntityKey, 0, len(s.entities))
+	for key := range s.entities {
+		keys = append(keys, key)
 	}
-	sort.Strings(uris)
-	for _, uri := range uris {
-		pending := s.entities[uri]
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Less(keys[j]) })
+	for _, key := range keys {
+		uri := key.URI
+		pending := s.entities[key]
 		// A sub-aggregate reference resolves through the dedicated aggregate
 		// registry tier (bare-name capable), not the generic catalog-entity
 		// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
@@ -609,7 +653,7 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		var res Resolution
 		var err error
 		switch {
-		case pending.kindHint == aggregateKindHint:
+		case pending.kindHint == KindAggregate:
 			res, err = lookup.ResolveAggregate(ctx, uri)
 		case pending.pinnedSocket:
 			res, err = ResolvePinnedSocketEntity(ctx, lookup, uri)
@@ -678,7 +722,7 @@ func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, look
 	pending := axis.pendingLibs(s)
 	for _, uri := range slices.Sorted(maps.Keys(pending)) {
 		lib := pending[uri]
-		selected, err := selectMVSVersion(uri, lib.versionByConsumer)
+		selected, err := selectMVSVersion(uri, consumerVersionLabels(lib.versionByConsumer))
 		if err != nil {
 			return err
 		}
@@ -872,11 +916,11 @@ func ReferencedFromPreview(paths []string) string {
 // stage; canonicaliseClosure performs the final sort pass.
 func (s *walkState) materialise() Closure {
 	c := Closure{}
-	for uri, p := range s.entities {
+	for key, p := range s.entities {
 		if p.resolution == nil {
 			continue
 		}
-		c.Entities = append(c.Entities, p.toResolvedRef(uri))
+		c.Entities = append(c.Entities, p.toResolvedRef(key.URI))
 	}
 	// c.Plugins is populated at pull time by the pipeline-plugin descent, which
 	// descends every plugin-kinded entity (workspace-socket plugins recorded
@@ -901,12 +945,12 @@ func (s *walkState) materialiseLibs(axis LibraryAxis) []ResolvedLibrary {
 }
 
 // canonicaliseClosure sorts every slice field by its canonical
-// key (URI for top-level slices; ConsumerURI for Consumers;
-// lexicographic for Fragments and ReferencedFrom). Two
-// independent walks of the same input produce identical Closure
-// bytes after this pass.
+// key (URI for top-level slices, then kind for entities sharing one;
+// ConsumerURI for Consumers; lexicographic for Fragments and
+// ReferencedFrom). Two independent walks of the same input produce
+// identical Closure bytes after this pass.
 func canonicaliseClosure(c *Closure) {
-	sort.Slice(c.Entities, func(i, j int) bool { return c.Entities[i].URI < c.Entities[j].URI })
+	sort.Slice(c.Entities, func(i, j int) bool { return c.Entities[i].Key().Less(c.Entities[j].Key()) })
 	sort.Slice(c.Plugins, func(i, j int) bool { return c.Plugins[i].URI < c.Plugins[j].URI })
 	for _, a := range libraryAxes {
 		libs := a.Libraries(c)
@@ -938,49 +982,37 @@ func sortLibrary(lib *ResolvedLibrary) {
 
 // ---- helper accessors on the pending types ----
 
-// addEntity / addSchemaLibrary / addMappingLibrary are the
-// structural accumulator entry points used by every per-axis
-// sub-walker.
+// addEntityKind / addLibrary are the structural accumulator entry points used by
+// every per-axis sub-walker.
 
-func (s *walkState) addEntity(uri, refPath string) {
-	if s.entities[uri] == nil {
-		s.entities[uri] = &pendingRef{referencedFrom: map[string]struct{}{}}
+// addEntityKind records an entity reference together with the hint its collection
+// site carries, which names the entity's kind (see EntityKindOf). Every site the
+// walk collects an entity at knows the kind from its position — a Manifest
+// mapping value is a Recipe or a FeatureRecipe, a Release's spec.manifest is a
+// Manifest — so the hint is never empty here.
+//
+// The entity is keyed by that kind and the reference, so one reference collected
+// as two kinds — an Aggregate and a Manifest of one name, a Component and a Recipe
+// of one name — is two entities, each resolved as its own kind and pinned by a
+// row of its own. The hint stays authoritative for source-descent, which would
+// otherwise re-derive the kind lexically from the URI and miss short-form
+// references.
+//
+// One identity met under two hints keeps the one keptKindHint keeps, which is the
+// rule a pass merging entities into a closure applies too (mergeEntity).
+//
+// It returns the entity's accumulator, so a site that records more about the
+// entity it collected reaches the very entry the reference was recorded on.
+func (s *walkState) addEntityKind(uri, refPath, hint string) *pendingRef {
+	key := EntityKey{Kind: EntityKindOf(hint), URI: uri}
+	p := s.entities[key]
+	if p == nil {
+		p = &pendingRef{referencedFrom: map[string]struct{}{}}
+		s.entities[key] = p
 	}
-	s.entities[uri].referencedFrom[refPath] = struct{}{}
-}
-
-// addEntityKind records an entity reference together with a catalog kind known
-// from the collection site ("recipe" or "feature_recipe"). The kind is
-// authoritative for source-descent, which would otherwise re-derive it
-// lexically from the URI and miss short-form references. First non-empty kind
-// for a URI wins, so a reference whose position implies a kind is not
-// overwritten by a later position-less reference to the same URI.
-func (s *walkState) addEntityKind(uri, refPath, kind string) {
-	s.addEntity(uri, refPath)
-	if kind == "" {
-		return
-	}
-	// Recipe / FeatureRecipe / Aggregate hints are authoritative — source-descent
-	// and sub-aggregate descent rely on them. A Component / Feature hint is
-	// weaker: it fills an empty hint but never clobbers an authoritative one, and
-	// an authoritative hint upgrades a previously-recorded weak one. This matters
-	// when one bare URI is shared across kinds (a Component and a Recipe of the
-	// same name): the authoritative kind must win regardless of walk order.
-	//
-	// The Release's own Aggregate hint yields to every other, so a URI another site
-	// names under a kind of its own is recorded exactly as it would be without it.
-	cur := s.entities[uri].kindHint
-	if cur == "" || cur == ReleaseAggregateKindHint || (isWeakKindHint(cur) && !isWeakKindHint(kind)) {
-		s.entities[uri].kindHint = kind
-	}
-}
-
-// isWeakKindHint reports whether a KindHint is a weak (overridable) entity kind.
-// Weak hints (component, feature) supply the registry-location kind for a
-// bare-identity pull but yield to an authoritative recipe/feature_recipe/aggregate
-// hint on a URI shared across kinds.
-func isWeakKindHint(kind string) bool {
-	return kind == "component" || kind == "feature"
+	p.referencedFrom[refPath] = struct{}{}
+	p.kindHint = keptKindHint(p.kindHint, hint)
+	return p
 }
 
 // seedLibs re-seeds an axis's accumulator from libraries already resolved into a
@@ -996,31 +1028,32 @@ func (s *walkState) seedLibs(axis LibraryAxis, libs []ResolvedLibrary) {
 // optional version floor and the fragment it references. It is written once and
 // parameterised by the axis, so every axis accumulates by exactly the same rule
 // and a per-axis copy cannot drift from its siblings.
-func (s *walkState) addLibrary(axis LibraryAxis, libURI, version, consumerURI, fragment string) {
+func (s *walkState) addLibrary(axis LibraryAxis, libURI, version string, consumer consumerIdentity, fragment string) {
 	pending := axis.pendingLibs(s)
 	if pending[libURI] == nil {
 		pending[libURI] = &pendingLibrary{
-			versionByConsumer: map[string]string{},
-			fragmentsByCons:   map[string]map[string]struct{}{},
+			versionByConsumer: map[consumerIdentity]string{},
+			fragmentsByCons:   map[consumerIdentity]map[string]struct{}{},
 		}
 	}
 	l := pending[libURI]
 	if version != "" {
-		l.versionByConsumer[consumerURI] = version
-	} else if _, present := l.versionByConsumer[consumerURI]; !present {
-		l.versionByConsumer[consumerURI] = ""
+		l.versionByConsumer[consumer] = version
+	} else if _, present := l.versionByConsumer[consumer]; !present {
+		l.versionByConsumer[consumer] = ""
 	}
-	if l.fragmentsByCons[consumerURI] == nil {
-		l.fragmentsByCons[consumerURI] = map[string]struct{}{}
+	if l.fragmentsByCons[consumer] == nil {
+		l.fragmentsByCons[consumer] = map[string]struct{}{}
 	}
 	if fragment != "" {
-		l.fragmentsByCons[consumerURI][fragment] = struct{}{}
+		l.fragmentsByCons[consumer][fragment] = struct{}{}
 	}
 }
 
 // toResolvedRef materialises a ResolvedRef once the resolveAll pass
 // has populated the resolution pointer. The URI is supplied by the
-// caller since pendingRef itself is map-keyed by URI.
+// caller since pendingRef itself is map-keyed by kind and URI; the
+// kind travels in the hint.
 func (p *pendingRef) toResolvedRef(uri string) ResolvedRef {
 	refs := make([]string, 0, len(p.referencedFrom))
 	for r := range p.referencedFrom {
@@ -1037,9 +1070,23 @@ func (p *pendingRef) toResolvedRef(uri string) ResolvedRef {
 	}
 }
 
+// toResolvedLibrary materialises the library resolved for uri. Its consumers are
+// recorded one per URI, as a lockfile row records them: the fragments every
+// identity sharing a URI references are merged into that URI's one row.
 func (p *pendingLibrary) toResolvedLibrary(uri string) ResolvedLibrary {
-	consumers := make([]LibraryConsumer, 0, len(p.fragmentsByCons))
+	byURI := make(map[string]map[string]struct{}, len(p.fragmentsByCons))
 	for cons, fragSet := range p.fragmentsByCons {
+		merged := byURI[cons.URI]
+		if merged == nil {
+			merged = map[string]struct{}{}
+			byURI[cons.URI] = merged
+		}
+		for f := range fragSet {
+			merged[f] = struct{}{}
+		}
+	}
+	consumers := make([]LibraryConsumer, 0, len(byURI))
+	for cons, fragSet := range byURI {
 		frags := make([]string, 0, len(fragSet))
 		for f := range fragSet {
 			frags = append(frags, f)
@@ -1067,16 +1114,18 @@ func (p *pendingLibrary) toResolvedLibrary(uri string) ResolvedLibrary {
 // $ref:/$import: discoveries into an existing closure).
 func libraryFromResolved(lib ResolvedLibrary) *pendingLibrary {
 	p := &pendingLibrary{
-		versionByConsumer: map[string]string{},
-		fragmentsByCons:   map[string]map[string]struct{}{},
+		versionByConsumer: map[consumerIdentity]string{},
+		fragmentsByCons:   map[consumerIdentity]map[string]struct{}{},
 	}
 	for _, c := range lib.Consumers {
 		set := map[string]struct{}{}
 		for _, f := range c.Fragments {
 			set[f] = struct{}{}
 		}
-		p.fragmentsByCons[c.ConsumerURI] = set
-		p.versionByConsumer[c.ConsumerURI] = lib.ResolvedVersion
+		// A materialised consumer row records no kind, so it is seeded under none.
+		consumer := consumerIdentity{URI: c.ConsumerURI}
+		p.fragmentsByCons[consumer] = set
+		p.versionByConsumer[consumer] = lib.ResolvedVersion
 	}
 	if lib.ResolvedVersion != "" || lib.Digest != "" {
 		p.resolution = &LibraryResolution{

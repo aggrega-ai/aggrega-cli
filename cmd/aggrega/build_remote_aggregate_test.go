@@ -130,7 +130,7 @@ func relocateAggregateToCache(t *testing.T, root, cacheDir, name string) {
 	if err != nil {
 		t.Fatalf("read aggregate %s: %v", name, err)
 	}
-	if err := oci.WriteCached(root, cacheDir, name+":1.0.0", "1.0.0", body); err != nil {
+	if err := oci.WriteCached(root, cacheDir, "Aggregate", name+":1.0.0", "1.0.0", body); err != nil {
 		t.Fatalf("write aggregate %s to cache: %v", name, err)
 	}
 	// Persist the OCI manifest committing to the aggregate body, mirroring the real
@@ -139,7 +139,7 @@ func relocateAggregateToCache(t *testing.T, root, cacheDir, name string) {
 	if err != nil {
 		t.Fatalf("build aggregate manifest %s: %v", name, err)
 	}
-	if err := oci.WriteCachedManifest(root, cacheDir, name+":1.0.0", "1.0.0", mb); err != nil {
+	if err := oci.WriteCachedManifest(root, cacheDir, "Aggregate", name+":1.0.0", "1.0.0", mb); err != nil {
 		t.Fatalf("write aggregate manifest %s: %v", name, err)
 	}
 	if err := os.Remove(src); err != nil {

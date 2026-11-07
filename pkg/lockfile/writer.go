@@ -9,16 +9,53 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
+
+// CheckEntityKinds refuses a lockfile whose entity rows do not each record one of
+// the declared entity kinds (closure.DeclaredEntityKinds), naming every such row with the
+// places that reference it. It is asked of a lockfile a resolution composed, before
+// it is written.
+//
+// A row without a kind would be written and then refused as the lockfile is read
+// again, under the schema-failure condition whose remedy is a pull — and that pull
+// would compose the same row once more. Refusing here stops that loop where the row
+// is made, and says that the fault lies in the resolution rather than in anything
+// the workspace holds.
+func CheckEntityKinds(lf *Lockfile) error {
+	if lf == nil {
+		return nil
+	}
+	var rows []string
+	for _, e := range lf.Entities {
+		if closure.IsEntityKind(e.Kind) {
+			continue
+		}
+		row := fmt.Sprintf("%q (kind %q)", e.URI, e.Kind)
+		if len(e.ReferencedFrom) > 0 {
+			row += " referenced from " + closure.ReferencedFromPreview(e.ReferencedFrom)
+		}
+		rows = append(rows, row)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return fmt.Errorf("internal: the resolution recorded an entity with no known kind — %s — so the lockfile was not "+
+		"written: a lockfile row records its entity's kind, and resolving the Release again would record the same "+
+		"row. This is a defect in the compiler rather than in the workspace; report it with the Release",
+		strings.Join(rows, "; "))
+}
 
 // WriteLockfile writes lf to path in canonical (deterministic) form.
 // Canonical form:
 //   - Top-level keys emitted in alphabetical order (driven by struct
 //     field declaration order in types.go).
-//   - Slice fields sorted by their canonical key: Entities,
-//     SchemaLibraries, MappingLibraries, WorkloadLibraries, Plugins by URI;
+//   - Slice fields sorted by their canonical key: Entities by URI, then
+//     kind; SchemaLibraries, MappingLibraries, WorkloadLibraries, Plugins by URI;
 //     SourceArtifacts by the composite (Kind, URL, Chart, PinnedVersion);
 //     ExternalInputs by URL; VerdictInputs by (Plugin, Role), with each
 //     entry's Sources by base name. Mutators is the exception: its order
@@ -202,7 +239,7 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		out.Entities[i] = entryCopy
 	}
 	sort.Slice(out.Entities, func(i, j int) bool {
-		return out.Entities[i].URI < out.Entities[j].URI
+		return out.Entities[i].Key().Less(out.Entities[j].Key())
 	})
 
 	out.ExternalInputs = make([]ExternalInput, len(lf.ExternalInputs))

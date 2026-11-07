@@ -285,7 +285,7 @@ spec:
 		Release:     "./" + releaseRel,
 		GeneratedAt: "2026-06-03T10:00:00Z",
 		Entities: []lockfile.Entity{{
-			URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: contentDigestHex([]byte(svcComponent)),
+			Kind: "component", URI: "demo/svc:1.0.0", ResolvedVersion: "1.0.0", Digest: contentDigestHex([]byte(svcComponent)),
 		}},
 	}
 	if withMarker {

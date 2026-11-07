@@ -43,7 +43,7 @@ func verdictPluginFixture(t *testing.T) (VerdictPluginTierSources, func(string) 
 
 	ws := t.TempDir()
 	const cacheDir = ".aggrega/cache"
-	if err := oci.WriteCached(ws, cacheDir, artifactRef, wasmDigest, wasm); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), artifactRef, wasmDigest, wasm); err != nil {
 		t.Fatalf("seed content cache: %v", err)
 	}
 

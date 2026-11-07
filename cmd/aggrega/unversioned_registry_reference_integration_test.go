@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // registryReferencePublisher lays every entity the Release reaches into a
@@ -89,7 +90,7 @@ func TestIntegration_AReferenceWrittenWithoutItsVersionPullsAndBuildsFromARegist
 			}
 			assertPinnedAtTheResolvedVersion(t, lockPath, row.forms.writtenBare())
 			for _, uri := range row.forms.writtenBare() {
-				slot := mustCachePath(ws, ".aggrega/cache", uri+":"+registryReferenceVersion, registryReferenceVersion)
+				slot := ocitest.MustCachePath(ws, ".aggrega/cache", writtenBareKind(uri), uri+":"+registryReferenceVersion, registryReferenceVersion)
 				if _, statErr := os.Stat(filepath.Join(slot, "blob")); statErr != nil {
 					t.Errorf("%s is not cached where a read of its pin opens: %v", uri, statErr)
 				}

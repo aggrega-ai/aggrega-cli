@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
 )
 
 // unpinnedEntityRegistry is an in-process registry holding one entity, the
@@ -68,7 +69,7 @@ func TestAnEntityCacheThatCannotBeWrittenIsSaidAsWhatWasBeingDone(t *testing.T) 
 	// A regular file stands where the copy's directory goes. The Aggregate and the
 	// Manifest write the reference bare, and the copy is keyed by it at the version
 	// it resolved to — the slot every reader of its pin addresses.
-	slot := mustCachePath(f.root, cacheDir, staleSlotEntry, "1.0.0")
+	slot := ocitest.MustCachePath(f.root, cacheDir, "Component", staleSlotEntry, "1.0.0")
 	writeFixture(t, slot, "in the way\n")
 
 	var diag, out bytes.Buffer

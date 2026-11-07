@@ -382,7 +382,11 @@ func HoldReleaseToLockfile(ctx context.Context, view *catalog.LazyLookup, releas
 	if lf == nil {
 		return nil
 	}
-	held := view.ForRequest(catalog.PinsFromLockfile(lf))
+	pins, err := catalog.PinsFromLockfile(lf)
+	if err != nil {
+		return err
+	}
+	held := view.ForRequest(pins)
 	held.WriteNoticesTo(io.Discard)
 	resolved, cerr := resolveBuildClosure(ctx, held, releasePath, workspaceRoot, workspaceConfig, lf)
 	if cerr != nil {
@@ -1152,8 +1156,16 @@ func reconstructPreviewClosureAxes(ctx context.Context, view *catalog.LazyLookup
 	resolvePlugin := func(ref string) (types.Plugin, bool, error) {
 		return view.ProviderPluginForTarget(ref, bindings)
 	}
+	lockfilePins, err := catalog.PinsFromLockfile(lf)
+	if err != nil {
+		return err
+	}
 	refold := func() (closure.RecipeLoader, error) {
-		view.SetPins(catalog.PinsFromClosure(resolved.Closure))
+		closurePins, err := catalog.PinsFromClosure(resolved.Closure)
+		if err != nil {
+			return nil, err
+		}
+		view.SetPins(closurePins)
 		return view.ClosureRecipeLoader(), nil
 	}
 	// The plugin passes resolve through a lookup carrying the lockfile's pins. A
@@ -1164,7 +1176,7 @@ func reconstructPreviewClosureAxes(ctx context.Context, view *catalog.LazyLookup
 	// external documents that pass reads. One pinned lookup serves every plugin
 	// pass, the workspace-socket one below included.
 	pinned := view.ClosureLookup(nil, workspaceRoot, workspaceConfig.ResolvedArtifactCacheDir(), nil, nil,
-		&catalog.ReuseVerification{PriorPins: catalog.PinsFromLockfile(lf)})
+		&catalog.ReuseVerification{PriorPins: lockfilePins})
 	// The artifact of a Plugin entity authored in a catalog directory is resolved from
 	// this machine by the same question the pull asked when it wrote the lockfile, so
 	// a transform-role attachment authored there reconstructs to the pin the pull
@@ -1174,10 +1186,10 @@ func reconstructPreviewClosureAxes(ctx context.Context, view *catalog.LazyLookup
 	// it, so it refuses nothing at that step that its render would not.
 	catalogArtifacts := pipeline.CatalogPluginArtifacts(workspaceRoot, workspaceConfig, view.PluginColocatedDirs())
 	if err := closure.DescendPinnedAxes(ctx, &resolved.Closure, aggLoader, recipeLoader, lookup, pinned, resolvePlugin, refold, nil, catalogArtifacts); err != nil {
-		view.SetPins(catalog.PinsFromLockfile(lf))
+		view.SetPins(lockfilePins)
 		return err
 	}
-	view.SetPins(catalog.PinsFromLockfile(lf))
+	view.SetPins(lockfilePins)
 
 	// The output-shaping workspace-socket plugin entities and their .wasm are
 	// pull-time choices recorded only in the lockfile, so ComputeClosure cannot

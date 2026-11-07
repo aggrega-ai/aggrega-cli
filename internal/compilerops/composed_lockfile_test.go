@@ -58,7 +58,7 @@ func TestComposedLockfileIsHeldToTheBuildsDriftVerify(t *testing.T) {
 	}
 	withdrawn := lockfiletest.Mirroring(composedHeader(), seed.Resolved.Closure)
 	withdrawn.Entities = append(withdrawn.Entities, lockfile.Entity{
-		URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
+		Kind: "component", URI: "demo/withdrawn", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("0", 64),
 	})
 
 	cases := []struct {
@@ -95,7 +95,7 @@ func TestComposedLockfileIsHeldToTheBuildsDriftVerify(t *testing.T) {
 			}
 			if tc.wantComposed {
 				msg := err.Error()
-				if !strings.Contains(msg, `entity "demo/withdrawn" no longer used by the release`) {
+				if !strings.Contains(msg, `entity "demo/withdrawn" (component) no longer used by the release`) {
 					t.Errorf("the refusal must name each disagreement the verify found; got:\n%s", msg)
 				}
 				if strings.Contains(msg, lockfile.ErrLockfileDrift().Error()) {

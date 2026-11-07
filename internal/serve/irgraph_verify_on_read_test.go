@@ -156,10 +156,10 @@ spec:
 	// bytes), never authored in the catalog dir. The slot carries the persisted OCI
 	// manifest committing to the ORIGINAL (pinned) content — the independent record
 	// against which the drifted blob is caught as an integrity skip, not a miss.
-	if err := oci.WriteCached(tmp, cacheDir, compURI, "1.0.0", cachedComponent); err != nil {
+	if err := oci.WriteCached(tmp, cacheDir, "Component", compURI, "1.0.0", cachedComponent); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	if err := oci.WriteCachedManifest(tmp, cacheDir, compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
+	if err := oci.WriteCachedManifest(tmp, cacheDir, "Component", compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
 		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 
@@ -232,7 +232,7 @@ spec:
 		Release:     "./release.yaml",
 		GeneratedAt: "2026-06-03T10:00:00Z",
 		Entities: []lockfile.Entity{{
-			URI:             compURI,
+			Kind: "component", URI: compURI,
 			ResolvedVersion: "1.0.0",
 			Digest:          contentDigestHex(pinnedComponent),
 		}},
@@ -349,10 +349,10 @@ spec:
 	// guard sees it absent. The slot carries the persisted OCI manifest committing
 	// to the ORIGINAL (pinned) content, so the drift is an integrity skip, not a
 	// fail-closed miss.
-	if err := oci.WriteCached(tmp, cacheDir, compURI, "1.0.0", cachedComponent); err != nil {
+	if err := oci.WriteCached(tmp, cacheDir, "Component", compURI, "1.0.0", cachedComponent); err != nil {
 		t.Fatalf("WriteCached: %v", err)
 	}
-	if err := oci.WriteCachedManifest(tmp, cacheDir, compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
+	if err := oci.WriteCachedManifest(tmp, cacheDir, "Component", compURI, "1.0.0", componentManifestFor(t, pinnedComponent)); err != nil {
 		t.Fatalf("WriteCachedManifest: %v", err)
 	}
 
@@ -441,7 +441,7 @@ spec:
 		Release:     "./release.yaml",
 		GeneratedAt: "2026-06-03T10:00:00Z",
 		Entities: []lockfile.Entity{{
-			URI:             compURI,
+			Kind: "component", URI: compURI,
 			ResolvedVersion: "1.0.0",
 			Digest:          contentDigestHex(pinnedComponent),
 		}},

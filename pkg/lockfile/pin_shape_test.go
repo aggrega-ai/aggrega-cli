@@ -30,9 +30,9 @@ func pulledLockfile() *lockfile.Lockfile {
 		},
 		ReleaseDocuments: []lockfile.ReleaseDocument{{Path: "release.yaml", Digest: fixtureDigest("release")}},
 		Entities: []lockfile.Entity{
-			{URI: "./aggregate.yaml", ResolvedVersion: "", Digest: fixtureDigest("aggregate")},
+			{Kind: "aggregate", URI: "./aggregate.yaml", ResolvedVersion: "", Digest: fixtureDigest("aggregate")},
 			{
-				URI:             "demo/app/api",
+				Kind: "component", URI: "demo/app/api",
 				ResolvedVersion: "1.0.0",
 				Digest:          fixtureDigest("api"),
 				ManifestDigest:  fixtureDigest("api-manifest"),

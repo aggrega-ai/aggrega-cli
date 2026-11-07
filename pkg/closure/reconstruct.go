@@ -150,10 +150,7 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 		return nil
 	}
 
-	entityIndex := make(map[string]int, len(c.Entities))
-	for i, e := range c.Entities {
-		entityIndex[e.URI] = i
-	}
+	entityIndex := entityIndexOf(c)
 
 	sorted := append([]string(nil), entityURIs...)
 	sort.Strings(sorted)
@@ -172,23 +169,15 @@ func ReconstructWorkspaceSocketEntities(ctx context.Context, c *Closure, entityU
 			continue
 		}
 		entityPaths[entityURI] = res.ResolutionPath
-		if idx, dup := entityIndex[entityURI]; dup {
-			c.Entities[idx].ReferencedFrom = unionReferencedFrom(c.Entities[idx].ReferencedFrom, refPath)
-			if c.Entities[idx].KindHint == "" {
-				c.Entities[idx].KindHint = pluginKindHint
-			}
-			continue
-		}
-		c.Entities = append(c.Entities, ResolvedRef{
+		mergeEntity(c, entityIndex, ResolvedRef{
 			URI:             entityURI,
 			ResolvedVersion: res.ResolvedVersion,
 			Digest:          res.Digest,
 			ManifestDigest:  res.ManifestDigest,
 			ResolutionPath:  res.ResolutionPath,
 			ReferencedFrom:  []string{refPath},
-			KindHint:        pluginKindHint,
+			KindHint:        KindPlugin,
 		})
-		entityIndex[entityURI] = len(c.Entities) - 1
 	}
 	canonicaliseClosure(c)
 

@@ -106,11 +106,11 @@ func TestValidateDiagnosticsPublishesPhaseErrorBesidePerViolationFindings(t *tes
 			// internally, so the expected fall-back text is derived from the run error
 			// rather than transcribed from it.
 			tw := resolvedToolWorkspace(t, s, root, dirs)
-			lf, lockRefused := tw.loadReleaseLockfile(releasePath)
+			_, lockPins, lockRefused := tw.loadReleaseLockfile(releasePath)
 			if lockRefused != "" {
 				t.Fatalf("read the oracle's lockfile: %s", lockRefused)
 			}
-			view := tw.newView(releasePath, lf)
+			view := tw.newView(releasePath, lockPins)
 			resolved, cerr := compilerops.ResolveClosure(context.Background(), compilerops.ClosureInputs{
 				View:            view,
 				ReleasePath:     releasePath,

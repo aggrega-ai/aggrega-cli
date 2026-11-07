@@ -70,7 +70,7 @@ func TestEmbedCheckedFirst(t *testing.T) {
 
 	ws := t.TempDir()
 	cacheDir := ".aggrega/cache"
-	if err := oci.WriteCached(ws, cacheDir, uri, "1.0.0", []byte("cache-content")); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), uri, "1.0.0", []byte("cache-content")); err != nil {
 		t.Fatalf("seed cache: %v", err)
 	}
 
@@ -121,7 +121,7 @@ func TestPrecedenceOrder(t *testing.T) {
 	colocatedBytes := []byte("tier-colocated")
 	cacheBytes := []byte("tier-cache")
 
-	if err := oci.WriteCached(ws, cacheDir, uri, "1.0.0", cacheBytes); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), uri, "1.0.0", cacheBytes); err != nil {
 		t.Fatalf("seed cache: %v", err)
 	}
 	writeColocated(t, colocatedDir, uri, colocatedBytes)
@@ -185,7 +185,7 @@ func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 
 	ws := t.TempDir()
 	cacheDir := ".aggrega/cache"
-	if err := oci.WriteCached(ws, cacheDir, uri, pin, content); err != nil {
+	if err := oci.WriteCached(ws, cacheDir, oci.PluginArtifactKind(), uri, pin, content); err != nil {
 		t.Fatalf("seed cache: %v", err)
 	}
 	cacheGot, err := Resolver{
@@ -323,7 +323,7 @@ func TestResolveCatalogArtifactAsksTheCascade(t *testing.T) {
 			name: "the content cache holds the artifact and nothing sits beside the entity",
 			setup: func(t *testing.T) Resolver {
 				ws := t.TempDir()
-				if err := oci.WriteCached(ws, ".aggrega/cache", artifactRef, "", []byte("cached-guest")); err != nil {
+				if err := oci.WriteCached(ws, ".aggrega/cache", oci.PluginArtifactKind(), artifactRef, "", []byte("cached-guest")); err != nil {
 					t.Fatalf("seed cache: %v", err)
 				}
 				return Resolver{colocatedDirs: map[string]ColocatedDir{artifactRef: {Dir: t.TempDir()}}, workspaceRoot: ws, cacheDir: ".aggrega/cache"}

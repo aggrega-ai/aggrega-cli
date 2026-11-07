@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
 // TestDescribeToolResolvesEveryKindTheResolutionReaches proves this surface
@@ -89,6 +91,13 @@ func TestDescribeToolRefusesAnUnresolvedName(t *testing.T) {
 // closure entry is the word an author types at the head of a document, not the
 // note the walk keeps for itself — the same rendering every other surface
 // reporting a closure applies, so one entry reads the same wherever it is read.
+//
+// The words accepted are derived from the declared entity kinds through the one
+// translation into a document kind (closure.DocumentKind), never listed here, so a
+// kind added to the declared set is accepted by construction and a walk's word
+// that leaked through is refused. The Release's own Manifest must be among the
+// kinded entries: it is the entry sharing its name with the Aggregate, and the one
+// a listing naming no kind for it would show as a duplicate.
 func TestDescribeToolReportsClosureKindsAsAnAuthorWritesThem(t *testing.T) {
 	s := newTestServer(t)
 	root, catalogDir, releasePath := fullstackWorkspace(t)
@@ -106,19 +115,28 @@ func TestDescribeToolReportsClosureKindsAsAnAuthorWritesThem(t *testing.T) {
 	if len(payload.Entities) == 0 {
 		t.Fatal("the closure carried no entities, so the kinds below would be read off an empty list")
 	}
+	authored := map[string]bool{}
+	for _, kind := range closure.DeclaredEntityKinds() {
+		authored[closure.DocumentKind(kind)] = true
+	}
 	var kinded int
+	var manifest bool
 	for _, e := range payload.Entities {
 		if e.Kind == "" {
 			continue
 		}
 		kinded++
-		switch e.Kind {
-		case "Recipe", "FeatureRecipe", "Aggregate":
-		default:
+		if !authored[e.Kind] {
 			t.Errorf("entry %q carries kind %q, which is not a kind an author writes", e.URI, e.Kind)
+		}
+		if e.Kind == closure.DocumentKind(closure.KindManifest) {
+			manifest = true
 		}
 	}
 	if kinded == 0 {
 		t.Fatal("no entry carried a kind at all, so this asserts nothing about how kinds are rendered")
+	}
+	if !manifest {
+		t.Errorf("no entry names the Release's own Manifest by its kind; entries: %+v", payload.Entities)
 	}
 }

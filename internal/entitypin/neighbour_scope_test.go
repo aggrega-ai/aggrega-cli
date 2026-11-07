@@ -193,7 +193,7 @@ func TestThePinStepHoldsANeighbourToTheRootItsLockIsHeldTo(t *testing.T) {
 
 			_, err := Compute(PlanInputs{
 				View:          catalog.NewLazyLookup(ws, "", []string{listed}, nil, listed),
-				URIs:          []string{"helm/server:1.0.0"},
+				Entities:      recipes("helm/server:1.0.0"),
 				Resolver:      &recordingResolver{},
 				WorkspaceRoot: ws,
 				ForWriting:    true,
