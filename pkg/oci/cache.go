@@ -59,7 +59,7 @@ import (
 // [JoinCacheLocation].
 func CachePath(workspaceRoot, cacheDir, kind, uri, version string) (string, error) {
 	if !IsPublishableKind(kind) {
-		return "", fmt.Errorf("oci: cache slot for %q: kind %q: %w", uri, kind, ErrUnknownEntityKind())
+		return "", fmt.Errorf("cache slot for %q: kind %q: %w", uri, kind, ErrUnknownEntityKind())
 	}
 	return JoinCacheLocation(EntitiesRoot(workspaceRoot, cacheDir), fmt.Sprintf("entity %q", uri),
 		entitySlotSegments(kind, uri, version)...)
