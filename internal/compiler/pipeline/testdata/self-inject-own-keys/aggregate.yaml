@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-self-inject-own-keys
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/own-app
+      values:
+        role: researcher
+        goal: summarise
+      # The component's own block: one entry delivering an own provides key, one
+      # delivering one own value, one literal, one reading two own values, and one
+      # in a custom mechanism delivering the other own value. The Aggregate's own
+      # text is rendered against its parameters first, so each template is written
+      # escaped and reaches the component's injection block as written below the
+      # escape.
+      inject:
+        env:
+          - in: SERVICE_HOST
+            from: host
+          - in: AGENT_ROLE
+            value: '{{ "{{" }} .values.role {{ "}}" }}'
+          - in: MODE
+            value: batch
+          - in: ROLE_AND_GOAL
+            value: '{{ "{{" }} .values.role {{ "}}" }}-{{ "{{" }} .values.goal {{ "}}" }}'
+        ssm_param:
+          - in: /app/goal
+            value: '{{ "{{" }} .values.goal {{ "}}" }}'

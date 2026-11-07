@@ -201,29 +201,27 @@ func mergeSorted(dest *types.OrderedMap[string], src types.OrderedMap[string]) {
 	}
 }
 
-// normalizeInjectMechanism converts one inject mechanism — the list of
-// {in, from?, value?} entries the inject_delivery definition describes — to an
-// OrderedMap[string] in the order the author wrote the entries. value: wins
-// over from: where an entry carries both, and an entry whose in: does not
-// decode is skipped. A mechanism that is not a list yields an empty map.
+// normalizeInjectMechanism converts one mechanism of a component's own inject
+// block to the pipe's starting shape: one key per entry, in the order the author
+// wrote them, holding the entry as authored — its from: provides key, or else its
+// value: text. The self-inject delivery replaces every one of those values with
+// what the entry resolves to before anything reads the pipe, so what the pipe
+// takes from here is its keys and their order.
+//
+// The entries are the delivery's own, read through normalizeSelfInjectEntries,
+// and which half of an entry is read is [selfInjectEntry.providesKey]'s answer —
+// so the pipe starts with exactly the keys the delivery resolves, in the order the
+// author wrote them, and an entry carrying both halves is read the way it is
+// delivered. A mechanism that is not a list yields an empty map.
 func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
-	entries, ok := raw.([]any)
-	if !ok {
-		return out
-	}
-	for _, entry := range entries {
-		in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
-		if !ok {
-			continue
-		}
-		if hasValue {
-			out.Set(in, value)
-			continue
-		}
-		if hasFrom {
+	entries := normalizeSelfInjectEntries(raw)
+	for in, entry := range entries.All() {
+		if from, ok := entry.providesKey(); ok {
 			out.Set(in, from)
+			continue
 		}
+		out.Set(in, entry.value)
 	}
 	return out
 }

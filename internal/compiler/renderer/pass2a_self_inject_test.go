@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -176,26 +177,26 @@ func TestNormalizeSelfInjectEntries_OrderedMapEntries_Decode(t *testing.T) {
 		entry("in", "middle", "value", "literal-2"),
 	}
 
-	entries, err := normalizeSelfInjectEntries(raw)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	entries := normalizeSelfInjectEntries(raw)
+	if entries.Len() != 3 {
+		t.Fatalf("expected 3 entries, got %d", entries.Len())
 	}
-	if len(entries) != 3 {
-		t.Fatalf("expected 3 entries, got %d", len(entries))
+	if got, want := entries.Keys(), []string{"zulu", "alpha", "middle"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("entries = %v; want %v, in the order written", got, want)
 	}
-	if e, ok := entries["zulu"]; !ok || e.value != "literal-1" || e.from != "" {
+	if e, ok := entries.Get("zulu"); !ok || e.value != "literal-1" || e.from != "" {
 		t.Errorf("zulu: %+v want value=literal-1", e)
 	}
-	if e, ok := entries["alpha"]; !ok || e.from != "alpha-key" || e.value != "" {
+	if e, ok := entries.Get("alpha"); !ok || e.from != "alpha-key" || e.value != "" {
 		t.Errorf("alpha: %+v want from=alpha-key", e)
 	}
-	if e, ok := entries["middle"]; !ok || e.value != "literal-2" || e.from != "" {
+	if e, ok := entries.Get("middle"); !ok || e.value != "literal-2" || e.from != "" {
 		t.Errorf("middle: %+v want value=literal-2", e)
 	}
 
 	notAList := entry("zulu", "literal-1")
-	if got, err := normalizeSelfInjectEntries(notAList); err != nil || len(got) != 0 {
-		t.Errorf("an ordered map in place of a list: got err=%v entries=%+v, want no entries", err, got)
+	if got := normalizeSelfInjectEntries(notAList); got.Len() != 0 {
+		t.Errorf("an ordered map in place of a list: got entries=%v, want no entries", got.Keys())
 	}
 }
 
@@ -211,23 +212,20 @@ func TestNormalizeSelfInjectEntries_VerboseArrayForm(t *testing.T) {
 		map[string]any{"in": "PORT", "value": "8080"},
 	}
 
-	entries, err := normalizeSelfInjectEntries(raw)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	entries := normalizeSelfInjectEntries(raw)
+	if entries.Len() != 2 {
+		t.Fatalf("expected 2 entries, got %d", entries.Len())
 	}
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(entries))
-	}
-	if e, ok := entries["DB_URL"]; !ok || e.from != "connection.url" {
+	if e, ok := entries.Get("DB_URL"); !ok || e.from != "connection.url" {
 		t.Errorf("DB_URL: %+v want from=connection.url", e)
 	}
-	if e, ok := entries["PORT"]; !ok || e.value != "8080" {
+	if e, ok := entries.Get("PORT"); !ok || e.value != "8080" {
 		t.Errorf("PORT: %+v want value=8080", e)
 	}
 
-	emptyEntries, _ := normalizeSelfInjectEntries([]any{})
-	if len(emptyEntries) != 0 {
-		t.Errorf("empty []any should produce empty map; got %d entries", len(emptyEntries))
+	emptyEntries := normalizeSelfInjectEntries([]any{})
+	if emptyEntries.Len() != 0 {
+		t.Errorf("empty []any should produce empty map; got %d entries", emptyEntries.Len())
 	}
 }
 
@@ -252,11 +250,8 @@ func TestNormalizeSelfInjectEntries_BothFieldsPresent_BlocksTheCaseBeforeResolve
 	verboseRaw := []any{
 		map[string]any{"in": "BOTH", "from": "ref.path", "value": "literal-text"},
 	}
-	entries, err := normalizeSelfInjectEntries(verboseRaw)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	entry, ok := entries["BOTH"]
+	entries := normalizeSelfInjectEntries(verboseRaw)
+	entry, ok := entries.Get("BOTH")
 	if !ok {
 		t.Fatalf("entry BOTH missing from decoded entries")
 	}

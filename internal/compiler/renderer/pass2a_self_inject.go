@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"fmt"
+	"iter"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -74,38 +75,74 @@ func ExecutePass2a(
 		return nil
 	}
 
-	// Process each mechanism
-	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx, withheld); err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
-	}
-	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx, withheld); err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
-	}
-	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, withheld); err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
-	}
-
-	// A mechanism the component names that is not one of the three typed ones
-	// resolves through the same per-key resolver and lands under its own name.
-	// The resolver is already mechanism-parametric, so the mechanism name and
-	// the destination map are the only things that differ from the three calls
-	// above.
-	for _, mech := range customInjectMechanisms(selfInject.Additional) {
-		raw, _ := selfInject.Additional.Get(mech)
-		dest, ok := inject.Additional.Get(mech)
-		if !ok {
-			dest = types.OrderedMap[string]{}
+	for mech, raw := range selfInjectMechanisms(selfInject) {
+		// The three typed mechanisms land in the pipe's own fields. Any other
+		// mechanism resolves through the same per-key resolver and lands under its
+		// own name; the resolver is mechanism-parametric, so the destination map is
+		// the only thing that differs.
+		var err error
+		switch mech {
+		case "env":
+			err = processSelfInjectMechanism(&inject.Env, mech, raw, ownProvides, siCtx, withheld)
+		case "file":
+			err = processSelfInjectMechanism(&inject.File, mech, raw, ownProvides, siCtx, withheld)
+		case "arg":
+			err = processSelfInjectMechanism(&inject.Arg, mech, raw, ownProvides, siCtx, withheld)
+		default:
+			dest, ok := inject.Additional.Get(mech)
+			if !ok {
+				dest = types.OrderedMap[string]{}
+			}
+			err = processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, withheld)
+			if err == nil {
+				inject.Additional.Set(mech, dest)
+			}
 		}
-		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, withheld); err != nil {
+		if err != nil {
 			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 		}
-		inject.Additional.Set(mech, dest)
 	}
 
 	// Rebuild .all
 	inject.All = buildInjectAll(*inject)
 
 	return nil
+}
+
+// selfInjectMechanisms yields each mechanism a component's own inject block
+// names, with its authored entries, in the order the delivery resolves them: env,
+// file and arg, each only where the block names it, then every other mechanism in
+// the order customInjectMechanisms gives. It is the one statement of that order:
+// the delivery and the reading of which own value each entry delivers both walk
+// a block through it, so the two meet the mechanisms in one sequence. A nil block
+// yields nothing.
+func selfInjectMechanisms(block *types.InjectBlock) iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
+		if block == nil {
+			return
+		}
+		for _, typed := range []struct {
+			name string
+			raw  any
+		}{
+			{"env", block.Env},
+			{"file", block.File},
+			{"arg", block.Arg},
+		} {
+			if typed.raw == nil {
+				continue
+			}
+			if !yield(typed.name, typed.raw) {
+				return
+			}
+		}
+		for _, mech := range customInjectMechanisms(block.Additional) {
+			raw, _ := block.Additional.Get(mech)
+			if !yield(mech, raw) {
+				return
+			}
+		}
+	}
 }
 
 func processSelfInjectMechanism(
@@ -120,19 +157,13 @@ func processSelfInjectMechanism(
 		return nil
 	}
 
-	entries, err := normalizeSelfInjectEntries(raw)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, mechName)
-	}
+	entries := normalizeSelfInjectEntries(raw)
 
-	keys := make([]string, 0, len(entries))
-	for k := range entries {
-		keys = append(keys, k)
-	}
+	keys := entries.Keys()
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		entry := entries[key]
+		entry, _ := entries.Get(key)
 		resolved, err := resolveSelfInjectEntry(key, entry, mechName, ownProvides, siCtx, withheld)
 		if err != nil {
 			return err
@@ -149,21 +180,33 @@ type selfInjectEntry struct {
 	from  string // from: provides key reference
 }
 
+// providesKey reports the own provides key the entry delivers, when it delivers
+// one. It is the one statement of which half of an entry is read: a non-empty
+// from: is read ahead of value:, so an entry carrying both — which schema
+// validation and the rules asked while the documents are resolved refuse before
+// any render, but which a block handed straight to the renderer can still carry —
+// delivers its provides key, and its value: is read only when this reports none.
+// Within the render, a reader of an entry asks here rather than testing the two
+// fields itself, so the render's readings of an entry agree on which half counts.
+func (e selfInjectEntry) providesKey() (string, bool) {
+	return e.from, e.from != ""
+}
+
 // normalizeSelfInjectEntries reads one mechanism of a component-level injection
 // block: the list of {in, from?, value?} entries the inject_delivery definition
-// describes, keyed by each entry's in:. An entry whose in: does not decode is
-// skipped, and a mechanism that is not a list yields no entries.
+// describes, keyed by each entry's in:, in the order the author wrote them. An
+// entry whose in: does not decode is skipped, a mechanism that is not a list
+// yields no entries, and an in: written twice keeps its first position and its
+// last entry.
 //
-// Schema validation enforces that an entry carries exactly one of value: and
-// from:, and the rules asked while the documents are resolved refuse an entry
-// carrying both before any reader runs. Where both still reach this decode — a
-// block handed straight to the renderer rather than through a build — both
-// populate the entry, and resolveSelfInjectEntry reads from: ahead of value:.
-func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
-	result := map[string]selfInjectEntry{}
+// Within the render it is the reader of a component's own entries, so no reading
+// there can come to see an entry another skips. Both halves of an entry are kept
+// as written; which one is read is [selfInjectEntry.providesKey]'s answer.
+func normalizeSelfInjectEntries(raw any) types.OrderedMap[selfInjectEntry] {
+	result := types.OrderedMap[selfInjectEntry]{}
 	entries, ok := raw.([]any)
 	if !ok {
-		return result, nil
+		return result
 	}
 	for _, entry := range entries {
 		in, value, from, hasValue, hasFrom, ok := types.DecodeVerboseInjectEntry(entry)
@@ -177,9 +220,9 @@ func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 		if hasFrom {
 			outEntry.from = from
 		}
-		result[in] = outEntry
+		result.Set(in, outEntry)
 	}
-	return result, nil
+	return result
 }
 
 func resolveSelfInjectEntry(
@@ -191,10 +234,10 @@ func resolveSelfInjectEntry(
 	withheld redact.Keys,
 ) (string, error) {
 	// from: → resolve from own provides
-	if entry.from != "" {
-		val, ok := ownProvides.Get(entry.from)
+	if from, ok := entry.providesKey(); ok {
+		val, ok := ownProvides.Get(from)
 		if !ok {
-			return "", cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q]: from key %q not found in component provides", mechName, key, entry.from), nil, nil)
+			return "", cerrors.Unidentified(cerrors.DeveloperError, cerrors.SourceLocation{}, fmt.Sprintf("%s[%q]: from key %q not found in component provides", mechName, key, from), nil, nil)
 		}
 		return val, nil
 	}

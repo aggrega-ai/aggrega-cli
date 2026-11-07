@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: own-app-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/own-app
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: app:1.0
+        variables:
+          OWN_KEYS: '{{ toJson .context.self_inject }}'

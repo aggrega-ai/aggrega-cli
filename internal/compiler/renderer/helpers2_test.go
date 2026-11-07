@@ -7,31 +7,33 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestNormalizeInjectMechanism_ReadsTheListAndNothingElse pins that a list
-// entry whose value: and from: are both absent or non-string contributes no key,
-// and that a mechanism in any shape other than a list yields an empty map
-// rather than being read some other way.
+// TestNormalizeInjectMechanism_ReadsTheListAndNothingElse pins that every list
+// entry the delivery resolves holds its key, in the order written — a list entry
+// whose value: and from: are both absent or non-string included, holding the
+// empty string the delivery resolves it to — and that a mechanism in any shape
+// other than a list yields an empty map rather than being read some other way.
 func TestNormalizeInjectMechanism_ReadsTheListAndNothingElse(t *testing.T) {
 	t.Parallel()
 	got := normalizeInjectMechanism([]any{
 		map[string]any{"in": "k1", "value": "v1"},
-		map[string]any{"in": "k2", "value": 42}, // skipped: no string value: or from:
+		map[string]any{"in": "k2", "value": 42}, // no string value: or from:
 		map[string]any{"in": "k3", "from": "v3"},
 	})
-	if got.Len() != 2 {
-		t.Errorf("list: Len=%d; want 2", got.Len())
+	if want := []string{"k1", "k2", "k3"}; !reflect.DeepEqual(got.Keys(), want) {
+		t.Errorf("list: keys %v; want %v", got.Keys(), want)
 	}
 	if v, _ := got.Get("k1"); v != "v1" {
 		t.Errorf("k1 = %q; want v1", v)
 	}
-	if _, ok := got.Get("k2"); ok {
-		t.Errorf("k2 carries no string value: or from: and should contribute no key")
+	if v, ok := got.Get("k2"); !ok || v != "" {
+		t.Errorf("k2 = %q (present=%v); want the empty string the delivery resolves it to", v, ok)
 	}
 
 	om := types.NewOrderedMap[any]()
@@ -405,15 +407,15 @@ func TestParseInjectMappingOutput_MalformedYAML(t *testing.T) {
 }
 
 // TestNormalizeInjectMechanism_SchemaVerbose pins the schema-verbose
-// []any path: each entry decoded via DecodeVerboseInjectEntry; value
-// wins over from when both present.
+// []any path: each entry decoded through the delivery's own entry reader;
+// from wins over value when both are present, as the delivery reads it.
 func TestNormalizeInjectMechanism_SchemaVerbose(t *testing.T) {
 	t.Parallel()
 	// Schema-verbose form: list of {in, from?, value?} entries.
 	src := []any{
 		map[string]any{"in": "K1", "value": "v1-direct"},
 		map[string]any{"in": "K2", "from": "f2"},
-		map[string]any{"in": "K3", "value": "v3", "from": "ignored-because-value-wins"},
+		map[string]any{"in": "K3", "value": "ignored-because-from-wins", "from": "f3"},
 		// Invalid entry (no `in` field) skipped.
 		map[string]any{"value": "no-in"},
 	}
@@ -421,8 +423,8 @@ func TestNormalizeInjectMechanism_SchemaVerbose(t *testing.T) {
 	if got.Len() != 3 {
 		t.Errorf("verbose: Len=%d; want 3", got.Len())
 	}
-	if v, _ := got.Get("K3"); v != "v3" {
-		t.Errorf("K3 value-wins-over-from: got %q", v)
+	if v, _ := got.Get("K3"); v != "f3" {
+		t.Errorf("K3 from-wins-over-value: got %q", v)
 	}
 	if v, _ := got.Get("K2"); v != "f2" {
 		t.Errorf("K2 from path: got %q", v)

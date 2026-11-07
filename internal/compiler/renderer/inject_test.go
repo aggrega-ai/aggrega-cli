@@ -194,8 +194,8 @@ func TestNormalizeInjectMechanism_OrderedMapEntries_PreserveAuthorOrder(t *testi
 }
 
 // TestNormalizeInjectMechanism_VerboseArrayForm pins the list decode. Entries
-// decode in source order; value: wins over from: when both are present.
-// Entries without `in:` skip.
+// decode in source order; from: is read ahead of value: when both are present,
+// as the delivery reads it. Entries without `in:` skip.
 func TestNormalizeInjectMechanism_VerboseArrayForm(t *testing.T) {
 	t.Parallel()
 
@@ -216,7 +216,7 @@ func TestNormalizeInjectMechanism_VerboseArrayForm(t *testing.T) {
 	cases := map[string]string{
 		"DB_URL": "connection.url",
 		"PORT":   "8080",
-		"BOTH":   "literal",
+		"BOTH":   "ref.path",
 	}
 	for k, want := range cases {
 		got, _ := out.Get(k)

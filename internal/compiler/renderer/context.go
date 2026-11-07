@@ -17,7 +17,8 @@ import (
 // It fills the node's identity and topology (instance_id, the name its provider
 // reports for the resources it renders for the node, labels, the
 // three cascading annotation buckets, the pre-hydrated inject pipe, and the
-// enriched uses map keyed by the alias the developer gave each edge), the
+// enriched uses map keyed by the alias the developer gave each edge, and the map
+// from each name in the node's own inject block to the own key it delivers), the
 // evaluated values and infra dictionaries, the node's own resolved provides, its
 // attachments in author order, and the immutable inject_raw record of what the
 // developer actually authored.
@@ -107,6 +108,10 @@ func AssembleNodeContext(
 			Annotations:  annotations,
 			Inject:       inject,
 			Uses:         uses,
+			// The node's own component-level block — the one a render hands in
+			// as injectRaw — read once here, beside the connections' name maps
+			// in uses.
+			SelfInject: selfInjectOwnKeys(node.SelfInject),
 		},
 		Values: values,
 		Infra:  infra,

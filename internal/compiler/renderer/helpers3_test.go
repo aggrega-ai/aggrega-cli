@@ -28,21 +28,18 @@ func TestNormalizeSelfInjectEntries_ReadsTheListAndNothingElse(t *testing.T) {
 		orderedEntry,
 		map[string]any{"value": "no-in"}, // skipped
 	}
-	got, err := normalizeSelfInjectEntries(verbose)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
+	got := normalizeSelfInjectEntries(verbose)
 	want := map[string]selfInjectEntry{
 		"K1": {value: "tmpl1"},
 		"K2": {from: "provides.x"},
 		"K3": {value: "tmpl3", from: "from3"},
 		"K4": {value: "tmpl4"},
 	}
-	if len(got) != len(want) {
-		t.Errorf("list: got %d entries %+v, want %d", len(got), got, len(want))
+	if got.Len() != len(want) {
+		t.Errorf("list: got %d entries %v, want %d", got.Len(), got.Keys(), len(want))
 	}
 	for key, w := range want {
-		if g, ok := got[key]; !ok || g != w {
+		if g, ok := got.Get(key); !ok || g != w {
 			t.Errorf("list entry %q: got %+v (present=%v), want %+v", key, g, ok, w)
 		}
 	}
@@ -61,9 +58,8 @@ func TestNormalizeSelfInjectEntries_ReadsTheListAndNothingElse(t *testing.T) {
 		{"nil ordered map", (*types.OrderedMap[any])(nil)},
 		{"scalar", "scalar"},
 	} {
-		got, err := normalizeSelfInjectEntries(tc.raw)
-		if err != nil || len(got) != 0 {
-			t.Errorf("%s: got err=%v entries=%+v, want no entries", tc.name, err, got)
+		if got := normalizeSelfInjectEntries(tc.raw); got.Len() != 0 {
+			t.Errorf("%s: got entries=%v, want no entries", tc.name, got.Keys())
 		}
 	}
 }

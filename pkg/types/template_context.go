@@ -125,6 +125,23 @@ type ContextBlock struct {
 	Inject       InjectPipe               `json:"inject" yaml:"inject"`
 	Uses         OrderedMap[EnrichedEdge] `json:"uses" yaml:"uses"`
 
+	// SelfInject maps the delivery names the author wrote in the node's own
+	// component-level inject block to the own key each entry delivers, per
+	// mechanism, in the shape [EnrichedEdge.Inject] maps a connection's names to
+	// the provides keys they read: "provides.<key>" for an entry delivering one of
+	// the node's own provides, "values.<key>" for an entry whose template reads
+	// exactly one of the node's own values and nothing else — <key> being that
+	// value's top-level key, however deeply the template reads into it — and the
+	// empty string for every other entry. A template therefore tells which of the
+	// node's own values the author has already given a name, and which still need
+	// one.
+	//
+	// Every mechanism the block names is present, custom ones included; entries
+	// keep the order the author wrote them. The map is empty, never absent, where
+	// the author wrote no block. It is read from the authored text alone: the
+	// delivered values themselves are at Inject.
+	SelfInject OrderedMap[OrderedMap[string]] `json:"self_inject" yaml:"self_inject"`
+
 	// UsedBy is the connections other nodes make TO this node — one entry per
 	// `uses` edge whose target this node is, in the order the graph records them:
 	// the order the connecting components are written, then the order of each
