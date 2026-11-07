@@ -598,8 +598,8 @@ const graphImage = "ghcr.io/example/support-desk:1.0.0"
 // connection: each graph is given, as LANGGRAPH_CHECKPOINTER_HOST and _PORT, the
 // address of the datastore its checkpointer names; and the compiled graph's
 // values carry each graph's import path as graph_entrypoint, and recursion_limit
-// at the Component's default, 25 — the hub's LangGraph Recipes render neither,
-// so the compiled graph is where they are read.
+// at the Component's default, 25 — the hub's LangGraph Recipes render only the
+// second, so the compiled graph is where both are read.
 //
 // 🔴 PLANTED DEFECT: in writeGraph (plugins/internal/langgraphimport/render.go),
 // skip the uses block: the build halts naming the required checkpointer_db socket.
