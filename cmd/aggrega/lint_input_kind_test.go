@@ -58,7 +58,7 @@ spec:
         sourced: true
       boundaryAssembly: nest
 `)
-	err := validateCatalogWide("", "", []string{dir}, nil, os.Stderr, os.Stdout)
+	err := validateCatalogWide("", "", []string{dir}, nil, nil, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected lint to flag workload:+helm-chart; got nil")
 	}
@@ -104,7 +104,7 @@ spec:
         synthesized: true
       boundaryAssembly: merge
 `)
-	if err := validateCatalogWide("", "", []string{dir}, nil, os.Stderr, os.Stdout); err != nil {
+	if err := validateCatalogWide("", "", []string{dir}, nil, nil, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("workload:+compose (synthesizing) must lint clean; got %v", err)
 	}
 }
@@ -157,7 +157,7 @@ spec:
 	// to the diagnostic writer, which is where an operator reads it — so the
 	// wording is asserted against the emitted bytes rather than the error value.
 	var diag, out bytes.Buffer
-	err := validateCatalogWide("", "", []string{dir}, nil, &diag, &out)
+	err := validateCatalogWide("", "", []string{dir}, nil, nil, &diag, &out)
 	if err == nil {
 		t.Fatal("expected whole-catalog validation to flag source:+workload:+terraform; got nil")
 	}
@@ -210,7 +210,7 @@ spec:
     capabilities:
       - terraform
 `)
-	if err := validateCatalogWide("", "", []string{dir}, nil, os.Stderr, os.Stdout); err != nil {
+	if err := validateCatalogWide("", "", []string{dir}, nil, nil, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("a provider Plugin declaring no contract: block offers no capability claim to contradict, so the detector must skip and the pass must be clean; got: %v", err)
 	}
 }

@@ -96,10 +96,11 @@ func remedyWorkspace(t *testing.T, authored, cached bool) (ws, catalogDir, consu
 }
 
 // The words the catalog-directories-only line carries: the library it could not
-// use, why, and the two actions that work for a check reading no lockfile.
+// use, why, and the two actions that work for a check reading libraries through no
+// lockfile entry.
 var catalogDirectoriesRemedyWords = []string{
 	`SchemaLibrary "Sizing"`,
-	"this check reads libraries from catalog directories only and reads no lockfile",
+	"this check reads libraries from catalog directories only, never through a lockfile entry",
 	"aggrega pull --release <release>",
 	"aggrega validate --release <release>",
 	"Author the library under a catalog directory",
@@ -109,7 +110,7 @@ var catalogDirectoriesRemedyWords = []string{
 // check over a catalog whose Component refers to a library only the artifact
 // cache holds. The check reads catalog directories only, so it cannot use the
 // cached copy; it must name that library, say why it was not used, and point to
-// the actions that work for a check that reads no lockfile — and nothing else
+// the actions that work for a check that reads no library through a lockfile — and nothing else
 // about the failure may move: its condition still matches, and a catalog with
 // nothing cached reports exactly as it did.
 //
@@ -131,7 +132,7 @@ func TestValidateCatalog_UnpinnedCachedLibraryCarriesRemedy(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ws, catalogDir, _ := remedyWorkspace(t, tc.authored, tc.cached)
-			_, err := ValidateCatalog(ws, remedyCacheDir, []string{catalogDir}, nil)
+			_, err := ValidateCatalog(ws, remedyCacheDir, []string{catalogDir}, nil, nil)
 			if !tc.wantErr {
 				if err != nil {
 					t.Fatalf("ValidateCatalog: %v", err)

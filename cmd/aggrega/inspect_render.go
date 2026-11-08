@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -232,7 +233,11 @@ func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []stri
 	if err != nil {
 		return resolver.CatalogLookup{}, fmt.Errorf("catalog load: %w", err)
 	}
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+	extErrs, err := resolveWorkspaceExtends(context.Background(), rw, cat, "", dirs, named)
+	if err != nil {
+		return resolver.CatalogLookup{}, err
+	}
+	if len(extErrs) > 0 {
 		return resolver.CatalogLookup{}, fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
 	return cat.CatalogLookup(), nil

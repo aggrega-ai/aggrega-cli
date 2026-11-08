@@ -372,6 +372,10 @@ func loadResolvedCatalog(wsRoot, cacheDir string, dirs, named []string) (*catalo
 		return nil, nil, "", fmt.Errorf("catalog load: %w", err)
 	}
 	var note string
+	// The chains resolve over the catalog directories alone, because validating one
+	// entity reads no lockfile and no cache. So a parent only a pull would supply
+	// stays missing here whatever has been pulled, and the note carries no advice
+	// to pull — ResolveAllExtends, unlike ResolveAllExtendsWithPins, offers none.
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		note = fmt.Sprintf("  note: %d catalog extends resolution error(s); first: %s", len(extErrs), extErrs[0].Error())
 	}

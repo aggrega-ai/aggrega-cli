@@ -21,14 +21,9 @@ import (
 // pinned entity, via the verified lazy library walk); the producers stay
 // decoupled from that resolution machinery.
 type LibrarySource interface {
-	// ClosureComponent and ClosureFeature read the Component or Feature a closure
-	// entity reference resolves to. They take the reference whole rather than its
-	// URI, because where the walk collected it says which kind it can be, and an
-	// implementation that would ask a registry asks only for that kind. They take
-	// the caller's context because such a read can leave the process, and a
-	// discovery whose caller has withdrawn must not wait on it.
-	ClosureComponent(ctx context.Context, ref ResolvedRef) (types.Component, bool)
-	ClosureFeature(ctx context.Context, ref ResolvedRef) (types.Feature, bool)
+	// ExtendsSource reads the Component or Feature a closure entity reference
+	// resolves to, for the library discovery and the extends descent alike.
+	ExtendsSource
 	SchemaLibrary(uri string) (types.SchemaLibrary, bool)
 	RecipeByURI(uri string) (types.Recipe, bool)
 	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
@@ -44,16 +39,22 @@ type LibrarySource interface {
 	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary)
 }
 
-// AugmentClosure resolves the cross-document library axes the entity walk does not
-// descend, merging each into the closure. Every discovery reads the resolved
+// AugmentClosure resolves what the entity walk does not descend and every
+// computation of a Release's closure needs: first the bases the closure's
+// Components and Features extend (DescendExtendsBases), then the cross-document
+// library axes, merging each into the closure. Every step reads the resolved
 // closure through the same source, so a pull and a build of the same Release
-// compute the identical library closure. It routes libraries only; the plugin,
-// sub-aggregate, and source axes are reconstructed by their own passes.
+// compute the identical closure. The bases come first so the libraries their
+// schemas reference are discovered with them. The plugin, sub-aggregate, and
+// source axes are reconstructed by their own passes.
 //
-// The axes run in declared order, and each reports failure under its own
+// The library axes run in declared order, and each reports failure under its own
 // operator-facing label rather than a hand-written string, so a label cannot
 // disagree with the one the lockfile uses for the same axis.
 func AugmentClosure(ctx context.Context, cl *Closure, src LibrarySource, lookup Lookup) error {
+	if err := DescendExtendsBases(ctx, cl, src, lookup); err != nil {
+		return fmt.Errorf("resolving the base a Component or Feature extends: %w", err)
+	}
 	for _, d := range libraryDiscoverers() {
 		if err := d.discover(ctx, cl, src, lookup); err != nil {
 			return fmt.Errorf("%s discovery: %w", d.axis.Label, err)

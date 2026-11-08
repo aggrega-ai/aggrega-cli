@@ -54,9 +54,9 @@ type ClosureInputs struct {
 	// external. The Manifest is always external; it has no registry tier.
 	Lockfile *lockfile.Lockfile
 
-	// Augment, when true, folds the cross-document library axes into the computed
-	// closure — the SchemaLibrary and MappingLibrary references the entity walk
-	// does not descend — so the resolved closure matches the one a build or lint
+	// Augment, when true, folds into the computed closure what the entity walk does
+	// not descend — the extends bases, then the SchemaLibrary and MappingLibrary
+	// references — so the resolved closure matches the one a build or lint
 	// verifies against. false leaves the closure as ComputeClosure produced it,
 	// which is what a caller that folds the library axes separately needs so the
 	// fold does not run twice.
@@ -356,10 +356,11 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		}
 	}
 	cl.ReleaseDocuments = releaseDocs
-	// Fold the cross-document library axes into the closure (the SchemaLibrary and
-	// MappingLibrary references the entity walk does not descend) so the resolved
-	// closure matches the one a build or lint verifies against. Opt-in: a caller
-	// that folds these axes separately leaves it off so the fold does not run twice.
+	// Fold in what the entity walk does not descend — the bases the closure's
+	// Components and Features extend, then the cross-document library axes (see
+	// closure.AugmentClosure) — so the resolved closure matches the one a build or
+	// lint verifies against. Opt-in: a caller that folds these separately leaves it
+	// off so the fold does not run twice.
 	if in.Augment {
 		if aerr := closure.AugmentClosure(ctx, &cl, in.View, lookup); aerr != nil {
 			return nil, &ClosureError{

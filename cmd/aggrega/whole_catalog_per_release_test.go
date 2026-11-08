@@ -109,7 +109,7 @@ func TestWholeCatalogValidationRunsOncePerRelease(t *testing.T) {
 	passes := passesFor(t, rw, nil)
 
 	var out, diag bytes.Buffer
-	err := validateCatalogPasses(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes, &diag, &out)
+	err := validateCatalogPasses(rw, passes, &diag, &out)
 
 	if err == nil {
 		t.Fatalf("a pass over a broken variant was not a failing verdict; out:\n%s\ndiag:\n%s", out.String(), diag.String())
@@ -158,7 +158,7 @@ func TestWholeCatalogPerReleasePassesHaltOnAnAggregaDocumentTheyCannotLoad(t *te
 	}
 
 	var out, diag bytes.Buffer
-	err := validateCatalogPasses(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes, &diag, &out)
+	err := validateCatalogPasses(rw, passes, &diag, &out)
 	if err == nil {
 		t.Fatalf("whole-catalog validation passed a variant holding an Aggrega document it cannot load\nout:\n%s\ndiag:\n%s", out.String(), diag.String())
 	}

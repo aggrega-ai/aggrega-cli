@@ -568,7 +568,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	// warning-free result comes purely from the eager enumeration the build's
 	// closure-backed path does not touch — the retained-eager-load split.
 	t.Chdir(t.TempDir())
-	if err := validateCatalogWide("", "", []string{std}, nil, os.Stderr, os.Stdout); err != nil {
+	if err := validateCatalogWide("", "", []string{std}, nil, nil, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("whole-catalog lint not warning-free (independent eager enumeration): %v", err)
 	}
 

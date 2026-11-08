@@ -592,7 +592,11 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		}
 		return fmt.Errorf("catalog load: %w", err)
 	}
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+	extErrs, err := resolveWorkspaceExtends(ctx, rw, cat, opts.release, dirs, named)
+	if err != nil {
+		return err
+	}
+	if len(extErrs) > 0 {
 		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
 	// A name that matches nothing is refused rather than rendered as an entity
@@ -944,7 +948,11 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+	extErrs, err := resolveWorkspaceExtends(ctx, rw, cat, releasePath, dirs, named)
+	if err != nil {
+		return err
+	}
+	if len(extErrs) > 0 {
 		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
 

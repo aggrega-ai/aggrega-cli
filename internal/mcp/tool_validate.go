@@ -563,7 +563,18 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 	if len(passes) > 0 && passes[0].NamesReleases() {
 		return validateCatalogPasses(tw, passes)
 	}
-	res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named)
+	// The single workspace pass reads a base its catalog does not hold through the
+	// pins its Releases' lockfiles record, decided over the same pass value
+	// `aggrega validate` hands the decision.
+	var pass workspaceconfig.CatalogPass
+	if len(passes) > 0 {
+		pass = passes[0]
+	}
+	pins, cerr := serve.CatalogPassPins(tw.rw, pass)
+	if cerr != nil {
+		return tw.answer(errorResult(explainToolError("Catalog validation could not read the workspace's lockfiles.", cerr, "component")))
+	}
+	res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named, pins)
 	if cerr != nil {
 		return tw.answer(errorResult(explainToolError("Catalog validation could not load the catalog.", cerr, "component")))
 	}
@@ -589,6 +600,11 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 //
 // The answer's own Valid, Diagnostics and Notices cover every pass together, so
 // a caller reading only those keys reads the whole verdict.
+//
+// The command line has a function of the same name, kept apart on purpose: each
+// renders the passes for its own surface — a structured answer here, lines on a
+// terminal there. What a pass reads is decided once for both, by
+// serve.WholeCatalogPasses and serve.CatalogPassPins.
 func validateCatalogPasses(tw *toolWorkspace, passes []workspaceconfig.CatalogPass) (*callToolResult, *rpcError) {
 	payload := validateResultPayload{Scope: validateScopeCatalog}
 	for _, pass := range passes {
@@ -603,8 +619,10 @@ func validateCatalogPasses(tw *toolWorkspace, passes []workspaceconfig.CatalogPa
 		}
 		var diags, notices []string
 		if len(pass.Dirs) > 0 {
-			res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, pass.Dirs, pass.Named)
-			if cerr != nil {
+			pins, perr := serve.CatalogPassPins(tw.rw, pass)
+			if perr != nil {
+				diags = []string{"Catalog validation could not read the lockfiles of this pass's Releases: " + perr.Error()}
+			} else if res, cerr := validateops.ValidateCatalog(tw.root, tw.cacheDir, pass.Dirs, pass.Named, pins); cerr != nil {
 				diags = []string{"Catalog validation could not load the catalog: " + cerr.Error()}
 			} else {
 				diags, notices = catalogDiagnostics(res), res.Notices

@@ -4,6 +4,7 @@
 package validator
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -20,6 +21,12 @@ import (
 // It is read by the rules over a chain's length rather than by the walk, which
 // is what keeps one bound governing every authored kind that declares extends.
 const maxInheritanceDepth = 10
+
+// ExtendsChainBound returns the most entities an extends chain may reach,
+// counting the entity it starts from: a longer chain is refused. It is the bound
+// the chain rules enforce, read by a pass that follows chains for another purpose
+// so that it stops where they stop, with one value governing both.
+func ExtendsChainBound() int { return maxInheritanceDepth }
 
 // chainFaultKind names which of the two chain-structural failures a walk stops
 // on. Each carries its own condition and its own remedy, so they are
@@ -342,7 +349,7 @@ func unresolvableParentError(
 		}
 	}
 	required := fmt.Sprintf("%s extends %s, which no catalog entity provides", f.from, f.link)
-	suggestion := "Verify the extends reference names an entity present in the catalog"
+	suggestion := catalogMissingParentSuggestion
 	if missingParent != nil {
 		required, suggestion = missingParent(f.from, f.link)
 	}
@@ -352,6 +359,40 @@ func unresolvableParentError(
 		Suggestion: suggestion,
 		Err:        ErrInheritanceMerge(),
 	})
+}
+
+// catalogMissingParentSuggestion is the advice a catalog entity's unresolvable
+// extends link carries wherever it is reported.
+const catalogMissingParentSuggestion = "Verify the extends reference names an entity present in the catalog"
+
+// pullRemedy is the advice WithPublishedBaseRemedy adds to it.
+const pullRemedy = "a base published to a registry is fetched by `aggrega pull --release <release>`"
+
+// WithPublishedBaseRemedy returns errs with each catalog entity's unresolvable extends link
+// carrying one more piece of advice: that a base published to a registry is
+// fetched by a pull. Every other failure is returned as it is.
+//
+// The advice is true only where the resolution that missed reads what a pull
+// leaves behind — a content-cache slot a lockfile pin vouches for — so it is added
+// by such a resolution and never by one that reads catalog directories alone,
+// where a pull that succeeds changes nothing the resolution reads and the advice
+// would send its reader round the same loop. Both sentences live here, beside the
+// missing-parent failure they complete, so the wording has one home.
+func WithPublishedBaseRemedy(errs []*ValidationError) []*ValidationError {
+	if len(errs) == 0 {
+		return errs
+	}
+	out := make([]*ValidationError, len(errs))
+	for i, e := range errs {
+		out[i] = e
+		if e == nil || e.detail.Suggestion != catalogMissingParentSuggestion || !errors.Is(e.detail.Err, ErrInheritanceMerge()) {
+			continue
+		}
+		detail := e.detail
+		detail.Suggestion += "; " + pullRemedy
+		out[i] = &ValidationError{kind: e.kind, name: e.name, detail: detail}
+	}
+	return out
 }
 
 // malformedParentPinError reports an unresolvable extends link whose version pin

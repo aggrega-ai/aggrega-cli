@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -2207,6 +2208,65 @@ func (c *Catalog) DeprecationWarnings() []string {
 // (cmd/aggrega/build.go, cmd/aggrega/inspect.go) print every error and
 // exit non-zero when the slice is non-empty.
 func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
+	return c.resolveAllExtendsFrom(extendsParents{})
+}
+
+// ResolveAllExtendsWithPins is ResolveAllExtends for a surface that reads a
+// workspace: a parent the catalog's own entities do not hold is read where a
+// build reads one — the catalog directories, then a content-cache slot one of
+// pins vouches for — through the build's own resolution of an extends parent
+// (LazyLookup.extendsParentComponent), over a view of dirs that holds no registry
+// client. So a base published to a registry, which a pull fetches and pins, is
+// found here once the pull has run; nothing is fetched. pins are the pins of the
+// lockfiles the surface reads, and nil pins leave the directories as the only
+// source.
+//
+// A link nothing serves is refused with the missing-parent failure carrying the
+// pull that fetches a published base (validator.WithPublishedBaseRemedy), because here a
+// successful pull does change what the resolution reads. ResolveAllExtends, which
+// reads the directories alone, never carries it.
+//
+// It is the one whole-catalog resolution a surface reading a workspace calls;
+// the parent source it composes is not exported, so no surface can assemble a
+// second one.
+func (c *Catalog) ResolveAllExtendsWithPins(ctx context.Context, workspaceRoot, cacheDir string, dirs, named []string, pins Pins) []*validator.ValidationError {
+	view := NewLazyLookup(workspaceRoot, cacheDir, dirs, nil, named...)
+	view.SetPins(pins)
+	return validator.WithPublishedBaseRemedy(c.resolveAllExtendsFrom(view.extendsParents(ctx)))
+}
+
+// extendsParents resolves a parent an extends link names that a catalog's own
+// entities do not hold. A nil field answers nothing for its kind.
+type extendsParents struct {
+	component func(uri string) (types.Component, bool)
+	feature   func(uri string) (types.Feature, bool)
+}
+
+// lookupComponent resolves uri through the component field, answering nothing
+// where it is nil.
+func (p extendsParents) lookupComponent(uri string) (types.Component, bool) {
+	if p.component == nil {
+		return types.Component{}, false
+	}
+	return p.component(uri)
+}
+
+// lookupFeature resolves uri through the feature field, answering nothing where
+// it is nil.
+func (p extendsParents) lookupFeature(uri string) (types.Feature, bool) {
+	if p.feature == nil {
+		return types.Feature{}, false
+	}
+	return p.feature(uri)
+}
+
+// resolveAllExtendsFrom is ResolveAllExtends with a second source for a parent:
+// every link of every chain is resolved against the catalog's own entities first,
+// exactly as ResolveAllExtends resolves it, and only a link they do not hold is
+// asked of parents. A parent the catalog holds at other versions only is reported
+// as the version no catalog entry satisfies, as ResolveAllExtends reports it,
+// unless parents holds the version the link asks for.
+func (c *Catalog) resolveAllExtendsFrom(parents extendsParents) []*validator.ValidationError {
 	// Clear what this pass contributed on the last run. Nothing stops a caller
 	// resolving one catalog's chains twice, and without this every narrowing
 	// advisory would be reported once per run.
@@ -2217,14 +2277,14 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 	compLookup := func(uri string) (types.Component, bool) {
 		key, ok, _ := c.resolveComponentKey(uri)
 		if !ok {
-			return types.Component{}, false
+			return parents.lookupComponent(uri)
 		}
 		return c.Components[key], true
 	}
 	featLookup := func(uri string) (types.Feature, bool) {
 		key, ok, _ := c.resolveFeatureKey(uri)
 		if !ok {
-			return types.Feature{}, false
+			return parents.lookupFeature(uri)
 		}
 		return c.Features[key], true
 	}
@@ -2270,8 +2330,10 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		}
 		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok {
 			if detail, refused := extendsParentVersionRefusal(comp.Spec.Extends, verr); refused {
-				errs = append(errs, validator.NewValidationError(envelope.KindComponent, name, detail))
-				continue
+				if _, held := parents.lookupComponent(comp.Spec.Extends); !held {
+					errs = append(errs, validator.NewValidationError(envelope.KindComponent, name, detail))
+					continue
+				}
 			}
 		}
 		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
@@ -2298,8 +2360,10 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		}
 		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok {
 			if detail, refused := extendsParentVersionRefusal(feat.Spec.Extends, verr); refused {
-				errs = append(errs, validator.NewValidationError(envelope.KindFeature, name, detail))
-				continue
+				if _, held := parents.lookupFeature(feat.Spec.Extends); !held {
+					errs = append(errs, validator.NewValidationError(envelope.KindFeature, name, detail))
+					continue
+				}
 			}
 		}
 		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)

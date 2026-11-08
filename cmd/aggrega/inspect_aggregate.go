@@ -129,7 +129,11 @@ func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs 
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("catalog load: %w", err)
 	}
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+	extErrs, err := resolveWorkspaceExtends(context.Background(), rw, cat, "", dirs, named)
+	if err != nil {
+		return resolver.CatalogLookup{}, nil, "", err
+	}
+	if len(extErrs) > 0 {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
 	return cat.CatalogLookup(), cat.SubAggregateLoader(), wsRoot, nil

@@ -52,7 +52,7 @@ const (
 	PhaseDependencies
 	// PhaseClosure is the closure walk over the selected references.
 	PhaseClosure
-	// PhaseLibraries is the cross-document library discovery and resolution.
+	// PhaseLibraries is the descent to extends bases, then library discovery.
 	PhaseLibraries
 	// PhaseValidate is the closure-scoped validation.
 	PhaseValidate
@@ -873,11 +873,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	lazyView.SetPins(closurePins)
 
-	// Discover + resolve the cross-document SchemaLibrary axis (ComputeClosure's
-	// entity walk does not descend Component/Feature schema bodies), reading the
-	// resolved closure through lazyView — the same producer build runs, so this
-	// operation and a build of the same Release compute the identical library
-	// closure.
+	// Resolve what ComputeClosure's entity walk does not descend — the bases the
+	// closure's Components and Features extend, then the cross-document library axes
+	// (see closure.AugmentClosure) — reading the resolved closure through lazyView,
+	// the same producer a build runs, so this operation and a build of the same
+	// Release compute the identical closure.
 	report.phase(PhaseLibraries)
 	if err := closure.AugmentClosure(ctx, &cl, lazyView, lookup); err != nil {
 		return Result{}, withPullLibraryRemedy(err, lazyView, wsCfg.Offline)

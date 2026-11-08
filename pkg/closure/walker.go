@@ -643,30 +643,12 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 	for _, key := range keys {
 		uri := key.URI
 		pending := s.entities[key]
-		// A sub-aggregate reference resolves through the dedicated aggregate
-		// registry tier (bare-name capable), not the generic catalog-entity
-		// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
-		// A pinned workspace-socket entity resolves through the socket resolution
-		// (see ResolvePinnedSocketEntity). Every other entity passes its KindHint to
-		// the catalog-entity resolver so a registry-backed pull can bind the bare
-		// identity to its OCI location.
-		var res Resolution
-		var err error
-		switch {
-		case pending.kindHint == KindAggregate:
-			res, err = lookup.ResolveAggregate(ctx, uri)
-		case pending.pinnedSocket:
-			res, err = ResolvePinnedSocketEntity(ctx, lookup, uri)
-		default:
-			res, err = lookup.ResolveCatalogEntity(ctx, uri, pending.kindHint)
-		}
-		// Both failures carry the reference and its kind hint alongside the
-		// rendered message, so a reporter can say WHICH entity went unresolved
-		// without parsing its own output back. The message is unchanged.
+		res, err := pending.resolve(ctx, lookup, uri)
 		if err != nil {
-			return NewUnresolvedEntityError(uri, pending.kindHint,
-				fmt.Errorf("resolve entity %q: %w", uri, err))
+			return err
 		}
+		// A reference no lookup answered carries its reference and kind hint the
+		// way a lookup failure does, for the same reason.
 		if res.NotFound {
 			return NewUnresolvedEntityError(uri, pending.kindHint,
 				entityNotFound(uri, referencedFromPreview(pending.referencedFrom), res.UnsatisfiedPin))
@@ -674,6 +656,39 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		pending.resolution = &res
 	}
 	return nil
+}
+
+// resolve asks lookup for the entity p records under uri, by the resolution its
+// collection site calls for, and returns what the lookup answered — a NotFound
+// resolution included, which is the caller's to judge. It is the one resolution
+// of a recorded reference: the walk refuses a reference it answers NotFound for,
+// and the extends descent leaves such a base to the chain walk that reports it.
+func (p *pendingRef) resolve(ctx context.Context, lookup Lookup, uri string) (Resolution, error) {
+	// A sub-aggregate reference resolves through the dedicated aggregate
+	// registry tier (bare-name capable), not the generic catalog-entity
+	// tier-3 (which needs a tag); the walk marked it KindHint=="aggregate".
+	// A pinned workspace-socket entity resolves through the socket resolution
+	// (see ResolvePinnedSocketEntity). Every other entity passes its KindHint to
+	// the catalog-entity resolver so a registry-backed pull can bind the bare
+	// identity to its OCI location.
+	var res Resolution
+	var err error
+	switch {
+	case p.kindHint == KindAggregate:
+		res, err = lookup.ResolveAggregate(ctx, uri)
+	case p.pinnedSocket:
+		res, err = ResolvePinnedSocketEntity(ctx, lookup, uri)
+	default:
+		res, err = lookup.ResolveCatalogEntity(ctx, uri, p.kindHint)
+	}
+	// A failure carries the reference and its kind hint alongside the rendered
+	// message, so a reporter can say WHICH entity went unresolved without parsing
+	// its own output back. The message is unchanged.
+	if err != nil {
+		return Resolution{}, NewUnresolvedEntityError(uri, p.kindHint,
+			fmt.Errorf("resolve entity %q: %w", uri, err))
+	}
+	return res, nil
 }
 
 // entityNotFound is the failure the walk reports for a catalog-entity reference
@@ -1055,19 +1070,25 @@ func (s *walkState) addLibrary(axis LibraryAxis, libURI, version string, consume
 // caller since pendingRef itself is map-keyed by kind and URI; the
 // kind travels in the hint.
 func (p *pendingRef) toResolvedRef(uri string) ResolvedRef {
-	refs := make([]string, 0, len(p.referencedFrom))
-	for r := range p.referencedFrom {
-		refs = append(refs, r)
-	}
 	return ResolvedRef{
 		URI:             uri,
 		ResolvedVersion: p.resolution.ResolvedVersion,
 		Digest:          p.resolution.Digest,
 		ManifestDigest:  p.resolution.ManifestDigest,
 		ResolutionPath:  p.resolution.ResolutionPath,
-		ReferencedFrom:  refs,
+		ReferencedFrom:  p.sites(),
 		KindHint:        p.kindHint,
 	}
+}
+
+// sites returns the authoring sites p was recorded at, in no particular order;
+// canonicaliseClosure sorts every entity's sites before a closure is handed out.
+func (p *pendingRef) sites() []string {
+	refs := make([]string, 0, len(p.referencedFrom))
+	for r := range p.referencedFrom {
+		refs = append(refs, r)
+	}
+	return refs
 }
 
 // toResolvedLibrary materialises the library resolved for uri. Its consumers are

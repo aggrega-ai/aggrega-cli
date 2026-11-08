@@ -333,6 +333,53 @@ func WholeCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, flagDirs []string
 	return rw.WholeCatalogPasses(func() []string { return ReleaseCandidates(rw.Root(), rw.Config()) }, flagDirs)
 }
 
+// CatalogPassPins returns the pins the lockfiles of a whole-catalog pass's
+// Releases record, for the pass to read a base an extends link names where a build
+// of one of those Releases reads it: from a content-cache slot a pull filled and a
+// lockfile pins. The Releases are the ones the pass is run for, or, for the single
+// pass a workspace runs when it gives no Release directories of its own, every
+// Release the workspace holds (ReleaseCandidates), since that pass reads the
+// catalog each of them reads.
+//
+// A Release with no lockfile, or one that cannot be read or parsed, contributes
+// nothing, as it seeds no pins for a validation of that Release either; a lockfile
+// leading out of its root through a link refuses the pass, as it refuses that
+// validation, and so does one holding a row no pin can be kept for. Where two
+// lockfiles pin one reference differently, the Release that sorts first keeps its
+// pin, so identical input yields identical pins.
+//
+// It is the one answer to which pins a whole-catalog check reads, asked by the
+// command line and by the assistant-facing tool alike.
+func CatalogPassPins(rw *workspaceconfig.ResolvedWorkspace, pass workspaceconfig.CatalogPass) (catalog.Pins, error) {
+	releases := pass.Releases
+	if !pass.NamesReleases() {
+		releases = ReleaseCandidates(rw.Root(), rw.Config())
+	}
+	ordered := append([]string(nil), releases...)
+	sort.Strings(ordered)
+	pins := catalog.Pins{}
+	for _, release := range ordered {
+		file := release
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(rw.Root(), file)
+		}
+		lf, err := lockfile.LoadIfReadable(rw.Root(), lockfile.PathFor(file))
+		if err != nil {
+			return nil, err
+		}
+		recorded, err := catalog.PinsFromLockfile(lf)
+		if err != nil {
+			return nil, err
+		}
+		for key, pin := range recorded {
+			if _, held := pins[key]; !held {
+				pins[key] = pin
+			}
+		}
+	}
+	return pins, nil
+}
+
 // LockfilesFor maps each Release path to the path of its lockfile, placed by
 // [lockfile.PathFor] — the rule every command that writes or reads a lockfile
 // applies — so an answer carrying it names the file a pull writes and a build

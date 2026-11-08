@@ -4,6 +4,7 @@
 package validateops
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -61,12 +62,20 @@ type CatalogResult struct {
 // caller supplies the already-resolved workspace root, cache directory, catalog
 // search directories, and the part of them somebody named.
 //
+// pins are the pins the lockfiles of the Releases the pass is run for record
+// (serve.CatalogPassPins). An extends link whose parent the catalog under dirs does
+// not hold is resolved the way a build's extends gate resolves it — the catalog
+// directories, then a content-cache slot one of those pins vouches for — so a base
+// a pull fetched and pinned is found here as a build finds it, and only a base
+// neither holds is refused. Nothing is fetched: nil pins leave the catalog
+// directories as the only source.
+//
 // Before anything is loaded, every document under dirs is read and an Aggrega
 // document that cannot be loaded halts the pass, naming each such file — see
 // unloadableCatalogDocuments. The load on its own passes over a file whose YAML
 // does not parse, as a build's load does, so without that walk the pass would
 // report a clean catalog over a document it never read.
-func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResult, error) {
+func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string, pins catalog.Pins) (CatalogResult, error) {
 	if err := unloadableCatalogDocuments(wsRoot, cacheDir, dirs, named); err != nil {
 		return CatalogResult{}, err
 	}
@@ -80,7 +89,9 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string) (CatalogResu
 	// Read before the extends chains are merged, so each finding names the entity
 	// whose document authors the keyword rather than every entity extending it.
 	schemaNotices := catalogSchemaNotices(cat)
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+	// A parent the loaded catalog does not hold is read where a build reads one,
+	// under the pins handed in.
+	if extErrs := cat.ResolveAllExtendsWithPins(context.Background(), wsRoot, cacheDir, dirs, named, pins); len(extErrs) > 0 {
 		errs := make([]error, len(extErrs))
 		for i, e := range extErrs {
 			errs[i] = e

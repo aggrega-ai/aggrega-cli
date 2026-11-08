@@ -3354,7 +3354,7 @@ func (l *LazyLookup) PullLibraryRemedy(offline bool) string {
 }
 
 // UnpinnedCachedLibraryRemedy returns the remediation line for a check that reads
-// SchemaLibraries from catalog directories only and reads no lockfile — a
+// SchemaLibraries from catalog directories only, never through a lockfile entry — a
 // whole-catalog validation, or the validation of one entity file — when a schema
 // reference in it resolved to nothing while the artifact cache holds SchemaLibrary
 // content that none of catalogDirs supplies. Such a check never uses cached
@@ -3453,8 +3453,8 @@ const (
 	// build and a Release-scoped validation run.
 	remedyLockfilePinned remedyScope = iota
 	// remedyCatalogDirectoriesOnly is a check that reads libraries from catalog
-	// directories only and reads no lockfile: whole-catalog validation and the
-	// validation of one entity file.
+	// directories only, never through a lockfile entry: whole-catalog validation
+	// and the validation of one entity file.
 	remedyCatalogDirectoriesOnly
 	// remedyOfflinePull is a pull, or a build filling its lockfile, under the
 	// offline posture: it reads no registry, so it cannot record an entry for a
@@ -3485,7 +3485,7 @@ func cachedLibraryRemedy(scope remedyScope, names []string) string {
 		strings.Join(names, ", ") + "); "
 	switch scope {
 	case remedyCatalogDirectoriesOnly:
-		return head + "this check reads libraries from catalog directories only and reads no lockfile, so it was not used. " +
+		return head + "this check reads libraries from catalog directories only, never through a lockfile entry, so it was not used. " +
 			"Author the library under a catalog directory, or run `aggrega pull --release <release>` and then " +
 			"`aggrega validate --release <release>`, which checks the Release against the libraries its lockfile pins."
 	case remedyOfflinePull:
@@ -3584,6 +3584,40 @@ func (l *LazyLookup) ClosureNarrowingWarnings() []string {
 	return l.closureNarrowings
 }
 
+// extendsParentComponent is the one resolution of a Component an extends link
+// names, as the extends gate reads a chain's parents: the catalog directories,
+// then a content-cache slot a pin vouches for, then the registry where this view
+// has a puller. A build's view has none, so a build reads a base from the
+// directories and the pinned cache only, which is where a pull leaves it.
+func (l *LazyLookup) extendsParentComponent(ctx context.Context, uri string) (types.Component, bool) {
+	return l.resolveComponentContext(ctx, uri, l.puller)
+}
+
+// extendsParentFeature is extendsParentComponent for a Feature's chain.
+func (l *LazyLookup) extendsParentFeature(ctx context.Context, uri string) (types.Feature, bool) {
+	return l.resolveFeatureContext(ctx, uri, l.puller)
+}
+
+// extendsParents returns this view's resolution of an extends parent, as the
+// extends gate reads one (extendsParentComponent), for a pass that walks chains
+// over a catalog of its own and needs a parent that catalog does not hold
+// (Catalog.ResolveAllExtendsWithPins). Every read runs under ctx, and each takes
+// the view's lock.
+func (l *LazyLookup) extendsParents(ctx context.Context) extendsParents {
+	return extendsParents{
+		component: func(uri string) (types.Component, bool) {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			return l.extendsParentComponent(ctx, uri)
+		},
+		feature: func(uri string) (types.Feature, bool) {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			return l.extendsParentFeature(ctx, uri)
+		},
+	}
+}
+
 // ResolveClosureExtends resolves the extends chain for each Component/Feature the
 // closure reaches and returns the collected resolution errors (a dangling parent,
 // a cycle, a malformed chain) — the daemon's early-warning extends gate, the lazy
@@ -3613,10 +3647,10 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 	_ = l.buildSchemaLibraries()
 
 	compLookup := func(uri string) (types.Component, bool) {
-		return l.resolveComponentContext(ctx, uri, l.puller)
+		return l.extendsParentComponent(ctx, uri)
 	}
 	featLookup := func(uri string) (types.Feature, bool) {
-		return l.resolveFeatureContext(ctx, uri, l.puller)
+		return l.extendsParentFeature(ctx, uri)
 	}
 
 	// CatalogEntry chain lookup that compiles each chain entry's authored schema
@@ -3705,7 +3739,9 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 				lookup, refusal := recordExtendsRefusal(compLookup, l.localComponentVersion)
 				if _, vErrs := validator.ResolveComponentExtends(comp, lookup); len(vErrs) > 0 {
 					name := entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)
-					for _, ve := range refusal.refine(envelope.KindComponent, name, vErrs) {
+					// This gate reads a parent from the pinned cache too, so the pull
+					// that fetches and pins a published base changes what it reads.
+					for _, ve := range validator.WithPublishedBaseRemedy(refusal.refine(envelope.KindComponent, name, vErrs)) {
 						errs = append(errs, ve)
 					}
 				}
@@ -3722,7 +3758,7 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 			lookup, refusal := recordExtendsRefusal(featLookup, l.localFeatureVersion)
 			if _, vErrs := validator.ResolveFeatureExtends(feat, lookup); len(vErrs) > 0 {
 				name := entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)
-				for _, ve := range refusal.refine(envelope.KindFeature, name, vErrs) {
+				for _, ve := range validator.WithPublishedBaseRemedy(refusal.refine(envelope.KindFeature, name, vErrs)) {
 					errs = append(errs, ve)
 				}
 				continue
