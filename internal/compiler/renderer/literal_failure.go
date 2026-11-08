@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"text/template"
 	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
@@ -16,18 +15,29 @@ import (
 // failFunction is the name a template calls to halt with a sentence of its own.
 const failFunction = "fail"
 
-// literalFailure reports whether err, a failed execution of t, was raised by a
-// call of fail whose sentence is written out in the template: a fail call whose
-// every argument is a string literal and which opens its pipeline, so nothing a
-// pipeline hands on reaches it. Such a failure's text is the failing position and
-// the author's own sentence, both template source, so it cannot carry anything
-// the template read — whichever branch the template took to reach the call.
+// definedTemplate is one template a prepared template carries — its body or one
+// it defines — as the evaluator reads it from the set: the name it is defined
+// under and its parse tree. The name is carried beside the tree rather than read
+// from it, because the engine names a failing template by the name it was defined
+// under, which a tree added to a set under another name does not record.
+type definedTemplate struct {
+	name string
+	tree *parse.Tree
+}
+
+// literalFailure reports whether err, a failed execution of a template carrying
+// the set defined, was raised by a call of fail whose sentence is written out in
+// the template: a fail call whose every argument is a string literal and which
+// opens its pipeline, so nothing a pipeline hands on reaches it. Such a failure's
+// text is the failing position and the author's own sentence, both template
+// source, so it cannot carry anything the template read — whichever branch the
+// template took to reach the call.
 //
 // The call is found in the tree, never in the failure's text alone. An execution
 // failure opens with the position the template engine composes from the node it
 // was evaluating — the template, the line and column of the node in the template
 // source, and the node as the source spells it — and nothing in that position is
-// data. For every such call in every template t carries, the position the engine
+// data. For every such call in every template of defined, the position the engine
 // would compose for it is composed here the same way and compared with the whole
 // position err opens with. A command starts at an offset no other command in one
 // parse shares, so an equal position names that call, or the pipeline it alone
@@ -43,13 +53,14 @@ const failFunction = "fail"
 // The release also requires the function bound under the name to compose its text
 // from its message alone; see [templateEval.failComposesFromMessage].
 //
-// The candidates are read from t after it ran, which is the set it was parsed with:
-// text/template defines templates only when it parses — `define` and `block` are
-// parse-time — and no function a surface binds is handed the template to define
-// more into, so nothing derived from the data can join the set while the template
-// runs. A surface binding a function that parses text into t would break that, and
-// its failures would then have to be located against the set as parsed.
-func (e templateEval) literalFailure(t *template.Template, err error) bool {
+// The candidates are the set the evaluator read from the template after it ran
+// ([definedTemplates]), which is the set it was parsed with: text/template defines
+// templates only when it parses — `define` and `block` are parse-time — and no
+// function a surface binds is handed the template to define more into, so nothing
+// derived from the data can join the set while the template runs. A surface
+// binding a function that parses text into the template would break that, and its
+// failures would then have to be located against the set as parsed.
+func (e templateEval) literalFailure(defined []definedTemplate, err error) bool {
 	if !e.failComposesFromMessage() {
 		return false
 	}
@@ -57,16 +68,16 @@ func (e templateEval) literalFailure(t *template.Template, err error) bool {
 	if position == "" {
 		return false
 	}
-	for _, defined := range t.Templates() {
-		if defined.Tree == nil || strings.Contains(defined.Tree.ParseName, "%") || strings.Contains(defined.Name(), "%") {
+	for _, d := range defined {
+		if strings.Contains(d.tree.ParseName, "%") || strings.Contains(d.name, "%") {
 			continue
 		}
-		for _, cmd := range pipelineHeads(defined.Tree.Root) {
+		for _, cmd := range pipelineHeads(d.tree.Root) {
 			if !literalCallOf(cmd, failFunction) {
 				continue
 			}
-			location, context := defined.Tree.ErrorContext(cmd)
-			if fmt.Sprintf("template: %s: executing %q at <%s>", location, defined.Name(), context) == position {
+			location, context := d.tree.ErrorContext(cmd)
+			if fmt.Sprintf("template: %s: executing %q at <%s>", location, d.name, context) == position {
 				return true
 			}
 		}

@@ -251,24 +251,38 @@ func (e templateEval) executeData(t *template.Template, refs []gotmpl.RootRef, d
 	return buf.String(), nil
 }
 
-// readsWithheld reports whether a prepared template's references reach a datum
-// the surface's withheld set names. Every template the tree carries is read — the
-// body and any it defines — through the same over-collecting reference census
-// the display's reading uses, answered by the set in the coordinates the data is
-// read by. A template handing on the whole of its data — `toJson .`, a bare `$` —
-// reads every datum in it, so it reaches whatever the set names.
-func (e templateEval) readsWithheld(t *template.Template) bool {
+// readsWithheld reports whether the references of defined, a prepared template's
+// set as [definedTemplates] reads it, reach a datum the surface's withheld set
+// names. Every template of the set is read — the body and any it defines —
+// through the same over-collecting reference census the display's reading uses,
+// answered by the set in the coordinates the data is read by. A template handing
+// on the whole of its data — `toJson .`, a bare `$` — reads every datum in it, so
+// it reaches whatever the set names.
+func (e templateEval) readsWithheld(defined []definedTemplate) bool {
 	if !e.scope.withheld.AnyWithheld() {
 		return false
 	}
 	var refs []string
+	for _, d := range defined {
+		refs = append(refs, gotmpl.TreeDataReads(d.tree.Root)...)
+	}
+	return e.scope.withheld.ReachedBy(refs)
+}
+
+// definedTemplates reads the set a prepared template carries — the body and every
+// template it defines — into the form the readers deciding what a failure may
+// report take, so the template itself stays in the evaluator and those readers
+// work on parse trees alone. A template the set names without a parse tree is
+// left out: it has nothing to read and no fail call to find.
+func definedTemplates(t *template.Template) []definedTemplate {
+	var out []definedTemplate
 	for _, defined := range t.Templates() {
 		if defined.Tree == nil {
 			continue
 		}
-		refs = append(refs, gotmpl.TreeDataReads(defined.Tree.Root)...)
+		out = append(out, definedTemplate{name: defined.Name(), tree: defined.Tree})
 	}
-	return e.scope.withheld.ReachedBy(refs)
+	return out
 }
 
 // withholdFailure decides what a failed execution may report. A template whose
@@ -297,7 +311,8 @@ func (e templateEval) readsWithheld(t *template.Template) bool {
 // quotes it. The comparison only chooses which of the two a reader gets, so an
 // imprecise one costs a reader the author's sentence and never prints a value.
 func (e templateEval) withholdFailure(t *template.Template, refs []gotmpl.RootRef, err error) error {
-	if !e.readsWithheld(t) || e.literalFailure(t, err) {
+	defined := definedTemplates(t)
+	if !e.readsWithheld(defined) || e.literalFailure(defined, err) {
 		return err
 	}
 	if _, substituted := e.execute(t, refs, true); substituted != nil && sameExecutionFailure(err, substituted) {
@@ -438,7 +453,7 @@ func decodeTemplateOutput(e templateEval, output string, dst any) error {
 // read into a fresh value of it and the two failures compared.
 func withholdDecodeFailure(e templateEval, err error, target reflect.Type) error {
 	t, _, perr := e.prepare()
-	if perr != nil || !e.readsWithheld(t) {
+	if perr != nil || !e.readsWithheld(definedTemplates(t)) {
 		return err
 	}
 	substituted, serr := e.runSubstituted()
