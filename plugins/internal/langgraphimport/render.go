@@ -243,21 +243,22 @@ func renderRelease(name string, read []*application, parts []*datastorePart) str
 // imageContract is the comment above the Release's first graph: what each
 // graph's image holds, the variables the Recipes of Component hand it, who reads
 // each, and which inject block replaces which default name. Every variable it
-// names is checked against what a build of the catalog's Recipe renders, so a
-// name changed on either side fails that check.
+// names is checked against what a build through each of the catalog's Recipes
+// renders, so a name changed on either side fails that check.
 const imageContract = "    # Each graph's image is the application's own, not the server image langgraph build builds: its " +
 	"code, with LangGraph installed.\n" +
 	"    # It is handed, for its code to read, the graph to run as LANGGRAPH_GRAPH_ENTRYPOINT, the model's name as " +
 	"OPENAI_MODEL, the checkpointer store's host and port as LANGGRAPH_CHECKPOINTER_HOST and " +
-	"LANGGRAPH_CHECKPOINTER_PORT, and a password attached on the " + checkpointerSocket + " connection as " +
-	"LANGGRAPH_CHECKPOINTER_PASSWORD.\n" +
+	"LANGGRAPH_CHECKPOINTER_PORT, its user and database, where the store publishes them, as " +
+	"LANGGRAPH_CHECKPOINTER_USER and LANGGRAPH_CHECKPOINTER_DATABASE, and a password attached on the " +
+	checkpointerSocket + " connection as LANGGRAPH_CHECKPOINTER_PASSWORD.\n" +
 	"    # It is also handed the model's address as OPENAI_BASE_URL and a key attached on the " + modelSocket +
 	" connection as OPENAI_API_KEY, which the OpenAI client library reads, and recursion_limit as " +
 	"LANGGRAPH_DEFAULT_RECURSION_LIMIT, which LangGraph reads.\n" +
 	"    # An inject: block on the graph's own instance, through an entry reading graph_entrypoint alone, replaces " +
 	"LANGGRAPH_GRAPH_ENTRYPOINT with the name it writes; one on the " + modelSocket + " connection replaces " +
-	"OPENAI_MODEL, and one on the " + checkpointerSocket + " connection the store's host and port, with the names " +
-	"it writes.\n"
+	"OPENAI_MODEL, and one on the " + checkpointerSocket + " connection the store's host, port, user and database, " +
+	"with the names it writes.\n"
 
 // writeEnvironment writes, in a comment, the environment an application's
 // configuration states, for the Release to carry for each of its graphs: each

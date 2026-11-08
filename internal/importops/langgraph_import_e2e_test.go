@@ -27,8 +27,10 @@ package importops
 //   - each draft builds, once the author adds a model and wires each graph to it,
 //     with a Release supplying each graph's image and the credentials on its
 //     connections: each graph is given the address of the datastore its
-//     checkpointer names and exactly the variables the drafted Release's comment
-//     on the image names, and the compiled graph carries its import path.
+//     checkpointer names, with its user and database where it publishes them,
+//     and exactly the variables the drafted Release's comment on the image names
+//     save those two where it publishes neither, and the compiled graph carries
+//     its import path.
 //
 // The fixtures are described in testdata/langgraph/README.md.
 
@@ -122,15 +124,19 @@ type graphDraft struct {
 // holds: the drafted paths; the instance keys of the Aggregate and of the
 // Release, in the order each writes them; each graph's import path; the
 // datastore every graph is wired to on checkpointer_db and the Component it is
-// an instance of; and the address the hub's Recipe — or, for a drafted
-// datastore, the scratch Recipe the build case writes — gives each graph.
+// an instance of; and the address, the user and the database the hub's Recipe —
+// or, for a drafted datastore, the scratch Recipe the build case writes — gives
+// each graph, the host by target, and a user or database left empty where that
+// Recipe publishes none.
 var langgraphApplications = []struct {
 	app                        string
 	paths                      []string
 	aggregateKeys, releaseKeys []string
 	entrypoints                map[string]string
 	datastore, component       string
-	host, port                 string
+	hosts                      map[string]string
+	port                       string
+	user, database             string
 }{
 	{
 		app:           "python",
@@ -140,7 +146,8 @@ var langgraphApplications = []struct {
 		entrypoints: map[string]string{"triage": "./src/support_desk/triage.py:make_graph",
 			"support": "./src/support_desk/agent.py:graph"},
 		datastore: "postgres", component: "core/datastore/postgres",
-		host: "postgres-default", port: "5432",
+		hosts: map[string]string{"helm": "postgres-default", "compose": "postgres"}, port: "5432",
+		user: "appuser", database: "appdb",
 	},
 	{
 		app:           "envfile",
@@ -149,9 +156,15 @@ var langgraphApplications = []struct {
 		releaseKeys:   []string{"researcher", "mongodb"},
 		entrypoints:   map[string]string{"researcher": "./src/researcher.ts:graph"},
 		datastore:     "mongodb", component: "imported/datastore/mongodb",
-		host: scratchMongoHost, port: "27017",
+		hosts: map[string]string{"helm": scratchMongoHost, "compose": scratchMongoHost}, port: "27017",
 	},
 }
+
+// graphTargets are the targets each draft is built for: Kubernetes through the
+// helm Recipes and Docker Compose through the compose Recipes, so the drafted
+// Release's comment on the image is checked against what each of the catalog's
+// Recipes renders.
+var graphTargets = []string{"helm", "compose"}
 
 // TestEveryLangGraphApplicationIsRecognisedAndDraftedAsAgentsWiredToTheirDatastore
 // imports each committed application directory, naming no format, and requires
@@ -508,21 +521,23 @@ func TestALangGraphConfigurationTheParserRefusesHaltsTheImport(t *testing.T) {
 // drafted MongoDB publishes.
 const scratchMongoHost = "mongo.example.internal"
 
-// scratchMongoRecipe is a reference Recipe realizing the drafted MongoDB on helm,
-// publishing scratchMongoHost and port 27017: the Recipe the drafted Component's
-// comment leaves for the author.
-const scratchMongoRecipe = "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: mongodb-external\n" +
-	"  version: 0.1.0\nspec:\n  capability: helm\n  implements: imported/datastore/mongodb:0.1.0\n  provides:\n" +
-	"    host: \"" + scratchMongoHost + "\"\n    port: \"27017\"\n  workload: |\n" +
-	"    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    form: reference\n" +
-	"    endpoint: \"" + scratchMongoHost + "\"\n    port: 27017\n"
+// scratchMongoRecipe is a reference Recipe realizing the drafted MongoDB on
+// target, publishing scratchMongoHost and port 27017: the Recipe the drafted
+// Component's comment leaves for the author.
+func scratchMongoRecipe(target string) string {
+	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: mongodb-external\n" +
+		"  version: 0.1.0\nspec:\n  capability: " + target + "\n  implements: imported/datastore/mongodb:0.1.0\n" +
+		"  provides:\n    host: \"" + scratchMongoHost + "\"\n    port: \"27017\"\n  workload: |\n" +
+		"    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    form: reference\n" +
+		"    endpoint: \"" + scratchMongoHost + "\"\n    port: 27017\n"
+}
 
 // langgraphBuildPaths are the catalog paths a drafted application is built
 // against: the LangGraph agent, PostgreSQL and the OpenAI model with their
-// Kubernetes Recipes, the schema library, the secret Feature a connection's
-// credential is attached as with its realization, the provider Plugin entities,
-// and local, the directory the case laid a drafted Component and its scratch
-// Recipe in.
+// Kubernetes and Docker Compose Recipes, the schema library, the secret Features
+// a connection's credential is attached as with their realizations, the provider
+// Plugin entities, and local, the directory the case laid a drafted Component and
+// its scratch Recipe in.
 func langgraphBuildPaths(local string) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog", local}
 	for _, rel := range []string{
@@ -530,11 +545,16 @@ func langgraphBuildPaths(local string) []string {
 		"component/core/datastore/postgres/1.0.0/component.yaml",
 		"component/core/ai-model/openai/1.0.0/component.yaml",
 		"recipe/helm/langgraph/1.0.0/recipe.yaml",
+		"recipe/compose/langgraph/1.0.0/recipe.yaml",
 		"recipe/helm/postgres/1.0.0/recipe.yaml",
+		"recipe/compose/postgres/1.0.0/recipe.yaml",
 		"recipe/helm/openai/1.0.0/recipe.yaml",
+		"recipe/compose/openai/1.0.0/recipe.yaml",
 		"schemalibrary/base-components/1.0.0/library.yaml",
 		"feature/core/referenced-secret/1.0.0/feature.yaml",
+		"feature/core/secret-value/1.0.0/feature.yaml",
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
+		"feature-recipe/compose/dotenv-secret/1.0.0/recipe.yaml",
 	} {
 		paths = append(paths, platformHub+"/"+rel)
 	}
@@ -544,22 +564,41 @@ func langgraphBuildPaths(local string) []string {
 // writeGraphRelease makes, beside the drafted Aggregate in dir, the author's act
 // the draft leaves — an OpenAI model instance, gpt-4o, and each graph's model
 // connection to it, every other line kept as drafted — and writes a Manifest
-// realizing every Component on helm and a Release supplying only each graph's
+// realizing every Component on target and a Release supplying only each graph's
 // image and a credential on its model connection and on its checkpointer_db
 // connection, so every variable the drafted Release's image comment names is
-// rendered. A drafted datastore Component,
-// written under dir's components/, is laid with the scratch Recipe in local. It
-// returns the Release's path, which replaces the drafted Release.
-func writeGraphRelease(t *testing.T, dir, local string, graphs []string, datastore, component string) string {
+// rendered. On helm each credential is a core/referenced-secret naming a Secret.
+// On compose each is a core/secret-value holding a Compose variable reference;
+// two attached by the Release alone would both arrive under the key value, so
+// the Aggregate attaches the checkpointer_db one, naming its key, and the
+// Release gives its origin, as the LangGraph walkthrough's review does. A
+// drafted datastore Component, written under dir's components/, is laid with
+// the scratch Recipe for target in local. It returns the Release's path, which
+// replaces the drafted Release.
+func writeGraphRelease(t *testing.T, dir, local, target string, graphs []string, datastore, component string) string {
 	t.Helper()
+	secret, realization, environment := "core/referenced-secret", "helm/k8s-existing-secret", "production"
+	modelOrigin, storeOrigin := "model-key", "checkpointer-password"
+	if target == "compose" {
+		secret, realization, environment = "core/secret-value", "compose/dotenv-secret", "development"
+		modelOrigin, storeOrigin = "${OPENAI_API_KEY}", "${CHECKPOINTER_PASSWORD}"
+	}
 	aggregate := readDraftedAggregate(t, dir)
 	wired := strings.ReplaceAll(aggregate, "      uses:\n",
 		"      uses:\n        model:\n          gpt-4o:\n            target: gpt-4o\n")
+	if target == "compose" {
+		connection := "          " + datastore + ":\n            target: " + datastore + "\n"
+		if !strings.Contains(wired, connection) {
+			t.Fatalf("the drafted Aggregate holds no checkpointer_db connection to %s:\n%s", datastore, wired)
+		}
+		wired = strings.ReplaceAll(wired, connection, connection+"            features:\n              credential:\n"+
+			"                type: core/secret-value\n                values:\n                  key: checkpointer_password\n")
+	}
 	wired += "    gpt-4o:\n      type: core/ai-model/openai\n      values:\n        model: gpt-4o\n"
 	if err := os.WriteFile(filepath.Join(dir, "aggregate.yaml"), []byte(wired), 0o644); err != nil {
 		t.Fatalf("write the wired Aggregate: %v", err)
 	}
-	mapping := "core/datastore/postgres:1.0.0: helm/postgres:1.0.0"
+	mapping := "core/datastore/postgres:1.0.0: " + target + "/postgres:1.0.0"
 	if component != "core/datastore/postgres" {
 		body, err := os.ReadFile(filepath.Join(dir, "components", "imported-datastore-mongodb.yaml"))
 		if err != nil {
@@ -567,28 +606,29 @@ func writeGraphRelease(t *testing.T, dir, local string, graphs []string, datasto
 		}
 		importopstest.WriteSource(t, filepath.Join(local, "component", "imported", "datastore", "mongodb", "0.1.0",
 			"component.yaml"), string(body))
-		importopstest.WriteSource(t, filepath.Join(local, "recipe", "helm", "mongodb-external", "0.1.0", "recipe.yaml"),
-			scratchMongoRecipe)
-		mapping = component + ":0.1.0: helm/mongodb-external:0.1.0"
+		importopstest.WriteSource(t, filepath.Join(local, "recipe", target, "mongodb-external", "0.1.0", "recipe.yaml"),
+			scratchMongoRecipe(target))
+		mapping = component + ":0.1.0: " + target + "/mongodb-external:0.1.0"
 	}
 	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-langgraph\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
-		"        core/ai-agent/langgraph:1.0.0: helm/langgraph:1.0.0\n        core/ai-model/openai:1.0.0: helm/openai:1.0.0\n" +
+		"        core/ai-agent/langgraph:1.0.0: " + target + "/langgraph:1.0.0\n" +
+		"        core/ai-model/openai:1.0.0: " + target + "/openai:1.0.0\n" +
 		"        " + mapping + "\n" +
-		"    features:\n      type:\n        core/referenced-secret:1.0.0: helm/k8s-existing-secret:1.0.0\n"
+		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported-langgraph\n" +
-		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
-		"  manifest: imported-langgraph\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n" +
-		"        gpt-4o: {}\n        " + datastore + ": {}\n")
+		"  environment: " + environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
+		"  manifest: imported-langgraph\n  boundaries:\n    main:\n      directory: ./dist/" + target + "\n" +
+		"      components:\n        gpt-4o: {}\n        " + datastore + ": {}\n")
 	for _, g := range graphs {
 		b.WriteString("        " + g + ":\n          infra:\n            image: " + graphImage + "\n" +
 			"          uses:\n            model:\n              gpt-4o:\n                features:\n" +
-			"                  credential:\n                    type: core/referenced-secret\n" +
-			"                    infra:\n                      origin: model-key\n" +
+			"                  credential:\n                    type: " + secret + "\n" +
+			"                    infra:\n                      origin: " + modelOrigin + "\n" +
 			"            checkpointer_db:\n              " + datastore + ":\n                features:\n" +
-			"                  credential:\n                    type: core/referenced-secret\n" +
-			"                    infra:\n                      origin: checkpointer-password\n")
+			"                  credential:\n                    type: " + secret + "\n" +
+			"                    infra:\n                      origin: " + storeOrigin + "\n")
 	}
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": b.String()} {
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
@@ -638,83 +678,118 @@ func imageContractVariables(t *testing.T, release string) []string {
 }
 
 // TestEachLangGraphDraftBuildsReachingTheDatastoreItsCheckpointerNames drafts
-// each committed application and builds the draft on helm through the
-// build-faithful harness, once the author's acts the draft leaves are made — a
-// model instance each graph is wired to and, for a drafted datastore, a Recipe —
-// with a Release supplying each graph's image and a credential on its model
-// connection and on its checkpointer_db connection: each graph is given, as
-// LANGGRAPH_CHECKPOINTER_HOST and _PORT, the address of the datastore its
-// checkpointer names; each graph's Deployment renders exactly the LangGraph and
-// OpenAI variables the drafted Release's comment on the image names, read from
-// that comment's text; and the compiled graph's
-// values carry each graph's import path as graph_entrypoint, and recursion_limit
-// at the Component's default, 25 — read from the compiled graph, which carries
-// both whatever names the Recipe delivers them under.
+// each committed application and builds the draft through the build-faithful
+// harness, on helm and on compose, once the author's acts the draft leaves are
+// made — a model instance each graph is wired to and, for a drafted datastore, a
+// Recipe — with a Release supplying each graph's image and a credential on its
+// model connection and on its checkpointer_db connection: each graph is given,
+// as LANGGRAPH_CHECKPOINTER_HOST and _PORT, the address of the datastore its
+// checkpointer names, and as _USER and _DATABASE that datastore's user and
+// database where its Recipe publishes them, and neither variable where it
+// publishes neither; each graph's Deployment on helm, and its service on
+// compose, renders exactly the LangGraph and OpenAI variables the drafted
+// Release's comment on the image names, read from that comment's text, save
+// those two where nothing fills them; and the compiled graph's values carry each
+// graph's import path as graph_entrypoint, and recursion_limit at the
+// Component's default, 25 — read from the compiled graph, which carries both
+// whatever names the Recipe delivers them under.
 //
 // 🔴 PLANTED DEFECT: in writeGraph (plugins/internal/langgraphimport/render.go),
 // skip the uses block: the build halts naming the required checkpointer_db socket.
+// Dropping LANGGRAPH_CHECKPOINTER_USER from the hub's helm Recipe of the agent
+// fails the PostgreSQL application's helm case, and dropping it from the compose
+// Recipe its compose case, each naming the variable the comment names and the
+// build does not render.
 func TestEachLangGraphDraftBuildsReachingTheDatastoreItsCheckpointerNames(t *testing.T) {
 	t.Parallel()
 	for _, a := range langgraphApplications {
-		t.Run(a.app, func(t *testing.T) {
-			t.Parallel()
-			_, dir := writtenDirectoryImport(t, langgraphWorkspace(t, nil), langgraphApplication(t, a.app), a.app)
-			local := t.TempDir()
-			var graphs []string
-			for key := range a.entrypoints {
-				graphs = append(graphs, key)
-			}
-			slices.Sort(graphs)
-			drafted, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
-			if err != nil {
-				t.Fatalf("read the drafted Release: %v", err)
-			}
-			contract := imageContractVariables(t, string(drafted))
-			result := pipelinetest.Build(t, pipelinetest.Input{
-				ReleasePath:  writeGraphRelease(t, dir, local, graphs, a.datastore, a.component),
-				CatalogPaths: langgraphBuildPaths(local),
+		for _, target := range graphTargets {
+			t.Run(a.app+"/"+target, func(t *testing.T) {
+				t.Parallel()
+				_, dir := writtenDirectoryImport(t, langgraphWorkspace(t, nil), langgraphApplication(t, a.app), a.app)
+				local := t.TempDir()
+				var graphs []string
+				for key := range a.entrypoints {
+					graphs = append(graphs, key)
+				}
+				slices.Sort(graphs)
+				drafted, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
+				if err != nil {
+					t.Fatalf("read the drafted Release: %v", err)
+				}
+				contract := imageContractVariables(t, string(drafted))
+				// The variables the comment names only where the store publishes what
+				// they carry, each with the value this application's store publishes,
+				// empty where it publishes none.
+				published := map[string]string{"LANGGRAPH_CHECKPOINTER_USER": a.user,
+					"LANGGRAPH_CHECKPOINTER_DATABASE": a.database}
+				for name := range published {
+					if !slices.Contains(contract, name) {
+						t.Errorf("the drafted Release's image comment does not name %s: %v", name, contract)
+					}
+				}
+				result := pipelinetest.Build(t, pipelinetest.Input{
+					ReleasePath:  writeGraphRelease(t, dir, local, target, graphs, a.datastore, a.component),
+					CatalogPaths: langgraphBuildPaths(local),
+				})
+				for _, g := range graphs {
+					rendered := helmVariableNames
+					if target == "compose" {
+						rendered = composeVariableNames
+					}
+					names := rendered(t, result.Artifacts, g)
+					// Every variable the drafted Release's image comment names is one the
+					// Recipe renders: the build attaches a credential on both connections,
+					// so the key and the password render too, and nothing is left out —
+					// save the user and the database of a store publishing none, which
+					// the Recipe renders no variable for.
+					for _, name := range contract {
+						value, conditional := published[name]
+						switch {
+						case conditional && value == "" && slices.Contains(names, name):
+							t.Errorf("%s's store publishes no value for %s, and the build renders it: %v", g, name, names)
+						case (!conditional || value != "") && !slices.Contains(names, name):
+							t.Errorf("the drafted Release says %s is handed %s, and the build renders no such variable: %v",
+								g, name, names)
+						}
+					}
+					// Every variable the Recipe renders under the LangGraph or OpenAI names is
+					// one the comment names, so the comment leaves none of them out.
+					for _, name := range names {
+						if (strings.HasPrefix(name, "LANGGRAPH_") || strings.HasPrefix(name, "OPENAI_")) &&
+							!slices.Contains(contract, name) {
+							t.Errorf("the build hands %s %s, which the drafted Release's image comment does not name: %v",
+								g, name, contract)
+						}
+					}
+				}
+				for _, g := range graphs {
+					raw, ok := result.IRGraph.Spec.ValuesMapping.Get(g)
+					if !ok {
+						t.Fatalf("the compiled graph carries no values for %s", g)
+					}
+					var compiled map[string]any
+					if err := json.Unmarshal(raw, &compiled); err != nil {
+						t.Fatalf("the compiled values of %s do not decode: %v", g, err)
+					}
+					if compiled["graph_entrypoint"] != a.entrypoints[g] || compiled["recursion_limit"] != float64(25) {
+						t.Errorf("%s compiles graph_entrypoint %#v and recursion_limit %#v, want %q and 25", g,
+							compiled["graph_entrypoint"], compiled["recursion_limit"], a.entrypoints[g])
+					}
+					want := map[string]string{"LANGGRAPH_CHECKPOINTER_HOST": a.hosts[target],
+						"LANGGRAPH_CHECKPOINTER_PORT": a.port, "OPENAI_BASE_URL": openAIEndpoint}
+					for name, value := range published {
+						if value != "" {
+							want[name] = value
+						}
+					}
+					for name, value := range want {
+						if got := platformVariable(t, result.Artifacts, g, target, name); got != value {
+							t.Errorf("%s is given %s=%q, want %q", g, name, got, value)
+						}
+					}
+				}
 			})
-			for _, g := range graphs {
-				rendered := helmVariableNames(t, result.Artifacts, g)
-				// Every variable the drafted Release's image comment names is one the
-				// Recipe renders: the build attaches a credential on both connections,
-				// so the key and the password render too, and nothing is left out.
-				for _, name := range contract {
-					if !slices.Contains(rendered, name) {
-						t.Errorf("the drafted Release says %s is handed %s, and the build renders no such variable: %v",
-							g, name, rendered)
-					}
-				}
-				// Every variable the Recipe renders under the LangGraph or OpenAI names is
-				// one the comment names, so the comment leaves none of them out.
-				for _, name := range rendered {
-					if (strings.HasPrefix(name, "LANGGRAPH_") || strings.HasPrefix(name, "OPENAI_")) &&
-						!slices.Contains(contract, name) {
-						t.Errorf("the build hands %s %s, which the drafted Release's image comment does not name: %v",
-							g, name, contract)
-					}
-				}
-			}
-			for _, g := range graphs {
-				raw, ok := result.IRGraph.Spec.ValuesMapping.Get(g)
-				if !ok {
-					t.Fatalf("the compiled graph carries no values for %s", g)
-				}
-				var compiled map[string]any
-				if err := json.Unmarshal(raw, &compiled); err != nil {
-					t.Fatalf("the compiled values of %s do not decode: %v", g, err)
-				}
-				if compiled["graph_entrypoint"] != a.entrypoints[g] || compiled["recursion_limit"] != float64(25) {
-					t.Errorf("%s compiles graph_entrypoint %#v and recursion_limit %#v, want %q and 25", g,
-						compiled["graph_entrypoint"], compiled["recursion_limit"], a.entrypoints[g])
-				}
-				for name, want := range map[string]string{"LANGGRAPH_CHECKPOINTER_HOST": a.host,
-					"LANGGRAPH_CHECKPOINTER_PORT": a.port, "OPENAI_BASE_URL": openAIEndpoint} {
-					if got := platformVariable(t, result.Artifacts, g, "helm", name); got != want {
-						t.Errorf("%s is given %s=%q, want %q", g, name, got, want)
-					}
-				}
-			}
-		})
+		}
 	}
 }

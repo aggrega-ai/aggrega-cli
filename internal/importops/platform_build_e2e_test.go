@@ -558,6 +558,23 @@ func helmVariableNames(t *testing.T, artifacts map[string][]byte, platform strin
 	return names
 }
 
+// composeVariableNames returns the name of every environment variable the
+// rendered compose service of platform sets, sorted, since the service's
+// environment is read as a map: the counterpart of helmVariableNames.
+func composeVariableNames(t *testing.T, artifacts map[string][]byte, platform string) []string {
+	t.Helper()
+	service, ok := renderedCompose(t, artifacts).Services[platform]
+	if !ok {
+		t.Fatalf("the rendered compose file has no service %s", platform)
+	}
+	var names []string
+	for name := range service.Environment {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
 // helmVariable is one environment variable a helm Deployment hands a container:
 // its name, and its literal value or the Secret key it is read from.
 type helmVariable struct {

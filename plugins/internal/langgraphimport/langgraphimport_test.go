@@ -285,15 +285,16 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 			"with LangGraph installed.\n",
 		"    # It is handed, for its code to read, the graph to run as LANGGRAPH_GRAPH_ENTRYPOINT, the model's name " +
 			"as OPENAI_MODEL, the checkpointer store's host and port as LANGGRAPH_CHECKPOINTER_HOST and " +
-			"LANGGRAPH_CHECKPOINTER_PORT, and a password attached on the checkpointer_db connection as " +
-			"LANGGRAPH_CHECKPOINTER_PASSWORD.\n",
+			"LANGGRAPH_CHECKPOINTER_PORT, its user and database, where the store publishes them, as " +
+			"LANGGRAPH_CHECKPOINTER_USER and LANGGRAPH_CHECKPOINTER_DATABASE, and a password attached on the " +
+			"checkpointer_db connection as LANGGRAPH_CHECKPOINTER_PASSWORD.\n",
 		"    # It is also handed the model's address as OPENAI_BASE_URL and a key attached on the model connection " +
 			"as OPENAI_API_KEY, which the OpenAI client library reads, and recursion_limit as " +
 			"LANGGRAPH_DEFAULT_RECURSION_LIMIT, which LangGraph reads.\n",
 		"    # An inject: block on the graph's own instance, through an entry reading graph_entrypoint alone, " +
 			"replaces LANGGRAPH_GRAPH_ENTRYPOINT with the name it writes; one on the model connection replaces " +
-			"OPENAI_MODEL, and one on the checkpointer_db connection the store's host and port, with the names it " +
-			"writes.\n",
+			"OPENAI_MODEL, and one on the checkpointer_db connection the store's host, port, user and database, " +
+			"with the names it writes.\n",
 	} {
 		if !strings.Contains(release, want) {
 			t.Errorf("the Release does not say %q:\n%s", want, release)
