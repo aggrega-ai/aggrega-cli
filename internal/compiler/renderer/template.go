@@ -275,23 +275,29 @@ func (e templateEval) readsWithheld(t *template.Template) bool {
 // references reach no withheld datum reports its failure exactly as it failed, so
 // its text is byte-identical to what it would be without any declaration.
 //
-// A template that reads one is run again, the same tree over its data with every
-// withheld datum replaced by the placeholder. When that run fails at the same
-// action with the same condition, its failure is the report: an author's own
-// sentence survives, with the placeholder where the value stood, and a value the
-// template transformed — encoded, quoted, upper-cased — is withheld too, because
-// the substitution happened before the transformation. When it does not — the
-// template took a different branch, or failed elsewhere, because what it did
-// depended on what the value holds — the report is the failing position with a
-// fixed sentence saying the failure text is withheld.
+// A template that reads one and failed on a fail call whose sentence is written
+// out in the template reports that failure as it failed too: its text is the
+// failing position and the author's sentence, both template source, so it carries
+// nothing the template read — and the position, which the withheld form below
+// prints as well, already spells the sentence out. Which calls those are is
+// decided from the tree; see [templateEval.literalFailure].
 //
-// Whatever the comparison decides, the text reported is never the real run's once
-// the template reads a withheld datum: it is either a run that never saw the value
-// or a sentence that never quotes it. The comparison only chooses which of the two
-// a reader gets, so an imprecise one costs a reader the author's sentence and never
-// prints a value.
+// Any other failure of a template that reads one is run again, the same tree over
+// its data with every withheld datum replaced by the placeholder. When that run
+// fails at the same action with the same condition, its failure is the report: an
+// author's own sentence survives, with the placeholder where the value stood, and
+// a value the template transformed — encoded, quoted, upper-cased — is withheld
+// too, because the substitution happened before the transformation. When it does
+// not — the template took a different branch, or failed elsewhere, because what it
+// did depended on what the value holds — the report is the failing position with
+// a fixed sentence saying the failure text is withheld.
+//
+// Whatever the comparison decides, the text reported for any of these is never the
+// real run's: it is either a run that never saw the value or a sentence that never
+// quotes it. The comparison only chooses which of the two a reader gets, so an
+// imprecise one costs a reader the author's sentence and never prints a value.
 func (e templateEval) withholdFailure(t *template.Template, refs []gotmpl.RootRef, err error) error {
-	if !e.readsWithheld(t) {
+	if !e.readsWithheld(t) || e.literalFailure(t, err) {
 		return err
 	}
 	if _, substituted := e.execute(t, refs, true); substituted != nil && sameExecutionFailure(err, substituted) {

@@ -1131,6 +1131,18 @@ var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
 // reader comparing the two needs them in one spelling. The other is named because
 // it is written somewhere the locator does not reach, and finding it is half of
 // the remedy.
+//
+// # What the advice says
+//
+// The other half is [attachmentMappingKeyAdvice], supplied with every raise. It is
+// stated in what the author of either document writes — attachments, their values
+// and infra, the Aggregate and the Release — because which key a mapping writes is
+// the FeatureRecipe's business: the rule reads no value and knows no Feature, so
+// it cannot say which value chooses the key, only that a mapping renders from the
+// attachment's own values and infra, and that the other attachment may have
+// delivered through its own inject block instead. It does not say which document
+// wrote the other attachment either, because the record carries that attachment's
+// name and not its site.
 var AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment = constraint.Check[
 	constraint.HydratedView,
 	constraint.NodeAttachmentSubject,
@@ -1146,8 +1158,9 @@ var AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment = constraint.Check
 			if !claim.ThroughMapping {
 				continue
 			}
-			out = append(out, s.RaiseWith(
+			out = append(out, s.RaiseWithAdvice(
 				ErrAttachmentInjectMappingKeyCollision(),
+				attachmentMappingKeyAdvice,
 				constraint.Uncaptioned(claim.DeliveryKey),
 				constraint.Captioned("mechanism", claim.Mechanism),
 				constraint.Captioned("attachment", s.AttachmentName()),
@@ -1157,6 +1170,25 @@ var AttachmentInjectMappingKeyNotDeliveredByAnotherAttachment = constraint.Check
 		return out
 	},
 }
+
+// attachmentMappingKeyAdvice is what the duplicate-delivery-key refusal tells the
+// author to write instead.
+//
+// Each clause is a property of the build rather than of a catalog. The attachment
+// the refusal is positioned at always delivered through its mapping, whose key is
+// rendered from that attachment's own values and infra. The attachment that
+// delivered first did so through its mapping or through its own inject block, and
+// the claim this rule reads names that attachment and not its route, so the advice
+// names both. The Release's schema
+// admits infra on an attachment and refuses values on one, so a value choosing a
+// key is written where the Aggregate attaches the attachment, while the Release
+// goes on supplying its infra.
+const attachmentMappingKeyAdvice = "Give one of the two attachments a key of its own, or attach one fewer: " +
+	"the key this attachment delivers under is chosen by its FeatureRecipe, which can read the attachment's " +
+	"own values and infra, and the other's is chosen the same way or by its own inject block where it " +
+	"delivered through one. A Release sets an attachment's infra and never its values, so where a key is " +
+	"chosen by a value, attach that attachment in the Aggregate with the value, and keep giving the rest " +
+	"from the Release."
 
 // AttachmentInjectMappingCoversEveryAuthoredMechanism reports each delivery
 // mechanism the host component's own injection block declares that one

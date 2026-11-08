@@ -129,7 +129,9 @@ func (c *census) fieldPaths() []string {
 
 // collectFromNode walks a parse.Node tree and records every field access it
 // encounters, wherever it sits. Dot-qualified paths are joined with "." and
-// prefixed with ".".
+// prefixed with ".". The structure is walked by [WalkPipelines], the one walk
+// every reader needing each pipeline shares; what is recorded from each pipeline
+// is this census's own, in [census.recordPipe].
 //
 // This walk deliberately OVER-collects, and the direction is load-bearing rather
 // than incidental. It records a field read inside a range or with body, where the
@@ -144,40 +146,18 @@ func (c *census) fieldPaths() []string {
 // true at the root, through an if and every else branch, and in the pipeline a range
 // or a with evaluates; false in a range or with body, where the dot is rebound.
 func collectFromNode(n parse.Node, c *census, dotIsData bool) {
-	if n == nil {
-		return
-	}
-	switch v := n.(type) {
-	case *parse.ListNode:
-		if v == nil {
-			return
-		}
-		for _, child := range v.Nodes {
-			collectFromNode(child, c, dotIsData)
-		}
-	case *parse.ActionNode:
-		collectFromPipe(v.Pipe, c, dotIsData)
-	case *parse.IfNode:
-		collectFromPipe(v.Pipe, c, dotIsData)
-		collectFromNode(v.List, c, dotIsData)
-		collectFromNode(v.ElseList, c, dotIsData)
-	case *parse.RangeNode:
-		collectFromPipe(v.Pipe, c, dotIsData)
-		collectFromNode(v.List, c, false)
-		collectFromNode(v.ElseList, c, dotIsData)
-	case *parse.WithNode:
-		collectFromPipe(v.Pipe, c, dotIsData)
-		collectFromNode(v.List, c, false)
-		collectFromNode(v.ElseList, c, dotIsData)
-	case *parse.TemplateNode:
-		collectFromPipe(v.Pipe, c, dotIsData)
-	}
+	walkPipelinesFrom(n, dotIsData, c.recordPipe)
 }
 
+// collectFromPipe records what one pipeline, and every pipeline inside its
+// arguments, reads.
 func collectFromPipe(p *parse.PipeNode, c *census, dotIsData bool) {
-	if p == nil {
-		return
-	}
+	walkPipeline(p, dotIsData, c.recordPipe)
+}
+
+// recordPipe records what one pipeline's arguments read, apart from the pipelines
+// inside them, which the walk visits on their own.
+func (c *census) recordPipe(p *parse.PipeNode, dotIsData bool) {
 	for _, cmd := range p.Cmds {
 		if cmd == nil {
 			continue
@@ -188,6 +168,9 @@ func collectFromPipe(p *parse.PipeNode, c *census, dotIsData bool) {
 	}
 }
 
+// collectFromArg records what one argument reads. A pipeline among the arguments,
+// or as a chain's receiver, contributes nothing here: the walk visits it as a
+// pipeline of its own, with the same dot, and records it there.
 func collectFromArg(arg parse.Node, c *census, dotIsData bool) {
 	switch a := arg.(type) {
 	case *parse.DotNode:
@@ -225,9 +208,9 @@ func collectFromArg(arg parse.Node, c *census, dotIsData bool) {
 		if len(a.Field) > 0 {
 			c.paths["."+strings.Join(a.Field, ".")] = true
 		}
+		// A receiver that is a pipeline is visited by the walk; any other receiver is
+		// an argument in its own right.
 		collectFromArg(a.Node, c, dotIsData)
-	case *parse.PipeNode:
-		collectFromPipe(a, c, dotIsData)
 	}
 }
 

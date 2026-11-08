@@ -394,6 +394,24 @@ func TestRenderAll_TwoDeliveriesOnOneKeyGrid(t *testing.T) {
 			detail:   []string{`"API_KEY"`, `attachment "beta"`, `delivered first by attachment "alpha"`},
 		},
 		{
+			// Two attachments the Release alone wrote, each delivering under the key its
+			// mapping chooses from the attachment's own values — which the Release cannot
+			// write, so neither can be given another key there. The remedy says so.
+			name: "EXTRA: two attachments the Release wrote, both mapping one key, are refused with the remedy",
+			attachments: []pipeKeyAttachment{
+				{name: "alpha", mapMechanism: "env", mapKey: key, mapValue: "from-alpha-mapping", releaseBoundary: "local"},
+				{name: "beta", mapMechanism: "env", mapKey: key, mapValue: "from-beta-mapping", releaseBoundary: "local"},
+			},
+			refused:  mappingRule,
+			locator:  ".spec.boundaries.local.components.api.features.beta",
+			operator: true,
+			detail: []string{
+				`"API_KEY"`, `attachment "beta"`, `delivered first by attachment "alpha"`,
+				"A Release sets an attachment's infra and never its values, so where a key is chosen by a value, " +
+					"attach that attachment in the Aggregate with the value, and keep giving the rest from the Release.",
+			},
+		},
+		{
 			name: "EXTRA: an attachment's mapping rewriting its own block's key displaces nobody and renders",
 			attachments: []pipeKeyAttachment{
 				{name: "alpha", blockKey: key, mapMechanism: "env", mapKey: key, mapValue: "from-alpha-mapping"},
@@ -455,6 +473,21 @@ func TestRenderAll_TwoDeliveriesOnOneKeyGrid(t *testing.T) {
 				if !strings.Contains(ce.Message(), part) {
 					t.Errorf("the finding must carry %s; got %q", part, ce.Message())
 				}
+			}
+			// Every refusal by the mapping rule says what to write instead; the block
+			// rule's registered wording is unchanged and carries no remedy of its own.
+			const remedy = "Give one of the two attachments a key of its own, or attach one fewer: " +
+				"the key this attachment delivers under is chosen by its FeatureRecipe, which can read the " +
+				"attachment's own values and infra, and the other's is chosen the same way or by its own " +
+				"inject block where it delivered through one."
+			if carries := strings.Contains(ce.Message(), remedy); carries != (row.refused == mappingRule) {
+				t.Errorf("the remedy must be carried exactly by the mapping rule's refusals (carried: %v); got %q",
+					carries, ce.Message())
+			}
+			// The mapping rule's refusal is read by whoever wrote either attachment, so it
+			// names no catalog field.
+			if row.refused == mappingRule && strings.Contains(ce.Message(), "injectMapping") {
+				t.Errorf("the mapping rule's refusal names the catalog field: %q", ce.Message())
 			}
 		})
 	}

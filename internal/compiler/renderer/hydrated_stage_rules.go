@@ -822,7 +822,7 @@ func runNodeInjectMappingDeliveryRule(
 		return err
 	}
 	return objectionsAsAuthoredHalt(
-		raised, "attachments whose injectMapping writes a key another attachment already delivered")
+		raised, "attachments whose FeatureRecipe writes a delivery key another attachment already delivered")
 }
 
 // declaredProvidesContract is the node axis and the provides-key axis for the

@@ -89,10 +89,12 @@ type AssertionRecipeContext struct {
 // failure wraps the template engine's error alone.
 //
 // withheld names what of ctx an author declared sensitive. An assertion whose
-// body reads such a value and fails reports its own sentence with the
-// placeholder where the value stood, or, where what it did depended on what the
-// value holds, the failing position and a sentence saying the text is withheld —
-// never the value. The condition it reports is unchanged either way.
+// body reads such a value and fails on a fail call whose sentence is written out
+// in the body reports that sentence as written, whatever branch led to the call.
+// Any other failure of such a body reports its own sentence with the placeholder
+// where the value stood, or, where what it did depended on what the value holds,
+// the failing position and a sentence saying the text is withheld — never the
+// value. The condition it reports is unchanged either way.
 func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.Keys) error {
 	// The assertion surface declares no narrowing: every field the context type
 	// defines is readable from an assertion. What it contributes is two things.
@@ -103,9 +105,7 @@ func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.
 	// the value surface installs, so an author's number means the same thing in an
 	// assertion as in a value template.
 	funcs := gotmpl.AssertionComparisons()
-	funcs["fail"] = func(msg string) (string, error) {
-		return "", fmt.Errorf("%w: %s", ErrAssertionFailed(), msg)
-	}
+	funcs[failFunction] = assertionFail
 	_, err := templateEval{
 		name:       name,
 		text:       body,
@@ -124,6 +124,16 @@ func EvaluateAssertion(name, body string, ctx AssertionContext, withheld redact.
 		},
 	}.run()
 	return err
+}
+
+// assertionFail is the fail an assertion calls: it halts with the assertion
+// condition followed by the author's message, and composes its text from that
+// message alone. It is a named function rather than a literal at the binding
+// because the evaluator recognises it by identity — see
+// [templateEval.failComposesFromMessage] — to release a failure whose message is
+// written out in the assertion.
+func assertionFail(msg string) (string, error) {
+	return "", fmt.Errorf("%w: %s", ErrAssertionFailed(), msg)
 }
 
 // assertionTextStop is an assertion that stopped while it was evaluated rather

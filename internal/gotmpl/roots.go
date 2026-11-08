@@ -446,6 +446,15 @@ func bindPipeDecls(vars varPaths, p *parse.PipeNode, value dotPath) {
 	}
 }
 
+// walkRoots walks the template's structure itself rather than through
+// [WalkPipelines], and that second walk of the same node kinds is deliberate. This
+// reading threads one variable environment through a list in order — a
+// declaration binds for the actions after it — clones it per body, binds a body's
+// dot to what its pipeline names, and stops at a chain whose receiver names a path
+// rather than descending into it. A visitor handed each pipeline on its own carries
+// none of that state between pipelines, so routing this reading through one would
+// mean rebuilding the walk inside the visitor. A node kind added to the language
+// has to be added here, in [WalkPipelines] and in pkg/closure's walkParseNode.
 func walkRoots(n parse.Node, dot dotPath, vars varPaths, out *rootRefs) {
 	if n == nil {
 		return

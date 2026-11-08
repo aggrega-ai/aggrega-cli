@@ -138,7 +138,7 @@ func ErrAttachmentInjectMappingKeyCollision() error { return errAttachmentInject
 
 var errAttachmentInjectMappingKeyCollision = cerrors.Register("attachment-inject-mapping-key-collision", cerrors.Meta{
 	ShortCode: "E0318",
-	Message:   "duplicate delivery key across two attachments: an attachment's FeatureRecipe injectMapping writes a key another attachment already delivered",
+	Message:   "duplicate delivery key across two attachments: an attachment's FeatureRecipe writes a delivery key another attachment already delivered",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

@@ -92,8 +92,17 @@ func TestEvaluateAssertion_WithholdsADeclaredValueFromItsFailure(t *testing.T) {
 			want: "the admin password " + redact.Placeholder() + " must be supplied as a reference",
 		},
 		{
-			name: "a failure that happens only because of what the value holds",
-			body: `{{- if hasPrefix "node-secret" .values.admin_password }}{{ fail "planted" }}{{ end -}}`,
+			// The branch depends on what the value holds, so a run over the
+			// placeholder takes the other one; the failure is still reported as it
+			// is, because the sentence is written out in the body — see
+			// TestEvaluateAssertion_ReleasesASentenceWrittenOutBehindADeclaredValue.
+			name:          "a written-out sentence behind a branch on what the value holds",
+			body:          `{{- if hasPrefix "node-secret" .values.admin_password }}{{ fail "planted" }}{{ end -}}`,
+			byteIdentical: true,
+		},
+		{
+			name: "a composed sentence behind a branch on what the value holds",
+			body: `{{- if hasPrefix "node-secret" .values.admin_password }}{{ fail (printf "planted %s" .values.admin_password) }}{{ end -}}`,
 			want: templateFailureWithheld,
 		},
 		{
@@ -171,6 +180,91 @@ func TestEvaluateAssertion_WithholdsADeclaredValueFromItsFailure(t *testing.T) {
 	}
 }
 
+// TestEvaluateAssertion_ReleasesASentenceWrittenOutBehindADeclaredValue pins which
+// failures of an assertion reading a declared value are reported with their own
+// text although a run over the placeholder would not fail the same way: a fail
+// call whose sentence is written out in the body, and nothing else. Every row
+// fails only because of what the declared value holds, so the comparison alone
+// would withhold every one of them; the released rows are what the tree decides,
+// and the withheld rows beside them are the shapes the tree must not release — a
+// sentence composed from the value, a sentence a pipeline hands to fail, and a
+// sentence a call composes even from constants.
+//
+// The first two rows are the refusal shape a FeatureRecipe's assertion takes over
+// an attachment's declared origin: the same assertion, once with its sentence
+// written out and once with the origin interpolated into it.
+func TestEvaluateAssertion_ReleasesASentenceWrittenOutBehindADeclaredValue(t *testing.T) {
+	t.Parallel()
+	const sentence = "this attachment sets its origin to a reference the target never substitutes; " +
+		"set the real value through the Release instead"
+	const origin = `{{- $origin := optional .features.admin_key.values "origin" "" -}}` +
+		`{{- if regexMatch "^own-attachment-" $origin -}}`
+	cases := []struct {
+		name     string
+		body     string
+		released string // the sentence the failure must carry as written; empty: withheld
+	}{
+		{
+			name:     "literal_sentence_behind_the_origin",
+			body:     origin + `{{- fail "` + sentence + `" -}}{{- end -}}`,
+			released: sentence,
+		},
+		{
+			name: "interpolated_origin_behind_the_origin",
+			body: origin + `{{- fail (printf "this attachment sets its origin to %s, which the target never substitutes" $origin) -}}{{- end -}}`,
+		},
+		{
+			name: "sentence_piped_into_fail",
+			body: origin + `{{- "planted" | fail -}}{{- end -}}`,
+		},
+		{
+			name: "sentence_composed_by_a_call_of_constants",
+			body: origin + `{{- fail (printf "planted") -}}{{- end -}}`,
+		},
+		{
+			name:     "literal_sentence_in_a_template_the_body_invokes",
+			body:     `{{- define "refuse" }}{{ fail "planted in a defined template" }}{{ end -}}` + origin + `{{- template "refuse" -}}{{- end -}}`,
+			released: "planted in a defined template",
+		},
+		{
+			name:     "literal_sentence_in_a_parenthesized_pipeline",
+			body:     origin + `{{- printf "%s" (fail "planted in parentheses") -}}{{- end -}}`,
+			released: "planted in parentheses",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := EvaluateAssertion("rule", c.body, assertionWithheldContext(), assertionWithheldKeys())
+			if got == nil {
+				t.Fatal("the assertion must fail")
+			}
+			if !errors.Is(got, ErrAssertionFailed()) {
+				t.Errorf("the failure lost its condition: %v", got)
+			}
+			if code, _ := cerrors.ShortCodeOf(got); code != "E0033" {
+				t.Errorf("the failure's short code = %q, want E0033", code)
+			}
+			text := got.Error() + cerrors.CauseChain(got)
+			if strings.Contains(text, withheldOwnSecret) {
+				t.Errorf("the failure carries the declared origin:\n%s", text)
+			}
+			if c.released == "" {
+				if !strings.Contains(text, templateFailureWithheld) {
+					t.Errorf("the failure must be withheld:\n%s", text)
+				}
+				return
+			}
+			if strings.Contains(text, templateFailureWithheld) {
+				t.Errorf("a sentence written out in the body must be reported, not withheld:\n%s", text)
+			}
+			if want := "error calling fail: " + ErrAssertionFailed().Error() + ": " + c.released; !strings.Contains(text, want) {
+				t.Errorf("the failure must read %q:\n%s", want, text)
+			}
+		})
+	}
+}
+
 // TestEvalTemplate_WithholdsAConnectionAttachmentsDeclaredLeaf: the render context
 // surfaces read a connection's attachment at .context.uses.<alias>.features.<slot>,
 // and a failure quoting its declared leaf names no value; the same failure quoting
@@ -204,6 +298,19 @@ func TestEvalTemplate_WithholdsAConnectionAttachmentsDeclaredLeaf(t *testing.T) 
 			name:          "the undeclared leaf beside it",
 			tmpl:          `{{ fail (printf "key %s is not allowed" .context.uses.gpt.features.credential.values.key) }}`,
 			byteIdentical: true,
+		},
+		{
+			// The shared function set's fail, on a value surface: a sentence written
+			// out in the template is reported as it is, though a run over the
+			// placeholder would take the other branch.
+			name:          "a written-out sentence behind a branch on the declared leaf",
+			tmpl:          `{{ if hasPrefix "connection-" .context.uses.gpt.features.credential.values.origin }}{{ fail "the origin must be a reference" }}{{ end }}`,
+			byteIdentical: true,
+		},
+		{
+			name: "a composed sentence behind a branch on the declared leaf",
+			tmpl: `{{ if hasPrefix "connection-" .context.uses.gpt.features.credential.values.origin }}{{ fail (printf "the origin %s must be a reference" .context.uses.gpt.features.credential.values.origin) }}{{ end }}`,
+			want: templateFailureWithheld,
 		},
 	}
 	for _, c := range cases {
