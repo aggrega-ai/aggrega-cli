@@ -12,8 +12,8 @@ standard input and output — the same server `aggrega mcp` runs with no listen 
 manifest names no executable of any platform, the same bundle applies to every platform it declares:
 macOS, Windows and Linux.
 
-**It asks for two settings, and both are required.** **Path to the aggrega executable** is the program
-it launches. **Workspace folder** is the workspace the server serves: the folder that holds the
+**It asks for two settings.** **Path to the aggrega executable** is the program it launches, and is
+required. **Workspace folder** is the workspace the server serves: the folder that holds the
 project's `.aggrega-config.yaml`, handed to the server as `AGGREGA_WORKSPACE_ROOT` in its environment
 rather than as an argument, so the folder does not pass through the quoting of the command line the
 client composes. A client starts a local server in a folder of its own choosing, often a system folder,
@@ -23,12 +23,14 @@ workspace root itself, as `--workspace-root` is on every command. A folder that 
 stop the server: it writes its refusal to standard error, starts all the same, and answers every request
 that acts in the workspace with that refusal, which names `AGGREGA_WORKSPACE_ROOT` as the variable the
 **Workspace folder** setting sets and quotes the value it was given — so the client receives it in the
-answer to each such request rather than only in its log. A setting left empty, which a client may save
-and launch the server with, is answered the same way: a server launched over standard input and output
-with `AGGREGA_BUNDLE_VERSION` in its environment and no root named refuses every request naming no
-workspace of its own with a refusal naming the empty **Workspace folder** setting, where any other
-launch reads an empty variable as unset. A Go test in this repository holds the variable's spelling and
-the setting's title in the manifest to the ones the program reads.
+answer to each such request rather than only in its log. The setting is not required and its default is
+empty, so left unset or emptied it is handed to the server as an empty `AGGREGA_WORKSPACE_ROOT` rather
+than as the setting's placeholder text, and that is answered the same way: a server launched over
+standard input and output with `AGGREGA_BUNDLE_VERSION` in its environment and no root named refuses
+every request naming no workspace of its own with a refusal naming the empty **Workspace folder**
+setting, where any other launch reads an empty variable as unset. A Go test in this repository holds the
+variable's spelling and the setting's title in the manifest to the ones the program reads, and holds the
+setting not required with its empty default.
 
 ## Building the bundle
 

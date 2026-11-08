@@ -27,20 +27,29 @@ const desktopBundleManifest = "../../extensions/mcpb/manifest.json"
 var userConfigPlaceholder = regexp.MustCompile(`^\$\{user_config\.([^}]+)\}$`)
 
 // workspaceRootLaunchComplaints reports every way a bundle manifest's launch
-// fails to hand the server a required setting through the variable the binary
-// reads its workspace root from, one sentence each, or none where it does.
+// fails to hand the server its workspace-folder setting through the variable the
+// binary reads its workspace root from, one sentence each, or none where it does.
 //
-// Four things have to hold together, and each fails on its own: the launch's
+// These have to hold together, and each fails on its own: the launch's
 // environment carries the variable under exactly the spelling the binary reads
 // (workspaceconfig.EnvWorkspaceRoot); its value is one placeholder naming a
 // setting the manifest declares, since a placeholder naming none reaches the
-// server as its own text; that setting is required, since a client that let it
-// be left empty would launch the server with nothing in the variable — which
-// the server reads as no root at all and answers from whatever folder the
-// client started it in; and that setting carries the title the binary's refusal
-// of a root the variable supplied names it by
-// (workspaceconfig.DesktopWorkspaceFolderSetting), since that refusal tells the
-// person reading it which setting to change.
+// server as its own text — the precondition for reading the setting at all, so it
+// deliberately overlaps the bundle build script's wider check of every
+// placeholder; that setting is not required, since the format's
+// reference resolver builds no launch at all while a required setting is empty,
+// so the server's refusal naming the empty setting would never be served; that
+// setting defaults to the empty string, since a setting with no default and no
+// value leaves its placeholder in the variable as its own text, which the server
+// refuses as a folder that is not there rather than naming the empty setting,
+// while an empty default hands an unset setting over exactly as an emptied one;
+// and that setting carries the title the binary's refusals name it by
+// (workspaceconfig.DesktopWorkspaceFolderSetting), since those refusals tell the
+// person reading them which setting to change.
+//
+// The resolver's handling of required and default settings is the one the
+// packer version scripts/build-mcp-bundle.sh pins publishes, read at
+// @anthropic-ai/mcpb 2.1.2; a raise of that pin re-reads it.
 func workspaceRootLaunchComplaints(manifest []byte) []string {
 	var doc struct {
 		Server struct {
@@ -49,8 +58,11 @@ func workspaceRootLaunchComplaints(manifest []byte) []string {
 			} `json:"mcp_config"`
 		} `json:"server"`
 		UserConfig map[string]struct {
-			Required *bool  `json:"required"`
-			Title    string `json:"title"`
+			Required *bool `json:"required"`
+			// Default stays raw, so an absent default (nil) reads apart from an
+			// empty string and from a value of another type.
+			Default json.RawMessage `json:"default"`
+			Title   string          `json:"title"`
 		} `json:"user_config"`
 	}
 	if err := json.Unmarshal(manifest, &doc); err != nil {
@@ -79,9 +91,23 @@ func workspaceRootLaunchComplaints(manifest []byte) []string {
 			"not declare, so the placeholder reaches the server as its own text", workspaceconfig.EnvWorkspaceRoot, key)}
 	}
 	var complaints []string
-	if setting.Required == nil || !*setting.Required {
-		complaints = append(complaints, fmt.Sprintf("user_config.%s, which server.mcp_config.env.%s names, is not "+
-			"required, so a client may launch the server with the variable empty", key, workspaceconfig.EnvWorkspaceRoot))
+	if setting.Required != nil && *setting.Required {
+		complaints = append(complaints, fmt.Sprintf("user_config.%s, which server.mcp_config.env.%s names, is "+
+			"required, and the format's reference resolver builds no launch while a required setting is empty, so "+
+			"the server's refusal naming the empty setting is never served", key, workspaceconfig.EnvWorkspaceRoot))
+	}
+	var defaultValue any
+	switch {
+	case setting.Default == nil:
+		complaints = append(complaints, fmt.Sprintf("user_config.%s, which server.mcp_config.env.%s names, declares "+
+			"no default, so a client holding no value for it leaves ${user_config.%s} in the variable as its own "+
+			"text, which the server refuses as a folder that is not there rather than naming the empty setting",
+			key, workspaceconfig.EnvWorkspaceRoot, key))
+	case json.Unmarshal(setting.Default, &defaultValue) != nil || defaultValue != "":
+		complaints = append(complaints, fmt.Sprintf("user_config.%s, which server.mcp_config.env.%s names, defaults "+
+			"to %s rather than the empty string, so a setting left unset hands the server that value instead of the "+
+			"empty variable the server refuses naming the setting", key, workspaceconfig.EnvWorkspaceRoot,
+			setting.Default))
 	}
 	if setting.Title != workspaceconfig.DesktopWorkspaceFolderSetting {
 		complaints = append(complaints, fmt.Sprintf("user_config.%s, which server.mcp_config.env.%s names, is titled "+
@@ -91,26 +117,28 @@ func workspaceRootLaunchComplaints(manifest []byte) []string {
 	return complaints
 }
 
-// TestTheDesktopBundleHandsItsRequiredWorkspaceFolderToTheVariableTheBinaryReads
-// holds the installable bundle's manifest to the binary across the language
-// boundary between them: the manifest, read from the repository, must pass the
-// folder its user chooses through workspaceconfig.EnvWorkspaceRoot, from a
-// setting it declares and requires, titled as the binary's refusal names it
-// (workspaceconfig.DesktopWorkspaceFolderSetting).
+// TestTheDesktopBundleHandsItsWorkspaceFolderToTheVariableTheBinaryReads holds
+// the installable bundle's manifest to the binary across the language boundary
+// between them: the manifest, read from the repository, must pass the folder its
+// user chooses through workspaceconfig.EnvWorkspaceRoot, from a setting it
+// declares, does not require and defaults to the empty string, titled as the
+// binary's refusals name it (workspaceconfig.DesktopWorkspaceFolderSetting).
 //
 // The rows after the first are that same manifest with one fault planted in it
 // each, and every one must be named: the variable renamed, the setting renamed
-// out from under the placeholder, the setting no longer required, dropped or set
-// false, and the setting retitled or left untitled. A check that read nothing
-// would pass the first row and fail every other, so the rows are what show it
-// reads the four things it claims.
+// out from under the placeholder, the setting required again, its default
+// dropped, its default not empty, written as a string or as another type, and
+// the setting retitled or left untitled. A check that read nothing would pass the
+// first row and fail every other, so the rows are what show it reads each thing
+// it claims.
 //
 // 🔴 PLANTED DEFECT, for the file itself: rename the env key in
-// extensions/mcpb/manifest.json, rename its workspace_root setting, drop that
-// setting's "required" or change its "title", and the first row fails naming the
-// fault. 🔴 And for the binary's side: change DesktopWorkspaceFolderSetting, the
-// title the refusal names the setting by, and the first row fails the same way.
-func TestTheDesktopBundleHandsItsRequiredWorkspaceFolderToTheVariableTheBinaryReads(t *testing.T) {
+// extensions/mcpb/manifest.json, rename its workspace_root setting, set that
+// setting's "required" to true, drop its "default" or give it a non-empty one,
+// or change its "title", and the first row fails naming the fault. 🔴 And for
+// the binary's side: change DesktopWorkspaceFolderSetting, the title the
+// refusals name the setting by, and the first row fails the same way.
+func TestTheDesktopBundleHandsItsWorkspaceFolderToTheVariableTheBinaryReads(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile(desktopBundleManifest)
 	if err != nil {
@@ -144,18 +172,32 @@ func TestTheDesktopBundleHandsItsRequiredWorkspaceFolderToTheVariableTheBinaryRe
 			want: "which user_config does not declare",
 		},
 		{
-			name: "the setting no longer required",
+			name: "the setting required again",
 			plant: func(t *testing.T, doc map[string]any) {
-				delete(objectAt(t, doc, "user_config", placeholderKey(t, doc)), "required")
+				objectAt(t, doc, "user_config", placeholderKey(t, doc))["required"] = true
 			},
-			want: "is not required",
+			want: "is required",
 		},
 		{
-			name: "the setting declared optional",
+			name: "the setting's default dropped",
 			plant: func(t *testing.T, doc map[string]any) {
-				objectAt(t, doc, "user_config", placeholderKey(t, doc))["required"] = false
+				delete(objectAt(t, doc, "user_config", placeholderKey(t, doc)), "default")
 			},
-			want: "is not required",
+			want: "declares no default",
+		},
+		{
+			name: "the setting's default a folder rather than empty",
+			plant: func(t *testing.T, doc map[string]any) {
+				objectAt(t, doc, "user_config", placeholderKey(t, doc))["default"] = "workspace"
+			},
+			want: "rather than the empty string",
+		},
+		{
+			name: "the setting's default null",
+			plant: func(t *testing.T, doc map[string]any) {
+				objectAt(t, doc, "user_config", placeholderKey(t, doc))["default"] = nil
+			},
+			want: "rather than the empty string",
 		},
 		{
 			name: "the setting retitled",

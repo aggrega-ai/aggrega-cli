@@ -47,8 +47,9 @@
     "workspace_root": {
       "type": "directory",
       "title": "Workspace folder",
-      "description": "Select the folder of the Aggrega workspace the assistant works in — the folder that holds your project's .aggrega-config.yaml. Every request that names no folder of its own is answered in this workspace, so the server does not start until this folder is set.",
-      "required": true
+      "description": "Select the folder of the Aggrega workspace the assistant works in — the folder that holds your project's .aggrega-config.yaml. Every request that names no folder of its own is answered in this workspace; while this setting is empty, the server answers each such request that acts in the workspace with a refusal asking you to set it.",
+      "required": false,
+      "default": ""
     }
   }
 }
