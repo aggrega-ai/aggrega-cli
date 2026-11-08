@@ -8,7 +8,6 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The rules over what a delivery entry reads from, expressed as constraint
@@ -252,15 +251,8 @@ var OriginatedConnectionInjectEntryNamesAKey = constraint.Check[
 		var out []constraint.Objection
 		for _, payloads := range dictated {
 			for mechanism, payload := range payloads.All() {
-				entries, isList := payload.([]any)
-				if !isList {
-					continue
-				}
-				for _, entry := range entries {
-					in, _, _, hasValue, _, ok := types.DecodeVerboseInjectEntry(entry)
-					if ok && hasValue {
-						out = append(out, s.Raise(ErrUsesInjectValue(), mechanism, in))
-					}
+				for _, entry := range literalDeliveryEntries(payload) {
+					out = append(out, s.Raise(ErrUsesInjectValue(), mechanism, entry.in))
 				}
 			}
 		}

@@ -2457,6 +2457,31 @@ var facts = []factDecl{
 			"locator.",
 	},
 	{
+		Name:        "authored-inject-block-attachment",
+		Stage:       "normalized",
+		SourceField: "types.FeatureInstance.Inject",
+		Subject:     []string{"inject-delivery"},
+		Params: []paramDecl{
+			{Name: "document", Type: "string"},
+			{Name: "block", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AuthoredInjectBlockAttachment is the attachment an injection block " +
+			"is written on directly, and empty for every other block: a " +
+			"component's own, the one on a connection a component draws, and the " +
+			"one on a connection an attachment draws.\n\nWhich surface wrote a " +
+			"block decides what an entry in it may say, and the delivery axis " +
+			"is keyed by the block rather than by its owner — so a rule over " +
+			"what an attachment's own block may carry reads the owner here rather " +
+			"than recovering it from the block's identity, which is a key and " +
+			"never something a rule interprets.\n\nAn attachment's own block " +
+			"and the block on a connection that attachment draws are told apart: " +
+			"the first delivers what the attachment's own FeatureRecipe publishes, " +
+			"the second what the connection's target publishes, and the second " +
+			"answers empty here. A Release attachment writes no block of its own, " +
+			"so every block in the Release answers empty.",
+	},
+	{
 		Name:        "authored-values-pillar",
 		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Values",

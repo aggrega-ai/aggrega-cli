@@ -97,7 +97,7 @@ const (
 	// SubjectNodeMechanismDeliveryKey is the subject kind (node, mechanism, delivery-key), keyed by 3 declared facts.
 	SubjectNodeMechanismDeliveryKey SubjectKind = "(node, mechanism, delivery-key)"
 
-	// SubjectInjectDelivery is the subject kind inject-delivery, keyed by 1 declared fact.
+	// SubjectInjectDelivery is the subject kind inject-delivery, keyed by 2 declared facts.
 	SubjectInjectDelivery SubjectKind = "inject-delivery"
 
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.

@@ -172,7 +172,7 @@ spec:
               inject:
                 arg:
                   - in: --ca-file
-                    value: /etc/ca.pem
+                    from: ca_file
             audit: {}
 `,
 		// A Release whose boundaries nest. The fixture enumerates the inner one as

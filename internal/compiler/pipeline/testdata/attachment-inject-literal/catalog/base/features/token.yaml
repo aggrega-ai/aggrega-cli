@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/token
+  version: "1.0.0"
+spec:
+  # A Feature whose FeatureRecipe renders nothing and publishes one key, name,
+  # for an attachment's own inject block to deliver into its component.
+  interoperability:
+    conflictsWith: []

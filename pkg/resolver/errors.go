@@ -305,6 +305,29 @@ var errUsesInjectValue = cerrors.Register("uses-inject-value", cerrors.Meta{
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
+// ErrAttachmentInjectValue reports a delivery entry in an attachment's own
+// injection block that carries `value:`. An attachment's block delivers into its
+// component what the attachment's FeatureRecipe publishes, each entry naming a
+// published key through `from:`; a literal names nothing the attachment
+// publishes and reached no consumer, so the entry is refused rather than
+// dropped. A literal the component needs is written in the component's own
+// injection block, where `value:` is admitted and delivered.
+//
+// It is asked of every injection block the Aggregate writes on an attachment —
+// one on a component and one on a scope — while the documents are resolved, and
+// the build halts with one finding per offending entry, positioned at the
+// entry's mechanism inside the attachment's block and naming the mechanism and
+// the entry's `in:`. A block on a connection an attachment draws is the
+// connection rule's, [ErrUsesInjectValue].
+func ErrAttachmentInjectValue() error { return errAttachmentInjectValue }
+
+var errAttachmentInjectValue = cerrors.Register("attachment-inject-value", cerrors.Meta{
+	ShortCode: "E0372",
+	Message: "inject entry on an attachment carries `value:`; an attachment delivers the keys its FeatureRecipe " +
+		"publishes, each named with `from:`, and a literal belongs in the component's own inject block",
+	RulePlace: cerrors.RuleOverAuthoredInput(),
+})
+
 // ErrInjectDeliveryShape reports an inject delivery mechanism — env, file, arg
 // or a mechanism an author names beside them — whose value is not a list of
 // entries. A mechanism is the list of {in, from?, value?} entries the

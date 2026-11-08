@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-scope-literal
+  version: "1.0.0"
+spec:
+  subsystems:
+    tier:
+      features:
+        # The same block, written once for every component the scope holds.
+        token:
+          type: core/token
+          inject:
+            env:
+              - in: TOKEN_NAME
+                from: name
+              - in: LITERAL_NAME
+                value: a-literal
+      components:
+        api:
+          type: core/api

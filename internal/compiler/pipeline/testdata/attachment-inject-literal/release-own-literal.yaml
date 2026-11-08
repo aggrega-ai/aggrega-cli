@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: attachment-inject-literal-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: aggregate-own-literal
+  manifest: attachment-inject-literal-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api: {}

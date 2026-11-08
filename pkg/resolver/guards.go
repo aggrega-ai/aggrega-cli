@@ -626,6 +626,10 @@ func runDeclaredRules(
 		cancelled, coordinates, facts, injectDeliveryEntryIsUnambiguous)); err != nil {
 		return nil, err
 	}
+	if err := authoredRule(constraint.RunOnInjectDeliveries(
+		cancelled, coordinates, facts, attachmentInjectEntryNamesAKey)); err != nil {
+		return nil, err
+	}
 
 	// Once per attachment a declared scope of either document carries.
 	if err := developerRule(constraint.RunOnSubsystemAttachments(

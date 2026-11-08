@@ -2408,6 +2408,26 @@ type NormalizedView interface {
 	// Keyed by inject-delivery; read from types.InjectBlock.
 	AuthoredInjectDelivery(document string, block string, mechanism string) any
 
+	// AuthoredInjectBlockAttachment is the attachment an injection block is
+	// written on directly, and empty for every other block: a component's own,
+	// the one on a connection a component draws, and the one on a connection
+	// an attachment draws.
+	//
+	// Which surface wrote a block decides what an entry in it may say, and the
+	// delivery axis is keyed by the block rather than by its owner — so a
+	// rule over what an attachment's own block may carry reads the owner here
+	// rather than recovering it from the block's identity, which is a key and
+	// never something a rule interprets.
+	//
+	// An attachment's own block and the block on a connection that attachment
+	// draws are told apart: the first delivers what the attachment's own
+	// FeatureRecipe publishes, the second what the connection's target
+	// publishes, and the second answers empty here. A Release attachment
+	// writes no block of its own, so every block in the Release answers empty.
+	//
+	// Keyed by inject-delivery; read from types.FeatureInstance.Inject.
+	AuthoredInjectBlockAttachment(document string, block string) string
+
 	// AuthoredValuesPillar is one configuration pillar as the author wrote it,
 	// carried as an opaque ordered payload.
 	//

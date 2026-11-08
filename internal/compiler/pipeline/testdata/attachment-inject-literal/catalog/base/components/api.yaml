@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/api
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # The component's own block may deliver through env, which is where the
+  # literal an attachment cannot carry is written instead.
+  inject: ["env"]
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }
+    provides:
+      host: { type: string, required: true }

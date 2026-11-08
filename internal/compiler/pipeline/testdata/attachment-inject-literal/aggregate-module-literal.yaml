@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-module-literal
+  version: "1.0.0"
+spec:
+  # The literal is written in the imported module's own document, not here.
+  aggregates:
+    mod:
+      type: token-module

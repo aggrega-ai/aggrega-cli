@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: api-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/api
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: api:1.0
+        variables:
+          # Every key the delivery pipe carries, with its value, so the output
+          # shows exactly what reached the component.
+          PIPE: "{{ with .context.inject }}{{ with .env }}{{ range $k, $v := . }}{{ $k }}={{ $v }};{{ end }}{{ end }}{{ end }}"
+        ports:
+          p: 8080
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          p: 8080

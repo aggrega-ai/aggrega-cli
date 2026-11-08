@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-literal
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      features:
+        token:
+          type: core/token
+          inject:
+            env:
+              # A reference to the key the attachment's FeatureRecipe publishes.
+              - in: TOKEN_NAME
+                from: name
+              # A literal: it names nothing the attachment publishes.
+              - in: LITERAL_NAME
+                value: a-literal

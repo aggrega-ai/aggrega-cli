@@ -165,6 +165,13 @@ type normalizedView struct {
 	releaseDeliveries   []constraint.InjectDeliveryInstance
 	deliveryPayloads    map[injectDeliveryCoordinates]any
 
+	// deliveryBlockAttachments names, for each block written on an attachment
+	// directly, the attachment it is written on, keyed by the document and the
+	// block's identity. It is filled by the walk that records an attachment's
+	// deliveries, for the reason the payloads are: the block a rule is invoked for
+	// and the owner it then reads cannot disagree about which blocks exist.
+	deliveryBlockAttachments map[injectBlockCoordinates]string
+
 	// componentContracts is the resolved contract of each component type in
 	// play, produced once when this value was built.
 	componentContracts map[string]resolvedContract
@@ -208,6 +215,13 @@ type injectDeliveryCoordinates struct {
 	document  string
 	block     string
 	mechanism string
+}
+
+// injectBlockCoordinates identifies one injection block as this presentation
+// keys it: the document and the block's identity within it.
+type injectBlockCoordinates struct {
+	document string
+	block    string
 }
 
 // injectBlockPathSeparator joins the authored keys reaching an injection block
@@ -287,6 +301,8 @@ func newNormalizedView(
 		deliveryPayloads:   map[injectDeliveryCoordinates]any{},
 		componentContracts: map[string]resolvedContract{},
 		socketContracts:    map[socketPillarKey]resolvedContract{},
+
+		deliveryBlockAttachments: map[injectBlockCoordinates]string{},
 	}
 
 	for _, p := range collectComponentInstances(na) {
@@ -565,6 +581,11 @@ func (v *normalizedView) recordComponentDeliveries(site constraint.AuthoredSite,
 // recordAttachmentDeliveries records the deliveries of one attachment's own
 // injection block, then those on the connections it draws. A Release attachment
 // writes no block of its own, so its inject is nil and contributes nothing.
+//
+// The attachment's own block is the one place the walk knows it is recording an
+// attachment's own block rather than a connection's, so its owner is recorded
+// here, from the call that recorded the block, and not recovered afterwards from
+// which coordinates happened to be empty.
 func (v *normalizedView) recordAttachmentDeliveries(
 	document string,
 	site constraint.AuthoredSite,
@@ -573,7 +594,9 @@ func (v *normalizedView) recordAttachmentDeliveries(
 	inject *types.InjectBlock,
 	uses types.OrderedMap[types.UsesSocketValue],
 ) {
-	v.recordDeliveries(document, site, componentKeys, attachment, "", "", inject)
+	if block, recorded := v.recordDeliveries(document, site, componentKeys, attachment, "", "", inject); recorded {
+		v.deliveryBlockAttachments[injectBlockCoordinates{document: document, block: block}] = attachment
+	}
 	v.recordConnectionDeliveries(document, site, componentKeys, attachment, uses)
 }
 
@@ -601,16 +624,20 @@ func (v *normalizedView) recordConnectionDeliveries(
 // Every mechanism the block declares is recorded, a mechanism carrying no value
 // included: whether such a mechanism delivers anything is a rule's question, and
 // a walk that answered it here would be a second statement of that rule.
+//
+// It returns the block's identity and whether any mechanism was recorded under
+// it, so a caller recording a fact about the block keys it by the identity the
+// deliveries carry rather than by a second spelling of it.
 func (v *normalizedView) recordDeliveries(
 	document string,
 	site constraint.AuthoredSite,
 	componentKeys []string,
 	attachment, socket, alias string,
 	inject *types.InjectBlock,
-) {
+) (string, bool) {
 	payloads := InjectMechanismPayloads(inject)
 	if payloads.Len() == 0 {
-		return
+		return "", false
 	}
 	parts := make([]string, 0, len(componentKeys)+5)
 	parts = append(parts, site.ScopePath, site.Component)
@@ -640,6 +667,7 @@ func (v *normalizedView) recordDeliveries(
 			mechanism: mechanism,
 		}] = payload
 	}
+	return block, true
 }
 
 // AuthoredInjectDelivery returns the payload one mechanism of one injection block
@@ -650,6 +678,13 @@ func (v *normalizedView) AuthoredInjectDelivery(document string, block string, m
 		block:     block,
 		mechanism: mechanism,
 	}]
+}
+
+// AuthoredInjectBlockAttachment returns the attachment one injection block is
+// written on directly, and empty for every other block and for a coordinate no
+// block carries.
+func (v *normalizedView) AuthoredInjectBlockAttachment(document string, block string) string {
+	return v.deliveryBlockAttachments[injectBlockCoordinates{document: document, block: block}]
 }
 
 // AuthoredAnnotationSubvalue returns the value an author wrote at one annotation

@@ -22,10 +22,12 @@ import (
 // the sockets its own attachments and the Release's connections name, the slots
 // its attachments fill — each through a reading the flattened composition carries.
 // The rules asked here are the ones nothing else reaches: those over a component's
-// own injection block, and the socket rule over an attachment a module declares at
+// own injection block, the rule over a literal written in an attachment's own
+// injection block, and the socket rule over an attachment a module declares at
 // one of its own subsystems. Left unasked, a module could deliver what its
-// component type forbids, or wire a socket nobody declared, where the same
-// declaration written in the Aggregate halts the build.
+// component type forbids, drop a literal its attachment wrote, or wire a socket
+// nobody declared, where the same declaration written in the Aggregate halts the
+// build.
 //
 // They are the SAME declared rules [RunGuards] asks, invoked through the same
 // traversals over the same presentation of a document — this one built over the
@@ -145,6 +147,16 @@ func runModuleRules(
 	if err := rule(constraint.RunOnNodeMechanismDeliveryKeys(
 		cancelled, coordinates, coordinates, coordinates, facts,
 		selfInjectKeyNotOnTwoMechanisms)); err != nil {
+		return nil, err
+	}
+
+	// Once per delivery mechanism of every injection block the module's document
+	// writes. Only the literal rule is asked over this axis here: the shape and the
+	// ambiguity rules refuse what the Aggregate schema already refuses when a
+	// module's document is read, while a literal in an attachment's own block is
+	// admitted by the schema and refused by this rule alone.
+	if err := rule(constraint.RunOnInjectDeliveries(
+		cancelled, coordinates, facts, attachmentInjectEntryNamesAKey)); err != nil {
 		return nil, err
 	}
 

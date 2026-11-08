@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: token-module
+  version: "1.0.0"
+spec:
+  # A module whose component carries the same attachment block as the literal
+  # case: the Aggregate importing it writes none of these keys. It sits in a
+  # catalog of its own so only the module case reads it.
+  components:
+    api:
+      type: core/api
+      features:
+        token:
+          type: core/token
+          inject:
+            env:
+              - in: TOKEN_NAME
+                from: name
+              - in: LITERAL_NAME
+                value: a-literal

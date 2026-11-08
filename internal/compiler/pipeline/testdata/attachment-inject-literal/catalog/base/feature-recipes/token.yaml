@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: token-compose
+  version: 1.0.0
+  description: >
+    Compose implementation of core/token. It renders no resource and publishes
+    one key, name, which an attachment's own inject block reads with from:.
+spec:
+  capability: compose
+  implements: core/token
+  provides:
+    name: tok-secret

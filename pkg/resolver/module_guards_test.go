@@ -234,6 +234,22 @@ func TestRunModuleGuardsAsksEachRuleOfAModuleDocument(t *testing.T) {
 			locator: ".spec.subsystems.store.features.scrape",
 		},
 		{
+			name: "a literal in an attachment's own injection block",
+			spec: `components:
+  api:
+    type: app/env-only:1.0.0
+    features:
+      scrape:
+        type: app/scrape:1.0.0
+        inject:
+          env:
+            - { in: TOKEN_NAME, from: name }
+            - { in: LITERAL_NAME, value: a-literal }
+`,
+			want:    ErrAttachmentInjectValue(),
+			locator: ".spec.components.api.features.scrape.inject.env",
+		},
+		{
 			name: "a component type only the module uses whose contract does not compile",
 			spec: `components:
   api:

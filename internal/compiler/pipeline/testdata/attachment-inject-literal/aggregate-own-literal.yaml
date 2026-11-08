@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-own-literal
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      # The remedy the refusal names: the literal moves to the component's own
+      # block, which delivers it.
+      inject:
+        env:
+          - in: LITERAL_NAME
+            value: a-literal
+      features:
+        token:
+          type: core/token
+          inject:
+            env:
+              - in: TOKEN_NAME
+                from: name

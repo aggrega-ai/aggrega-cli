@@ -6,13 +6,14 @@ package resolver
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// The tests of the two rules over what an author wrote under one delivery
+// The tests of the rules over what an author wrote under one delivery
 // mechanism. Each is driven two ways: through its traversal, where the subject's
 // position and detail are read directly, and through the suite a resolve asks,
 // where what a build halts with is read as a finding.
@@ -395,6 +396,134 @@ func TestInjectDeliveryRules_ReachEveryReleaseBlock(t *testing.T) {
 				if got := deliveryObjections(t, emptyAggregate(), rel, check); len(got) != 0 {
 					t.Errorf("the list form must pass; raised at %v", locatorsOf(got))
 				}
+			}
+		})
+	}
+}
+
+// literalBesideReference is a delivery list carrying a literal, a reference and an
+// entry carrying both keys, in that order. Only the first is the attachment
+// literal rule's: the reference is legal on every block, and an entry carrying
+// both keys is the ambiguity rule's to report.
+func literalBesideReference() *types.InjectBlock {
+	return &types.InjectBlock{Env: []any{
+		deliveryEntry("LITERAL_NAME", "a-literal", ""),
+		deliveryEntry("TOKEN_NAME", "", "name"),
+		deliveryEntry("BOTH", "x", "y"),
+	}}
+}
+
+// TestAttachmentInjectValue_RefusedOnAnAttachmentsOwnBlockAndNowhereElse pins
+// which blocks the attachment literal rule reads: every block the Aggregate
+// writes carries the same list, and only the two written directly on an
+// attachment — one on a component, one scope-wide — are refused, each at its own
+// mechanism and naming the literal entry alone. A component's own block admits a
+// literal, and a block on a connection, a component's or an attachment's, is the
+// connection rule's.
+func TestAttachmentInjectValue_RefusedOnAnAttachmentsOwnBlockAndNowhereElse(t *testing.T) {
+	t.Parallel()
+
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("primary", types.VerboseUsesEntry{Target: "db", Inject: literalBesideReference()})
+	ownUses := types.OrderedMap[types.UsesSocketValue]{}
+	ownUses.Set("databases", types.UsesSocketValue{Verbose: verbose})
+
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("creds", types.FeatureInstance{Inject: literalBesideReference()})
+	features.Set("metrics", types.FeatureInstance{Uses: deliveryAttachmentUses(literalBesideReference())})
+
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Inject:   literalBesideReference(),
+		Uses:     ownUses,
+		Features: features,
+	})
+	scopeFeatures := types.OrderedMap[types.FeatureInstance]{}
+	scopeFeatures.Set("audit", types.FeatureInstance{Inject: literalBesideReference()})
+
+	subsystems := types.OrderedMap[types.Subsystem]{}
+	subsystems.Set("web", types.Subsystem{Components: components})
+	subsystems.Set("outer", types.Subsystem{Features: scopeFeatures})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "app"},
+		Spec:     types.AggregateSpec{Subsystems: subsystems},
+	}
+
+	objections := deliveryObjections(t, agg, nil, attachmentInjectEntryNamesAKey)
+	wantAt := []string{
+		".spec.subsystems.web.components.api.features.creds.inject.env",
+		".spec.subsystems.outer.features.audit.inject.env",
+	}
+	if got := locatorsOf(objections); !equalStrings(got, wantAt) {
+		t.Fatalf("raised at\n got: %v\nwant: %v", got, wantAt)
+	}
+	if got, want := detailsOf(objections), []string{"env,LITERAL_NAME", "env,LITERAL_NAME"}; !equalStrings(got, want) {
+		t.Errorf("detail %v; want %v", got, want)
+	}
+	for _, o := range objections {
+		if !errors.Is(o.Sentinel(), ErrAttachmentInjectValue()) {
+			t.Errorf("objection at %s carries %v; want the attachment literal condition", o.Locator(), o.Sentinel())
+		}
+	}
+}
+
+// TestAttachmentInjectValue_AHaltNamesTheEntryAndTheRemedy pins the refusal as a
+// build halts with it: one finding per literal entry, filed under the Aggregate,
+// at the attachment's mechanism, saying where a literal belongs; and a block
+// carrying references alone passes.
+func TestAttachmentInjectValue_AHaltNamesTheEntryAndTheRemedy(t *testing.T) {
+	t.Parallel()
+
+	attached := func(block *types.InjectBlock) *types.Aggregate {
+		features := types.OrderedMap[types.FeatureInstance]{}
+		features.Set("token", types.FeatureInstance{Type: "core/logging:1.0.0", Inject: block})
+		components := types.OrderedMap[types.ComponentInstance]{}
+		components.Set("api", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
+		return &types.Aggregate{
+			Metadata: types.AggregateMetadata{Name: "app"},
+			Spec:     types.AggregateSpec{Components: components},
+		}
+	}
+
+	findings := deliveryFindings(t, attached(&types.InjectBlock{Env: []any{
+		deliveryEntry("TOKEN_NAME", "", "name"),
+		deliveryEntry("LITERAL_NAME", "a-literal", ""),
+	}}), nil, ErrAttachmentInjectValue())
+	if len(findings) != 1 {
+		t.Fatalf("want one finding for the one literal entry; got %d: %v", len(findings), findings)
+	}
+	f := findings[0]
+	if f.Entity != "Aggregate app" || f.Field != ".spec.components.api.features.token.inject.env" {
+		t.Errorf("finding filed under %q at %q; want %q at %q",
+			f.Entity, f.Field, "Aggregate app", ".spec.components.api.features.token.inject.env")
+	}
+	for _, want := range []string{`"LITERAL_NAME"`, `"env"`, "the component's own inject block"} {
+		if !strings.Contains(f.Error(), want) {
+			t.Errorf("the finding does not say %q; got: %s", want, f.Error())
+		}
+	}
+	if strings.Contains(f.Error(), "TOKEN_NAME") {
+		t.Errorf("the reference beside the literal was named too; got: %s", f.Error())
+	}
+
+	if got := deliveryFindings(t, attached(&types.InjectBlock{Env: []any{
+		deliveryEntry("TOKEN_NAME", "", "name"),
+	}}), nil, ErrAttachmentInjectValue()); len(got) != 0 {
+		t.Errorf("a block of references alone must pass; got %v", got)
+	}
+}
+
+// TestAttachmentInjectValue_TheReleaseWritesNoAttachmentBlock pins the Release's
+// side: a literal on a connection a Release attachment draws is a connection's
+// block, so this rule reads it at no position the Release writes an attachment.
+func TestAttachmentInjectValue_TheReleaseWritesNoAttachmentBlock(t *testing.T) {
+	t.Parallel()
+	for _, where := range deliveryReleasePositions {
+		t.Run(where, func(t *testing.T) {
+			t.Parallel()
+			rel, _ := releaseWithDeliveryOnAttachment(where, literalBesideReference())
+			if got := deliveryObjections(t, emptyAggregate(), rel, attachmentInjectEntryNamesAKey); len(got) != 0 {
+				t.Errorf("a connection's block was read as an attachment's; raised at %v", locatorsOf(got))
 			}
 		})
 	}
