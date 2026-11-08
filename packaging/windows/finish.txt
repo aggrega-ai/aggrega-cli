@@ -1,0 +1,9 @@
+Next steps
+
+Install the Aggrega skill for the AI assistants on this machine. In a new terminal, run:
+
+    aggrega skills install --global
+
+Connect your AI client to the Aggrega MCP server, as this page describes:
+
+    https://aggrega.ai/docs/install/#connect-an-mcp-client

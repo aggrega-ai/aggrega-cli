@@ -1,0 +1,5 @@
+This installs aggrega, the Aggrega command-line program, for you alone, without administrator rights.
+
+The next pages let you choose whether to add its folder to your PATH, and where to install it. Unless you choose another folder, it goes into %LOCALAPPDATA%\Programs\aggrega.
+
+If aggrega is running, started by an editor or an AI client, close that before you continue.

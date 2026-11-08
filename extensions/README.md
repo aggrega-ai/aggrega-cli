@@ -46,8 +46,10 @@ scripts/build-mcp-bundle.sh --output-dir <dir>
 
 It checks the manifest against the format's schema with the format's own packer, `@anthropic-ai/mcpb`,
 run through `npx` at the exact version the script pins — after refusing, itself, any
-`${user_config.KEY}` the manifest writes that names a setting it does not declare, which the packer
-accepts — then writes the installable file
+`${user_config.KEY}` the manifest writes that names a setting it does not declare, or a setting it
+declares required or with no default, all of which the packer accepts: a required setting left alone
+starts no server, and an optional one with no default is left in the launch as the placeholder's own text —
+then writes the installable file
 `aggrega-<version>.mcpb` into `<dir>` and prints its path. The directory must lie outside the
 repository — the built file is a build output and does not belong in it. Node.js and `npx` must be
 installed. The release workflow runs the same script and attaches the file to each release beside the

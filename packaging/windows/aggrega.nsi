@@ -4,19 +4,39 @@
 ; scripts/build-windows-installer.sh, which says how it is built and signed.
 ;
 ; It installs aggrega.exe for the user who runs it, with no administrator
-; rights, into %LOCALAPPDATA%\Programs\aggrega, the folder install.ps1 installs
-; into too, and adds that folder to the user's PATH. It registers an uninstaller
-; in the user's list of installed apps, which removes aggrega.exe, the PATH
-; entry and itself. Run again, by the same release or a later one, it installs
-; over what is there. /S installs with no window and no question, and
-; uninstall.exe /S uninstalls the same way.
+; rights, by default into %LOCALAPPDATA%\Programs\aggrega, the folder
+; install.ps1 installs into too, and adds that folder to the user's PATH. It is
+; a Modern UI wizard built from pages makensis itself implements, so it runs no
+; plug-in but EnVar: a welcome page, showing welcome.txt; a components page,
+; where Aggrega itself is always installed and adding its folder to the PATH is
+; selected and can be cleared; the install folder, which can be changed; the
+; progress; and a finish page, showing what this install did with the PATH and
+; finish.txt's next steps. The welcome and finish pages are NSIS's license page,
+; with no acceptance control. It registers an uninstaller in the user's list of
+; installed apps, which removes aggrega.exe, the PATH entry and itself, after a
+; confirmation page. Run again, by the same release or a later one, it offers
+; the folder it installed into last and installs over what is there. /S
+; installs with no window and no question, into that folder or the default one
+; and with the PATH entry, and uninstall.exe /S uninstalls the same way.
 ;
 ; The user's PATH is edited with the EnVar plug-in, which reads and writes the
 ; whole value whatever its length, keeps the kind of value Windows stores it as,
 ; and tells Windows the environment changed. The installer runs it as a plug-in;
 ; the uninstaller carries no plug-in of its own and runs the copy the installer
 ; placed beside aggrega.exe, so every program file the installer carries is one
-; that is signed before the installer is built.
+; that is signed before the installer is built. The build script deletes NSIS's
+; own plug-ins before compiling, so a call to any plug-in but EnVar - by a page,
+; a macro from an NSIS include, or this script - fails the compile.
+;
+; aggrega.ico, the installer's and the uninstaller's icon, and
+; installer-header.bmp, the image at the right of every page's header, are
+; copies of the files of the same names in the logo folder of the aggrega-brand
+; repository, which its scripts/build-windows-images.mjs writes from the logo
+; and the brand colours, and its scripts/check-windows-images.mjs, run by its
+; npm test, holds them to that script. They are copies because the installer is
+; built by this repository's release alone, from this folder, which reads
+; nothing from aggrega-brand. To change them, change them there, run that
+; script, and copy both here.
 ;
 ; Defined on the makensis command line by the build script:
 ;   VERSION      the release version, as the aggrega binary reports it
@@ -27,6 +47,7 @@
 ;   OUTFILE      the installer to write
 
 !include LogicLib.nsh
+!include MUI2.nsh
 
 Unicode true
 Target x86-unicode
@@ -36,9 +57,14 @@ SetCompressor /SOLID lzma
 SetDateSave off
 RequestExecutionLevel user
 
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\aggrega"
+
 Name "Aggrega"
 OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\aggrega"
+; A folder chosen at an earlier install is offered again, and /S installs there.
+InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
+BrandingText "Aggrega ${VERSION}"
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -59,11 +85,50 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 ; of it, to be signed, or puts the signed copy in its place.
 !uninstfinalize 'bash "${FINALIZER}" finalize-uninstaller "%1"' = 0
 
-Page instfiles
-UninstPage uninstConfirm
-UninstPage instfiles
+; What the finish page says about the PATH, set by the sections that ran.
+Var PathNote
 
-!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\aggrega"
+!define MUI_ICON "${__FILEDIR__}/aggrega.ico"
+!define MUI_UNICON "${__FILEDIR__}/aggrega.ico"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADERIMAGE_BITMAP "${__FILEDIR__}/installer-header.bmp"
+
+!define MUI_PAGE_HEADER_TEXT "Welcome to Aggrega Setup"
+!define MUI_PAGE_HEADER_SUBTEXT "aggrega ${VERSION}"
+!define MUI_LICENSEPAGE_TEXT_TOP "Setup installs aggrega ${VERSION} on this computer."
+!define MUI_LICENSEPAGE_TEXT_BOTTOM "Click Next to continue."
+!define MUI_LICENSEPAGE_BUTTON "$(^NextBtn)"
+!insertmacro MUI_PAGE_LICENSE "${__FILEDIR__}/welcome.txt"
+
+!define MUI_COMPONENTSPAGE_TEXT_TOP "Aggrega is always installed. Add to PATH lets a terminal run it by typing aggrega."
+!insertmacro MUI_PAGE_COMPONENTS
+
+!insertmacro MUI_PAGE_DIRECTORY
+
+; The progress page waits for Next once the install is done.
+AutoCloseWindow false
+!insertmacro MUI_PAGE_INSTFILES
+
+; The header and the top text are set when the page is shown, so they name the
+; folder and what this install did with the PATH. finish.txt's next steps are a
+; deliberate copy of the ones the install commands print, in
+; packaging/install/install.ps1 (Write-NextSteps) and packaging/install/install.sh
+; (its next steps), in their own wording: the three are a text file shown by
+; NSIS, PowerShell and POSIX shell, with no common source any of them could read
+; at run time, so a change to the next steps changes all three.
+!define MUI_PAGE_HEADER_TEXT "Aggrega is installed"
+!define MUI_PAGE_HEADER_SUBTEXT "aggrega ${VERSION}, in $INSTDIR"
+!define MUI_LICENSEPAGE_TEXT_TOP "$PathNote"
+!define MUI_LICENSEPAGE_TEXT_BOTTOM "Click Finish to close Setup."
+!define MUI_LICENSEPAGE_BUTTON "&Finish"
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW FinishShow
+!insertmacro MUI_PAGE_LICENSE "${__FILEDIR__}/finish.txt"
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
 
 ; Stops the installer, or the uninstaller, with a message: shown in a window,
 ; and in silent mode only in its log, its exit code then being 2.
@@ -72,7 +137,9 @@ UninstPage instfiles
   Abort "${MESSAGE}"
 !macroend
 
-Section "aggrega"
+Section "Aggrega" SecAggrega
+  ; Always installed: the components page shows it selected and greyed.
+  SectionIn RO
   SetOutPath "$INSTDIR"
   ; A file that cannot be replaced, most often an aggrega.exe still running, is
   ; reported and stops the installer rather than being skipped in silence.
@@ -84,6 +151,8 @@ Section "aggrega"
     !insertmacro STOP "$INSTDIR\aggrega.exe could not be replaced. If aggrega is running, started by an editor or an AI client, close that and run the installer again."
   ${EndIf}
 
+  ; EnVar.dll is placed whether or not the PATH is edited: the uninstaller runs
+  ; it to remove the folder from the PATH when an install put it there.
   ClearErrors
   File "/oname=EnVar.dll" "${PLUGIN_DIR}/EnVar.dll"
   ${If} ${Errors}
@@ -97,6 +166,11 @@ Section "aggrega"
   ${EndIf}
   SetOverwrite on
 
+  ; The section below replaces this when it runs.
+  StrCpy $PathNote "This install did not add its folder to your PATH, so unless an earlier install put it there, a terminal runs aggrega as $INSTDIR\aggrega.exe."
+SectionEnd
+
+Section "Add to PATH" SecPath
   ; Adds the folder to the user's PATH unless it is there already, so
   ; installing over an earlier copy leaves one entry.
   EnVar::SetHKCU
@@ -105,13 +179,26 @@ Section "aggrega"
   ${If} $0 != 0
     !insertmacro STOP "$INSTDIR could not be added to your PATH (EnVar error $0)."
   ${EndIf}
+  StrCpy $PathNote "Its folder is on your PATH: a terminal opened from now on runs it as aggrega; one already open keeps the PATH it started with."
+SectionEnd
+
+; Registers the uninstaller in the user's list of installed apps, once the
+; sections above have run.
+Section "-Register"
+  ; The size in KB the list shows: that of the files the first section installs,
+  ; which makensis records when it compiles; the uninstaller is not counted.
+  SectionGetSize ${SecAggrega} $1
 
   ClearErrors
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Aggrega"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "Cognitio S.r.l."
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLInfoAbout" "https://aggrega.ai"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "HelpLink" "https://aggrega.ai/docs/install/"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "URLUpdateInfo" "https://github.com/aggrega-ai/aggrega-cli/releases"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "EstimatedSize" $1
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
@@ -120,6 +207,20 @@ Section "aggrega"
     !insertmacro STOP "The uninstaller could not be registered in your list of installed apps."
   ${EndIf}
 SectionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecAggrega} "aggrega.exe, and the uninstaller that removes it."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the install folder to your user PATH, so a new terminal runs aggrega by name. Cleared, aggrega is run by its full path."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+; The finish page comes after the install, so there is nothing to go back to
+; and nothing to cancel: Back and Cancel are disabled, and Finish closes Setup.
+Function FinishShow
+  GetDlgItem $0 $HWNDPARENT 3
+  EnableWindow $0 0
+  GetDlgItem $0 $HWNDPARENT 2
+  EnableWindow $0 0
+FunctionEnd
 
 Section "Uninstall"
   ; aggrega.exe goes first: when it is running it cannot be removed, and the

@@ -28,7 +28,9 @@
 # address; the plug-in is EnVar, fetched from the NSIS wiki. Each is fetched at
 # one version and refused, before anything in it is unpacked or run, unless its
 # SHA-256 is the one written below; moving to another version changes both
-# lines.
+# lines. The plug-ins nsis-common carries are deleted once it is unpacked, so the
+# one plug-in makensis can find is EnVar: a script calling any other fails to
+# compile, so the installer carries no plug-in but the EnVar.dll it is given.
 #
 # The packages are unpacked, and makensis runs, in a container of the Debian
 # image written below, pinned by its digest: the Debian release those packages
@@ -221,6 +223,11 @@ prepare_tools() {
   MAKENSIS="$WORK/nsis/usr/bin/makensis"
   [ -x "$MAKENSIS" ] || refuse "the nsis package holds no usr/bin/makensis"
   [ -d "$WORK/nsis/usr/share/nsis/Stubs" ] || refuse "the nsis-common package holds no usr/share/nsis/Stubs"
+  # NSIS's own plug-ins are removed, so makensis can resolve no plug-in but the
+  # EnVar.dll handed to it through the script's !addplugindir: a call to any
+  # other refuses the compile rather than packing a DLL no step signs.
+  [ -d "$WORK/nsis/usr/share/nsis/Plugins" ] || refuse "the nsis-common package holds no usr/share/nsis/Plugins"
+  rm -rf -- "$WORK/nsis/usr/share/nsis/Plugins"
   mkdir -p "$WORK/plugin"
   unzip -p "$WORK/envar.zip" "$ENVAR_DLL_MEMBER" > "$WORK/plugin/EnVar.dll" ||
     refuse "$ENVAR_ZIP_URL holds no $ENVAR_DLL_MEMBER"

@@ -198,10 +198,13 @@
 #                 and nothing else; the user PATH holding that folder once; an
 #                 uninstall entry in the user's list of installed apps naming
 #                 Aggrega, the version staged, Cognitio S.r.l. as its publisher,
-#                 the folder, and the uninstaller in it, with /S as its quiet
-#                 form; and a new PowerShell, whose PATH is the machine's and the
-#                 user's as Windows keeps them, must find aggrega in that folder
-#                 by name and run it to report the version staged. Run again with
+#                 the folder, the uninstaller in it as its icon and as its
+#                 command, with /S as its quiet form, the Aggrega site, the
+#                 install page and the releases page as its links, no modify or
+#                 repair, and a size in KB no smaller than aggrega.exe; and a
+#                 new PowerShell, whose PATH is the machine's and the user's as
+#                 Windows keeps them, must find aggrega in that folder by name
+#                 and run it to report the version staged. Run again with
 #                 /S over that install, as an upgrade in place is, the same must
 #                 hold, the folder still on the PATH once. Unless --unsigned, the
 #                 installer and each program file it installed must pass step
@@ -1331,10 +1334,13 @@ INSTALLER_SECONDS=300
 # the install folder in SMOKE_INSTALL_FOLDER and the version staged in
 # SMOKE_VERSION. present prints the entry's values and refuses one that is
 # missing or does not name Aggrega, the version, Cognitio S.r.l., the folder,
-# and the uninstaller in it, quoted, with /S as its quiet form; absent refuses
-# an entry that is there. Its strings are in single quotes and the quote around
-# the uninstaller's path is [char]34, as user_path's and authenticode_report's
-# text carries no double quote.
+# the uninstaller in it as its icon and, quoted, as its command with /S as its
+# quiet form, https://aggrega.ai, the install page and the releases page as its
+# links, and 1 for NoModify and NoRepair; or whose EstimatedSize is not a
+# number of KB at least the installed aggrega.exe's size. absent refuses an
+# entry that is there. Its strings are in single quotes and the
+# quote around the uninstaller's path is [char]34, as user_path's and
+# authenticode_report's text carries no double quote.
 installed_app() {
   local script
   script="\$ErrorActionPreference = 'Stop'; "
@@ -1342,12 +1348,18 @@ installed_app() {
   script+="\$q = [string][char]34; "
   script+="\$uninstaller = Join-Path \$env:SMOKE_INSTALL_FOLDER 'uninstall.exe'; "
   script+="\$want = [ordered]@{ DisplayName = 'Aggrega'; DisplayVersion = \$env:SMOKE_VERSION; Publisher = 'Cognitio S.r.l.'; "
-  script+="InstallLocation = \$env:SMOKE_INSTALL_FOLDER; UninstallString = \$q + \$uninstaller + \$q; QuietUninstallString = \$q + \$uninstaller + \$q + ' /S' }; "
+  script+="DisplayIcon = \$uninstaller; URLInfoAbout = 'https://aggrega.ai'; HelpLink = 'https://aggrega.ai/docs/install/'; "
+  script+="URLUpdateInfo = 'https://github.com/aggrega-ai/aggrega-cli/releases'; "
+  script+="InstallLocation = \$env:SMOKE_INSTALL_FOLDER; UninstallString = \$q + \$uninstaller + \$q; QuietUninstallString = \$q + \$uninstaller + \$q + ' /S'; "
+  script+="NoModify = '1'; NoRepair = '1' }; "
   script+="switch (\$env:SMOKE_INSTALLED_APP) { "
   script+="'present' { if (-not (Test-Path -LiteralPath \$key)) { throw 'the list of installed apps holds no entry for aggrega' }; "
   script+="\$entry = Get-ItemProperty -LiteralPath \$key; "
   script+="foreach (\$name in \$want.Keys) { \$value = [string]\$entry.\$name; 'entry: ' + \$name + ' = ' + \$value; "
   script+="if (\$value -cne \$want[\$name]) { throw ('the entry' + [char]39 + 's ' + \$name + ' is ' + \$value + ', not ' + \$want[\$name]) } }; "
+  script+="\$size = \$entry.EstimatedSize; 'entry: EstimatedSize = ' + [string]\$size; "
+  script+="\$least = [math]::Floor((Get-Item -LiteralPath (Join-Path \$env:SMOKE_INSTALL_FOLDER 'aggrega.exe')).Length / 1024); "
+  script+="if (-not (\$size -is [int]) -or \$size -lt \$least) { throw ('the entry' + [char]39 + 's EstimatedSize is ' + [string]\$size + ', not a number of KB of at least ' + \$least) }; "
   script+="'ok: the list of installed apps holds the entry for aggrega' } "
   script+="'absent' { if (Test-Path -LiteralPath \$key) { throw 'the list of installed apps still holds an entry for aggrega' }; "
   script+="'ok: the list of installed apps holds no entry for aggrega' } "

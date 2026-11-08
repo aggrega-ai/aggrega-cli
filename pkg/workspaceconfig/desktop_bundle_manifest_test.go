@@ -34,18 +34,19 @@ var userConfigPlaceholder = regexp.MustCompile(`^\$\{user_config\.([^}]+)\}$`)
 // environment carries the variable under exactly the spelling the binary reads
 // (workspaceconfig.EnvWorkspaceRoot); its value is one placeholder naming a
 // setting the manifest declares, since a placeholder naming none reaches the
-// server as its own text — the precondition for reading the setting at all, so it
-// deliberately overlaps the bundle build script's wider check of every
-// placeholder; that setting is not required, since the format's
-// reference resolver builds no launch at all while a required setting is empty,
-// so the server's refusal naming the empty setting would never be served; that
-// setting defaults to the empty string, since a setting with no default and no
-// value leaves its placeholder in the variable as its own text, which the server
-// refuses as a folder that is not there rather than naming the empty setting,
-// while an empty default hands an unset setting over exactly as an emptied one;
-// and that setting carries the title the binary's refusals name it by
-// (workspaceconfig.DesktopWorkspaceFolderSetting), since those refusals tell the
-// person reading them which setting to change.
+// server as its own text — the precondition for reading the setting at all;
+// that setting is not required, since the format's reference resolver builds no
+// launch at all while a required setting is empty, so the server's refusal
+// naming the empty setting would never be served; that setting defaults to the
+// empty string, since a setting with no default and no value leaves its
+// placeholder in the variable as its own text, which the server refuses as a
+// folder that is not there rather than naming the empty setting, while an empty
+// default hands an unset setting over exactly as an emptied one; and that
+// setting carries the title the binary's refusals name it by
+// (workspaceconfig.DesktopWorkspaceFolderSetting), since those refusals tell
+// the person reading them which setting to change. That the placeholder names a
+// declared setting, not required, with a default deliberately overlaps the
+// bundle build script's check of every placeholder's setting.
 //
 // The resolver's handling of required and default settings is the one the
 // packer version scripts/build-mcp-bundle.sh pins publishes, read at

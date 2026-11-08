@@ -52,6 +52,14 @@
 # validation and at pack, so this script checks it itself, before the packer
 # runs, and refuses naming each undeclared key and where the manifest writes it.
 #
+# EACH SETTING SUCH A PLACEHOLDER NAMES MUST BE NOT REQUIRED AND DECLARE A
+# DEFAULT, so the bundle launches its server when the user leaves the setting
+# alone: the packer's reference resolver builds no launch while a required
+# setting has nothing stored, and leaves an optional setting with no default and
+# nothing stored in the launch as the placeholder's own text. The packer
+# accepts both, so this script refuses each, naming the key and where the
+# manifest writes it.
+#
 # Usage:
 #   scripts/build-mcp-bundle.sh --output-dir <dir> [options]
 #
@@ -69,7 +77,8 @@
 # the written bundle, so a caller can capture it; the packer's own report goes
 # to standard error. It exits 1 when the manifest fails validation (the
 # validator's message is shown), when it writes a ${user_config.KEY} naming a
-# setting it does not declare (the key is named), when its launch environment
+# setting it does not declare, or one it declares required or with no default
+# (the key is named), when its launch environment
 # carries no AGGREGA_BUNDLE_VERSION entry, when the stamped version differs from
 # --expect-version, when the source directory holds anything but the manifest,
 # or when packing fails; and 2 on a usage error.
@@ -80,10 +89,9 @@ set -euo pipefail
 # The packer, at one exact version. Raise it deliberately: validate
 # extensions/mcpb/manifest.json under the new version before changing it here,
 # and re-read how the new version's resolver treats a required setting and a
-# setting's default. Both bundle settings rely on it: each is not required and
-# carries a default, because this version substitutes a default only where
-# nothing is stored and builds no launch while a required setting has nothing
-# stored.
+# setting's default, since the settings check below encodes this version's
+# behaviour: a default substituted only where nothing is stored, and no launch
+# while a required setting has nothing stored.
 MCPB_PACKER="@anthropic-ai/mcpb@2.1.2"
 
 # The launch-environment entry the stamped version is written into. The manifest
@@ -187,20 +195,35 @@ node -e '
   fs.writeFileSync(dst, JSON.stringify(manifest, null, 2) + "\n");
 ' "$SOURCE_DIR/manifest.json" "$_ver" "$STAGE/bundle/manifest.json" "$BUNDLE_VERSION_ENV" || exit 1
 
-# Refuse a ${user_config.KEY} naming a setting the manifest does not declare.
+# Refuse a ${user_config.KEY} naming a setting the manifest does not declare, or
+# a setting that would not launch the server when the user leaves it alone.
 # Every string the manifest holds is read, wherever it sits, because a client
-# fills a placeholder wherever the server's launch carries one; each undeclared
-# key is named with the place it is written, in the manifest's own key path.
+# fills a placeholder wherever the server's launch carries one; each key is
+# named with the places it is written, in the manifest's own key path.
+#
+# A setting a placeholder names must be not required and declare a default. The
+# packer's reference resolver, at the version pinned above, builds no launch at
+# all while a required setting has nothing stored, whatever its default; and a
+# setting that is not required, has no default and has nothing stored is left
+# in the launch as the placeholder's own text. This holds that rule for every
+# setting. The Go test of the workspace setting
+# (pkg/workspaceconfig/desktop_bundle_manifest_test.go) holds, for that one
+# setting, that it is declared, not required and has a default, deliberately: it
+# also holds its exact default, empty,
+# beside the variable the binary reads, across the language boundary this
+# script does not reach.
 node -e '
   const fs = require("fs");
   const [src, staged] = process.argv.slice(1);
   const manifest = JSON.parse(fs.readFileSync(staged, "utf8"));
   const declared = manifest.user_config && typeof manifest.user_config === "object" ? manifest.user_config : {};
-  const undeclared = [];
+  const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+  const referenced = new Map();
   const walk = (value, where) => {
     if (typeof value === "string") {
       for (const m of value.matchAll(/\$\{user_config\.([^}]*)\}/g)) {
-        if (!Object.prototype.hasOwnProperty.call(declared, m[1])) undeclared.push([m[1], where]);
+        if (!referenced.has(m[1])) referenced.set(m[1], []);
+        referenced.get(m[1]).push(where);
       }
     } else if (Array.isArray(value)) {
       value.forEach((v, i) => walk(v, where + "[" + i + "]"));
@@ -209,12 +232,28 @@ node -e '
     }
   };
   walk(manifest, "");
-  for (const [key, where] of undeclared) {
-    process.stderr.write("build-mcp-bundle: " + src + " writes ${user_config." + key + "} at " + where +
-      ", and its user_config declares no setting with the key " + key +
-      ": declare that setting, or name one the manifest declares\n");
+  let refused = 0;
+  const refuse = (message) => { process.stderr.write("build-mcp-bundle: " + message + "\n"); refused++; };
+  for (const [key, places] of referenced) {
+    const at = "${user_config." + key + "} at " + places.join(", ");
+    const setting = has(declared, key) ? declared[key] : undefined;
+    if (setting === undefined) {
+      refuse(src + " writes " + at + ", and its user_config declares no setting with the key " + key +
+        ": declare that setting, or name one the manifest declares");
+      continue;
+    }
+    if (setting !== null && typeof setting === "object" && setting.required === true) {
+      refuse(src + " declares user_config." + key + " required, and writes " + at +
+        ": the format reference resolver builds no launch while a required setting has nothing stored, " +
+        "whatever its default, so a user who leaves it alone gets no server; make it not required, with a default");
+    }
+    if (setting === null || typeof setting !== "object" || !has(setting, "default")) {
+      refuse(src + " declares no default for user_config." + key + ", and writes " + at +
+        ": a setting that is not required, has no default and has nothing stored is left in the launch as the " +
+        "placeholder text itself; give it a default");
+    }
   }
-  process.exit(undeclared.length === 0 ? 0 : 1);
+  process.exit(refused === 0 ? 0 : 1);
 ' "$SOURCE_DIR/manifest.json" "$STAGE/bundle/manifest.json" || exit 1
 
 # The packer runs from the staging directory, never from inside the working
