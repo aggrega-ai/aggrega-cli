@@ -24,6 +24,10 @@ func (recipesOnlySource) ClosureComponent(context.Context, ResolvedRef) (types.C
 func (recipesOnlySource) ClosureFeature(context.Context, ResolvedRef) (types.Feature, bool) {
 	return types.Feature{}, false
 }
+
+// ExtendsChainBound is never consulted to any effect: this source serves no
+// Component or Feature, so there is no chain to follow through it.
+func (recipesOnlySource) ExtendsChainBound() int { return 0 }
 func (recipesOnlySource) SchemaLibrary(string) (types.SchemaLibrary, bool) {
 	return types.SchemaLibrary{}, false
 }

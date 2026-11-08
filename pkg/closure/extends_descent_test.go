@@ -31,6 +31,11 @@ func (f fakeExtendsSource) ClosureComponent(_ context.Context, ref closure.Resol
 	return c, ok
 }
 
+// ExtendsChainBound hands the descent the bound the extends rules enforce, as the
+// lazy view does, so a test of how far the descent follows a chain reads that one
+// value.
+func (fakeExtendsSource) ExtendsChainBound() int { return validator.ExtendsChainBound() }
+
 func (f fakeExtendsSource) ClosureFeature(_ context.Context, ref closure.ResolvedRef) (types.Feature, bool) {
 	if !ref.ReadableAs(closure.KindFeature) {
 		return types.Feature{}, false

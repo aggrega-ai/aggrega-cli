@@ -3598,6 +3598,13 @@ func (l *LazyLookup) extendsParentFeature(ctx context.Context, uri string) (type
 	return l.resolveFeatureContext(ctx, uri, l.puller)
 }
 
+// ExtendsChainBound reports the most entities an extends chain may reach,
+// counting the one it starts from — the bound the extends rules enforce
+// (validator.ExtendsChainBound), handed to the dependency resolution that follows
+// chains through this view so that it stops where the rules stop, satisfying
+// closure.ExtendsSource.
+func (l *LazyLookup) ExtendsChainBound() int { return validator.ExtendsChainBound() }
+
 // extendsParents returns this view's resolution of an extends parent, as the
 // extends gate reads one (extendsParentComponent), for a pass that walks chains
 // over a catalog of its own and needs a parent that catalog does not hold

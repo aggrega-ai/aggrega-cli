@@ -8,7 +8,6 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // ExtendsSource reads the Component or the Feature a closure entity reference
@@ -24,6 +23,12 @@ type ExtendsSource interface {
 	// discovery whose caller has withdrawn must not wait on it.
 	ClosureComponent(ctx context.Context, ref ResolvedRef) (types.Component, bool)
 	ClosureFeature(ctx context.Context, ref ResolvedRef) (types.Feature, bool)
+	// ExtendsChainBound reports the most entities an extends chain may reach,
+	// counting the one it starts from — the bound the extends rules enforce where a
+	// chain is merged. The source supplies it, rather than this package reading it
+	// from where it is defined, so the value has one definition and this package
+	// takes no dependency on the rules that define it.
+	ExtendsChainBound() int
 }
 
 // DescendExtendsBases adds to c the base every Component and every Feature in c
@@ -55,7 +60,7 @@ type ExtendsSource interface {
 // # How far it follows a chain
 //
 // A chain is followed as far as the extends rules admit one and no further: a
-// chain may reach validator.ExtendsChainBound() entities counting the one it starts
+// chain may reach src.ExtendsChainBound() entities counting the one it starts
 // from, so the descent follows at most one fewer generation of bases from any
 // entity c held when it was called. That is one value governing both, and a chain
 // running past it is refused by those rules wherever it is merged, so pinning more
@@ -77,7 +82,8 @@ func DescendExtendsBases(ctx context.Context, c *Closure, src ExtendsSource, loo
 	index := entityIndexOf(c)
 	read := map[EntityKey]struct{}{}
 	level := append([]ResolvedRef(nil), c.Entities...)
-	for generation := 1; len(level) > 0 && generation < validator.ExtendsChainBound(); generation++ {
+	bound := src.ExtendsChainBound()
+	for generation := 1; len(level) > 0 && generation < bound; generation++ {
 		sort.SliceStable(level, func(i, j int) bool { return level[i].Key().Less(level[j].Key()) })
 		bases := newWalkState()
 		for _, e := range level {
