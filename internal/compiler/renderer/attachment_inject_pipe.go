@@ -9,20 +9,26 @@ import (
 
 // buildAttachmentInject constructs the top-level TemplateContext.Inject an
 // attachment FeatureRecipe reads, from the attachment's authored
-// IRFeatureEntry.Inject map (mechanism → key → value). Guarantees non-zero
-// OrderedMaps for env/file/arg and builds .All via the shared helper. Custom
-// mechanisms beyond env/file/arg are not surfaced today.
+// IRFeatureEntry.Inject map (mechanism → key → value). Every mechanism the
+// attachment authored is carried: env, file and arg in the pipe's own fields,
+// each empty where the attachment authors nothing under it, and any other
+// mechanism in Additional under its own name, so a template reads
+// .inject.<mechanism> for a custom mechanism exactly as it reads .inject.env.
+//
+// The mechanisms are walked by deliveryMappingMechanisms and placed by
+// injectPipeMechanism — the walk and the placement deliverAttachmentInjectKeys
+// uses to deliver the same attachment into its host's pipe — so the two cannot
+// disagree about which mechanisms an attachment carries. .All is built by the
+// shared helper. Each key map is copied, so the pipe never aliases the entry it
+// was built from.
 func buildAttachmentInject(entry types.IRFeatureEntry) *types.InjectPipe {
-	env, _ := entry.Inject.Get("env")
-	file, _ := entry.Inject.Get("file")
-	arg, _ := entry.Inject.Get("arg")
-	pipe := &types.InjectPipe{
-		Env:  copyOrderedStringMap(env),
-		File: copyOrderedStringMap(file),
-		Arg:  copyOrderedStringMap(arg),
+	pipe := &types.InjectPipe{}
+	for mech, keymap := range deliveryMappingMechanisms(entry.Inject) {
+		dest, keep := injectPipeMechanism(pipe, mech)
+		*dest = copyOrderedStringMap(keymap)
+		keep()
 	}
-	all := buildInjectAll(*pipe)
-	pipe.All = all
+	pipe.All = buildInjectAll(*pipe)
 	return pipe
 }
 

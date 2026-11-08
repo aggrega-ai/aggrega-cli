@@ -1007,17 +1007,7 @@ func walkStruct(v reflect.Value) map[string]any {
 // own fields first, so a name with a field can never also arrive here — and the
 // guard states that precedence rather than resolving a live conflict.
 func mergeUntaggedKeys(v reflect.Value, out map[string]any) {
-	var src templateUntaggedKeys
-	if v.CanInterface() {
-		if u, ok := v.Interface().(templateUntaggedKeys); ok {
-			src = u
-		}
-	}
-	if src == nil && v.CanAddr() && v.Addr().CanInterface() {
-		if u, ok := v.Addr().Interface().(templateUntaggedKeys); ok {
-			src = u
-		}
-	}
+	src := untaggedKeysOf(v)
 	if src == nil {
 		return
 	}
@@ -1027,6 +1017,26 @@ func mergeUntaggedKeys(v reflect.Value, out map[string]any) {
 		}
 		out[k] = walkForTemplate(reflect.ValueOf(val))
 	}
+}
+
+// untaggedKeysOf returns the value as a templateUntaggedKeys, or nil when its type
+// declares no such method — by the value's own method set, or by its pointer's
+// where the value is addressable. It is the one answer to whether a value carries
+// keys no struct tag exposes, read both by the walk that delivers those keys to a
+// template and by the reference check that admits them, so a key the walk delivers
+// is a key the check admits.
+func untaggedKeysOf(v reflect.Value) templateUntaggedKeys {
+	if v.CanInterface() {
+		if u, ok := v.Interface().(templateUntaggedKeys); ok {
+			return u
+		}
+	}
+	if v.CanAddr() && v.Addr().CanInterface() {
+		if u, ok := v.Addr().Interface().(templateUntaggedKeys); ok {
+			return u
+		}
+	}
+	return nil
 }
 
 func walkMap(v reflect.Value) map[string]any {

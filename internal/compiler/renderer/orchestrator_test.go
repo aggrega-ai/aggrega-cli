@@ -825,6 +825,208 @@ stringData:
 	}
 }
 
+// An attachment's .inject carries every mechanism the attachment authored, so its
+// FeatureRecipe reads a custom mechanism by name exactly as it reads env — through
+// the real render, the artifact template evaluated against the attachment's own
+// context and handed to the provider guest. The env read is the control; .all
+// carries the custom mechanism's keys beside env's.
+func TestRenderAll_AttachmentFeatureRecipeReadsACustomMechanismFromItsInject(t *testing.T) {
+	t.Parallel()
+
+	input := testInput()
+	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+		envInj := types.OrderedMap[string]{}
+		envInj.Set("TOKEN_NAME", "name")
+		vaultInj := types.OrderedMap[string]{}
+		vaultInj.Set("VAULT_PATH", "path")
+		inj := types.OrderedMap[types.OrderedMap[string]]{}
+		inj.Set("env", envInj)
+		inj.Set("vault_ref", vaultInj)
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("token", types.IRFeatureEntry{Type: "core/vault-token", Inject: inj})
+		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+		outer.Set("api", inner)
+		return outer
+	}()
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"token"}}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType == "core/compute/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec: types.RecipeSpec{
+						Capability:    "helm-chart",
+						Implements:    "core/compute/api-server",
+						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if featureType == "core/vault-token" {
+				art := types.OrderedMap[types.ArtifactEntry]{}
+				art.Set("reads.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .attachment_name }}
+data:
+  env_read: "{{ .inject.env.TOKEN_NAME }}"
+  custom_read: "{{ .inject.vault_ref.VAULT_PATH }}"
+  all_read: '{{ toJson .inject.all }}'
+`})
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "vault-token"},
+					Spec: types.FeatureRecipeSpec{
+						Capability: "helm",
+						Implements: "core/vault-token",
+						Artifacts:  art,
+					},
+				}, true
+			}
+			return nil, false
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
+	if err != nil {
+		t.Fatalf("an attachment template reading a custom mechanism it authored must render: %v", err)
+	}
+
+	var reads string
+	for k := range result.Files {
+		if strings.Contains(k, "charts/api--token/") && strings.Contains(k, "reads.yaml") {
+			reads = k
+			break
+		}
+	}
+	if reads == "" {
+		t.Fatalf("missing the attachment's artifact under charts/api--token/, keys: %v", fileKeys(result.Files))
+	}
+	body := string(result.Files[reads].Content)
+	// The provider may restyle the document's quoting, so each entry is compared by
+	// its unquoted value rather than by its spelling.
+	got := map[string]string{}
+	for _, line := range strings.Split(body, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), ": ")
+		if !ok {
+			continue
+		}
+		got[key] = strings.Trim(value, `"'`)
+	}
+	for key, want := range map[string]string{
+		"env_read":    "name",
+		"custom_read": "path",
+		"all_read":    `{"TOKEN_NAME":"name","VAULT_PATH":"path"}`,
+	} {
+		if got[key] != want {
+			t.Errorf("%s = %q, want %q; rendered artifact:\n%s", key, got[key], want, body)
+		}
+	}
+}
+
+// The guarded read a FeatureRecipe uses for a mechanism its attachment may or may
+// not author builds either way, through the real render: with the attachment
+// authoring the mechanism it reads the value, and with the attachment authoring no
+// inject: block at all — so .inject holds nothing — it takes the fallback. The
+// guard sits under a with over .inject because hasKey needs a map, and .inject is
+// not one when the attachment authors no block.
+func TestRenderAll_AttachmentFeatureRecipeGuardsACustomMechanismWithOrWithoutAnInjectBlock(t *testing.T) {
+	t.Parallel()
+
+	withBlock := func() types.OrderedMap[types.OrderedMap[string]] {
+		vaultInj := types.OrderedMap[string]{}
+		vaultInj.Set("VAULT_PATH", "path")
+		inj := types.OrderedMap[types.OrderedMap[string]]{}
+		inj.Set("vault_ref", vaultInj)
+		return inj
+	}
+	for _, row := range []struct {
+		name   string
+		inject types.OrderedMap[types.OrderedMap[string]]
+		want   string
+	}{
+		{name: "the attachment authors the mechanism", inject: withBlock(), want: "path"},
+		{name: "the attachment authors no inject block", want: "none"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			input := testInput()
+			input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
+				inner := types.OrderedMap[types.IRFeatureEntry]{}
+				inner.Set("token", types.IRFeatureEntry{Type: "core/vault-token", Inject: row.inject})
+				outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+				outer.Set("api", inner)
+				return outer
+			}()
+			input.FeatureOrder = ir.FeatureOrder{"api": []string{"token"}}
+
+			lookup := renderer.RecipeLookup{
+				Recipe: func(_, componentType string) (*types.Recipe, bool) {
+					if componentType == "core/compute/api-server" {
+						return &types.Recipe{
+							Metadata: types.RecipeMetadata{Name: "api-recipe"},
+							Spec: types.RecipeSpec{
+								Capability:    "helm-chart",
+								Implements:    "core/compute/api-server",
+								ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
+							},
+						}, true
+					}
+					return nil, false
+				},
+				FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+					if featureType == "core/vault-token" {
+						art := types.OrderedMap[types.ArtifactEntry]{}
+						art.Set("reads.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .attachment_name }}
+data:
+  guarded_read: '{{ with .inject }}{{ if hasKey . "vault_ref" }}{{ index . "vault_ref" "VAULT_PATH" }}{{ else }}none{{ end }}{{ else }}none{{ end }}'
+`})
+						return &types.FeatureRecipe{
+							Metadata: types.FeatureRecipeMetadata{Name: "vault-token"},
+							Spec: types.FeatureRecipeSpec{
+								Capability: "helm",
+								Implements: "core/vault-token",
+								Artifacts:  art,
+							},
+						}, true
+					}
+					return nil, false
+				},
+			}
+
+			result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
+			if err != nil {
+				t.Fatalf("the guarded read must build whether or not the attachment authors an inject block: %v", err)
+			}
+			var reads string
+			for k := range result.Files {
+				if strings.Contains(k, "charts/api--token/") && strings.Contains(k, "reads.yaml") {
+					reads = k
+					break
+				}
+			}
+			if reads == "" {
+				t.Fatalf("missing the attachment's artifact under charts/api--token/, keys: %v", fileKeys(result.Files))
+			}
+			body := string(result.Files[reads].Content)
+			got := ""
+			for _, line := range strings.Split(body, "\n") {
+				if key, value, ok := strings.Cut(strings.TrimSpace(line), ": "); ok && key == "guarded_read" {
+					got = strings.Trim(value, `"'`)
+				}
+			}
+			if got != row.want {
+				t.Errorf("guarded_read = %q, want %q; rendered artifact:\n%s", got, row.want, body)
+			}
+		})
+	}
+}
+
 // monitoringFeatureInput builds a RendererInput with a single "mon" feature
 // (core/monitoring) attached to node "api", carrying a scrape_port value.
 // Shared by the FeatureRecipe composed-kind and gate tests.

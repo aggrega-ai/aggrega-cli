@@ -17,10 +17,12 @@ import (
 )
 
 // contextRootField is one root a render context exposes: the name a template
-// reads it by, and the declared type behind that name.
+// reads it by, the declared type behind that name, and the field's index in its
+// struct, which reaches the root's value in a context of that type.
 type contextRootField struct {
-	Name string
-	Type reflect.Type
+	Name  string
+	Type  reflect.Type
+	Index int
 }
 
 // contextRootNames returns the roots a render context exposes to a template, in
@@ -64,7 +66,7 @@ func structRootFields(t reflect.Type) ([]contextRootField, bool) {
 		if skip || name == "" {
 			continue
 		}
-		fields = append(fields, contextRootField{Name: name, Type: f.Type})
+		fields = append(fields, contextRootField{Name: name, Type: f.Type, Index: i})
 	}
 	return fields, true
 }
@@ -120,16 +122,20 @@ func closedRootKeys(ft reflect.Type) ([]string, bool) {
 // leave a stale permitted set admitting or refusing the wrong thing.
 //
 // Depth 2 comes from the same derivation: a root whose declared type is a closed
-// struct admits exactly that struct's own roots, while a root the context walk
+// struct admits that struct's own roots, and the keys its value carries that no
+// field declares but the walk delivers beside them, while a root the context walk
 // delivers as an open keyed map admits any key. Whether a root is open or closed
 // is read off the type and never declared, which is what closes the typo hole
 // under a closed pillar while leaving every optional-key idiom on values, infra,
 // locals and provides working untouched.
 type templateScope struct {
-	// data is a value of the surface's context type. Only the type is read, so a
-	// zero value is enough — a scope never has to carry the data being rendered,
-	// which is what lets a pre-check that runs before a template is evaluated
-	// share one derivation with the evaluation it guards.
+	// data is a value of the surface's context type. The type decides what a scope
+	// admits; the value can only lift a refusal, never add one — for admission it is
+	// read for one thing alone, the keys a closed root carries beyond its declared
+	// fields (see admittedKeys). So a scope declared with a zero value admits the
+	// declared set and nothing more, and a pre-check holding one is at least as
+	// strict as the evaluation it guards while sharing one derivation with it; with
+	// substitutes the value being rendered, which the evaluation also executes.
 	data any
 	// exclude names roots the context type defines but this surface refuses.
 	// Every entry must be a root of the type; validate reports one that is not,
@@ -148,10 +154,13 @@ type templateScope struct {
 
 // with returns the scope carrying the value actually being rendered, and what of
 // that value an author declared sensitive. A scope declared at package level holds
-// a zero value of its context type, because only the type is read to derive what
-// the surface admits; substituting the value at the call site is what lets the
-// surface's declared narrowing and the data the template renders against be the
-// same scope rather than two arguments a caller could pair wrongly.
+// a zero value of its context type, because the type decides what the surface
+// admits and a zero value admits exactly the declared set; the value substituted
+// here can only lift a refusal, never add one — it adds the keys a closed root
+// carries beyond its declared fields (see admittedKeys). Substituting the value at
+// the call site is what lets the surface's declared narrowing and the data the
+// template renders against be the same scope rather than two arguments a caller
+// could pair wrongly.
 //
 // The withheld set is bound here, beside the data, for the same reason: it is
 // spelled in the coordinates of that data and governs nothing else, so a binding
@@ -211,8 +220,8 @@ type templateScopeViolation struct {
 // prepares for the execution — calls checkRefs instead. Both are the same rule
 // over the same walk; only who performed the walk differs.
 //
-// The comparison is over NAMES taken from the context type, never over the
-// context's runtime contents, because a root can be legitimately defined and
+// A refusal rests on NAMES taken from the context type, never on the context's
+// runtime contents, because a root can be legitimately defined and
 // still absent from the delivered data: a pillar declared omitempty is dropped
 // when the node carries nothing for it, so a node with no attachments delivers no
 // attachment pillar at all. Runtime absence therefore cannot tell a retired root
@@ -226,6 +235,11 @@ type templateScopeViolation struct {
 // CLOSED struct — the identity, metadata, delivery, workload and boundary pillars
 // — additionally has its keys checked against the struct's own fields, so a
 // mistyped key halts instead of reaching the emitted artifact as an empty value.
+// The one runtime reading is additive: a closed root's value may carry keys no
+// field declares — the delivery pipe's custom mechanisms — and the check admits
+// those the value being rendered carries, because the walk delivers them; runtime
+// absence still refuses nothing a type admits.
+//
 // What the check removes at both nestings is the ability of a wrapper to launder a
 // name the context does not define into an empty value: a wrapper can supply a
 // default for an absent key, never for a name that does not exist.
@@ -275,30 +289,90 @@ func (s templateScope) admittedRoots() ([]string, bool) {
 	return withoutNames(roots, s.exclude), true
 }
 
-// admittedKeys is one root's depth-2 set less this surface's narrowing. gated is
-// false for a root the type reports open, which admits any key.
+// admittedKeys is one root's depth-2 set less this surface's narrowing, joined by
+// the keys the root's value carries beyond its declared fields. gated is false for
+// a root the type reports open, which admits any key.
+//
+// A type can route keys into a field no tag exposes and hand them to a template
+// through TemplateUntaggedKeys — the delivery pipe's custom mechanisms are such
+// keys — and the walk delivers them at the same level as the declared fields. They
+// are data rather than declaration, so no type names them; the ones admitted are
+// exactly the ones the value being rendered carries, in sorted order so a
+// diagnostic quoting the set reads the same on every run. A scope holding a zero
+// value carries none and admits the declared set alone, as it always has.
+//
+// The surface's narrowing wins over a carried key as it does over a declared one:
+// a carried key spelled like a key the surface refuses is refused, so what a
+// value carries can never re-admit what the surface narrowed away.
 func (s templateScope) admittedKeys(root string) ([]string, bool) {
 	declared, closed := s.declaredKeys(root)
 	if !closed {
 		return nil, false
 	}
-	return withoutNames(declared, s.subGate[root]), true
+	admitted := slices.Clone(withoutNames(declared, s.subGate[root]))
+	for _, key := range withoutNames(s.carriedUntaggedKeys(root), s.subGate[root]) {
+		if !slices.Contains(admitted, key) {
+			admitted = append(admitted, key)
+		}
+	}
+	return admitted, true
+}
+
+// carriedUntaggedKeys names the untagged template keys the value of one root
+// carries in the data this scope holds, sorted; nil where the context type does
+// not define the root, the data or the root's value is nil, or the value carries
+// none. It asks the same lookup the template walk merges from, untaggedKeysOf, so
+// the keys admitted and the keys delivered are one reading.
+func (s templateScope) carriedUntaggedKeys(root string) []string {
+	f, ok := s.rootField(root)
+	if !ok {
+		return nil
+	}
+	v := reflect.ValueOf(s.data)
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	fv := v.Field(f.Index)
+	for fv.Kind() == reflect.Pointer {
+		if fv.IsNil() {
+			return nil
+		}
+		fv = fv.Elem()
+	}
+	untagged := untaggedKeysOf(fv)
+	if untagged == nil {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(untagged.TemplateUntaggedKeys()))
 }
 
 // declaredKeys is one root's depth-2 set as its own type declares it, before this
 // surface's narrowing is applied.
 func (s templateScope) declaredKeys(root string) ([]string, bool) {
-	fields, ok := contextRootFields(s.data)
+	f, ok := s.rootField(root)
 	if !ok {
 		return nil, false
 	}
-	for _, f := range fields {
-		if f.Name != root {
-			continue
-		}
-		return closedRootKeys(f.Type)
+	return closedRootKeys(f.Type)
+}
+
+// rootField is the one lookup of a root, by the name a template reads it by,
+// among the roots this scope's context type exposes: its declared type for the
+// depth-2 set, its index for the value the root holds in the data.
+func (s templateScope) rootField(root string) (contextRootField, bool) {
+	fields, ok := contextRootFields(s.data)
+	if !ok {
+		return contextRootField{}, false
 	}
-	return nil, false
+	for _, f := range fields {
+		if f.Name == root {
+			return f, true
+		}
+	}
+	return contextRootField{}, false
 }
 
 // validate reports every narrowing this scope declares that its context type does

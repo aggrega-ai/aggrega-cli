@@ -196,6 +196,93 @@ func TestEvalTemplate_MistypedKeyUnderClosedPillarHalts(t *testing.T) {
 	}
 }
 
+// A closed root's value can carry keys no field of its type declares — the
+// delivery pipe's custom mechanisms — and a template reads them by name as it reads
+// a declared one. The check admits exactly the keys the value carries: a carried
+// mechanism renders, a name the value does not carry still halts, and the halt
+// lists the carried mechanism beside the declared ones. A scope holding a value
+// that carries none admits the declared set alone.
+func TestEvalTemplate_ACarriedCustomMechanismUnderAClosedRootIsAdmitted(t *testing.T) {
+	t.Parallel()
+	ctx := populatedTemplateContext(t)
+	vault := types.OrderedMap[string]{}
+	vault.Set("VAULT_PATH", "path")
+	ctx.Inject.Additional.Set("vault_ref", vault)
+
+	out, err := EvalTemplate("probe", `{{ .inject.vault_ref.VAULT_PATH }}`, ctx, redact.Keys{})
+	if err != nil {
+		t.Fatalf("a mechanism the pipe carries must be readable by name: %v", err)
+	}
+	if out != "path" {
+		t.Errorf("rendered %q, want %q", out, "path")
+	}
+
+	_, err = EvalTemplate("probe", `{{ .inject.vault_rfe.VAULT_PATH }}`, ctx, redact.Keys{})
+	if err == nil {
+		t.Fatal("a mechanism the pipe does not carry must still halt")
+	}
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
+		t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), ".inject.vault_ref") {
+		t.Errorf("diagnostic does not offer the carried .inject.vault_ref: %v", err)
+	}
+
+	keys, gated := (templateScope{data: populatedTemplateContext(t)}).admittedKeys("inject")
+	if !gated {
+		t.Fatal(".inject must stay a closed root")
+	}
+	if slices.Contains(keys, "vault_ref") {
+		t.Errorf("a value carrying no custom mechanism must admit the declared set alone, got %v", keys)
+	}
+}
+
+// A surface's narrowing wins over what a value carries: a carried key spelled like
+// a key the surface refuses stays refused, and a carried key it does not refuse is
+// still admitted beside the declared ones.
+func TestTemplateScope_ANarrowingWinsOverACarriedKey(t *testing.T) {
+	t.Parallel()
+	ctx := populatedTemplateContext(t)
+	carried := types.OrderedMap[string]{}
+	carried.Set("K", "v")
+	ctx.Inject.Additional.Set("all", carried)
+	ctx.Inject.Additional.Set("vault_ref", carried)
+
+	keys, gated := (templateScope{data: ctx, subGate: map[string][]string{"inject": {"all"}}}).admittedKeys("inject")
+	if !gated {
+		t.Fatal(".inject must stay a closed root")
+	}
+	if slices.Contains(keys, "all") {
+		t.Errorf("a narrowed key must stay refused when the value carries a key of that spelling, got %v", keys)
+	}
+	if !slices.Contains(keys, "vault_ref") {
+		t.Errorf("a carried key the surface does not narrow must be admitted, got %v", keys)
+	}
+}
+
+// A scope holding a zero value of the render context — a nil pipe behind the
+// pointer, or no context value at all behind a nil pointer — admits exactly the
+// keys the pipe's type declares under .inject, and reading it panics nowhere.
+func TestTemplateScope_AZeroValueAdmitsTheDeclaredInjectKeysAlone(t *testing.T) {
+	t.Parallel()
+	want := []string{"env", "file", "arg", "all"}
+	for name, data := range map[string]any{
+		"pointer to a zero context": &types.TemplateContext{},
+		"zero context value":        types.TemplateContext{},
+		"nil context pointer":       (*types.TemplateContext)(nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			keys, gated := (templateScope{data: data}).admittedKeys("inject")
+			if !gated {
+				t.Fatal(".inject must be a closed root")
+			}
+			if !slices.Equal(keys, want) {
+				t.Errorf("admitted %v, want exactly %v", keys, want)
+			}
+		})
+	}
+}
+
 // The anti-requirement of the depth-2 gate: an absent KEY under an OPEN pillar is
 // normal authoring and keeps its missingkey=zero optionality untouched. A gate on
 // an open pillar would break every one of these.
