@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -118,6 +121,102 @@ func TestImportReadsASourceTheAuthorSelectedOutsideTheWorkspace(t *testing.T) {
 		strings.Contains(resp.Error.Message, "--format") {
 		t.Errorf("the refusal %q does not open with its short code and name the field rather than the flag", resp.Error.Message)
 	}
+}
+
+// TestImportOffersADirectoryNoImporterRecognisesWhatCanHelpIt drives the session's
+// refusal of a source no importer's signatures recognise, over a directory holding
+// only a Langflow export and over a lone file no signature matches.
+//
+// The Langflow importer's signature names no file, so it applies to none of a
+// directory's files, and naming its format would refuse the directory again. So
+// the directory's answer offers sending one of its files on its own, or a format
+// whose importer reads a directory — exactly the formats whose importers declare
+// file patterns, computed here from the importers' own declarations, apart from
+// the code under test on purpose, so a defect there cannot move what the test
+// expects — while the
+// file's keeps naming every format the importers advertise. Both keep the
+// condition's codes in the answer's data, which is what a client keys asking for
+// the format on.
+//
+// 🔴 PLANTED DEFECT: in sessionUndetectedFormat (internal/serve/import.go), write
+// `if true || !e.IsDirectory() {`, so a directory is answered in the file's words:
+// the directory row reddens.
+func TestImportOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testing.T) {
+	t.Parallel()
+	srv := importReadableFixture(t)
+	seam, err := importops.BuildSeam(srv.resolvedWorkspace, srv.resolveImportPlugin)
+	if err != nil {
+		t.Fatalf("build the import's seam: %v", err)
+	}
+	var readers, advertised []string
+	for _, importer := range seam.Importers {
+		formats := catalog.ImporterFormats(importer)
+		advertised = appendFormats(advertised, formats)
+		if importer.Spec.Importer == nil {
+			continue
+		}
+		for _, sig := range importer.Spec.Importer.Detect {
+			if len(sig.Files) > 0 {
+				readers = appendFormats(readers, formats)
+				break
+			}
+		}
+	}
+	if len(readers) == 0 || slices.Contains(readers, "langflow") || !slices.Contains(advertised, "langflow") {
+		t.Fatalf("the case rests on langflow being advertised by an importer declaring no file pattern and on "+
+			"another declaring one; advertised %v, declaring patterns %v", advertised, readers)
+	}
+	export, err := os.ReadFile("../compiler/importersocket/testdata/langflow-flow.json")
+	if err != nil {
+		t.Fatalf("read the committed Langflow export: %v", err)
+	}
+	dir := filepath.Join(t.TempDir(), "flows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create the directory source: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "flow.json"), export, 0o644); err != nil {
+		t.Fatalf("seed the directory source: %v", err)
+	}
+	file := filepath.Join(t.TempDir(), "notes.json")
+	if err := os.WriteFile(file, []byte(`{"unrelated": true}`), 0o644); err != nil {
+		t.Fatalf("seed the file source: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name, source, want string
+	}{
+		{"a directory holding a Langflow export", dir, "E0350: import: the source format of " + dir + " was not " +
+			"recognised from its shape by the signatures the importers declare, and a directory is read only " +
+			"through the file patterns its importer declares; send one of its files on its own as source, or send " +
+			"format naming a format whose importer reads a directory (for example " + strings.Join(readers, " or ") +
+			")"},
+		{"a file no signature matches", file, "E0350: import: the source format of " + file + " was not recognised " +
+			"from its shape by the signatures the importers declare; send format to name it explicitly (for " +
+			"example " + strings.Join(advertised, " or ") + ")"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := callDaemonMethod(t, srv, "aggrega/import", map[string]any{"source": tc.source, "dryRun": true})
+			if resp.Error == nil {
+				t.Fatal("a source no importer recognises was imported")
+			}
+			if resp.Error.Message != tc.want {
+				t.Errorf("the refusal reads\n  %q\nwant\n  %q", resp.Error.Message, tc.want)
+			}
+			if d := resp.Error.Data; d == nil || d.Code != "unrecognised-import-format" || d.ShortCode != "E0350" {
+				t.Errorf("the refusal's data = %+v; want code unrecognised-import-format and short code E0350", d)
+			}
+		})
+	}
+}
+
+// appendFormats appends each format not already in list, in order.
+func appendFormats(list, formats []string) []string {
+	for _, f := range formats {
+		if !slices.Contains(list, f) {
+			list = append(list, f)
+		}
+	}
+	return list
 }
 
 // TestImportStillConfinesItsDestination is the other direction over the same

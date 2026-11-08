@@ -68,11 +68,14 @@ var errAmbiguousImportFormat = cerrors.Register("ambiguous-import-format", cerro
 // reads that shape. Its occurrence names the source and every format the
 // catalog's importers advertise, so the reader can name the one they meant, and a
 // client of a protocol surface recognises it by its code rather than by the words
-// of the remedy, which differ per surface.
+// of the remedy, which differ per surface. A directory source is the same
+// condition with a different remedy: it is read only through the file patterns
+// its importer declares, so its occurrence offers importing one of its files on
+// its own, or naming only a format whose importer declares file patterns.
 //
 // It is the counterpart of [ErrAmbiguousImportFormat]: there more than one format
-// claims the source, here none does, and in both only naming the format settles
-// it.
+// claims the source, here none does, and in both naming the format settles it —
+// for a directory, a format whose importer reads one.
 func ErrUnrecognisedImportFormat() error { return errUnrecognisedImportFormat }
 
 var errUnrecognisedImportFormat = cerrors.Register("unrecognised-import-format", cerrors.Meta{

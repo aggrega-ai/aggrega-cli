@@ -290,11 +290,9 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	// than on these words.
 	if undetected := (*importops.UndetectedFormatError)(nil); errors.As(err, &undetected) {
 		return s.writeErrorEnvelope(ctx, req.ID, &jsonRPCError{
-			Code: jsonRPCInvalidParams,
-			Message: "import: the source format of " + undetected.Path() + " was not recognised from its shape by the " +
-				"signatures the importers declare; send format to name it explicitly (" +
-				sessionFormatExamples(undetected.Formats()) + ")",
-			cause: undetected,
+			Code:    jsonRPCInvalidParams,
+			Message: sessionUndetectedFormat(undetected),
+			cause:   undetected,
 		})
 	}
 	if ambiguous := (*importops.AmbiguousFormatError)(nil); errors.As(err, &ambiguous) {
@@ -380,6 +378,30 @@ func sessionImportRecord(e *importops.ImportRecordError) string {
 	return "import: sync was sent, and no record of what an import wrote lists the Aggregate at " + place + " (" +
 		record + ", which every import writes beside its drafts), so its parts cannot be told from parts an author " +
 		"wrote; nothing was written"
+}
+
+// sessionUndetectedFormat words the refusal of a source whose format no
+// importer's signatures recognise, naming the field a request can send.
+//
+// A directory is offered a different remedy from a file, because a directory is
+// read only through the file patterns its importer declares: naming a format
+// whose importer declares none refuses the same directory again. So it is offered
+// sending one of its files on its own, or a format whose importer reads a
+// directory — the formats the refusal itself carries, read off the importers'
+// declarations.
+func sessionUndetectedFormat(e *importops.UndetectedFormatError) string {
+	head := "import: the source format of " + e.Path() + " was not recognised from its shape by the signatures " +
+		"the importers declare"
+	if !e.IsDirectory() {
+		return head + "; send format to name it explicitly (" + sessionFormatExamples(e.Formats()) + ")"
+	}
+	head += ", and a directory is read only through the file patterns its importer declares"
+	if len(e.DirectoryFormats()) == 0 {
+		return head + "; send one of its files on its own as source, since no importer in the workspace's catalog " +
+			"declares file patterns"
+	}
+	return head + "; send one of its files on its own as source, or send format naming a format whose importer " +
+		"reads a directory (" + sessionFormatExamples(e.DirectoryFormats()) + ")"
 }
 
 // sessionFormatExamples names the formats a request may send in the field, or

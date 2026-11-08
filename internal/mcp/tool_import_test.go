@@ -450,6 +450,49 @@ func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
 	}
 }
 
+// TestTheImportToolOffersADirectoryNoImporterRecognisesWhatCanHelpIt drives the
+// tool, through the shared layer's own resolution over the compiler's core
+// importers, at a directory holding only a Langflow export. The Langflow
+// importer's signature names no file, so it applies to none of a directory's
+// files, and naming its format would refuse the directory again: the refusal
+// offers sending one of the directory's files on its own, or a format whose
+// importer reads a directory, and never names langflow. Which formats those are is
+// held to the importers' declarations where the refusal is built; here the case
+// holds that this surface reaches the directory's wording at all.
+func TestTheImportToolOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testing.T) {
+	root, _ := importSourceWorkspace(t, "notes.txt", []byte("notes\n"))
+	dir := filepath.Join(root, "flows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create the directory source: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "flow.json"), readImportFixture(t, langflowFixture), 0o644); err != nil {
+		t.Fatalf("seed the directory source: %v", err)
+	}
+	before := treeUnder(t, root)
+
+	res := callTool(t, importToolServer(t, root), importToolName, map[string]any{"source": "flows"})
+	if !res.IsError {
+		t.Fatalf("a directory no importer recognises was imported rather than refused: %s", res.Content[0].Text)
+	}
+	text := res.Content[0].Text
+	for _, want := range []string{
+		"E0350: " + importToolName + " did not recognise the source format of the directory flows",
+		"send one of its files on its own as 'source', or send 'format' naming a format whose importer reads a " +
+			"directory (one of ",
+		`"langgraph"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the refusal %q does not carry %q", text, want)
+		}
+	}
+	if strings.Contains(text, `"langflow"`) || strings.Contains(text, "--format") {
+		t.Errorf("the refusal offers a format that cannot read a directory, or the terminal's flag: %q", text)
+	}
+	if after := treeUnder(t, root); !slices.Equal(after, before) {
+		t.Errorf("a refused import wrote to the workspace\n--- before ---\n%v\n--- after ---\n%v", before, after)
+	}
+}
+
 // TestTheImportToolRewordsAnUnsettledFormatByItsType pins this surface's two
 // re-wordings of a format the shared layer could not settle. Each names the
 // argument a caller here can send and never the terminal's flag, names the
@@ -457,22 +500,48 @@ func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
 // catalog's importers advertise, or the ones the source was recognised as — and
 // each opens with its condition's short code. Any other error is left to the
 // caller.
+//
+// A directory no importer recognises is offered one of its files on its own, or
+// only the formats whose importers read a directory — never a format that would
+// refuse the same directory again — while a file keeps naming every format.
+//
+// 🔴 PLANTED DEFECT: in importFormatRefusal (tool_import.go), write
+// `if true || !undetected.IsDirectory() {`, so a directory is answered in the
+// file's words: both directory rows redden.
 func TestTheImportToolRewordsAnUnsettledFormatByItsType(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name string
-		err  error
-		want []string
+		name   string
+		err    error
+		want   []string
+		absent []string
 	}{
 		{"no importer recognises the source",
-			&importops.UndetectedFormatError{Source: "mystery.json", Advertised: []string{"langflow", "flowise"}},
-			[]string{"E0350: ", "mystery.json", "'format'", `one of "langflow", "flowise"`}},
+			&importops.UndetectedFormatError{Source: "mystery.json", Advertised: []string{"langflow", "flowise"},
+				DirectoryAdvertised: []string{"langgraph"}},
+			[]string{"E0350: ", "mystery.json", "'format'", `one of "langflow", "flowise"`},
+			[]string{"one of its files", "directory"}},
 		{"no importer advertises a format",
 			&importops.UndetectedFormatError{Source: "mystery.json"},
-			[]string{"E0350: ", "mystery.json", "'format'", "no importer in this workspace's catalog advertises a format to name"}},
+			[]string{"E0350: ", "mystery.json", "'format'", "no importer in this workspace's catalog advertises a format to name"},
+			nil},
+		{"no importer recognises a directory",
+			&importops.UndetectedFormatError{Source: "flows", Directory: true,
+				Advertised: []string{"langflow", "langgraph", "mcp"}, DirectoryAdvertised: []string{"langgraph", "mcp"}},
+			[]string{"E0350: " + importToolName + " did not recognise the source format of the directory flows from the " +
+				"signatures the importers declare, and a directory is read only through the file patterns its " +
+				"importer declares: send one of its files on its own as 'source', or send 'format' naming a format " +
+				`whose importer reads a directory (one of "langgraph", "mcp"), and call again. Nothing was written.`},
+			[]string{`"langflow"`}},
+		{"no importer that reads a directory",
+			&importops.UndetectedFormatError{Source: "flows", Directory: true, Advertised: []string{"langflow"}},
+			[]string{"the directory flows", "send one of its files on its own as 'source' and call again, since no " +
+				"importer in this workspace's catalog declares file patterns. Nothing was written."},
+			[]string{`"langflow"`, "send 'format'"}},
 		{"importers of two formats recognise the source",
 			&importops.AmbiguousFormatError{Source: "flow.json", Matched: []string{"langflow", "nested-flow"}},
-			[]string{"E0339: ", "flow.json", "'format'", `"langflow", "nested-flow"`}},
+			[]string{"E0339: ", "flow.json", "'format'", `"langflow", "nested-flow"`},
+			nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			text, unsettled := importFormatRefusal(tc.err)
@@ -482,6 +551,11 @@ func TestTheImportToolRewordsAnUnsettledFormatByItsType(t *testing.T) {
 			for _, want := range tc.want {
 				if !strings.Contains(text, want) {
 					t.Errorf("the refusal %q does not carry %q", text, want)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(text, absent) {
+					t.Errorf("the refusal %q carries %q", text, absent)
 				}
 			}
 			if strings.Contains(text, "--format") {

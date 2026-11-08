@@ -277,7 +277,9 @@ var importToolSpec = toolSpec{
 		"the parsers the importer reads the source with, the one this workspace's catalog holds for a syntax or " +
 		"the compiler's own for a syntax it holds none for, reading the file named, or of a directory only the files a " +
 		"signature's file patterns select, and no network: a source no signature matches is refused asking for " +
-		"`format` and naming the formats the importers advertise, and a source " +
+		"`format` and naming the formats the importers advertise — or, for a directory, asking for one of its " +
+		"files sent on its own as `source` or a `format` whose importer declares file patterns, naming only " +
+		"those — and a source " +
 		"signatures of more than one format match is refused naming them, rather than guessed at. Send `target`, a " +
 		"provider capability such as compose or helm — the word a Recipe's spec.capability binds to — to have a " +
 		"Manifest drafted beside the importer's drafts as manifest.yaml: each component type the drafted Aggregate " +
@@ -529,6 +531,12 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 // statement rather than a list of this surface's that would stop being true the
 // first time the importers changed. Each opens with its condition's short code, as
 // every refusal naming a registered condition does.
+//
+// A directory no importer recognises is offered a different remedy from a file.
+// A directory is read only through the file patterns its importer declares, so
+// naming a format whose importer declares none would refuse the same directory
+// again: the caller is offered sending one of its files on its own, or a format
+// whose importer reads a directory — only those, as the refusal carries them.
 func importFormatRefusal(err error) (string, bool) {
 	var undetected *importops.UndetectedFormatError
 	if errors.As(err, &undetected) {
@@ -537,9 +545,23 @@ func importFormatRefusal(err error) (string, bool) {
 			b.WriteString(short)
 			b.WriteString(": ")
 		}
-		fmt.Fprintf(&b, "%s did not recognise the source format of %s from the signatures the importers "+
-			"declare, and it does not guess: send 'format' naming the format outright (%s) and "+
-			"call again. Nothing was written.", importToolName, undetected.Path(), formatChoices(undetected.Formats()))
+		if !undetected.IsDirectory() {
+			fmt.Fprintf(&b, "%s did not recognise the source format of %s from the signatures the importers "+
+				"declare, and it does not guess: send 'format' naming the format outright (%s) and "+
+				"call again. Nothing was written.", importToolName, undetected.Path(), formatChoices(undetected.Formats()))
+			return b.String(), true
+		}
+		fmt.Fprintf(&b, "%s did not recognise the source format of the directory %s from the signatures the "+
+			"importers declare, and a directory is read only through the file patterns its importer declares: ",
+			importToolName, undetected.Path())
+		if readers := undetected.DirectoryFormats(); len(readers) > 0 {
+			fmt.Fprintf(&b, "send one of its files on its own as 'source', or send 'format' naming a format whose "+
+				"importer reads a directory (one of %s), and call again.", quotedFormats(readers))
+		} else {
+			b.WriteString("send one of its files on its own as 'source' and call again, since no importer in this " +
+				"workspace's catalog declares file patterns.")
+		}
+		b.WriteString(" Nothing was written.")
 		return b.String(), true
 	}
 	var ambiguous *importops.AmbiguousFormatError

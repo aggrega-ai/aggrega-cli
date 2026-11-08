@@ -34,17 +34,33 @@ import (
 // Matching on the type rather than on the message text is what keeps the two in
 // step: a surface that compared the sentence would keep compiling and silently
 // stop matching the first time either wording moved.
+//
+// A directory source is refused with a different remedy, because naming just any
+// format cannot help it: a directory is read only through the file patterns its
+// importer declares, so a format whose importer declares none refuses the same
+// directory again. Its occurrence therefore offers importing one of the
+// directory's files on its own, or naming one of [DirectoryAdvertised] — read off
+// the importers' declarations, never listed by the host.
 type UndetectedFormatError struct {
 	// Source is the source path as it was received.
 	Source string
 	// Advertised is every format the importers in the catalog advertise, in the
 	// order the recognition read them — the formats a caller may name instead.
 	Advertised []string
+	// Directory is set when the source is a directory.
+	Directory bool
+	// DirectoryAdvertised is every format advertised by an importer whose
+	// signatures declare file patterns, in the order the recognition read them —
+	// the formats whose importer reads a directory, and so the only ones a caller
+	// naming a format for a directory source may usefully name. A format is listed
+	// when one importer advertising it declares patterns.
+	DirectoryAdvertised []string
 }
 
 // Error renders the condition's registered sentence, the source, and the
-// terminal's remedy: the flag that names a format explicitly, and the formats the
-// catalog's importers advertise.
+// terminal's remedy: for a file, the flag that names a format explicitly and the
+// formats the catalog's importers advertise; for a directory, importing one of
+// its files on its own or naming a format whose importer reads a directory.
 func (e *UndetectedFormatError) Error() string { return e.occurrence().Error() }
 
 // Unwrap returns the occurrence of the registered condition, so errors.Is
@@ -55,6 +71,19 @@ func (e *UndetectedFormatError) Unwrap() error { return e.occurrence() }
 // the fields rather than held, so the value a caller constructs and the value
 // the recognition returns render the same text.
 func (e *UndetectedFormatError) occurrence() *cerrors.CompilerError {
+	if e.Directory {
+		remedy := "Import one of the directory's files on its own; no importer in the workspace's catalog declares " +
+			"the file patterns a directory is read through"
+		if len(e.DirectoryAdvertised) > 0 {
+			remedy = "Import one of the directory's files on its own, or pass --format naming a format whose importer " +
+				"reads a directory through the file patterns it declares (" +
+				formatExamples(e.DirectoryAdvertised, "--format ") + ")"
+		}
+		return cerrors.Raise(errUnrecognisedImportFormat, "", cerrors.SourceLocation{},
+			cerrors.ComposeMessage(errUnrecognisedImportFormat,
+				[]string{"directory " + strconv.Quote(e.Source)}, remedy),
+			nil)
+	}
 	return cerrors.Raise(errUnrecognisedImportFormat, "", cerrors.SourceLocation{},
 		cerrors.ComposeMessage(errUnrecognisedImportFormat,
 			[]string{"source " + strconv.Quote(e.Source)},
@@ -70,6 +99,15 @@ func (e *UndetectedFormatError) Path() string { return e.Source }
 // re-wording this refusal names the formats a caller may name without parsing
 // the message.
 func (e *UndetectedFormatError) Formats() []string { return e.Advertised }
+
+// IsDirectory reports whether the source is a directory, so a surface re-wording
+// this refusal offers the directory's remedy rather than the file's.
+func (e *UndetectedFormatError) IsDirectory() bool { return e.Directory }
+
+// DirectoryFormats returns the formats whose importer reads a directory, so a
+// surface re-wording the refusal of a directory names only the formats that can
+// help it.
+func (e *UndetectedFormatError) DirectoryFormats() []string { return e.DirectoryAdvertised }
 
 // AmbiguousFormatError reports a source the signatures of more than one format
 // recognise. It carries the occurrence of [ErrAmbiguousImportFormat], so a
@@ -181,8 +219,9 @@ func SelectFormat(ctx context.Context, explicit string, src *Source, seam Seam) 
 // order without repeats — so two versions of one importer, or two importers of
 // one format, recognise one format. Exactly one format recognised selects it.
 // None is an [*UndetectedFormatError] naming every format the importers
-// advertise; more than one is an [*AmbiguousFormatError] naming the formats
-// recognised. Neither guesses.
+// advertise and, apart, those whose importers declare file patterns; more than
+// one is an [*AmbiguousFormatError] naming the formats recognised. Neither
+// guesses.
 //
 // A file that does not parse in a syntax — its parser reports a halting
 // diagnostic — matches no signature naming that syntax. A syntax that cannot be
@@ -202,10 +241,13 @@ func detectFormat(ctx context.Context, src *Source, seam Seam) (string, error) {
 		}
 	}
 	parsed := map[parseKey]parsedSource{}
-	var advertised, recognised []string
+	var advertised, readsDirectories, recognised []string
 	for _, importer := range seam.Importers {
 		formats := catalog.ImporterFormats(importer)
 		advertised = appendUnseen(advertised, formats...)
+		if declaresFilePatterns(importer) {
+			readsDirectories = appendUnseen(readsDirectories, formats...)
+		}
 		matched, err := importerRecognises(ctx, importer, src, seam, parsed)
 		if err != nil {
 			if readErr := (*SourceReadError)(nil); errors.As(err, &readErr) {
@@ -221,7 +263,8 @@ func detectFormat(ctx context.Context, src *Source, seam Seam) (string, error) {
 	case 1:
 		return recognised[0], nil
 	case 0:
-		return "", &UndetectedFormatError{Source: src.name, Advertised: advertised}
+		return "", &UndetectedFormatError{Source: src.name, Advertised: advertised, Directory: src.directory,
+			DirectoryAdvertised: readsDirectories}
 	default:
 		return "", &AmbiguousFormatError{Source: src.name, Matched: recognised}
 	}
