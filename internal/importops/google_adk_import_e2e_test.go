@@ -34,6 +34,7 @@ package importops
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,6 +43,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -650,5 +653,72 @@ func TestEachGoogleADKDraftBuildsReachingTheGeminiModel(t *testing.T) {
 				t.Errorf("%s compiles its description as %#v, want %q", a.key, compiled["description"], a.description)
 			}
 		})
+	}
+}
+
+// TestAGoogleADKDraftNamingALiteLLMModelHaltsNamingItsModelSocket drafts the
+// committed application whose root names openai/gpt-4o, a model ADK serves
+// through LiteLLM rather than through the Gemini API: the draft wires its model
+// socket to nothing and drafts no Gemini instance, the comment above the
+// instance naming the model and the class's family, and saying the author wires
+// a Gemini model and names it in the agent's configuration; and its build, with
+// a Release supplying the instance's image and nothing else, halts under the
+// required-socket rule's own identity and short code, at the instance's model
+// socket.
+//
+// 🔴 PLANTED DEFECT: in wire (plugins/internal/adkimport/adkimport.go), wire every
+// model the tree names, as a Gemini instance: the draft wires the LiteLLM model,
+// and the case fails on the draft and on the build, which no longer halts.
+func TestAGoogleADKDraftNamingALiteLLMModelHaltsNamingItsModelSocket(t *testing.T) {
+	t.Parallel()
+	res, dir := writtenDirectoryImport(t, googleADKWorkspace(t, nil), googleADKApplication(t, "litellm"), "litellm")
+	if res.Format != "google-adk" || res.Halted() {
+		t.Fatalf("the application was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
+	}
+	draft, text := readCrewDraft(t, dir)
+	const key = "routed-agent"
+	if len(draft.Spec.Components) != 1 || len(draft.Spec.Components[key].Uses) != 0 {
+		t.Errorf("the draft wires the LiteLLM model, or drafts a model instance:\n%s", text)
+	}
+	if want := "# The model connection is left for the author, since the model openai/gpt-4o, which routed_agent " +
+		"names, is one ADK serves through LiteLLM, not through the Gemini API, while core/ai-agent/google-adk takes " +
+		"a Gemini model on its model socket and reads no model name from its environment, so the author wires a " +
+		"Gemini model there and names that model in routed_agent's configuration; the build halts naming the " +
+		"socket until one is wired.\n"; !strings.Contains(text, want) {
+		t.Errorf("the Aggregate does not say %q:\n%s", want, text)
+	}
+
+	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-google-adk\n" +
+		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
+		"        core/ai-agent/google-adk:1.0.0: helm/google-adk:1.0.0\n        core/ai-model/gemini:1.0.0: helm/gemini:1.0.0\n"
+	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
+		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
+		"  manifest: imported-google-adk\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n" +
+		"        " + key + ":\n          infra:\n            image: " + googleADKImage + "\n"
+	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": release} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
+			t.Fatalf("write the %s: %v", file, err)
+		}
+	}
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{ReleasePath: filepath.Join(dir, "release.yaml"),
+		CatalogPaths: googleADKBuildPaths()})
+	if !errors.Is(err, resolver.ErrMissingRequiredSocket()) {
+		t.Fatalf("the build of a draft leaving its model socket unwired did not halt under the required-socket rule: "+
+			"%v", err)
+	}
+	if short, _ := cerrors.ShortCodeOf(err); short != "E0163" {
+		t.Errorf("the halt carries short code %q, want E0163", short)
+	}
+	var multi *resolver.MultiResolverError
+	if !errors.As(err, &multi) || len(multi.Violations) != 1 {
+		t.Fatalf("the halt does not carry one violation: %v", err)
+	}
+	if got, want := multi.Violations[0].Field, ".spec.components."+key+".uses.model"; got != want {
+		t.Errorf("the halt positions at %q, want the instance's model socket %q", got, want)
+	}
+	for _, want := range []string{"model", "core/ai-agent/google-adk"} {
+		if !strings.Contains(multi.Violations[0].Message, want) {
+			t.Errorf("the halt does not name %q: %q", want, multi.Violations[0].Message)
+		}
 	}
 }

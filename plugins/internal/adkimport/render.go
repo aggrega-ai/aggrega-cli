@@ -79,7 +79,8 @@ func writeHeader(b *strings.Builder, apps []*application, unread []string) {
 	b.WriteString(commentLine("", "Not read: the application's code, which defines the tools, callbacks and agents a configuration "+
 		"names by their code, nor the environment file ADK's scaffold writes beside "+RootFile+"; the "+
 		"application runs in the image the Release names for each instance, and loads its configurations itself."))
-	b.WriteString(commentLine("", "ADK states that its Agent Config is experimental and currently supports only Gemini models."))
+	b.WriteString(commentLine("", "ADK states that its Agent Config is experimental. An agent's model is a Gemini model by "+
+		"default; other providers are reached through a LiteLLM model string."))
 	if len(unread) > 0 {
 		b.WriteString(commentLine("", "Not read, since no agent configuration names it: "+commentList(unread)+"."))
 	}
@@ -115,7 +116,8 @@ func writeApplication(b *strings.Builder, app *application) {
 			deprecated = append(deprecated, "the "+class+" "+commentText(a.ref))
 		}
 		if asksOtherModel(app, a) {
-			models = append(models, commentText(a.model)+" ("+commentText(a.ref)+")")
+			models = append(models, commentText(a.model)+" ("+commentText(a.ref)+", served through "+
+				familyOf(a.model)+")")
 		}
 	}
 	if len(subs) > 0 {
@@ -147,9 +149,12 @@ func writeApplication(b *strings.Builder, app *application) {
 	if len(deprecated) > 0 {
 		b.WriteString(commentLine("    ", "Deprecated by ADK in favour of Workflow: "+strings.Join(deprecated, ", ")+"."))
 	}
-	if len(models) > 0 {
-		b.WriteString(commentLine("    ", "Models other agents of the tree ask for, whose requests ADK's Gemini client sends with the "+
-			"key this instance's "+modelSocket+" connection delivers: "+strings.Join(models, ", ")+"."))
+	// The line names the key the instance's model connection delivers, so it is
+	// written only where the instance has that connection.
+	if len(models) > 0 && app.part != nil {
+		b.WriteString(commentLine("    ", "Models other agents of the tree ask for, each with the family ADK serves it "+
+			"through; one whose requests ADK sends to the Gemini API is sent with the key this instance's "+
+			modelSocket+" connection delivers: "+strings.Join(models, ", ")+"."))
 	}
 	if app.part == nil {
 		b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since "+unwiredWhy(app)+

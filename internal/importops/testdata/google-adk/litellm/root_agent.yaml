@@ -1,0 +1,4 @@
+name: routed_agent
+description: Answers questions with a model another provider serves.
+instruction: You answer the user's questions briefly.
+model: openai/gpt-4o

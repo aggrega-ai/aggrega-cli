@@ -192,7 +192,11 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 			tools:       []string{"google_search", "tutor_tools.make_snippet_runner"},
 			notes: []string{"# Not read, since no agent configuration names it: lesson_plan.yaml.\n",
 				"#   - code_tutor_agent.yaml\n", "#   - math_tutor_agent.yaml\n",
-				"# Models other agents of the tree ask for", "gemini-pro-latest (math_tutor_agent)",
+				"# ADK states that its Agent Config is experimental. An agent's model is a Gemini model by default; " +
+					"other providers are reached through a LiteLLM model string.\n",
+				"# Models other agents of the tree ask for, each with the family ADK serves it through; one whose " +
+					"requests ADK sends to the Gemini API is sent with the key this instance's model connection " +
+					"delivers: gemini-pro-latest (math_tutor_agent, served through Gemini).\n",
 				"# Not read: a sub-agent of tutor_root, which is built by the application's code at " +
 					"tutor_agents.review_agent"},
 			carried: []string{"tools.tutor_tools.make_snippet_runner.args.api_key of node code_tutor_agent",
@@ -264,6 +268,21 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 			}
 			if got := decision(t, out, rootName(tc.name)); got.Chosen == nil || got.Chosen.Target != Component {
 				t.Errorf("the root agent is decided as %+v, want an instance of %s", got, Component)
+			}
+			var models int
+			for _, dec := range out.Decisions {
+				if dec.SourceNode.Type != "model" {
+					continue
+				}
+				models++
+				if want := "ADK serves the model " + tc.model + " through its Gemini class, which sends its requests to " +
+					"the Gemini API, so it is drafted as an instance of the Gemini Component; the catalog holds " +
+					modelComponent + ", so " + tc.part + " is an instance of it"; !strings.HasPrefix(dec.Rationale, want) {
+					t.Errorf("the model %s is decided as %q, want it to open %q", dec.SourceNode.ID, dec.Rationale, want)
+				}
+			}
+			if models != 1 {
+				t.Errorf("the import reports %d model decisions, want the tree's model's alone", models)
 			}
 			if !strings.Contains(files(out)["release.yaml"], "#   - infra.image, the container image running the "+
 				"application built on ADK, holding its configurations\n") {
@@ -503,8 +522,11 @@ func TestAConfigPathResolvesAsADKResolvesIt(t *testing.T) {
 }
 
 // TestHowATreesModelIsWired drives each way a tree's model is decided: a model
-// the root names wired; a tree naming none, and one whose model the code builds,
-// left unwired and saying why; two trees naming one model sharing one part; and,
+// whose requests ADK sends to the Gemini API wired, and its decision naming the
+// API its class reaches; a tree naming none, one whose model the code builds,
+// and one naming a model ADK sends elsewhere, left unwired and saying why; a
+// sub-agent's model under an unwired root; two trees naming one model sharing
+// one part; and,
 // where the catalog view holds no Gemini Component, one drafted under the target
 // namespace carrying the label the agent's model socket selects.
 //
@@ -531,6 +553,99 @@ func TestHowATreesModelIsWired(t *testing.T) {
 			t.Errorf("a tree whose model the code builds is drafted as:\n%s", text)
 		}
 	})
+	// A model whose requests ADK does not send to the Gemini API is left unwired,
+	// the draft naming the family ADK serves it through: a LiteLLM model string,
+	// and a Vertex AI resource name, which ADK's Gemini class sends to Vertex AI.
+	// token is a part of the model string a Release entry for it would carry.
+	for _, row := range []struct{ name, model, family, token string }{
+		{"a LiteLLM model string", "openai/gpt-4o", "LiteLLM", "gpt-4o"},
+		{"a Vertex AI resource name", "projects/acme/locations/us-central1/publishers/google/models/gemini-2.5-pro",
+			"Vertex AI", "acme"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			out := importSources(catalog, "", named("root_agent.yaml",
+				"name: routed\ninstruction: Answer.\nmodel: "+row.model+"\n"))
+			d, text := drafted(t, out)
+			why := "the model " + row.model + ", which routed names, is one ADK serves through " + row.family +
+				", not through the Gemini API, while core/ai-agent/google-adk takes a Gemini model on its model " +
+				"socket and reads no model name from its environment, so the author wires a Gemini model there and " +
+				"names that model in routed's configuration; the build halts naming the socket until one is wired"
+			if len(d.Spec.Components) != 1 || len(d.Spec.Components["routed"].Uses) != 0 {
+				t.Errorf("a tree naming %s is drafted wired, or with a model part:\n%s", row.model, text)
+			}
+			if want := "    # The model connection is left for the author, since " + why + ".\n    routed:\n"; !strings.Contains(
+				text, want) {
+				t.Errorf("the Aggregate does not say %q:\n%s", want, text)
+			}
+			if got := decision(t, out, "routed"); !strings.Contains(got.Rationale,
+				"; its model socket is left for the author, since "+why) {
+				t.Errorf("the root agent is decided as %q, want it to say %q", got.Rationale, why)
+			}
+			for _, dec := range out.Decisions {
+				if dec.SourceNode.Type == "model" {
+					t.Errorf("the model %s is decided as a model part: %+v", row.model, dec)
+				}
+			}
+			if release := files(out)["release.yaml"]; strings.Contains(release, row.token) ||
+				strings.Contains(release, "the credential routed presents to the model") {
+				t.Errorf("the Release names an entry or a credential for the unwired model:\n%s", release)
+			}
+		})
+	}
+	// A tree whose root model is unwired has no connection whose key another
+	// agent's model could be sent with, so the Aggregate names no such line, and a
+	// sub-agent's model is decided with the family ADK serves it through alone,
+	// saying nothing of a connection the author has yet to wire.
+	t.Run("a sub-agent's model under an unwired root", func(t *testing.T) {
+		out := importSources(catalog, "",
+			named("helper.yaml", "name: helper\ninstruction: Help.\nmodel: gemini-flash-latest\n"),
+			named("root_agent.yaml", "name: routed\ninstruction: Answer.\nmodel: openai/gpt-4o\nsub_agents:\n"+
+				"  - config_path: helper.yaml\n"))
+		_, text := drafted(t, out)
+		if strings.Contains(text, "Models other agents of the tree ask for") {
+			t.Errorf("the Aggregate names the key of a connection the unwired root does not have:\n%s", text)
+		}
+		want := "; it asks for the model gemini-flash-latest, which ADK serves through Gemini"
+		got := decision(t, out, "helper").Rationale
+		if !strings.Contains(got, want) || strings.Contains(got, "connection") {
+			t.Errorf("the sub-agent is decided as %q, want it to say %q and name no connection", got, want)
+		}
+	})
+	// A model whose requests ADK sends to the Gemini API is wired, serving the
+	// name its class is handed: a Gemma 3 model, served by ADK's Gemma class,
+	// which supports the Gemini API only, and a model written as gemini:model,
+	// served by its Gemini class, which reaches the Gemini API or Vertex AI as the
+	// application's environment chooses.
+	gemmaOnly := "; ADK's Gemma class supports the Gemini API only, not Vertex AI, and the model socket of " +
+		Component + " admits the Gemini API alone"
+	environment := "; the application reaches Gemini through the Gemini API or through Vertex AI as its " +
+		"environment chooses"
+	for _, row := range []struct{ name, model, part, served, family, backend, not string }{
+		{"a Gemma 3 model", "gemma-3-27b-it", "gemma-3-27b-it", "gemma-3-27b-it", "Gemma", gemmaOnly, environment},
+		{"a model named with ADK's Gemini class", "gemini:gemini-2.5-flash", "gemini-2-5-flash", "gemini-2.5-flash",
+			"Gemini", environment, gemmaOnly},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			out := importSources(catalog, "", named("root_agent.yaml",
+				"name: served\ninstruction: Answer.\nmodel: "+row.model+"\n"))
+			d, text := drafted(t, out)
+			if got := d.Spec.Components["served"].Uses[modelSocket][row.part].Target; got != row.part {
+				t.Errorf("the model connection %s targets %q:\n%s", row.part, got, text)
+			}
+			if got := d.Spec.Components[row.part].Values["model"]; got != row.served {
+				t.Errorf("the model part serves %#v, want %q:\n%s", got, row.served, text)
+			}
+			want := "ADK serves the model " + row.served + " through its " + row.family + " class, which sends its " +
+				"requests to the Gemini API"
+			got := decision(t, out, row.model).Rationale
+			if !strings.HasPrefix(got, want) {
+				t.Errorf("the model is decided as %q, want it to open %q", got, want)
+			}
+			if !strings.Contains(got, row.backend) || strings.Contains(got, row.not) {
+				t.Errorf("the model is decided as %q, want it to say %q and not %q", got, row.backend, row.not)
+			}
+		})
+	}
 	t.Run("two trees naming one model share one part", func(t *testing.T) {
 		out := importSources(catalog, "",
 			named("a/root_agent.yaml", "name: first\ninstruction: Answer.\nmodel: gemini-flash-latest\n"),
@@ -566,6 +681,61 @@ func TestHowATreesModelIsWired(t *testing.T) {
 			t.Errorf("the drafted Gemini Component does not carry the label the model socket selects:\n%s", component)
 		}
 	})
+}
+
+// TestServedByMirrorsADKsModelRegistry resolves model strings as ADK 2.13.0's
+// models registry does, and requires for each the family ADK serves it through,
+// whether ADK sends its requests to the Gemini API — the condition a model is
+// wired on — and the model name the class is handed: one row per pattern of its
+// Gemini class, whose two Vertex AI resource names ADK sends to Vertex AI; a
+// Gemma 3 name, served by its Gemma class through the Gemini API too; class:model
+// forms, one naming a Vertex AI resource; and rows for the strings ADK serves
+// any other way — a LiteLLM provider form, LiteLLM's own Gemini form, an
+// Anthropic Vertex AI resource name, an Anthropic, a Gemma-through-Ollama, an
+// Apigee and an OpenAI name — and a string ADK resolves no class for. The rows
+// are written out here, apart from the table they check, so a pattern dropped
+// from or added to that table fails a row.
+//
+// 🔴 PLANTED DEFECT: in modelClasses (models.go), drop the Gemini class's
+// gemma-4.* pattern: the Gemma 4 row resolves to the Gemma class and fails.
+func TestServedByMirrorsADKsModelRegistry(t *testing.T) {
+	const liteLLM = "LiteLLM, if LiteLLM knows the provider it names"
+	for _, tc := range []struct {
+		model, family string
+		geminiAPI     bool
+		name          string
+	}{
+		{"gemini-2.5-flash", "Gemini", true, "gemini-2.5-flash"},
+		{"gemma-4-27b-it", "Gemini", true, "gemma-4-27b-it"},
+		{"model-optimizer-default", "Gemini", true, "model-optimizer-default"},
+		{"projects/acme/locations/us-central1/endpoints/1234567890", "Vertex AI", false,
+			"projects/acme/locations/us-central1/endpoints/1234567890"},
+		{"projects/acme/locations/us-central1/publishers/google/models/gemini-2.5-pro", "Vertex AI", false,
+			"projects/acme/locations/us-central1/publishers/google/models/gemini-2.5-pro"},
+		{"gemini:gemini-2.5-flash", "Gemini", true, "gemini-2.5-flash"},
+		{"gemini:projects/acme/locations/us-central1/endpoints/1234567890", "Vertex AI", false,
+			"projects/acme/locations/us-central1/endpoints/1234567890"},
+		{"gemma-3-27b", "Gemma", true, "gemma-3-27b"},
+		{"openai/gpt-4o", "LiteLLM", false, "openai/gpt-4o"},
+		{"vertex_ai/claude-3-sonnet", "LiteLLM", false, "vertex_ai/claude-3-sonnet"},
+		{"ollama/llama3", "LiteLLM", false, "ollama/llama3"},
+		{"gemini/gemini-2.5-flash", liteLLM, false, "gemini/gemini-2.5-flash"},
+		{"projects/acme/locations/us-east5/publishers/anthropic/models/claude-sonnet-4", liteLLM, false,
+			"projects/acme/locations/us-east5/publishers/anthropic/models/claude-sonnet-4"},
+		{"claude-sonnet-4", "Anthropic", false, "claude-sonnet-4"},
+		{"ollama/gemma3:4b", "Gemma, through Ollama", false, "ollama/gemma3:4b"},
+		{"apigee/x", "Apigee", false, "apigee/x"},
+		{"gpt-4o", "OpenAI", false, "gpt-4o"},
+		{"my-own-model", "", false, "my-own-model"},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			got := servedBy(tc.model)
+			if got.family != tc.family || got.geminiAPI != tc.geminiAPI || got.name != tc.name {
+				t.Errorf("servedBy(%q) is %+v; want family %q, Gemini API %v, name %q", tc.model, got, tc.family,
+					tc.geminiAPI, tc.name)
+			}
+		})
+	}
 }
 
 // TestTwoImportsAreByteIdentical imports each committed application twice and

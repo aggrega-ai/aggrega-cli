@@ -210,8 +210,9 @@ var plantedEnvFileValues = []string{
 // graph_entrypoint, triage its description, wired on checkpointer_db to one
 // instance of core/datastore/postgres, since the checkpointer names no backend;
 // no recursion_limit written and no model connection, each left as the comment
-// above the graph says; and a Release with an entry per graph leaving its image,
-// then one for the datastore.
+// above the graph says; and a Release stating once, above the first graph, what
+// each graph's image holds and the variables it is handed, with an entry per
+// graph leaving its image, then one for the datastore.
 //
 // 🔴 PLANTED DEFECT: in readGraphs (config.go), range over sortedKeys of the
 // graphs object instead of members: support is drafted before triage, and the
@@ -253,7 +254,10 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 	}
 	for _, want := range []string{
 		"# The model connection is left for the author, since the configuration names no model",
-		"# Not carried, since langgraph build reads them to build the image: dependencies, python_version.",
+		"# Not read: the application's code, which defines each graph; it runs in the image the Release names for " +
+			"each graph.\n",
+		"# Not carried, since they configure the server image langgraph build builds, and the image the Release " +
+			"names is the application's own: dependencies, python_version.\n",
 		"# Not carried, since core/ai-agent/langgraph takes no value for them: http.",
 		"# Not carried, since core/ai-agent/langgraph takes no value for them: checkpointer.ttl.",
 		"# The store configures the memory store",
@@ -267,9 +271,33 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 	if got, want := componentKeys(t, release), []string{"triage", "support", "postgres"}; !slices.Equal(got, want) {
 		t.Errorf("the Release holds %v, want %v:\n%s", got, want, release)
 	}
-	if !strings.Contains(release, "#   - infra.image, the container image running the application, which langgraph "+
-		"build builds from its configuration\n") {
-		t.Errorf("the Release does not leave the image for the Release:\n%s", release)
+	if got := strings.Count(release, "    #   - infra.image, the container image running the application\n"); got != 2 {
+		t.Errorf("the Release leaves the image for the Release above %d graphs, want both:\n%s", got, release)
+	}
+	// The image contract opens the Release's graphs once: the application's own
+	// image, and the variables the Recipes hand it.
+	if got := strings.Count(release, imageContract); got != 1 || !strings.HasPrefix(strings.SplitN(release,
+		"  components:\n", 2)[1], imageContract) {
+		t.Errorf("the Release states the image contract %d times, want once, above the first graph:\n%s", got, release)
+	}
+	for _, want := range []string{
+		"    # Each graph's image is the application's own, not the server image langgraph build builds: its code, " +
+			"with LangGraph installed.\n",
+		"    # It is handed, for its code to read, the graph to run as LANGGRAPH_GRAPH_ENTRYPOINT, the model's name " +
+			"as OPENAI_MODEL, the checkpointer store's host and port as LANGGRAPH_CHECKPOINTER_HOST and " +
+			"LANGGRAPH_CHECKPOINTER_PORT, and a password attached on the checkpointer_db connection as " +
+			"LANGGRAPH_CHECKPOINTER_PASSWORD.\n",
+		"    # It is also handed the model's address as OPENAI_BASE_URL and a key attached on the model connection " +
+			"as OPENAI_API_KEY, which the OpenAI client library reads, and recursion_limit as " +
+			"LANGGRAPH_DEFAULT_RECURSION_LIMIT, which LangGraph reads.\n",
+		"    # An inject: block on the graph's own instance, through an entry reading graph_entrypoint alone, " +
+			"replaces LANGGRAPH_GRAPH_ENTRYPOINT with the name it writes; one on the model connection replaces " +
+			"OPENAI_MODEL, and one on the checkpointer_db connection the store's host and port, with the names it " +
+			"writes.\n",
+	} {
+		if !strings.Contains(release, want) {
+			t.Errorf("the Release does not say %q:\n%s", want, release)
+		}
 	}
 	if got := len(out.Files); got != 2 {
 		t.Errorf("the import drafted %d files, want the Aggregate and the Release alone: %v", got, files(out))

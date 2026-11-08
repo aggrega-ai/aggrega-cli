@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpimport"
 )
 
 // agent is one declarative agent a source declares, as the draft writes it.
@@ -68,26 +67,23 @@ type tool struct {
 	kind, name string
 	// description is the tool's, nil where it states none.
 	description *string
-	// url is the address of an MCP server, for a tool of kind mcp.
+	// url is the address of an MCP server, for a tool of kind mcp, at which the
+	// model's provider reaches it.
 	url text
-	// connection is the connection the agent reaches the tool on.
+	// connection is the connection the declarative agent states for the tool,
+	// whose key the draft names in the Release for review.
 	connection connection
 	// approval is the tool's approval mode as declared, and allowed the tools of
 	// its server the agent may call, for a tool of kind mcp.
 	approval string
 	allowed  []string
-	// key is the instance's key for a tool of kind mcp, which the draft drafts as
-	// an instance of the MCP tool; ref names it in a report.
-	key, ref string
-	// endpoint is the address the instance is reached at, as the draft writes it,
-	// and parts the parts of the url it leaves out, in the order the url writes
-	// them; left says why no address is written, empty where one is.
-	endpoint *string
-	parts    []mcpimport.AddressPart
-	left     string
+	// ref names a tool of kind mcp in a report. The draft drafts no instance of
+	// one: the model's provider, not the application, reaches it.
+	ref string
 }
 
-// mcp reports whether the tool is an MCP server the agent reaches.
+// mcp reports whether the tool is an MCP server, which Agent Framework sends to
+// the model's provider as a hosted tool.
 func (t *tool) mcp() bool {
 	return t.kind == mcpKind
 }
@@ -116,8 +112,9 @@ func (t text) literal() bool {
 type statedValue struct {
 	field string
 	text  text
-	// marked is set for a value the format marks as a credential.
-	marked bool
+	// marked is set for a value the format marks as a credential, and server for
+	// an MCP server's url, a member of an MCP server's configuration.
+	marked, server bool
 	// emptied is set where the credential decision wrote the value empty.
 	emptied bool
 }

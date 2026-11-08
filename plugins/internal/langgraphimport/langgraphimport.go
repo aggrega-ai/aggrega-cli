@@ -25,8 +25,8 @@
 // memory store (store, its semantic-search index and the time its items live),
 // and the environment the application runs with (env): an object of names to
 // values, or the path of a file of KEY=VALUE lines. Its other members configure
-// the image langgraph build builds — dependencies, python_version, base_image
-// and the like — or the server inside it.
+// the server image langgraph build builds — dependencies, python_version,
+// base_image and the like — or the server inside it.
 //
 // The importer reads the configuration and nothing else. The application's code
 // is never among the sources: a directory is handed to the importer as the file
@@ -59,8 +59,10 @@
 // is wired.
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
-// for the Release each graph's image, which langgraph build builds from the
-// configuration. Each datastore has an entry of its own, so the Release places
+// for the Release each graph's image: the application's own, its code with
+// LangGraph installed, rather than the server image langgraph build builds, and
+// a comment above the first graph names the variables the image is handed. Each
+// datastore has an entry of its own, so the Release places
 // it with the graphs. The Release's environment and its Manifest are left unset,
 // each named in a comment, since no source names either and the import drafts no
 // Manifest.

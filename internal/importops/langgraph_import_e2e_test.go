@@ -25,9 +25,10 @@ package importops
 //   - two imports of one application are byte-identical;
 //   - a configuration the parser refuses halts the import with the parser's reason;
 //   - each draft builds, once the author adds a model and wires each graph to it,
-//     with a Release supplying each graph's image and the credential on its model
-//     connection: each graph is given the address of the datastore its
-//     checkpointer names, and the compiled graph carries its import path.
+//     with a Release supplying each graph's image and the credentials on its
+//     connections: each graph is given the address of the datastore its
+//     checkpointer names and exactly the variables the drafted Release's comment
+//     on the image names, and the compiled graph carries its import path.
 //
 // The fixtures are described in testdata/langgraph/README.md.
 
@@ -35,6 +36,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -159,8 +161,9 @@ var langgraphApplications = []struct {
 // checkpointer's backend, that Component: an instance of core/ai-agent/langgraph
 // per graph, in the order the configuration writes them, carrying its import path
 // as graph_entrypoint and wired on checkpointer_db to the datastore, with no
-// model connection; the Release an entry per graph, leaving its image, and one
-// for the datastore, so every instance is placed.
+// model connection; the Release an entry per graph, leaving its image, which it
+// says is the application's own, and one for the datastore, so every instance is
+// placed.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/langgraph-importer/main.go), write
 // `{Path: "graphs", Is: "array"}` in the langgraph.json signature: both rows are
@@ -185,9 +188,12 @@ func TestEveryLangGraphApplicationIsRecognisedAndDraftedAsAgentsWiredToTheirData
 				t.Errorf("the Aggregate holds %v and the Release %v, want %v and %v", aggregateKeys, releaseKeys,
 					a.aggregateKeys, a.releaseKeys)
 			}
-			if !strings.Contains(release, "#   - infra.image, the container image running the application, which "+
-				"langgraph build builds from its configuration\n") {
+			if !strings.Contains(release, "#   - infra.image, the container image running the application\n") {
 				t.Errorf("the Release does not leave the graphs' image for the Release:\n%s", release)
+			}
+			if !strings.Contains(release, "# Each graph's image is the application's own, not the server image "+
+				"langgraph build builds: its code, with LangGraph installed.\n") {
+				t.Errorf("the Release does not say what the graphs' image holds:\n%s", release)
 			}
 
 			var draft graphDraft
@@ -539,7 +545,9 @@ func langgraphBuildPaths(local string) []string {
 // the draft leaves — an OpenAI model instance, gpt-4o, and each graph's model
 // connection to it, every other line kept as drafted — and writes a Manifest
 // realizing every Component on helm and a Release supplying only each graph's
-// image and a credential on its model connection. A drafted datastore Component,
+// image and a credential on its model connection and on its checkpointer_db
+// connection, so every variable the drafted Release's image comment names is
+// rendered. A drafted datastore Component,
 // written under dir's components/, is laid with the scratch Recipe in local. It
 // returns the Release's path, which replaces the drafted Release.
 func writeGraphRelease(t *testing.T, dir, local string, graphs []string, datastore, component string) string {
@@ -577,7 +585,10 @@ func writeGraphRelease(t *testing.T, dir, local string, graphs []string, datasto
 		b.WriteString("        " + g + ":\n          infra:\n            image: " + graphImage + "\n" +
 			"          uses:\n            model:\n              gpt-4o:\n                features:\n" +
 			"                  credential:\n                    type: core/referenced-secret\n" +
-			"                    infra:\n                      origin: model-key\n")
+			"                    infra:\n                      origin: model-key\n" +
+			"            checkpointer_db:\n              " + datastore + ":\n                features:\n" +
+			"                  credential:\n                    type: core/referenced-secret\n" +
+			"                    infra:\n                      origin: checkpointer-password\n")
 	}
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": b.String()} {
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
@@ -590,13 +601,52 @@ func writeGraphRelease(t *testing.T, dir, local string, graphs []string, datasto
 // graphImage is the image the Release names for every graph.
 const graphImage = "ghcr.io/example/support-desk:1.0.0"
 
+// variableName matches an environment variable's name as the drafted Release's
+// comments write one: upper case, in at least two parts joined by underscores.
+var variableName = regexp.MustCompile(`\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b`)
+
+// imageContractVariables returns, in the order they are first written, the
+// variables the drafted Release's comment on each graph's image names: read from
+// the line opening that comment, "Each graph's image is the application's own",
+// and every comment line after it that is not a list entry, up to the first list
+// entry or the first line that is no comment — so the emitted text is the one
+// source of the list. It fails the test where the Release states no such comment
+// or it names no variable.
+func imageContractVariables(t *testing.T, release string) []string {
+	t.Helper()
+	var names []string
+	in := false
+	for _, line := range strings.Split(release, "\n") {
+		if !in {
+			in = strings.HasPrefix(line, "    # Each graph's image is the application's own")
+			if !in {
+				continue
+			}
+		} else if !strings.HasPrefix(line, "    # ") || strings.HasPrefix(line, "    #   ") {
+			break
+		}
+		for _, name := range variableName.FindAllString(line, -1) {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	if len(names) == 0 {
+		t.Fatalf("the drafted Release states no image comment naming a variable:\n%s", release)
+	}
+	return names
+}
+
 // TestEachLangGraphDraftBuildsReachingTheDatastoreItsCheckpointerNames drafts
 // each committed application and builds the draft on helm through the
 // build-faithful harness, once the author's acts the draft leaves are made — a
 // model instance each graph is wired to and, for a drafted datastore, a Recipe —
 // with a Release supplying each graph's image and a credential on its model
-// connection: each graph is given, as LANGGRAPH_CHECKPOINTER_HOST and _PORT, the
-// address of the datastore its checkpointer names; and the compiled graph's
+// connection and on its checkpointer_db connection: each graph is given, as
+// LANGGRAPH_CHECKPOINTER_HOST and _PORT, the address of the datastore its
+// checkpointer names; each graph's Deployment renders exactly the LangGraph and
+// OpenAI variables the drafted Release's comment on the image names, read from
+// that comment's text; and the compiled graph's
 // values carry each graph's import path as graph_entrypoint, and recursion_limit
 // at the Component's default, 25 — read from the compiled graph, which carries
 // both whatever names the Recipe delivers them under.
@@ -615,10 +665,36 @@ func TestEachLangGraphDraftBuildsReachingTheDatastoreItsCheckpointerNames(t *tes
 				graphs = append(graphs, key)
 			}
 			slices.Sort(graphs)
+			drafted, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
+			if err != nil {
+				t.Fatalf("read the drafted Release: %v", err)
+			}
+			contract := imageContractVariables(t, string(drafted))
 			result := pipelinetest.Build(t, pipelinetest.Input{
 				ReleasePath:  writeGraphRelease(t, dir, local, graphs, a.datastore, a.component),
 				CatalogPaths: langgraphBuildPaths(local),
 			})
+			for _, g := range graphs {
+				rendered := helmVariableNames(t, result.Artifacts, g)
+				// Every variable the drafted Release's image comment names is one the
+				// Recipe renders: the build attaches a credential on both connections,
+				// so the key and the password render too, and nothing is left out.
+				for _, name := range contract {
+					if !slices.Contains(rendered, name) {
+						t.Errorf("the drafted Release says %s is handed %s, and the build renders no such variable: %v",
+							g, name, rendered)
+					}
+				}
+				// Every variable the Recipe renders under the LangGraph or OpenAI names is
+				// one the comment names, so the comment leaves none of them out.
+				for _, name := range rendered {
+					if (strings.HasPrefix(name, "LANGGRAPH_") || strings.HasPrefix(name, "OPENAI_")) &&
+						!slices.Contains(contract, name) {
+						t.Errorf("the build hands %s %s, which the drafted Release's image comment does not name: %v",
+							g, name, contract)
+					}
+				}
+			}
 			for _, g := range graphs {
 				raw, ok := result.IRGraph.Spec.ValuesMapping.Get(g)
 				if !ok {

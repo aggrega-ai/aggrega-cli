@@ -6,8 +6,7 @@
 // built on Agent Framework loads an agent from — and drafts an Aggregate holding
 // one instance of the standard library's Agent Framework agent,
 // core/ai-agent/agent-framework, per declarative agent, wired to the model its
-// declaration names and to each MCP server it reaches, and a Release beside it
-// naming what the Release supplies.
+// declaration names, and a Release beside it naming what the Release supplies.
 //
 // The importer guest (plugins/agent-framework-importer) holds the descriptor,
 // the signature a declarative agent is recognised by and the export wiring;
@@ -26,8 +25,10 @@
 // whose code the application binds, a tool the model's provider runs, or an MCP
 // server reached at its url, with the approval mode its calls take and the tools
 // of the server the agent may call. A member written as =Env.NAME is read by
-// Agent Framework from the environment variable NAME, and any other member
-// opening with = is an expression the application computes. Agent Framework
+// Agent Framework from the environment variable NAME only where the application
+// loads the declarative agent with safe_mode off and a .NET runtime is present,
+// and is otherwise taken as its text; any other member opening with = is an
+// expression the application computes. Agent Framework
 // builds a prompt agent from a document whose kind is Prompt, in any letter case,
 // or Agent.
 //
@@ -65,24 +66,21 @@
 // and one naming no id is wired to nothing, and the draft says why. An anonymous
 // connection is written as the connection's unauthenticated value.
 //
-// Each tool of kind mcp is drafted as the MCP importer drafts a server someone
-// else runs: an instance of core/ai-tool/mcp, keyed by the tool's name and
-// carrying its description, whose Release entry holds its url as infra.endpoint
-// without any part that carries a key — each part it leaves out, the url's user
-// part, its query and its fragment, written in the comment above the entry —
-// wired to the agent's instance on its tools socket. Its approval mode and the
-// tools it allows are the application's,
-// named in a comment above it. A tool of any other kind is reported in a decision
-// choosing nothing.
+// A tool of kind mcp becomes no Component and no connection: Agent Framework
+// sends the server to the model's provider as a hosted tool, and the provider,
+// not the application, reaches it at its url, so nothing the draft deploys
+// reaches it. The comment above the agent's instance names the server, says so,
+// and names its description, its approval mode and the tools it allows; its url
+// is written, whole, in the comment above the agent's entry of the Release. A
+// tool of any other kind is reported in a decision choosing nothing too.
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declarative agent states: each instance's image,
 // which runs the application and holds its declarative agents, and the
-// credential each presents to its model and to each MCP server whose connection
-// presents a key. Each model has an entry of its own, so the Release places it
-// with the instances. The Release's environment and its Manifest are left unset,
-// each named in a comment, since no source names either and the import drafts no
-// Manifest.
+// credential each presents to its model. Each model has an entry of its own, so
+// the Release places it with the instances. The Release's environment and its
+// Manifest are left unset, each named in a comment, since no source names either
+// and the import drafts no Manifest.
 //
 // # Credential values
 //
@@ -90,17 +88,14 @@
 // MCP server — is the one member Agent Framework marks as a credential: its
 // loader reads it alone with its value kept out of its own logs. Each one a
 // declarative agent writes as a literal is written into a comment above the
-// agent's entry of the Release, for the author to attach where the Component
-// takes it, and handed to the plugin kit's credential decision,
-// importer.CarryCredentials, as a value its format marks as a credential; an MCP
-// server's url, written as its instance's infra.endpoint, and each part of it
-// the endpoint leaves out, as members of an MCP server's configuration; and a
-// model's endpoint as an input its format marks as no credential. By default
-// each is carried as written and named in a credential-carried warning by its
-// agent and its field — a part of a url by the url's field and the part's name —
-// never by its value; where the empty_credentials setting asks for its class,
-// each is written with no value and reported under credential-emptied, a part of
-// a url named alone in the comment. A value written as a
+// agent's entry of the Release, for review, and handed to the plugin kit's
+// credential decision, importer.CarryCredentials, as a value its format marks as
+// a credential; an MCP server's url, written whole in the same comment, as a
+// member of an MCP server's configuration; and a model's endpoint as an input its
+// format marks as no credential. By default each is carried as written and named
+// in a credential-carried warning by its agent and its field, never by its value;
+// where the empty_credentials setting asks for its class, each is written with no
+// value and reported under credential-emptied. A value written as a
 // reference to an environment variable holds none, so it is named by its
 // variable whatever the setting says, and a value written as any other
 // expression is named as one and never written.
@@ -112,7 +107,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpimport"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -147,11 +141,10 @@ const (
 	modelAPI       = "openai"
 )
 
-// The sockets of Component a model and an MCP server are wired to.
-const (
-	modelSocket = "model"
-	toolsSocket = "tools"
-)
+// modelSocket is the socket of Component a model is wired to. The draft wires
+// nothing to its tools socket: an MCP server a declarative agent names is
+// reached by the model's provider, not by the application.
+const modelSocket = "model"
 
 // where completes each credential report, naming where the value is written.
 const where = "in the Release the draft writes"
@@ -229,12 +222,9 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	parts := wire(in, agents, used)
 	for _, a := range agents {
 		for _, t := range a.tools {
-			if !t.mcp() {
-				continue
+			if t.mcp() {
+				t.ref = a.ref + "#" + firstOf(t.name, mcpKind)
 			}
-			t.ref = a.ref + "#" + firstOf(t.name, mcpKind)
-			t.key = importer.UniqueKey(used, firstOf(t.name, mcpKind))
-			address(t)
 		}
 		a.stated = statedValues(a)
 	}
@@ -273,14 +263,6 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		}
 		entities = append(entities, aggrega.EmittedEntity{Kind: "Component", Name: p.component, Mode: mode, Body: body,
 			SourceRef: p.ref, DecisionRef: "decision:" + p.ref})
-	}
-	for _, a := range agents {
-		for _, t := range a.tools {
-			if t.mcp() {
-				entities = append(entities, aggrega.EmittedEntity{Kind: "Component", Name: mcpimport.Component,
-					Mode: "reference", SourceRef: t.ref, DecisionRef: "decision:" + t.ref})
-			}
-		}
 	}
 
 	name := namespace + "/flow"
@@ -354,6 +336,18 @@ func textKey(t text) string {
 	return t.value
 }
 
+// envReference names a value a declarative agent writes as =Env.<variable>, with
+// the variable written as name, and says when Agent Framework reads it from the
+// environment: only where the application loads the declarative agent with
+// safe_mode off and a .NET runtime is present. Every sentence of the drafts and
+// the decisions naming such a value names it through here, so each states the
+// same condition.
+func envReference(name string) string {
+	return "=Env." + name + ", which Agent Framework reads from the environment variable " + name + " only where the " +
+		"application loads the declarative agent with AgentFactory(safe_mode=False), Agent Framework's own security " +
+		"setting, and a .NET runtime is present; otherwise the value is the expression's text as written"
+}
+
 // modelName is the name a model part is keyed by: its id, or, for an id written
 // as a reference, the variable it reads.
 func modelName(id text) string {
@@ -388,8 +382,8 @@ func unwiredWhy(a *agent) string {
 	case !m.present:
 		return "the declarative agent declares no model, so the application's code supplies its chat client"
 	case m.provider.variable != "":
-		return "its model names its provider through the environment variable " + commentText(m.provider.variable) +
-			", which the import does not read"
+		return "its model names its provider as " + envReference(commentText(m.provider.variable)) +
+			", and the import does not read that variable"
 	case m.provider.expression:
 		return "its model names its provider through an expression the application computes, which the import " +
 			"does not evaluate"
@@ -407,36 +401,12 @@ func unwiredWhy(a *agent) string {
 	return ""
 }
 
-// address writes the address an MCP server is reached at as its instance's
-// infra.endpoint takes it — as the MCP importer writes a remote server's — and
-// keeps the parts of its url it leaves out, each as the url writes it, since a
-// literal url holds no reference of the format's inside it; and, where no
-// address is written, why.
-func address(t *tool) {
-	switch {
-	case t.url.variable != "":
-		t.left = "infra.endpoint, which the declarative agent reads from the environment variable " + t.url.variable
-		return
-	case t.url.expression:
-		t.left = "infra.endpoint, which the declarative agent computes with an expression the import does not evaluate"
-		return
-	case !t.url.literal():
-		t.left = "infra.endpoint, since the tool names no url"
-		return
-	}
-	endpoint, parts := mcpimport.RemoteEndpoint(t.url.value)
-	t.parts = parts
-	if endpoint == "" {
-		t.left = "infra.endpoint, since the url holds no address"
-		return
-	}
-	t.endpoint = &endpoint
-}
-
-// statedValues returns the values an agent's declaration states for its
-// connections that the draft names in the Release for review, in the order it
-// writes them: its model's endpoint where its model is wired to nothing, its
-// model's key, then each MCP server's key, in the order it lists its tools.
+// statedValues returns the values an agent's declaration states for its model
+// and its MCP servers that the draft names in the Release for review, in the
+// order it writes them: its model's endpoint where its model is wired to
+// nothing, its model's key, then, for each MCP server in the order it lists its
+// tools, the server's url and its key. The draft holds no instance of an MCP
+// server, so its url is written here whole, as the declarative agent writes it.
 func statedValues(a *agent) []statedValue {
 	var out []statedValue
 	c := a.model.connection
@@ -447,9 +417,14 @@ func statedValues(a *agent) []statedValue {
 		out = append(out, statedValue{field: "model.connection." + c.keyField, text: c.key, marked: true})
 	}
 	for _, t := range a.tools {
-		if t.mcp() && t.connection.keyField != "" {
-			out = append(out, statedValue{field: "tools." + firstOf(t.name, mcpKind) + ".connection." +
-				t.connection.keyField, text: t.connection.key, marked: true})
+		if !t.mcp() {
+			continue
+		}
+		field := "tools." + firstOf(t.name, mcpKind)
+		out = append(out, statedValue{field: field + ".url", text: t.url, server: true})
+		if t.connection.keyField != "" {
+			out = append(out, statedValue{field: field + ".connection." + t.connection.keyField, text: t.connection.key,
+				marked: true})
 		}
 	}
 	return out
@@ -458,9 +433,7 @@ func statedValues(a *agent) []statedValue {
 // draftedValues writes, as one JSON document, the values the credential decision
 // judges: under each agent's key, the text of each value it states, in the order
 // the draft writes them, empty for one that is no literal; under each model
-// part's and each MCP server's key, the endpoint the draft writes, null where it
-// writes none, and under each MCP server's key the text of each part of its url
-// the endpoint leaves out, in the order the url writes them.
+// part's key, the endpoint the draft writes, null where it writes none.
 func draftedValues(agents []*agent, parts []*modelPart) []byte {
 	doc := map[string]map[string]any{}
 	for _, a := range agents {
@@ -469,15 +442,6 @@ func draftedValues(agents []*agent, parts []*modelPart) []byte {
 			texts = append(texts, literalText(v.text))
 		}
 		doc[a.key] = map[string]any{"stated": texts}
-		for _, t := range a.tools {
-			if t.mcp() {
-				address := make([]string, 0, len(t.parts))
-				for _, p := range t.parts {
-					address = append(address, p.Text)
-				}
-				doc[t.key] = map[string]any{"endpoint": t.endpoint, "address": address}
-			}
-		}
 	}
 	for _, p := range parts {
 		doc[p.key] = map[string]any{"endpoint": p.endpoint}
@@ -495,14 +459,11 @@ func literalText(t text) string {
 }
 
 // located returns every value of draftedValues the credential decision judges,
-// agent by agent — its stated values, its model's endpoint where it is the first
-// agent wired to the part, then each MCP server's address and the parts of its
-// url the address leaves out — each named by its agent and its field: a key a
+// agent by agent — its stated values, then its model's endpoint where it is the
+// first agent wired to the part — each named by its agent and its field: a key a
 // connection presents as a value its format marks as a credential, an MCP
-// server's address and each part of its url, named as
-// mcpimport.AddressPartCredential names one, as a member of an MCP server's
-// configuration, and every other value as an input its format marks as no
-// credential.
+// server's url as a member of an MCP server's configuration, and every other
+// value as an input its format marks as no credential.
 func located(agents []*agent, parts []*modelPart) []importer.Credential {
 	var out []importer.Credential
 	for _, a := range agents {
@@ -511,8 +472,11 @@ func located(agents []*agent, parts []*modelPart) []importer.Credential {
 				continue
 			}
 			class := importer.CredentialUnmarked
-			if v.marked {
+			switch {
+			case v.marked:
 				class = importer.CredentialMarked
+			case v.server:
+				class = importer.CredentialServerMember
 			}
 			out = append(out, importer.Credential{Node: a.ref, Field: v.field,
 				Pointer: importer.Pointer(a.key, "stated", strconv.Itoa(j)), Class: class})
@@ -521,38 +485,19 @@ func located(agents []*agent, parts []*modelPart) []importer.Credential {
 			out = append(out, importer.Credential{Node: a.ref, Field: "model.connection.endpoint",
 				Pointer: importer.Pointer(a.part.key, "endpoint"), Class: importer.CredentialUnmarked})
 		}
-		for _, t := range a.tools {
-			if !t.mcp() {
-				continue
-			}
-			field := "tools." + firstOf(t.name, mcpKind) + ".url"
-			if t.endpoint != nil {
-				out = append(out, importer.Credential{Node: a.ref, Field: field,
-					Pointer: importer.Pointer(t.key, "endpoint"), Class: importer.CredentialServerMember})
-			}
-			for j, p := range t.parts {
-				if p.Text != "" {
-					out = append(out, mcpimport.AddressPartCredential(a.ref, field,
-						importer.Pointer(t.key, "address", strconv.Itoa(j)), p))
-				}
-			}
-		}
 	}
 	return out
 }
 
 // readBack reads the values the credential decision wrote empty back onto the
-// agents, the model parts and the MCP servers: a stated value that held
-// something and is written empty is written with no value, an endpoint that
-// held something and is written empty is left for the Release, and a part of an
-// MCP server's url that held something and is written empty is left out, named
-// alone. A value the decision carried is left exactly as the declaration writes
-// it.
+// agents and the model parts: a stated value that held something and is written
+// empty is written with no value, and an endpoint that held something and is
+// written empty is left for the Release. A value the decision carried is left
+// exactly as the declaration writes it.
 func readBack(agents []*agent, parts []*modelPart, written []byte) error {
 	var values map[string]struct {
 		Stated   []string `json:"stated"`
 		Endpoint *string  `json:"endpoint"`
-		Address  []string `json:"address"`
 	}
 	if err := json.Unmarshal(written, &values); err != nil {
 		return err
@@ -567,21 +512,6 @@ func readBack(agents []*agent, parts []*modelPart, written []byte) error {
 			v := &a.stated[j]
 			if v.text.literal() && j < len(got) && got[j] == "" {
 				v.text.value, v.emptied = "", true
-			}
-		}
-		for _, t := range a.tools {
-			if !t.mcp() {
-				continue
-			}
-			if emptied(t.key, t.endpoint) {
-				t.endpoint = nil
-				t.left = "infra.endpoint, " + emptiedNote
-			}
-			address := values[t.key].Address
-			for j := range t.parts {
-				if t.parts[j].Text != "" && j < len(address) && address[j] == "" {
-					t.parts[j].Emptied = true
-				}
 			}
 		}
 	}
@@ -684,8 +614,8 @@ func partDecision(p *modelPart) aggrega.ImportDecision {
 			" provider, so " + p.key + " is an instance of it serving " + p.ref + " to " + strings.Join(p.agents, ", ")
 	}
 	if p.id.variable != "" {
-		d.Rationale += "; its model's name is left for the author, since the declarative agent reads its id from the " +
-			"environment variable " + p.id.variable
+		d.Rationale += "; its model's name is left for the author, since the declarative agent writes its id as " +
+			envReference(p.id.variable)
 	} else if p.id.expression {
 		d.Rationale += "; its model's name is left for the author, since the declarative agent computes its id with " +
 			"an expression the import does not evaluate"
@@ -693,8 +623,10 @@ func partDecision(p *modelPart) aggrega.ImportDecision {
 	return d
 }
 
-// toolDecision is the decision for one tool: an instance of the MCP tool for an
-// MCP server, and no choice for any other, saying why.
+// toolDecision is the decision for one tool: no choice, saying why — for an MCP
+// server, that the model's provider, to which Agent Framework sends it as a
+// hosted tool, reaches it, so it becomes no Component and no connection, and
+// where the draft names it instead.
 func toolDecision(a *agent, t *tool) aggrega.ImportDecision {
 	id := a.ref + "#" + firstOf(t.name, firstOf(t.kind, "tool"))
 	d := aggrega.ImportDecision{SourceNode: aggrega.DecisionSourceNode{ID: id, Type: "tool",
@@ -702,10 +634,9 @@ func toolDecision(a *agent, t *tool) aggrega.ImportDecision {
 	switch t.kind {
 	case mcpKind:
 		d.SourceNode.ID = t.ref
-		d.Chosen = &aggrega.DecisionChoice{Target: mcpimport.Component, Mode: "reference", Tier: "NONE"}
-		d.Rationale = "an MCP server the agent reaches at its url is an instance of " + mcpimport.Component +
-			", drafted as a server someone else runs, wired to " + a.key + " on its " + toolsSocket + " socket; " +
-			"its approval mode and the tools it allows are the application's, read from the declarative agent"
+		d.Rationale = "an MCP server the agent names with its url becomes no Component and no connection of " + a.key +
+			", since " + hostedTool("it") + "; its name, its approval mode and the tools it allows are written in a " +
+			"comment above " + a.key + " in the Aggregate, and its url above " + a.key + "'s entry in the Release"
 	case "function":
 		d.Rationale = "a function tool runs code the application binds to it, which the import does not read, so it " +
 			"becomes no Component"

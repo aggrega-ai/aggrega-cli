@@ -101,16 +101,16 @@ func writeHeader(b *strings.Builder, read []*application, unread []string) {
 		b.WriteString(commentLine("", "Not read, since no configuration names them: the environment files "+commentList(unread)+
 			"."))
 	}
-	b.WriteString(commentLine("", "Not read: the application's code, which defines each graph; langgraph build builds it into the "+
-		"image the Release names for each graph."))
+	b.WriteString(commentLine("", "Not read: the application's code, which defines each graph; it runs in the image the Release "+
+		"names for each graph."))
 	for _, a := range read {
 		of := ""
 		if len(read) > 1 {
 			of = " of " + commentText(a.name())
 		}
 		if len(a.built) > 0 {
-			b.WriteString(commentLine("", "Not carried, since langgraph build reads them to build the image"+of+": "+
-				commentList(a.built)+"."))
+			b.WriteString(commentLine("", "Not carried, since they configure the server image langgraph build builds"+of+
+				", and the image the Release names is the application's own: "+commentList(a.built)+"."))
 		}
 		if len(a.others) > 0 {
 			b.WriteString(commentLine("", "Not carried, since "+Component+" takes no value for them"+of+": "+
@@ -190,13 +190,14 @@ func aggregateText(text string) string {
 }
 
 // renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: for each graph, under its key, a comment naming what
-// the Release supplies — the image langgraph build builds — and, above each
-// application's first graph, the environment its configuration states; then an
-// entry for each datastore part, since a build places only the instances a
-// Release names. The Release's environment and its Manifest are left unset, each
-// named in a comment where it belongs. Each importer renders its own Release;
-// the plugin kit renders none.
+// Aggregate of that name: above the first graph, what each graph's image holds
+// and the variables it is handed; for each graph, under its key, a comment
+// naming what the Release supplies — the image running the application — and,
+// above each application's first graph, the environment its configuration
+// states; then an entry for each datastore part, since a build places only the
+// instances a Release names. The Release's environment and its Manifest are left
+// unset, each named in a comment where it belongs. Each importer renders its own
+// Release; the plugin kit renders none.
 func renderRelease(name string, read []*application, parts []*datastorePart) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -211,19 +212,23 @@ func renderRelease(name string, read []*application, parts []*datastorePart) str
 	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
 		"the graphs are built for.\n")
 	b.WriteString("  components:\n")
+	contract := true
 	for _, a := range read {
 		first := true
 		for _, g := range a.graphs {
 			if g.entrypoint == "" {
 				continue
 			}
+			if contract {
+				b.WriteString(imageContract)
+				contract = false
+			}
 			if first {
 				writeEnvironment(&b, a)
 				first = false
 			}
 			b.WriteString("    # Left for the Release, since no configuration states it:\n")
-			b.WriteString("    #   - infra.image, the container image running the application, which langgraph build " +
-				"builds from its configuration\n")
+			b.WriteString("    #   - infra.image, the container image running the application\n")
 			b.WriteString("    " + g.key + ":\n")
 			b.WriteString("      infra: {}\n")
 		}
@@ -234,6 +239,25 @@ func renderRelease(name string, read []*application, parts []*datastorePart) str
 	}
 	return b.String()
 }
+
+// imageContract is the comment above the Release's first graph: what each
+// graph's image holds, the variables the Recipes of Component hand it, who reads
+// each, and which inject block replaces which default name. Every variable it
+// names is checked against what a build of the catalog's Recipe renders, so a
+// name changed on either side fails that check.
+const imageContract = "    # Each graph's image is the application's own, not the server image langgraph build builds: its " +
+	"code, with LangGraph installed.\n" +
+	"    # It is handed, for its code to read, the graph to run as LANGGRAPH_GRAPH_ENTRYPOINT, the model's name as " +
+	"OPENAI_MODEL, the checkpointer store's host and port as LANGGRAPH_CHECKPOINTER_HOST and " +
+	"LANGGRAPH_CHECKPOINTER_PORT, and a password attached on the " + checkpointerSocket + " connection as " +
+	"LANGGRAPH_CHECKPOINTER_PASSWORD.\n" +
+	"    # It is also handed the model's address as OPENAI_BASE_URL and a key attached on the " + modelSocket +
+	" connection as OPENAI_API_KEY, which the OpenAI client library reads, and recursion_limit as " +
+	"LANGGRAPH_DEFAULT_RECURSION_LIMIT, which LangGraph reads.\n" +
+	"    # An inject: block on the graph's own instance, through an entry reading graph_entrypoint alone, replaces " +
+	"LANGGRAPH_GRAPH_ENTRYPOINT with the name it writes; one on the " + modelSocket + " connection replaces " +
+	"OPENAI_MODEL, and one on the " + checkpointerSocket + " connection the store's host and port, with the names " +
+	"it writes.\n"
 
 // writeEnvironment writes, in a comment, the environment an application's
 // configuration states, for the Release to carry for each of its graphs: each

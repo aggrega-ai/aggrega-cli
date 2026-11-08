@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpimport"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
@@ -27,14 +26,13 @@ var (
 
 // renderAggregate writes the drafted Aggregate, named name: one instance of
 // Component per declarative agent, in the order the import was handed them,
-// carrying its displayName and its description and wired to its model part and
-// to its MCP servers; then one instance per model part, serving its model; then
-// one instance of the MCP tool per MCP server, carrying its description. Comments
-// above it name the declarative agents read and what the draft does not read;
-// comments above an instance name what the application reads from the
-// declarative agent, the tools drafted as no Component, why its model is not
-// wired where it is not, a model name left for the author, and an MCP server's
-// approval mode and the tools it allows.
+// carrying its displayName and its description and wired to its model part;
+// then one instance per model part, serving its model. Comments above it name
+// the declarative agents read and what the draft does not read; comments above
+// an instance name what the application reads from the declarative agent, the
+// tools drafted as no Component, each MCP server the model's provider reaches,
+// why its model is not wired where it is not, and a model name left for the
+// author.
 func renderAggregate(name string, agents []*agent, parts []*modelPart) string {
 	var b strings.Builder
 	var files []string
@@ -66,21 +64,14 @@ func renderAggregate(name string, agents []*agent, parts []*modelPart) string {
 	for _, p := range parts {
 		writePart(&b, p)
 	}
-	for _, a := range agents {
-		for _, t := range a.tools {
-			if t.mcp() {
-				writeTool(&b, a, t)
-			}
-		}
-	}
 	return b.String()
 }
 
 // writeAgent writes one declarative agent's instance of Component: its
-// displayName and its description, its model connection where it has a model
-// part, and a connection per MCP server, with comments above it naming the
-// agent, what the application reads from the declarative agent, its tools
-// drafted as no Component, and why its model is not wired where it is not.
+// displayName and its description, and its model connection where it has a
+// model part, with comments above it naming the agent, what the application
+// reads from the declarative agent, its tools drafted as no Component, each MCP
+// server it names, and why its model is not wired where it is not.
 func writeAgent(b *strings.Builder, a *agent) {
 	of := ""
 	if a.file != "" {
@@ -119,6 +110,11 @@ func writeAgent(b *strings.Builder, a *agent) {
 		b.WriteString(commentLine("    ", "Tools of other kinds, which the application configures, drafted as no Component: "+
 			strings.Join(others, ", ")+"."))
 	}
+	for _, t := range a.tools {
+		if t.mcp() {
+			writeServerComment(b, a, t)
+		}
+	}
 	if a.part == nil {
 		b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since "+unwiredWhy(a)+
 			"; the build halts naming the socket until one is wired."))
@@ -134,31 +130,17 @@ func writeAgent(b *strings.Builder, a *agent) {
 			b.WriteString("        description: " + aggregateText(*a.description) + "\n")
 		}
 	}
-	var tools []*tool
-	for _, t := range a.tools {
-		if t.mcp() {
-			tools = append(tools, t)
-		}
-	}
-	if a.part == nil && len(tools) == 0 {
+	p := a.part
+	if p == nil {
 		return
 	}
 	b.WriteString("      uses:\n")
-	if p := a.part; p != nil {
-		b.WriteString("        " + modelSocket + ":\n")
-		b.WriteString("          " + p.key + ":\n")
-		b.WriteString("            target: " + p.key + "\n")
-		if a.model.connection.kind == "anonymous" {
-			b.WriteString("            values:\n")
-			b.WriteString("              unauthenticated: true\n")
-		}
-	}
-	if len(tools) > 0 {
-		b.WriteString("        " + toolsSocket + ":\n")
-		for _, t := range tools {
-			b.WriteString("          " + t.key + ":\n")
-			b.WriteString("            target: " + t.key + "\n")
-		}
+	b.WriteString("        " + modelSocket + ":\n")
+	b.WriteString("          " + p.key + ":\n")
+	b.WriteString("            target: " + p.key + "\n")
+	if a.model.connection.kind == "anonymous" {
+		b.WriteString("            values:\n")
+		b.WriteString("              unauthenticated: true\n")
 	}
 }
 
@@ -170,9 +152,10 @@ func writePart(b *strings.Builder, p *modelPart) {
 		openAIProvider+" provider."))
 	switch {
 	case p.id.variable != "":
-		b.WriteString(commentLine("    ", "values.model is left for the author, since the declarative agent reads its model's id "+
-			"from the environment variable "+commentText(p.id.variable)+", which the import does not read; the build "+
-			"halts naming it until it is set."))
+		b.WriteString(commentLine("    ", "values.model is left for the author, since the declarative agent writes its model's id "+
+			"as "+envReference(commentText(p.id.variable))+"."))
+		b.WriteString(commentLine("    ", "The import reads no environment variable; the build halts naming values.model until "+
+			"it is set."))
 	case p.id.expression:
 		b.WriteString(commentLine("    ", "values.model is left for the author, since the declarative agent computes its model's "+
 			"id with an expression the import does not evaluate; the build halts naming it until it is set."))
@@ -185,29 +168,37 @@ func writePart(b *strings.Builder, p *modelPart) {
 	}
 }
 
-// writeTool writes one MCP server's instance of the MCP tool, carrying its
-// description, with a comment above it naming the server, the agent reaching it,
-// and its approval mode and the tools it allows, which the application applies.
-func writeTool(b *strings.Builder, a *agent, t *tool) {
-	b.WriteString(commentLine("    ", "The MCP server "+commentText(firstOf(t.name, mcpKind))+", which "+commentText(a.ref)+
-		" reaches."))
-	var applied []string
+// writeServerComment writes the comment above an agent's instance naming one MCP
+// server the declarative agent names: that it is drafted as no Component and no
+// connection, since the model's provider, not the application, reaches it; and
+// its description, its approval mode and the tools it allows, as the declarative
+// agent states them. Its url is written above the agent's entry of the Release.
+func writeServerComment(b *strings.Builder, a *agent, t *tool) {
+	b.WriteString(commentLine("    ", "The MCP server "+commentText(firstOf(t.name, mcpKind))+", drafted as no Component and "+
+		"no connection, since "+hostedTool("it")+"; its url is written above "+a.key+"'s entry in the Release."))
+	var stated []string
+	if t.description != nil {
+		stated = append(stated, "its description, "+yamlString(*t.description))
+	}
 	if t.approval != "" {
-		applied = append(applied, "its approval mode, "+commentText(t.approval))
+		stated = append(stated, "its approval mode, "+commentText(t.approval))
 	}
 	if len(t.allowed) > 0 {
-		applied = append(applied, "the tools of the server it allows, "+commentList(t.allowed))
+		stated = append(stated, "the tools of the server it allows, "+commentList(t.allowed))
 	}
-	if len(applied) > 0 {
-		b.WriteString(commentLine("    ", "Applied by the application from the declarative agent, and taken by no key of "+
-			mcpimport.Component+": "+strings.Join(applied, "; ")+"."))
+	if len(stated) > 0 {
+		b.WriteString(commentLine("    ", "Stated by the declarative agent for "+commentText(firstOf(t.name, mcpKind))+": "+
+			strings.Join(stated, "; ")+"."))
 	}
-	b.WriteString("    " + t.key + ":\n")
-	b.WriteString("      type: " + mcpimport.Component + "\n")
-	if t.description != nil {
-		b.WriteString("      values:\n")
-		b.WriteString("        description: " + aggregateText(*t.description) + "\n")
-	}
+}
+
+// hostedTool says who reaches an MCP server a declarative agent names, the
+// server written as server: the model's provider, to which Agent Framework sends
+// it as a hosted tool. The comment naming the server above the agent's instance
+// and the server's decision both say it through here, so the two state one fact.
+func hostedTool(server string) string {
+	return "Agent Framework sends " + server + " to the model's provider as a hosted tool, and the provider, not the " +
+		"application, reaches it at its url, which must therefore be reachable from the provider"
 }
 
 // aggregateText writes text read from a source as a value of the drafted
@@ -219,15 +210,14 @@ func aggregateText(text string) string {
 
 // renderRelease writes the drafted Release, named name and deploying the
 // Aggregate of that name: for each agent, under its instance's key, a comment
-// naming what the Release supplies — the image running the application, the
-// credential it presents to its model, and the one it presents to each MCP
-// server whose connection presents a key — and the values its declarative agent
-// states for its connections, written as stated or, where the credential
-// decision wrote one empty, with no value; for each model part, an entry, with
-// the endpoint its connection states where it states one; and for each MCP
-// server, its address. The Release's environment and its Manifest are left
-// unset, each named in a comment where it belongs. Each importer renders its
-// own Release; the plugin kit renders none.
+// naming what the Release supplies — the image running the application and the
+// credential it presents to its model — and the values its declarative agent
+// states for its model and its MCP servers, each server's url among them,
+// written as stated or, where the credential decision wrote one empty, with no
+// value; then for each model part, an entry, with the endpoint its connection
+// states where it states one. The Release's environment and its Manifest are
+// left unset, each named in a comment where it belongs. Each importer renders
+// its own Release; the plugin kit renders none.
 func renderRelease(name string, agents []*agent, parts []*modelPart) string {
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
@@ -248,13 +238,6 @@ func renderRelease(name string, agents []*agent, parts []*modelPart) string {
 	for _, p := range parts {
 		writePartEntry(&b, p)
 	}
-	for _, a := range agents {
-		for _, t := range a.tools {
-			if t.mcp() {
-				writeToolEntry(&b, t)
-			}
-		}
-	}
 	return b.String()
 }
 
@@ -267,15 +250,9 @@ func writeAgentEntry(b *strings.Builder, a *agent) {
 		b.WriteString("    #   - the credential " + a.key + " presents to the model it reaches, attached under credential " +
 			"on its connection uses." + modelSocket + "." + p.key + "\n")
 	}
-	for _, t := range a.tools {
-		if t.mcp() && t.connection.keyField != "" {
-			b.WriteString("    #   - the credential " + a.key + " presents to " + t.key + ", attached under credential on " +
-				"its connection uses." + toolsSocket + "." + t.key + "\n")
-		}
-	}
 	if len(a.stated) > 0 {
-		b.WriteString("    # The declarative agent also states these values for its connections, which the application " +
-			"reads from it, written here for review:\n")
+		b.WriteString("    # The declarative agent also states these values for its model and its MCP servers, written here " +
+			"for review:\n")
 		for _, v := range a.stated {
 			b.WriteString("    #   - " + statedLine(v) + "\n")
 		}
@@ -286,8 +263,9 @@ func writeAgentEntry(b *strings.Builder, a *agent) {
 
 // statedLine writes one stated value for the comment above an agent's entry:
 // its field and its value as written, as a double-quoted scalar reading back as
-// exactly the source's text; for a value written as a reference, the variable it
-// reads; for one written as another expression, that it is one; and for a value
+// exactly the source's text; for a value written as a reference, the reference
+// and when Agent Framework reads its variable; for one written as another
+// expression, that it is one; and for a value
 // the empty_credentials setting leaves out, its field alone, saying why.
 func statedLine(v statedValue) string {
 	field := commentText(v.field)
@@ -295,7 +273,7 @@ func statedLine(v statedValue) string {
 	case v.emptied:
 		return field + ", " + emptiedNote
 	case v.text.variable != "":
-		return field + ", read from the environment variable " + commentText(v.text.variable)
+		return field + ", written as " + envReference(commentText(v.text.variable))
 	case v.text.expression:
 		return field + ", computed by an expression the import does not evaluate"
 	case !v.text.literal():
@@ -306,7 +284,7 @@ func statedLine(v statedValue) string {
 
 // writePartEntry writes one model part's entry of the Release, since a build
 // places only the instances a Release names: the endpoint its connection states
-// as infra.endpoint, or a comment naming the variable it is read from, saying it
+// as infra.endpoint, or a comment naming the reference it is written as, saying it
 // is computed, or leaving it for the Release where it was written empty. A part
 // whose connection states no endpoint has an entry holding no infrastructure:
 // the Component's own default is its address.
@@ -315,8 +293,8 @@ func writePartEntry(b *strings.Builder, p *modelPart) {
 	switch {
 	case p.endpoint != nil:
 	case e.variable != "":
-		b.WriteString("    # infra.endpoint is left at the Component's default, while the declarative agent reads its " +
-			"model's address from the environment variable " + commentText(e.variable) + ".\n")
+		b.WriteString("    # infra.endpoint is left at the Component's default, while the declarative agent writes its " +
+			"model's address as " + envReference(commentText(e.variable)) + ".\n")
 	case e.expression:
 		b.WriteString("    # infra.endpoint is left at the Component's default, while the declarative agent computes its " +
 			"model's address with an expression the import does not evaluate.\n")
@@ -332,28 +310,6 @@ func writePartEntry(b *strings.Builder, p *modelPart) {
 	}
 	b.WriteString("      infra:\n")
 	b.WriteString("        endpoint: " + yamlString(*p.endpoint) + "\n")
-}
-
-// writeToolEntry writes one MCP server's entry of the Release: its address as
-// infra.endpoint, as the MCP importer writes a remote server's, or why none is
-// written, with the comment the MCP importer writes above it naming each part
-// of its url the address leaves out, beside its text or, where the
-// empty_credentials setting leaves it out, alone.
-func writeToolEntry(b *strings.Builder, t *tool) {
-	if t.left != "" {
-		b.WriteString("    # Left for the Release, since the draft does not write it:\n")
-		b.WriteString("    #   - " + t.left + "\n")
-	}
-	for _, line := range mcpimport.AddressComment(t.parts) {
-		b.WriteString("    # " + line + "\n")
-	}
-	b.WriteString("    " + t.key + ":\n")
-	if t.endpoint == nil {
-		b.WriteString("      infra: {}\n")
-		return
-	}
-	b.WriteString("      infra:\n")
-	b.WriteString("        endpoint: " + yamlString(*t.endpoint) + "\n")
 }
 
 // renderModel writes the drafted OpenAI Component, named name, for a catalog

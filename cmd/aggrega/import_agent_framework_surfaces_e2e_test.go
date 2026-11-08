@@ -10,8 +10,8 @@ package main
 // through `aggrega serve`, each driven at the real command tree and held to the
 // shared operation's own result over an identically laid workspace, so the three
 // draft one declarative agent alike — one Agent Framework agent, wired to the
-// OpenAI model it names and to the MCP server it reaches, and the Release beside
-// it carrying the model's endpoint and the server's address.
+// OpenAI model it names, its MCP server named in a comment, and the Release beside
+// it carrying the model's endpoint and, in a comment, the server's url.
 
 import (
 	"encoding/json"

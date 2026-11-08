@@ -6,7 +6,8 @@
 // Kit (ADK) — a root_agent.yaml and the configurations its sub-agents name — and
 // drafts an Aggregate holding one instance of the standard library's
 // ADK agent, core/ai-agent/google-adk, per agent tree, wired to the Gemini model
-// the tree names, and a Release beside it naming what the Release supplies.
+// the tree names where ADK serves it as one, and a Release beside it naming what
+// the Release supplies.
 //
 // The importer guest (plugins/google-adk-importer) holds the descriptor, the
 // signatures a configuration is recognised by and the export wiring; everything
@@ -15,8 +16,9 @@
 //
 // # What a configuration declares
 //
-// ADK states that its Agent Config is experimental and currently supports only
-// Gemini models. An application declared this way keeps each agent in a YAML
+// ADK states that its Agent Config is experimental. An agent's model is a Gemini
+// model by default, and other providers are reached through a LiteLLM model
+// string. An application declared this way keeps each agent in a YAML
 // file: its name, its class (agent_class, LlmAgent where it names none), its
 // description and its instruction; the model it asks for (model) or the code
 // building its model (model_code); its tools, each by name with the arguments
@@ -53,20 +55,32 @@
 // SequentialAgent — is reported as deprecated.
 //
 // The first agent of a tree, root first, naming a model or the code building
-// one decides the instance's model: a model it names is wired, on the instance's
-// model socket, to an instance of the catalog's Gemini Component,
-// core/ai-model/gemini, serving that model — the Component of the one provider
-// the Agent Config supports, named by the provider as every envelope importer
-// names one, and the one the socket admits; trees naming one model share one
-// instance. Where the request's catalog view holds no Component of that name, one
-// is drafted under the target namespace, <target_namespace>/ai-model/gemini, and
-// its decision says so. The models other agents of the tree ask for are reported:
-// ADK's Gemini client sends every model's requests with the one key the
-// connection delivers. A tree whose model the application's code builds, or
-// naming none, is wired to nothing, and the draft says why. Whether the
-// application reaches Gemini through the Gemini API or through Vertex AI is chosen
-// by its environment, which the import does not read; the socket admits the
-// Gemini API alone, and the model's decision says so.
+// one decides the instance's model. A model it names whose requests ADK sends to
+// the Gemini API — a model name of its Gemini class other than a Vertex AI
+// resource name, or one of its Gemma class, as ADK resolves a model string, which
+// servedBy mirrors — is wired, on the instance's model socket, to an instance of
+// the catalog's Gemini Component,
+// core/ai-model/gemini, serving the model name that class is handed: the
+// Component of ADK's default provider, named by the provider as every envelope
+// importer names one, and the one the socket admits; trees naming one model
+// share one instance. Where the request's catalog view holds no Component of
+// that name, one is drafted under the target namespace,
+// <target_namespace>/ai-model/gemini, and its decision says so. A model ADK
+// serves any other way — a LiteLLM model string or a Vertex AI resource name
+// among them — is wired to nothing: the socket takes a Gemini model and the
+// agent reads no model name from its environment, so the author wires one and
+// names it in the agent's configuration, and the comment above the instance and
+// the root agent's decision name the model and the family ADK serves it
+// through. The models other agents of the tree ask for are reported with the
+// family ADK serves each through, where the tree's model is wired: one whose
+// requests ADK sends to the Gemini API is sent with the one key the connection
+// delivers. A tree whose model the application's code builds, or naming none, is
+// wired to nothing too, and the draft says why; the socket is required, so a
+// build halts naming it until one is wired. Whether the application reaches a
+// model of ADK's Gemini class through the Gemini API or through Vertex AI is
+// chosen by its environment, which the import does not read, while ADK's Gemma
+// class supports the Gemini API only; the socket admits the Gemini API alone,
+// and the model's decision says so.
 //
 // Each tool is reported in a decision choosing nothing: one ADK ships runs inside
 // the application, and any other is code the application defines.
@@ -123,8 +137,8 @@ const RootFile = "root_agent.yaml"
 // of.
 const Component = "core/ai-agent/google-adk"
 
-// The model provider the Agent Config supports, and the catalog Component
-// serving it, named by the provider.
+// The model provider ADK uses by default, and the catalog Component serving it,
+// named by the provider.
 const (
 	provider       = "gemini"
 	modelComponent = "core/ai-model/" + provider
@@ -149,8 +163,11 @@ type modelPart struct {
 	// Component is drafted rather than referenced.
 	component string
 	drafted   bool
-	// model is the model it serves.
-	model string
+	// model is the model it serves: the name ADK hands the class serving it, and
+	// family the family it is named by; geminiAPIAlone is set where that class
+	// reaches the Gemini API alone, never Vertex AI.
+	model, family  string
+	geminiAPIAlone bool
 	// agents are the agents whose model it serves, by ref.
 	agents []string
 }
@@ -289,11 +306,14 @@ func modelAgent(app *application) *agent {
 	return nil
 }
 
-// wire makes the model part each tree naming a model is wired to, keyed after
-// every tree's instance: one part per model, shared by every tree whose model it
-// is. A part's Component is the catalog's Gemini Component where the request's
-// catalog view holds it, and a Component drafted under the target namespace
-// otherwise.
+// wire makes the model part each tree naming a model whose requests ADK sends to
+// the Gemini API is wired to, keyed after every tree's instance: one
+// part per model, serving the model name that class is handed and shared by
+// every tree whose model it is. A part's Component is the catalog's Gemini
+// Component where the request's catalog view holds it, and a Component drafted
+// under the target namespace otherwise. A tree naming a model ADK serves any
+// other way has no part: Component takes a Gemini model on its model socket, so
+// the author wires one.
 func wire(in aggrega.ImportInput, apps []*application, used map[string]bool) []*modelPart {
 	held := false
 	if in.Catalog != nil {
@@ -313,11 +333,15 @@ func wire(in aggrega.ImportInput, apps []*application, used map[string]bool) []*
 		if a == nil || a.model == "" {
 			continue
 		}
-		p := shared[a.model]
+		s := servedBy(a.model)
+		if !s.geminiAPI {
+			continue
+		}
+		p := shared[s.name]
 		if p == nil {
-			p = &modelPart{ref: app.prefix + a.model, component: component, drafted: !held, model: a.model,
-				key: importer.UniqueKey(used, a.model)}
-			shared[a.model] = p
+			p = &modelPart{ref: app.prefix + a.model, component: component, drafted: !held, model: s.name,
+				family: s.family, geminiAPIAlone: s.geminiAPIAlone, key: importer.UniqueKey(used, s.name)}
+			shared[s.name] = p
 			parts = append(parts, p)
 		}
 		p.agents = append(p.agents, a.ref)
@@ -486,7 +510,8 @@ func rootDecision(app *application) aggrega.ImportDecision {
 		d.Rationale += "; the model " + app.part.model + ", which " + app.modeled.ref + " names, is wired to " +
 			app.part.key + " on its " + modelSocket + " socket"
 	} else {
-		d.Rationale += "; its " + modelSocket + " socket is left for the author, since " + unwiredWhy(app)
+		d.Rationale += "; its " + modelSocket + " socket is left for the author, since " + unwiredWhy(app) +
+			"; the build halts naming the socket until one is wired"
 	}
 	if note := deprecationNote(a); note != "" {
 		d.Rationale += "; " + note
@@ -495,11 +520,22 @@ func rootDecision(app *application) aggrega.ImportDecision {
 }
 
 // unwiredWhy says why a tree's model is wired to nothing, in words following
-// "since".
+// "since": the model its deciding agent names is one whose requests ADK does not
+// send to the Gemini API, naming the family ADK serves it through, while Component
+// takes a Gemini model and reads no model name from its environment, so the
+// author wires one and names it in the agent's configuration; the application's
+// code builds it; or no agent names one.
 func unwiredWhy(app *application) string {
-	if app.modeled != nil {
-		return "the model of " + app.modeled.ref + " is built by the application's code at " +
-			app.modeled.modelCode + ", which the import does not read"
+	a := app.modeled
+	switch {
+	case a != nil && a.model != "":
+		return "the model " + commentText(a.model) + ", which " + commentText(a.ref) + " names, is one ADK serves " +
+			"through " + familyOf(a.model) + ", not through the Gemini API, while " + Component + " takes a Gemini " +
+			"model on its " + modelSocket + " socket and reads no model name from its environment, so the author " +
+			"wires a Gemini model there and names that model in " + commentText(a.ref) + "'s configuration"
+	case a != nil:
+		return "the model of " + a.ref + " is built by the application's code at " + a.modelCode +
+			", which the import does not read"
 	}
 	return "no agent of the tree names a model, so ADK uses its default model"
 }
@@ -514,23 +550,31 @@ func deprecationNote(a *agent) string {
 }
 
 // partDecision is the decision for one model part: a reference to the catalog's
-// Gemini Component, or that Component drafted where the catalog holds none.
+// Gemini Component, or that Component drafted where the catalog holds none. Only
+// a model whose requests ADK sends to the Gemini API has a part. Where its class
+// reaches the Gemini API alone, the decision says so; otherwise, that the
+// application's environment chooses between the Gemini API and Vertex AI.
 func partDecision(p *modelPart) aggrega.ImportDecision {
 	d := aggrega.ImportDecision{SourceNode: aggrega.DecisionSourceNode{ID: p.ref, Type: "model",
 		ParamsSummary: "provider " + provider + ", model " + p.model}}
+	every := "ADK serves the model " + p.model + " through its " + p.family + " class, which sends its requests " +
+		"to the Gemini API, so it is drafted as an instance of the Gemini Component; "
 	backend := "; the application reaches Gemini through the Gemini API or through Vertex AI as its environment " +
 		"chooses, which the import does not read, and the " + modelSocket + " socket of " + Component +
 		" admits the Gemini API alone"
+	if p.geminiAPIAlone {
+		backend = "; ADK's " + p.family + " class supports the Gemini API only, not Vertex AI, and the " +
+			modelSocket + " socket of " + Component + " admits the Gemini API alone"
+	}
 	if p.drafted {
 		d.Chosen = &aggrega.DecisionChoice{Target: p.component, Mode: "draft", Tier: "NONE"}
-		d.Rationale = "ADK's Agent Config supports Gemini models alone, and the catalog holds no " + modelComponent +
-			", so a Component for it is drafted as " + p.component + ", serving " + p.model + " to " +
-			strings.Join(p.agents, ", ") + backend
+		d.Rationale = every + "the catalog holds no " + modelComponent + ", so a Component for it is drafted as " +
+			p.component + ", serving " + p.model + " to " + strings.Join(p.agents, ", ") + backend
 		return d
 	}
 	d.Chosen = &aggrega.DecisionChoice{Target: p.component, Mode: "reference", Tier: "NONE"}
-	d.Rationale = "ADK's Agent Config supports Gemini models alone, and the catalog holds " + p.component + ", so " +
-		p.key + " is an instance of it serving " + p.model + " to " + strings.Join(p.agents, ", ") + backend
+	d.Rationale = every + "the catalog holds " + p.component + ", so " + p.key + " is an instance of it serving " +
+		p.model + " to " + strings.Join(p.agents, ", ") + backend
 	return d
 }
 
@@ -543,9 +587,17 @@ func subDecision(app *application, a *agent) aggrega.ImportDecision {
 		Rationale: "a sub-agent of " + a.parent.ref + ", which ADK builds inside the application the instance of " +
 			app.root.ref + " runs, so it becomes no instance of its own"}
 	switch {
+	case asksOtherModel(app, a) && app.part == nil:
+		// The instance has no model connection until the author wires one, so the
+		// decision names none.
+		d.Rationale += "; it asks for the model " + a.model + ", which ADK serves through " + familyOf(a.model)
+	case asksOtherModel(app, a) && servedBy(a.model).geminiAPI:
+		d.Rationale += "; it asks for the model " + a.model + ", which ADK serves through its " + familyOf(a.model) +
+			" class, sending its requests to the Gemini API with the key the instance's " + modelSocket +
+			" connection delivers"
 	case asksOtherModel(app, a):
-		d.Rationale += "; it asks for the model " + a.model + ", whose requests ADK's Gemini client sends with the " +
-			"key the instance's " + modelSocket + " connection delivers"
+		d.Rationale += "; it asks for the model " + a.model + ", which ADK serves through " + familyOf(a.model) +
+			", not through the instance's " + modelSocket + " connection"
 	case a.modelCode != "" && a != app.modeled:
 		d.Rationale += "; its model is built by the application's code at " + a.modelCode + ", which the import does " +
 			"not read"
@@ -557,9 +609,10 @@ func subDecision(app *application, a *agent) aggrega.ImportDecision {
 }
 
 // asksOtherModel reports whether an agent of a tree names a model other than
-// the one the tree's instance is wired to serve.
+// the one the tree's instance is wired to serve, compared by the model name ADK
+// hands the class serving each.
 func asksOtherModel(app *application, a *agent) bool {
-	return a.model != "" && a != app.modeled && (app.part == nil || a.model != app.part.model)
+	return a.model != "" && a != app.modeled && (app.part == nil || servedBy(a.model).name != app.part.model)
 }
 
 // toolDecision is the decision for one tool a tree's agents name: no choice,

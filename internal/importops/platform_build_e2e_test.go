@@ -535,15 +535,53 @@ func platformVariable(t *testing.T, artifacts map[string][]byte, platform, targe
 		}
 		return value
 	}
+	for _, e := range helmContainerEnv(t, artifacts, platform) {
+		if e.Name == name && e.Value != nil {
+			return *e.Value
+		}
+	}
+	t.Fatalf("the rendered Deployment of %s sets no literal %s", platform, name)
+	return ""
+}
+
+// helmVariableNames returns the name of every environment variable the helm
+// Deployment of platform hands its first container, in the order it writes them:
+// one given a literal value and one read from a Secret alike, which
+// platformVariable, reading literal values alone, cannot tell apart from an
+// absent one.
+func helmVariableNames(t *testing.T, artifacts map[string][]byte, platform string) []string {
+	t.Helper()
+	var names []string
+	for _, e := range helmContainerEnv(t, artifacts, platform) {
+		names = append(names, e.Name)
+	}
+	return names
+}
+
+// helmVariable is one environment variable a helm Deployment hands a container:
+// its name, and its literal value or the Secret key it is read from.
+type helmVariable struct {
+	Name      string  `yaml:"name"`
+	Value     *string `yaml:"value"`
+	ValueFrom *struct {
+		SecretKeyRef *struct {
+			Name string `yaml:"name"`
+			Key  string `yaml:"key"`
+		} `yaml:"secretKeyRef"`
+	} `yaml:"valueFrom"`
+}
+
+// helmContainerEnv reads the environment the helm Deployment of platform hands
+// its first container, in the order it writes it: the one reader of a rendered
+// Deployment's variables platformVariable and helmVariableNames share.
+func helmContainerEnv(t *testing.T, artifacts map[string][]byte, platform string) []helmVariable {
+	t.Helper()
 	var d struct {
 		Spec struct {
 			Template struct {
 				Spec struct {
 					Containers []struct {
-						Env []struct {
-							Name  string  `yaml:"name"`
-							Value *string `yaml:"value"`
-						} `yaml:"env"`
+						Env []helmVariable `yaml:"env"`
 					} `yaml:"containers"`
 				} `yaml:"spec"`
 			} `yaml:"template"`
@@ -553,13 +591,7 @@ func platformVariable(t *testing.T, artifacts map[string][]byte, platform, targe
 	if err := yaml.Unmarshal(doc, &d); err != nil || len(d.Spec.Template.Spec.Containers) == 0 {
 		t.Fatalf("the rendered Deployment does not read (%v):\n%s", err, doc)
 	}
-	for _, e := range d.Spec.Template.Spec.Containers[0].Env {
-		if e.Name == name && e.Value != nil {
-			return *e.Value
-		}
-	}
-	t.Fatalf("the rendered Deployment sets no literal %s:\n%s", name, doc)
-	return ""
+	return d.Spec.Template.Spec.Containers[0].Env
 }
 
 // renderedEnding returns the one rendered file whose path ends with suffix. The

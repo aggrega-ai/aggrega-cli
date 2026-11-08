@@ -13,23 +13,24 @@ package importops
 //     its author's choosing, is recognised as the agent-framework format with no
 //     format named — so no other importer's signature matches it — and drafted as
 //     an Aggregate holding one Agent Framework agent, wired to the OpenAI model
-//     it names and to each MCP server it reaches, and a Release;
+//     it names and to nothing else, each MCP server it names written in a
+//     comment, since the model's provider reaches it, and a Release;
 //   - a directory is never handed to the importer: one naming the format is
 //     refused under its own condition before any file is opened, and one naming
 //     no format recognises nothing;
-//   - by default the literal values a declarative agent states for its
-//     connections are carried as written into the Release and named in a
-//     warning; the empty_credentials setting at marked writes its keys and its
-//     MCP server's address empty, and at all its model's endpoint too; an MCP
-//     server's query is carried in the comment above its entry by default and
-//     written empty at marked or all; a reference to an environment variable is
-//     named by its variable under every setting;
+//   - by default the literal values a declarative agent states for its model and
+//     its MCP servers are carried as written into the Release and named in a
+//     warning, an MCP server's url whole, its query included; the
+//     empty_credentials setting at marked writes its keys and its MCP server's
+//     url empty, and at all its model's endpoint too; a reference to an
+//     environment variable is named as written under every setting, with when
+//     Agent Framework reads it;
 //   - two imports of one declarative agent are byte-identical;
 //   - a declarative agent the parser refuses halts the import with the parser's
 //     reason;
 //   - the learn agent's draft builds, with its Release supplying only what it
-//     leaves for the Release, into a Deployment given the model's endpoint and
-//     the MCP server's address, and Services reaching both.
+//     leaves for the Release, into a Deployment given the model's endpoint and no
+//     variable for the MCP server, and a Service reaching the model alone.
 //
 // The fixtures are described in testdata/agent-framework/README.md.
 
@@ -87,9 +88,10 @@ func readAgentFrameworkFixture(t *testing.T, name string) []byte {
 // an import is handed it under — one its author chose, as Agent Framework loads
 // a declarative agent from whatever file its application names — and what its
 // draft holds: the instance keys of the Aggregate and of the Release, in the order
-// each writes them; the agent's instance, the model part it is wired to and the
-// MCP servers' instances; and the tools its decisions report as becoming no
-// Component.
+// each writes them; the agent's instance and the model part it is wired to; the
+// MCP servers it names, by name, each written in the comment above the agent and
+// drafted as no instance; and the decisions choosing nothing — the MCP servers'
+// and the other tools' among them.
 var agentFrameworkAgents = []struct {
 	fixture, name              string
 	aggregateKeys, releaseKeys []string
@@ -97,18 +99,17 @@ var agentFrameworkAgents = []struct {
 	servers, unchosen          []string
 }{
 	{fixture: "learn-agent.yaml", name: "agents/learn.yaml",
-		aggregateKeys: []string{"learnagent", "gpt-4-1-mini", "microsoft-learn"},
-		releaseKeys:   []string{"learnagent", "gpt-4-1-mini", "microsoft-learn"},
-		key:           "learnagent", part: "gpt-4-1-mini", servers: []string{"microsoft-learn"},
-		unchosen: []string{"LearnAgent#GetRelease", "LearnAgent#search"}},
+		aggregateKeys: []string{"learnagent", "gpt-4-1-mini"}, releaseKeys: []string{"learnagent", "gpt-4-1-mini"},
+		key: "learnagent", part: "gpt-4-1-mini", servers: []string{"microsoft_learn"},
+		unchosen: []string{"LearnAgent#microsoft_learn", "LearnAgent#GetRelease", "LearnAgent#search"}},
 	{fixture: "docs-agent.yaml", name: "docs.agent.yaml",
-		aggregateKeys: []string{"docsagent", "openai-model", "team-docs"},
-		releaseKeys:   []string{"docsagent", "openai-model", "team-docs"},
-		key:           "docsagent", part: "openai-model", servers: []string{"team-docs"}},
+		aggregateKeys: []string{"docsagent", "openai-model"}, releaseKeys: []string{"docsagent", "openai-model"},
+		key: "docsagent", part: "openai-model", servers: []string{"team docs"},
+		unchosen: []string{"DocsAgent#team docs"}},
 	{fixture: "research-agent.yaml", name: "research.yml",
-		aggregateKeys: []string{"researchagent", "github"}, releaseKeys: []string{"researchagent", "github"},
+		aggregateKeys: []string{"researchagent"}, releaseKeys: []string{"researchagent"},
 		key: "researchagent", servers: []string{"github"},
-		unchosen: []string{"ResearchAgent#model", "ResearchAgent#python"}},
+		unchosen: []string{"ResearchAgent#model", "ResearchAgent#github", "ResearchAgent#python"}},
 }
 
 // TestEveryAgentFrameworkDeclarativeAgentIsRecognisedAndDrafted imports each
@@ -117,10 +118,11 @@ var agentFrameworkAgents = []struct {
 // other importer's signature matched it — and drafted as aggregate.yaml and
 // release.yaml alone: one instance of core/ai-agent/agent-framework, wired on its
 // model socket to an instance of core/ai-model/openai where its provider is
-// OpenAI and on its tools socket to an instance of core/ai-tool/mcp per MCP
-// server; the Release an entry for the agent, leaving its image for the Release,
-// and one for each model part and each server, so every instance is placed. Every
-// other tool is reported in a decision choosing nothing.
+// OpenAI and on no other socket; each MCP server it names drafted as no instance
+// and named in the comment above the agent, which says the model's provider
+// reaches it; the Release an entry for the agent, leaving its image for the
+// Release, and one for each model part, so every instance is placed. Every MCP
+// server and every other tool is reported in a decision choosing nothing.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/agent-framework-importer/main.go), write
 // `{Path: "model", Is: "string"}`: every row is refused asking for the format, and
@@ -164,12 +166,15 @@ func TestEveryAgentFrameworkDeclarativeAgentIsRecognisedAndDrafted(t *testing.T)
 			} else if _, wired := agent.Uses["model"]; wired {
 				t.Errorf("%s is wired to a model its declarative agent's provider is not served by:\n%s", a.key, text)
 			}
+			if _, wired := agent.Uses["tools"]; wired {
+				t.Errorf("%s is wired on its tools socket, which the model's provider, not the application, "+
+					"reaches its MCP servers through:\n%s", a.key, text)
+			}
 			for _, s := range a.servers {
-				if got := agent.Uses["tools"][s].Target; got != s {
-					t.Errorf("%s's tools connection %s targets %q:\n%s", a.key, s, got, text)
-				}
-				if m := draft.Spec.Components[s]; m.Type != "core/ai-tool/mcp" {
-					t.Errorf("the MCP server %s is %q, want core/ai-tool/mcp", s, m.Type)
+				if want := "# The MCP server " + s + ", drafted as no Component and no connection, since Agent " +
+					"Framework sends it to the model's provider as a hosted tool, and the provider, not the " +
+					"application, reaches it at its url"; !strings.Contains(text, want) {
+					t.Errorf("the Aggregate does not say %q:\n%s", want, text)
 				}
 			}
 			var unchosen []string
@@ -222,10 +227,10 @@ func TestADirectoryIsNeverHandedToTheAgentFrameworkImporter(t *testing.T) {
 // the learn agent with the empty_credentials setting absent, none, marked and
 // all, after a needle proves each planted value is in its declarative agent:
 // where it is absent or none, the model's key, the MCP server's key and the
-// session the server's address carries in its query are carried as written into
+// session the server's url carries in its query are carried as written into
 // release.yaml, reach nothing else, and are named in a credential-carried
-// warning; where it is marked or all, none reaches anything, each is named in a
-// credential-emptied warning, and so is the MCP server's address; the model's
+// warning, the url whole; where it is marked or all, none reaches anything, and
+// each is named in a credential-emptied warning, the url whole; the model's
 // endpoint is carried under marked and emptied under all; each report opens with
 // the exact words the kit gives its class and its fate. The docs agent's
 // references are named by their variables, and reported under neither code,
@@ -276,16 +281,15 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnAgentFrameworkImportCarries(t *t
 				endpoint = "model.connection.endpoint"
 				url      = "tools.microsoft_learn.url"
 			)
-			carriedQuery := "credential-carried: " + url + " of node LearnAgent is carried with its query as written "
-			emptiedQuery := "credential-emptied: " + url + " of node LearnAgent is written with its query empty "
-			want := []string{carried(modelKey), carried(toolKey), carried(endpoint), carried(url), carriedQuery}
+			// The MCP server's url is one value, written whole, its query included:
+			// the draft holds no instance of the server for an address to be split
+			// off into.
+			want := []string{carried(modelKey), carried(url), carried(toolKey), carried(endpoint)}
 			switch setting {
 			case "marked":
-				want = []string{emptiedMarked(modelKey), emptiedMarked(toolKey), carried(endpoint), emptiedWhole(url),
-					emptiedQuery}
+				want = []string{emptiedMarked(modelKey), emptiedWhole(url), emptiedMarked(toolKey), carried(endpoint)}
 			case "all":
-				want = []string{emptiedMarked(modelKey), emptiedMarked(toolKey), emptiedWhole(endpoint), emptiedWhole(url),
-					emptiedQuery}
+				want = []string{emptiedMarked(modelKey), emptiedWhole(url), emptiedMarked(toolKey), emptiedWhole(endpoint)}
 			}
 			var reported []string
 			for _, d := range res.Diagnostics {
@@ -307,9 +311,16 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnAgentFrameworkImportCarries(t *t
 			if err != nil {
 				t.Fatalf("read the drafted Release: %v", err)
 			}
+			// A reference is read from the environment only under the setting and the
+			// runtime the comment names, and the comment says so.
+			condition := " only where the application loads the declarative agent with AgentFactory(safe_mode=False), " +
+				"Agent Framework's own security setting, and a .NET runtime is present; otherwise the value is the " +
+				"expression's text as written\n"
 			for _, want := range []string{
-				"#   - model.connection.key, read from the environment variable OPENAI_API_KEY\n",
-				"#   - infra.endpoint, which the declarative agent reads from the environment variable DOCS_MCP_URL\n",
+				"#   - model.connection.key, written as =Env.OPENAI_API_KEY, which Agent Framework reads from the " +
+					"environment variable OPENAI_API_KEY" + condition,
+				"#   - tools.team docs.url, written as =Env.DOCS_MCP_URL, which Agent Framework reads from the " +
+					"environment variable DOCS_MCP_URL" + condition,
 			} {
 				if !strings.Contains(string(release), want) {
 					t.Errorf("the docs agent's Release does not say %q:\n%s", want, release)
@@ -373,9 +384,10 @@ func TestADeclarativeAgentTheParserRefusesHaltsTheImport(t *testing.T) {
 
 // agentFrameworkBuildPaths are the catalog paths a drafted declarative agent is
 // built against: the Agent Framework agent, the OpenAI model and the MCP tool with
-// their Kubernetes Recipes — the MCP tool's realizing a server someone else runs
-// — the schema library, the secret Feature a connection's credential is attached
-// as with its realization, and the provider Plugin entities.
+// their Kubernetes Recipes — the MCP tool's realizing a server someone else runs,
+// so a draft holding an instance of it would render one — the schema library,
+// the secret Feature a connection's credential is attached as with its
+// realization, and the provider Plugin entities.
 func agentFrameworkBuildPaths() []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
@@ -401,10 +413,10 @@ const agentFrameworkImage = "ghcr.io/example/agent-framework-app:1.0.0"
 // Manifest realizing the agent, the model and the MCP tool through their
 // Kubernetes Recipes, and rewrites the drafted Release with only what it leaves
 // for the Release added: an environment, the Manifest, a boundary holding the
-// drafted entries — the model's endpoint and the MCP server's address as the
-// draft writes them — the agent's image, and a credential on each of its
-// connections. It returns the Release's path.
-func writeAgentFrameworkRelease(t *testing.T, dir, key, part, server string) string {
+// drafted entries — the model's endpoint as the draft writes it — the agent's
+// image, and a credential on its model connection. It returns the Release's
+// path.
+func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 	t.Helper()
 	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-agent-framework\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
@@ -439,8 +451,7 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part, server string) str
 			"                      origin: " + name + "\n"
 	}
 	replace("        "+key+":\n          infra: {}\n", "        "+key+":\n          infra:\n            image: "+
-		agentFrameworkImage+"\n          uses:\n            model:\n              "+part+":\n"+credential("model-key")+
-		"            tools:\n              "+server+":\n"+credential("tool-key"))
+		agentFrameworkImage+"\n          uses:\n            model:\n              "+part+":\n"+credential("model-key"))
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": release} {
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
 			t.Fatalf("write the %s: %v", file, err)
@@ -449,41 +460,52 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part, server string) str
 	return filepath.Join(dir, "release.yaml")
 }
 
-// TestTheLearnAgentsDraftBuildsReachingItsModelAndItsMCPServer drafts the learn
+// TestTheLearnAgentsDraftBuildsReachingItsModelAndNoMCPServer drafts the learn
 // agent and builds the draft on helm through the build-faithful harness, the
 // drafted Aggregate unchanged and the drafted Release given only what it leaves
 // for the Release — the build halts naming the image where the Release names
 // none, so its completing is the image's proof: the agent's Deployment is given
-// the model's endpoint the declarative agent states as OPENAI_BASE_URL, its id as
-// OPENAI_MODEL and the MCP server's address, without the query the comment above
-// its entry carries, as
-// AGGREGA_TOOL_MICROSOFT_LEARN_URL; the model's and the server's Services reach
-// their hosts; and the compiled graph carries the agent's description as the
+// the model's endpoint the declarative agent states as OPENAI_BASE_URL and its id
+// as OPENAI_MODEL, and no AGGREGA_TOOL_ variable, since the draft wires no
+// connection to the MCP server, which the model's provider, not the application,
+// reaches; the model's Service reaches its host, and nothing rendered names the
+// MCP server or reaches its host, though the catalog and the Manifest realize the
+// MCP tool; and the compiled graph carries the agent's description as the
 // declarative agent writes it.
 //
-// 🔴 PLANTED DEFECT: in writeToolEntry (plugins/internal/agentframeworkimport/render.go),
-// write no infra block: the build halts naming the remote server's endpoint.
-func TestTheLearnAgentsDraftBuildsReachingItsModelAndItsMCPServer(t *testing.T) {
+// 🔴 PLANTED DEFECT: in writeAgent and renderAggregate
+// (plugins/internal/agentframeworkimport/render.go), wire each MCP server on the
+// tools socket to an instance of the MCP tool: the build halts, or renders the
+// server's variable and Service, and the case fails either way.
+func TestTheLearnAgentsDraftBuildsReachingItsModelAndNoMCPServer(t *testing.T) {
 	t.Parallel()
 	_, dir := writtenImport(t, agentFrameworkWorkspace(t, nil), "learn.yaml",
 		readAgentFrameworkFixture(t, "learn-agent.yaml"))
 	result := pipelinetest.Build(t, pipelinetest.Input{
-		ReleasePath:  writeAgentFrameworkRelease(t, dir, "learnagent", "gpt-4-1-mini", "microsoft-learn"),
+		ReleasePath:  writeAgentFrameworkRelease(t, dir, "learnagent", "gpt-4-1-mini"),
 		CatalogPaths: agentFrameworkBuildPaths(),
 	})
 	for name, want := range map[string]string{
-		"OPENAI_BASE_URL":                  "https://llm-gateway.example.com/v1",
-		"OPENAI_MODEL":                     "gpt-4.1-mini",
-		"AGGREGA_TOOL_MICROSOFT_LEARN_URL": "https://learn.microsoft.com/api/mcp",
+		"OPENAI_BASE_URL": "https://llm-gateway.example.com/v1",
+		"OPENAI_MODEL":    "gpt-4.1-mini",
 	} {
 		if got := platformVariable(t, result.Artifacts, "learnagent", "helm", name); got != want {
 			t.Errorf("the agent is given %s=%q, want %q", name, got, want)
 		}
 	}
-	for suffix, host := range map[string]string{"/helm/gpt-4-1-mini-service.yaml": "llm-gateway.example.com",
-		"/helm/microsoft-learn-service.yaml": "learn.microsoft.com"} {
-		if got := string(renderedEnding(t, result.Artifacts, suffix)); !strings.Contains(got, "externalName: "+host+"\n") {
-			t.Errorf("the Service %s does not reach %s:\n%s", suffix, host, got)
+	names := helmVariableNames(t, result.Artifacts, "learnagent")
+	for _, name := range names {
+		if strings.HasPrefix(name, "AGGREGA_TOOL_") {
+			t.Errorf("the agent is given %s, a variable nothing in the application reads: %v", name, names)
+		}
+	}
+	if got := string(renderedEnding(t, result.Artifacts, "/helm/gpt-4-1-mini-service.yaml")); !strings.Contains(got,
+		"externalName: llm-gateway.example.com\n") {
+		t.Errorf("the model's Service does not reach llm-gateway.example.com:\n%s", got)
+	}
+	for path, body := range result.Artifacts {
+		if strings.Contains(path, "microsoft-learn") || strings.Contains(string(body), "learn.microsoft.com") {
+			t.Errorf("the rendered %s names the MCP server, which nothing the draft deploys reaches:\n%s", path, body)
 		}
 	}
 	raw, ok := result.IRGraph.Spec.ValuesMapping.Get("learnagent")

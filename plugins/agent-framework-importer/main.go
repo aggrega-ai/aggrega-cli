@@ -7,8 +7,9 @@
 // It reads a Microsoft Agent Framework declarative agent — the YAML document of
 // kind Prompt an application built on Agent Framework loads an agent from — and
 // drafts an Aggregate holding one instance of core/ai-agent/agent-framework per
-// declarative agent, wired to the OpenAI model it names and to each MCP server
-// it reaches, and a Release beside it. The application's code is never read.
+// declarative agent, wired to the OpenAI model it names, with each MCP server it
+// names written in a comment, and a Release beside it. The application's code is
+// never read.
 //
 // The guest holds what the host reads off it: this descriptor, the signature a
 // declarative agent is recognised by, and the export wiring. What it does with a
@@ -54,8 +55,8 @@ func descriptor() aggrega.PluginDescriptor {
 		PluginType: "importer",
 		Description: "Import a Microsoft Agent Framework declarative agent (a YAML document of kind Prompt) into a " +
 			"draft Aggregate holding one " + agentframeworkimport.Component + " instance per declarative agent, wired " +
-			"to the OpenAI model it names and to each MCP server it reaches, and a draft Release beside it; the " +
-			"application's code is not read.",
+			"to the OpenAI model it names, with each MCP server it names written in a comment, since the model's " +
+			"provider reaches it, and a draft Release beside it; the application's code is not read.",
 		Capabilities: []string{"import:" + agentframeworkimport.Format},
 		Exports: []aggrega.PluginExport{{
 			Name:          "import",

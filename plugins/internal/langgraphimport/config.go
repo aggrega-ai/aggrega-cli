@@ -36,7 +36,7 @@ type application struct {
 	// env is the environment the configuration states.
 	env environment
 	// built names the members of the configuration langgraph build reads to build
-	// the application's image, and others the members the draft does not carry for
+	// its server image, and others the members the draft does not carry for
 	// another reason, each in the order the configuration writes them.
 	built, others []string
 	// part is the datastore the application's graphs are wired to, nil where none.
@@ -141,9 +141,9 @@ type envEntry struct {
 	located, emptied bool
 }
 
-// The members of a configuration langgraph build reads to build the
-// application's image, which the draft does not carry: the image is the
-// Release's to name.
+// The members of a configuration langgraph build reads to build its server
+// image, which the draft does not carry: the image the Release names is the
+// application's own.
 var buildMembers = []string{
 	"_INTERNAL_docker_tag", "api_version", "base_image", "dependencies", "dockerfile_lines", "image_distro",
 	"keep_pkg_tools", "node_version", "pip_config_file", "pip_installer", "python_version", "source",
