@@ -17,9 +17,10 @@
 // # What a configuration declares
 //
 // ADK states that its Agent Config is experimental. An agent's model is a Gemini
-// model by default, and other providers are reached through a LiteLLM model
-// string. An application declared this way keeps each agent in a YAML
-// file: its name, its class (agent_class, LlmAgent where it names none), its
+// model by default; ADK serves some other providers' models by name through
+// classes of its own, such as claude-sonnet-4-5 and gpt-4o, and others through a
+// LiteLLM model string. An application declared this way keeps each agent in a
+// YAML file: its name, its class (agent_class, LlmAgent where it names none), its
 // description and its instruction; the model it asks for (model) or the code
 // building its model (model_code); its tools, each by name with the arguments
 // its configuration hands it (args); the options of its model requests

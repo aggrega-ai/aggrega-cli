@@ -80,7 +80,8 @@ func writeHeader(b *strings.Builder, apps []*application, unread []string) {
 		"names by their code, nor the environment file ADK's scaffold writes beside "+RootFile+"; the "+
 		"application runs in the image the Release names for each instance, and loads its configurations itself."))
 	b.WriteString(commentLine("", "ADK states that its Agent Config is experimental. An agent's model is a Gemini model by "+
-		"default; other providers are reached through a LiteLLM model string."))
+		"default; ADK serves some other providers' models by name through classes of its own, such as "+
+		"claude-sonnet-4-5 and gpt-4o, and others through a LiteLLM model string."))
 	if len(unread) > 0 {
 		b.WriteString(commentLine("", "Not read, since no agent configuration names it: "+commentList(unread)+"."))
 	}

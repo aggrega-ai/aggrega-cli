@@ -193,7 +193,8 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 			notes: []string{"# Not read, since no agent configuration names it: lesson_plan.yaml.\n",
 				"#   - code_tutor_agent.yaml\n", "#   - math_tutor_agent.yaml\n",
 				"# ADK states that its Agent Config is experimental. An agent's model is a Gemini model by default; " +
-					"other providers are reached through a LiteLLM model string.\n",
+					"ADK serves some other providers' models by name through classes of its own, such as " +
+					"claude-sonnet-4-5 and gpt-4o, and others through a LiteLLM model string.\n",
 				"# Models other agents of the tree ask for, each with the family ADK serves it through; one whose " +
 					"requests ADK sends to the Gemini API is sent with the key this instance's model connection " +
 					"delivers: gemini-pro-latest (math_tutor_agent, served through Gemini).\n",
