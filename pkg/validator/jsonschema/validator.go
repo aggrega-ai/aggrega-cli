@@ -376,6 +376,14 @@ type branchIndex struct {
 	// and a library names its own call root as the root.
 	definition string
 
+	// description is the description the schema writes on this branch itself,
+	// read before a reference-only branch is replaced by the definition it
+	// names, so a definition's own description never stands in for it, and with
+	// its runs of whitespace collapsed to single spaces. It is empty where the
+	// branch declares none. A branch excluded by `not` reports
+	// it as the reason a matching value is refused; see evaluateNot.
+	description string
+
 	// ownPruned carries a compound branch's own constraints — the
 	// declared property names, closedness, the property-count bounds, the
 	// array keywords, the in-place applicators — with the property values

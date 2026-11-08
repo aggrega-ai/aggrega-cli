@@ -663,6 +663,10 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	// value was checked against.
 	declaredSensitive := DeclaresSensitive(s.Extra)
 	definition := enclosing
+	// A description is authored prose, often wrapped across lines in the schema
+	// document; a refusal prints it on one line, so its runs of whitespace are
+	// collapsed to single spaces.
+	description := strings.Join(strings.Fields(s.Description), " ")
 	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
 		s = substituted
 		definition = name
@@ -676,7 +680,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		return nil
 	}
 
-	bi := &branchIndex{definition: definition, format: s.Format, regions: a.libraryRegions(s)}
+	bi := &branchIndex{definition: definition, description: description, format: s.Format, regions: a.libraryRegions(s)}
 	if a.sensitiveDepth > 0 {
 		bi.sensitive = s
 	}

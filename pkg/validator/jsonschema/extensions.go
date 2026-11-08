@@ -739,10 +739,18 @@ func evaluateAnyOf(a *googleAdapter, branches []*branchIndex, instance any, path
 // findings), the exclusion is violated and a single "not" Finding is
 // emitted.
 //
-// The message names the excluded shape where the author gave it a name by
-// referencing one of the schema's own definitions, because that is the one
-// word telling the reader which shape their value is not allowed to be.
-// Without a name there is nothing to name, so the message says what the
+// Where the excluded branch declares a description, the message is that
+// description: a schema that rules a value out is the one place that knows
+// why, and the description written on the exclusion is where it says so. The
+// rule reads the branch as written and nothing else — a description on a
+// definition the branch merely references describes the definition, not the
+// exclusion — so only an author who wrote the reason on the excluded branch
+// changes what a refusal prints.
+//
+// Otherwise the message names the excluded shape where the author gave it a
+// name by referencing one of the schema's own definitions, because that is
+// the one word telling the reader which shape their value is not allowed to
+// be. Without a name there is nothing to name, so the message says what the
 // reader can still act on: the value at this position is one the schema
 // rules out.
 func evaluateNot(a *googleAdapter, notBranch *branchIndex, instance any, path string, rpt *Report) {
@@ -751,7 +759,10 @@ func evaluateNot(a *googleAdapter, notBranch *branchIndex, instance any, path st
 		return
 	}
 	message := "value matches a shape that is not allowed here"
-	if notBranch.definition != "" {
+	switch {
+	case notBranch.description != "":
+		message = notBranch.description
+	case notBranch.definition != "":
 		message = "value matches " + strconv.Quote(notBranch.definition) + ", which is not allowed here"
 	}
 	rpt.append(Finding{
