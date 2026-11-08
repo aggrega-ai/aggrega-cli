@@ -105,11 +105,11 @@ func TestWholeCatalogScopesRefuseAnEmptyStack(t *testing.T) {
 				var out, diag bytes.Buffer
 				dirs := stackFor(t, rw, "", nil)
 				if len(dirs) == 0 {
-					return validateCatalogWideFromWorkspace(rw, nil)
+					return validateCatalogWideFromWorkspace(t.Context(), rw, nil)
 				}
 				// With a stack to scan, the core is driven against buffers so the
 				// summary line does not reach the runner's own output.
-				return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, namedStackFor(t, rw, "", nil), nil, &diag, &out)
+				return validateCatalogWide(t.Context(), rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, namedStackFor(t, rw, "", nil), nil, &diag, &out)
 			},
 		},
 		{

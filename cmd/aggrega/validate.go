@@ -172,7 +172,7 @@ func newValidateCmd() *cobra.Command {
 			if path == "" {
 				// No entity argument → whole-catalog correctness, one pass for each
 				// Release where the workspace gives its Releases directories of their own.
-				return validateCatalogWideFromWorkspace(rw, catalogDirs)
+				return validateCatalogWideFromWorkspace(cmd.Context(), rw, catalogDirs)
 			}
 			// An entity argument is the single-entity scope, with --release or
 			// without it: beside an entity, --release names the Release whose terms

@@ -157,11 +157,11 @@ func importableSummary(inline, importTarget string) string {
 // lookup (the three-form version matching used by the build path — no parallel
 // resolver). It aborts with a clear error when implements is empty, the catalog
 // is unavailable, or the target Component is absent.
-func resolveImplementsComponent(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string, implements string) (types.Component, error) {
+func resolveImplementsComponent(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string, implements string) (types.Component, error) {
 	if implements == "" {
 		return types.Component{}, fmt.Errorf("--show-implements: recipe declares no implements reference")
 	}
-	lookup, err := loadCatalogLookup(rw, catalogDirs)
+	lookup, err := loadCatalogLookup(ctx, rw, catalogDirs)
 	if err != nil {
 		return types.Component{}, fmt.Errorf("--show-implements: %w", err)
 	}
@@ -181,11 +181,11 @@ func resolveImplementsComponent(rw *workspaceconfig.ResolvedWorkspace, catalogDi
 // resolveImplementsFeature mirrors resolveImplementsComponent for a
 // FeatureRecipe's spec.implements reference, resolving the bound Feature via the
 // shared catalog lookup.
-func resolveImplementsFeature(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string, implements string) (types.Feature, error) {
+func resolveImplementsFeature(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string, implements string) (types.Feature, error) {
 	if implements == "" {
 		return types.Feature{}, fmt.Errorf("--show-implements: feature recipe declares no implements reference")
 	}
-	lookup, err := loadCatalogLookup(rw, catalogDirs)
+	lookup, err := loadCatalogLookup(ctx, rw, catalogDirs)
 	if err != nil {
 		return types.Feature{}, fmt.Errorf("--show-implements: %w", err)
 	}
@@ -211,7 +211,7 @@ func resolveImplementsFeature(rw *workspaceconfig.ResolvedWorkspace, catalogDirs
 // reference — but it still supplies the resolved workspace root, which anchors
 // the configured cache directory so the walk steps over cached entities from
 // whichever directory the command is invoked.
-func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, error) {
+func loadCatalogLookup(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, error) {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return resolver.CatalogLookup{}, err
@@ -233,7 +233,7 @@ func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []stri
 	if err != nil {
 		return resolver.CatalogLookup{}, fmt.Errorf("catalog load: %w", err)
 	}
-	extErrs, err := resolveWorkspaceExtends(context.Background(), rw, cat, "", dirs, named)
+	extErrs, err := resolveWorkspaceExtends(ctx, rw, cat, "", dirs, named)
 	if err != nil {
 		return resolver.CatalogLookup{}, err
 	}

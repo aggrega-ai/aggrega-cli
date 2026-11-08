@@ -25,7 +25,7 @@ import (
 //   - levelList: identifier, implements, provider, artifact count.
 //   - levelDefault: implements, provider, artifacts, valuesMapping, injectMapping, executionScope.
 //   - levelDetail: adds artifact bodies, workload body, provides / locals / pipeline / assertions.
-func renderFeatureRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
+func renderFeatureRecipeFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}
@@ -91,7 +91,7 @@ func renderFeatureRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWork
 	}
 
 	if opts.showImplements {
-		feat, err := resolveImplementsFeature(rw, catalogDirs, fr.Spec.Implements)
+		feat, err := resolveImplementsFeature(ctx, rw, catalogDirs, fr.Spec.Implements)
 		if err != nil {
 			return err
 		}

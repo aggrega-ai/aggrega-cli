@@ -39,7 +39,7 @@ import (
 //   - default / --resolved: the topology-resolved text layout.
 //   - --flat: the subsystem tree is flattened to one line per node, each
 //     prefixed with its full dotted InstanceID.
-func renderAggregateFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
+func renderAggregateFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	if opts.mode == modeForcedRaw || opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}
@@ -65,7 +65,7 @@ func renderAggregateFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspac
 		return fmt.Errorf("load aggregate: %w", err)
 	}
 
-	lookup, subLoader, wsRoot, err := aggregateTopologyInputs(rw, catalogDirs)
+	lookup, subLoader, wsRoot, err := aggregateTopologyInputs(ctx, rw, catalogDirs)
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func renderAggregateFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspac
 // (inspect fails on a broken catalog) so the resolved node labels and
 // required-features lookups are accurate; an unavailable catalog aborts the
 // inspection (A5).
-func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, topology.SubAggregateLoader, string, error) {
+func aggregateTopologyInputs(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, topology.SubAggregateLoader, string, error) {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", err
@@ -129,7 +129,7 @@ func aggregateTopologyInputs(rw *workspaceconfig.ResolvedWorkspace, catalogDirs 
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", fmt.Errorf("catalog load: %w", err)
 	}
-	extErrs, err := resolveWorkspaceExtends(context.Background(), rw, cat, "", dirs, named)
+	extErrs, err := resolveWorkspaceExtends(ctx, rw, cat, "", dirs, named)
 	if err != nil {
 		return resolver.CatalogLookup{}, nil, "", err
 	}

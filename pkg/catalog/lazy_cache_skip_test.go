@@ -285,7 +285,8 @@ func TestUnverifiedCachedSchemaLibraries_NamesOnlyWhatWentUnused(t *testing.T) {
 
 // TestCachedLibraryRemedy_EachScopeNamesTheActionThatWorksThere holds the remedy
 // line to the surface printing it. A surface that reads a lockfile is fixed by a
-// pull; a check that reads catalog directories only is not, so it must point
+// pull; a check that reads libraries from catalog directories only — whatever
+// else it reads a lockfile for — is not, so it must point
 // past the pull to the check that reads what the pull records; an offline pull
 // cannot record anything, so it must say where the pull has to run; and a
 // connected pull that found the library nowhere has nothing to record, so it must
@@ -311,7 +312,7 @@ func TestCachedLibraryRemedy_EachScopeNamesTheActionThatWorksThere(t *testing.T)
 		{
 			name:    "a check reading catalog directories only points past the pull",
 			scope:   remedyCatalogDirectoriesOnly,
-			must:    []string{`SchemaLibrary "DbSizing"`, "catalog directories only", "reads no lockfile", "aggrega validate --release <release>", "aggrega pull --release <release>", "Author the library under a catalog directory"},
+			must:    []string{`SchemaLibrary "DbSizing"`, "catalog directories only", "never through a lockfile entry", "aggrega validate --release <release>", "aggrega pull --release <release>", "Author the library under a catalog directory"},
 			mustNot: []string{"counts as catalog content only where"},
 		},
 		{

@@ -25,7 +25,7 @@ import (
 //   - levelDefault: implements, provider, mode sections, valuesMapping summary,
 //     artifacts listing.
 //   - levelDetail: adds workload body, provides / locals / assertions / pipeline.
-func renderRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
+func renderRecipeFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
 		return emitYAMLRoundTrip(opts, path, data)
 	}
@@ -68,7 +68,7 @@ func renderRecipeFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace, 
 	}
 
 	if opts.showImplements {
-		comp, err := resolveImplementsComponent(rw, catalogDirs, rec.Spec.Implements)
+		comp, err := resolveImplementsComponent(ctx, rw, catalogDirs, rec.Spec.Implements)
 		if err != nil {
 			return err
 		}

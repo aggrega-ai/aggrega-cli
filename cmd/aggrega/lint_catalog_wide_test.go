@@ -41,7 +41,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := validateCatalogWide("", "", []string{dir}, nil, nil, os.Stderr, os.Stdout); err == nil {
+	if err := validateCatalogWide(t.Context(), "", "", []string{dir}, nil, nil, os.Stderr, os.Stdout); err == nil {
 		t.Fatal("expected catalog validation to fail on the unresolvable cross-document $ref; got nil")
 	}
 }
@@ -64,7 +64,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-	if err := validateCatalogWide("", "", []string{dir}, nil, nil, os.Stderr, os.Stdout); err != nil {
+	if err := validateCatalogWide(t.Context(), "", "", []string{dir}, nil, nil, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("valid catalog should pass catalog-wide validation; got %v", err)
 	}
 }
@@ -147,7 +147,7 @@ func wholeCatalogScopes(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) []w
 	passes := passesFor(t, rw, nil)
 	return []wholeCatalogScope{
 		{"aggrega validate (whole catalog)", func(out, diag *bytes.Buffer) error {
-			return validateCatalogWide(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes[0].Dirs, passes[0].Named, nil, diag, out)
+			return validateCatalogWide(t.Context(), rw.Root(), rw.Config().ResolvedArtifactCacheDir(), passes[0].Dirs, passes[0].Named, nil, diag, out)
 		}},
 		{"aggrega lint (whole catalog)", func(out, diag *bytes.Buffer) error {
 			return lintops.RunCatalogWide(context.Background(), rw, passes, nil, out, diag, nil)

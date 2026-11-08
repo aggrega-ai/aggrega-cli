@@ -310,7 +310,7 @@ func TestInspectAggregate_NoDivergence_TopologyMatchesBuildFunnel(t *testing.T) 
 	if err != nil {
 		t.Fatalf("load aggregate: %v", err)
 	}
-	lookup, subLoader, _, err := aggregateTopologyInputs(resolveTempWorkspace(t, tempWorkspaceOptions{}), []string{fullstackCatalog})
+	lookup, subLoader, _, err := aggregateTopologyInputs(t.Context(), resolveTempWorkspace(t, tempWorkspaceOptions{}), []string{fullstackCatalog})
 	if err != nil {
 		t.Fatalf("topology inputs: %v", err)
 	}

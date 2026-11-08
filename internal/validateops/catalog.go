@@ -68,14 +68,15 @@ type CatalogResult struct {
 // directories, then a content-cache slot one of those pins vouches for — so a base
 // a pull fetched and pinned is found here as a build finds it, and only a base
 // neither holds is refused. Nothing is fetched: nil pins leave the catalog
-// directories as the only source.
+// directories as the only source. ctx is the caller's, and those reads run under
+// it, so a caller that withdraws ends them.
 //
 // Before anything is loaded, every document under dirs is read and an Aggrega
 // document that cannot be loaded halts the pass, naming each such file — see
 // unloadableCatalogDocuments. The load on its own passes over a file whose YAML
 // does not parse, as a build's load does, so without that walk the pass would
 // report a clean catalog over a document it never read.
-func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string, pins catalog.Pins) (CatalogResult, error) {
+func ValidateCatalog(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, pins catalog.Pins) (CatalogResult, error) {
 	if err := unloadableCatalogDocuments(wsRoot, cacheDir, dirs, named); err != nil {
 		return CatalogResult{}, err
 	}
@@ -91,7 +92,7 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs, named []string, pins catalog
 	schemaNotices := catalogSchemaNotices(cat)
 	// A parent the loaded catalog does not hold is read where a build reads one,
 	// under the pins handed in.
-	if extErrs := cat.ResolveAllExtendsWithPins(context.Background(), wsRoot, cacheDir, dirs, named, pins); len(extErrs) > 0 {
+	if extErrs := cat.ResolveAllExtendsWithPins(ctx, wsRoot, cacheDir, dirs, named, pins); len(extErrs) > 0 {
 		errs := make([]error, len(extErrs))
 		for i, e := range extErrs {
 			errs[i] = e

@@ -181,7 +181,7 @@ func TestValidateRefusesAnUnreadableDeclaredSelector(t *testing.T) {
 					}
 				}()
 				entityRes, entityErr = ValidateEntity(context.Background(), ws, cacheDir, []string{catalogDir}, nil, path, false)
-				catRes, catErr = ValidateCatalog(ws, cacheDir, []string{catalogDir}, nil, nil)
+				catRes, catErr = ValidateCatalog(t.Context(), ws, cacheDir, []string{catalogDir}, nil, nil)
 			}()
 			if catErr != nil {
 				t.Fatalf("the whole-catalog check could not load the catalog: %v", catErr)

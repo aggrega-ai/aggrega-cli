@@ -40,7 +40,10 @@ import (
 // The refusal names what a reader can do about it. Release-scoped correctness
 // resolves a specific closure rather than a whole-tree enumeration, so it has
 // its own way to reach entities and does not refuse here.
-func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string) error {
+//
+// ctx is the caller's, carried into every pass, so a reader who stops the run
+// stops the reads the passes make.
+func validateCatalogWideFromWorkspace(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
@@ -72,9 +75,9 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 		if err != nil {
 			return err
 		}
-		return validateCatalogWide(wsRoot, cacheDir, passes[0].Dirs, passes[0].Named, pins, os.Stderr, os.Stdout)
+		return validateCatalogWide(ctx, wsRoot, cacheDir, passes[0].Dirs, passes[0].Named, pins, os.Stderr, os.Stdout)
 	}
-	return validateCatalogPasses(rw, passes, os.Stderr, os.Stdout)
+	return validateCatalogPasses(ctx, rw, passes, os.Stderr, os.Stdout)
 }
 
 // validateCatalogPasses runs the whole-catalog correctness pass once for each
@@ -97,7 +100,7 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 // purpose: each renders the passes for its own surface — lines on a terminal here,
 // a structured answer there. What a pass reads is decided once for both, by
 // serve.WholeCatalogPasses and serve.CatalogPassPins.
-func validateCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, passes []workspaceconfig.CatalogPass, diagOut, out io.Writer) error {
+func validateCatalogPasses(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, passes []workspaceconfig.CatalogPass, diagOut, out io.Writer) error {
 	wsRoot := rw.Root()
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
 	var failed []string
@@ -115,7 +118,7 @@ func validateCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, passes []works
 		}
 		pins, err := serve.CatalogPassPins(rw, pass)
 		if err == nil {
-			err = validateCatalogWide(wsRoot, cacheDir, pass.Dirs, pass.Named, pins, diagOut, out)
+			err = validateCatalogWide(ctx, wsRoot, cacheDir, pass.Dirs, pass.Named, pins, diagOut, out)
 		}
 		if err != nil {
 			fmt.Fprintf(diagOut, "  %s\n", cerrors.CauseChain(err))
@@ -139,8 +142,8 @@ func validateCatalogPasses(rw *workspaceconfig.ResolvedWorkspace, passes []works
 // the core reports each failing category's full ordered detail. named is the
 // part of dirs somebody named, as the resolver returned it. pins are the pins the
 // pass reads a base its catalog does not hold through (validateops.ValidateCatalog).
-func validateCatalogWide(wsRoot, cacheDir string, dirs, named []string, pins catalog.Pins, diagOut, out io.Writer) error {
-	res, err := validateops.ValidateCatalog(wsRoot, cacheDir, dirs, named, pins)
+func validateCatalogWide(ctx context.Context, wsRoot, cacheDir string, dirs, named []string, pins catalog.Pins, diagOut, out io.Writer) error {
+	res, err := validateops.ValidateCatalog(ctx, wsRoot, cacheDir, dirs, named, pins)
 	if err != nil {
 		return fmt.Errorf("catalog validation failed: %w", err)
 	}

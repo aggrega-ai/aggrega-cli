@@ -252,7 +252,7 @@ func TestValidateToolCatalogScopeCoreParity(t *testing.T) {
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		coreRes, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named, nil)
+		coreRes, coreErr := validateops.ValidateCatalog(t.Context(), tw.root, tw.cacheDir, tw.dirs, tw.named, nil)
 		if coreErr != nil {
 			t.Fatalf("core could not load the clean catalog: %v", coreErr)
 		}
@@ -312,7 +312,7 @@ spec:
 		}
 		payload := unmarshalValidatePayload(t, res)
 
-		coreRes, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named, nil)
+		coreRes, coreErr := validateops.ValidateCatalog(t.Context(), tw.root, tw.cacheDir, tw.dirs, tw.named, nil)
 		if coreErr != nil {
 			t.Fatalf("core could not load the fixture catalog: %v", coreErr)
 		}
@@ -392,7 +392,7 @@ metadata:
 			t.Errorf("the tool's answer names the chart template:\n%s", text)
 		}
 
-		_, coreErr := validateops.ValidateCatalog(tw.root, tw.cacheDir, tw.dirs, tw.named, nil)
+		_, coreErr := validateops.ValidateCatalog(t.Context(), tw.root, tw.cacheDir, tw.dirs, tw.named, nil)
 		if !errors.Is(coreErr, resolver.ErrYAMLLoad()) {
 			t.Fatalf("the core did not halt on the document-load condition: %v", coreErr)
 		}

@@ -755,7 +755,7 @@ func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
 			}
 
 			t.Run("the whole catalog, the drafted Aggregate included", func(t *testing.T) {
-				cr, err := validateops.ValidateCatalog(target.Root(), cacheDir, pass.Dirs, pass.Named, nil)
+				cr, err := validateops.ValidateCatalog(t.Context(), target.Root(), cacheDir, pass.Dirs, pass.Named, nil)
 				if err != nil {
 					t.Fatalf("the catalog holding the drafts did not load: %v", err)
 				}

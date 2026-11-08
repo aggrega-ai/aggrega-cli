@@ -132,7 +132,7 @@ func TestValidateCatalog_UnpinnedCachedLibraryCarriesRemedy(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ws, catalogDir, _ := remedyWorkspace(t, tc.authored, tc.cached)
-			_, err := ValidateCatalog(ws, remedyCacheDir, []string{catalogDir}, nil, nil)
+			_, err := ValidateCatalog(t.Context(), ws, remedyCacheDir, []string{catalogDir}, nil, nil)
 			if !tc.wantErr {
 				if err != nil {
 					t.Fatalf("ValidateCatalog: %v", err)

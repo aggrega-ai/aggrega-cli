@@ -234,7 +234,7 @@ func TestAContentPathOutsideTheEntityDirectoryIsRefusedAtEveryMoment(t *testing.
 				name string
 				run  func() error
 			}{
-				{"aggrega validate", func() error { return validateCatalogWideFromWorkspace(ws, []string{catalogDir}) }},
+				{"aggrega validate", func() error { return validateCatalogWideFromWorkspace(t.Context(), ws, []string{catalogDir}) }},
 				{"aggrega validate <recipe>", func() error {
 					return dispatchValidate(context.Background(), ws, recipePath, "", []string{catalogDir}, false, io.Discard)
 				}},
@@ -261,7 +261,7 @@ func TestAContentPathThatStaysInsideTheEntityDirectoryIsUntouched(t *testing.T) 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := validateCatalogWideFromWorkspace(ws, []string{catalogDir}); err != nil {
+	if err := validateCatalogWideFromWorkspace(t.Context(), ws, []string{catalogDir}); err != nil {
 		t.Fatalf("aggrega validate: %v", err)
 	}
 	if err := dispatchValidate(context.Background(), ws, recipePath, "", []string{catalogDir}, false, io.Discard); err != nil {

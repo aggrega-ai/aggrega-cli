@@ -180,8 +180,8 @@ func TestIntegration_PullFollowsAComponentsExtendsAndPlainValidateReadsWhatItPin
 			t.Fatalf("pins of the workspace's lockfiles: %v", err)
 		}
 		var diag, out bytes.Buffer
-		err = validateCatalogWide(consumer.Root(), consumer.Config().ResolvedArtifactCacheDir(), passes[0].Dirs, passes[0].Named, pins, &diag, &out)
-		if fdErr := validateCatalogWideFromWorkspace(consumer, nil); (fdErr == nil) != (err == nil) {
+		err = validateCatalogWide(t.Context(), consumer.Root(), consumer.Config().ResolvedArtifactCacheDir(), passes[0].Dirs, passes[0].Named, pins, &diag, &out)
+		if fdErr := validateCatalogWideFromWorkspace(t.Context(), consumer, nil); (fdErr == nil) != (err == nil) {
 			t.Fatalf("`aggrega validate` reached verdict %v where its single pass reached %v", fdErr, err)
 		}
 		return diag.String(), err
