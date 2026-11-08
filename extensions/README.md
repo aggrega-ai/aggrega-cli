@@ -7,16 +7,20 @@ settings, which is how some clients take a local server. The client table on the
 which clients take it this way and how every other client connects.
 
 **The bundle carries no Aggrega program.** It launches the `aggrega` executable already installed on
-the machine, at a path the person installing it supplies, and speaks the protocol over that process's
-standard input and output — the same server `aggrega mcp` runs with no listen address. Because the
-manifest names no executable of any platform, the same bundle applies to every platform it declares:
-macOS, Windows and Linux.
+the machine, by default the `aggrega` command on the client's `PATH`, and speaks the protocol over
+that process's standard input and output — the same server `aggrega mcp` runs with no listen address.
+Because the manifest names no executable of any platform, the same bundle applies to every platform it
+declares: macOS, Windows and Linux.
 
-**It asks for two settings.** **Path to the aggrega executable** is the program it launches, and is
-required. **Workspace folder** is the workspace the server serves: the folder that holds the
-project's `.aggrega-config.yaml`, handed to the server as `AGGREGA_WORKSPACE_ROOT` in its environment
-rather than as an argument, so the folder does not pass through the quoting of the command line the
-client composes. A client starts a local server in a folder of its own choosing, often a system folder,
+**It asks for two settings.** **Path to the aggrega executable** is the program it launches. Its
+default is the command name `aggrega`, which the bundle hands the client as the command to start, so
+the client looks it up on the `PATH` it was started with; an executable chosen in the setting replaces
+the name. The setting is not required, and that is deliberate: the format's reference resolver fills
+in a setting's default where nothing is stored, but builds no launch at all while a required setting
+has nothing stored, whatever its default. **Workspace folder** is the workspace the server serves: the
+folder that holds the project's `.aggrega-config.yaml`, handed to the server as
+`AGGREGA_WORKSPACE_ROOT` in its environment rather than as an argument, so the folder does not pass
+through the quoting of the command line the client composes. A client starts a local server in a folder of its own choosing, often a system folder,
 so a request naming no workspace of its own is answered in the folder this setting names, or refused,
 and never answered in that one. The folder is taken as the
 workspace root itself, as `--workspace-root` is on every command. A folder that does not exist does not

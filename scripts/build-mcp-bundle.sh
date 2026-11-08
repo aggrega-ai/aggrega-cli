@@ -78,7 +78,12 @@
 set -euo pipefail
 
 # The packer, at one exact version. Raise it deliberately: validate
-# extensions/mcpb/manifest.json under the new version before changing it here.
+# extensions/mcpb/manifest.json under the new version before changing it here,
+# and re-read how the new version's resolver treats a required setting and a
+# setting's default. Both bundle settings rely on it: each is not required and
+# carries a default, because this version substitutes a default only where
+# nothing is stored and builds no launch while a required setting has nothing
+# stored.
 MCPB_PACKER="@anthropic-ai/mcpb@2.1.2"
 
 # The launch-environment entry the stamped version is written into. The manifest

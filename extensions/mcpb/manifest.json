@@ -3,7 +3,7 @@
   "name": "aggrega",
   "display_name": "Aggrega",
   "version": "0.0.0",
-  "description": "Runs Aggrega as a Model Context Protocol server, so an assistant can compile and inspect a Release and read catalog entities through a structured protocol instead of scraping command output. This package carries no Aggrega program of its own: it launches the aggrega executable already installed on this machine, at the path you supply below.",
+  "description": "Runs Aggrega as a Model Context Protocol server, so an assistant can compile and inspect a Release and read catalog entities through a structured protocol instead of scraping command output. This package carries no Aggrega program of its own: it launches the aggrega executable already installed on this machine — the aggrega command found on this application's PATH, unless you choose another executable below.",
   "author": {
     "name": "aggrega-ai"
   },
@@ -41,8 +41,9 @@
     "binary_path": {
       "type": "file",
       "title": "Path to the aggrega executable",
-      "description": "Select the aggrega executable already installed on this machine — the same program that runs when you type aggrega version at a terminal. This package launches that program rather than carrying one of its own, so the server does not start until this path is set.",
-      "required": true
+      "description": "The aggrega executable this package launches, rather than carrying one of its own. Left at aggrega, it is the aggrega command found on the PATH this application was started with; a PATH changed since then reaches it once the application is quit and started again. Choose a file here to run an aggrega that is not on that PATH, or a different one than it finds first. If no aggrega is installed, install it first: https://aggrega.ai/docs/install/",
+      "required": false,
+      "default": "aggrega"
     },
     "workspace_root": {
       "type": "directory",
