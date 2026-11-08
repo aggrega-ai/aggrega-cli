@@ -5,9 +5,11 @@ package renderer
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -159,6 +161,108 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyIsRefused(t *testing.T)
 		!strings.Contains(got[0], `"DB_PASSWORD"`) ||
 		!strings.Contains(got[0], `mechanism "env"`) {
 		t.Errorf("finding must name the key and the mechanism; got %q", got)
+	}
+}
+
+// TestDeliverAttachmentInjectKeys_ClaimsComeBackEnvFileArgThenCustomSorted pins
+// the order an attachment's claims and its sensitive reports come back in: env,
+// file and arg, then every other mechanism in sorted name order, whatever order
+// the attachment's mapping names them in, each mechanism's keys in the order the
+// mapping lists them. It also pins where each lands: a typed mechanism in the
+// pipe's own field, a custom one under its own name — kept even when none of its
+// claims delivered — beside a custom mechanism the pipe already carried, whose
+// standing key is left in place.
+func TestDeliverAttachmentInjectKeys_ClaimsComeBackEnvFileArgThenCustomSorted(t *testing.T) {
+	t.Parallel()
+
+	mapping := func(pairs ...[3]string) types.OrderedMap[types.OrderedMap[string]] {
+		var out types.OrderedMap[types.OrderedMap[string]]
+		for _, p := range pairs {
+			keys, _ := out.Get(p[0])
+			keys.Set(p[1], p[2])
+			out.Set(p[0], keys)
+		}
+		return out
+	}
+	// Named in an order that is neither the typed order nor sorted.
+	entryInject := mapping(
+		[3]string{"vault", "V", "v"},
+		[3]string{"arg", "A", "a"},
+		[3]string{"ssm", "S", "s"},
+		[3]string{"ssm", "S_TAKEN", "s"},
+		[3]string{"env", "E", "e"},
+		[3]string{"env", "E_MISSING", "nope"},
+		[3]string{"kv", "K", "nope"},
+		[3]string{"file", "F", "f"},
+	)
+	sensitive := mapping(
+		[3]string{"env", "E", "e"},
+		[3]string{"vault", "V", "v"},
+		[3]string{"ssm", "S_TAKEN", "s"},
+	)
+	provided := types.OrderedMap[string]{}
+	for _, k := range []string{"e", "f", "a", "s", "v"} {
+		provided.Set(k, "value-"+k)
+	}
+	inject := types.InjectPipe{}
+	var standing types.OrderedMap[string]
+	standing.Set("S_TAKEN", "standing")
+	inject.Additional.Set("ssm", standing)
+
+	var reported []string
+	claims := deliverAttachmentInjectKeys(&inject, "creds", entryInject, provided, sensitive, func(attachment, mechanism, deliveryKey string) {
+		reported = append(reported, attachment+"/"+mechanism+"/"+deliveryKey)
+	})
+
+	claim := func(mech, key string, delivered bool) constraint.InjectDelivery {
+		return constraint.InjectDelivery{Mechanism: mech, DeliveryKey: key, Attachment: "creds", Delivered: delivered}
+	}
+	wantClaims := []constraint.InjectDelivery{
+		claim("env", "E", true),
+		claim("env", "E_MISSING", false),
+		claim("file", "F", true),
+		claim("arg", "A", true),
+		claim("kv", "K", false),
+		claim("ssm", "S", true),
+		claim("ssm", "S_TAKEN", false),
+		claim("vault", "V", true),
+	}
+	if !reflect.DeepEqual(claims, wantClaims) {
+		t.Errorf("claims came back as\n  %+v\nwant\n  %+v", claims, wantClaims)
+	}
+	if want := []string{"creds/env/E", "creds/vault/V"}; !reflect.DeepEqual(reported, want) {
+		t.Errorf("sensitive reports %v, want %v", reported, want)
+	}
+
+	for _, tc := range []struct {
+		view types.OrderedMap[string]
+		key  string
+		want string
+	}{
+		{inject.Env, "E", "value-e"},
+		{inject.File, "F", "value-f"},
+		{inject.Arg, "A", "value-a"},
+	} {
+		if got, _ := tc.view.Get(tc.key); got != tc.want {
+			t.Errorf("typed field %s = %q, want %q", tc.key, got, tc.want)
+		}
+	}
+	if got, want := inject.Additional.Keys(), []string{"ssm", "kv", "vault"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("custom mechanisms in the pipe %v, want %v", got, want)
+	}
+	ssm, _ := inject.Additional.Get("ssm")
+	if got, _ := ssm.Get("S_TAKEN"); got != "standing" {
+		t.Errorf("ssm S_TAKEN = %q, want the standing value kept", got)
+	}
+	if got, _ := ssm.Get("S"); got != "value-s" {
+		t.Errorf("ssm S = %q, want %q", got, "value-s")
+	}
+	vault, _ := inject.Additional.Get("vault")
+	if got, _ := vault.Get("V"); got != "value-v" {
+		t.Errorf("vault V = %q, want %q", got, "value-v")
+	}
+	if kv, _ := inject.Additional.Get("kv"); kv.Len() != 0 {
+		t.Errorf("kv carries %v, want an empty entry: none of its claims delivered", kv.Keys())
 	}
 }
 

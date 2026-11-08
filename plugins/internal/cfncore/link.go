@@ -361,17 +361,14 @@ func linkedKeys(edge rendercore.LinkEdge) (edgeLinkKeys, error) {
 }
 
 // injectedOutputKeys returns the sorted, de-duplicated set of consumed output
-// keys the edge injects across its env, file, and arg mechanisms — the keys the
-// producer must export and the consumer must resolve whatever their value.
-// Sorting makes the publish operations and handle entries byte-identical across
-// runs of identical input.
+// keys the edge injects under every mechanism its inject mapping names — env,
+// file, arg and any mechanism of the author's naming alike, because the host
+// stamps a placeholder for a key under each — the keys the producer must export
+// and the consumer must resolve whatever their value. Sorting makes the publish
+// operations and handle entries byte-identical across runs of identical input.
 func injectedOutputKeys(edge rendercore.LinkEdge) []string {
 	seen := map[string]struct{}{}
-	for _, mech := range []string{"env", "file", "arg"} {
-		keymap, ok := edge.Inject.Get(mech)
-		if !ok {
-			continue
-		}
+	for _, keymap := range edge.Inject.All() {
 		for _, outputKey := range keymap.All() {
 			seen[outputKey] = struct{}{}
 		}

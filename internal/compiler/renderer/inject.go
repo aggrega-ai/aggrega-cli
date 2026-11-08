@@ -4,6 +4,8 @@
 package renderer
 
 import (
+	"iter"
+	"slices"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -108,22 +110,10 @@ func RehydrateInjectFromProvides(
 			continue
 		}
 
-		// Resolve env inject keys
-		resolveInjectKeys(&inject.Env, edge.Inject, "env", targetProvides)
-		resolveInjectKeys(&inject.File, edge.Inject, "file", targetProvides)
-		resolveInjectKeys(&inject.Arg, edge.Inject, "arg", targetProvides)
-
-		// A mechanism the edge names that is not one of the three typed ones
-		// resolves through the same per-key resolver and lands under its own
-		// name. The resolver is already mechanism-parametric, so the mechanism
-		// name is the only thing that differs from the three calls above.
-		for _, mech := range customInjectMechanisms(edge.Inject) {
-			dst, ok := inject.Additional.Get(mech)
-			if !ok {
-				dst = types.OrderedMap[string]{}
-			}
-			resolveInjectKeys(&dst, edge.Inject, mech, targetProvides)
-			inject.Additional.Set(mech, dst)
+		for mech, keymap := range deliveryMappingMechanisms(edge.Inject) {
+			dest, keep := injectPipeMechanism(inject, mech)
+			resolveInjectKeys(dest, keymap, targetProvides)
+			keep()
 		}
 	}
 
@@ -131,10 +121,69 @@ func RehydrateInjectFromProvides(
 	inject.All = buildInjectAll(*inject)
 }
 
+// typedInjectMechanisms are the mechanisms the pipe carries in fields of its own,
+// in the order deliveryMappingMechanisms yields them. Every other mechanism name is custom.
+var typedInjectMechanisms = [...]string{"env", "file", "arg"}
+
+// deliveryMappingMechanisms yields each mechanism a resolved delivery mapping
+// names — a uses edge's or an attachment's, keyed by mechanism to the local key and
+// the provides key it reads — with that mechanism's key map, in the order the
+// deliveries resolve them: env, file and arg, each only where the mapping names it,
+// then every other mechanism in the order customInjectMechanisms gives.
+//
+// The edge delivery, the cross-boundary placeholder stamp and the attachment
+// delivery all walk a mapping through it, so a mechanism the edge delivers is a
+// mechanism the stamp reaches, whatever its name, and an attachment's claims come
+// back in that one order.
+func deliveryMappingMechanisms(mapping types.OrderedMap[types.OrderedMap[string]]) iter.Seq2[string, types.OrderedMap[string]] {
+	return func(yield func(string, types.OrderedMap[string]) bool) {
+		for _, mech := range typedInjectMechanisms {
+			keymap, ok := mapping.Get(mech)
+			if !ok {
+				continue
+			}
+			if !yield(mech, keymap) {
+				return
+			}
+		}
+		for _, mech := range customInjectMechanisms(mapping) {
+			keymap, _ := mapping.Get(mech)
+			if !yield(mech, keymap) {
+				return
+			}
+		}
+	}
+}
+
+// injectPipeMechanism returns the pipe's delivery map for one mechanism, and keep,
+// which records in the pipe what the caller left in that map. env, file and arg
+// are the pipe's own fields, so the map is the field itself and keep does nothing.
+// Any other mechanism lives in Additional under its own name, held by value: the
+// map handed back is that value — empty when the pipe carries nothing under that
+// name yet — and it shares its storage with the entry in the pipe rather than
+// copying it, so a write to it is not wholly the pipe's until keep stores it back.
+// A caller that writes calls keep; a caller that only reads, or finds nothing to
+// change, does not, and the pipe is left exactly as it was.
+func injectPipeMechanism(inject *types.InjectPipe, mechanism string) (dest *types.OrderedMap[string], keep func()) {
+	switch mechanism {
+	case "env":
+		return &inject.Env, func() {}
+	case "file":
+		return &inject.File, func() {}
+	case "arg":
+		return &inject.Arg, func() {}
+	}
+	held, ok := inject.Additional.Get(mechanism)
+	if !ok {
+		held = types.OrderedMap[string]{}
+	}
+	return &held, func() { inject.Additional.Set(mechanism, held) }
+}
+
 // customInjectMechanisms names the mechanisms of an inject container that are
 // not one of the three typed ones, in sorted order.
 //
-// It is the one place that decides which mechanism names are typed, so a
+// It decides which names are custom by typedInjectMechanisms alone, so a
 // delivery site cannot disagree with another about whether a name is custom;
 // and it is generic over the payload because the containers differ by
 // authoring surface — a component's own inject block carries an undecoded
@@ -145,7 +194,7 @@ func RehydrateInjectFromProvides(
 func customInjectMechanisms[V any](container types.OrderedMap[V]) []string {
 	var custom []string
 	for mech := range container.All() {
-		if mech == "env" || mech == "file" || mech == "arg" {
+		if slices.Contains(typedInjectMechanisms[:], mech) {
 			continue
 		}
 		custom = append(custom, mech)
@@ -154,11 +203,7 @@ func customInjectMechanisms[V any](container types.OrderedMap[V]) []string {
 	return custom
 }
 
-func resolveInjectKeys(dest *types.OrderedMap[string], edgeInject types.OrderedMap[types.OrderedMap[string]], mechanism string, targetProvides types.OrderedMap[string]) {
-	mechanismMap, ok := edgeInject.Get(mechanism)
-	if !ok {
-		return
-	}
+func resolveInjectKeys(dest *types.OrderedMap[string], mechanismMap types.OrderedMap[string], targetProvides types.OrderedMap[string]) {
 	for localKey, providesKey := range mechanismMap.All() {
 		if resolved, ok := targetProvides.Get(providesKey); ok {
 			dest.Set(localKey, resolved)

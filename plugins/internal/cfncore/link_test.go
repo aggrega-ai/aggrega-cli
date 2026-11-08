@@ -121,6 +121,74 @@ func TestLinkResolveSameAccountImportValue(t *testing.T) {
 	}
 }
 
+// TestLinkKeyOnlyACustomMechanismInjectsIsExportedAndResolved holds the link to
+// every mechanism the edge injects under: a key the edge delivers only under a
+// mechanism of its author's naming is exported by the publish and its placeholder
+// replaced by the resolve with the import of that export, exactly as an env key
+// is. Each row names the edge's inject mapping; in every row the key "host"
+// reaches the consumer only under the custom mechanism ssm_ref.
+func TestLinkKeyOnlyACustomMechanismInjectsIsExportedAndResolved(t *testing.T) {
+	mapping := func(pairs ...[3]string) types.OrderedMap[types.OrderedMap[string]] {
+		var out types.OrderedMap[types.OrderedMap[string]]
+		for _, p := range pairs {
+			keys, _ := out.Get(p[0])
+			keys.Set(p[1], p[2])
+			out.Set(p[0], keys)
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name   string
+		inject types.OrderedMap[types.OrderedMap[string]]
+	}{
+		{name: "the custom mechanism alone", inject: mapping([3]string{"ssm_ref", "DB_HOST_REF", "host"})},
+		{name: "beside an env key carrying another value", inject: mapping(
+			[3]string{"env", "DB_PORT", "port"}, [3]string{"ssm_ref", "DB_HOST_REF", "host"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			edge := testLinkEdge(nil, nil)
+			edge.Inject = tc.inject
+			wantExport := ExportName(testRelease, "prod/data", "orders-db", "host")
+
+			pub, err := LinkPublish(edge, nil)
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			if got := pub.Handle[handleExportNamePrefix+"host"]; got != wantExport {
+				t.Fatalf("handle export name for host = %q, want %q: the key a custom mechanism injects was not published", got, wantExport)
+			}
+			wantPath := "/Outputs/" + OutputLogicalID("orders-db", "host") + "/Export"
+			exported := false
+			for _, patch := range pub.Patches {
+				for _, op := range patch.Ops {
+					if op.Op == "add" && op.Path == wantPath {
+						exported = true
+					}
+				}
+			}
+			if !exported {
+				t.Fatalf("the publish adds no Export at %s; patches: %+v", wantPath, pub.Patches)
+			}
+
+			stack := []byte(`{"Resources":{"Api":{"Properties":{"Environment":{"DB_HOST_REF":"` + sentinelFor("host") + `"}}}}}`)
+			out, err := LinkResolve(edge, pub.Handle, []rendercore.RenderedFile{{Path: StackTemplateName, Content: stack}})
+			if err != nil {
+				t.Fatalf("LinkResolve: %v", err)
+			}
+			if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
+				t.Fatalf("want one patch with one op replacing the placeholder, got %+v", out.Patches)
+			}
+			op := out.Patches[0].Ops[0]
+			if op.Op != "replace" || op.Path != "/Resources/Api/Properties/Environment/DB_HOST_REF" {
+				t.Errorf("op = %q at %q, want replace at the DB_HOST_REF path", op.Op, op.Path)
+			}
+			if val, _ := op.Value.(map[string]any); val["Fn::ImportValue"] != wantExport {
+				t.Errorf("the placeholder becomes %+v, want the import of %q", op.Value, wantExport)
+			}
+		})
+	}
+}
+
 // TestLinkResolveReplacesEveryOccurrence proves the resolver wires every place a
 // consumer renders the placeholder: a value bound to a sourced template's parameter
 // lands wherever the template referenced the parameter, so one injected key can

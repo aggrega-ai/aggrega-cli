@@ -76,31 +76,15 @@ func ExecutePass2a(
 	}
 
 	for mech, raw := range selfInjectMechanisms(selfInject) {
-		// The three typed mechanisms land in the pipe's own fields. Any other
-		// mechanism resolves through the same per-key resolver and lands under its
-		// own name; the resolver is mechanism-parametric, so the destination map is
-		// the only thing that differs.
-		var err error
-		switch mech {
-		case "env":
-			err = processSelfInjectMechanism(&inject.Env, mech, raw, ownProvides, siCtx, withheld)
-		case "file":
-			err = processSelfInjectMechanism(&inject.File, mech, raw, ownProvides, siCtx, withheld)
-		case "arg":
-			err = processSelfInjectMechanism(&inject.Arg, mech, raw, ownProvides, siCtx, withheld)
-		default:
-			dest, ok := inject.Additional.Get(mech)
-			if !ok {
-				dest = types.OrderedMap[string]{}
-			}
-			err = processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, withheld)
-			if err == nil {
-				inject.Additional.Set(mech, dest)
-			}
-		}
-		if err != nil {
+		// Every mechanism resolves through the same per-key resolver; the
+		// destination is the pipe's own field for env, file and arg and the
+		// mechanism's own entry for any other, and a failed resolution halts
+		// before keep is called.
+		dest, keep := injectPipeMechanism(inject, mech)
+		if err := processSelfInjectMechanism(dest, mech, raw, ownProvides, siCtx, withheld); err != nil {
 			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 		}
+		keep()
 	}
 
 	// Rebuild .all

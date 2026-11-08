@@ -575,44 +575,27 @@ func boundaryInfraFor(input RendererInput, nodeID string) *resolver.BoundaryInfr
 
 // stampEdgeSentinels overwrites the delivered value of each of an edge's
 // injected keys with the deterministic placeholder for that (edge, output-key)
-// pair, across the env, file, and arg mechanisms the uses-edge inject path
-// delivers. Only a key already present in the pipe is overwritten — the edge's
-// delivered value is replaced, never a new key introduced — so a value the
-// producer's provides did not carry stays absent. It reports whether it changed
-// any value.
+// pair, under every mechanism the edge's inject mapping names — env, file, arg
+// and any other — walked as the edge delivery walks them ([deliveryMappingMechanisms]).
+// Only a key already present in the pipe is overwritten — the edge's delivered
+// value is replaced, never a new key introduced — so a value the producer's
+// provides did not carry stays absent. It reports whether it changed any value.
 func stampEdgeSentinels(inject *types.InjectPipe, edge types.IREdge) bool {
 	stamped := false
-	for _, mech := range []string{"env", "file", "arg"} {
-		keymap, ok := edge.Inject.Get(mech)
-		if !ok {
-			continue
-		}
-		dest := injectMechanism(inject, mech)
-		if dest == nil {
-			continue
-		}
+	for mech, keymap := range deliveryMappingMechanisms(edge.Inject) {
+		dest, keep := injectPipeMechanism(inject, mech)
+		changed := false
 		for localKey, providesKey := range keymap.All() {
 			if _, delivered := dest.Get(localKey); !delivered {
 				continue
 			}
 			dest.Set(localKey, rendercore.CrossBoundaryLinkSentinel(edge.Source, edge.Target, edge.Socket, providesKey))
+			changed = true
+		}
+		if changed {
+			keep()
 			stamped = true
 		}
 	}
 	return stamped
-}
-
-// injectMechanism returns the addressable delivery map for one inject mechanism,
-// or nil for a mechanism the uses-edge inject path does not deliver.
-func injectMechanism(inject *types.InjectPipe, mechanism string) *types.OrderedMap[string] {
-	switch mechanism {
-	case "env":
-		return &inject.Env
-	case "file":
-		return &inject.File
-	case "arg":
-		return &inject.Arg
-	default:
-		return nil
-	}
 }

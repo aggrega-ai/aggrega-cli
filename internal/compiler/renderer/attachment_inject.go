@@ -524,28 +524,12 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 		claims = append(claims, claim)
 		reportSensitive(mech, localKey)
 	}
-	for _, mt := range []struct {
-		name string
-		dest *types.OrderedMap[string]
-	}{{"env", &inject.Env}, {"file", &inject.File}, {"arg", &inject.Arg}} {
-		mechMap, ok := entryInject.Get(mt.name)
-		if !ok {
-			continue
-		}
+	for mech, mechMap := range deliveryMappingMechanisms(entryInject) {
+		dest, keep := injectPipeMechanism(inject, mech)
 		for localKey, providesKey := range mechMap.All() {
-			set(mt.dest, mt.name, localKey, providesKey)
+			set(dest, mech, localKey, providesKey)
 		}
-	}
-	for _, mech := range customInjectMechanisms(entryInject) {
-		mechMap, _ := entryInject.Get(mech)
-		dst, ok := inject.Additional.Get(mech)
-		if !ok {
-			dst = types.OrderedMap[string]{}
-		}
-		for localKey, providesKey := range mechMap.All() {
-			set(&dst, mech, localKey, providesKey)
-		}
-		inject.Additional.Set(mech, dst)
+		keep()
 	}
 	return claims
 }
