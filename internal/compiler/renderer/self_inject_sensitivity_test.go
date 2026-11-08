@@ -139,6 +139,66 @@ func TestSelfInjectWithheld_EveryDeliveredMechanismIsRead(t *testing.T) {
 	}
 }
 
+// TestSelfInjectWithheld_ACustomMechanismIsReadAsEnvIs pins that a mechanism the
+// component type permits beyond env, file and arg is read by the same rule. Each
+// custom entry has an env twin carrying the same authored half, so every row
+// compares the two markings directly: a reading that skipped the custom mechanism
+// fails the withheld rows, and one that marked every custom entry fails the clear
+// rows beside them. The custom mechanism is written alone in a second block too,
+// so a reading that only reached custom mechanisms through an env pass is caught.
+func TestSelfInjectWithheld_ACustomMechanismIsReadAsEnvIs(t *testing.T) {
+	t.Parallel()
+	declaredProvides := map[string]bool{"rootPassword": true}
+	declaredValues := map[string]bool{"dbPassword": true}
+
+	entries := func(prefix string) any {
+		return selfInjectVerbose(
+			prefix+"_FROM_DECLARED", "from", "rootPassword",
+			prefix+"_FROM_PLAIN", "from", "port",
+			prefix+"_VALUE_DECLARED", "value", "{{ .values.dbPassword }}",
+			prefix+"_VALUE_PLAIN", "value", "{{ .values.host }}",
+			prefix+"_LITERAL", "value", "dbPassword",
+		)
+	}
+	withEnv := &types.InjectBlock{Env: entries("ZZ")}
+	withEnv.Additional.Set("vault_ref", entries("ZZ"))
+	customAlone := &types.InjectBlock{}
+	customAlone.Additional.Set("vault_ref", entries("ZZ"))
+
+	rows := []struct {
+		key      string
+		withheld bool
+	}{
+		{"ZZ_FROM_DECLARED", true},
+		{"ZZ_FROM_PLAIN", false},
+		{"ZZ_VALUE_DECLARED", true},
+		{"ZZ_VALUE_PLAIN", false},
+		{"ZZ_LITERAL", false},
+	}
+	for _, block := range []struct {
+		name  string
+		block *types.InjectBlock
+		env   bool
+	}{
+		{"beside env", withEnv, true},
+		{"alone", customAlone, false},
+	} {
+		got := selfInjectWithheld(block.block, declaredProvides, declaredValues, nil)
+		for _, r := range rows {
+			if got["vault_ref"][r.key] != r.withheld {
+				t.Errorf("%s: vault_ref %q withheld = %v, want %v; got %v", block.name, r.key, got["vault_ref"][r.key], r.withheld, got)
+			}
+			if block.env && got["env"][r.key] != got["vault_ref"][r.key] {
+				t.Errorf("%s: %q is withheld under env (%v) and under vault_ref (%v); one rule must answer both alike",
+					block.name, r.key, got["env"][r.key], got["vault_ref"][r.key])
+			}
+		}
+		if !block.env && len(got["env"]) != 0 {
+			t.Errorf("%s: a marking must not cross into a mechanism the block does not name; got %v", block.name, got)
+		}
+	}
+}
+
 // TestSelfInjectWithheld_AnAuthoredLiteralIsNotARoute pins the one entry shape the
 // reading deliberately ignores. A value: carrying no template reference is the
 // string the author typed; no declaration stands between them and it, so

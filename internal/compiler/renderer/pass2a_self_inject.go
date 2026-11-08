@@ -112,10 +112,11 @@ func ExecutePass2a(
 // selfInjectMechanisms yields each mechanism a component's own inject block
 // names, with its authored entries, in the order the delivery resolves them: env,
 // file and arg, each only where the block names it, then every other mechanism in
-// the order customInjectMechanisms gives. It is the one statement of that order:
-// the delivery and the reading of which own value each entry delivers both walk
-// a block through it, so the two meet the mechanisms in one sequence. A nil block
-// yields nothing.
+// the order customInjectMechanisms gives. Within the render it is the one
+// statement of that order and of that set: the delivery, the reading of which own value each entry
+// delivers, and the reading of which delivered keys carry declared-sensitive
+// material all walk a block through it, so each meets the mechanisms the delivery
+// resolves, in one sequence. A nil block yields nothing.
 func selfInjectMechanisms(block *types.InjectBlock) iter.Seq2[string, any] {
 	return func(yield func(string, any) bool) {
 		if block == nil {

@@ -339,9 +339,14 @@ func connectionsWithheld(nodeID string, graph *types.IRGraph) map[string]redact.
 //
 // A `value:` carrying no template reference is an authored literal: the author
 // typed the delivered string, no declaration stands between them and it, so it
-// contributes nothing. Only env, file and arg are read here; a custom
-// mechanism the self-inject pass also delivers is not, so an entry under one is
-// not withheld by this reading.
+// contributes nothing.
+//
+// Every mechanism the block names is read, by one rule: a custom mechanism the
+// component type permits is delivered onto the pipe beside env, file and arg,
+// under its own name, and the material it carries is the same material. The
+// block is walked by selfInjectMechanisms, the walker the delivery itself goes
+// through, so this reading meets exactly the mechanisms the delivery resolves and
+// holds no list of its own that a mechanism could be missing from.
 //
 // The reading is STATIC: authored entries plus declared leaf paths. It resolves no
 // `from:` and evaluates no template, and it never inspects a delivered value.
@@ -358,15 +363,8 @@ func selfInjectWithheld(
 	}
 	templateKeys := redact.Keys{Values: declaredValues, Infra: declaredInfra}
 	var out redact.DeliveryKeys
-	for _, mechanism := range []struct {
-		name string
-		raw  any
-	}{
-		{"env", selfInject.Env},
-		{"file", selfInject.File},
-		{"arg", selfInject.Arg},
-	} {
-		entries := normalizeSelfInjectEntries(mechanism.raw)
+	for mechanism, raw := range selfInjectMechanisms(selfInject) {
+		entries := normalizeSelfInjectEntries(raw)
 		for deliveryKey, entry := range entries.All() {
 			withheld := false
 			if from, ok := entry.providesKey(); ok {
@@ -380,10 +378,10 @@ func selfInjectWithheld(
 			if out == nil {
 				out = redact.DeliveryKeys{}
 			}
-			if out[mechanism.name] == nil {
-				out[mechanism.name] = map[string]bool{}
+			if out[mechanism] == nil {
+				out[mechanism] = map[string]bool{}
 			}
-			out[mechanism.name][deliveryKey] = true
+			out[mechanism][deliveryKey] = true
 		}
 	}
 	return out
