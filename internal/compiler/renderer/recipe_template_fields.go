@@ -308,11 +308,18 @@ func RecipeImportFields(recipe *types.Recipe) []string {
 	if recipe == nil {
 		return nil
 	}
+	return importFieldsOf(recipe.Spec.ValuesMapping, recipe.Spec.Workload)
+}
+
+// importFieldsOf is the body [RecipeImportFields] presents, over the two fields
+// themselves rather than over a Recipe, so a FeatureRecipe — which authors both
+// fields the same way — is enumerated by the same body.
+func importFieldsOf(valuesMapping types.ValuesMapping, workload types.WorkloadTemplate) []string {
 	var out []string
-	if recipe.Spec.ValuesMapping.Import != "" {
+	if valuesMapping.Import != "" {
 		out = append(out, recipeFieldValuesMapping)
 	}
-	if recipe.Spec.Workload.Import != "" {
+	if workload.Import != "" {
 		out = append(out, recipeFieldWorkload)
 	}
 	return out

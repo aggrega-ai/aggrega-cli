@@ -1409,10 +1409,19 @@ func (v *describedView) boundaryAttachmentEngine(
 // plugin version answers, and that is the plugin whose self-report this stage's
 // provider facts report.
 func (v *describedView) capabilityEngine(capability string) (Provider, bool) {
-	if v.engineFactory == nil {
+	return resolveCapabilityEngine(v.engineFactory, capability)
+}
+
+// resolveCapabilityEngine is the resolution [describedView.capabilityEngine]
+// presents, over a factory rather than over a presentation, so a reading made
+// where the render holds the factory itself resolves a binding exactly as every
+// provider fact does. A nil factory, a binding it cannot resolve and a nil engine
+// all report false.
+func resolveCapabilityEngine(factory EngineFactory, capability string) (Provider, bool) {
+	if factory == nil {
 		return nil, false
 	}
-	engine, err := v.engineFactory(capability)
+	engine, err := factory(capability)
 	if err != nil || engine == nil {
 		return nil, false
 	}

@@ -67,7 +67,7 @@ func TestResolveAttachmentInject_SecretDeliversResolvedProvidesToHostPipe(t *tes
 	}}
 
 	inject, _ := BuildInjectPipe(nil)
-	if _, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil, nil); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil, nil, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	got, ok := inject.Env.Get("DB_PASSWORD")
@@ -107,7 +107,7 @@ func TestResolveAttachmentInject_FeatureDeliversResolvedProvidesToHostPipe(t *te
 	}}
 
 	inject, _ := BuildInjectPipe(nil)
-	if _, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil, nil); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil, nil, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	if got, _ := inject.Env.Get("CACHE_URL"); got != "redis.svc.cluster.local" {
@@ -145,7 +145,7 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyIsRefused(t *testing.T)
 
 	inject, _ := BuildInjectPipe(nil)
 	inject.Env.Set("DB_PASSWORD", "from-self-inject") // a prior developer source claimed the key
-	deliveries, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil, nil)
+	deliveries, err := ResolveAttachmentInject(&inject, graph, "api", "", lookup, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("delivery itself must not fail: %v", err)
 	}
@@ -210,22 +210,27 @@ func TestDeliverAttachmentInjectKeys_ClaimsComeBackEnvFileArgThenCustomSorted(t 
 	inject.Additional.Set("ssm", standing)
 
 	var reported []string
-	claims := deliverAttachmentInjectKeys(&inject, "creds", entryInject, provided, sensitive, func(attachment, mechanism, deliveryKey string) {
+	source := &attachmentProvidesSource{featureRecipe: "creds-fr", provided: provided}
+	claims := deliverAttachmentInjectKeys(&inject, "creds", entryInject, source, sensitive, func(attachment, mechanism, deliveryKey string) {
 		reported = append(reported, attachment+"/"+mechanism+"/"+deliveryKey)
 	})
 
-	claim := func(mech, key string, delivered bool) constraint.InjectDelivery {
-		return constraint.InjectDelivery{Mechanism: mech, DeliveryKey: key, Attachment: "creds", Delivered: delivered}
+	published := []string{"a", "e", "f", "s", "v"}
+	claim := func(mech, key, from string, delivered, unresolved bool) constraint.InjectDelivery {
+		return constraint.InjectDelivery{
+			Mechanism: mech, DeliveryKey: key, Attachment: "creds", Delivered: delivered,
+			From: from, Unresolved: unresolved, FeatureRecipe: "creds-fr", Published: published,
+		}
 	}
 	wantClaims := []constraint.InjectDelivery{
-		claim("env", "E", true),
-		claim("env", "E_MISSING", false),
-		claim("file", "F", true),
-		claim("arg", "A", true),
-		claim("kv", "K", false),
-		claim("ssm", "S", true),
-		claim("ssm", "S_TAKEN", false),
-		claim("vault", "V", true),
+		claim("env", "E", "e", true, false),
+		claim("env", "E_MISSING", "nope", false, true),
+		claim("file", "F", "f", true, false),
+		claim("arg", "A", "a", true, false),
+		claim("kv", "K", "nope", false, true),
+		claim("ssm", "S", "s", true, false),
+		claim("ssm", "S_TAKEN", "s", false, false),
+		claim("vault", "V", "v", true, false),
 	}
 	if !reflect.DeepEqual(claims, wantClaims) {
 		t.Errorf("claims came back as\n  %+v\nwant\n  %+v", claims, wantClaims)

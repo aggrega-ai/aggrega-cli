@@ -254,13 +254,20 @@ var errAnnotationBindingPillarOverlap = cerrors.Register("annotation-binding-pil
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
-// ErrInvalidInjectKey wraps an inject delivery key that does not match
-// the expected per-mechanism format.
+// ErrInvalidInjectKey reports an inject entry whose `from:` names a key the
+// source it reads from does not publish: the component's own type for an entry
+// in a component's own injection block, the component a connection points at for
+// an entry on a connection, and the attachment's FeatureRecipe for an entry in an
+// attachment's own injection block.
+//
+// The registered wording names the source generically because one condition is
+// raised from all three surfaces, and each finding names its own source in its
+// detail, beside the keys that source does publish.
 func ErrInvalidInjectKey() error { return errInvalidInjectKey }
 
 var errInvalidInjectKey = cerrors.Register("invalid-inject-key", cerrors.Meta{
 	ShortCode: "E0156",
-	Message:   "invalid inject key: the from-key must name a declared provides key of the target component type",
+	Message:   "invalid inject key: the from-key must name a provides key its source publishes",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

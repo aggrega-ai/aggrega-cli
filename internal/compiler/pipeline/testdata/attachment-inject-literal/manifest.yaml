@@ -11,3 +11,4 @@ spec:
     features:
       type:
         core/token: token-compose:1.0.0
+        core/directive-token: directive-token-compose:1.0.0

@@ -626,9 +626,19 @@ var (
 	_ constraint.AttachmentSiteEnumerator = oneNodesAttachments{}
 )
 
-// runNodeInjectDeliveryRule asks the rule declared over one node's attributed
-// injection deliveries about each attachment attached to that node, and returns
-// what it raised as the render's halt.
+// runNodeInjectDeliveryRule asks the two rules declared over one node's attributed
+// injection deliveries about each attachment attached to that node — a claim
+// whose key another source already holds, and a claim naming a key the
+// attachment's FeatureRecipe does not publish — and returns what they raised as
+// the render's halt.
+//
+// The two are asked together and reported together, because a claim can fail for
+// both reasons and each reason has its own remedy: an author told only one would
+// fix it and meet the other on the next build. Findings about held keys come
+// first, then the others, each set in the order its rule raised it — and the order
+// is visible beyond the text: a halt joining both sets carries the first finding's
+// short code, so it reports the held-key code while matching both conditions, and
+// reordering the two sets changes which code a joined halt reports.
 //
 // It is called from inside the node walk, immediately after the attachments have
 // delivered into the node's pipe and before anything reads that pipe. That is the
@@ -668,14 +678,27 @@ func runNodeInjectDeliveryRule(
 		return nil
 	}
 	subject := oneNodesAttachments{node: node, attachments: coordinates}
-	raised, err := constraint.RunOnNodeAttachments(
+	held, err := constraint.RunOnNodeAttachments(
 		cancelled, subject, subject, view, AttachmentInjectKeyNotDeliveredByAnotherSource,
 	)
 	if err != nil {
 		return err
 	}
+	unpublished, err := constraint.RunOnNodeAttachments(
+		cancelled, subject, subject, view, AttachmentInjectFromNamesAPublishedKey,
+	)
+	if err != nil {
+		return err
+	}
+	switch {
+	case len(held) > 0 && len(unpublished) > 0:
+		return objectionsAsAuthoredHalt(append(held, unpublished...),
+			"attachments delivering a key another inject source already delivered, or naming a key their FeatureRecipe does not publish")
+	case len(unpublished) > 0:
+		return objectionsAsAuthoredHalt(unpublished, "attachments naming a key their FeatureRecipe does not publish")
+	}
 	return objectionsAsAuthoredHalt(
-		raised, "attachments delivering a key another inject source already delivered")
+		held, "attachments delivering a key another inject source already delivered")
 }
 
 // runInjectMappingMechanismRule asks the rule declared over one node's recorded

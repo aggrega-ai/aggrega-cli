@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -1085,6 +1086,85 @@ var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
 				constraint.Uncaptioned(claim.DeliveryKey),
 				constraint.Captioned("mechanism", claim.Mechanism),
 			))
+		}
+		return out
+	},
+}
+
+// AttachmentInjectFromNamesAPublishedKey reports each entry one attachment's own
+// inject block writes whose `from:` names a key the attachment's FeatureRecipe does
+// not publish, where that FeatureRecipe does not read the attachment's entries
+// itself.
+//
+// An attachment's entry delivers into the component's pipe the value its
+// FeatureRecipe publishes under the key `from:` names. A key the FeatureRecipe does
+// not publish puts no value there, and where nothing else receives the entry either
+// it is dropped without a word — a misspelt key builds and the component starts
+// without the variable it was written to receive. The build halts instead, naming
+// the key, the entry, the FeatureRecipe and the keys it does publish, which are the
+// alternatives the author picks from.
+//
+// A FeatureRecipe reading the attachment's entries at .inject — in a template it has
+// evaluated against the attachment's render context, the one context carrying them:
+// its values mapping, workload, artifacts, omits or a pipeline step's input or gate,
+// never its injectMapping — is the one exception, because there the entry is not
+// dropped: the FeatureRecipe receives every entry as written and delivers it its own
+// way, under a key that is its own business rather than one it publishes. Whether
+// it reads them is the read census's answer, recorded on the claim where the claim
+// was made, and that census sees a read only where the template text decides the
+// path — a FeatureRecipe handing the whole of its context on, or reaching the
+// entries through a function such as index over the context, is answered as not
+// reading them, and its entries naming unpublished keys are refused. A FeatureRecipe
+// whose templates the census cannot read is answered as reading them, because its
+// render halts on that template with the fault the author has to fix first.
+//
+// It is the condition a `from:` naming no published key raises on every surface
+// that writes one — a component's own block, a connection's — raised here from the
+// attachment's own block. It reads the same record the rule beside it reads, and a
+// claim whose key was already held as well as naming an unpublished key is reported
+// by each of the two rules, because each reason has its own remedy. An attachment
+// whose FeatureRecipe's provides were not evaluated for the component — one
+// rendering once for its boundary, where no boundary holding the component made
+// that evaluation — has no claim marked, so it is never reported here.
+//
+// It is invoked once per attachment, beside the rule over a held key and over the
+// same record, and each offending entry is its own objection.
+//
+// # What the detail names
+//
+// The key `from:` names stands bare, because the registered wording says a
+// from-key is what the finding is about. The entry is named by its `in:` and its
+// mechanism, captioned, then the FeatureRecipe, then each key it publishes, sorted;
+// a FeatureRecipe publishing nothing ends the message after its name. The node and
+// the attachment are carried by the locator, which positions the finding at the
+// attachment's own entry in the document that wrote it, on the reading the rule
+// beside it states.
+var AttachmentInjectFromNamesAPublishedKey = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: resolver.ErrInvalidInjectKey(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		var out []constraint.Objection
+		for _, claim := range v.NodeInjectDeliveries(s.NodeID()) {
+			if claim.Attachment != s.AttachmentName() || rewritesThePipe(claim) ||
+				!claim.Unresolved || claim.DirectiveRead {
+				continue
+			}
+			detail := []constraint.DetailValue{
+				constraint.Uncaptioned(claim.From),
+				constraint.Captioned("in", claim.DeliveryKey),
+				constraint.Captioned("mechanism", claim.Mechanism),
+				constraint.Captioned("FeatureRecipe", claim.FeatureRecipe),
+			}
+			for _, key := range claim.Published {
+				detail = append(detail, constraint.Captioned("publishes", key))
+			}
+			out = append(out, s.RaiseWith(resolver.ErrInvalidInjectKey(), detail...))
 		}
 		return out
 	},

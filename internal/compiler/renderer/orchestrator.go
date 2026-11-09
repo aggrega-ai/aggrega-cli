@@ -1734,6 +1734,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		release = input.ResolveResult.Release
 	}
 
+	// Whether an attachment's FeatureRecipe reads the attachment's own inject
+	// entries itself, asked at attachment delivery only of an attachment naming a
+	// key its FeatureRecipe does not publish. The libraries are the ones the
+	// render resolves those imports against.
+	readsInjectDirective := injectDirectiveReader(RecipeTemplateLibraries{
+		Mappings:  input.MappingLibraries,
+		Workloads: input.WorkloadLibraries,
+		Artifacts: input.ArtifactLibraries,
+	}, engineFactory)
+
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
 	// deterministic walk); nodeOrder is the host node's position in that order,
 	// the outer A1 replay-ordering key for deferred host PATCHes.
@@ -1782,7 +1792,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		injectDeliveries, err := ResolveAttachmentInject(&inject, graph, nodeID, renderedNames[nodeID], recipeLookup,
 			func(attachment, mechanism, deliveryKey string) {
 				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
-			}, readers.feature, boundaryFRState)
+			}, readers.feature, boundaryFRState, readsInjectDirective)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID}, fmt.Sprintf("node %q attachment inject", nodeID))
 		}

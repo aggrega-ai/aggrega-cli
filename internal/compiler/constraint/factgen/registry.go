@@ -433,13 +433,27 @@ var records = []recordDecl{
 			"by an earlier delivery another attachment made: a rewrite of what " +
 			"the component's own block or one " +
 			"of its connections delivered is interception rather than a second " +
-			"claim.",
+			"claim.\n\nWhy a claim an attachment's own injection block made " +
+			"went undelivered travels with it as well, because the two reasons " +
+			"call for different remedies and a claim can have both: its key may " +
+			"already be held, and the key its entry reads from may be one the " +
+			"attachment's FeatureRecipe does not publish. The second is recorded " +
+			"with what a finding about it names — the key read, the " +
+			"FeatureRecipe, the keys it does publish — and with whether that " +
+			"FeatureRecipe's own templates read the attachment's entries " +
+			"themselves, which is what separates an entry nothing receives from " +
+			"one its FeatureRecipe consumes.",
 		Fields: []recordField{
 			{Name: "Mechanism", Type: "string", Doc: "Mechanism is the injection mechanism the key is delivered through."},
 			{Name: "DeliveryKey", Type: "string", Doc: "DeliveryKey is the key the value is delivered under, which is what the consumer reads it by."},
 			{Name: "Attachment", Type: "string", Doc: "Attachment is the attachment instance that made the delivery — through its own injection block or through its FeatureRecipe's injectMapping — empty where the component's own block or one of its connections did."},
 			{Name: "Delivered", Type: "bool", Doc: "Delivered reports whether a value arrived under the key, which is false for a delivery whose reference resolved to nothing and for one whose key another delivery already holds. A delivery an injectMapping made always arrived: the merge sets every key the rendered output carries, an empty value included, so a key the output does not carry is the only thing such a mapping leaves undelivered, and it makes no delivery at all."},
 			{Name: "ThroughMapping", Type: "bool", Doc: "ThroughMapping reports whether the attachment made the delivery through its FeatureRecipe's injectMapping rather than through its own injection block, which is false for every delivery the component's own block or one of its connections made."},
+			{Name: "From", Type: "string", Doc: "From is the provides key the attachment's own injection block entry names with from:, which is empty for every other delivery."},
+			{Name: "Unresolved", Type: "bool", Doc: "Unresolved reports whether From names no key the attachment's FeatureRecipe publishes, read against the provides that FeatureRecipe's evaluation for this component produced. It is false wherever no such evaluation was made for the component — an attachment whose FeatureRecipe renders once for its boundary, where no boundary holding the component made that evaluation — because there is nothing to read the key against, and false for every delivery that is not an attachment's own injection block entry. It is independent of Delivered: a claim whose key was already held may name an unpublished key as well."},
+			{Name: "DirectiveRead", Type: "bool", Doc: "DirectiveRead reports, for an Unresolved claim, whether the attachment's FeatureRecipe reads the attachment's injection block itself — whether any template it has evaluated against the attachment's render context reads .inject, which carries every entry of that block — so that the entry is received by the FeatureRecipe rather than by nothing. Those templates are the values mapping, the workload, the artifacts entries, the omits entries and each pipeline step's input and gate; the locals, provides, source and assertions are evaluated against contexts carrying no .inject, and the injectMapping against the component's. It is decided by the read census over those templates, imported content included, and it is false on every claim that is not Unresolved, where it is not asked. A FeatureRecipe whose templates the census cannot read — one that does not parse, an import that does not resolve — is reported as reading it, because what it reads cannot be known and its render reports that fault where it evaluates the template."},
+			{Name: "FeatureRecipe", Type: "string", Doc: "FeatureRecipe is the name of the FeatureRecipe the attachment binds, for an attachment's own injection block entry whose FeatureRecipe's provides were evaluated for the component. It is empty where no such evaluation was made — an attachment whose FeatureRecipe renders once for its boundary, where no boundary holding the component made it — and for every other delivery."},
+			{Name: "Published", Type: "[]string", Doc: "Published are the keys the attachment's FeatureRecipe publishes, sorted, as the evaluation From is read against produced them — the alternatives a finding about an Unresolved claim offers. It is filled where FeatureRecipe is, and is empty there too for a FeatureRecipe that publishes nothing; it is empty for every other delivery."},
 		},
 	},
 	{

@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-consumed
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      features:
+        token:
+          type: core/directive-token
+          inject:
+            env:
+              # A key the attachment's FeatureRecipe does not publish, but reads
+              # itself: the entry is consumed rather than dropped.
+              - in: OPENAI_API_KEY
+                from: api_token

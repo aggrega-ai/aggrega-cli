@@ -62,7 +62,7 @@ func sensitiveByValueRun(t *testing.T, marked types.OrderedMap[types.OrderedMap[
 			t.Errorf("report identified attachment %q mechanism %q, want %q / %q", attachment, mechanism, "db-creds", "env")
 		}
 		reported = append(reported, deliveryKey)
-	}, nil, nil); err != nil {
+	}, nil, nil, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	return reported

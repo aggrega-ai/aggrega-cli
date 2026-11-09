@@ -138,7 +138,7 @@ func (f onceFixture) read(t *testing.T, state *BoundaryFRState, nodeID string) c
 
 	// An inject block authored on the attachment.
 	inject, injectRaw := BuildInjectPipe(nil)
-	if _, err := ResolveAttachmentInject(&inject, f.graph, nodeID, "", f.lookup, nil, nil, state); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, f.graph, nodeID, "", f.lookup, nil, nil, state, nil); err != nil {
 		t.Fatalf("%s: the attachment's inject block was not resolved: %v", nodeID, err)
 	}
 	injected, _ := inject.Env.Get("GW_EDGES")

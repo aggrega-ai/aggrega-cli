@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-held-unresolved
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      # The component's own block delivers TOKEN_NAME first.
+      inject:
+        env:
+          - in: TOKEN_NAME
+            value: own
+      features:
+        token:
+          type: core/token
+          inject:
+            env:
+              # The same key again, read from a key the attachment's
+              # FeatureRecipe does not publish: two faults on one entry.
+              - in: TOKEN_NAME
+                from: nmae

@@ -67,6 +67,87 @@ func RecipeTemplateReads(recipe *types.Recipe, libs RecipeTemplateLibraries, art
 	if recipe == nil {
 		return nil, nil
 	}
+	return templateReadsOf(templateReadDocument{
+		name:          recipe.Metadata.Name,
+		kind:          "Recipe",
+		inline:        RecipeTemplateFields(recipe),
+		valuesMapping: recipe.Spec.ValuesMapping,
+		workload:      recipe.Spec.Workload,
+		// The boundary block takes the same forms as the artifacts block and is
+		// walked by the same evaluation, so its imported entries are read the same
+		// way, after the Recipe's own.
+		artifacts: []artifactReadBlock{
+			{artifactsLabelPrefix, recipe.Spec.Artifacts},
+			{boundaryArtifactsLabelPrefix, recipe.Spec.Boundary.Artifacts},
+		},
+		blocks: func(visit func(label, text string) bool) bool {
+			return recipeBlockTemplates(recipe, visit)
+		},
+	}, libs, artifactLeft, artifactRight)
+}
+
+// FeatureRecipeTemplateReads returns every field access the read census reports
+// across the templates an attachment bound to a FeatureRecipe has evaluated against
+// the attachment's own render context, imported content included.
+//
+// It is the reading [RecipeTemplateReads] takes, over the other document a render
+// evaluates templates from, and it is that reading's own body rather than a copy of
+// it: the set is the inline fields [AttachmentTemplateFields] presents — the values
+// mapping, the workload body, each artifacts entry, each field of each omits entry,
+// and each pipeline step's input and gate — then the values mapping and the
+// workload the FeatureRecipe imports instead, and each artifacts entry it imports.
+// The census, the delimiter rule, the import resolution and the way an unreadable
+// template stops the reading are the ones stated there.
+//
+// The set is narrower than the Recipe reading's, and deliberately so. A
+// FeatureRecipe's locals, provides, assertions and source are each evaluated against
+// a context of their own, and its injectMapping against the context of the
+// component the attachment reaches; none of them is the attachment's render
+// context, which is the one carrying the attachment's own entries at .inject, so a
+// read counted from any of them would answer a question about that context from a
+// template that never sees it.
+func FeatureRecipeTemplateReads(fr *types.FeatureRecipe, libs RecipeTemplateLibraries, artifactLeft, artifactRight string) ([]string, error) {
+	if fr == nil {
+		return nil, nil
+	}
+	return templateReadsOf(templateReadDocument{
+		name:          fr.Metadata.Name,
+		kind:          "FeatureRecipe",
+		inline:        AttachmentTemplateFields(fr),
+		valuesMapping: fr.Spec.ValuesMapping,
+		workload:      fr.Spec.Workload,
+		artifacts:     []artifactReadBlock{{artifactsLabelPrefix, fr.Spec.Artifacts}},
+	}, libs, artifactLeft, artifactRight)
+}
+
+// templateReadDocument is what the read census walks of one document: its inline
+// fields as the document's own enumeration presents them, the two spec-root fields
+// it may import, each artifacts block it writes, and the walk over its other
+// template-bearing blocks — nil where the reading takes none of them.
+//
+// It is the one shape both documents are read through, so a Recipe and a
+// FeatureRecipe — which declare these blocks identically — are read by one body and
+// cannot come to disagree about what a block contributes.
+type templateReadDocument struct {
+	name, kind    string
+	inline        []RecipeTemplateField
+	valuesMapping types.ValuesMapping
+	workload      types.WorkloadTemplate
+	artifacts     []artifactReadBlock
+	blocks        func(visit func(label, text string) bool) bool
+}
+
+// artifactReadBlock is one artifacts block a document writes, under the label
+// prefix its entries are read back by.
+type artifactReadBlock struct {
+	labelPrefix string
+	entries     types.OrderedMap[types.ArtifactEntry]
+}
+
+// templateReadsOf is the body [RecipeTemplateReads] and
+// [FeatureRecipeTemplateReads] share: the census over one document's templates, in
+// the order the set is listed in.
+func templateReadsOf(doc templateReadDocument, libs RecipeTemplateLibraries, artifactLeft, artifactRight string) ([]string, error) {
 	var reads []string
 	collect := func(label, text, left, right string) error {
 		if text == "" {
@@ -80,7 +161,7 @@ func RecipeTemplateReads(recipe *types.Recipe, libs RecipeTemplateLibraries, art
 		return nil
 	}
 
-	for _, field := range RecipeTemplateFields(recipe) {
+	for _, field := range doc.inline {
 		left, right := "{{", "}}"
 		if RecipeTemplateFieldReadsWithArtifactDelimiters(field.Label) {
 			left, right = artifactLeft, artifactRight
@@ -90,15 +171,15 @@ func RecipeTemplateReads(recipe *types.Recipe, libs RecipeTemplateLibraries, art
 		}
 	}
 
-	name := recipe.Metadata.Name
-	for _, field := range RecipeImportFields(recipe) {
+	name := doc.name
+	for _, field := range importFieldsOf(doc.valuesMapping, doc.workload) {
 		var text string
 		var err error
 		switch field {
 		case recipeFieldValuesMapping:
-			text, err = resolveValuesMappingText(recipe.Spec.ValuesMapping, name, "Recipe", libs.Mappings)
+			text, err = resolveValuesMappingText(doc.valuesMapping, name, doc.kind, libs.Mappings)
 		case recipeFieldWorkload:
-			text, err = resolveWorkloadText(recipe.Spec.Workload, name, libs.Workloads)
+			text, err = resolveWorkloadText(doc.workload, name, libs.Workloads)
 		}
 		if err != nil {
 			return nil, err
@@ -109,16 +190,8 @@ func RecipeTemplateReads(recipe *types.Recipe, libs RecipeTemplateLibraries, art
 	}
 
 	// An inline artifacts entry is one of the fields above; only an imported one
-	// is read here, in the two forms the artifacts walk resolves it from. The
-	// boundary block takes the same forms and is walked by the same evaluation, so
-	// its imported entries are read the same way, after the Recipe's own.
-	for _, block := range []struct {
-		labelPrefix string
-		entries     types.OrderedMap[types.ArtifactEntry]
-	}{
-		{artifactsLabelPrefix, recipe.Spec.Artifacts},
-		{boundaryArtifactsLabelPrefix, recipe.Spec.Boundary.Artifacts},
-	} {
+	// is read here, in the two forms the artifacts walk resolves it from.
+	for _, block := range doc.artifacts {
 		for _, key := range block.entries.Keys() {
 			entry, _ := block.entries.Get(key)
 			if entry.Import == "" {
@@ -148,8 +221,11 @@ func RecipeTemplateReads(recipe *types.Recipe, libs RecipeTemplateLibraries, art
 		}
 	}
 
+	if doc.blocks == nil {
+		return reads, nil
+	}
 	var blockErr error
-	recipeBlockTemplates(recipe, func(label, text string) bool {
+	doc.blocks(func(label, text string) bool {
 		blockErr = collect(label, text, "{{", "}}")
 		return blockErr == nil
 	})

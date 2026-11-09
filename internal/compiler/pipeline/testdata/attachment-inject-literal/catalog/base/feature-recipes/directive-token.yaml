@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: directive-token-compose
+  version: 1.0.0
+  description: >
+    Compose implementation of core/directive-token. It publishes one key, name,
+    and reads the attachment's inject entries itself at .inject, rendering them
+    into a config of its own.
+spec:
+  capability: compose
+  implements: core/directive-token
+  provides:
+    name: tok-secret
+  artifacts:
+    directive.yaml: |
+      configs:
+        directive:
+          content: '{{ toJson .inject.env }}'

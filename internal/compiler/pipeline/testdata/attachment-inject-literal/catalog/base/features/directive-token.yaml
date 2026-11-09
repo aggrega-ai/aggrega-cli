@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/directive-token
+  version: "1.0.0"
+spec:
+  # A Feature whose FeatureRecipe receives the attachment's inject entries
+  # itself and delivers them its own way.
+  interoperability:
+    conflictsWith: []

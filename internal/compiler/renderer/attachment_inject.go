@@ -64,6 +64,14 @@ import (
 // inject block against the one evaluation of its provides that boundary made,
 // read from boundaryFR through the cascade lookup from the node's boundary path —
 // the value [ResolveAttachmentProvides] reads too — and is never evaluated here.
+// Where no boundary holding the node made that evaluation, there is nothing to
+// read a key against, so no claim of such an attachment is recorded as naming an
+// unpublished key.
+//
+// readsDirective answers whether an attachment's FeatureRecipe reads the
+// attachment's inject entries itself, at .inject, and is asked only of an
+// attachment one of whose claims names a key its FeatureRecipe does not publish;
+// the answer is recorded on those claims. A nil reader answers false.
 func ResolveAttachmentInject(
 	inject *types.InjectPipe,
 	graph *types.IRGraph,
@@ -72,6 +80,7 @@ func ResolveAttachmentInject(
 	onSensitiveByValue func(attachment, mechanism, deliveryKey string),
 	declared func(featureType string) resolver.SensitiveLeaves,
 	boundaryFR *BoundaryFRState,
+	readsDirective func(fr *types.FeatureRecipe) bool,
 ) ([]constraint.InjectDelivery, error) {
 	// The deliveries already standing in the pipe are read FIRST, before any
 	// attachment delivers into it. They are the component's own and its
@@ -98,7 +107,7 @@ func ResolveAttachmentInject(
 		if !found {
 			continue
 		}
-		made, boundary, _ := boundaryScopeAttachmentEvaluation(fr, boundaryFR, consumerBoundaryPath, instanceName)
+		made, boundary, evaluated := boundaryScopeAttachmentEvaluation(fr, boundaryFR, consumerBoundaryPath, instanceName)
 		provided := made.Provides
 		if !boundary {
 			var err error
@@ -106,9 +115,16 @@ func ResolveAttachmentInject(
 			if err != nil {
 				return deliveries, err
 			}
+			evaluated = true
 		}
-		deliveries = append(deliveries, deliverAttachmentInjectKeys(
-			inject, instanceName, entry.Inject, provided, entry.SensitiveInject, onSensitiveByValue)...)
+		var source *attachmentProvidesSource
+		if evaluated {
+			source = &attachmentProvidesSource{featureRecipe: fr.Metadata.Name, provided: provided}
+		}
+		claims := deliverAttachmentInjectKeys(
+			inject, instanceName, entry.Inject, source, entry.SensitiveInject, onSensitiveByValue)
+		recordDirectiveRead(claims, func() bool { return readsDirective != nil && readsDirective(fr) })
+		deliveries = append(deliveries, claims...)
 	}
 	inject.All = buildInjectAll(*inject)
 	return deliveries, nil
@@ -465,6 +481,29 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 	return out, nil
 }
 
+// attachmentProvidesSource is the evaluation of an attachment's FeatureRecipe
+// provides that the attachment's inject entries are read against: the
+// FeatureRecipe's name and what its provides produced for the component.
+//
+// It is absent — a nil pointer — where no evaluation was made for the component,
+// which is a boundary-scope attachment no boundary holding the component
+// evaluated. That absence is a different state from an evaluation producing
+// nothing, and the difference is what decides whether a key can be judged
+// unpublished at all.
+type attachmentProvidesSource struct {
+	featureRecipe string
+	provided      types.OrderedMap[string]
+}
+
+// published is the keys the evaluation produced, sorted, which is how a finding
+// about a key the FeatureRecipe does not publish lists the alternatives on every
+// surface that reports one.
+func (s *attachmentProvidesSource) published() []string {
+	keys := s.provided.Keys()
+	sort.Strings(keys)
+	return keys
+}
+
 // deliverAttachmentInjectKeys resolves each delivery key's provides-key
 // reference against the attachment's resolved provides and sets the resolved
 // value into the pipe under the local delivery key, returning one record per
@@ -479,11 +518,16 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 // promises a reader.
 //
 // An unresolved provides-key (absent from the attachment's provides) delivers
-// nothing either (missingkey=zero semantics) and is recorded the same way — and
-// the two cases have to be recorded alike, because a claim that put no value
-// under a key leaves that key free for a later claim whichever reason it failed
-// for. Mechanisms are processed env, file, arg, then custom mechanisms in sorted
-// order for deterministic emission, which is the order the records come back in.
+// nothing either and is recorded as undelivered too — the two cases have to be
+// recorded alike in that respect, because a claim that put no value under a key
+// leaves that key free for a later claim whichever reason it failed for. What
+// separates them is recorded beside it: a claim whose key names nothing the
+// source publishes is marked unresolved, with the key it read, the FeatureRecipe
+// and the keys it does publish, and the mark is read before whether the slot is
+// held, so a claim failing for both reasons carries both. A nil source made no
+// evaluation and marks no claim. Mechanisms are processed env, file, arg, then
+// custom mechanisms in sorted order for deterministic emission, which is the
+// order the records come back in.
 //
 // sensitiveInject is the attachment's derived per-delivery-key marking, in the
 // same mechanism-then-delivery-key shape as entryInject. It is read, never
@@ -492,8 +536,14 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 // disagree with the first. onSensitiveByValue, when non-nil, is called for each
 // marked key whose value the pipe actually received; a key whose referenced
 // provides key resolved to nothing delivers no literal and reports nothing.
-func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, entryInject types.OrderedMap[types.OrderedMap[string]], provided types.OrderedMap[string], sensitiveInject types.OrderedMap[types.OrderedMap[string]], onSensitiveByValue func(attachment, mechanism, deliveryKey string)) []constraint.InjectDelivery {
+func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, entryInject types.OrderedMap[types.OrderedMap[string]], source *attachmentProvidesSource, sensitiveInject types.OrderedMap[types.OrderedMap[string]], onSensitiveByValue func(attachment, mechanism, deliveryKey string)) []constraint.InjectDelivery {
 	var claims []constraint.InjectDelivery
+	var provided types.OrderedMap[string]
+	var published []string
+	if source != nil {
+		provided = source.provided
+		published = source.published()
+	}
 	reportSensitive := func(mech, localKey string) {
 		if onSensitiveByValue == nil {
 			return
@@ -508,14 +558,19 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 	}
 	set := func(dest *types.OrderedMap[string], mech, localKey, providesKey string) {
 		claim := constraint.InjectDelivery{
-			Mechanism: mech, DeliveryKey: localKey, Attachment: instanceName,
+			Mechanism: mech, DeliveryKey: localKey, Attachment: instanceName, From: providesKey,
+		}
+		val, resolved := provided.Get(providesKey)
+		if source != nil {
+			claim.FeatureRecipe = source.featureRecipe
+			claim.Published = published
+			claim.Unresolved = !resolved
 		}
 		if _, exists := dest.Get(localKey); exists {
 			claims = append(claims, claim)
 			return
 		}
-		val, ok := provided.Get(providesKey)
-		if !ok {
+		if !resolved {
 			claims = append(claims, claim)
 			return
 		}
@@ -532,4 +587,74 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 		keep()
 	}
 	return claims
+}
+
+// recordDirectiveRead records, on each of one attachment's claims that names a key
+// its FeatureRecipe does not publish, whether that FeatureRecipe reads the
+// attachment's inject entries itself.
+//
+// reads is asked at most once, and only where such a claim exists: answering it
+// takes a census of the FeatureRecipe's templates, imported content included, and
+// the answer changes nothing for a claim whose key resolved.
+func recordDirectiveRead(claims []constraint.InjectDelivery, reads func() bool) {
+	asked, answer := false, false
+	for i := range claims {
+		if !claims[i].Unresolved {
+			continue
+		}
+		if !asked {
+			asked, answer = true, reads()
+		}
+		claims[i].DirectiveRead = answer
+	}
+}
+
+// injectDirectiveRoot is the path at which an attachment's FeatureRecipe reads the
+// attachment's own inject entries, spelled as the read census spells a field
+// access: the template context's top-level inject pillar, which is distinct from
+// the delivery pipe under .context.inject and from the component's own entries
+// under .inject_raw.
+const injectDirectiveRoot = ".inject"
+
+// injectDirectiveReader returns the answer [ResolveAttachmentInject] records on a
+// claim naming a key its FeatureRecipe does not publish: whether any template the
+// FeatureRecipe has evaluated against the attachment's own render context — the
+// values mapping, the workload, the artifacts entries, the omits entries and each
+// pipeline step's input and gate, the one context carrying .inject — reads .inject.
+// Its locals, provides, source and assertions are evaluated against contexts
+// carrying no .inject, and its injectMapping against the component's, so none of
+// them is read; [FeatureRecipeTemplateReads] holds that set.
+//
+// The answer is the read census's, through [FeatureRecipeTemplateReads], with the
+// FeatureRecipe's imports resolved against libs and its artifacts entries read with
+// the delimiter pair its own provider declares — resolved through
+// [resolveCapabilityEngine] and read through [declaredArtifactDelimiters], the
+// resolution and the reading every provider fact uses, so the pair is the one the
+// render applies to those entries.
+//
+// The census over-collects, so a read hidden inside a rebound body counts; what it
+// cannot see is a read whose path the template text does not decide — the whole
+// context handed on, as `toJson .` hands it, or a key reached through a function
+// such as `index . "inject"` — and such a FeatureRecipe is answered as not reading
+// it. A census that cannot be taken — a template that does not parse, an import
+// that does not resolve — answers that it does: what the FeatureRecipe reads cannot
+// be known, and its render reports that fault where it evaluates the template, which
+// is the finding the author needs first.
+func injectDirectiveReader(libs RecipeTemplateLibraries, engineFactory EngineFactory) func(fr *types.FeatureRecipe) bool {
+	return func(fr *types.FeatureRecipe) bool {
+		if fr == nil {
+			return false
+		}
+		delims := declaredArtifactDelimiters(resolveCapabilityEngine(engineFactory, fr.Spec.Capability))
+		reads, err := FeatureRecipeTemplateReads(fr, libs, delims.Left, delims.Right)
+		if err != nil {
+			return true
+		}
+		for _, read := range reads {
+			if read == injectDirectiveRoot || strings.HasPrefix(read, injectDirectiveRoot+".") {
+				return true
+			}
+		}
+		return false
+	}
 }
