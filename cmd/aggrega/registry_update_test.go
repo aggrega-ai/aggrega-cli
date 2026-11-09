@@ -1107,6 +1107,17 @@ type listingFlake struct {
 // else as the go-containerregistry in-memory registry does. The walk reaches it
 // through the production index source, so every read goes through the walk's own
 // retrying transport.
+//
+// It keeps no connection alive: every answer closes its connection, so every read
+// arrives on a connection that has carried nothing before. For a dropped
+// connection to reach the walk, the read must arrive on such a connection. Where a
+// connection the client reused fails before any byte of the answer arrives, Go's
+// HTTP transport sends a read with no body again by itself, on another connection,
+// and hands its caller only the answer to that: it cannot tell the failure from a
+// server closing an idle connection just as the read was sent. A reset met on a reused connection would
+// then never reach the walk's retrying transport and would not be counted, and
+// whether the faulted read rode a reused connection would depend on how the
+// parallel walk happened to share its connections.
 type flakyListingRegistry struct {
 	host   string
 	inner  http.Handler
@@ -1117,7 +1128,7 @@ type flakyListingRegistry struct {
 func newFlakyListingRegistry(t *testing.T, flakes map[string]*listingFlake) *flakyListingRegistry {
 	t.Helper()
 	r := &flakyListingRegistry{inner: registry.New(), flakes: flakes}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/tags/list") {
 			repo := strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/v2/"), "/tags/list")
 			r.mu.Lock()
@@ -1134,6 +1145,8 @@ func newFlakyListingRegistry(t *testing.T, flakes map[string]*listingFlake) *fla
 		}
 		r.inner.ServeHTTP(w, req)
 	}))
+	srv.Config.SetKeepAlivesEnabled(false)
+	srv.Start()
 	t.Cleanup(srv.Close)
 	r.host = strings.TrimPrefix(srv.URL, "http://")
 	return r
@@ -1158,6 +1171,12 @@ func (r *flakyListingRegistry) fired(repo string) int {
 // that opens it. Each row also requires its faults to have fired as often as set,
 // so a fixture whose fault never met a read cannot pass as a walk that counted
 // nothing.
+//
+// The registry closes every connection after its answer, so the reset meets a read
+// on a connection the HTTP transport does not send that read again on by itself,
+// since no read of the walk is abandoned while its connection is being opened, and
+// the reset reaches the walk on every run; flakyListingRegistry says why a reused
+// connection would hide it.
 func TestRegistryUpdateCountsTheReadsItAskedAgain(t *testing.T) {
 	// Not parallel: the walk resolves its source through the process-global
 	// index-target seam, which other tests in this package point elsewhere; here it
