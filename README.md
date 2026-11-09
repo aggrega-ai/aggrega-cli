@@ -59,6 +59,9 @@ no images and reconciles no state.
   complete workspaces you can build with the `aggrega` CLI.
 - [CLI Overview](https://aggrega.ai/docs/language-reference/07-cli/) — every
   `aggrega` subcommand.
+- [Compatibility](https://aggrega.ai/docs/language-reference/compatibility/) —
+  what a release promises for the schemas, the commands and flags, the
+  assistant tools, the error codes and the plugin kits.
 - [Building](#building) and [Testing](#testing) below — building and testing the
   compiler from this repository.
 
