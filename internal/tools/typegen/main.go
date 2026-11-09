@@ -260,16 +260,14 @@ var enumSources = map[string]enumSource{
 }
 
 // apiVersionDoc is the file-level doc for the generated API version constant.
-const apiVersionDoc = "APIVersion is the apiVersion every document this compiler reads declares,\n" +
-	"generated from the Aggregate schema's apiVersion constant. Every entity kind's\n" +
-	"schema pins the same value, and the document-envelope tests hold each of them\n" +
-	"to this const.\n" +
+const apiVersionDoc = "APIVersion is the apiVersion this compiler reads, generated from the Aggregate\n" +
+	"schema's apiVersion constant. Every schema that pins an apiVersion pins the\n" +
+	"same value, and the document-envelope tests hold each of them to this const.\n" +
 	"\n" +
-	"Everything in this module that drafts a document — the importers, the entity\n" +
-	"synthesis, the single-entity check, the editor's completion list — writes\n" +
-	"this const rather than the value, so a move to a new API version is a schema\n" +
-	"edit and a regeneration. The plugin kit is a separate module and carries its\n" +
-	"own copy, pinned to this const by a test in this module."
+	"Every writer in this module that drafts a document writes this const rather\n" +
+	"than the value, so a move to a new API version is a schema edit and a\n" +
+	"regeneration. The plugin kit is a separate module and carries its own copy,\n" +
+	"pinned to this const by a test in this module."
 
 // abiVersionEnumDoc is the shared file-level doc for the three plugin-ABI-version
 // targets, so the Go/Rust/TS files carry one explanation.

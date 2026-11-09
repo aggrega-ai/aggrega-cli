@@ -7,16 +7,14 @@
 
 package apiversion
 
-// APIVersion is the apiVersion every document this compiler reads declares,
-// generated from the Aggregate schema's apiVersion constant. Every entity kind's
-// schema pins the same value, and the document-envelope tests hold each of them
-// to this const.
+// APIVersion is the apiVersion this compiler reads, generated from the Aggregate
+// schema's apiVersion constant. Every schema that pins an apiVersion pins the
+// same value, and the document-envelope tests hold each of them to this const.
 //
-// Everything in this module that drafts a document — the importers, the entity
-// synthesis, the single-entity check, the editor's completion list — writes
-// this const rather than the value, so a move to a new API version is a schema
-// edit and a regeneration. The plugin kit is a separate module and carries its
-// own copy, pinned to this const by a test in this module.
+// Every writer in this module that drafts a document writes this const rather
+// than the value, so a move to a new API version is a schema edit and a
+// regeneration. The plugin kit is a separate module and carries its own copy,
+// pinned to this const by a test in this module.
 
 const (
 	APIVersion = "aggrega.ai/v1beta1"
