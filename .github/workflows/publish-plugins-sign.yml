@@ -3817,7 +3817,19 @@ jobs:
             NOTES="$(printf '## Changes\n\n%s\n\n%s' "$(cat "$CHANGES_FILE")" "$NOTES")"
           fi
 
+          # A tag carrying a pre-release suffix (v0.9.0-rc.1) is published as a
+          # pre-release and never as the latest release: the install scripts,
+          # run with no version, download from the latest release, which must
+          # keep naming the newest final one.
+          RELEASE_KIND=()
+          case "$TAG" in
+            v*.*.*-*) RELEASE_KIND=(--prerelease --latest=false) ;;
+          esac
+
           if [ "$DRY" = "true" ]; then
+            if [ "${#RELEASE_KIND[@]}" -gt 0 ]; then
+              echo "publish-plugins (dry-run): '$TAG' carries a pre-release suffix: the release would be a pre-release, never the latest"
+            fi
             echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
             for asset in "${ASSETS[@]}"; do
               echo "  $(basename "$asset")"
@@ -3855,7 +3867,8 @@ jobs:
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --title "$TAG" \
-              --notes "$NOTES"
+              --notes "$NOTES" \
+              "${RELEASE_KIND[@]}"
           fi
 
       - name: Render the Homebrew formula, the Scoop manifest and the winget manifest
