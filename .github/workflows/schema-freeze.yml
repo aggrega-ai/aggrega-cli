@@ -1,0 +1,72 @@
+name: Schema freeze
+
+# On main, which holds what was last released, a push fails when it changes a
+# codec generated from a schema since the newest commit main shares with dev: a
+# release fast-forwards main to dev and passes, an edit made on main does not.
+#
+# The check is the schemas repository's own (cmd/schemagate; its usage text is the
+# contract), checked out beside this repository from its dev branch. The codecs it
+# protects are named by the codec generator's registries in
+# internal/tools/typegen/main.go, which the check reads when it runs at both ends
+# of the judged change — the newest commit main shares with dev, and the pushed
+# head — so a newly registered codec is protected with no list to edit here, and a
+# push cannot remove the protection of a codec it edits. The comparison reads dev
+# from this repository's remote, so dev is pushed before main.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  freeze:
+    name: Refuse a codec change (main)
+    runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Check out with history
+        uses: actions/checkout@v5
+        with:
+          path: aggrega-cli
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Mint org app token for private-sibling access
+        # The schemas repository is private; a GitHub App installation token
+        # scoped to the org grants the checkout below read access. The App's
+        # secrets are handed to this action and to no step, and its token to that
+        # checkout, which does not keep it.
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Check out the schemas sibling, which carries the check
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/aggrega-schemas
+          path: aggrega-schemas
+          ref: dev
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: aggrega-schemas/go.mod
+          cache: false
+
+      - name: Build the check
+        working-directory: aggrega-schemas
+        run: go build -o "$RUNNER_TEMP/schemagate" ./cmd/schemagate
+
+      - name: Refuse a codec change not brought in from dev
+        run: >-
+          "$RUNNER_TEMP/schemagate" freeze
+          -repo aggrega-cli
+          -registry aggrega-cli/internal/tools/typegen/main.go
+          -head "$GITHUB_SHA"
+          -dev origin/dev
